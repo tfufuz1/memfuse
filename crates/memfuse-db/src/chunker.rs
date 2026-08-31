@@ -225,6 +225,7 @@ impl MarkdownChunker {
                     token_count,
                     metadata,
                     contextual_prefix: None,
+                    links: Vec::new(),
                 }
             })
             .collect()

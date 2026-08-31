@@ -20,3 +20,9 @@ blake3 = { workspace = true }
 memfuse-core = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+proptest = "1.4"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "checkpoint_bench"
+harness = false

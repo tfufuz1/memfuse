@@ -230,25 +230,6 @@ impl DiskAnnIndex {
         })
     }
 
-    fn compute_dist_between_nodes(&self, idx_a: u32, idx_b: u32) -> Result<f32> {
-        let node_a = self.load_node(idx_a)?;
-        let node_b = self.load_node(idx_b)?;
-
-        match (&node_a.vector, &node_b.vector) {
-            (VectorData::F32(v_a), VectorData::F32(v_b)) => {
-                compute_distance(v_a, v_b, self.inner.config.distance_metric)
-            }
-            (VectorData::U8(v_a), VectorData::U8(v_b)) => {
-                let q_guard = self.inner.quantizer.read();
-                let q = q_guard
-                    .as_ref()
-                    .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
-                q.symmetric_dist(v_a, v_b, self.inner.config.distance_metric)
-            }
-            _ => Err(MemFuseError::Index("Mixed vector types".into())),
-        }
-    }
-
     fn check_quantizer_drift(&self, vector: &[f32]) {
         let mut q_guard = self.inner.quantizer.write();
         if let Some(ref mut q) = *q_guard {
@@ -287,9 +268,76 @@ impl DiskAnnIndex {
         }
     }
 
-    fn prune(&self, candidates: &mut [SearchCandidate], max_degree: usize, alpha: f32) -> Vec<u32> {
+    fn search_in_memory(
+        &self,
+        query: &[f32],
+        graph: &[Vec<u32>],
+        vectors: &[Vec<f32>],
+        entry_point: u32,
+        beam_width: usize,
+    ) -> Result<Vec<SearchCandidate>> {
+        let mut visited = HashSet::new();
+        let mut candidates = BinaryHeap::new();
+        let mut results = BinaryHeap::new();
+
+        let ep_dist = compute_distance(
+            query,
+            &vectors[entry_point as usize],
+            self.inner.config.distance_metric,
+        )?;
+
+        let initial = SearchCandidate {
+            index: entry_point,
+            distance: ep_dist,
+        };
+        candidates.push(Reverse(initial.clone()));
+        results.push(initial);
+        visited.insert(entry_point);
+
+        while let Some(Reverse(current)) = candidates.pop() {
+            if let Some(worst) = results.peek() {
+                if current.distance > worst.distance && results.len() >= beam_width {
+                    break;
+                }
+            }
+
+            for &neighbor in &graph[current.index as usize] {
+                if !visited.insert(neighbor) {
+                    continue;
+                }
+                let dist = compute_distance(
+                    query,
+                    &vectors[neighbor as usize],
+                    self.inner.config.distance_metric,
+                )?;
+                let cand = SearchCandidate {
+                    index: neighbor,
+                    distance: dist,
+                };
+
+                if results.len() < beam_width
+                    || results.peek().map(|w| dist < w.distance).unwrap_or(true)
+                {
+                    candidates.push(Reverse(cand.clone()));
+                    results.push(cand);
+                    if results.len() > beam_width {
+                        results.pop();
+                    }
+                }
+            }
+        }
+        Ok(results.into_vec())
+    }
+
+    fn prune_in_memory(
+        &self,
+        candidates: &mut [SearchCandidate],
+        vectors: &[Vec<f32>],
+        max_degree: usize,
+        alpha: f32,
+    ) -> Result<Vec<u32>> {
         if candidates.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         candidates.sort_by(|a, b| a.distance.total_cmp(&b.distance));
 
@@ -301,9 +349,11 @@ impl DiskAnnIndex {
 
             let mut keep = true;
             for &p_idx in &pruned {
-                let dist_p_cand = self
-                    .compute_dist_between_nodes(cand.index, p_idx)
-                    .unwrap_or(f32::MAX);
+                let dist_p_cand = compute_distance(
+                    &vectors[cand.index as usize],
+                    &vectors[p_idx as usize],
+                    self.inner.config.distance_metric,
+                )?;
                 if alpha * dist_p_cand < cand.distance {
                     keep = false;
                     break;
@@ -314,7 +364,7 @@ impl DiskAnnIndex {
                 pruned.push(cand.index);
             }
         }
-        pruned
+        Ok(pruned)
     }
 
     /// Builds the index from a set of vectors.
@@ -332,35 +382,65 @@ impl DiskAnnIndex {
             *self.inner.quantizer.write() = Some(q);
         }
 
-        // 1. Initial State
+        // 1. Initial State (Ring topology)
         let mut graph: Vec<Vec<u32>> = vec![vec![]; n];
         for (i, node_graph) in graph.iter_mut().enumerate() {
-            let neighbor = (i + 1) % n;
-            node_graph.push(neighbor as u32);
+            let neighbor = ((i + 1) % n) as u32;
+            node_graph.push(neighbor);
         }
 
-        // 2. Initial Write & Mmap
-        self.write_to_file(&graph, vectors, ids).await?;
-        self.load().await?; // Load mmap and doc_ids
+        // 2. Vamana In-Memory Build Passes (Pass 1: alpha=1.0, Pass 2: alpha=1.2)
+        let entry_point = 0u32;
+        for alpha in [1.0f32, 1.2f32] {
+            for i in 0..n {
+                let mut candidates = self.search_in_memory(
+                    &vectors[i],
+                    &graph,
+                    vectors,
+                    entry_point,
+                    self.inner.config.beam_width,
+                )?;
+                let pruned = self.prune_in_memory(
+                    &mut candidates,
+                    vectors,
+                    self.inner.config.max_degree,
+                    alpha,
+                )?;
 
-        // 3. Vamana Build Pass
-        let alpha = 1.2;
-        for (i, vector) in vectors.iter().enumerate() {
-            let mut results = self.search_to_candidates(vector, self.inner.config.beam_width)?;
-            let pruned = self.prune(&mut results, self.inner.config.max_degree, alpha);
-
-            for &neighbor in &pruned {
-                let neighbor_idx = neighbor as usize;
-                if !graph[neighbor_idx].contains(&(i as u32))
-                    && graph[neighbor_idx].len() < self.inner.config.max_degree
-                {
-                    graph[neighbor_idx].push(i as u32);
+                for &neighbor in &pruned {
+                    let neighbor_idx = neighbor as usize;
+                    if !graph[neighbor_idx].contains(&(i as u32)) {
+                        graph[neighbor_idx].push(i as u32);
+                        if graph[neighbor_idx].len() > self.inner.config.max_degree {
+                            let mut cand_vec: Vec<SearchCandidate> = graph[neighbor_idx]
+                                .iter()
+                                .map(|&idx| {
+                                    let dist = compute_distance(
+                                        &vectors[neighbor_idx],
+                                        &vectors[idx as usize],
+                                        self.inner.config.distance_metric,
+                                    )
+                                    .unwrap_or(f32::MAX);
+                                    SearchCandidate {
+                                        index: idx,
+                                        distance: dist,
+                                    }
+                                })
+                                .collect();
+                            graph[neighbor_idx] = self.prune_in_memory(
+                                &mut cand_vec,
+                                vectors,
+                                self.inner.config.max_degree,
+                                alpha,
+                            )?;
+                        }
+                    }
                 }
+                graph[i] = pruned;
             }
-            graph[i] = pruned;
         }
 
-        // 4. Final Write
+        // 3. Final Write & Load Mmap
         self.write_to_file(&graph, vectors, ids).await?;
         self.load().await?;
 
@@ -504,62 +584,6 @@ impl DiskAnnIndex {
         Ok(())
     }
 
-    fn search_to_candidates(
-        &self,
-        query: &[f32],
-        beam_width: usize,
-    ) -> Result<Vec<SearchCandidate>> {
-        let header_guard = self.inner.header.read();
-        let header = header_guard
-            .as_ref()
-            .ok_or_else(|| MemFuseError::Index("Index not loaded".into()))?;
-        let mut visited = HashSet::new();
-        let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
-
-        let ep = header.entry_point;
-        let ep_dist = self.get_dist_to_query(query, ep)?;
-
-        let initial = SearchCandidate {
-            index: ep,
-            distance: ep_dist,
-        };
-        candidates.push(Reverse(initial.clone()));
-        results.push(initial);
-        visited.insert(ep);
-
-        while let Some(Reverse(current)) = candidates.pop() {
-            if let Some(worst) = results.peek() {
-                if current.distance > worst.distance && results.len() >= beam_width {
-                    break;
-                }
-            }
-
-            let node = self.load_node(current.index)?;
-            for &neighbor in &node.neighbors {
-                if !visited.insert(neighbor) {
-                    continue;
-                }
-                let dist = self.get_dist_to_query(query, neighbor)?;
-                let cand = SearchCandidate {
-                    index: neighbor,
-                    distance: dist,
-                };
-
-                if results.len() < beam_width
-                    || results.peek().map(|w| dist < w.distance).unwrap_or(true)
-                {
-                    candidates.push(Reverse(cand.clone()));
-                    results.push(cand);
-                    if results.len() > beam_width {
-                        results.pop();
-                    }
-                }
-            }
-        }
-        Ok(results.into_vec())
-    }
-
     /// Loads the index from the configured path.
     pub async fn load(&self) -> Result<()> {
         let inner = Arc::clone(&self.inner);
@@ -573,7 +597,10 @@ impl DiskAnnIndex {
             #[allow(unsafe_code)]
             let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
-            let header = DiskAnnHeader::try_from_bytes(&mmap[0..DiskAnnHeader::SIZE])?;
+            let header_slice = mmap
+                .get(0..DiskAnnHeader::SIZE)
+                .ok_or_else(|| MemFuseError::Storage("DiskANN file too small for header".into()))?;
+            let header = DiskAnnHeader::try_from_bytes(header_slice)?;
 
             if inner.config.sector_size != header.sector_size as usize {
                 return Err(MemFuseError::Index(format!(
@@ -635,8 +662,11 @@ impl DiskAnnIndex {
                 let mmap_ref = inner_mmap
                     .as_ref()
                     .ok_or(MemFuseError::Index("Mmap failed".into()))?;
+                let doc_id_bytes = mmap_ref.get(offset..offset + 8).ok_or_else(|| {
+                    MemFuseError::Storage("DiskANN file truncated before doc_id".into())
+                })?;
                 let doc_id = u64::from_le_bytes(
-                    mmap_ref[offset..offset + 8]
+                    doc_id_bytes
                         .try_into()
                         .map_err(|_| MemFuseError::Index("Corrupt doc_id".into()))?,
                 );

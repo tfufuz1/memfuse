@@ -514,9 +514,9 @@ impl MemFuse {
     /// EINZIGE legale TxId-Quelle für externe Crates (verhindert Kollisionen).
     pub fn allocate_tx(&self) -> Result<TxId> {
         let id = self.next_tx.fetch_add(1, Ordering::SeqCst);
-        if id >= TxId::INTERNAL_BASE {
+        if id > TxId::MAX_COLLECTION_SEQUENCE {
             return Err(memfuse_core::MemFuseError::Transaction(
-                "TxId counter exhausted: INTERNAL_BASE range collision. Collection must be recreated.".into(),
+                "TxId counter exhausted: MAX_COLLECTION_SEQUENCE range exceeded. Collection must be recreated.".into(),
             ));
         }
         Ok(TxId::new(id))

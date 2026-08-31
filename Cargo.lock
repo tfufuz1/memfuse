@@ -2672,8 +2672,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
+ "criterion",
  "memfuse-core",
  "parking_lot",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",
@@ -2703,9 +2705,11 @@ name = "memfuse-crypto"
 version = "0.1.0"
 dependencies = [
  "aes-gcm-siv",
+ "criterion",
  "hkdf",
  "hmac",
  "memfuse-core",
+ "proptest",
  "rand 0.8.8",
  "sha2",
  "subtle",
@@ -2852,10 +2856,12 @@ dependencies = [
 name = "memfuse-router"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "memfuse-core",
  "memfuse-db",
  "memfuse-ollama",
  "memfuse-store",
+ "proptest",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
