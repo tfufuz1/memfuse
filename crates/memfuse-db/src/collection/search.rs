@@ -743,10 +743,75 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        Ok(crate::fusion::weighted_reciprocal_rank_fusion(
+        let mut fused_results = crate::fusion::weighted_reciprocal_rank_fusion(
             signal_sets,
             k,
-        ))
+        );
+
+        if !query.include_superseded {
+            // Post-RRF Supersedes Displacement (ADR-038)
+            let mut superseded_targets = std::collections::HashSet::new();
+            for res in &fused_results {
+                if let Ok(doc_id) = DocId::from_key(&res.id) {
+                    let links = self.get_links(doc_id).await?;
+                    for link in links {
+                        if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+                            superseded_targets.insert(link.target);
+                        }
+                    }
+                }
+            }
+            if !superseded_targets.is_empty() {
+                fused_results.retain(|res| {
+                    if let Ok(doc_id) = DocId::from_key(&res.id) {
+                        !superseded_targets.contains(&doc_id)
+                    } else {
+                        true
+                    }
+                });
+            }
+        }
+
+        Ok(fused_results)
+    }
+
+    /// Traverses Zettelkasten memory links starting from a given document up to a maximum hop depth (ADR-038).
+    ///
+    /// Performs iterative BFS with cycle detection using `VecDeque`, returning `(DocId, depth)` tuples.
+    /// Result count is capped at `MAX_SEARCH_K`.
+    pub async fn traverse_links(
+        &self,
+        start: DocId,
+        max_depth: usize,
+    ) -> Result<Vec<(DocId, usize)>> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut results = Vec::new();
+
+        visited.insert(start);
+        queue.push_back((start, 0));
+
+        while let Some((current_id, depth)) = queue.pop_front() {
+            if depth >= max_depth {
+                continue;
+            }
+
+            let links = self.get_links(current_id).await?;
+            for link in links {
+                if visited.insert(link.target) {
+                    let next_depth = depth + 1;
+                    results.push((link.target, next_depth));
+                    if results.len() >= memfuse_core::MAX_SEARCH_K {
+                        return Ok(results);
+                    }
+                    if next_depth < max_depth {
+                        queue.push_back((link.target, next_depth));
+                    }
+                }
+            }
+        }
+
+        Ok(results)
     }
 
     /// Filters a candidate list of search results by effective importance score threshold.

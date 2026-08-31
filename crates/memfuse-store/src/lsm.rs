@@ -1073,7 +1073,7 @@ impl StorageEngine for LsmStorage {
         // INVARIANT (Task C - Single snapshot boundary):
         // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
-        let mut map = std::collections::BTreeMap::new();
+        let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> = std::collections::BTreeMap::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
 
@@ -1100,9 +1100,9 @@ impl StorageEngine for LsmStorage {
             for (k, v, seq, tx) in entries {
                 let raw_seq = seq & !TOMBSTONE_BIT;
                 if raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
-                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                    let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                        *entry = (v.to_vec(), seq);
+                        *entry = (v, seq);
                     }
                 }
             }
@@ -1116,9 +1116,9 @@ impl StorageEngine for LsmStorage {
                     && raw_seq <= seq_no
                     && (tx <= last_tx || tx >= TxId::INTERNAL_BASE)
                 {
-                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                    let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                        *entry = (v.to_vec(), seq);
+                        *entry = (v.clone(), seq);
                     }
                 }
             }
@@ -1131,17 +1131,17 @@ impl StorageEngine for LsmStorage {
                 && raw_seq <= seq_no
                 && (tx <= last_tx || tx >= TxId::INTERNAL_BASE)
             {
-                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
                 if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                    *entry = (v.to_vec(), seq);
+                    *entry = (v.clone(), seq);
                 }
             }
         }
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(map.len());
         for (k, (v, seq)) in map {
             if (seq & TOMBSTONE_BIT) == 0 {
-                results.push((k, v));
+                results.push((k.to_vec(), v.to_vec()));
             }
         }
 

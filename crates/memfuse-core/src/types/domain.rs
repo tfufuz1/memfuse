@@ -450,13 +450,36 @@ impl ScoredDocument {
     }
 }
 
-/// Graph entity node representation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Relationship types between Zettelkasten memory chunks (A-MEM).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LinkRelation {
+    /// Target memory provides more detail or context.
+    Elaborates,
+    /// Target memory contradicts this memory.
+    Contradicts,
+    /// Target memory supersedes this memory, replacing its context.
+    Supersedes,
+    /// General reference without specific semantics.
+    References,
+}
+
+/// A directional link to another memory chunk in the Zettelkasten.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MemoryLink {
+    /// The target document ID.
+    pub target: DocId,
+    /// The type of relationship.
+    pub relation: LinkRelation,
+    /// The transaction ID when this link was created.
+    pub created_at_tx: TxId,
+}
+
+/// Represents a canonical node in the knowledge graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
-    /// Unique entity identifier.
+    /// Unique entity ID.
     pub id: EntityId,
-    /// Human-readable entity name.
-    #[serde(default)]
+    /// Canonical human-readable name.
     pub name: String,
     /// Categorical entity type.
     pub entity_type: String,
