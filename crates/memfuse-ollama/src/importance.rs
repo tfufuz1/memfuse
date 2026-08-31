@@ -1,13 +1,13 @@
 // FILE-CONTEXT
 // STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
 // ZWECK: LLM-basierte Wichtigkeits-Bewertung (ImportanceScore 0.0-1.0) für Memory Chunks
-// INVARIANTEN: Parst Floats via OnceLock-Regex; Sanitisiert Input vor Prompt-Bau; Returnt `MemFuseError::Internal` bei Parse-Fehler
+// INVARIANTEN: Parst Floats via OnceLock-Regex; Escaped Input vor Prompt-Bau; Returnt `MemFuseError::Internal` bei Parse-Fehler
 // NICHT-OFFENSICHTLICH: Regex parst erste valide 0.0-1.0 Float-Zahl aus LLM Few-Shot Antwort
 // HOTSPOTS: score_importance
 
 //! LLM-based Memory Importance scoring using Ollama generate_text.
 
-use crate::client::sanitize_prompt_input;
+use crate::client::xml_escape;
 use crate::OllamaClient;
 use memfuse_core::{ImportanceScore, MemFuseError, Result};
 use regex::Regex;
@@ -38,7 +38,7 @@ pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result
         ));
     }
 
-    let sanitized = sanitize_prompt_input(chunk_text);
+    let escaped = xml_escape(chunk_text);
 
     let prompt = format!(
         "Rate the long-term importance of the following memory chunk for an AI agent on a scale from 0.0 to 1.0.\n\
@@ -51,7 +51,7 @@ pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result
          Memory: 'User prefers Rust code examples over Python.' -> 0.9\n\
          Memory: 'System password hint is super-secret-123.' -> 1.0\n\n\
          Memory to rate:\n\
-         \"{sanitized}\"\n\n\
+         \"{escaped}\"\n\n\
          Return ONLY a single floating-point number between 0.0 and 1.0. No explanations or extra text."
     );
 
