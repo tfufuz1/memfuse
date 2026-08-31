@@ -809,7 +809,11 @@ impl SstableReader {
                 bloom_offset as usize
             } else {
                 file_size.saturating_sub(if is_mfsx {
-                    if format_version >= 1 { 54 } else { 52 }
+                    if format_version >= 1 {
+                        54
+                    } else {
+                        52
+                    }
                 } else {
                     12
                 }) as usize

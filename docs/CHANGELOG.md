@@ -152,8 +152,3 @@
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
-| `` | `crates/memfuse-text/benches/text_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantifiziert Durchsatz (Words/sec), Latencies p50/p95/p99 für Tokenisierungen, Morphologie & BM25-Suche. |
-| `` | `crates/memfuse-text/tests/bm25_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert BM25 Scoring gegen handberechnete mathematische Werte. |
-| `` | `crates/memfuse-text/tests/inverted_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert CRUD-Semantik, MVCC Snapshot Isolation und Nebenläufigkeits-Konsistenz. |
-| `` | `crates/memfuse-text/tests/morphology_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Kompositazerlegung, Umlautnormalisierung, False-Positive-Rate & End-to-End Tokenisierung. |
-| `` | `crates/memfuse-text/tests/tokenizer_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Fuzz-Robustheit (0 Panics), BM25-Score-Monotonie und Tokenisierungs-Grenzfälle. |
