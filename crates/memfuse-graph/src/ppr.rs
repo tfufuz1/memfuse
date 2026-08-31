@@ -892,28 +892,26 @@ mod tests {
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn personalized_pagerank_CASE_empty_and_non_existent_teleport_nodes() {
+    async fn personalized_pagerank_CASE_empty_and_non_existent_teleport_nodes(
+    ) -> memfuse_core::Result<()> {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
         let id1 = EntityId::new(1);
-        graph
-            .add_entity(tx, Entity::new(id1, "N1", "Type"))
-            .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+        graph.add_entity(tx, Entity::new(id1, "N1", "Type")).await?;
+        graph.commit(tx).await?;
 
         let config = PprConfig::default();
 
         // Empty teleport nodes
-        let res_empty = graph.personalized_page_rank(&[], &config).await.unwrap();
+        let res_empty = graph.personalized_page_rank(&[], &config).await?;
         assert!(res_empty.is_empty());
 
         // Non-existent teleport nodes
         let non_existent = EntityId::new(999);
         let res_non_existent = graph
             .personalized_page_rank(&[non_existent], &config)
-            .await
-            .unwrap();
+            .await?;
         assert!(res_non_existent.is_empty());
+        Ok(())
     }
 }

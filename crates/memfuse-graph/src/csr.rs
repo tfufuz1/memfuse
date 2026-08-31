@@ -2792,38 +2792,31 @@ mod tests {
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn insert_edge_direct_with_validity_CASE_boundary_weights_and_temporal() {
+    async fn insert_edge_direct_with_validity_CASE_boundary_weights_and_temporal() -> Result<()> {
         let graph = CsrGraph::new();
         let e1 = EntityId::new(100);
         let e2 = EntityId::new(200);
 
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
-        graph
-            .insert_entity_direct(Entity::new(e2, "E2".to_string(), "Type".to_string()))
-            .unwrap();
+        graph.insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))?;
+        graph.insert_entity_direct(Entity::new(e2, "E2".to_string(), "Type".to_string()))?;
 
         // Edge with negative weight and inverted valid_from > valid_to
         let vf = Some(TxId::new(200));
         let vt = Some(TxId::new(100));
-        graph
-            .insert_edge_direct_with_validity(e1, e2, -0.5, vf, vt)
-            .unwrap();
+        graph.insert_edge_direct_with_validity(e1, e2, -0.5, vf, vt)?;
 
-        let n = graph.neighbors(e1).await.unwrap();
+        let n = graph.neighbors(e1).await?;
         assert_eq!(n.len(), 1);
         assert_eq!(n[0], e2);
+        Ok(())
     }
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn set_communities_batch_CASE_empty_and_non_existent_entities() {
+    async fn set_communities_batch_CASE_empty_and_non_existent_entities() -> Result<()> {
         let graph = CsrGraph::new();
         let e1 = EntityId::new(1);
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
+        graph.insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))?;
 
         // Empty batch call
         graph.set_communities_batch(&[]);
@@ -2843,57 +2836,53 @@ mod tests {
 
         let comms = graph
             .get_communities_batch(&[e1, EntityId::new(999)])
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(comms.get(&e1), Some(&1));
         assert_eq!(comms.get(&EntityId::new(999)), Some(&42));
+        Ok(())
     }
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn entity_exists_and_neighbors_CASE_non_existent_and_isolated() {
+    async fn entity_exists_and_neighbors_CASE_non_existent_and_isolated() -> Result<()> {
         let graph = CsrGraph::new();
         let e1 = EntityId::new(1);
         let non_existent = EntityId::new(999);
 
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
+        graph.insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))?;
 
         assert!(graph.entity_exists(e1));
         assert!(!graph.entity_exists(non_existent));
 
         // Isolated entity neighbors
-        let n1 = graph.neighbors(e1).await.unwrap();
+        let n1 = graph.neighbors(e1).await?;
         assert!(n1.is_empty());
 
         // Non-existent entity neighbors
-        let n2 = graph.neighbors(non_existent).await.unwrap();
+        let n2 = graph.neighbors(non_existent).await?;
         assert!(n2.is_empty());
+        Ok(())
     }
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn traverse_at_time_CASE_zero_hops_returns_empty_since_start_is_excluded() {
+    async fn traverse_at_time_CASE_zero_hops_returns_empty_since_start_is_excluded() -> Result<()> {
         let graph = CsrGraph::new();
         let e1 = EntityId::new(1);
         let e2 = EntityId::new(2);
 
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
-        graph
-            .insert_entity_direct(Entity::new(e2, "E2".to_string(), "Type".to_string()))
-            .unwrap();
-        graph.insert_edge_direct(e1, e2, 1.0).unwrap();
+        graph.insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))?;
+        graph.insert_entity_direct(Entity::new(e2, "E2".to_string(), "Type".to_string()))?;
+        graph.insert_edge_direct(e1, e2, 1.0)?;
 
         // 0 hops should exclude start_idx and reach no neighbors
-        let zero_hop = graph.traverse_at_time(e1, 0, TxId::new(10)).await.unwrap();
+        let zero_hop = graph.traverse_at_time(e1, 0, TxId::new(10)).await?;
         assert!(zero_hop.is_empty());
 
         // 1 hop should reach e2 (and exclude start e1)
-        let one_hop = graph.traverse_at_time(e1, 1, TxId::new(10)).await.unwrap();
+        let one_hop = graph.traverse_at_time(e1, 1, TxId::new(10)).await?;
         assert_eq!(one_hop.len(), 1);
         assert_eq!(one_hop[0].0, e2);
+        Ok(())
     }
 }

@@ -592,26 +592,21 @@ mod tests {
 
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn detect_communities_CASE_zero_max_iterations() {
+    async fn detect_communities_CASE_zero_max_iterations() -> Result<()> {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
         let id1 = EntityId::new(10);
         let id2 = EntityId::new(20);
-        graph
-            .add_entity(tx, Entity::new(id1, "N1", "Type"))
-            .await
-            .unwrap();
-        graph
-            .add_entity(tx, Entity::new(id2, "N2", "Type"))
-            .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+        graph.add_entity(tx, Entity::new(id1, "N1", "Type")).await?;
+        graph.add_entity(tx, Entity::new(id2, "N2", "Type")).await?;
+        graph.commit(tx).await?;
 
         let config = CommunityDetectionConfig {
             max_iterations: 0,
             seed: 42,
         };
-        let assignments = detect_communities(&graph, &config).await.unwrap();
+        let assignments = detect_communities(&graph, &config).await?;
         assert_eq!(assignments.len(), 2);
+        Ok(())
     }
 }
