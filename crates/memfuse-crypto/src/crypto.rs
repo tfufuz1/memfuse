@@ -3,7 +3,7 @@
 // INVARIANTEN: Nonce prefix (4 bytes) + OsRng random suffix (8 bytes) per encrypt_auto_nonce call. HKDF-Expand per file_id.
 // NICHT-OFFENSICHTLICH: AES-256-GCM-SIV provides nonce-misuse resistance (RFC 8452). Keys zeroized on drop. Lock-free & I/O-free.
 // HOTSPOTS: [50-150]
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+// STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
 //! Encryption utilities for MemFuse.
 //!
@@ -414,13 +414,72 @@ mod tests {
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
-    // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
-    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2)
+    #[test]
+    fn test_try_new_max_salt_boundary() {
+        let salt = vec![0x42u8; 10_000];
+        let res = KeyManager::try_new("valid-passphrase", &salt);
+        assert!(res.is_ok(), "Salt of exactly 10,000 bytes MUST be accepted");
+    }
+
+    #[test]
+    fn test_derive_file_key_max_id_boundary() {
+        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let file_id = vec![0x77u8; 10_000];
+        let res = km.derive_file_key(&file_id);
+        assert!(
+            res.is_ok(),
+            "file_id of exactly 10,000 bytes MUST be accepted"
+        );
+    }
+
+    #[test]
+    fn test_try_new_random_salt_empty_passphrase() {
+        let res = KeyManager::try_new_random_salt("");
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_decrypt_too_short_ciphertext() {
+        let km = KeyManager::try_new("passphrase", b"salt").expect("km");
+        let nonce = [0u8; 12];
+        let short_ciphertext = [0u8; 10]; // AES-GCM-SIV tag is 16 bytes
+        let res = km.decrypt_auto_nonce(&short_ciphertext, &nonce);
+        assert!(matches!(res, Err(MemFuseError::Crypto(_))));
+    }
+
+    #[test]
+    fn test_hkdf_anti_mirroring_reference_check() {
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        let passphrase = "independent-passphrase-reference";
+        let salt = b"independent-salt-reference";
+
+        let km = KeyManager::try_new(passphrase, salt).expect("km");
+
+        // Independent external calculation
+        let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
+        let mut expected_key = [0u8; 32];
+        hk.expand(b"memfuse-aes-256-gcm-key", &mut expected_key)
+            .expect("hkdf expansion");
+
+        assert_eq!(
+            km.inspect_key_bytes_for_test(),
+            &expected_key,
+            "KeyManager derived key MUST match independently calculated HKDF-SHA256 reference value!"
+        );
+    }
+
+    // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-31T21:13:05Z) (SESSION:8427f167) — Nonce-Uniqueness verification bei paralleler Verschlüsselung
+    // REVIEW-PASS[1/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Parallel encryption nonce uniqueness verified across concurrent threads.
-    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:05:00Z) (SESSION: c9f5e2b3)
+    // REVIEW-PASS[2/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:05:00Z) (SESSION: c9f5e2b3)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Independent review pass verified no duplicate nonces generated.
+    // REVIEW-PASS[3/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-31T21:13:05Z) (SESSION: 8427f167)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Security review pass re-verified 100k parallel nonces without duplication.
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;

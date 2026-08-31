@@ -2,8 +2,9 @@
 // ZWECK: Key separation and cryptographic edge cases test suite for memfuse-crypto.
 // INVARIANTEN: HMAC integrity key and encryption key derived from same passphrase/salt must be distinct.
 // NICHT-OFFENSICHTLICH: Handles extreme passphrase lengths, unicode, truncated ciphertexts, and 100MB payloads without panics.
-// STAND: TS:2026-08-30T19:40:00Z (SESSION: 20260830)
+// STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
+use memfuse_crypto::wal_crypto::EncryptedWal;
 use memfuse_crypto::CryptoKey;
 
 #[test]
@@ -139,4 +140,42 @@ fn test_passphrase_reuse_behavior() {
         "Nonces MUST be non-deterministic across calls/instances"
     );
     assert_ne!(ct1, ct2, "Ciphertexts MUST differ due to random nonces");
+}
+
+#[test]
+fn test_unicode_file_id_derivation() {
+    let km = CryptoKey::try_new("passphrase", b"salt").expect("km");
+    let unicode_file_id = "pfad/zur/datenbank_🔒_001.sst";
+    let sub_km = km
+        .derive_file_key(unicode_file_id.as_bytes())
+        .expect("derive unicode file_id");
+
+    let (ct, nonce) = sub_km.encrypt_auto_nonce(b"payload").expect("encrypt");
+    let decrypted = sub_km.decrypt_auto_nonce(&ct, &nonce).expect("decrypt");
+    assert_eq!(decrypted, b"payload");
+}
+
+#[test]
+fn test_extremely_large_passphrase_100k_chars() {
+    let large_passphrase = "x".repeat(100_000);
+    let salt = b"salt-for-100k-passphrase";
+    let km = CryptoKey::try_new(&large_passphrase, salt).expect("100k passphrase try_new");
+
+    let (ct, nonce) = km
+        .encrypt_auto_nonce(b"100k pass payload")
+        .expect("encrypt");
+    let decrypted = km.decrypt_auto_nonce(&ct, &nonce).expect("decrypt");
+    assert_eq!(decrypted, b"100k pass payload");
+}
+
+#[test]
+fn test_encrypted_wal_zero_byte_chunk() {
+    let km = CryptoKey::try_new("wal-pass", b"wal-salt").expect("km");
+    let wal = EncryptedWal::new(km, b"wal_0.log").expect("wal");
+
+    let encrypted = wal.encrypt_chunk(b"").expect("encrypt 0-byte chunk");
+    assert_eq!(encrypted.len(), 12 + 16);
+
+    let decrypted = wal.decrypt_chunk(&encrypted).expect("decrypt 0-byte chunk");
+    assert_eq!(decrypted, b"");
 }
