@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn bm25_struct_score_term_case_matches_standalone_function() {
-        let bm25 = BM25::new(1.5, 0.75).expect("valid parameters");
+        let bm25 = BM25::default();
         let struct_score = bm25.score_term(2, 50, 50.0, 5, 100);
         let fn_score = score_term(2, 50, 50.0, 5, 100);
         assert_eq!(struct_score, fn_score);
