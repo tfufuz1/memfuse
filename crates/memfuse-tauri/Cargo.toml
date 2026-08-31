@@ -33,6 +33,11 @@ futures-util = "0.3"
 tempfile = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
+zip = "2"
+
+[[bench]]
+name = "parser_bench"
+harness = false
 
 [lib]
 name = "memfuse_tauri_lib"

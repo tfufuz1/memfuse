@@ -1,7 +1,7 @@
 pub mod commands;
 pub mod ingestion;
 pub mod ollama;
-mod state;
+pub mod state;
 
 use state::AppState;
 
