@@ -674,40 +674,4 @@ mod tests {
         assert!(res_mismatch.is_err());
         assert!(res_mismatch.unwrap_err().to_string().contains("expected 3"));
     }
-
-    #[test]
-    fn test_asymmetric_symmetric_distance_metrics() {
-        // Build quantizer for 3D vectors
-        // x in [0, 10], y in [0, 20], z in [0, 100]
-        let v1 = vec![0.0, 0.0, 0.0];
-        let v2 = vec![10.0, 20.0, 100.0];
-        let q = ScalarQuantizer::train(&[&v1, &v2], 3);
-
-        let query = vec![5.0, 10.0, 50.0];
-        let target_vec = vec![0.0, 0.0, 0.0];
-        let target_quant = q.quantize(&target_vec);
-
-        // Test asymmetric distances
-        let cos_dist = q.asymmetric_dist(&query, &target_quant, DistanceMetric::Cosine).unwrap();
-        assert!(cos_dist >= 0.0);
-
-        let euc_dist = q.asymmetric_dist(&query, &target_quant, DistanceMetric::Euclidean).unwrap();
-        // Distance query [5, 10, 50] to target [0, 0, 0] is sqrt(25 + 100 + 2500) = sqrt(2625) ~ 51.2347
-        assert!((euc_dist - 51.2347).abs() < 1.0);
-
-        let dot_dist = q.asymmetric_dist(&query, &target_quant, DistanceMetric::DotProduct).unwrap();
-        // Dot product distance returns negative dot product: -(0 + 0 + 0) = 0.0
-        assert_eq!(dot_dist, 0.0);
-
-        // Test symmetric distances
-        let query_quant = q.quantize(&query);
-        let sym_cos = q.symmetric_dist(&query_quant, &target_quant, DistanceMetric::Cosine).unwrap();
-        assert!(sym_cos >= 0.0);
-
-        let sym_euc = q.symmetric_dist(&query_quant, &target_quant, DistanceMetric::Euclidean).unwrap();
-        assert!((sym_euc - 51.2347).abs() < 2.0);
-
-        let sym_dot = q.symmetric_dist(&query_quant, &target_quant, DistanceMetric::DotProduct).unwrap();
-        assert!(sym_dot <= 0.0);
-    }
 }

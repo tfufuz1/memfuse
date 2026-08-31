@@ -33,6 +33,7 @@ impl RouterEngine {
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
+    #[allow(deprecated)]
     pub async fn route(
         &self,
         query_embedding: &[f32],
