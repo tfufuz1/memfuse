@@ -31,9 +31,3 @@ flatbuffers = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 # Property-based testing framework for invariant validation.
 proptest = "1.4"
-# Benchmark framework for core throughput and latency measurements.
-criterion = { version = "0.5", features = ["async_tokio"] }
-
-[[bench]]
-name = "core_benchmarks"
-harness = false
