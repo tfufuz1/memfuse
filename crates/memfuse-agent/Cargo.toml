@@ -10,6 +10,10 @@ description = "Persistent agent workflow engine for MemFuse — checkpoint/execu
 default = []
 test-utils = []
 
+[[bench]]
+name = "agent_benchmarks"
+harness = false
+
 [dependencies]
 memfuse-core       = { workspace = true }
 memfuse-db         = { workspace = true }

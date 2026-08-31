@@ -211,10 +211,60 @@ impl McpServer {
                         continue;
                     }
 
-                    let response = match serde_json::from_str::<Value>(trimmed) {
+                    match serde_json::from_str::<Value>(trimmed) {
+                        Ok(Value::Array(arr)) => {
+                            if arr.is_empty() {
+                                let response = JsonRpcResponse::err(
+                                    None,
+                                    -32600,
+                                    "Invalid Request: batch array is empty",
+                                );
+                                let mut out = serde_json::to_string(&response)?;
+                                out.push('\n');
+                                stdout.write_all(out.as_bytes()).await?;
+                                stdout.flush().await?;
+                            } else {
+                                let mut responses = Vec::new();
+                                for val in arr {
+                                    let req_id = val.get("id").cloned();
+                                    match serde_json::from_value::<JsonRpcRequest>(val) {
+                                        Ok(req) => {
+                                            if req.id.is_none() || req.id == Some(Value::Null) {
+                                                let method = req.method.clone();
+                                                let resp = self.handle(req).await;
+                                                if let Some(err) = resp.error {
+                                                    tracing::warn!(
+                                                        method = %method,
+                                                        code = err.code,
+                                                        error = %err.message,
+                                                        "MCP notification handling returned error"
+                                                    );
+                                                }
+                                                // notification: no response in batch output
+                                            } else {
+                                                responses.push(self.handle(req).await);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            responses.push(JsonRpcResponse::err(
+                                                req_id,
+                                                -32600,
+                                                format!("Invalid Request: {e}"),
+                                            ));
+                                        }
+                                    }
+                                }
+                                if !responses.is_empty() {
+                                    let mut out = serde_json::to_string(&responses)?;
+                                    out.push('\n');
+                                    stdout.write_all(out.as_bytes()).await?;
+                                    stdout.flush().await?;
+                                }
+                            }
+                        }
                         Ok(val) => {
                             let req_id = val.get("id").cloned();
-                            match serde_json::from_value::<JsonRpcRequest>(val) {
+                            let response = match serde_json::from_value::<JsonRpcRequest>(val) {
                                 Ok(req) => {
                                     if req.id.is_none() || req.id == Some(Value::Null) {
                                         let method = req.method.clone();
@@ -236,16 +286,23 @@ impl McpServer {
                                     -32600,
                                     format!("Invalid Request: {e}"),
                                 ),
-                            }
-                        }
-                        Err(e) => JsonRpcResponse::err(None, -32700, format!("Parse error: {e}")),
-                    };
+                            };
 
-                    // MCP-Protokoll: eine JSON-Antwort pro Zeile, abgeschlossen mit '\n'.
-                    let mut out = serde_json::to_string(&response)?;
-                    out.push('\n');
-                    stdout.write_all(out.as_bytes()).await?;
-                    stdout.flush().await?;
+                            // MCP-Protokoll: eine JSON-Antwort pro Zeile, abgeschlossen mit '\n'.
+                            let mut out = serde_json::to_string(&response)?;
+                            out.push('\n');
+                            stdout.write_all(out.as_bytes()).await?;
+                            stdout.flush().await?;
+                        }
+                        Err(e) => {
+                            let response =
+                                JsonRpcResponse::err(None, -32700, format!("Parse error: {e}"));
+                            let mut out = serde_json::to_string(&response)?;
+                            out.push('\n');
+                            stdout.write_all(out.as_bytes()).await?;
+                            stdout.flush().await?;
+                        }
+                    }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
                     let response = JsonRpcResponse::err(None, -32700, format!("Parse error: {e}"));
@@ -389,6 +446,22 @@ impl McpServer {
                 }
             }
 
+            "memfuse_delete"
+            | "memfuse_upsert"
+            | "memfuse_relate"
+            | "memfuse_create_collection"
+            | "memfuse_drop_collection" => {
+                let tool_name = req.method.as_str();
+                match self
+                    .sandbox
+                    .execute_with_timeout(tool_name, self.call_tool(tool_name, &req.params))
+                    .await
+                {
+                    Ok(res) => JsonRpcResponse::ok(id, res),
+                    Err(e) => response_from_error(id, e),
+                }
+            }
+
             // ── Ping ───────────────────────────────────────────────────────────
             "ping" => JsonRpcResponse::ok(id, json!({})),
 
@@ -463,7 +536,11 @@ impl McpServer {
                     .await
                     .map_err(|e| McpError::internal_error(e.to_string()))?;
                 let results = col
-                    .hybrid_search(query, &vec, k, None)
+                    .query()
+                    .text(query)
+                    .vector(vec)
+                    .k(k)
+                    .execute()
                     .await
                     .map_err(McpError::from)?;
 
