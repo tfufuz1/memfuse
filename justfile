@@ -54,7 +54,10 @@ check-consistency:
 context-tags *ARGS:
     cargo xtask context-tags {{ARGS}}
 
-# Zeigt den Session-Kontext-Digest manuell an (Fallback, falls Environment-Setup nicht griff)
+# Zeigt offene kritische AI-TAGs und ANCHORs an — primärer manueller
+# Weg, den aktuellen Governance-Status einer Session zu prüfen
+# (das früher hier referenzierte Context-Engineering-Framework-Dokument
+# und context-cli existieren nicht mehr im Repository).
 session-context:
     #!/usr/bin/env bash
     echo "OFFENE KRITISCHE TAGS:"
