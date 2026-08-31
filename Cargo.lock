@@ -2590,7 +2590,6 @@ dependencies = [
  "async-trait",
  "bincode",
  "blake3",
- "criterion",
  "flatbuffers",
  "parking_lot",
  "proptest",
@@ -2701,7 +2700,6 @@ name = "memfuse-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "criterion",
  "futures-util",
  "memfuse-agent",
  "memfuse-core",
@@ -2726,10 +2724,8 @@ name = "memfuse-ollama"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "criterion",
  "futures-util",
  "memfuse-core",
- "proptest",
  "rand 0.8.8",
  "regex",
  "reqwest 0.12.28",
@@ -2829,7 +2825,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bincode",
- "criterion",
  "itoa",
  "memfuse-core",
  "parking_lot",

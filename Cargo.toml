@@ -58,8 +58,7 @@ rand = "0.8"
 # Observability
 tracing = "0.1"
 
-# Testing & Benchmarking
-criterion = { version = "0.5", features = ["async_tokio"] }
+# Testing
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

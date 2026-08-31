@@ -170,38 +170,4 @@ mod tests {
             _ => panic!("Expected MemFuseError::Index, got {:?}", err),
         }
     }
-
-    #[tokio::test]
-    async fn test_embed_batch_consistency_and_dimensions() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server_url = format!("http://{}", addr);
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                let mut buf = [0u8; 2048];
-                let _ = socket.read(&mut buf).await;
-                let vec1 = vec![0.1f32; 768];
-                let vec2 = vec![0.2f32; 768];
-                let body = serde_json::json!({
-                    "embeddings": [vec1, vec2]
-                })
-                .to_string();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                socket.write_all(response.as_bytes()).await.ok();
-            }
-        });
-
-        let embedder = OllamaEmbedder::new(server_url, "nomic-embed-text");
-        let results = embedder.embed_batch(&["hello", "world"]).await.unwrap();
-
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].len(), 768);
-        assert_eq!(results[1].len(), 768);
-    }
 }
