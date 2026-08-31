@@ -12,4 +12,4 @@
 - `rules/llm_protocol.md` — Schleife 1 (Read-Before-Write für Core-API Signatures)
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682) — Benchmark und Collisions-Tests für DocId Key-Trunkierung
+- ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) — Benchmark und Collisions-Tests für DocId Key-Trunkierung
