@@ -17,7 +17,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-08-31T21:12:57Z (SESSION: 14348074)
 // ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
 // INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
@@ -1269,8 +1269,7 @@ mod tests {
             metadata: serde_json::json!({"version": 1}),
             created_at: 500,
         };
-        let mut manifest = CheckpointManifest::new(meta, vec!["comp1".to_string()])
-            .expect("// expect #[cfg(test)]");
+        let mut manifest = CheckpointManifest::new(meta, vec!["comp1".to_string()]).unwrap();
         manifest.components.push("tampered_comp".to_string());
         let res = manifest.verify();
         assert!(matches!(res, Err(MemFuseError::Serialization(_))));
@@ -1341,7 +1340,7 @@ mod tests {
                 };
                 let manifest = CheckpointManifest::new(meta, vec!["comp_a".to_string(), "comp_b".to_string()]);
                 proptest::prop_assert!(manifest.is_ok());
-                let manifest = manifest.expect("// expect #[cfg(test)]");
+                let manifest = manifest.unwrap();
                 proptest::prop_assert!(manifest.verify().is_ok());
                 proptest::prop_assert_eq!(manifest.meta.name, name);
                 proptest::prop_assert_eq!(manifest.meta.collection_id, col);

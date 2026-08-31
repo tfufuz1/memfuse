@@ -130,4 +130,14 @@ mod tests {
         let entities = SimpleEntityExtractor::extract(text);
         assert!(entities.is_empty());
     }
+
+    #[test]
+    fn test_extract_german_unicode() {
+        let text = "Münchener Rückversicherungs Gesellschaft arbeitet mit der Zürcher Kantonalbank zusammen.";
+        let entities = SimpleEntityExtractor::extract(text);
+        let munich_re = EntityId::from("Münchener Rückversicherungs Gesellschaft");
+        let zurich_bank = EntityId::from("Zürcher Kantonalbank");
+        assert!(entities.contains(&munich_re));
+        assert!(entities.contains(&zurich_bank));
+    }
 }

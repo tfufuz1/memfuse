@@ -2,8 +2,6 @@
 // ZWECK: Audit-Testsuite für SQ8 Kendall-Tau Rangkorrelation, Persistence Roundtrips und Mmap Fault-Tolerance
 // STAND: TS:2026-08-31T00:00:00Z
 
-#![cfg(feature = "experimental-diskann")]
-
 use memfuse_core::traits::VectorIndex;
 use memfuse_core::types::{DistanceMetric, DocId, TxId};
 use memfuse_core::MemFuseError;
@@ -83,8 +81,8 @@ fn test_sq8_kendall_tau_rank_correlation() {
     let mut skewed_vectors = Vec::with_capacity(num_vectors);
     for _ in 0..num_vectors {
         let mut v: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
-        for item in v.iter_mut().take(10) {
-            *item *= 100.0;
+        for i in 0..10 {
+            v[i] *= 100.0;
         }
         skewed_vectors.push(v);
     }
@@ -134,8 +132,8 @@ fn test_sq8_kendall_tau_rank_correlation() {
 
         // Query for Skewed
         let mut q_skewed: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
-        for item in q_skewed.iter_mut().take(10) {
-            *item *= 100.0;
+        for i in 0..10 {
+            q_skewed[i] *= 100.0;
         }
 
         let mut f32_dists_s: Vec<(DocId, f32)> = skewed_vectors

@@ -2493,8 +2493,8 @@ mod tests {
 
         // Rollback on empty storage with non-existent TxId (e.g. TxId::new(999))
         let res = storage.rollback_to_tx(TxId::new(999)).await;
-        // Rolling back on empty WAL safely returns Ok((0, [0; 32]))
-        assert!(res.is_ok());
+        // WAL find_tx_offset for non-existent tx returns an error
+        assert!(matches!(res, Err(MemFuseError::Storage(_))));
 
         // Put and commit a transaction
         let tx1 = TxId::new(1);
