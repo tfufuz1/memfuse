@@ -111,52 +111,52 @@ type InternalIndex = usize;
 
 /// Internal representation of an edge payload.
 #[derive(Debug, Clone, PartialEq)]
-struct EdgePayload {
-    target: InternalIndex,
-    weight: f32,
-    valid_from: Option<TxId>,
-    valid_to: Option<TxId>,
+pub struct EdgePayload {
+    pub target: InternalIndex,
+    pub weight: f32,
+    pub valid_from: Option<TxId>,
+    pub valid_to: Option<TxId>,
 }
 
 /// Inner state of the CsrGraph to manage contiguous storage.
-pub(crate) struct GraphInner {
+pub struct GraphInner {
     /// Mapping from public EntityId to internal contiguous index.
-    pub(crate) id_map: HashMap<EntityId, InternalIndex>,
+    pub id_map: HashMap<EntityId, InternalIndex>,
     /// Mapping from internal index back to EntityId.
-    pub(crate) reverse_map: Vec<EntityId>,
+    pub reverse_map: Vec<EntityId>,
     /// Entity metadata stored contiguously.
-    pub(crate) entities: Vec<Option<Entity>>,
+    pub entities: Vec<Option<Entity>>,
     /// Community assignments mapping EntityId -> community_id.
-    pub(crate) communities: HashMap<EntityId, u64>,
+    pub communities: HashMap<EntityId, u64>,
     /// Flag indicating whether communities have been loaded from storage or set in memory.
-    pub(crate) communities_loaded: bool,
+    pub communities_loaded: bool,
 
     /// CSR offsets array: offsets[i] is the start index in `targets` for node `i`.
     /// Length is nodes + 1.
-    pub(crate) offsets: Vec<usize>,
+    pub offsets: Vec<usize>,
     /// CSR targets array: contiguous list of neighbor internal indices.
-    pub(crate) targets: Vec<InternalIndex>,
+    pub targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
-    pub(crate) weights: Vec<f32>,
+    pub weights: Vec<f32>,
     /// CSR valid_from array: contiguous list of bi-temporal valid_from TxIds.
-    pub(crate) valid_froms: Vec<Option<TxId>>,
+    pub valid_froms: Vec<Option<TxId>>,
     /// CSR valid_to array: contiguous list of bi-temporal valid_to TxIds.
-    pub(crate) valid_tos: Vec<Option<TxId>>,
+    pub valid_tos: Vec<Option<TxId>>,
 
     /// Staging for entities not yet committed, grouped by TxId.
-    staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
+    pub staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
     /// Staging for edges not yet committed, grouped by TxId.
-    staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<EdgePayload>>>,
+    pub staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<EdgePayload>>>,
     /// Staging for edge removals not yet committed, grouped by TxId.
-    staged_removals: HashMap<TxId, Vec<(InternalIndex, InternalIndex)>>,
+    pub staged_removals: HashMap<TxId, Vec<(InternalIndex, InternalIndex)>>,
     /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
-    pending_edges: HashMap<InternalIndex, Vec<EdgePayload>>,
+    pub pending_edges: HashMap<InternalIndex, Vec<EdgePayload>>,
     /// Tombstoned edges that have been removed and should be excluded during compaction and traversal.
-    pub(crate) tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
+    pub tombstoned_edges: HashSet<(InternalIndex, InternalIndex)>,
     /// Total number of uncompacted edges currently in `pending_edges`.
-    pending_edge_count: usize,
+    pub pending_edge_count: usize,
     /// Flag indicating if there are uncompacted pending edges or modifications.
-    is_dirty: bool,
+    pub is_dirty: bool,
 }
 
 impl GraphInner {
@@ -198,13 +198,23 @@ impl GraphInner {
 
     /// Compacts pending edges in the delta buffer into the main CSR arrays.
     fn compact(&mut self) {
-        if !self.is_dirty || (self.pending_edges.is_empty() && self.tombstoned_edges.is_empty()) {
+        let num_nodes = self.reverse_map.len();
+
+        if !self.is_dirty
+            && self.pending_edges.is_empty()
+            && self.tombstoned_edges.is_empty()
+            && self.offsets.len() == num_nodes + 1
+        {
+            return;
+        }
+
+        if self.pending_edges.is_empty() && self.tombstoned_edges.is_empty() {
+            let last_offset = *self.offsets.last().unwrap_or(&0);
+            self.offsets.resize(num_nodes + 1, last_offset);
             self.pending_edge_count = 0;
             self.is_dirty = false;
             return;
         }
-
-        let num_nodes = self.reverse_map.len();
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
         let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
         let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
@@ -322,7 +332,7 @@ impl CsrGraph {
         }
     }
 
-    pub(crate) fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
+    pub fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
         self.inner.read()
     }
 
@@ -561,15 +571,14 @@ impl CsrGraph {
         if !inner_read.is_dirty
             && inner_read.pending_edges.is_empty()
             && inner_read.tombstoned_edges.is_empty()
+            && inner_read.offsets.len() == inner_read.reverse_map.len() + 1
         {
             return;
         }
         drop(inner_read);
 
         let mut inner = self.inner.write();
-        if inner.is_dirty || !inner.pending_edges.is_empty() || !inner.tombstoned_edges.is_empty() {
-            inner.compact();
-        }
+        inner.compact();
     }
 
     /// Asynchronously compacts the graph delta buffer, offloading heavy CPU rebuild work to `spawn_blocking` if necessary.
@@ -579,6 +588,7 @@ impl CsrGraph {
             inner_read.is_dirty
                 || !inner_read.pending_edges.is_empty()
                 || !inner_read.tombstoned_edges.is_empty()
+                || inner_read.offsets.len() != inner_read.reverse_map.len() + 1
         };
         if !is_needed {
             return Ok(());
@@ -587,12 +597,7 @@ impl CsrGraph {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || {
             let mut inner = self_clone.inner.write();
-            if inner.is_dirty
-                || !inner.pending_edges.is_empty()
-                || !inner.tombstoned_edges.is_empty()
-            {
-                inner.compact();
-            }
+            inner.compact();
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("Graph compact panicked: {e}")))?;
@@ -614,17 +619,22 @@ impl CsrGraph {
         &self,
         entity_ids: &[EntityId],
     ) -> Result<HashMap<EntityId, u64>> {
-        let inner = self.inner.read();
-        let mut map = HashMap::with_capacity(entity_ids.len());
-        for &eid in entity_ids {
-            if let Some(&comm_id) = inner.communities.get(&eid) {
-                map.insert(eid, comm_id);
+        let (map, needs_fetch) = {
+            let inner = self.inner.read();
+            let mut map = HashMap::with_capacity(entity_ids.len());
+            for &eid in entity_ids {
+                if let Some(&comm_id) = inner.communities.get(&eid) {
+                    map.insert(eid, comm_id);
+                }
             }
-        }
-        if inner.communities_loaded || self.storage.is_none() || entity_ids.is_empty() {
+            let needs_fetch =
+                !inner.communities_loaded && self.storage.is_some() && !entity_ids.is_empty();
+            (map, needs_fetch)
+        };
+
+        if !needs_fetch {
             return Ok(map);
         }
-        drop(inner);
 
         if let Some(ref storage) = self.storage {
             let entries = storage.scan_prefix(GRAPH_COMMUNITY_PREFIX).await?;
