@@ -3,7 +3,7 @@
 // INVARIANTEN: Re-exports core workflow primitives; Layer 3 orchestrator integration for MemFuse.
 // NICHT-OFFENSICHTLICH: Preserves public API boundaries for persistent checkpoint-execute-commit-audit loops.
 // HOTSPOTS: Module re-exports (ll. 75-85).
-// STAND: TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
 //! MemFuse Agent — Persistent workflow engine for multi-step agent execution.
 //!
@@ -64,7 +64,7 @@
 //! 4. **Token budget limit**: Enforces token budget consumption on each step.
 //!
 //! ADR-042: Re-integration from archived `memfuse-saos-agent` (Commit ddc4c77).
-// AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-31T21:07:58Z) (SESSION: 5f1a7b8e)
+// AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z)
 
 #![forbid(unsafe_code)]
 #![allow(async_fn_in_trait)]

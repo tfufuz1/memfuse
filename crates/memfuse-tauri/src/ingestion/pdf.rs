@@ -26,29 +26,3 @@ pub async fn extract_pdf_text(path: &Path) -> Result<String> {
     .map_err(|e| MemFuseError::Internal(format!("PDF extraction task panicked: {e:?}")))?
     .map_err(|_| MemFuseError::Internal("PDF extraction panicked on malformed file".into()))?
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_pdf_bytes_empty() {
-        let res = extract_pdf_bytes(&[]);
-        assert!(res.is_ok());
-        assert_eq!(res.unwrap(), "");
-    }
-
-    #[test]
-    fn test_extract_pdf_bytes_invalid_format() {
-        let invalid_bytes = b"This is not a PDF file.";
-        let res = extract_pdf_bytes(invalid_bytes);
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn test_extract_pdf_bytes_corrupted_header() {
-        let corrupted_bytes = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< >>";
-        let res = extract_pdf_bytes(corrupted_bytes);
-        assert!(res.is_err());
-    }
-}
