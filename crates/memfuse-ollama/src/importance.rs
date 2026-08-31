@@ -156,4 +156,79 @@ mod tests {
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("Failed to parse ImportanceScore float"));
     }
+
+    #[tokio::test]
+    async fn test_score_importance_exact_bounds_and_variations() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            let mut count = 0;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                count += 1;
+                let content = match count {
+                    1 => "1.0",
+                    2 => "0.00",
+                    _ => "Score is 0.5 exactly.",
+                };
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": content
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+
+        let s1 = score_importance(&client, "Critical key").await.unwrap();
+        assert_eq!(s1.value(), 1.0);
+
+        let s2 = score_importance(&client, "Noise text").await.unwrap();
+        assert_eq!(s2.value(), 0.0);
+
+        let s3 = score_importance(&client, "Moderate utility").await.unwrap();
+        assert_eq!(s3.value(), 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_score_importance_http_server_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let body = "500 Internal Server Error";
+                let response = format!(
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let res = score_importance(&client, "Some text").await;
+        assert!(matches!(
+            res,
+            Err(MemFuseError::Io(_) | MemFuseError::Internal(_) | MemFuseError::Storage(_))
+        ));
+    }
 }

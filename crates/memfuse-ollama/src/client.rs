@@ -1639,4 +1639,102 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, MemFuseError::NotFound(_)));
     }
+
+    #[test]
+    fn test_xml_escape_comprehensive() {
+        assert_eq!(xml_escape(""), "");
+        assert_eq!(xml_escape("plain text 123"), "plain text 123");
+        assert_eq!(
+            xml_escape("<tag attr=\"val\">a & b 'c'</tag>"),
+            "&lt;tag attr=\"val\"&gt;a &amp; b 'c'&lt;/tag&gt;"
+        );
+    }
+
+    #[test]
+    fn test_validate_text_length_bounds() {
+        let exact_10mb = "a".repeat(10_000_000);
+        assert!(validate_text_length(&exact_10mb, "prompt").is_ok());
+
+        let over_10mb = "a".repeat(10_000_001);
+        let err = validate_text_length(&over_10mb, "prompt").unwrap_err();
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_validate_batch_size_bounds() {
+        assert!(validate_batch_size(0).is_ok());
+        assert!(validate_batch_size(10_000).is_ok());
+
+        let err = validate_batch_size(10_001).unwrap_err();
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_validate_model_name_variants() {
+        assert!(validate_model_name("llama3").is_ok());
+        assert!(validate_model_name("llama3:8b-instruct").is_ok());
+
+        assert!(matches!(
+            validate_model_name(""),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            validate_model_name("model/name"),
+            Err(MemFuseError::PolicyViolation(_))
+        ));
+        assert!(matches!(
+            validate_model_name("model\nname"),
+            Err(MemFuseError::PolicyViolation(_))
+        ));
+        assert!(matches!(
+            validate_model_name("model\rname"),
+            Err(MemFuseError::PolicyViolation(_))
+        ));
+    }
+
+    #[test]
+    fn test_is_transient_error_variants() {
+        assert!(is_transient_error(&MemFuseError::Storage(
+            "Connection timeout occurred".into()
+        )));
+        assert!(is_transient_error(&MemFuseError::Storage(
+            "connection reset by peer".into()
+        )));
+        assert!(is_transient_error(&MemFuseError::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timeout"
+        ))));
+
+        assert!(!is_transient_error(&MemFuseError::InvalidInput(
+            "invalid input".into()
+        )));
+        assert!(!is_transient_error(&MemFuseError::NotFound(
+            "model not found".into()
+        )));
+        assert!(!is_transient_error(&MemFuseError::Internal(
+            "internal error".into()
+        )));
+    }
+
+    #[test]
+    fn test_ollama_config_and_client_getters_serde() {
+        let config = OllamaConfig {
+            base_url: "http://127.0.0.1:11434".into(),
+            model: "llama3".into(),
+            request_timeout: Duration::from_secs(15),
+            connect_timeout: Duration::from_secs(3),
+            max_retries: 5,
+        };
+
+        let client = OllamaClient::with_config(config.clone());
+        assert_eq!(client.base_url(), "http://127.0.0.1:11434");
+        assert_eq!(client.config().model, "llama3");
+        assert_eq!(client.config().max_retries, 5);
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: OllamaConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.base_url, deserialized.base_url);
+        assert_eq!(config.model, deserialized.model);
+        assert_eq!(config.max_retries, deserialized.max_retries);
+    }
 }
