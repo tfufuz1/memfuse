@@ -2862,6 +2862,7 @@ dependencies = [
  "memfuse-db",
  "memfuse-ollama",
  "memfuse-store",
+ "parking_lot",
  "proptest",
  "reqwest 0.12.28",
  "serde",

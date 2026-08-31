@@ -7,6 +7,7 @@ mod tests {
     use memfuse_core::{EntityId, MemFuseError, StorageEngine, TokenBudget};
     use memfuse_db::{MemFuse, MemFuseConfig};
     use serde_json::json;
+    use std::sync::Arc;
     use tokio::net::TcpListener;
     use tokio::sync::oneshot;
 
@@ -236,5 +237,146 @@ mod tests {
             params["context"]["chunks"][0]["content"],
             "Minimal context content for SLM"
         );
+    }
+
+    #[tokio::test]
+    async fn test_route_hot_reload_concurrent_safety() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "entity_1";
+        collection
+            .insert(key, &vec_data, Some(json!({"text": "sample text content"})))
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&10u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
+
+        let profile_v1 = SlmProfile::new(
+            "slm-v1",
+            "http://localhost:8001/mcp",
+            vec![10],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = Arc::new(RouterEngine::new(collection, vec![profile_v1]));
+
+        // Spawn 20 reader tasks continuously calling route()
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let r = router.clone();
+            let vec_c = vec_data.clone();
+            handles.push(tokio::spawn(async move {
+                for _ in 0..50 {
+                    let res = r.route(&vec_c, "sample text content").await;
+                    assert!(res.is_ok());
+                    let decision = res.unwrap();
+                    assert!(
+                        decision.profile.name == "slm-v1" || decision.profile.name == "slm-v2",
+                        "Unexpected profile name: {}",
+                        decision.profile.name
+                    );
+                }
+            }));
+        }
+
+        // Spawn background writer updating profiles dynamically
+        let r_writer = router.clone();
+        let writer_handle = tokio::spawn(async move {
+            for i in 0..50 {
+                let name = if i % 2 == 0 { "slm-v1" } else { "slm-v2" };
+                let p = SlmProfile::new(
+                    name,
+                    "http://localhost:8001/mcp",
+                    vec![10],
+                    TokenBudget::new(1000, 100),
+                    0.01,
+                );
+                r_writer.update_profiles(vec![p]);
+                tokio::task::yield_now().await;
+            }
+        });
+
+        for h in handles {
+            h.await.unwrap();
+        }
+        writer_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_route_hot_reload_atomic_snapshot_determinism() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "entity_1";
+        collection
+            .insert(key, &vec_data, Some(json!({"text": "test content"})))
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&42u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
+
+        let initial_profiles = vec![
+            SlmProfile::new(
+                "profile-a",
+                "http://localhost/a",
+                vec![42],
+                TokenBudget::new(500, 50),
+                0.01,
+            ),
+            SlmProfile::new(
+                "profile-b",
+                "http://localhost/b",
+                vec![42],
+                TokenBudget::new(500, 50),
+                0.01,
+            ),
+        ];
+
+        let router = RouterEngine::new(collection, initial_profiles);
+
+        // Pre-reload decision: deterministic tie-breaking picks profile-a (lower index 0)
+        let d1 = router.route(&vec_data, "test content").await.unwrap();
+        assert_eq!(d1.profile.name, "profile-a");
+
+        // Hot reload profile configuration with new single profile
+        let updated_profiles = vec![SlmProfile::new(
+            "profile-c",
+            "http://localhost/c",
+            vec![42],
+            TokenBudget::new(500, 50),
+            0.01,
+        )];
+        router.update_profiles(updated_profiles);
+
+        let d2 = router.route(&vec_data, "test content").await.unwrap();
+        assert_eq!(d2.profile.name, "profile-c");
     }
 }
