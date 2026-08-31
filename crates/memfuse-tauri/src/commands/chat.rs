@@ -14,6 +14,7 @@ const MAX_QUERY_LEN: usize = 65_536; // 64 KiB
 
 /// Streamt Chat-Antworten als Tauri-Events an das Frontend, statt sie
 /// als einzelnen Rückgabewert zu liefern.
+#[allow(deprecated)]
 #[tauri::command]
 pub async fn chat_with_rag(
     app: tauri::AppHandle,
