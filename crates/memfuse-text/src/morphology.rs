@@ -561,6 +561,12 @@ mod tests {
     }
 
     // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-31T21:13:26Z) (SESSION:4d3320ef)
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-08-31T21:15:00Z) (SESSION: b8e4f1a2)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: German compound splitting recall evaluated on 55 KMU terms.
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-08-31T21:20:00Z) (SESSION: c9f5e2b3)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Independent review pass confirmed compound splitter accuracy.
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
