@@ -2603,9 +2603,11 @@ name = "memfuse-crypto"
 version = "0.1.0"
 dependencies = [
  "aes-gcm-siv",
+ "criterion",
  "hkdf",
  "hmac",
  "memfuse-core",
+ "proptest",
  "rand 0.8.8",
  "sha2",
  "subtle",
