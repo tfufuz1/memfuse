@@ -23,7 +23,7 @@ Ergebnis: **2 offene Tags**
 | `memfuse-core` | 0 | 7921 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 2824 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 1998 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 5565 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 5333 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 9324 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 11394 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 4084 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
@@ -33,7 +33,7 @@ Ergebnis: **2 offene Tags**
 | `memfuse-ollama` | 3 | 2493 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1298 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 591 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2397 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2836 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3387 | 🟢 Clean |  |
 
 
