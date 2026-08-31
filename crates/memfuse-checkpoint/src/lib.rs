@@ -170,6 +170,16 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
             .take()
             .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
     }
+
+    /// Führt ein manuelles, asynchrones Rollback des Checkpoints aus.
+    /// Nach Aufruf von `rollback()` ist der Guard konsumiert, sodass beim Drop kein erneutes Rollback ausgelöst wird.
+    pub async fn rollback(mut self) -> Result<()> {
+        if let Some(cp) = self.checkpoint.take() {
+            self.storage.rollback_to_tx(cp.tx_id).await
+        } else {
+            Err(MemFuseError::Internal("Checkpoint already consumed".into()))
+        }
+    }
 }
 
 impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
