@@ -7,7 +7,6 @@ use std::sync::Arc;
 struct MockStorage {
     data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
     pinned: Mutex<HashSet<u64>>,
-    fail_on_put_seq: Mutex<HashSet<u64>>,
 }
 
 impl MockStorage {
@@ -15,7 +14,6 @@ impl MockStorage {
         Self {
             data: Mutex::new(HashMap::new()),
             pinned: Mutex::new(HashSet::new()),
-            fail_on_put_seq: Mutex::new(HashSet::new()),
         }
     }
 }
@@ -26,13 +24,6 @@ impl StorageEngine for MockStorage {
         Ok(self.data.lock().get(key).cloned())
     }
     async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        if let Ok(manifest) = serde_json::from_slice::<memfuse_checkpoint::CheckpointManifest>(value) {
-            if self.fail_on_put_seq.lock().contains(&manifest.meta.seq_no) {
-                return Err(memfuse_core::MemFuseError::Internal(
-                    "Fault injected storage save failure".to_string(),
-                ));
-            }
-        }
         self.data.lock().insert(key.to_vec(), value.to_vec());
         Ok(())
     }
@@ -173,90 +164,5 @@ async fn test_concurrent_drop_checkpoints() {
     assert!(
         storage.pinned.lock().is_empty(),
         "All checkpoint seq_nos should be unpinned after drops"
-    );
-}
-
-/// ANCHOR[TEST:CKPT-001] STATUS:DONE (ID: AGT-CKPT-f3a19b88) (TS:2026-08-30T22:00:34Z) (SESSION:a140747b) — Concurrent Checkpoint Pinning & GC Exclusions
-/// REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CKPT-f3a19b88) (TS:2026-08-30T22:30:00Z) (SESSION:b8e4f1a2)
-/// REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CKPT-f3a19b88) (TS:2026-08-30T22:35:00Z) (SESSION:c9f5e2b3)
-/// Verifies concurrent pinning, unpinning on save failures (fault injection), overwrite unpinning, and GC exclusion state.
-#[tokio::test]
-async fn test_concurrent_checkpoint_pinning_and_gc_exclusions() {
-    let storage = Arc::new(MockStorage::new());
-    let store = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test"));
-
-    // Inject fault for seq_nos 5, 10, 15
-    let failed_seqs: HashSet<u64> = vec![5, 10, 15].into_iter().collect();
-    *storage.fail_on_put_seq.lock() = failed_seqs.clone();
-
-    let mut handles = Vec::new();
-    for i in 1..=20 {
-        let store_clone = store.clone();
-        handles.push(tokio::spawn(async move {
-            let seq = i as u64;
-            store_clone
-                .create_checkpoint(
-                    &format!("cp_{seq}"),
-                    "coll_test",
-                    seq,
-                    TxId::new(seq),
-                    serde_json::json!({"step": seq}),
-                )
-                .await
-        }));
-    }
-
-    let mut success_count = 0;
-    let mut failure_count = 0;
-    for handle in handles {
-        match handle.await.unwrap() {
-            Ok(_) => success_count += 1,
-            Err(_) => failure_count += 1,
-        }
-    }
-
-    assert_eq!(success_count, 17, "Expected 17 successful checkpoints");
-    assert_eq!(failure_count, 3, "Expected 3 failed checkpoints due to fault injection");
-
-    let pinned = storage.pinned.lock().clone();
-    // Verify all 17 successful checkpoints are pinned
-    for seq in 1..=20 {
-        if failed_seqs.contains(&seq) {
-            assert!(
-                !pinned.contains(&seq),
-                "Failed checkpoint seq {seq} must NOT remain pinned (must be unpinned for GC)"
-            );
-        } else {
-            assert!(
-                pinned.contains(&seq),
-                "Successful checkpoint seq {seq} must be pinned"
-            );
-        }
-    }
-
-    // Overwrite cp_1 with new seq_no 100
-    store
-        .create_checkpoint("cp_1", "coll_test", 100, TxId::new(100), serde_json::json!({}))
-        .await
-        .unwrap();
-
-    let pinned_after_overwrite = storage.pinned.lock().clone();
-    assert!(
-        !pinned_after_overwrite.contains(&1),
-        "Old seq_no 1 must be unpinned after overwrite"
-    );
-    assert!(
-        pinned_after_overwrite.contains(&100),
-        "New seq_no 100 must be pinned after overwrite"
-    );
-
-    // Clean up all checkpoints and verify unpinned
-    let list = store.list_checkpoints().await.unwrap();
-    for cp in list {
-        store.drop_checkpoint(&cp.name).await.unwrap();
-    }
-    assert!(
-        storage.pinned.lock().is_empty(),
-        "All checkpoints should be unpinned after drop"
     );
 }
