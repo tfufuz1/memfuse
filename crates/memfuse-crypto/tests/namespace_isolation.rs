@@ -1,3 +1,8 @@
+// FILE-CONTEXT
+// ZWECK: Namespace isolation test suite for memfuse-crypto (SD-09-CRYPTO-002).
+// INVARIANTEN: derive_file_key produces distinct keys when namespace paths differ.
+// STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
+
 //! SD-09-CRYPTO-002 — Namespace Isolation Tests.
 //!
 //! Verifies that `derive_file_key` produces unique sub-keys even when

@@ -3,7 +3,7 @@
 // INVARIANTEN: Key bytes held in Zeroizing<[u8; 32]>. emergency_wipe explicitly zeroizes memory.
 // NICHT-OFFENSICHTLICH: Debug implementation redacts secret bytes. Constant-time equality comparison.
 // HOTSPOTS: [10-60]
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+// STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
