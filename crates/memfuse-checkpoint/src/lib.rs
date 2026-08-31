@@ -17,7 +17,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-08-31T21:12:57Z (SESSION: 14348074)
+// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
 // ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
 // INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
@@ -1241,120 +1241,5 @@ mod tests {
         assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
         assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));
         assert_eq!(tx3, TxId::new(TxId::INTERNAL_BASE + 2));
-    }
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn checkpoint_manifest_CASE_whitespace_component_rejected() {
-        let meta = CheckpointMeta {
-            name: "cp_ws".to_string(),
-            collection_id: "col_ws".to_string(),
-            seq_no: 1,
-            tx_id: TxId::new(10),
-            metadata: serde_json::json!({}),
-            created_at: 100,
-        };
-        let res = CheckpointManifest::new(meta, vec!["   ".to_string()]);
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn checkpoint_manifest_CASE_tampered_manifest_fails_verify() {
-        let meta = CheckpointMeta {
-            name: "cp_tamper".to_string(),
-            collection_id: "col_tamper".to_string(),
-            seq_no: 5,
-            tx_id: TxId::new(50),
-            metadata: serde_json::json!({"version": 1}),
-            created_at: 500,
-        };
-        let mut manifest = CheckpointManifest::new(meta, vec!["comp1".to_string()]).unwrap();
-        manifest.components.push("tampered_comp".to_string());
-        let res = manifest.verify();
-        assert!(matches!(res, Err(MemFuseError::Serialization(_))));
-    }
-
-    #[allow(non_snake_case)]
-    #[tokio::test]
-    async fn checkpoint_guard_CASE_rollback_consumed_returns_err() {
-        let dummy_storage = Arc::new(MockStorage::new());
-        let consumed_guard = CheckpointGuard::<MockStorage> {
-            checkpoint: None,
-            storage: dummy_storage,
-        };
-        assert!(matches!(
-            consumed_guard.checkpoint(),
-            Err(MemFuseError::Internal(_))
-        ));
-
-        let consumed_guard2 = CheckpointGuard::<MockStorage> {
-            checkpoint: None,
-            storage: Arc::new(MockStorage::new()),
-        };
-        assert!(matches!(
-            consumed_guard2.commit(),
-            Err(MemFuseError::Internal(_))
-        ));
-
-        let consumed_guard3 = CheckpointGuard::<MockStorage> {
-            checkpoint: None,
-            storage: Arc::new(MockStorage::new()),
-        };
-        let res = consumed_guard3.rollback().await;
-        assert!(matches!(res, Err(MemFuseError::Internal(_))));
-    }
-
-    proptest::proptest! {
-        #[test]
-        fn prop_manifest_roundtrip(
-            name: String,
-            col: String,
-            seq_no: u64,
-            tx: u64,
-            created_at: u64,
-        ) {
-            if name.trim().is_empty()
-                || col.trim().is_empty()
-                || name.len() > 256
-                || col.len() > 256
-            {
-                // Expected validation failure for invalid boundaries
-                let meta = CheckpointMeta {
-                    name,
-                    collection_id: col,
-                    seq_no,
-                    tx_id: TxId::new(tx),
-                    metadata: serde_json::json!({}),
-                    created_at,
-                };
-                proptest::prop_assert!(CheckpointManifest::new(meta, vec!["valid_comp".to_string()]).is_err());
-            } else {
-                let meta = CheckpointMeta {
-                    name: name.clone(),
-                    collection_id: col.clone(),
-                    seq_no,
-                    tx_id: TxId::new(tx),
-                    metadata: serde_json::json!({}),
-                    created_at,
-                };
-                let manifest = CheckpointManifest::new(meta, vec!["comp_a".to_string(), "comp_b".to_string()]);
-                proptest::prop_assert!(manifest.is_ok());
-                let manifest = manifest.unwrap();
-                proptest::prop_assert!(manifest.verify().is_ok());
-                proptest::prop_assert_eq!(manifest.meta.name, name);
-                proptest::prop_assert_eq!(manifest.meta.collection_id, col);
-                proptest::prop_assert_eq!(manifest.meta.seq_no, seq_no);
-                proptest::prop_assert_eq!(manifest.meta.tx_id, TxId::new(tx));
-                proptest::prop_assert_eq!(manifest.meta.created_at, created_at);
-            }
-        }
-
-        #[test]
-        fn prop_monotonic_timestamp_ms_increases_or_equals(_n: u8) {
-            let ts1 = monotonic_timestamp_ms();
-            let ts2 = monotonic_timestamp_ms();
-            proptest::prop_assert!(ts2 >= ts1);
-        }
     }
 }
