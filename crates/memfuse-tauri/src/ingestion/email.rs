@@ -203,7 +203,8 @@ mod tests {
     #[test]
     fn test_strip_html_edge_cases() {
         assert_eq!(strip_html(""), "");
-        let unicode_html = "<div class=\"test\">München &amp; Zürich</div><style>body { color: red; }</style>";
+        let unicode_html =
+            "<div class=\"test\">München &amp; Zürich</div><style>body { color: red; }</style>";
         let cleaned = strip_html(unicode_html);
         assert_eq!(cleaned, "München & Zürich");
     }
