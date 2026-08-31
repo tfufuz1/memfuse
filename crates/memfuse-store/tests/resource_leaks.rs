@@ -59,10 +59,7 @@ async fn test_file_descriptor_leak_on_repeated_open_close() -> Result<()> {
     }
 
     let final_fds = get_open_fd_count();
-    println!(
-        "Final Open File Descriptors after 1000 cycles: {}",
-        final_fds
-    );
+    println!("Final Open File Descriptors after 1000 cycles: {}", final_fds);
 
     if baseline_fds > 0 {
         let diff = (final_fds as isize - baseline_fds as isize).abs();

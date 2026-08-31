@@ -1269,7 +1269,8 @@ mod tests {
             metadata: serde_json::json!({"version": 1}),
             created_at: 500,
         };
-        let mut manifest = CheckpointManifest::new(meta, vec!["comp1".to_string()]).unwrap();
+        let mut manifest = CheckpointManifest::new(meta, vec!["comp1".to_string()])
+            .expect("// expect #[cfg(test)]");
         manifest.components.push("tampered_comp".to_string());
         let res = manifest.verify();
         assert!(matches!(res, Err(MemFuseError::Serialization(_))));
@@ -1340,7 +1341,7 @@ mod tests {
                 };
                 let manifest = CheckpointManifest::new(meta, vec!["comp_a".to_string(), "comp_b".to_string()]);
                 proptest::prop_assert!(manifest.is_ok());
-                let manifest = manifest.unwrap();
+                let manifest = manifest.expect("// expect #[cfg(test)]");
                 proptest::prop_assert!(manifest.verify().is_ok());
                 proptest::prop_assert_eq!(manifest.meta.name, name);
                 proptest::prop_assert_eq!(manifest.meta.collection_id, col);
