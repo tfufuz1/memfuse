@@ -955,4 +955,57 @@ mod tests {
         };
         assert_eq!(metrics.expansion_ratio(), 0.0);
     }
+
+    #[test]
+    fn test_targeted_multibyte_slicing_safety() {
+        let splitter = GermanCompoundSplitter::new();
+
+        // 1. Umlaut-heavy inputs (2-byte UTF-8 sequences)
+        let umlaut_inputs = [
+            "überwachungsgesetz",
+            "änderungsantrag",
+            "qualitätsprüfung",
+            "straße",
+            "großschadenslage",
+            "österreicher",
+            "müller",
+        ];
+
+        for input in umlaut_inputs {
+            let norm = normalize_umlauts(input);
+            let parts = splitter.decompose(&norm);
+            assert!(!parts.is_empty());
+        }
+
+        // 2. Emoji-heavy inputs (4-byte UTF-8 sequences)
+        let emoji_inputs = [
+            "🤖🚀🦀",
+            "haus🤖boot",
+            "auto🚀bahn",
+            "über🤖kauf",
+            "🔥s",
+            "s🔥",
+            "en🤖",
+        ];
+
+        for input in emoji_inputs {
+            let norm = normalize_umlauts(input);
+            let parts = splitter.decompose(&norm);
+            assert!(!parts.is_empty());
+        }
+
+        // 3. Combining diacritical marks (Grapheme clusters: 'e' + combining acute accent U+0301)
+        let combining_inputs = [
+            "e\u{0301}a\u{0308}u\u{0308}",
+            "bundesve\u{0301}rfassungsgericht",
+            "e\u{0301}s",
+            "s\u{0301}",
+        ];
+
+        for input in combining_inputs {
+            let norm = normalize_umlauts(input);
+            let parts = splitter.decompose(&norm);
+            assert!(!parts.is_empty());
+        }
+    }
 }

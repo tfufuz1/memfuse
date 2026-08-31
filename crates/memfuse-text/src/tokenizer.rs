@@ -124,6 +124,8 @@ mod tests {
     use proptest::prelude::*;
 
     proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(10000))]
+
         #[test]
         fn tokenizer_never_panics(s in ".*") {
             let _ = DefaultTokenizer.tokenize(&s);
@@ -132,6 +134,39 @@ mod tests {
         #[test]
         fn german_tokenizer_never_panics(s in ".*") {
             let _ = GermanMorphTokenizer::new().tokenize(&s);
+        }
+
+        #[test]
+        fn prop_high_density_multibyte_never_panics(
+            s in proptest::collection::vec(
+                prop_oneof![
+                    proptest::char::range('\u{00C0}', '\u{017F}'),
+                    proptest::char::range('\u{1F300}', '\u{1FAFF}'),
+                    proptest::char::range('\u{0300}', '\u{036F}'),
+                    proptest::char::range('a', 'z'),
+                ],
+                0..100
+            ).prop_map(|chars| chars.into_iter().collect::<String>())
+        ) {
+            use crate::morphology::MorphologicalTokenizer;
+
+            // 1. DefaultTokenizer
+            let _ = DefaultTokenizer.tokenize(&s);
+
+            // 2. GermanMorphTokenizer
+            let german_tok = GermanMorphTokenizer::new();
+            let _ = german_tok.tokenize(&s);
+
+            // 3. normalize_umlauts
+            let norm = crate::morphology::normalize_umlauts(&s);
+
+            // 4. GermanCompoundSplitter
+            let splitter = crate::morphology::GermanCompoundSplitter::new();
+            let _ = splitter.decompose(&norm);
+
+            // 5. BM25 scoring model
+            let bm25 = crate::bm25::BM25::default();
+            let _ = bm25.score_term(1, 10, 10.0, 1, 100);
         }
     }
 
