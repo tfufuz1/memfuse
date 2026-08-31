@@ -8,6 +8,7 @@
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/quantize_persistence_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für SQ8 Kendall-Tau Rangkorrelation, Persistence Roundtrips und Mmap Fault-Tolerance |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/recall_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für HNSW & DiskANN Graph-Korrektheit & Brute-Force Recall |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/simd_numerical_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für numerische Korrektheit (SIMD vs Skalar vs f64-Referenz) |
+| `TS:2026-08-30T22:30:00Z (SESSION: 37b1d991)` | `crates/memfuse-index/tests/mmap_toctou_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Empirische TOCTOU-Testreihen für Mmap Truncation & Unlink/Deletion Szenarien in DiskANN & HNSW. |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/bm25.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Berechnet mathematisch BM25 Term-Scores und validiert Hyperparameter (k1, b). |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/inverted.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine. |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Exportiert Bm25Scorer, InvertedIndex, Morphologie-Tools und BM25-Modelle für DB-Hybrid-Suche. |
