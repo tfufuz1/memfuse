@@ -11,6 +11,6 @@
 ## Relevante rules/*.md
 - `rules/testing.md` — Python FFI Integration Verification
 
-## Pflicht-Tests Status (ANCHOR-Status)
-- ANCHOR[TEST:PY-001] STATUS:DONE (TS:2026-08-31T21:15:40Z SESSION:846802ab) — Smoke-Test für open(), collection() und close() in test_bindings.py
-- ANCHOR[TEST:PY-002] STATUS:DONE (TS:2026-08-31T21:15:40Z SESSION:846802ab) — Hybrid-Search Python Integration Test in test_bindings.py
+## Offene Pflicht-Tests (ANCHOR-Status)
+- ANCHOR[TEST:PY-001] STATUS:OPEN — Smoke-Test für open(), collection() und close()
+- ANCHOR[TEST:PY-002] STATUS:OPEN — Hybrid-Search Python Integration Test
