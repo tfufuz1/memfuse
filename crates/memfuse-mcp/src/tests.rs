@@ -385,3 +385,340 @@ async fn test_read_tools_always_allowed_regardless_of_flag() {
     let res_rw = serde_json::to_value(&resp_rw).unwrap();
     assert_ne!(res_rw["result"]["isError"], true);
 }
+
+#[test]
+fn test_mcp_error_constructors_and_codes() {
+    use crate::protocol::McpError;
+
+    let parse_err = McpError::parse_error("syntax error");
+    assert_eq!(parse_err.code(), -32700);
+    assert_eq!(parse_err.to_string(), "syntax error");
+
+    let invalid_req = McpError::invalid_request("bad request");
+    assert_eq!(invalid_req.code(), -32600);
+    assert_eq!(invalid_req.to_string(), "bad request");
+
+    let method_not_found = McpError::method_not_found("unknown method");
+    assert_eq!(method_not_found.code(), -32601);
+    assert_eq!(method_not_found.to_string(), "unknown method");
+
+    let invalid_params = McpError::invalid_params("bad params");
+    assert_eq!(invalid_params.code(), -32602);
+    assert_eq!(invalid_params.to_string(), "bad params");
+
+    let internal_err = McpError::internal_error("system fault");
+    assert_eq!(internal_err.code(), -32603);
+    assert_eq!(internal_err.to_string(), "system fault");
+}
+
+#[test]
+fn test_mcp_error_from_conversions() {
+    use crate::protocol::McpError;
+    use memfuse_core::MemFuseError;
+
+    // MemFuseError::InvalidInput -> InvalidParams (-32602)
+    let err_input = MemFuseError::InvalidInput("invalid key".into());
+    let mcp_input: McpError = err_input.into();
+    assert_eq!(mcp_input.code(), -32602);
+    assert_eq!(mcp_input.to_string(), "invalid key");
+
+    // MemFuseError::NotFound -> InvalidParams (-32602)
+    let err_nf = MemFuseError::NotFound("missing doc".into());
+    let mcp_nf: McpError = err_nf.into();
+    assert_eq!(mcp_nf.code(), -32602);
+    assert_eq!(mcp_nf.to_string(), "missing doc");
+
+    // MemFuseError::Internal -> InternalError (-32603)
+    let err_int = MemFuseError::Internal("crash".into());
+    let mcp_int: McpError = err_int.into();
+    assert_eq!(mcp_int.code(), -32603);
+
+    // String -> InvalidParams (-32602)
+    let mcp_str: McpError = String::from("string error").into();
+    assert_eq!(mcp_str.code(), -32602);
+    assert_eq!(mcp_str.to_string(), "string error");
+
+    // &str -> InvalidParams (-32602)
+    let mcp_str_ref: McpError = "str ref error".into();
+    assert_eq!(mcp_str_ref.code(), -32602);
+    assert_eq!(mcp_str_ref.to_string(), "str ref error");
+}
+
+#[test]
+fn test_response_from_error_helper() {
+    use crate::protocol::{response_from_error, McpError};
+
+    let id = Some(json!("req_42"));
+    let err = McpError::invalid_params("missing query");
+    let resp = response_from_error(id.clone(), err);
+
+    assert_eq!(resp.jsonrpc, "2.0");
+    assert_eq!(resp.id, id);
+    let rpc_err = resp.error.expect("error object");
+    assert_eq!(rpc_err.code, -32602);
+    assert_eq!(rpc_err.message, "missing query");
+}
+
+#[test]
+fn test_jsonrpc_struct_serialization_roundtrip() {
+    use crate::protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+
+    // 1. JsonRpcRequest roundtrip
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(123)),
+        method: "memfuse_search".to_string(),
+        params: json!({"query": "test query"}),
+    };
+    let json_req = serde_json::to_string(&req).expect("serialize req");
+    let deserialized_req: JsonRpcRequest =
+        serde_json::from_str(&json_req).expect("deserialize req");
+    assert_eq!(deserialized_req.jsonrpc, "2.0");
+    assert_eq!(deserialized_req.id, Some(json!(123)));
+    assert_eq!(deserialized_req.method, "memfuse_search");
+    assert_eq!(deserialized_req.params["query"], "test query");
+
+    // 2. JsonRpcResponse (success) roundtrip
+    let resp_ok = JsonRpcResponse::ok(Some(json!("id_1")), json!({"ok": true}));
+    let json_resp_ok = serde_json::to_string(&resp_ok).expect("serialize ok resp");
+    let deserialized_ok: JsonRpcResponse =
+        serde_json::from_str(&json_resp_ok).expect("deserialize ok resp");
+    assert_eq!(deserialized_ok.jsonrpc, "2.0");
+    assert_eq!(deserialized_ok.id, Some(json!("id_1")));
+    assert_eq!(deserialized_ok.result.expect("result"), json!({"ok": true}));
+    assert!(deserialized_ok.error.is_none());
+
+    // 3. JsonRpcResponse (error) roundtrip
+    let resp_err = JsonRpcResponse::err(Some(json!(99)), -32601, "Method not found");
+    let json_resp_err = serde_json::to_string(&resp_err).expect("serialize err resp");
+    let deserialized_err: JsonRpcResponse =
+        serde_json::from_str(&json_resp_err).expect("deserialize err resp");
+    assert_eq!(deserialized_err.jsonrpc, "2.0");
+    assert_eq!(deserialized_err.id, Some(json!(99)));
+    assert!(deserialized_err.result.is_none());
+    let err = deserialized_err.error.expect("error object");
+    assert_eq!(err.code, -32601);
+    assert_eq!(err.message, "Method not found");
+
+    // 4. Standalone JsonRpcError serialization roundtrip
+    let rpc_err_obj = JsonRpcError {
+        code: -32700,
+        message: "Parse error".to_string(),
+        data: Some(json!({"details": "syntax"})),
+    };
+    let json_rpc_err = serde_json::to_string(&rpc_err_obj).expect("serialize err obj");
+    let deserialized_rpc_err: JsonRpcError =
+        serde_json::from_str(&json_rpc_err).expect("deserialize err obj");
+    assert_eq!(deserialized_rpc_err.code, -32700);
+    assert_eq!(deserialized_rpc_err.message, "Parse error");
+    assert_eq!(
+        deserialized_rpc_err.data,
+        Some(json!({"details": "syntax"}))
+    );
+}
+
+#[tokio::test]
+async fn test_read_line_bounded_edge_cases() {
+    use crate::read_line_bounded;
+    use std::io::Cursor;
+    use tokio::io::BufReader;
+
+    // 1. EOF (empty reader)
+    let mut reader_eof = BufReader::new(Cursor::new(""));
+    let mut buf = String::new();
+    let res_eof = read_line_bounded(&mut reader_eof, &mut buf, 100).await;
+    assert!(res_eof.is_ok());
+    assert_eq!(res_eof.unwrap(), 0);
+    assert!(buf.is_empty());
+
+    // 2. Exact boundary fit
+    let exact_data = "123456789\n"; // 10 bytes
+    let mut reader_exact = BufReader::new(Cursor::new(exact_data));
+    let res_exact = read_line_bounded(&mut reader_exact, &mut buf, 10).await;
+    assert!(res_exact.is_ok());
+    assert_eq!(res_exact.unwrap(), 10);
+    assert_eq!(buf, exact_data);
+
+    // 3. CRLF line ending
+    let crlf_data = "hello world\r\n";
+    let mut reader_crlf = BufReader::new(Cursor::new(crlf_data));
+    let res_crlf = read_line_bounded(&mut reader_crlf, &mut buf, 100).await;
+    assert!(res_crlf.is_ok());
+    assert_eq!(buf, crlf_data);
+
+    // 4. Invalid UTF-8 input
+    let invalid_utf8 = vec![0x61, 0x62, 0xFF, 0xFE, 0x0A]; // ab<invalid>\n
+    let mut reader_invalid = BufReader::new(Cursor::new(invalid_utf8));
+    let res_invalid = read_line_bounded(&mut reader_invalid, &mut buf, 100).await;
+    assert!(res_invalid.is_err());
+    let err = res_invalid.unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("Invalid UTF-8"));
+}
+
+#[test]
+fn test_is_write_allowed_by_env_values() {
+    use crate::is_write_allowed_by_env;
+
+    let key = "MEMFUSE_MCP_ALLOW_WRITE";
+
+    std::env::set_var(key, "1");
+    assert!(is_write_allowed_by_env());
+
+    std::env::set_var(key, "true");
+    assert!(is_write_allowed_by_env());
+
+    std::env::set_var(key, "YES");
+    assert!(is_write_allowed_by_env());
+
+    std::env::set_var(key, "0");
+    assert!(!is_write_allowed_by_env());
+
+    std::env::set_var(key, "false");
+    assert!(!is_write_allowed_by_env());
+
+    std::env::remove_var(key);
+    assert!(!is_write_allowed_by_env());
+}
+
+#[tokio::test]
+async fn test_mcp_server_constructors_and_lifecycle() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db = Arc::new(MemFuse::open(tmp.path()).await.expect("open db"));
+    let col = db.collection("default").await.expect("col");
+    let embedder: Arc<dyn TextEmbeddingEngine> = Arc::new(MockEmbedder {
+        dimension: col.dimension(),
+    });
+
+    // 1. McpServer::new
+    let server_default = McpServer::new(db.clone(), embedder.clone()).expect("server new");
+    assert!(!server_default.sandbox.policy().allow_db_writes);
+
+    // 2. McpServer::with_sandbox
+    let policy = crate::sandbox::SandboxPolicy {
+        allow_db_reads: true,
+        allow_db_writes: true,
+        allow_code_execution: false,
+        max_execution_ms: 2000,
+    };
+    let sandbox = Arc::new(crate::sandbox::McpSandbox::new(policy).expect("sandbox"));
+    let server_custom = McpServer::with_sandbox(db.clone(), embedder.clone(), sandbox);
+    assert!(server_custom.sandbox.policy().allow_db_writes);
+
+    // 3. Lifecycle handle: initialize
+    let req_init = make_request("initialize", json!({}));
+    let resp_init = server_custom.handle(req_init).await;
+    assert_eq!(resp_init.jsonrpc, "2.0");
+    let res_val = resp_init.result.expect("result");
+    assert_eq!(res_val["protocolVersion"], "2024-11-05");
+    assert_eq!(res_val["serverInfo"]["name"], "memfuse");
+
+    // 4. Lifecycle handle: ping
+    let req_ping = make_request("ping", json!({}));
+    let resp_ping = server_custom.handle(req_ping).await;
+    assert_eq!(resp_ping.result.expect("result"), json!({}));
+}
+
+#[tokio::test]
+async fn test_tools_call_missing_or_empty_name() {
+    let (server, _tmp) = create_mock_server().await;
+
+    // Missing tool name
+    let req_missing = make_request("tools/call", json!({"arguments": {}}));
+    let resp_missing = server.handle(req_missing).await;
+    let err = resp_missing.error.expect("error");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("missing or empty tool 'name'"));
+
+    // Empty tool name
+    let req_empty = make_request("tools/call", json!({"name": "", "arguments": {}}));
+    let resp_empty = server.handle(req_empty).await;
+    let err_empty = resp_empty.error.expect("error");
+    assert_eq!(err_empty.code, -32602);
+    assert!(err_empty.message.contains("missing or empty tool 'name'"));
+}
+
+#[tokio::test]
+async fn test_memfuse_insert_raw_vector_and_missing_payload() {
+    let (server, _tmp) = create_mock_server_with_write(true).await;
+    let col = server.db.collection("default").await.expect("collection");
+    let dim = col.dimension();
+    let raw_vector = vec![0.1f32; dim];
+
+    // Direct vector insert (no text)
+    let req_vector_only = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "raw_vec_doc",
+            "vector": raw_vector,
+            "collection": "default"
+        }),
+    );
+    let resp_vec = server.handle(req_vector_only).await;
+    assert!(
+        resp_vec.error.is_none(),
+        "Unexpected error: {:?}",
+        resp_vec.error
+    );
+    let res_val = resp_vec.result.expect("result");
+    assert_eq!(res_val["ok"], true);
+    assert_eq!(res_val["chunks_inserted"], 1);
+    assert_eq!(res_val["id"], "raw_vec_doc");
+
+    // Missing both vector and text
+    let req_missing_both = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "no_payload_doc",
+            "collection": "default"
+        }),
+    );
+    let resp_missing = server.handle(req_missing_both).await;
+    let err = resp_missing.error.expect("error for missing payload");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("text/vector fehlt"));
+}
+
+#[tokio::test]
+async fn test_memfuse_get_nonexistent_and_unicode() {
+    let (server, _tmp) = create_mock_server_with_write(true).await;
+
+    // Get non-existent document returns null
+    let req_get_missing = make_request(
+        "memfuse_get",
+        json!({
+            "id": "non_existent_doc_id_999",
+            "collection": "default"
+        }),
+    );
+    let resp_missing = server.handle(req_get_missing).await;
+    assert!(resp_missing.error.is_none());
+    assert_eq!(resp_missing.result.expect("result"), json!(null));
+
+    // Multi-byte Unicode insertion & retrieval (🚀 Emoji, German Umlauts, Japanese text)
+    let unicode_id = "doc_unicode_🚀_日本語";
+    let unicode_text = "MemFuse Gedächtnis mit 日本語 Text und Emojis 🦀🚀✨";
+
+    let req_insert = make_request(
+        "memfuse_insert",
+        json!({
+            "id": unicode_id,
+            "text": unicode_text,
+            "collection": "default"
+        }),
+    );
+    let resp_insert = server.handle(req_insert).await;
+    assert!(resp_insert.error.is_none());
+
+    let req_get = make_request(
+        "memfuse_get",
+        json!({
+            "id": unicode_id,
+            "collection": "default"
+        }),
+    );
+    let resp_get = server.handle(req_get).await;
+    assert!(resp_get.error.is_none());
+    let get_res = resp_get.result.expect("result");
+    assert_eq!(get_res["metadata"]["text"], unicode_text);
+}
