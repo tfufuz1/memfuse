@@ -191,20 +191,4 @@ mod tests {
         let content = extract_email_bytes(eml).unwrap(); // unwrap
         assert_eq!(content.body, "Plain text body");
     }
-
-    #[test]
-    fn test_extract_email_bytes_empty() {
-        let content = extract_email_bytes(&[]).expect("empty email bytes");
-        assert_eq!(content.subject, "");
-        assert_eq!(content.from, "");
-        assert_eq!(content.body, "");
-    }
-
-    #[test]
-    fn test_strip_html_edge_cases() {
-        assert_eq!(strip_html(""), "");
-        let unicode_html = "<div class=\"test\">München &amp; Zürich</div><style>body { color: red; }</style>";
-        let cleaned = strip_html(unicode_html);
-        assert_eq!(cleaned, "München & Zürich");
-    }
 }

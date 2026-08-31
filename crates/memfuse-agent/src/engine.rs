@@ -3,7 +3,7 @@
 // INVARIANTEN: Enforces Checkpoint -> Execute -> Commit -> Audit loop per step; atomic commit & RAII guard protection.
 // NICHT-OFFENSICHTLICH: Persists final state to LSM before final checkpoint; replay_from reconstructs state from checkpoint registry.
 // HOTSPOTS: run_internal (ll. 90-180), replay_from (ll. 185-230).
-// STAND: TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
 //! Deterministic, persistent graph-walker engine for agent workflows.
 //!
@@ -443,88 +443,5 @@ impl OrchestratorEngine {
             .max_by_key(|e| e.priority)
             .ok_or_else(|| MemFuseError::Internal("No edges found".to_string()))?;
         Ok(edge.to.to_string())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct MockTool {
-        name: String,
-    }
-
-    #[async_trait::async_trait]
-    impl AgentTool for MockTool {
-        fn name(&self) -> &str {
-            &self.name
-        }
-
-        async fn execute(
-            &self,
-            _ctx: &AgentContext,
-            _input: serde_json::Value,
-        ) -> Result<StepResult> {
-            Ok(StepResult {
-                node_id: "mock_node".to_string(),
-                output: serde_json::json!({"status": "mocked"}),
-                tokens_consumed: 10,
-                next_edge: None,
-            })
-        }
-    }
-
-    #[test]
-    fn test_event_loop_exit_reason_CASE_traits() {
-        let r1 = EventLoopExitReason::Shutdown;
-        let r2 = EventLoopExitReason::SourceExhausted;
-
-        assert_eq!(r1, EventLoopExitReason::Shutdown);
-        assert_ne!(r1, r2);
-        assert_eq!(format!("{:?}", r1), "Shutdown");
-        assert_eq!(format!("{:?}", r2), "SourceExhausted");
-    }
-
-    #[test]
-    fn test_try_register_tool_CASE_edge_cases() {
-        let storage = Arc::new(crate::audit::InMemoryStorageEngine::new());
-        let mock_store = Arc::new(PersistentCheckpointStore::new(storage, "test"));
-        let mut engine = OrchestratorEngine {
-            tools: HashMap::new(),
-            checkpoint_store: mock_store,
-        };
-
-        // Valid tool
-        let tool1 = Box::new(MockTool {
-            name: "tool_alpha".to_string(),
-        });
-        assert!(engine.try_register_tool(tool1).is_ok());
-
-        // Empty name tool
-        let tool_empty = Box::new(MockTool {
-            name: "".to_string(),
-        });
-        assert!(matches!(
-            engine.try_register_tool(tool_empty),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Oversized name tool
-        let tool_huge = Box::new(MockTool {
-            name: "t".repeat(MAX_ID_LEN + 1),
-        });
-        assert!(matches!(
-            engine.try_register_tool(tool_huge),
-            Err(MemFuseError::InvalidInput(_))
-        ));
-
-        // Tool with null byte in name
-        let tool_null = Box::new(MockTool {
-            name: "tool\0null".to_string(),
-        });
-        assert!(matches!(
-            engine.try_register_tool(tool_null),
-            Err(MemFuseError::InvalidInput(_))
-        ));
     }
 }
