@@ -529,12 +529,23 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             None
         };
 
-        let filter_or_boost = |list: Vec<crate::SearchResult>| async {
-            if let Some(target_comm) = target_community_id {
-                let mut filtered = Vec::new();
+        let (vector_results, text_results, graph_results) = if let Some(target_comm) = target_community_id {
+            let mut candidate_eids = Vec::with_capacity(
+                vector_results.len() + text_results.len() + graph_results.len(),
+            );
+            for res in vector_results.iter().chain(text_results.iter()).chain(graph_results.iter()) {
+                if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                    candidate_eids.push(eid);
+                }
+            }
+
+            let community_map = self.get_communities_batch(&candidate_eids).await?;
+
+            let filter_or_boost = |list: Vec<crate::SearchResult>| {
+                let mut filtered = Vec::with_capacity(list.len());
                 for mut res in list {
                     if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                        if let Ok(Some(comm)) = self.get_community(eid).await {
+                        if let Some(&comm) = community_map.get(&eid) {
                             if comm == target_comm {
                                 // Candidate is in the same community: boost score
                                 res.score *= 1.2;
@@ -544,14 +555,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     }
                 }
                 filtered
-            } else {
-                list
-            }
-        };
+            };
 
-        let vector_results = filter_or_boost(vector_results).await;
-        let text_results = filter_or_boost(text_results).await;
-        let graph_results = filter_or_boost(graph_results).await;
+            (
+                filter_or_boost(vector_results),
+                filter_or_boost(text_results),
+                filter_or_boost(graph_results),
+            )
+        } else {
+            (vector_results, text_results, graph_results)
+        };
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
@@ -669,7 +682,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 None
             };
 
-        let filter_and_boost = |list: Vec<crate::SearchResult>| async {
+        let community_map = if target_community_id.is_some() {
+            let mut candidate_eids = Vec::with_capacity(
+                vector_results.len() + text_results.len() + graph_results.len(),
+            );
+            for res in vector_results.iter().chain(text_results.iter()).chain(graph_results.iter()) {
+                if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                    candidate_eids.push(eid);
+                }
+            }
+            self.get_communities_batch(&candidate_eids).await?
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        let filter_and_boost = |list: Vec<crate::SearchResult>| {
             let mut filtered = Vec::with_capacity(list.len());
             for mut res in list {
                 if let Some(ref filter_expr) = query.filter {
@@ -688,7 +715,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                 if let Some(target_comm) = target_community_id {
                     if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                        if let Ok(Some(comm)) = self.get_community(eid).await {
+                        if let Some(&comm) = community_map.get(&eid) {
                             if comm == target_comm {
                                 res.score *= 1.2;
                             }
@@ -701,9 +728,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             filtered
         };
 
-        let vector_results = filter_and_boost(vector_results).await;
-        let text_results = filter_and_boost(text_results).await;
-        let graph_results = filter_and_boost(graph_results).await;
+        let vector_results = filter_and_boost(vector_results);
+        let text_results = filter_and_boost(text_results);
+        let graph_results = filter_and_boost(graph_results);
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
