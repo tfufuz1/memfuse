@@ -50,6 +50,10 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-08-31T21:05:36Z (SESSION: fdef8c82)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
+| `2026-08-31T21:05:36Z (SESSION: fdef8c82)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
+| `2026-08-31T21:05:36Z (SESSION: fdef8c82)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
+| `2026-08-31T21:05:36Z (SESSION: fdef8c82)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für Grok-Style Agent State Branching |
 | `2026-08-31T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-30T22:01:55Z` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `cf1f75c6` | `OPEN` | `0` | // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6) |
 | `2026-08-30T21:56:10Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `a140747b` | `OPEN` | `0` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T21:56:10Z) (SESSION: a140747b) |
@@ -75,10 +79,6 @@
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/model_info.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen |
 | `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `TEST:CRY-001` | `3779c7f0` | `DONE` | `2` | // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
 | `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `TEST:OLL-001` | `ed7b7b38` | `DONE` | `2` | // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für Grok-Style Agent State Branching |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/seq_log.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Shared Versioned Sequence Log für Snapshot-isolierte Index-Suchen (_at Familie). |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/snapshot.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SnapshotRegistry für MVCC-sichere Reads und minimal aktive Sequenznummern. |
@@ -152,8 +152,3 @@
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
-| `` | `crates/memfuse-text/benches/text_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantifiziert Durchsatz (Words/sec), Latencies p50/p95/p99 für Tokenisierungen, Morphologie & BM25-Suche. |
-| `` | `crates/memfuse-text/tests/bm25_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert BM25 Scoring gegen handberechnete mathematische Werte. |
-| `` | `crates/memfuse-text/tests/inverted_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert CRUD-Semantik, MVCC Snapshot Isolation und Nebenläufigkeits-Konsistenz. |
-| `` | `crates/memfuse-text/tests/morphology_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Kompositazerlegung, Umlautnormalisierung, False-Positive-Rate & End-to-End Tokenisierung. |
-| `` | `crates/memfuse-text/tests/tokenizer_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Fuzz-Robustheit (0 Panics), BM25-Score-Monotonie und Tokenisierungs-Grenzfälle. |
