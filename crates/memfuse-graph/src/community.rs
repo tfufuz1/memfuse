@@ -4,7 +4,7 @@
 //! semantic communities for GraphRAG retrieval.
 
 // FILE-CONTEXT
-// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
+// STAND: 2026-08-31T21:05:36Z (SESSION: fdef8c82)
 // ZWECK: Community-Erkennung via Label Propagation für GraphRAG
 // INVARIANTEN: Bitidentischer Determinismus bei gleichem Seed & Graph.
 // HOTSPOTS: L90-L160 (Label Propagation Iterationsschleife)
@@ -588,5 +588,30 @@ mod tests {
         let deserialized_assignment: CommunityAssignment =
             bincode::deserialize(&serialized_assignment).unwrap(); // unwrap allowed
         assert_eq!(assignment, deserialized_assignment);
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn detect_communities_CASE_zero_max_iterations() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id1 = EntityId::new(10);
+        let id2 = EntityId::new(20);
+        graph
+            .add_entity(tx, Entity::new(id1, "N1", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id2, "N2", "Type"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = CommunityDetectionConfig {
+            max_iterations: 0,
+            seed: 42,
+        };
+        let assignments = detect_communities(&graph, &config).await.unwrap();
+        assert_eq!(assignments.len(), 2);
     }
 }

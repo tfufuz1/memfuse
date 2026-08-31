@@ -423,6 +423,49 @@ mod tests {
     }
 
     #[test]
+    fn test_tx_buffer_stage_many_exceeds_capacity() {
+        let config = TxBufferConfig {
+            max_ops_per_tx: 2,
+            ..Default::default()
+        };
+        let buffer = TxBuffer::<String>::new_with_config_ext(1, Duration::from_secs(5), config);
+        let tx = TxId::new(10);
+
+        let ops = vec![
+            IndexOp::Insert {
+                doc_id: DocId::new(1),
+                data: "op1".to_string(),
+            },
+            IndexOp::Insert {
+                doc_id: DocId::new(2),
+                data: "op2".to_string(),
+            },
+            IndexOp::Insert {
+                doc_id: DocId::new(3),
+                data: "op3".to_string(),
+            },
+        ];
+
+        let res = buffer.stage_many(tx, ops);
+        assert!(matches!(res, Err(MemFuseError::Transaction(_))));
+    }
+
+    #[test]
+    fn test_tx_buffer_reap_orphans_bounded_capping() {
+        let buffer = TxBuffer::<String>::new_with_config(1, Duration::from_millis(5));
+
+        buffer.begin(TxId::new(1));
+        buffer.begin(TxId::new(2));
+        buffer.begin(TxId::new(3));
+
+        std::thread::sleep(Duration::from_millis(20));
+
+        let reaped = buffer.reap_orphans_bounded(2);
+        assert_eq!(reaped.len(), 2);
+        assert_eq!(buffer.len(), 1);
+    }
+
+    #[test]
     fn test_tx_buffer_discard() {
         let buffer = TxBuffer::<String>::new_with_config(64, Duration::from_secs(30));
         let tx = TxId::new(1);

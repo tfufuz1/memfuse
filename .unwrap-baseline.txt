@@ -1334,72 +1334,72 @@ crates/memfuse-store/src/checkpoint.rs:185:            storage.commit(tx2).await
 crates/memfuse-store/src/checkpoint.rs:186:            assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
 crates/memfuse-store/src/checkpoint.rs:196:        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
 crates/memfuse-store/src/checkpoint.rs:197:        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap
-crates/memfuse-store/src/compaction.rs:1003:            .expect("open"); // expect
-crates/memfuse-store/src/compaction.rs:1006:        let res = reader.get(b"key-1").await.expect("get"); // expect
-crates/memfuse-store/src/compaction.rs:1011:        let (_, seq, _) = res.unwrap(); // unwrap
-crates/memfuse-store/src/compaction.rs:1034:            .expect("merge"); // expect
-crates/memfuse-store/src/compaction.rs:1038:            .expect("open"); // expect
-crates/memfuse-store/src/compaction.rs:1039:        let res_full = reader_full.get(b"key-1").await.expect("get"); // expect
-crates/memfuse-store/src/compaction.rs:1069:        let tmp = tempfile::TempDir::new().unwrap(); // unwrap
-crates/memfuse-store/src/compaction.rs:1102:            let tmp = tempfile::TempDir::new().unwrap(); // unwrap
-crates/memfuse-store/src/compaction.rs:1118:            let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
-crates/memfuse-store/src/compaction.rs:1128:                    .expect("put"); // expect
-crates/memfuse-store/src/compaction.rs:1129:                storage.commit(tx).await.expect("commit"); // expect
-crates/memfuse-store/src/compaction.rs:1131:            storage.force_flush().await.expect("flush 1"); // expect
-crates/memfuse-store/src/compaction.rs:1140:                    .expect("put"); // expect
-crates/memfuse-store/src/compaction.rs:1141:                storage.commit(tx).await.expect("commit"); // expect
-crates/memfuse-store/src/compaction.rs:1143:            storage.force_flush().await.expect("flush 2"); // expect
-crates/memfuse-store/src/compaction.rs:1153:                    .expect("put"); // expect
-crates/memfuse-store/src/compaction.rs:1154:                storage.commit(tx).await.expect("commit"); // expect
-crates/memfuse-store/src/compaction.rs:1166:                .expect("flush task joined") // expect
-crates/memfuse-store/src/compaction.rs:1167:                .expect("flush succeeded"); // expect
-crates/memfuse-store/src/compaction.rs:1169:                .expect("compact task joined") // expect
-crates/memfuse-store/src/compaction.rs:1170:                .expect("compact succeeded"); // expect
-crates/memfuse-store/src/compaction.rs:1179:                    .expect("get") // expect
-crates/memfuse-store/src/compaction.rs:1180:                    .expect("key must exist"); // expect
-crates/memfuse-store/src/compaction.rs:483:        let mut builder = SstableBuilder::create(&path).await.expect("create sst"); // expect
-crates/memfuse-store/src/compaction.rs:485:            builder.add(k, v, *seq, *seq).await.expect("add entry"); // expect
-crates/memfuse-store/src/compaction.rs:487:        builder.finish().await.expect("finish sst"); // expect
-crates/memfuse-store/src/compaction.rs:488:        Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // expect
-crates/memfuse-store/src/compaction.rs:493:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:529:            .expect("merge"); // expect
-crates/memfuse-store/src/compaction.rs:533:            .expect("open merged"); // expect
-crates/memfuse-store/src/compaction.rs:534:        let entries = reader.iter().await.expect("iter"); // expect
-crates/memfuse-store/src/compaction.rs:545:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:575:            .expect("merge"); // expect
-crates/memfuse-store/src/compaction.rs:579:            .expect("open"); // expect
-crates/memfuse-store/src/compaction.rs:580:        let entries = reader.iter().await.expect("iter"); // expect
-crates/memfuse-store/src/compaction.rs:588:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:618:            .expect("merge"); // expect
-crates/memfuse-store/src/compaction.rs:622:            .expect("open"); // expect
-crates/memfuse-store/src/compaction.rs:623:        let entries = reader.iter().await.expect("iter"); // expect
-crates/memfuse-store/src/compaction.rs:630:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:679:            .expect("compact"); // expect
-crates/memfuse-store/src/compaction.rs:692:        let entries = last_sst.iter().await.expect("iter"); // expect
-crates/memfuse-store/src/compaction.rs:698:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:732:            .expect("compact"); // expect
-crates/memfuse-store/src/compaction.rs:740:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:775:            .unwrap(); // unwrap
-crates/memfuse-store/src/compaction.rs:782:        let result = engine.maybe_compact(&sstables, tmp.path()).await.unwrap(); // unwrap
-crates/memfuse-store/src/compaction.rs:791:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:792:        let path1 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 1"); // expect
-crates/memfuse-store/src/compaction.rs:793:        let path2 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 2"); // expect
-crates/memfuse-store/src/compaction.rs:805:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:821:        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
-crates/memfuse-store/src/compaction.rs:849:            storage.put(tx, key.as_bytes(), &val).await.expect("put"); // expect
-crates/memfuse-store/src/compaction.rs:850:            storage.commit(tx).await.expect("commit"); // expect
-crates/memfuse-store/src/compaction.rs:854:        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no"); // expect
-crates/memfuse-store/src/compaction.rs:865:                .expect("put heavy"); // expect
-crates/memfuse-store/src/compaction.rs:866:            storage.commit(tx).await.expect("commit heavy"); // expect
-crates/memfuse-store/src/compaction.rs:873:            storage.delete(tx, key.as_bytes()).await.expect("delete"); // expect
-crates/memfuse-store/src/compaction.rs:874:            storage.commit(tx).await.expect("commit delete"); // expect
-crates/memfuse-store/src/compaction.rs:881:            let stats = storage.stats().await.expect("stats"); // expect
-crates/memfuse-store/src/compaction.rs:891:        reader_handle.await.expect("reader task panicked"); // expect
-crates/memfuse-store/src/compaction.rs:894:        let stats = storage.stats().await.expect("final stats"); // expect
-crates/memfuse-store/src/compaction.rs:908:                .expect("get final") // expect
-crates/memfuse-store/src/compaction.rs:916:            let val = storage.get(key.as_bytes()).await.expect("get deleted"); // expect
-crates/memfuse-store/src/compaction.rs:934:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/compaction.rs:999:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:1000:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:1004:            .expect("open"); // expect
+crates/memfuse-store/src/compaction.rs:1007:        let res = reader.get(b"key-1").await.expect("get"); // expect
+crates/memfuse-store/src/compaction.rs:1012:        let (_, seq, _) = res.unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:1035:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:1039:            .expect("open"); // expect
+crates/memfuse-store/src/compaction.rs:1040:        let res_full = reader_full.get(b"key-1").await.expect("get"); // expect
+crates/memfuse-store/src/compaction.rs:1070:        let tmp = tempfile::TempDir::new().unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:1103:            let tmp = tempfile::TempDir::new().unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:1119:            let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
+crates/memfuse-store/src/compaction.rs:1129:                    .expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:1130:                storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:1132:            storage.force_flush().await.expect("flush 1"); // expect
+crates/memfuse-store/src/compaction.rs:1141:                    .expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:1142:                storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:1144:            storage.force_flush().await.expect("flush 2"); // expect
+crates/memfuse-store/src/compaction.rs:1154:                    .expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:1155:                storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:1167:                .expect("flush task joined") // expect
+crates/memfuse-store/src/compaction.rs:1168:                .expect("flush succeeded"); // expect
+crates/memfuse-store/src/compaction.rs:1170:                .expect("compact task joined") // expect
+crates/memfuse-store/src/compaction.rs:1171:                .expect("compact succeeded"); // expect
+crates/memfuse-store/src/compaction.rs:1180:                    .expect("get") // expect
+crates/memfuse-store/src/compaction.rs:1181:                    .expect("key must exist"); // expect
+crates/memfuse-store/src/compaction.rs:484:        let mut builder = SstableBuilder::create(&path).await.expect("create sst"); // expect
+crates/memfuse-store/src/compaction.rs:486:            builder.add(k, v, *seq, *seq).await.expect("add entry"); // expect
+crates/memfuse-store/src/compaction.rs:488:        builder.finish().await.expect("finish sst"); // expect
+crates/memfuse-store/src/compaction.rs:489:        Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // expect
+crates/memfuse-store/src/compaction.rs:494:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:530:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:534:            .expect("open merged"); // expect
+crates/memfuse-store/src/compaction.rs:535:        let entries = reader.iter().await.expect("iter"); // expect
+crates/memfuse-store/src/compaction.rs:546:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:576:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:580:            .expect("open"); // expect
+crates/memfuse-store/src/compaction.rs:581:        let entries = reader.iter().await.expect("iter"); // expect
+crates/memfuse-store/src/compaction.rs:589:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:619:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:623:            .expect("open"); // expect
+crates/memfuse-store/src/compaction.rs:624:        let entries = reader.iter().await.expect("iter"); // expect
+crates/memfuse-store/src/compaction.rs:631:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:680:            .expect("compact"); // expect
+crates/memfuse-store/src/compaction.rs:693:        let entries = last_sst.iter().await.expect("iter"); // expect
+crates/memfuse-store/src/compaction.rs:699:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:733:            .expect("compact"); // expect
+crates/memfuse-store/src/compaction.rs:741:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:776:            .unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:783:        let result = engine.maybe_compact(&sstables, tmp.path()).await.unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:792:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:793:        let path1 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 1"); // expect
+crates/memfuse-store/src/compaction.rs:794:        let path2 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 2"); // expect
+crates/memfuse-store/src/compaction.rs:806:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:822:        let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
+crates/memfuse-store/src/compaction.rs:850:            storage.put(tx, key.as_bytes(), &val).await.expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:851:            storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:855:        let snapshot_seq = storage.last_seq_no().await.expect("last_seq_no"); // expect
+crates/memfuse-store/src/compaction.rs:866:                .expect("put heavy"); // expect
+crates/memfuse-store/src/compaction.rs:867:            storage.commit(tx).await.expect("commit heavy"); // expect
+crates/memfuse-store/src/compaction.rs:874:            storage.delete(tx, key.as_bytes()).await.expect("delete"); // expect
+crates/memfuse-store/src/compaction.rs:875:            storage.commit(tx).await.expect("commit delete"); // expect
+crates/memfuse-store/src/compaction.rs:882:            let stats = storage.stats().await.expect("stats"); // expect
+crates/memfuse-store/src/compaction.rs:892:        reader_handle.await.expect("reader task panicked"); // expect
+crates/memfuse-store/src/compaction.rs:895:        let stats = storage.stats().await.expect("final stats"); // expect
+crates/memfuse-store/src/compaction.rs:909:                .expect("get final") // expect
+crates/memfuse-store/src/compaction.rs:917:            let val = storage.get(key.as_bytes()).await.expect("get deleted"); // expect
+crates/memfuse-store/src/compaction.rs:935:        let tmp = TempDir::new().expect("temp dir"); // expect
 crates/memfuse-store/src/lsm.rs:1240:        let tmp = TempDir::new().expect("temp dir"); // expect
 crates/memfuse-store/src/lsm.rs:1249:        let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 crates/memfuse-store/src/lsm.rs:1258:        storage.put(tx, b"hello", b"world").await.expect("put"); // expect
@@ -1702,103 +1702,103 @@ crates/memfuse-store/src/memtable.rs:335:        let (val, seq, tx) = mt.get_at_
 crates/memfuse-store/src/memtable.rs:366:        let (val, seq, tx) = mt.get_at_seq(&key, 15, u64::MAX).expect("Should find v1"); // expect
 crates/memfuse-store/src/memtable.rs:374:            .expect("Should find tombstone"); // expect
 crates/memfuse-store/src/memtable.rs:540:            h.join().expect("thread panicked"); // #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:1736:                .expect("test") // expect
-crates/memfuse-store/src/sstable.rs:1738:                .expect("test"), // expect
-crates/memfuse-store/src/sstable.rs:1746:                .expect("test") // expect
-crates/memfuse-store/src/sstable.rs:1748:                .expect("correct length"), // expect
-crates/memfuse-store/src/sstable.rs:1778:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:1782:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
-crates/memfuse-store/src/sstable.rs:1783:        builder.add(b"key1", b"val1", 1, 0).await.expect("add key1"); // expect
-crates/memfuse-store/src/sstable.rs:1784:        builder.add(b"key2", b"val2", 2, 0).await.expect("add key2"); // expect
-crates/memfuse-store/src/sstable.rs:1785:        builder.finish().await.expect("finish builder"); // expect
-crates/memfuse-store/src/sstable.rs:1787:        let reader = SstableReader::open(&path, bc).await.expect("open reader"); // expect
-crates/memfuse-store/src/sstable.rs:1790:        let res = reader.get(b"key1").await.expect("get key1"); // expect
-crates/memfuse-store/src/sstable.rs:1791:        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // expect
-crates/memfuse-store/src/sstable.rs:1794:        let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // expect
-crates/memfuse-store/src/sstable.rs:1800:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:1804:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
-crates/memfuse-store/src/sstable.rs:1811:                .expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1813:        builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:1815:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect
-crates/memfuse-store/src/sstable.rs:1822:                .expect("get") // expect
-crates/memfuse-store/src/sstable.rs:1823:                .expect("exists"); // expect
-crates/memfuse-store/src/sstable.rs:1832:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:1836:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
-crates/memfuse-store/src/sstable.rs:1843:                .expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1845:        builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:1847:        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open")); // expect
-crates/memfuse-store/src/sstable.rs:1856:                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // expect
-crates/memfuse-store/src/sstable.rs:1863:            h.await.expect("task failed"); // expect
-crates/memfuse-store/src/sstable.rs:1869:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:1873:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
-crates/memfuse-store/src/sstable.rs:1874:        builder.add(b"apple/1", b"a1", 1, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1875:        builder.add(b"apple/2", b"a2", 2, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1876:        builder.add(b"banana/1", b"b1", 3, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1877:        builder.add(b"cherry/1", b"c1", 4, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1878:        builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:1880:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect
-crates/memfuse-store/src/sstable.rs:1882:        let apples = reader.scan_prefix(b"apple/").await.expect("scan"); // expect
-crates/memfuse-store/src/sstable.rs:1887:        let bananas = reader.scan_prefix(b"banana/").await.expect("scan"); // expect
-crates/memfuse-store/src/sstable.rs:1891:        let non = reader.scan_prefix(b"zebra").await.expect("scan"); // expect
-crates/memfuse-store/src/sstable.rs:1898:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:1902:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
-crates/memfuse-store/src/sstable.rs:1903:        builder.add(b"a", b"1", 1, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1904:        builder.add(b"b", b"2", 2, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1905:        builder.add(b"c", b"3", 3, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1906:        builder.add(b"d", b"4", 4, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1907:        builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:1909:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect
-crates/memfuse-store/src/sstable.rs:1915:            .expect("scan"); // expect
-crates/memfuse-store/src/sstable.rs:1924:            .expect("scan"); // expect
-crates/memfuse-store/src/sstable.rs:1932:            .expect("scan"); // expect
-crates/memfuse-store/src/sstable.rs:1939:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:1945:            let mut builder = SstableBuilder::create(&sst_path).await.expect("create"); // expect
-crates/memfuse-store/src/sstable.rs:1949:                .expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1950:            builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:1957:                .expect("open"); // expect
-crates/memfuse-store/src/sstable.rs:1961:            let res = reader.get(b"active-key").await.expect("get"); // expect
-crates/memfuse-store/src/sstable.rs:1965:            let res = reader.get(b"missing-key-xyz-123").await.expect("get"); // expect
-crates/memfuse-store/src/sstable.rs:1975:                .expect("create old sub"); // expect
-crates/memfuse-store/src/sstable.rs:1979:                .expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:1980:            builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:1986:            let data = tokio::fs::read(&old_sst_path).await.expect("read"); // expect
-crates/memfuse-store/src/sstable.rs:1989:                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap()); // unwrap
-crates/memfuse-store/src/sstable.rs:1999:                .expect("recreate"); // expect
-crates/memfuse-store/src/sstable.rs:2000:            f.write_all(&data[0..file_size - 24]).await.unwrap(); // expect
-crates/memfuse-store/src/sstable.rs:2001:            f.write_u64_le(index_off).await.expect("write ioff"); // expect
-crates/memfuse-store/src/sstable.rs:2002:            f.write_u32_le(0x4D465354).await.expect("write magic"); // expect
-crates/memfuse-store/src/sstable.rs:2003:            f.sync_all().await.expect("sync"); // expect
-crates/memfuse-store/src/sstable.rs:2009:                .expect("open old"); // expect
-crates/memfuse-store/src/sstable.rs:2019:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:2024:            let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect
-crates/memfuse-store/src/sstable.rs:2025:            builder.add(b"key1", b"val1", 1, 0).await.expect("add"); // expect
-crates/memfuse-store/src/sstable.rs:2026:            builder.finish().await.expect("finish"); // expect
-crates/memfuse-store/src/sstable.rs:2031:            let mut data = tokio::fs::read(&path).await.expect("read"); // expect
-crates/memfuse-store/src/sstable.rs:2035:                tokio::fs::write(&path, data).await.expect("write"); // expect
-crates/memfuse-store/src/sstable.rs:2075:        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2080:            NonZeroUsize::new(1).expect("non-zero"), // expect
-crates/memfuse-store/src/sstable.rs:2084:        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2086:        builder.add(b"key1", &val, 1, 0).await.expect("add key1"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2087:        builder.add(b"key2", &val, 2, 0).await.expect("add key2"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2088:        builder.add(b"key3", &val, 3, 0).await.expect("add key3"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2089:        builder.finish().await.expect("finish"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2093:            .expect("open"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2102:        let res1 = reader.get(b"key1").await.expect("get key1"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2108:        let res2 = reader.get(b"key2").await.expect("get key2"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2115:        let res3 = reader.get(b"key3").await.expect("get key3"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2125:        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2129:        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2130:        builder.add(b"k", b"val1", 1, 10).await.expect("add seq 1"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2131:        builder.add(b"k", b"val2", 2, 20).await.expect("add seq 2"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2132:        builder.finish().await.expect("finish"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2134:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2137:        let iter_entries = reader.iter().await.expect("iter"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2154:        let mut stream = reader_arc.stream().await.expect("stream"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2155:        let e1 = stream.next().await.expect("next").expect("entry 1"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2156:        let e2 = stream.next().await.expect("next").expect("entry 2"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2157:        let e_end = stream.next().await.expect("next"); // expect #[cfg(test)]
-crates/memfuse-store/src/sstable.rs:2208:        let tmp = TempDir::new().expect("temp dir"); // expect
-crates/memfuse-store/src/sstable.rs:2211:        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect
+crates/memfuse-store/src/sstable.rs:1740:                .expect("test") // expect
+crates/memfuse-store/src/sstable.rs:1742:                .expect("test"), // expect
+crates/memfuse-store/src/sstable.rs:1750:                .expect("test") // expect
+crates/memfuse-store/src/sstable.rs:1752:                .expect("correct length"), // expect
+crates/memfuse-store/src/sstable.rs:1782:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:1786:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
+crates/memfuse-store/src/sstable.rs:1787:        builder.add(b"key1", b"val1", 1, 0).await.expect("add key1"); // expect
+crates/memfuse-store/src/sstable.rs:1788:        builder.add(b"key2", b"val2", 2, 0).await.expect("add key2"); // expect
+crates/memfuse-store/src/sstable.rs:1789:        builder.finish().await.expect("finish builder"); // expect
+crates/memfuse-store/src/sstable.rs:1791:        let reader = SstableReader::open(&path, bc).await.expect("open reader"); // expect
+crates/memfuse-store/src/sstable.rs:1794:        let res = reader.get(b"key1").await.expect("get key1"); // expect
+crates/memfuse-store/src/sstable.rs:1795:        assert_eq!(res.expect("exists").0.as_ref(), b"val1"); // expect
+crates/memfuse-store/src/sstable.rs:1798:        let res = reader.get(b"nonexistent").await.expect("get nonexistent"); // expect
+crates/memfuse-store/src/sstable.rs:1804:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:1808:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
+crates/memfuse-store/src/sstable.rs:1815:                .expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1817:        builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:1819:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect
+crates/memfuse-store/src/sstable.rs:1826:                .expect("get") // expect
+crates/memfuse-store/src/sstable.rs:1827:                .expect("exists"); // expect
+crates/memfuse-store/src/sstable.rs:1836:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:1840:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
+crates/memfuse-store/src/sstable.rs:1847:                .expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1849:        builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:1851:        let reader = Arc::new(SstableReader::open(&path, bc).await.expect("open")); // expect
+crates/memfuse-store/src/sstable.rs:1860:                    let res = r.get(key.as_bytes()).await.expect("get").expect("exists"); // expect
+crates/memfuse-store/src/sstable.rs:1867:            h.await.expect("task failed"); // expect
+crates/memfuse-store/src/sstable.rs:1873:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:1877:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
+crates/memfuse-store/src/sstable.rs:1878:        builder.add(b"apple/1", b"a1", 1, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1879:        builder.add(b"apple/2", b"a2", 2, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1880:        builder.add(b"banana/1", b"b1", 3, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1881:        builder.add(b"cherry/1", b"c1", 4, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1882:        builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:1884:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect
+crates/memfuse-store/src/sstable.rs:1886:        let apples = reader.scan_prefix(b"apple/").await.expect("scan"); // expect
+crates/memfuse-store/src/sstable.rs:1891:        let bananas = reader.scan_prefix(b"banana/").await.expect("scan"); // expect
+crates/memfuse-store/src/sstable.rs:1895:        let non = reader.scan_prefix(b"zebra").await.expect("scan"); // expect
+crates/memfuse-store/src/sstable.rs:1902:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:1906:        let mut builder = SstableBuilder::create(&path).await.expect("create builder"); // expect
+crates/memfuse-store/src/sstable.rs:1907:        builder.add(b"a", b"1", 1, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1908:        builder.add(b"b", b"2", 2, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1909:        builder.add(b"c", b"3", 3, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1910:        builder.add(b"d", b"4", 4, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1911:        builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:1913:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect
+crates/memfuse-store/src/sstable.rs:1919:            .expect("scan"); // expect
+crates/memfuse-store/src/sstable.rs:1928:            .expect("scan"); // expect
+crates/memfuse-store/src/sstable.rs:1936:            .expect("scan"); // expect
+crates/memfuse-store/src/sstable.rs:1943:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:1949:            let mut builder = SstableBuilder::create(&sst_path).await.expect("create"); // expect
+crates/memfuse-store/src/sstable.rs:1953:                .expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1954:            builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:1961:                .expect("open"); // expect
+crates/memfuse-store/src/sstable.rs:1965:            let res = reader.get(b"active-key").await.expect("get"); // expect
+crates/memfuse-store/src/sstable.rs:1969:            let res = reader.get(b"missing-key-xyz-123").await.expect("get"); // expect
+crates/memfuse-store/src/sstable.rs:1979:                .expect("create old sub"); // expect
+crates/memfuse-store/src/sstable.rs:1983:                .expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:1984:            builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:1990:            let data = tokio::fs::read(&old_sst_path).await.expect("read"); // expect
+crates/memfuse-store/src/sstable.rs:1993:                u64::from_le_bytes(data[file_size - 12..file_size - 4].try_into().unwrap()); // unwrap
+crates/memfuse-store/src/sstable.rs:2003:                .expect("recreate"); // expect
+crates/memfuse-store/src/sstable.rs:2004:            f.write_all(&data[0..file_size - 24]).await.unwrap(); // expect
+crates/memfuse-store/src/sstable.rs:2005:            f.write_u64_le(index_off).await.expect("write ioff"); // expect
+crates/memfuse-store/src/sstable.rs:2006:            f.write_u32_le(0x4D465354).await.expect("write magic"); // expect
+crates/memfuse-store/src/sstable.rs:2007:            f.sync_all().await.expect("sync"); // expect
+crates/memfuse-store/src/sstable.rs:2013:                .expect("open old"); // expect
+crates/memfuse-store/src/sstable.rs:2023:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:2028:            let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect
+crates/memfuse-store/src/sstable.rs:2029:            builder.add(b"key1", b"val1", 1, 0).await.expect("add"); // expect
+crates/memfuse-store/src/sstable.rs:2030:            builder.finish().await.expect("finish"); // expect
+crates/memfuse-store/src/sstable.rs:2035:            let mut data = tokio::fs::read(&path).await.expect("read"); // expect
+crates/memfuse-store/src/sstable.rs:2039:                tokio::fs::write(&path, data).await.expect("write"); // expect
+crates/memfuse-store/src/sstable.rs:2079:        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2084:            NonZeroUsize::new(1).expect("non-zero"), // expect
+crates/memfuse-store/src/sstable.rs:2088:        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2090:        builder.add(b"key1", &val, 1, 0).await.expect("add key1"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2091:        builder.add(b"key2", &val, 2, 0).await.expect("add key2"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2092:        builder.add(b"key3", &val, 3, 0).await.expect("add key3"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2093:        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2097:            .expect("open"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2106:        let res1 = reader.get(b"key1").await.expect("get key1"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2112:        let res2 = reader.get(b"key2").await.expect("get key2"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2119:        let res3 = reader.get(b"key3").await.expect("get key3"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2129:        let tmp = TempDir::new().expect("temp dir"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2133:        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2134:        builder.add(b"k", b"val1", 1, 10).await.expect("add seq 1"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2135:        builder.add(b"k", b"val2", 2, 20).await.expect("add seq 2"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2136:        builder.finish().await.expect("finish"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2138:        let reader = SstableReader::open(&path, bc).await.expect("open"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2141:        let iter_entries = reader.iter().await.expect("iter"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2158:        let mut stream = reader_arc.stream().await.expect("stream"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2159:        let e1 = stream.next().await.expect("next").expect("entry 1"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2160:        let e2 = stream.next().await.expect("next").expect("entry 2"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2161:        let e_end = stream.next().await.expect("next"); // expect #[cfg(test)]
+crates/memfuse-store/src/sstable.rs:2212:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/sstable.rs:2215:        let mut builder = SstableBuilder::create(&path).await.expect("create"); // expect
 crates/memfuse-store/src/wal.rs:1443:        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new"); // expect
 crates/memfuse-store/src/wal.rs:1444:        let bytes = entry.to_bytes().expect("serialization failed"); // expect
 crates/memfuse-store/src/wal.rs:1448:        let total_payload_size = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // expect

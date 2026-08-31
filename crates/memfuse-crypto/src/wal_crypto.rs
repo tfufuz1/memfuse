@@ -3,7 +3,7 @@
 // INVARIANTEN: EncryptedWal prepends 12-byte nonce to ciphertext. IntegrityVerifier checks sequence HMAC chain in constant time.
 // NICHT-OFFENSICHTLICH: Subtle constant-time byte comparisons prevent timing attacks. All operations lock-free & I/O-free.
 // HOTSPOTS: [35-180]
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 20260830)
+// STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
 //! Encryption at Rest layer for LSM/WAL components (WP-3.2)
 //!
@@ -502,5 +502,117 @@ mod tests {
             res,
             Err(memfuse_core::MemFuseError::InvalidInput(_))
         ));
+    }
+
+    #[test]
+    fn test_encrypted_wal_oversized_file_id() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let oversized_id = vec![0x33u8; 10_001];
+        let res = EncryptedWal::new(km, &oversized_id);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_encrypted_wal_empty_payload_roundtrip() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let wal = EncryptedWal::new(km, b"empty_payload.log").expect("wal");
+        let encrypted = wal.encrypt_chunk(b"").expect("encrypt empty");
+        assert_eq!(encrypted.len(), 12 + 16); // 12-byte nonce + 16-byte AES-GCM-SIV tag
+
+        let decrypted = wal.decrypt_chunk(&encrypted).expect("decrypt empty");
+        assert_eq!(decrypted, b"");
+    }
+
+    #[test]
+    fn test_encrypted_wal_modified_nonce_fails() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let mut encrypted = wal.encrypt_chunk(b"payload").expect("encrypt");
+        encrypted[0] ^= 0xFF; // Corrupt first byte of nonce
+
+        let res = wal.decrypt_chunk(&encrypted);
+        assert!(matches!(res, Err(memfuse_core::MemFuseError::Crypto(_))));
+    }
+
+    #[test]
+    fn test_integrity_verifier_v2_roundtrip_and_tamper() {
+        let key = b"integrity-key-32-bytes-v2------";
+        let mut verifier = IntegrityVerifier::new(key);
+
+        // Compute V2 checksum independently
+        let mut hmac = WalHmac::new(key).expect("hmac");
+        hmac.update(&[0u8; 32]); // prev_hmac
+        hmac.update(&1u64.to_le_bytes()); // seq_no
+        hmac.update(&[0u8]); // op_type = Put
+        hmac.update(b"v2_key");
+        hmac.update(b"v2_val");
+        let checksum = hmac.finalize();
+
+        let v2_entry = WalEntrySnapshot {
+            tx_id: TxId::new(1),
+            seq_no: 1,
+            op_type: 0,
+            key: b"v2_key".to_vec(),
+            value: b"v2_val".to_vec(),
+            checksum,
+            prev_hmac: [0u8; 32],
+        };
+
+        // Verification should succeed
+        assert!(verifier.verify_and_update_v2(&v2_entry, 10).is_ok());
+
+        // Verification of tampered entry should fail with WalCorruption
+        let mut tampered_v2 = v2_entry.clone();
+        tampered_v2.value = b"v2_tampered".to_vec();
+        assert!(matches!(
+            verifier.verify_and_update_v2(&tampered_v2, 20),
+            Err(memfuse_core::MemFuseError::WalCorruption { .. })
+        ));
+    }
+
+    #[test]
+    fn test_integrity_verifier_skip_hmac_verify_legacy() {
+        let key = b"integrity-key-32-bytes-legacy--";
+        let mut verifier = IntegrityVerifier::new(key);
+
+        let legacy_entry = WalEntrySnapshot {
+            tx_id: TxId::new(10),
+            seq_no: 10,
+            op_type: 0,
+            key: b"legacy_key".to_vec(),
+            value: b"legacy_val".to_vec(),
+            checksum: [0xAA; 32],
+            prev_hmac: [0u8; 32],
+        };
+
+        verifier.skip_hmac_verify_legacy(&legacy_entry);
+        assert_eq!(verifier.last_hmac, [0xAA; 32]);
+    }
+
+    #[test]
+    fn test_wal_hmac_anti_mirroring_reference_check() {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        let key = b"integrity-key-32-bytes-check---";
+        let payload = b"critical-wal-data-payload";
+
+        let mut wal_hmac = WalHmac::new(key).expect("WalHmac new");
+        wal_hmac.update(payload);
+        let actual_checksum = wal_hmac.finalize();
+
+        // Independent external reference calculation using hmac::Hmac<Sha256>
+        let mut ref_hmac = Hmac::<Sha256>::new_from_slice(key).expect("hmac ref init");
+        ref_hmac.update(b"memfuse-wal-v1"); // Domain separation string
+        ref_hmac.update(payload);
+        let expected_checksum: [u8; 32] = ref_hmac.finalize().into_bytes().into();
+
+        assert_eq!(
+            actual_checksum, expected_checksum,
+            "WalHmac checksum MUST match independent HMAC-SHA256 reference calculation!"
+        );
     }
 }

@@ -170,4 +170,73 @@ mod tests {
             _ => panic!("Expected MemFuseError::Index, got {:?}", err),
         }
     }
+
+    #[test]
+    fn test_ollama_embedder_constructors_and_builders() {
+        let embedder = OllamaEmbedder::new("http://localhost:11434", "nomic-embed-text");
+        assert_eq!(embedder.model(), "nomic-embed-text");
+        assert_eq!(embedder.config().base_url, "http://localhost:11434");
+        assert_eq!(embedder.expected_dimension, Some(768));
+
+        let embedder_defaults = OllamaEmbedder::with_defaults();
+        assert_eq!(embedder_defaults.model(), DEFAULT_EMBED_MODEL);
+
+        let config = OllamaConfig {
+            base_url: "http://localhost:11434".into(),
+            model: "mxbai-embed-large".into(),
+            ..Default::default()
+        };
+        let embedder_config = OllamaEmbedder::with_config(config);
+        assert_eq!(embedder_config.model(), "mxbai-embed-large");
+        assert_eq!(embedder_config.expected_dimension, Some(1024));
+
+        let configured = embedder
+            .with_concurrency(0) // should set minimum to 1
+            .with_expected_dimension(512);
+        assert_eq!(configured.concurrency, 1);
+        assert_eq!(configured.expected_dimension, Some(512));
+    }
+
+    #[tokio::test]
+    async fn test_embed_single_success_and_batch_dimension_mismatch() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            let mut count = 0;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                count += 1;
+
+                let body = if count == 1 {
+                    serde_json::json!({
+                        "embedding": [0.1, 0.2]
+                    })
+                } else {
+                    serde_json::json!({
+                        "embeddings": [[0.1, 0.2], [0.3]]
+                    })
+                }
+                .to_string();
+
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let embedder = OllamaEmbedder::new(&server_url, "custom-model").with_expected_dimension(2);
+
+        let vec = embedder.embed("hello").await.unwrap();
+        assert_eq!(vec, vec![0.1, 0.2]);
+
+        let batch_err = embedder.embed_batch(&["a", "b"]).await.unwrap_err();
+        assert!(matches!(batch_err, MemFuseError::Index(_)));
+    }
 }
