@@ -47,3 +47,75 @@ def test_gil_released_during_search(tmp_path):
 
     # The background Python thread must have been able to run concurrently
     assert counter[0] > 0, "Python thread was completely blocked by Rust operations (GIL not released)"
+
+
+def test_gil_released_during_batch_insert(tmp_path):
+    path = str(tmp_path / "gil_batch_db")
+    db = memfuse.open(path, dimension=128)
+
+    counter = [0]
+    stop_flag = False
+
+    def python_cpu_worker():
+        while not stop_flag:
+            counter[0] += 1
+            time.sleep(0.0001)
+
+    t_py = threading.Thread(target=python_cpu_worker)
+    t_py.start()
+
+    def rust_batch_worker(thread_idx):
+        batch = [
+            (f"doc_t{thread_idx}_{i}", np.random.rand(128).astype(np.float32), {"idx": i})
+            for i in range(100)
+        ]
+        db.insert_many(batch)
+
+    threads = [threading.Thread(target=rust_batch_worker, args=(i,)) for i in range(4)]
+
+    for t in threads:
+        t.start()
+
+    for t in threads:
+        t.join()
+
+    stop_flag = True
+    t_py.join()
+
+    assert counter[0] > 0, "Python thread was completely blocked by batch insert operations (GIL not released)"
+
+
+def test_gil_released_during_batch_upsert(tmp_path):
+    path = str(tmp_path / "gil_upsert_db")
+    db = memfuse.open(path, dimension=128)
+
+    counter = [0]
+    stop_flag = False
+
+    def python_cpu_worker():
+        while not stop_flag:
+            counter[0] += 1
+            time.sleep(0.0001)
+
+    t_py = threading.Thread(target=python_cpu_worker)
+    t_py.start()
+
+    def rust_upsert_worker(thread_idx):
+        batch = [
+            (f"doc_u{thread_idx}_{i}", np.random.rand(128).astype(np.float32), {"idx": i})
+            for i in range(100)
+        ]
+        db.upsert_many(batch)
+
+    threads = [threading.Thread(target=rust_upsert_worker, args=(i,)) for i in range(4)]
+
+    for t in threads:
+        t.start()
+
+    for t in threads:
+        t.join()
+
+    stop_flag = True
+    t_py.join()
+
+    assert counter[0] > 0, "Python thread was completely blocked by batch upsert operations (GIL not released)"

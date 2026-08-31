@@ -1111,13 +1111,7 @@ mod tests {
         }
     }
 
-    // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
-    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CORE-001) (TS: 2026-08-30T22:00:00Z) (SESSION: b8e4f1a2)
-    // PRÜFER-KONTEXT: FRESH
-    // BEFUND: Benchmark and collision tests verified for DocId key truncation.
-    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CORE-001) (TS: 2026-08-30T22:05:00Z) (SESSION: c9f5e2b3)
-    // PRÜFER-KONTEXT: FRESH
-    // BEFUND: Independent review pass confirmed collision resilience at 100k samples.
+    // ANCHOR[TEST:CORE-001] STATUS:OPEN (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
     // Benchmark & Collision Test suite for DocId::from_key 64-bit BLAKE3 hash truncation
     #[test]
     fn test_doc_id_from_key_collisions_and_distribution() {
