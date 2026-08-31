@@ -4,14 +4,6 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/event_source.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Continuous event stream abstractions delivering telemetry/trigger events to agents. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/graph.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Declarative StateGraph definition routing workflow step transitions. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate entry point exposing audit, context, engine, event_source, graph, and step submodules. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/src/step.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Step result and tool trait definitions for agent workflows. |
-| `TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)` | `crates/memfuse-agent/tests/coverage_tests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Comprehensive test coverage for orchestrator engine error paths and state transitions. |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/benches/audit_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit Benchmark Suite zur Ermittlung von Durchsatz, Speedup, Latenz-Perzentilen, Pareto-Front und RAM-Footprint |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/quantize_persistence_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für SQ8 Kendall-Tau Rangkorrelation, Persistence Roundtrips und Mmap Fault-Tolerance |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/recall_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für HNSW & DiskANN Graph-Korrektheit & Brute-Force Recall |
@@ -22,6 +14,12 @@
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/morphology.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen. |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
 | `TS:2026-08-30T21:55:29Z (SESSION: 10569099)` | `crates/memfuse-index/src/quantize.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | 8-Bit Skalare Quantisierung (SQ8) mit pro-Dimension Min/Max Skalierung. |
+| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
+| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
+| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
+| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/event_source.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Continuous event stream abstractions delivering telemetry/trigger events to agents. |
+| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/graph.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Declarative StateGraph definition routing workflow step transitions. |
+| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate entry point exposing audit, context, engine, event_source, graph, and step submodules. |
 | `TS:2026-08-30T21:15:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection. |
 | `TS:2026-08-30T21:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/query_builder.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fluent HybridQueryBuilder Fassade für Konsolidierung aller Search-Signaturen. |
 | `TS:2026-08-30T19:50:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/benches/crypto_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Criterion benchmark suite for memfuse-crypto throughput and latency measurement. |
@@ -115,6 +113,7 @@
 | `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection/relate.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/context_compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
+| `2026-08-27T00:00:00Z` | `crates/memfuse-agent/src/lib.rs` | `AI-TAG` | `AGT-AGENT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/crud.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/mod.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
