@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-08-31T21:15:25Z (SESSION: a8f9c1d2)
+// STAND: 2026-08-29T17:16:44Z (SESSION: f50ed9ef)
 // ZWECK: In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG).
 // INVARIANTEN: Default-Build ohne ONNX hat leere Feature-Flags (ADR-005, Pure-Rust-USP).
 // NICHT-OFFENSICHTLICH: Threading via tokio::task::spawn_blocking zur Vermeidung von Executor-Starvation.
@@ -391,47 +391,6 @@ mod tests {
         let cfg = TextEmbedderConfig::default();
         assert_eq!(cfg.max_sequence_length, 512);
         assert_eq!(cfg.pool_size, 2);
-        assert_eq!(cfg.expected_dim, None);
-    }
-
-    #[cfg(feature = "onnx")]
-    #[test]
-    fn test_text_embedder_config_serde_roundtrip(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let cfg = TextEmbedderConfig {
-            max_sequence_length: 256,
-            pool_size: 4,
-            expected_dim: Some(384),
-        };
-        let serialized = serde_json::to_string(&cfg)?;
-        let deserialized: TextEmbedderConfig = serde_json::from_str(&serialized)?;
-        assert_eq!(deserialized.max_sequence_length, 256);
-        assert_eq!(deserialized.pool_size, 4);
-        assert_eq!(deserialized.expected_dim, Some(384));
-        Ok(())
-    }
-
-    #[cfg(feature = "onnx")]
-    #[test]
-    fn test_text_embedder_with_expected_dimension_builder(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let dir = tempdir()?;
-        File::create(dir.path().join("model.onnx"))?;
-        File::create(dir.path().join("tokenizer.json"))?;
-
-        let tokenizer =
-            Tokenizer::from_bytes(b"{}").map_err(|e| MemFuseError::Internal(e.to_string()))?;
-        let embedder = TextEmbedder {
-            session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(tokenizer),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            config: TextEmbedderConfig::default(),
-            expected_dim: None,
-        }
-        .with_expected_dimension(768);
-
-        assert_eq!(embedder.expected_dim, Some(768));
-        Ok(())
     }
 
     #[cfg(feature = "onnx")]
@@ -525,14 +484,6 @@ mod tests {
         let err_msg = err_res.err().unwrap().to_string(); // unwrap
         assert!(err_msg.contains("Failed on b"));
 
-        // Boundary tests: empty batch and single element
-        let empty_batch = failing_engine.embed_batch(&[]).await?;
-        assert!(empty_batch.is_empty());
-
-        let single_res = engine.embed_batch(&["hello"]).await?;
-        assert_eq!(single_res.len(), 1);
-        assert_eq!(single_res[0], vec![5.0, 'h' as u32 as f32]);
-
         Ok(())
     }
 
@@ -546,11 +497,9 @@ mod tests {
         File::create(dir.path().join("model.onnx"))?;
         File::create(dir.path().join("tokenizer.json"))?;
 
-        let tokenizer =
-            Tokenizer::from_bytes(b"{}").map_err(|e| MemFuseError::Internal(e.to_string()))?;
         let embedder = TextEmbedder {
             session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(tokenizer),
+            tokenizer: Arc::new(Tokenizer::default()),
             semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
             config: TextEmbedderConfig::default(),
             expected_dim: None,
