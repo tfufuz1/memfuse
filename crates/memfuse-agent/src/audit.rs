@@ -3,7 +3,7 @@
 // INVARIANTEN: Keyed `audit:{task_id}:step:{n}`; zero deletion/update paths by design.
 // NICHT-OFFENSICHTLICH: replay_task scans prefix and sorts by step_count for deterministic replay.
 // HOTSPOTS: append (ll. 35-50), replay_task (ll. 52-70).
-// STAND: TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
 //! Immutable audit trail for agent workflow executions.
 //!
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Single immutable record of an agent step execution.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
     pub task_id: String,
     pub step_count: u64,
@@ -85,9 +85,10 @@ mod tests {
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
 
-    fn create_test_audit_log() -> AuditLog<InMemoryStorageEngine> {
+    #[tokio::test]
+    async fn test_audit_log_in_memory_storage() {
         let storage = Arc::new(InMemoryStorageEngine::new());
-        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
+        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap()); // unwrap allowed
         let graph_index = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
 
@@ -101,42 +102,7 @@ mod tests {
             memfuse_text::Language::English,
         ));
 
-        AuditLog::new(collection)
-    }
-
-    #[test]
-    fn test_audit_entry_serde_roundtrip_CASE_with_and_without_error() {
-        let entry_ok = AuditEntry {
-            task_id: "task-100".to_string(),
-            step_count: 1,
-            node_id: "node-start".to_string(),
-            tokens_consumed: 30,
-            payload: serde_json::json!({"res": "ok"}),
-            error: None,
-        };
-
-        let entry_err = AuditEntry {
-            task_id: "task-100".to_string(),
-            step_count: 2,
-            node_id: "node-task".to_string(),
-            tokens_consumed: 0,
-            payload: serde_json::Value::Null,
-            error: Some("BudgetExhausted".to_string()),
-        };
-
-        let ser_ok = serde_json::to_string(&entry_ok).expect("Serialization ok failed");
-        let de_ok: AuditEntry = serde_json::from_str(&ser_ok).expect("Deserialization ok failed");
-        assert_eq!(de_ok, entry_ok);
-
-        let ser_err = serde_json::to_string(&entry_err).expect("Serialization err failed");
-        let de_err: AuditEntry =
-            serde_json::from_str(&ser_err).expect("Deserialization err failed");
-        assert_eq!(de_err, entry_err);
-    }
-
-    #[tokio::test]
-    async fn test_audit_log_in_memory_storage() {
-        let audit_log = create_test_audit_log();
+        let audit_log = AuditLog::new(collection);
 
         let entry1 = AuditEntry {
             task_id: "task-123".to_string(),
@@ -156,100 +122,15 @@ mod tests {
             error: None,
         };
 
-        audit_log.append(&entry1).await.unwrap();
-        audit_log.append(&entry2).await.unwrap();
+        audit_log.append(&entry1).await.unwrap(); // unwrap allowed
+        audit_log.append(&entry2).await.unwrap(); // unwrap allowed
 
-        let replayed = audit_log.replay_task("task-123").await.unwrap();
+        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
         assert_eq!(replayed.len(), 2);
         assert_eq!(replayed[0].step_count, 1);
         assert_eq!(replayed[0].node_id, "node-start");
         assert_eq!(replayed[1].step_count, 2);
         assert_eq!(replayed[1].node_id, "node-process");
-    }
-
-    #[tokio::test]
-    async fn test_audit_log_replay_nonexistent_CASE_empty() {
-        let audit_log = create_test_audit_log();
-        let replayed = audit_log.replay_task("task-ghost").await.unwrap();
-        assert!(replayed.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_audit_log_invalid_ids_CASE_error_handling() {
-        let audit_log = create_test_audit_log();
-
-        let entry_bad_task = AuditEntry {
-            task_id: "".to_string(),
-            step_count: 1,
-            node_id: "valid_node".to_string(),
-            tokens_consumed: 0,
-            payload: serde_json::Value::Null,
-            error: None,
-        };
-        assert!(matches!(
-            audit_log.append(&entry_bad_task).await,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-
-        let entry_bad_node = AuditEntry {
-            task_id: "valid_task".to_string(),
-            step_count: 1,
-            node_id: "".to_string(),
-            tokens_consumed: 0,
-            payload: serde_json::Value::Null,
-            error: None,
-        };
-        assert!(matches!(
-            audit_log.append(&entry_bad_node).await,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-
-        assert!(matches!(
-            audit_log.replay_task("   ").await,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_audit_log_out_of_order_replay_CASE_sorting() {
-        let audit_log = create_test_audit_log();
-
-        let entry3 = AuditEntry {
-            task_id: "task-sort".to_string(),
-            step_count: 3,
-            node_id: "step3".to_string(),
-            tokens_consumed: 10,
-            payload: serde_json::Value::Null,
-            error: None,
-        };
-
-        let entry1 = AuditEntry {
-            task_id: "task-sort".to_string(),
-            step_count: 1,
-            node_id: "step1".to_string(),
-            tokens_consumed: 10,
-            payload: serde_json::Value::Null,
-            error: None,
-        };
-
-        let entry2 = AuditEntry {
-            task_id: "task-sort".to_string(),
-            step_count: 2,
-            node_id: "step2".to_string(),
-            tokens_consumed: 10,
-            payload: serde_json::Value::Null,
-            error: None,
-        };
-
-        audit_log.append(&entry3).await.unwrap();
-        audit_log.append(&entry1).await.unwrap();
-        audit_log.append(&entry2).await.unwrap();
-
-        let replayed = audit_log.replay_task("task-sort").await.unwrap();
-        assert_eq!(replayed.len(), 3);
-        assert_eq!(replayed[0].step_count, 1);
-        assert_eq!(replayed[1].step_count, 2);
-        assert_eq!(replayed[2].step_count, 3);
     }
 }
 

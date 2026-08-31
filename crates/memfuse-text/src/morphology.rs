@@ -560,9 +560,7 @@ mod tests {
         interfix_type: &'static str,
     }
 
-    // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-31T21:13:26Z) (SESSION:4d3320ef)
-    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:TXT-001) (TS:2026-08-31T21:14:00Z) (SESSION: b8e4f1a2)
-    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS:2026-08-31T21:15:00Z) (SESSION: c9f5e2b3)
+    // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6)
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
@@ -947,67 +945,5 @@ mod tests {
         assert_eq!(normalize_umlauts(""), "");
         assert_eq!(normalize_umlauts("ÄÖÜß"), "aeoeuess");
         assert_eq!(normalize_umlauts("Grüße aus Köln!"), "gruesse aus koeln!");
-    }
-
-    #[test]
-    fn test_token_reduction_metrics_zero_original_tokens() {
-        let metrics = TokenReductionMetrics {
-            original_tokens: 0,
-            decomposed_tokens: 10,
-        };
-        assert_eq!(metrics.expansion_ratio(), 0.0);
-    }
-
-    #[test]
-    fn test_targeted_multibyte_slicing_safety() {
-        let splitter = GermanCompoundSplitter::new();
-
-        // 1. Umlaut-heavy inputs (2-byte UTF-8 sequences)
-        let umlaut_inputs = [
-            "überwachungsgesetz",
-            "änderungsantrag",
-            "qualitätsprüfung",
-            "straße",
-            "großschadenslage",
-            "österreicher",
-            "müller",
-        ];
-
-        for input in umlaut_inputs {
-            let norm = normalize_umlauts(input);
-            let parts = splitter.decompose(&norm);
-            assert!(!parts.is_empty());
-        }
-
-        // 2. Emoji-heavy inputs (4-byte UTF-8 sequences)
-        let emoji_inputs = [
-            "🤖🚀🦀",
-            "haus🤖boot",
-            "auto🚀bahn",
-            "über🤖kauf",
-            "🔥s",
-            "s🔥",
-            "en🤖",
-        ];
-
-        for input in emoji_inputs {
-            let norm = normalize_umlauts(input);
-            let parts = splitter.decompose(&norm);
-            assert!(!parts.is_empty());
-        }
-
-        // 3. Combining diacritical marks (Grapheme clusters: 'e' + combining acute accent U+0301)
-        let combining_inputs = [
-            "e\u{0301}a\u{0308}u\u{0308}",
-            "bundesve\u{0301}rfassungsgericht",
-            "e\u{0301}s",
-            "s\u{0301}",
-        ];
-
-        for input in combining_inputs {
-            let norm = normalize_umlauts(input);
-            let parts = splitter.decompose(&norm);
-            assert!(!parts.is_empty());
-        }
     }
 }

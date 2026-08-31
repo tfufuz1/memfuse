@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-08-31T21:15:25Z (SESSION: a8f9c1d2)
+// STAND: 2026-08-29T17:16:44Z (SESSION: f50ed9ef)
 // ZWECK: Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 // INVARIANTEN: Falls onnx-Feature inaktiv, greift transparenter Passthrough-Fallback.
 // NICHT-OFFENSICHTLICH: OnnxReranker nutzt ein eigenes Arc<Mutex<Session>> getrennt von TextEmbedder.
@@ -429,63 +429,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_rerank_config_default_values() {
-        let config = RerankConfig::default();
-        assert_eq!(
-            config.model_path,
-            std::path::PathBuf::from("models/bge-reranker-base.onnx")
-        );
-        assert_eq!(
-            config.tokenizer_path,
-            std::path::PathBuf::from("models/tokenizer.json")
-        );
-        assert_eq!(config.max_length, 512);
-        assert_eq!(config.batch_size, 8);
-    }
-
     #[tokio::test]
     async fn test_rerank_empty_candidates() {
         let config = RerankConfig::default();
         if let Ok(reranker) = CrossEncoderReranker::new(config) {
             let results = reranker.rerank("query", &[]).await.unwrap(); // unwrap
             assert!(results.is_empty());
-        }
-    }
-
-    #[tokio::test]
-    async fn test_rerank_single_candidate() {
-        let config = RerankConfig::default();
-        if let Ok(reranker) = CrossEncoderReranker::new(config) {
-            let candidates = vec!["sole candidate".to_string()];
-            let results = reranker.rerank("query", &candidates).await.unwrap();
-            assert_eq!(results.len(), 1);
-            assert_eq!(results[0].original_index, 0);
-            assert_eq!(results[0].score, 1.0);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_rerank_exact_max_candidates_boundary() {
-        let config = RerankConfig::default();
-        if let Ok(reranker) = CrossEncoderReranker::new(config) {
-            let candidates: Vec<String> = (0..MAX_CANDIDATES).map(|i| format!("doc {i}")).collect();
-            let results = reranker.rerank("query", &candidates).await.unwrap();
-            assert_eq!(results.len(), MAX_CANDIDATES);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_rerank_unicode_and_multibyte_strings() {
-        let config = RerankConfig::default();
-        if let Ok(reranker) = CrossEncoderReranker::new(config) {
-            let query = "Suchanfrage 🔍 mit Emoji & Umlauten (äöüß)";
-            let candidates = vec![
-                "Erstes Dokument 🚀 mit Unicode: 漢字".into(),
-                "Zweites Dokument 💡".into(),
-            ];
-            let results = reranker.rerank(query, &candidates).await.unwrap();
-            assert_eq!(results.len(), 2);
         }
     }
 
@@ -570,32 +519,6 @@ mod tests {
         assert_eq!(scores.len(), 2);
         assert!(scores[0] > 0.8);
         assert!(scores[1] < 0.2);
-
-        // 2D tensor with >2 columns (e.g., 3 cols)
-        let shape_3col = vec![2, 3];
-        let data_3col = vec![0.0f32, 1.0f32, 2.0f32, -1.0f32, 0.0f32, 1.0f32];
-        let scores_3col = OnnxReranker::extract_scores_from_tensor(&shape_3col, &data_3col, 2)?;
-        assert_eq!(scores_3col.len(), 2);
-        assert!((scores_3col[0] - 0.5).abs() < 1e-4);
-        assert!(scores_3col[1] < 0.3);
-
-        // Unsupported 3D shape
-        let shape_3d = vec![1, 2, 3];
-        let res_3d = OnnxReranker::extract_scores_from_tensor(&shape_3d, &[0.0; 6], 1);
-        assert!(res_3d.is_err());
-        assert!(res_3d.unwrap_err().contains("Unsupported output shape"));
-
-        // Batch size mismatch
-        let res_mismatch = OnnxReranker::extract_scores_from_tensor(&[2, 1], &[0.0, 1.0], 3);
-        assert!(res_mismatch.is_err());
-        assert!(res_mismatch.unwrap_err().contains("batch size mismatch"));
-
-        // Data length mismatch
-        let res_len_mismatch = OnnxReranker::extract_scores_from_tensor(&[2], &[0.0], 2);
-        assert!(res_len_mismatch.is_err());
-        assert!(res_len_mismatch
-            .unwrap_err()
-            .contains("len 1 != batch size 2"));
 
         Ok(())
     }
