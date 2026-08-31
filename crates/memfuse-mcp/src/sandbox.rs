@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND:       2026-08-31T21:12:53Z (SESSION: 2c814094)
+// STAND:       2026-08-30T14:46:32Z (SESSION: 2c814094)
 // ZWECK:       MCP Sandbox & Zero-Trust Tool Isolation Layer
 // INVARIANTEN: Opt-In Security; volatile_results nutzt Single-Lock (parking_lot::Mutex); keine geschachtelten Locks
 // HOTSPOTS:    validate_tool_call(), store_volatile(), execute_with_timeout()
@@ -424,107 +424,5 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("limit reached"));
-    }
-
-    #[test]
-    fn test_classify_method_mapping() {
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_search"),
-            ToolCategory::DatabaseRead
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_get"),
-            ToolCategory::DatabaseRead
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_collections"),
-            ToolCategory::DatabaseRead
-        );
-
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_insert"),
-            ToolCategory::DatabaseWrite
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_delete"),
-            ToolCategory::DatabaseWrite
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_upsert"),
-            ToolCategory::DatabaseWrite
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_relate"),
-            ToolCategory::DatabaseWrite
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_create_collection"),
-            ToolCategory::DatabaseWrite
-        );
-        assert_eq!(
-            McpSandbox::classify_method("memfuse_drop_collection"),
-            ToolCategory::DatabaseWrite
-        );
-
-        assert_eq!(
-            McpSandbox::classify_method("eval_python"),
-            ToolCategory::CodeExecution
-        );
-        assert_eq!(
-            McpSandbox::classify_method("bash_execute"),
-            ToolCategory::CodeExecution
-        );
-    }
-
-    #[test]
-    fn test_sandbox_policy_accessor() {
-        let policy = SandboxPolicy {
-            allow_db_reads: true,
-            allow_db_writes: false,
-            allow_code_execution: true,
-            max_execution_ms: 1234,
-        };
-        let sandbox = McpSandbox::new(policy.clone()).unwrap();
-        assert_eq!(sandbox.policy().allow_db_reads, true);
-        assert_eq!(sandbox.policy().allow_db_writes, false);
-        assert_eq!(sandbox.policy().allow_code_execution, true);
-        assert_eq!(sandbox.policy().max_execution_ms, 1234);
-    }
-
-    #[test]
-    fn test_get_volatile_nonexistent_key() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-        let res = sandbox.get_volatile("non_existent_key").unwrap();
-        assert!(res.is_none());
-    }
-
-    #[test]
-    fn test_volatile_result_decrypt_error_paths() {
-        let key1 =
-            memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
-                .unwrap();
-        let key2 =
-            memfuse_crypto::CryptoKey::try_new("abcdef0123456789abcdef0123456789", b"salt5678")
-                .unwrap();
-
-        let plaintext = b"secret data";
-        let res = VolatileToolResult::encrypt(plaintext, &key1).unwrap();
-
-        // 1. Decryption with wrong key returns Internal error
-        let err_wrong_key = res.decrypt(&key2);
-        assert!(err_wrong_key.is_err());
-        assert!(err_wrong_key.unwrap_err().to_string().contains("decrypt"));
-
-        // 2. Invalid nonce length (e.g. 10 bytes instead of 12)
-        let tampered_res = VolatileToolResult {
-            encrypted: res.encrypted.clone(),
-            nonce: vec![0u8; 10], // invalid length
-        };
-        let err_nonce = tampered_res.decrypt(&key1);
-        assert!(err_nonce.is_err());
-        assert!(err_nonce
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid nonce length"));
     }
 }

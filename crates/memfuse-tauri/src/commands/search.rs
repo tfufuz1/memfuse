@@ -15,7 +15,6 @@ pub struct SearchResultDto {
 
 const MAX_QUERY_LEN: usize = 65_536; // 64 KiB
 
-#[allow(deprecated)]
 #[tauri::command]
 pub async fn hybrid_search(
     state: State<'_, AppState>,
