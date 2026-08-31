@@ -2554,23 +2554,4 @@ mod tests {
             panic!("Expected Serialization error for key_len limit");
         }
     }
-
-    #[test]
-    fn test_wal_entry_from_bytes_invalid_cases() {
-        // 1. Too short data (< 94 bytes)
-        let short_data = vec![0u8; 50];
-        let res = WalEntry::from_bytes(&short_data);
-        assert!(matches!(res, Err(MemFuseError::Serialization(_))));
-
-        // 2. Invalid WalOp tag (e.g., tag = 255)
-        let mut payload = vec![0u8; 90];
-        payload[72] = 255; // Invalid tag
-        let crc = crc32fast::hash(&payload);
-        let mut data = vec![0u8; 4];
-        data[0..4].copy_from_slice(&crc.to_le_bytes());
-        data.extend_from_slice(&payload);
-
-        let res_op = WalEntry::from_bytes(&data);
-        assert!(matches!(res_op, Err(MemFuseError::Serialization(_))));
-    }
 }

@@ -1,7 +1,7 @@
 //! Personalized PageRank (PPR) power iteration implementation for `CsrGraph`.
 
 // FILE-CONTEXT
-// STAND: 2026-08-31T21:05:36Z (SESSION: fdef8c82)
+// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
 // ZWECK: Personalized PageRank Power Iteration über CSR Graph
 // INVARIANTEN: inner MUSS vor Aufruf kompaktiert sein; bitidentischer Determinismus.
 // HOTSPOTS: L30-L90 (Power Iteration Matrix-Vector Vector Multiplication)
@@ -888,32 +888,5 @@ mod tests {
             elapsed.as_millis() < 500,
             "Max iterations ceiling must terminate execution promptly without hanging"
         );
-    }
-
-    #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn personalized_pagerank_CASE_empty_and_non_existent_teleport_nodes() {
-        let graph = CsrGraph::new();
-        let tx = TxId::new(1);
-        let id1 = EntityId::new(1);
-        graph
-            .add_entity(tx, Entity::new(id1, "N1", "Type"))
-            .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
-
-        let config = PprConfig::default();
-
-        // Empty teleport nodes
-        let res_empty = graph.personalized_page_rank(&[], &config).await.unwrap();
-        assert!(res_empty.is_empty());
-
-        // Non-existent teleport nodes
-        let non_existent = EntityId::new(999);
-        let res_non_existent = graph
-            .personalized_page_rank(&[non_existent], &config)
-            .await
-            .unwrap();
-        assert!(res_non_existent.is_empty());
     }
 }

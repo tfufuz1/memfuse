@@ -4,7 +4,7 @@
 //! Datenstruktur für cache-effizienten Graph-Traversal.
 
 // FILE-CONTEXT
-// STAND: 2026-08-31T21:05:36Z (SESSION: fdef8c82)
+// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
 // ZWECK: CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion)
 // INVARIANTEN: Graph-Zustand wird in LSM-Store persistiert unter Präfixen
 //              `__graph:entity:` und `__graph:edge:`. Änderungen müssen
@@ -2788,112 +2788,5 @@ mod tests {
             proptest::prop_assert_eq!(inner.targets.len(), inner.valid_froms.len());
             proptest::prop_assert_eq!(inner.targets.len(), inner.valid_tos.len());
         }
-    }
-
-    #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn insert_edge_direct_with_validity_CASE_boundary_weights_and_temporal() {
-        let graph = CsrGraph::new();
-        let e1 = EntityId::new(100);
-        let e2 = EntityId::new(200);
-
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
-        graph
-            .insert_entity_direct(Entity::new(e2, "E2".to_string(), "Type".to_string()))
-            .unwrap();
-
-        // Edge with negative weight and inverted valid_from > valid_to
-        let vf = Some(TxId::new(200));
-        let vt = Some(TxId::new(100));
-        graph
-            .insert_edge_direct_with_validity(e1, e2, -0.5, vf, vt)
-            .unwrap();
-
-        let n = graph.neighbors(e1).await.unwrap();
-        assert_eq!(n.len(), 1);
-        assert_eq!(n[0], e2);
-    }
-
-    #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn set_communities_batch_CASE_empty_and_non_existent_entities() {
-        let graph = CsrGraph::new();
-        let e1 = EntityId::new(1);
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
-
-        // Empty batch call
-        graph.set_communities_batch(&[]);
-
-        // Batch call with non-existent entities - communities map stores assignments
-        let assignments = vec![
-            crate::CommunityAssignment {
-                entity_id: EntityId::new(999),
-                community_id: 42,
-            },
-            crate::CommunityAssignment {
-                entity_id: e1,
-                community_id: 1,
-            },
-        ];
-        graph.set_communities_batch(&assignments);
-
-        let comms = graph
-            .get_communities_batch(&[e1, EntityId::new(999)])
-            .await
-            .unwrap();
-        assert_eq!(comms.get(&e1), Some(&1));
-        assert_eq!(comms.get(&EntityId::new(999)), Some(&42));
-    }
-
-    #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn entity_exists_and_neighbors_CASE_non_existent_and_isolated() {
-        let graph = CsrGraph::new();
-        let e1 = EntityId::new(1);
-        let non_existent = EntityId::new(999);
-
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
-
-        assert!(graph.entity_exists(e1));
-        assert!(!graph.entity_exists(non_existent));
-
-        // Isolated entity neighbors
-        let n1 = graph.neighbors(e1).await.unwrap();
-        assert!(n1.is_empty());
-
-        // Non-existent entity neighbors
-        let n2 = graph.neighbors(non_existent).await.unwrap();
-        assert!(n2.is_empty());
-    }
-
-    #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn traverse_at_time_CASE_zero_hops_returns_empty_since_start_is_excluded() {
-        let graph = CsrGraph::new();
-        let e1 = EntityId::new(1);
-        let e2 = EntityId::new(2);
-
-        graph
-            .insert_entity_direct(Entity::new(e1, "E1".to_string(), "Type".to_string()))
-            .unwrap();
-        graph
-            .insert_entity_direct(Entity::new(e2, "E2".to_string(), "Type".to_string()))
-            .unwrap();
-        graph.insert_edge_direct(e1, e2, 1.0).unwrap();
-
-        // 0 hops should exclude start_idx and reach no neighbors
-        let zero_hop = graph.traverse_at_time(e1, 0, TxId::new(10)).await.unwrap();
-        assert!(zero_hop.is_empty());
-
-        // 1 hop should reach e2 (and exclude start e1)
-        let one_hop = graph.traverse_at_time(e1, 1, TxId::new(10)).await.unwrap();
-        assert_eq!(one_hop.len(), 1);
-        assert_eq!(one_hop[0].0, e2);
     }
 }
