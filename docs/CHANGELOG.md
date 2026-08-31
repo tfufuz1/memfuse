@@ -16,6 +16,8 @@
 | `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/event_source.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Continuous event stream abstractions delivering telemetry/trigger events to agents. |
 | `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/graph.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Declarative StateGraph definition routing workflow step transitions. |
 | `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate entry point exposing audit, context, engine, event_source, graph, and step submodules. |
+| `TS:2026-08-30T21:15:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection. |
+| `TS:2026-08-30T21:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/query_builder.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fluent HybridQueryBuilder Fassade für Konsolidierung aller Search-Signaturen. |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
@@ -30,7 +32,6 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/crud.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CRUD-Operationen (Insert, Upsert, Update, Delete, Get) für Collection. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/maintenance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Wartungs-, Reparatur- und Bereinigungsoperationen (Index repair, Expiry reaper, Community detection). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Sammlung/Collection-Namespace Verwaltung und gemeinsame Hilfsfunktionen. |
-| `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/tests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Unit-Tests für Collection-CRUD, Indizierung, Repair und Grenzwerte. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kontextfenster-Verwaltung und Token-Budgetierung für RAG-Prompts. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/context_compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kontextkompaktierung und Zusammenfassung langer Gesprächs- und Dokumentverläufe. |
