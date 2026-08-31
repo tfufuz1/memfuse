@@ -166,6 +166,14 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                 message: msg.clone(),
                 details: None,
             },
+            MemFuseError::EmbeddingDimensionMismatch { expected, got } => Self {
+                kind: "EmbeddingDimensionMismatch".to_string(),
+                message: err.to_string(),
+                details: Some(serde_json::json!({
+                    "expected": expected,
+                    "got": got,
+                })),
+            },
             MemFuseError::HnswConnectivityDegraded { deleted_ratio } => Self {
                 kind: "HnswConnectivityDegraded".to_string(),
                 message: err.to_string(),
@@ -298,6 +306,13 @@ mod tests {
                 "InvalidSequenceNumber",
             ),
             (MemFuseError::Index("test".into()), "Index"),
+            (
+                MemFuseError::EmbeddingDimensionMismatch {
+                    expected: 1536,
+                    got: 768,
+                },
+                "EmbeddingDimensionMismatch",
+            ),
             (
                 MemFuseError::HnswConnectivityDegraded { deleted_ratio: 0.2 },
                 "HnswConnectivityDegraded",

@@ -36,8 +36,14 @@
 //!     Some(serde_json::json!({"topic": "rust"})),
 //! ).await?;
 //!
-//! // Semantic search
-//! let results = db.search(&[0.1, 0.2, 0.3, 0.4], 5).await?;
+//! // Semantic search (via Collection::query() builder facade)
+//! let col = db.collection("default").await?;
+//! let results = col
+//!     .query()
+//!     .embedding(&[0.1, 0.2, 0.3, 0.4])
+//!     .k(5)
+//!     .execute()
+//!     .await?;
 //! for result in &results {
 //!     println!("{}: score={:.3}", result.id, result.score);
 //! }
@@ -94,6 +100,7 @@ pub mod transaction;
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
+pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]
 pub use filter::MetadataFilter;

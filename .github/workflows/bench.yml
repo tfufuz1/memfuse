@@ -26,13 +26,13 @@ jobs:
       - name: Benchmark Harness Dry-Run Test
         run: |
           # Verify benchmark compilation and harness functionality without long running timings
-          MEMFUSE_SCALE_TIERS=10,50 cargo bench -p memfuse-db -- --test
+          MEMFUSE_SCALE_TIERS=10,50 cargo bench --locked -p memfuse-db -- --test
 
       - name: Run Benchmark Group Baseline (Informative)
         run: |
           # Criterion baseline generation for PR artifacts
           # Note: A future session will add comparison gates against main branch baseline with tolerance bands
-          MEMFUSE_SCALE_TIERS=100,500 cargo bench -p memfuse-db --bench scale_bench -- --save-baseline pr-${{ github.event.number || github.sha }}
+          MEMFUSE_SCALE_TIERS=100,500 cargo bench --locked -p memfuse-db --bench scale_bench -- --save-baseline pr-${{ github.event.number || github.sha }}
 
       - name: Upload Benchmark Results Artifact
         uses: actions/upload-artifact@v4

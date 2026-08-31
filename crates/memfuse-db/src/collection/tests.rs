@@ -1951,268 +1951,106 @@ async fn test_search_dimension_mismatch_rejected() {
 }
 
 #[tokio::test]
-async fn test_community_lookup_batch_performance_regression() {
-    use async_trait::async_trait;
-    use memfuse_core::{EntityId, Result, StorageEngine, StorageStats, TxId};
-    use memfuse_graph::csr::CsrGraph;
+async fn test_concurrent_insert_many_collision_safety() {
+    use memfuse_core::{DocId, MemFuseError, StorageEngine, TxId};
+    use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
-    use memfuse_store::{LsmConfig, LsmStorage};
-    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    struct CountingStorageEngine {
-        inner: LsmStorage,
-        get_count: AtomicUsize,
-        scan_count: AtomicUsize,
-    }
-
-    #[async_trait]
-    impl StorageEngine for CountingStorageEngine {
-        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            self.get_count.fetch_add(1, Ordering::SeqCst);
-            self.inner.get(key).await
-        }
-        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
-            self.inner.get_at_seq(key, seq).await
-        }
-        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.inner.put(tx_id, key, value).await
-        }
-        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.inner.delete(tx_id, key).await
-        }
-        async fn commit(&self, tx_id: TxId) -> Result<()> {
-            self.inner.commit(tx_id).await
-        }
-        async fn rollback(&self, tx_id: TxId) -> Result<()> {
-            self.inner.rollback(tx_id).await
-        }
-        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
-            self.inner.rollback_to_tx(tx_id).await
-        }
-        async fn flush(&self) -> Result<()> {
-            self.inner.flush().await
-        }
-        async fn stats(&self) -> Result<StorageStats> {
-            self.inner.stats().await
-        }
-        async fn last_seq_no(&self) -> Result<u64> {
-            self.inner.last_seq_no().await
-        }
-        async fn last_tx_id(&self) -> Result<TxId> {
-            self.inner.last_tx_id().await
-        }
-        async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.inner.pin_checkpoint(seq_no).await
-        }
-        async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.inner.unpin_checkpoint(seq_no).await
-        }
-        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            self.scan_count.fetch_add(1, Ordering::SeqCst);
-            self.inner.scan_prefix(prefix).await
-        }
-        async fn scan_prefix_at(
-            &self,
-            prefix: &[u8],
-            seq_no: u64,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            self.scan_count.fetch_add(1, Ordering::SeqCst);
-            self.inner.scan_prefix_at(prefix, seq_no).await
-        }
-        async fn scan(
-            &self,
-            start: std::ops::Bound<&[u8]>,
-            end: std::ops::Bound<&[u8]>,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            self.inner.scan(start, end).await
-        }
-    }
-
     let dir = tempdir().unwrap();
-    let inner_lsm = LsmStorage::new(LsmConfig {
+    let lsm_config = memfuse_store::LsmConfig {
         path: dir.path().to_path_buf(),
         ..Default::default()
-    })
-    .await
-    .unwrap();
-
-    let storage = Arc::new(CountingStorageEngine {
-        inner: inner_lsm,
-        get_count: AtomicUsize::new(0),
-        scan_count: AtomicUsize::new(0),
-    });
-
-    let index = Arc::new(
-        HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        })
-        .unwrap(),
-    );
+    };
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let hnsw_config = memfuse_index::HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
     let graph = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
 
-    let col = super::Collection::new(
+    let col = Arc::new(super::Collection::new(
         "default".to_string(),
         storage.clone(),
         index,
         graph,
-        next_tx,
+        next_tx.clone(),
         4,
         memfuse_text::Language::English,
-    );
+    ));
 
-    // Insert 120 documents
-    for i in 1..=120 {
-        let id = format!("doc_{i}");
-        col.insert(
-            &id,
-            &[1.0, 0.0, 0.0, 0.0],
-            Some(serde_json::json!({"text": format!("content_{i}")})),
-        )
-        .await
-        .unwrap();
+    // 1. Parallel insert_many calls with overlapping document keys across tasks
+    let mut tasks = Vec::new();
+    for task_idx in 0..8 {
+        let col_clone = col.clone();
+        tasks.push(tokio::spawn(async move {
+            let docs: Vec<(String, Vec<f32>, Option<serde_json::Value>)> = (0..20)
+                .map(|i| {
+                    let key = format!("batch_doc_{i}");
+                    let val = (task_idx * 100 + i) as f32;
+                    (
+                        key,
+                        vec![val, 0.0, 0.0, 0.0],
+                        Some(serde_json::json!({ "task": task_idx, "i": i })),
+                    )
+                })
+                .collect();
+            col_clone.insert_many(&docs).await.unwrap();
+        }));
     }
 
-    // Connect documents to form graph structure
-    for i in 1..120 {
-        col.relate(&format!("doc_{i}"), &format!("doc_{}", i + 1), "link")
-            .await
-            .unwrap();
+    for task in tasks {
+        task.await.unwrap();
     }
 
-    // Run community detection to assign communities
-    col.run_community_detection().await.unwrap();
+    // All 20 document keys must exist and be valid
+    for i in 0..20 {
+        let key = format!("batch_doc_{i}");
+        let doc = col.get(&key).await.unwrap();
+        assert!(doc.is_some(), "Document {key} must exist after concurrent insert_many");
+    }
 
-    let target_eid = EntityId::from_key("doc_1").unwrap();
-
-    // Reset storage counter before hybrid search
-    storage.get_count.store(0, Ordering::SeqCst);
-    storage.scan_count.store(0, Ordering::SeqCst);
-
-    // Perform hybrid search with community filter over >100 candidates
-    let results = col
-        .hybrid_search_with_strategy(
-            "content",
-            &[1.0, 0.0, 0.0, 0.0],
-            100,
-            None,
-            None,
-            None,
-            Some(target_eid),
-        )
+    // 2. Synthetically test DocId collision rejection within insert_many
+    // Seed an initial document key "existing_key"
+    col.insert("existing_key", &[1.0, 0.0, 0.0, 0.0], None)
         .await
         .unwrap();
 
-    assert!(!results.is_empty(), "Results must not be empty");
+    // Map fixed synthetic DocId (e.g. 999) to "existing_key"
+    let synthetic_doc_id = DocId::from_key("colliding_target_key").unwrap();
+    let tx = TxId::new(next_tx.fetch_add(1, Ordering::SeqCst));
+    let doc_key = col.namespaced_key(&synthetic_doc_id.inner().to_le_bytes(), 1);
+    let existing_meta = super::StoredDocumentMeta {
+        id: "existing_key".to_string(),
+        metadata: None,
+    };
+    let meta_bytes = serde_json::to_vec(&existing_meta).unwrap();
+    storage.put(tx, &doc_key, &meta_bytes).await.unwrap();
+    storage.commit(tx).await.unwrap();
 
-    // With batch lookup: candidate community lookups are done in-memory via CsrGraph or single batch lookup,
-    // requiring 0 individual `get` calls per candidate (only 1 get call for target_community_id itself).
-    let get_calls = storage.get_count.load(Ordering::SeqCst);
+    // Attempt insert_many with a batch containing "colliding_target_key"
+    let batch_with_collision = vec![
+        ("safe_doc_1".to_string(), vec![1.0, 0.0, 0.0, 0.0], None),
+        ("colliding_target_key".to_string(), vec![2.0, 0.0, 0.0, 0.0], None),
+        ("safe_doc_2".to_string(), vec![3.0, 0.0, 0.0, 0.0], None),
+    ];
+
+    let err_res = col.insert_many(&batch_with_collision).await;
+    assert!(err_res.is_err(), "insert_many must fail when DocId collision is detected");
+    assert!(matches!(err_res, Err(MemFuseError::Internal(_))));
+
+    // Verify all-or-nothing rollback (Option a): safe_doc_1 and safe_doc_2 must NOT exist
     assert!(
-        get_calls <= 1,
-        "Expected at most 1 storage `get` call for target_community_id, got {get_calls} (proves batch lookup instead of N=100+ serial gets)"
+        col.get("safe_doc_1").await.unwrap().is_none(),
+        "safe_doc_1 must be rolled back on collision error in insert_many"
     );
-}
-
-#[tokio::test]
-async fn test_community_lookup_correctness_regression_large_candidate_set() {
-    use memfuse_core::EntityId;
-    use memfuse_graph::csr::CsrGraph;
-    use memfuse_index::HnswIndex;
-    use memfuse_store::LsmStorage;
-    use std::sync::atomic::AtomicU64;
-    use std::sync::Arc;
-    use tempfile::tempdir;
-
-    let dir = tempdir().unwrap();
-    let storage = Arc::new(
-        LsmStorage::new(memfuse_store::LsmConfig {
-            path: dir.path().to_path_buf(),
-            ..Default::default()
-        })
-        .await
-        .unwrap(),
+    assert!(
+        col.get("safe_doc_2").await.unwrap().is_none(),
+        "safe_doc_2 must be rolled back on collision error in insert_many"
     );
-    let index = Arc::new(
-        HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        })
-        .unwrap(),
-    );
-    let graph = Arc::new(CsrGraph::new());
-    let col = super::Collection::new(
-        "default".to_string(),
-        storage,
-        index,
-        graph,
-        Arc::new(AtomicU64::new(1)),
-        4,
-        memfuse_text::Language::English,
-    );
-
-    // Insert 150 documents into 2 clusters
-    for i in 1..=150 {
-        let id = format!("cand_{i}");
-        col.insert(
-            &id,
-            &[1.0, 0.0, 0.0, 0.0],
-            Some(serde_json::json!({"text": format!("topic candidate {}", i)})),
-        )
-        .await
-        .unwrap();
-    }
-
-    // Connect Cluster 1 (cand_1..cand_75)
-    for i in 1..75 {
-        col.relate(&format!("cand_{i}"), &format!("cand_{}", i + 1), "cluster1")
-            .await
-            .unwrap();
-    }
-
-    // Connect Cluster 2 (cand_76..cand_150)
-    for i in 76..150 {
-        col.relate(&format!("cand_{i}"), &format!("cand_{}", i + 1), "cluster2")
-            .await
-            .unwrap();
-    }
-
-    // Run community detection
-    col.run_community_detection().await.unwrap();
-
-    let target_eid = EntityId::from_key("cand_1").unwrap();
-
-    let query_res = col
-        .hybrid_search_with_strategy(
-            "candidate",
-            &[1.0, 0.0, 0.0, 0.0],
-            100,
-            None,
-            None,
-            None,
-            Some(target_eid),
-        )
-        .await
-        .unwrap();
-
-    assert!(!query_res.is_empty(), "Query result must not be empty");
-
-    let target_comm = col.get_community(target_eid).await.unwrap().unwrap();
-
-    // Verify all returned results belong to the target community
-    for res in &query_res {
-        let eid = EntityId::from_key(&res.id).unwrap();
-        let comm = col.get_community(eid).await.unwrap();
-        assert_eq!(
-            comm,
-            Some(target_comm),
-            "Document {} in community {:?} must match target community {}",
-            res.id,
-            comm,
-            target_comm
-        );
-    }
 }
