@@ -577,6 +577,36 @@ impl LsmStorage {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     }
+
+    /// Evaluates detailed traversal metrics (evaluated_sstables, bloom_passes, range_passes, block_reads, found) for point lookups.
+    pub async fn point_lookup_metrics(&self, key: &[u8]) -> (usize, usize, usize, usize, bool) {
+        let sstables = self.sstables.read().await;
+        let mut total_eval = 0usize;
+        let mut total_bloom_pass = 0usize;
+        let mut total_range_pass = 0usize;
+        let mut total_block_read = 0usize;
+        let mut found = false;
+
+        for sst in sstables.iter().rev() {
+            total_eval += 1;
+            let (b_pass, r_pass, blk_read, k_found) = sst.lookup_metrics(key).await;
+            if b_pass {
+                total_bloom_pass += 1;
+            }
+            if r_pass {
+                total_range_pass += 1;
+            }
+            if blk_read {
+                total_block_read += 1;
+            }
+            if k_found {
+                found = true;
+                break;
+            }
+        }
+
+        (total_eval, total_bloom_pass, total_range_pass, total_block_read, found)
+    }
 }
 
 #[async_trait::async_trait]

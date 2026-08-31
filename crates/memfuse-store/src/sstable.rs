@@ -1168,6 +1168,125 @@ impl SstableReader {
         Ok(None)
     }
 
+    /// Metrics result for point lookup instrumentation.
+    pub async fn lookup_metrics(&self, key: &[u8]) -> (bool, bool, bool, bool) {
+        // Returns (bloom_passed, range_passed, block_read, key_found)
+        if let Some(bloom) = &self.bloom_filter {
+            if !bloom.may_contain(key) {
+                return (false, false, false, false);
+            }
+        }
+
+        if key < self.metadata.first_key || key > self.metadata.last_key {
+            return (true, false, false, false);
+        }
+
+        let idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(key)) {
+            Ok(i) => i,
+            Err(i) => i,
+        };
+
+        if idx >= self.index.len() {
+            return (true, true, false, false);
+        }
+
+        let offset = match self.index.get(idx) {
+            Some((_, off)) => *off,
+            None => return (true, true, false, false),
+        };
+        let next_offset = if idx + 1 < self.index.len() {
+            match self.index.get(idx + 1) {
+                Some((_, off)) => *off,
+                None => self.index_offset,
+            }
+        } else {
+            self.index_offset
+        };
+
+        let block_data = match self.get_block(offset, next_offset).await {
+            Ok(b) => b,
+            Err(_) => return (true, true, false, false),
+        };
+
+        let n = block_data.len();
+        if n < 10 {
+            return (true, true, true, false);
+        }
+
+        let num_offsets = match block_data.get(n.saturating_sub(2)..n) {
+            Some(slice) => match slice.try_into() {
+                Ok(arr) => u16::from_le_bytes(arr) as usize,
+                Err(_) => return (true, true, true, false),
+            },
+            None => return (true, true, true, false),
+        };
+
+        let offsets_len = num_offsets.saturating_mul(2);
+        if n < offsets_len.saturating_add(10) {
+            return (true, true, true, false);
+        }
+        let offsets_start = n.saturating_sub(2).saturating_sub(offsets_len);
+        let bloom_offset = offsets_start.saturating_sub(8);
+        let bloom = match block_data.get(bloom_offset..bloom_offset.saturating_add(8)) {
+            Some(slice) => match slice.try_into() {
+                Ok(arr) => u64::from_le_bytes(arr),
+                Err(_) => return (true, true, true, false),
+            },
+            None => return (true, true, true, false),
+        };
+
+        // Block bloom check
+        let hash = blake3::hash(key);
+        let hash_bytes = hash.as_bytes();
+        let mut may_contain = true;
+        for i in 0..4 {
+            let chunk = u16::from_le_bytes([
+                *hash_bytes.get(i * 2).unwrap_or(&0),
+                *hash_bytes.get(i * 2 + 1).unwrap_or(&0),
+            ]);
+            let bit = chunk % 64;
+            if (bloom & (1 << bit)) == 0 {
+                may_contain = false;
+                break;
+            }
+        }
+
+        if !may_contain {
+            return (true, true, true, false);
+        }
+
+        for i in 0..num_offsets {
+            let off_pos = offsets_start + i * 2;
+            let entry_off = match block_data.get(off_pos..off_pos + 2) {
+                Some(slice) => match slice.try_into() {
+                    Ok(arr) => u16::from_le_bytes(arr) as usize,
+                    Err(_) => continue,
+                },
+                None => continue,
+            };
+
+            let mut ep = entry_off;
+            let k_len = match block_data.get(ep..ep + 2) {
+                Some(slice) => match slice.try_into() {
+                    Ok(arr) => u16::from_le_bytes(arr) as usize,
+                    Err(_) => continue,
+                },
+                None => continue,
+            };
+            ep += 2;
+            let entry_key = match block_data.get(ep..ep + k_len) {
+                Some(slice) => slice,
+                None => continue,
+            };
+
+            if entry_key == key {
+                return (true, true, true, true);
+            }
+        }
+
+        (true, true, true, false)
+    }
+
     pub fn metadata(&self) -> &SstableMetadata {
         &self.metadata
     }
