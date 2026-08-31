@@ -114,6 +114,9 @@ pub struct ContextChunk {
     /// None = kein Contextual Retrieval für diesen Chunk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contextual_prefix: Option<String>,
+    /// Zettelkasten Memory Links associated with this chunk.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<crate::types::domain::MemoryLink>,
 }
 
 impl ContextChunk {
@@ -208,6 +211,9 @@ pub struct HybridQuery {
     /// matches one of these types. None = no filter (default behaviour unchanged).
     #[serde(default)]
     pub memory_type_filter: Option<Vec<MemoryType>>,
+    /// Controls whether superseded Zettelkasten memory chunks are included in results (ADR-038). Default: false.
+    #[serde(default)]
+    pub include_superseded: bool,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -230,6 +236,7 @@ pub struct HybridQueryBuilder {
     filter: Option<FilterExpr>,
     same_community_as: Option<EntityId>,
     memory_type_filter: Option<Vec<MemoryType>>,
+    include_superseded: bool,
     k: Option<usize>,
 }
 
@@ -287,6 +294,12 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets whether to include superseded memory chunks (ADR-038).
+    pub fn with_include_superseded(mut self, include: bool) -> Self {
+        self.include_superseded = include;
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -315,6 +328,7 @@ impl HybridQueryBuilder {
             filter: self.filter,
             same_community_as: self.same_community_as,
             memory_type_filter: self.memory_type_filter,
+            include_superseded: self.include_superseded,
             k: self.k.unwrap_or(10),
         })
     }
@@ -448,6 +462,7 @@ mod tests {
             token_count: 1,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         let window = ContextWindow {
             chunks: vec![chunk],
@@ -470,6 +485,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: Some("Dokument Kontext".to_string()),
+            links: Vec::new(),
         };
         assert_eq!(
             chunk.combined_text_owned(),
@@ -487,6 +503,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         assert_eq!(chunk.combined_text_owned(), "Raw content");
         assert!(!chunk.has_context_prefix());
@@ -501,6 +518,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: Some("".to_string()),
+            links: Vec::new(),
         };
         assert_eq!(chunk.combined_text_owned(), "Raw content");
         assert!(!chunk.has_context_prefix());
@@ -522,6 +540,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         assert_eq!(chunk_no_prefix.combined_token_count(), 10);
 
@@ -532,6 +551,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: Some("1234567812345678".to_string()), // 16 chars -> +4 tokens
+            links: Vec::new(),
         };
         assert_eq!(chunk_with_prefix.combined_token_count(), 14);
         assert!(chunk_with_prefix.combined_token_count() > chunk_with_prefix.token_count);

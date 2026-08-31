@@ -598,23 +598,24 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         db_tx: &mut crate::transaction::DbTransaction<S, V>,
         id: &str,
     ) -> Result<()> {
-        validate_doc_id(id)?;
-        let tx = db_tx.tx_id;
+        // Find doc keys and tombstone them
         let doc_id = DocId::from_key(id)?;
-
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
-        // Stage removal from old text index
+        let tx = db_tx.tx_id;
+
         db_tx.stage_text_delete(doc_id);
 
-        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        if let Ok(eid) = EntityId::from_key(id) {
+            db_tx.stage_graph_entity_delete(eid);
+        }
 
         self.storage.delete(tx, &user_key).await?;
         self.storage.delete(tx, &doc_key).await?;
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
-        // Recovery-Pfad ist HNSW-Rebuild (>20% deleted nodes) der mit LSM re-synct.
         if let Err(e) = self.index.delete(tx, doc_id).await {
             tracing::warn!(
                 doc_id = ?doc_id,
@@ -623,6 +624,98 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         Ok(())
+    }
+
+    /// Links two memories together with a specific relation (Zettelkasten A-MEM).
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn link_memories(
+        &self,
+        from: DocId,
+        to: DocId,
+        relation: memfuse_core::types::domain::LinkRelation,
+    ) -> Result<()> {
+        let _guard = self.insert_lock.lock().await;
+
+        let tx = self.allocate_tx()?;
+        let doc_key = self.namespaced_key(&from.inner().to_le_bytes(), 1);
+
+        if let Some(bytes) = self.storage.get_at_seq(&doc_key, u64::MAX).await? {
+            // Determine which struct it was saved as
+            if let Ok(mut meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
+                if let Some(obj) = meta.metadata.as_mut().and_then(|m| m.as_object_mut()) {
+                    let mut links: Vec<memfuse_core::types::domain::MemoryLink> = obj
+                        .get("links")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default();
+
+                    // Check if link already exists to avoid duplicates
+                    if !links
+                        .iter()
+                        .any(|l| l.target == to && l.relation == relation)
+                    {
+                        links.push(memfuse_core::types::domain::MemoryLink {
+                            target: to,
+                            relation,
+                            created_at_tx: tx,
+                        });
+
+                        obj.insert("links".to_string(), serde_json::to_value(links).unwrap());
+                        let updated_bytes = serde_json::to_vec(&meta).unwrap();
+                        self.storage.put(tx, &doc_key, &updated_bytes).await?;
+                    }
+                }
+            } else if let Ok(mut full) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                if let Some(obj) = full.metadata.as_mut().and_then(|m| m.as_object_mut()) {
+                    let mut links: Vec<memfuse_core::types::domain::MemoryLink> = obj
+                        .get("links")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default();
+
+                    if !links
+                        .iter()
+                        .any(|l| l.target == to && l.relation == relation)
+                    {
+                        links.push(memfuse_core::types::domain::MemoryLink {
+                            target: to,
+                            relation,
+                            created_at_tx: tx,
+                        });
+
+                        obj.insert("links".to_string(), serde_json::to_value(links).unwrap());
+                        let updated_bytes = serde_json::to_vec(&full).unwrap();
+                        self.storage.put(tx, &doc_key, &updated_bytes).await?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Retrieves all links for a given document.
+    pub async fn get_links(
+        &self,
+        doc_id: DocId,
+    ) -> Result<Vec<memfuse_core::types::domain::MemoryLink>> {
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        if let Some(bytes) = self.storage.get_at_seq(&doc_key, u64::MAX).await? {
+            if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
+                if let Some(obj) = meta.metadata.as_ref().and_then(|m| m.as_object()) {
+                    return Ok(obj
+                        .get("links")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default());
+                }
+            } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
+                if let Some(obj) = full.metadata.as_ref().and_then(|m| m.as_object()) {
+                    return Ok(obj
+                        .get("links")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default());
+                }
+            }
+        }
+        Ok(Vec::new())
     }
 
     /// Scans documents in the collection that match a given key prefix.

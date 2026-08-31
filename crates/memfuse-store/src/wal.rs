@@ -505,16 +505,13 @@ fn set_restrictive_file_acl(path: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::null_mut;
     use windows_sys::Win32::Foundation::{
-        CloseHandle, ERROR_SUCCESS, GetLastError, GENERIC_ALL, HANDLE,
+        CloseHandle, GetLastError, ERROR_SUCCESS, GENERIC_ALL, HANDLE,
     };
-    use windows_sys::Win32::Security::Authorization::{
-        SetNamedSecurityInfoW, SE_FILE_OBJECT,
-    };
+    use windows_sys::Win32::Security::Authorization::{SetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        AddAccessAllowedAce, GetLengthSid, GetTokenInformation, InitializeAcl,
-        TokenUser, ACCESS_ALLOWED_ACE, ACL, ACL_REVISION,
-        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-        TOKEN_QUERY, TOKEN_USER,
+        AddAccessAllowedAce, GetLengthSid, GetTokenInformation, InitializeAcl, TokenUser,
+        ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, DACL_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION, TOKEN_QUERY, TOKEN_USER,
     };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -579,9 +576,8 @@ fn set_restrictive_file_acl(path: &Path) -> Result<()> {
     }
 
     let sid_len = unsafe { GetLengthSid(owner_sid) };
-    let acl_size = std::mem::size_of::<ACL>()
-        + std::mem::size_of::<ACCESS_ALLOWED_ACE>()
-        + sid_len as usize;
+    let acl_size =
+        std::mem::size_of::<ACL>() + std::mem::size_of::<ACCESS_ALLOWED_ACE>() + sid_len as usize;
 
     let mut acl_buf = vec![0u8; acl_size];
     let p_acl = acl_buf.as_mut_ptr() as *mut ACL;
@@ -2407,14 +2403,12 @@ mod tests {
     fn test_windows_wal_integrity_key_acl() {
         use std::os::windows::ffi::OsStrExt;
         use std::ptr::null_mut;
-        use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, GetLastError, HANDLE};
-        use windows_sys::Win32::Security::Authorization::{
-            GetNamedSecurityInfoW, SE_FILE_OBJECT,
-        };
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_SUCCESS, HANDLE};
+        use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
         use windows_sys::Win32::Security::{
-            GetAce, GetTokenInformation, EqualSid, TokenUser, ACCESS_ALLOWED_ACE,
-            ACL, DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
-            SECURITY_DESCRIPTOR_CONTROL, TOKEN_QUERY, TOKEN_USER,
+            EqualSid, GetAce, GetTokenInformation, TokenUser, ACCESS_ALLOWED_ACE, ACL,
+            DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SECURITY_DESCRIPTOR_CONTROL,
+            SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
         };
         use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -2484,7 +2478,8 @@ mod tests {
             )
         };
         assert_ne!(
-            status, 0,
+            status,
+            0,
             "GetSecurityDescriptorControl failed with error {}",
             unsafe { GetLastError() }
         );
@@ -2522,10 +2517,7 @@ mod tests {
 
         // Inspect ACE count and verify ACE matches process owner SID
         let ace_count = unsafe { (*p_dacl).AceCount };
-        assert_eq!(
-            ace_count, 1,
-            "DACL must contain exactly 1 ACE (owner only)"
-        );
+        assert_eq!(ace_count, 1, "DACL must contain exactly 1 ACE (owner only)");
 
         let mut p_ace: *mut std::ffi::c_void = null_mut();
         let res = unsafe { GetAce(p_dacl, 0, &mut p_ace) };
@@ -2535,10 +2527,7 @@ mod tests {
         let ace_sid = unsafe { &(*ace).SidStart as *const u32 as *mut std::ffi::c_void };
 
         let same_sid = unsafe { EqualSid(owner_sid, ace_sid) };
-        assert_ne!(
-            same_sid, 0,
-            "ACE SID must match the process owner SID"
-        );
+        assert_ne!(same_sid, 0, "ACE SID must match the process owner SID");
     }
 
     #[test]

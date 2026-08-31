@@ -1,8 +1,8 @@
 //! Client-side MCP dispatch mechanism for sending routed context to SLM endpoints.
 
 use crate::router::RoutingDecision;
-use memfuse_core::{MemFuseError, Result};
 use memfuse_core::ipc::{JsonRpcRequest, JsonRpcResponse};
+use memfuse_core::{MemFuseError, Result};
 use serde_json::json;
 
 /// Dispatches the prepared context from a [`RoutingDecision`] to the target SLM's MCP endpoint over HTTP JSON-RPC 2.0.

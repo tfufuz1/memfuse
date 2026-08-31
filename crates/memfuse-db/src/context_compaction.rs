@@ -199,6 +199,7 @@ impl ContextCompactor {
             token_count: estimated_tokens,
             metadata: Some(serde_json::Value::Object(combined_metadata)),
             contextual_prefix: None,
+            links: Vec::new(),
         };
 
         let tokens_used = consolidated_chunk.combined_token_count();
@@ -245,6 +246,7 @@ mod tests {
             token_count: content.len(),
             metadata,
             contextual_prefix: None,
+            links: Vec::new(),
         }
     }
 
@@ -334,6 +336,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: Some("1234567890123456789012".to_string()), // 22 chars → +5 tokens
+            links: Vec::new(),
         };
 
         // Without prefix: chunk fits (10 <= 20)

@@ -28,10 +28,5 @@ tokio-util = { version = "0.7", features = ["codec"] }
 futures-util = "0.3"
 
 [dev-dependencies]
-criterion = { workspace = true }
 tempfile = "3"
 async-trait = { workspace = true }
-
-[[bench]]
-name = "mcp_bench"
-harness = false

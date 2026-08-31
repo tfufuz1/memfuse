@@ -29,7 +29,10 @@ fn bench_aes_256_gcm_siv_decrypt(c: &mut Criterion) {
         let (ct, nonce) = km.encrypt_auto_nonce(&payload).unwrap();
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
-            b.iter(|| km.decrypt_auto_nonce(black_box(&ct), black_box(&nonce)).unwrap());
+            b.iter(|| {
+                km.decrypt_auto_nonce(black_box(&ct), black_box(&nonce))
+                    .unwrap()
+            });
         });
     }
     group.finish();

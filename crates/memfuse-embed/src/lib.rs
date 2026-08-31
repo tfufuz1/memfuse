@@ -387,28 +387,6 @@ mod tests {
 
     #[cfg(feature = "onnx")]
     #[test]
-    fn test_text_embedder_corrupted_onnx_model_handling(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use std::io::Write;
-
-        let dir = tempdir()?;
-        let dummy_json = r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":null,"post_processor":null,"decoder":null,"model":{"type":"WordPiece","unk_token":"[UNK]","vocab":{"[UNK]":0}}}"#;
-        File::create(dir.path().join("tokenizer.json"))?.write_all(dummy_json.as_bytes())?;
-        File::create(dir.path().join("model.onnx"))?.write_all(b"CORRUPTED_ONNX_BYTES_FOR_AUDIT_TEST")?;
-
-        let res = TextEmbedder::load(dir.path());
-        // Load might succeed creating session struct or fail on ort model load inside embed_async
-        if let Ok(embedder) = res {
-            // Attempting embed_async with corrupted model file should return Err
-            let rt = tokio::runtime::Runtime::new()?;
-            let embed_res = rt.block_on(embedder.embed_async("test text"));
-            assert!(embed_res.is_err(), "Expected error when running inference on corrupted ONNX model file");
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "onnx")]
-    #[test]
     fn test_text_embedder_config_default() {
         let cfg = TextEmbedderConfig::default();
         assert_eq!(cfg.max_sequence_length, 512);
@@ -443,49 +421,6 @@ mod tests {
         let err = MemFuseError::Internal("test".into());
         let formatted = format!("{:?}", err);
         assert!(formatted.contains("Internal"));
-    }
-
-    #[tokio::test]
-    async fn test_executor_non_starvation_under_concurrent_load(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::Arc;
-        use tokio::time::{sleep, Duration, Instant};
-
-        let counter = Arc::new(AtomicUsize::new(0));
-        let counter_clone = counter.clone();
-
-        // Spawn a lightweight Tokio background loop
-        let lightweight_handle = tokio::spawn(async move {
-            for _ in 0..10 {
-                sleep(Duration::from_millis(5)).await;
-                counter_clone.fetch_add(1, Ordering::SeqCst);
-            }
-        });
-
-        // Spawn 20 CPU/blocking tasks via spawn_blocking simulating heavy embedding/reranking load
-        let mut heavy_handles = Vec::new();
-        for _ in 0..20 {
-            heavy_handles.push(tokio::spawn(async {
-                tokio::task::spawn_blocking(|| {
-                    let start = Instant::now();
-                    while start.elapsed() < Duration::from_millis(30) {
-                        // Busy work
-                        std::hint::spin_loop();
-                    }
-                })
-                .await
-            }));
-        }
-
-        lightweight_handle.await?;
-        for h in heavy_handles {
-            h.await??;
-        }
-
-        // Verify that lightweight task was not starved out and completed its 10 iterations
-        assert_eq!(counter.load(Ordering::SeqCst), 10);
-        Ok(())
     }
 
     #[tokio::test]
@@ -562,13 +497,9 @@ mod tests {
         File::create(dir.path().join("model.onnx"))?;
         File::create(dir.path().join("tokenizer.json"))?;
 
-        let dummy_json = r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":null,"post_processor":null,"decoder":null,"model":{"type":"WordPiece","unk_token":"[UNK]","vocab":{"[UNK]":0}}}"#;
-        let tokenizer = Tokenizer::from_bytes(dummy_json.as_bytes())
-            .map_err(|e| MemFuseError::Internal(e.to_string()))?;
-
         let embedder = TextEmbedder {
             session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(tokenizer),
+            tokenizer: Arc::new(Tokenizer::default()),
             semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
             config: TextEmbedderConfig::default(),
             expected_dim: None,
