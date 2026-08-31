@@ -3,7 +3,7 @@
 // INVARIANTEN: Distinct from memfuse-graph::csr; validates node IDs, handler names, descriptions, and edge conditions.
 // NICHT-OFFENSICHTLICH: try_add_node validates handler when present; add_node/add_edge marked #[deprecated].
 // HOTSPOTS: try_add_node (ll. 60-110), try_add_edge (ll. 130-160).
-// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+// STAND: TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)
 
 //! Declarative StateGraph definition for Agent Workflows.
 
@@ -58,7 +58,7 @@ impl StateGraph {
     }
 
     /// Tries to insert a new node into the state graph after validating bounds.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty Node ID and description for graph nodes. (TS:2026-08-31T21:07:58Z) (SESSION: 5f1a7b8e)
     pub fn try_add_node(
         &mut self,
         id: &str,
@@ -132,7 +132,7 @@ impl StateGraph {
     }
 
     /// Tries to insert a new edge between nodes in the state graph after validating bounds.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-31T21:07:58Z) (SESSION: 5f1a7b8e)
     pub fn try_add_edge(
         &mut self,
         from: &str,
@@ -184,10 +184,73 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_graph_add_node_validation() {
+    fn test_node_type_serde_roundtrip_CASE_all_variants() {
+        let variants = vec![
+            NodeType::Start,
+            NodeType::Task,
+            NodeType::Decision,
+            NodeType::End,
+        ];
+
+        for variant in variants {
+            let serialized = serde_json::to_string(&variant).expect("Serde error");
+            let deserialized: NodeType =
+                serde_json::from_str(&serialized).expect("Deserialization error");
+            assert_eq!(deserialized, variant);
+        }
+    }
+
+    #[test]
+    fn test_stategraph_serde_roundtrip_CASE_full_graph() {
+        let mut graph = StateGraph::new();
+        graph
+            .try_add_node("start", "Start Node", NodeType::Start, None)
+            .unwrap();
+        graph
+            .try_add_node(
+                "task1",
+                "Execute Step",
+                NodeType::Task,
+                Some("tool_calculator"),
+            )
+            .unwrap();
+        graph
+            .try_add_node("end", "End Node", NodeType::End, None)
+            .unwrap();
+
+        graph
+            .try_add_edge("start", "task1", Some("always"), 10)
+            .unwrap();
+        graph.try_add_edge("task1", "end", None, 1).unwrap();
+
+        let serialized = serde_json::to_string(&graph).expect("Serialization failed");
+        let deserialized: StateGraph =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
+
+        assert_eq!(deserialized.nodes.len(), 3);
+        assert_eq!(deserialized.edges.len(), 2);
+
+        let task_node = deserialized.get_node("task1").expect("Node task1 missing");
+        assert_eq!(task_node.description, "Execute Step");
+        assert_eq!(task_node.node_type, NodeType::Task);
+        assert_eq!(task_node.handler, Some("tool_calculator".to_string()));
+    }
+
+    #[test]
+    fn test_graph_add_node_validation_CASE_edge_cases() {
         let mut graph = StateGraph::new();
         assert!(graph
             .try_add_node("start", "Start Node", NodeType::Start, None)
+            .is_ok());
+
+        // Unicode in description and handler
+        assert!(graph
+            .try_add_node(
+                "unicode_node",
+                "Agenten-Workflow 🧠 Startpunkt mit Umlauten",
+                NodeType::Task,
+                Some("werkzeug_prüfer")
+            )
             .is_ok());
 
         // Empty ID
@@ -196,24 +259,54 @@ mod tests {
             Err(MemFuseError::InvalidInput(_))
         ));
 
-        // Oversized description
+        // Empty / Whitespace-only description
+        assert!(matches!(
+            graph.try_add_node("node1", "   ", NodeType::Task, None),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // Oversized description (> MAX_TEXT_LEN)
         let huge_desc = "d".repeat(MAX_TEXT_LEN + 1);
         assert!(matches!(
             graph.try_add_node("task1", &huge_desc, NodeType::Task, None),
             Err(MemFuseError::InvalidInput(_))
         ));
 
-        // Empty handler name
+        // Description containing null byte
+        assert!(matches!(
+            graph.try_add_node("task_null", "desc\0null", NodeType::Task, None),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // Empty handler name when Some("")
         assert!(matches!(
             graph.try_add_node("task2", "desc", NodeType::Task, Some("")),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // Oversized handler name (> MAX_ID_LEN)
+        let huge_handler = "h".repeat(MAX_ID_LEN + 1);
+        assert!(matches!(
+            graph.try_add_node("task3", "desc", NodeType::Task, Some(&huge_handler)),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // Null byte in handler name
+        assert!(matches!(
+            graph.try_add_node("task4", "desc", NodeType::Task, Some("handler\0null")),
             Err(MemFuseError::InvalidInput(_))
         ));
     }
 
     #[test]
-    fn test_graph_add_edge_validation() {
+    fn test_graph_add_edge_validation_CASE_edge_cases() {
         let mut graph = StateGraph::new();
         assert!(graph.try_add_edge("start", "end", None, 1).is_ok());
+
+        // Unicode condition
+        assert!(graph
+            .try_add_edge("start", "end", Some("bedingung_erfüllt ✓"), 5)
+            .is_ok());
 
         // Null byte in endpoint
         assert!(matches!(
@@ -227,5 +320,17 @@ mod tests {
             graph.try_add_edge("start", "end", Some(&huge_cond), 1),
             Err(MemFuseError::InvalidInput(_))
         ));
+
+        // Null byte in condition
+        assert!(matches!(
+            graph.try_add_edge("start", "end", Some("cond\0null"), 1),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_graph_get_node_CASE_nonexistent() {
+        let graph = StateGraph::new();
+        assert!(graph.get_node("ghost_node").is_none());
     }
 }
