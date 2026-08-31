@@ -2827,6 +2827,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bincode",
+ "criterion",
  "itoa",
  "memfuse-core",
  "parking_lot",
