@@ -1069,6 +1069,7 @@ mod tests {
         assert_eq!(results[0].doc_id, doc_id);
 
         // Verify stats
+        let stats = index.stats().await?;
         assert!(stats.num_tokens >= 3); // "testing", "textindex", "trait"
 
         // Verify delete
