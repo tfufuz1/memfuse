@@ -541,4 +541,37 @@ mod tests {
         }
         assert_eq!(mt.iter_latest().len(), 1000);
     }
+
+    #[test]
+    fn test_empty_memtable_edge_cases() {
+        let mt = MemTable::new();
+
+        // 1. is_empty on new memtable
+        assert!(mt.is_empty());
+        assert_eq!(mt.size(), 0);
+
+        // 2. tx_range on empty memtable -> (u64::MAX, 0)
+        assert_eq!(mt.tx_range(), (u64::MAX, 0));
+
+        // 3. Rollback non-existent transaction on empty or populated memtable
+        mt.rollback(999);
+        assert!(mt.is_empty());
+        assert_eq!(mt.tx_range(), (u64::MAX, 0));
+
+        // Insert and then rollback non-existent tx
+        mt.put(Bytes::from("k"), Bytes::from("v"), 1, 10);
+        assert!(!mt.is_empty());
+        assert_eq!(mt.tx_range(), (10, 10));
+
+        mt.rollback(999); // should do nothing
+        assert!(!mt.is_empty());
+        assert_eq!(mt.get(b"k").expect("should exist").0.as_ref(), b"v");
+        assert_eq!(mt.tx_range(), (10, 10));
+
+        // Rollback existing tx
+        mt.rollback(10);
+        assert!(mt.is_empty());
+        assert_eq!(mt.size(), 0);
+        assert_eq!(mt.tx_range(), (u64::MAX, 0));
+    }
 }

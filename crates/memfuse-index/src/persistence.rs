@@ -460,4 +460,22 @@ mod tests {
         assert_eq!(returned_doc_ids, expected_doc_ids);
         Ok(())
     }
+
+    #[test]
+    fn test_mmap_index_error_paths() {
+        // Open non-existent path
+        let res = MmapIndex::open("non_existent_path_memfuse_test.hnsw");
+        assert!(res.is_err());
+
+        // Header parsing errors
+        let short_bytes = vec![0u8; 10];
+        assert!(HnswHeader::try_from_bytes(&short_bytes).is_err());
+
+        let invalid_magic = vec![0u8; HnswHeader::SIZE];
+        assert!(HnswHeader::try_from_bytes(&invalid_magic).is_err());
+
+        // NodeRecord parsing errors
+        let short_node = vec![0u8; 10];
+        assert!(NodeRecord::from_bytes(&short_node).is_err());
+    }
 }

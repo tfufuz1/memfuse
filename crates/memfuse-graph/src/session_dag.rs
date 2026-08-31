@@ -695,22 +695,28 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn path_to_head_CASE_deep_branching_tree_correct_path() -> Result<()> {
+    fn path_to_head_CASE_deep_branching_tree_correct_path() {
         let dag = SessionBranchTree::new("Root".into(), "Resp0".into());
         // Root is 0
-        let step1 = dag.append_step("Step 1".into(), "Resp1".into(), None, vec![], "next")?; // 1
-        let step2 = dag.append_step("Step 2".into(), "Resp2".into(), None, vec![], "next")?; // 2
-        let branch_from_1 = dag.branch_from(
-            step1,
-            "Branch Step".into(),
-            "RespB".into(),
-            None,
-            vec![],
-            "branch",
-        )?; // 3
+        let step1 = dag
+            .append_step("Step 1".into(), "Resp1".into(), None, vec![], "next")
+            .unwrap(); // 1
+        let step2 = dag
+            .append_step("Step 2".into(), "Resp2".into(), None, vec![], "next")
+            .unwrap(); // 2
+        let branch_from_1 = dag
+            .branch_from(
+                step1,
+                "Branch Step".into(),
+                "RespB".into(),
+                None,
+                vec![],
+                "branch",
+            )
+            .unwrap(); // 3
 
         // Switch active head to branch_from_1 (3). Path should be: [0, 1, 3]
-        dag.set_active_head(branch_from_1)?;
+        dag.set_active_head(branch_from_1).unwrap();
         let path = dag.path_to_head();
         assert_eq!(path.len(), 3);
         assert_eq!(path[0].step_id, 0);
@@ -718,12 +724,11 @@ mod tests {
         assert_eq!(path[2].step_id, 3);
 
         // Switch active head to step2 (2). Path should be: [0, 1, 2]
-        dag.set_active_head(step2)?;
+        dag.set_active_head(step2).unwrap();
         let path2 = dag.path_to_head();
         assert_eq!(path2.len(), 3);
         assert_eq!(path2[0].step_id, 0);
         assert_eq!(path2[1].step_id, 1);
         assert_eq!(path2[2].step_id, 2);
-        Ok(())
     }
 }
