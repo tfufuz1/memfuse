@@ -152,10 +152,10 @@ async fn test_missing_required_param_returns_invalid_params_32602() {
 
 #[tokio::test]
 async fn test_internal_error_returns_32603() {
-    use crate::protocol::McpError;
+    use crate::protocol::{response_from_error, McpError};
     let err = McpError::internal_error("storage layer failure");
     assert_eq!(err.code(), -32603);
-    let resp = JsonRpcResponse::from_error(Some(json!(102)), err);
+    let resp = response_from_error(Some(json!(102)), err);
     assert_eq!(resp.id, Some(json!(102)));
     let err_obj = resp.error.expect("error expected"); // expect
     assert_eq!(err_obj.code, -32603);

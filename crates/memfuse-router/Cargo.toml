@@ -12,7 +12,6 @@ ollama = ["dep:memfuse-ollama"]
 memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
 memfuse-db = { workspace = true }
-memfuse-mcp = { workspace = true }
 memfuse-ollama = { workspace = true, optional = true }
 tokio = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

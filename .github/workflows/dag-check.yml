@@ -102,7 +102,7 @@ jobs:
             exit 1
           fi
           echo "Verifying memfuse-router..."
-          if cargo tree -p memfuse-router --edges no-dev | grep -E -v "memfuse-router|memfuse-core|memfuse-db|memfuse-mcp|memfuse-ollama|memfuse-graph|memfuse-checkpoint|memfuse-store|memfuse-crypto|memfuse-index|memfuse-text" | grep -q "memfuse-"; then
+          if cargo tree -p memfuse-router --edges no-dev | grep -E -v "memfuse-router|memfuse-core|memfuse-db|memfuse-ollama|memfuse-graph|memfuse-checkpoint|memfuse-store|memfuse-crypto|memfuse-index|memfuse-text" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-router violates DAG."
             cargo tree -p memfuse-router --edges no-dev | grep "memfuse-"
             exit 1

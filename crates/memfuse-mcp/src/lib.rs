@@ -13,7 +13,7 @@ mod tests;
 use memfuse_core::{DocId, MemFuseError, TextEmbeddingEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
-use protocol::{JsonRpcRequest, JsonRpcResponse, McpError};
+use protocol::{response_from_error, JsonRpcRequest, JsonRpcResponse, McpError};
 use sandbox::{McpSandbox, SandboxPolicy};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -385,7 +385,7 @@ impl McpServer {
                     .await
                 {
                     Ok(res) => JsonRpcResponse::ok(id, res),
-                    Err(e) => JsonRpcResponse::from_error(id, e),
+                    Err(e) => response_from_error(id, e),
                 }
             }
 
@@ -522,6 +522,11 @@ impl McpServer {
                         if s.trim().is_empty() {
                             return Err(McpError::invalid_params("id cannot be empty"));
                         }
+                        if s.len() > 256 {
+                            return Err(McpError::invalid_params(
+                                "id length exceeds limit: max 256 chars",
+                            ));
+                        }
                         s
                     }
                     None => {
@@ -541,6 +546,9 @@ impl McpServer {
                             "Invalid params: 'vector' must be an array of numbers",
                         )
                     })?;
+                    if arr.is_empty() {
+                        return Err(McpError::invalid_params("vector cannot be empty"));
+                    }
                     let mut vec = Vec::with_capacity(arr.len());
                     for elem in arr {
                         let num = elem.as_f64().ok_or_else(|| {
@@ -548,7 +556,11 @@ impl McpServer {
                                 "Invalid params: 'vector' must contain numbers",
                             )
                         })?;
-                        vec.push(num as f32);
+                        let f = num as f32;
+                        if f.is_nan() || f.is_infinite() {
+                            return Err(McpError::invalid_params("NaN or Inf in vector"));
+                        }
+                        vec.push(f);
                     }
                     Some(vec)
                 } else {

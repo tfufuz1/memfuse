@@ -2,7 +2,7 @@
 
 use crate::router::RoutingDecision;
 use memfuse_core::{MemFuseError, Result};
-use memfuse_mcp::protocol::{JsonRpcRequest, JsonRpcResponse};
+use memfuse_core::ipc::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::json;
 
 /// Dispatches the prepared context from a [`RoutingDecision`] to the target SLM's MCP endpoint over HTTP JSON-RPC 2.0.
