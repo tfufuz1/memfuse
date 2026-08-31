@@ -8,13 +8,40 @@ crates/memfuse-agent/src/audit.rs:126:        audit_log.append(&entry2).await.un
 crates/memfuse-agent/src/audit.rs:128:        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:91:        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap()); // unwrap allowed
 crates/memfuse-agent/src/context.rs:141:            .expect("Invalid task_id or start_node in AgentContext::new")
-crates/memfuse-agent/src/context.rs:229:        assert_eq!(attached_vec.last().unwrap().observed_at_seq, 10_004);
+crates/memfuse-agent/src/context.rs:186:            let serialized = serde_json::to_string(&status).expect("Serialization failed");
+crates/memfuse-agent/src/context.rs:188:                serde_json::from_str(&serialized).expect("Deserialization failed");
+crates/memfuse-agent/src/context.rs:266:        assert_eq!(attached_vec.last().unwrap().observed_at_seq, 10_004);
+crates/memfuse-agent/src/context.rs:267:        assert_eq!(attached_vec.first().unwrap().observed_at_seq, 5);
 crates/memfuse-agent/src/engine.rs:80:            .expect("Invalid tool name in register_tool");
 crates/memfuse-agent/src/step.rs:46:        let serialized = serde_json::to_string(&original).expect("Serialization failed");
 crates/memfuse-agent/src/step.rs:48:            serde_json::from_str(&serialized).expect("Deserialization failed");
 crates/memfuse-agent/src/step.rs:66:        let serialized = serde_json::to_string(&original).expect("Serialization failed");
 crates/memfuse-agent/src/step.rs:68:            serde_json::from_str(&serialized).expect("Deserialization failed");
 crates/memfuse-agent/src/event_source.rs:215:            .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")
+crates/memfuse-agent/src/event_source.rs:241:        .expect("Valid event construction failed");
+crates/memfuse-agent/src/event_source.rs:243:        let serialized = serde_json::to_string(&event).expect("Serde error");
+crates/memfuse-agent/src/event_source.rs:245:            serde_json::from_str(&serialized).expect("Deserialization error");
+crates/memfuse-agent/src/event_source.rs:291:                BackgroundEvent::try_new(serde_json::json!({}), "source", i).expect("Valid event"),
+crates/memfuse-agent/src/event_source.rs:303:        let ev1 = BackgroundEvent::try_new(serde_json::json!({"step": 1}), "src", 100).unwrap();
+crates/memfuse-agent/src/event_source.rs:304:        let ev2 = BackgroundEvent::try_new(serde_json::json!({"step": 2}), "src", 101).unwrap();
+crates/memfuse-agent/src/event_source.rs:306:        let mut source = VecEventSource::try_new(vec![ev1.clone(), ev2.clone()]).unwrap();
+crates/memfuse-agent/src/event_source.rs:309:        assert_eq!(source.next_event().await.unwrap(), Some(ev1));
+crates/memfuse-agent/src/event_source.rs:311:        assert_eq!(source.next_event().await.unwrap(), Some(ev2));
+crates/memfuse-agent/src/event_source.rs:313:        assert_eq!(source.next_event().await.unwrap(), None);
+crates/memfuse-agent/src/graph.rs:196:            let serialized = serde_json::to_string(&variant).expect("Serde error");
+crates/memfuse-agent/src/graph.rs:198:                serde_json::from_str(&serialized).expect("Deserialization error");
+crates/memfuse-agent/src/graph.rs:208:            .unwrap();
+crates/memfuse-agent/src/graph.rs:216:            .unwrap();
+crates/memfuse-agent/src/graph.rs:219:            .unwrap();
+crates/memfuse-agent/src/graph.rs:223:            .unwrap();
+crates/memfuse-agent/src/graph.rs:224:        graph.try_add_edge("task1", "end", None, 1).unwrap();
+crates/memfuse-agent/src/graph.rs:226:        let serialized = serde_json::to_string(&graph).expect("Serialization failed");
+crates/memfuse-agent/src/graph.rs:228:            serde_json::from_str(&serialized).expect("Deserialization failed");
+crates/memfuse-agent/src/graph.rs:233:        let task_node = deserialized.get_node("task1").expect("Node task1 missing");
+crates/memfuse-agent/src/step.rs:46:        let serialized = serde_json::to_string(&original).expect("Serialization failed");
+crates/memfuse-agent/src/step.rs:48:            serde_json::from_str(&serialized).expect("Deserialization failed");
+crates/memfuse-agent/src/step.rs:66:        let serialized = serde_json::to_string(&original).expect("Serialization failed");
+crates/memfuse-agent/src/step.rs:68:            serde_json::from_str(&serialized).expect("Deserialization failed");
 crates/memfuse-checkpoint/src/lib.rs:1060:            .expect("// expect #[cfg(test)]");
 crates/memfuse-checkpoint/src/lib.rs:1065:            .expect("// expect #[cfg(test)]")
 crates/memfuse-checkpoint/src/lib.rs:1066:            .expect("// expect #[cfg(test)]");
@@ -275,11 +302,15 @@ crates/memfuse-crypto/src/crypto.rs:374:        let sub1 = km.derive_file_key(b"
 crates/memfuse-crypto/src/crypto.rs:375:        let sub2 = km.derive_file_key(b"file_B").expect("sub2"); // expect
 crates/memfuse-crypto/src/crypto.rs:404:        let km = KeyManager::try_new("pass", b"salt").expect("km");
 crates/memfuse-crypto/src/crypto.rs:411:        let km = KeyManager::try_new("pass", b"salt").expect("km");
-crates/memfuse-crypto/src/crypto.rs:430:            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
-crates/memfuse-crypto/src/crypto.rs:441:                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
-crates/memfuse-crypto/src/crypto.rs:442:                    let mut guard = nonces_clone.lock().expect("lock nonces");
-crates/memfuse-crypto/src/crypto.rs:452:            handle.await.expect("task handle joined");
-crates/memfuse-crypto/src/crypto.rs:455:        let final_count = nonces.lock().expect("lock nonces").len();
+crates/memfuse-crypto/src/crypto.rs:426:        let km = KeyManager::try_new("pass", b"salt").expect("km");
+crates/memfuse-crypto/src/crypto.rs:443:        let km = KeyManager::try_new("passphrase", b"salt").expect("km");
+crates/memfuse-crypto/src/crypto.rs:458:        let km = KeyManager::try_new(passphrase, salt).expect("km");
+crates/memfuse-crypto/src/crypto.rs:464:            .expect("hkdf expansion");
+crates/memfuse-crypto/src/crypto.rs:489:            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
+crates/memfuse-crypto/src/crypto.rs:500:                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
+crates/memfuse-crypto/src/crypto.rs:501:                    let mut guard = nonces_clone.lock().expect("lock nonces");
+crates/memfuse-crypto/src/crypto.rs:511:            handle.await.expect("task handle joined");
+crates/memfuse-crypto/src/crypto.rs:514:        let final_count = nonces.lock().expect("lock nonces").len();
 crates/memfuse-crypto/src/wal_crypto.rs:273:        let mut hmac = WalHmac::new(key).unwrap(); // unwrap
 crates/memfuse-crypto/src/wal_crypto.rs:288:        verifier.verify_and_update(&e1, 100).expect("e1 valid"); // expect
 crates/memfuse-crypto/src/wal_crypto.rs:294:        verifier.verify_and_update(&e2, 200).expect("e2 valid"); // expect
@@ -1090,6 +1121,10 @@ crates/memfuse-graph/src/ppr.rs:865:            .unwrap(); // unwrap allowed
 crates/memfuse-graph/src/ppr.rs:869:            .unwrap(); // unwrap allowed
 crates/memfuse-graph/src/ppr.rs:870:        graph.commit(tx).await.unwrap(); // unwrap allowed
 crates/memfuse-graph/src/ppr.rs:883:            .unwrap(); // unwrap allowed
+crates/memfuse-graph/src/ppr.rs:902:            .unwrap();
+crates/memfuse-graph/src/ppr.rs:903:        graph.commit(tx).await.unwrap();
+crates/memfuse-graph/src/ppr.rs:908:        let res_empty = graph.personalized_page_rank(&[], &config).await.unwrap();
+crates/memfuse-graph/src/ppr.rs:916:            .unwrap();
 crates/memfuse-graph/src/session_dag.rs:347:            .unwrap(); // unwrap
 crates/memfuse-graph/src/session_dag.rs:353:            .unwrap(); // unwrap
 crates/memfuse-graph/src/session_dag.rs:371:            .unwrap(); // unwrap
