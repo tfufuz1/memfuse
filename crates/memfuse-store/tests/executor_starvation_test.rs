@@ -1,16 +1,20 @@
 //! Empirical verification test for executor starvation under heavy I/O load.
 
+use memfuse_store::sstable::{create_block_cache, SstableBuilder, SstableReader};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use memfuse_store::sstable::{create_block_cache, SstableBuilder, SstableReader};
 
 async fn run_starvation_benchmark(test_name: &str, num_entries: usize, payload_size: usize) {
     println!("\n=======================================================");
     println!("RUNNING TEST: {}", test_name);
-    println!("Configuration: {} entries, {} bytes payload (~{} MB total)",
-        num_entries, payload_size, (num_entries * payload_size) / (1024 * 1024));
+    println!(
+        "Configuration: {} entries, {} bytes payload (~{} MB total)",
+        num_entries,
+        payload_size,
+        (num_entries * payload_size) / (1024 * 1024)
+    );
     println!("=======================================================");
 
     let temp_dir = TempDir::new().expect("temp dir");
@@ -67,20 +71,33 @@ async fn run_starvation_benchmark(test_name: &str, num_entries: usize, payload_s
 
     // 2. Heavy Write I/O Phase
     println!("[{}] Starting Heavy Write Phase...", test_name);
-    let mut builder = SstableBuilder::create(&sst_path).await.expect("builder create");
+    let mut builder = SstableBuilder::create(&sst_path)
+        .await
+        .expect("builder create");
     for i in 0..num_entries {
         let key = format!("key-{:08}", i);
-        builder.add(key.as_bytes(), &payload, i as u64, 1).await.expect("builder add");
+        builder
+            .add(key.as_bytes(), &payload, i as u64, 1)
+            .await
+            .expect("builder add");
     }
     let metadata = builder.finish().await.expect("builder finish");
     let write_duration = io_start.elapsed();
-    println!("[{}] Write Phase Finished in {:.2?}. File size: {} bytes", test_name, write_duration, metadata.file_size);
+    println!(
+        "[{}] Write Phase Finished in {:.2?}. File size: {} bytes",
+        test_name, write_duration, metadata.file_size
+    );
 
     // 3. Heavy Read I/O Phase (Random block access without cache)
-    println!("[{}] Starting Heavy Read Phase (Cache Bypassed)...", test_name);
+    println!(
+        "[{}] Starting Heavy Read Phase (Cache Bypassed)...",
+        test_name
+    );
     let read_start = Instant::now();
     let bc = create_block_cache(1); // Small 1MB cache to force disk I/O
-    let reader = SstableReader::open(&sst_path, bc).await.expect("reader open");
+    let reader = SstableReader::open(&sst_path, bc)
+        .await
+        .expect("reader open");
 
     for i in (0..num_entries).step_by(5) {
         let key = format!("key-{:08}", i);
@@ -88,7 +105,10 @@ async fn run_starvation_benchmark(test_name: &str, num_entries: usize, payload_s
         assert!(res.is_some());
     }
     let read_duration = read_start.elapsed();
-    println!("[{}] Read Phase Finished in {:.2?}", test_name, read_duration);
+    println!(
+        "[{}] Read Phase Finished in {:.2?}",
+        test_name, read_duration
+    );
 
     // Stop monitor task
     running.store(false, Ordering::Relaxed);

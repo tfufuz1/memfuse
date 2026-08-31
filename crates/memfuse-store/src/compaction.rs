@@ -391,7 +391,8 @@ impl CompactionEngine {
                 // FIND-STO-001: Tombstone-Retention
                 // Only GC tombstones during FULL compaction when no snapshot references them
                 // and no older SSTables outside this compaction round can contain older values.
-                let should_gc_tombstone = is_tombstone && is_full_compaction && raw_seq < min_snapshot_seq;
+                let should_gc_tombstone =
+                    is_tombstone && is_full_compaction && raw_seq < min_snapshot_seq;
                 if !should_gc_tombstone {
                     builder
                         .add(&item.key, &item.value, item.seq, item.tx)

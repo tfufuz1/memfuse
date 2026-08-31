@@ -605,7 +605,13 @@ impl LsmStorage {
             }
         }
 
-        (total_eval, total_bloom_pass, total_range_pass, total_block_read, found)
+        (
+            total_eval,
+            total_bloom_pass,
+            total_range_pass,
+            total_block_read,
+            found,
+        )
     }
 }
 

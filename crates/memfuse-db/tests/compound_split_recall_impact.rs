@@ -283,7 +283,12 @@ async fn test_german_compound_split_recall_impact() {
     println!("\n=== EMPIRICAL EVALUATION: GERMAN COMPOUND SPLIT RECALL IMPACT ===");
     println!(
         "{:<15} | {:<12} | {:<12} | {:<12} | {:<12} | {:<6}",
-        "Query Sub-Term", "BM25 (Split)", "BM25 (Unsplit)", "Hybr (Split)", "Hybr (Unsplit)", "Delta"
+        "Query Sub-Term",
+        "BM25 (Split)",
+        "BM25 (Unsplit)",
+        "Hybr (Split)",
+        "Hybr (Unsplit)",
+        "Delta"
     );
     println!("{}", "-".repeat(80));
 
