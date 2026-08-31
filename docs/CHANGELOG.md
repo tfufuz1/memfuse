@@ -79,10 +79,6 @@
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/model_info.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen |
 | `2026-08-30T18:54:39Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `TEST:CRY-001` | `3779c7f0` | `DONE` | `2` | // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:3779c7f0) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
 | `2026-08-30T18:54:39Z` | `crates/memfuse-ollama/src/client.rs` | `ANCHOR` | `TEST:OLL-001` | `ed7b7b38` | `DONE` | `2` | // ANCHOR[TEST:OLL-001] STATUS:DONE (TS:2026-08-30T18:54:39Z) (SESSION:ed7b7b38) |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für Grok-Style Agent State Branching |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/seq_log.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Shared Versioned Sequence Log für Snapshot-isolierte Index-Suchen (_at Familie). |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/snapshot.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SnapshotRegistry für MVCC-sichere Reads und minimal aktive Sequenznummern. |
