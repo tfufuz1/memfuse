@@ -16,9 +16,10 @@
 // ANCHOR[INTEGRATION:STO-001] STATUS:RESOLVED (TS:2026-08-24T00:00:00Z)
 // MODUL-HIERARCHIE: lsm.rs orchestriert, memtable/wal/sstable sind Bausteine.
 
-// INTENT: strictly forbid unsafe_code
-// BEGRÜNDUNG: Sovereign Core Doctrine mandates zero unsafe outside `memfuse-index`
-#![forbid(unsafe_code)]
+// INTENT: deny unsafe_code except Windows Win32 API calls for file permissions
+// BEGRÜNDUNG: Sovereign Core Doctrine mandates zero unsafe outside `memfuse-index`,
+// except Windows ACL security programming (`SetNamedSecurityInfoW`, etc.).
+#![deny(unsafe_code)]
 
 pub(crate) mod checkpoint;
 pub mod compaction;

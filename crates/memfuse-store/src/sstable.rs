@@ -33,6 +33,29 @@ use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+#[cfg(unix)]
+fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.read_exact_at(buf, offset)
+}
+
+#[cfg(windows)]
+fn pread_exact(file: &std::fs::File, mut buf: &mut [u8], mut offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    while !buf.is_empty() {
+        let n = file.seek_read(buf, offset)?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "failed to fill whole buffer",
+            ));
+        }
+        buf = &mut buf[n..];
+        offset += n as u64;
+    }
+    Ok(())
+}
+
 /// Cache for SSTable blocks. Key is (file_id, block_offset).
 pub type BlockCache = RwLock<LruCache<(u64, u64), Bytes>>;
 
@@ -617,11 +640,10 @@ impl SstableReader {
         let trailer_data = {
             let f = Arc::clone(&file);
             tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
-                use std::os::unix::fs::FileExt;
                 // We read up to 54 bytes to check for v1 trailer
                 let mut buf = vec![0u8; 54.min(file_size as usize)];
                 let offset = file_size.saturating_sub(54);
-                f.read_exact_at(&mut buf, offset)?;
+                pread_exact(&f, &mut buf, offset)?;
                 Ok(buf)
             })
             .await
@@ -742,10 +764,9 @@ impl SstableReader {
             let bloom_data_raw = {
                 let f = Arc::clone(&file);
                 tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
-                    use std::os::unix::fs::FileExt;
                     let mut buf =
                         vec![0u8; (bloom_end as usize).saturating_sub(bloom_offset as usize)];
-                    f.read_exact_at(&mut buf, bloom_offset)?;
+                    pread_exact(&f, &mut buf, bloom_offset)?;
                     Ok(buf)
                 })
                 .await
@@ -790,9 +811,8 @@ impl SstableReader {
                 (file_size - 12) as usize
             };
             tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
-                use std::os::unix::fs::FileExt;
                 let mut buf = vec![0u8; index_end.saturating_sub(index_offset as usize)];
-                f.read_exact_at(&mut buf, index_offset)?;
+                pread_exact(&f, &mut buf, index_offset)?;
                 Ok(buf)
             })
             .await
@@ -921,9 +941,8 @@ impl SstableReader {
     ) -> Result<Bytes> {
         let len = next_offset.saturating_sub(offset) as usize;
         let data = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
-            use std::os::unix::fs::FileExt;
             let mut buf = vec![0u8; len];
-            file.read_exact_at(&mut buf, offset)?;
+            pread_exact(&file, &mut buf, offset)?;
             Ok(buf)
         })
         .await
