@@ -2,6 +2,8 @@
 // ZWECK: Audit-Testsuite für HNSW & DiskANN Graph-Korrektheit & Brute-Force Recall
 // STAND: TS:2026-08-31T00:00:00Z
 
+#![cfg(feature = "experimental-diskann")]
+
 use memfuse_core::traits::VectorIndex;
 use memfuse_core::types::{DistanceMetric, DocId, TxId};
 use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
