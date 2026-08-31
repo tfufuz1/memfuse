@@ -48,6 +48,11 @@ name = "scale_bench"
 path = "../../benches/scale_bench.rs"
 harness = false
 
+[[bench]]
+name = "rrf_scale_bench"
+path = "../../benches/rrf_scale_bench.rs"
+harness = false
+
 [[example]]
 name = "quickstart"
 

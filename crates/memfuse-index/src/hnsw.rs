@@ -109,6 +109,19 @@ impl Default for HnswConfig {
 impl HnswConfig {
     /// Validates that the configuration parameters are within acceptable bounds.
     pub fn validate(&self) -> Result<()> {
+        if self.dimension == 0 {
+            return Err(MemFuseError::invalid_input(
+                "dimension must be greater than 0",
+            ));
+        }
+        if self.m == 0 {
+            return Err(MemFuseError::invalid_input("m must be greater than 0"));
+        }
+        if self.ef_search == 0 {
+            return Err(MemFuseError::invalid_input(
+                "ef_search must be greater than 0",
+            ));
+        }
         // ANCHOR[ALG-FIX:D2-003] STATUS:DONE (TS:2026-06-01T00:00:00Z) — ef_construction < M Guard fehlt
         // INVARIANTE: ef_construction >= M (INV-HNSW-1)
         if self.ef_construction < self.m {
@@ -3039,5 +3052,45 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("exceeds maximum allowed search limit"));
+    }
+
+    #[test]
+    fn test_hnsw_config_validation_invalid_params() {
+        // dimension == 0
+        let c_dim = HnswConfig { dimension: 0, ..Default::default() };
+        assert!(c_dim.validate().is_err());
+
+        // m == 0
+        let c_m = HnswConfig { m: 0, ..Default::default() };
+        assert!(c_m.validate().is_err());
+
+        // ef_construction < m
+        let c_ef_c = HnswConfig { m: 16, ef_construction: 8, ..Default::default() };
+        assert!(c_ef_c.validate().is_err());
+
+        // ef_search == 0
+        let c_ef_s = HnswConfig { ef_search: 0, ..Default::default() };
+        assert!(c_ef_s.validate().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_hnsw_index_search_k_zero_returns_empty() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let tx = TxId::new(1);
+        index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
+        index.commit(tx).await.unwrap();
+
+        let results = index.search(&[1.0, 0.0, 0.0, 0.0], 0).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_hnsw_index_delete_non_existent_doc() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let tx = TxId::new(1);
+        // Deleting non-existent doc should succeed without altering index state
+        index.delete(tx, DocId::new(999)).await.unwrap();
+        index.commit(tx).await.unwrap();
+        assert!(index.all_doc_ids().await.unwrap().is_empty());
     }
 }

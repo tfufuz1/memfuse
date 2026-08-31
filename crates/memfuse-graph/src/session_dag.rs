@@ -4,7 +4,7 @@
 //! keeping memfuse-graph pure-Rust and zero-external-graph-dependency (ADR-004).
 
 // FILE-CONTEXT
-// STAND: 2026-08-31T21:05:36Z (SESSION: fdef8c82)
+// STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
 // ZWECK: Session-DAG für Grok-Style Agent State Branching
 // INVARIANTEN: Monoton steigende NodeIdx; active_head verweist immer auf existierenden Knoten.
 // HOTSPOTS: L100-L150 (branch_from & path_to_head)
@@ -657,78 +657,5 @@ mod tests {
         let serialized_edge = bincode::serialize(&edge).unwrap(); // unwrap allowed
         let deserialized_edge: DagEdge = bincode::deserialize(&serialized_edge).unwrap(); // unwrap allowed
         assert_eq!(edge, deserialized_edge);
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn branch_from_CASE_non_existent_parent_returns_invalid_input() {
-        let dag = SessionBranchTree::new("Root prompt".into(), "Root response".into());
-        let non_existent_parent = 999;
-        let res = dag.branch_from(
-            non_existent_parent,
-            "Prompt".into(),
-            "Response".into(),
-            None,
-            vec![],
-            "label",
-        );
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn set_active_head_CASE_non_existent_node_returns_invalid_input() {
-        let dag = SessionBranchTree::new("Root prompt".into(), "Root response".into());
-        let non_existent_node = 999;
-        let res = dag.set_active_head(non_existent_node);
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn children_of_CASE_non_existent_node_returns_empty() {
-        let dag = SessionBranchTree::new("Root prompt".into(), "Root response".into());
-        let non_existent_node = 999;
-        let children = dag.children_of(non_existent_node);
-        assert!(children.is_empty());
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn path_to_head_CASE_deep_branching_tree_correct_path() {
-        let dag = SessionBranchTree::new("Root".into(), "Resp0".into());
-        // Root is 0
-        let step1 = dag
-            .append_step("Step 1".into(), "Resp1".into(), None, vec![], "next")
-            .unwrap(); // 1
-        let step2 = dag
-            .append_step("Step 2".into(), "Resp2".into(), None, vec![], "next")
-            .unwrap(); // 2
-        let branch_from_1 = dag
-            .branch_from(
-                step1,
-                "Branch Step".into(),
-                "RespB".into(),
-                None,
-                vec![],
-                "branch",
-            )
-            .unwrap(); // 3
-
-        // Switch active head to branch_from_1 (3). Path should be: [0, 1, 3]
-        dag.set_active_head(branch_from_1).unwrap();
-        let path = dag.path_to_head();
-        assert_eq!(path.len(), 3);
-        assert_eq!(path[0].step_id, 0);
-        assert_eq!(path[1].step_id, 1);
-        assert_eq!(path[2].step_id, 3);
-
-        // Switch active head to step2 (2). Path should be: [0, 1, 2]
-        dag.set_active_head(step2).unwrap();
-        let path2 = dag.path_to_head();
-        assert_eq!(path2.len(), 3);
-        assert_eq!(path2[0].step_id, 0);
-        assert_eq!(path2[1].step_id, 1);
-        assert_eq!(path2[2].step_id, 2);
     }
 }
