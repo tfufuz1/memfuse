@@ -60,6 +60,7 @@ tracing = "0.1"
 
 # Testing
 tempfile = "3"
+criterion = { version = "0.5", features = ["async_tokio"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Internal crates (Sovereign Core — 7 Crates)
