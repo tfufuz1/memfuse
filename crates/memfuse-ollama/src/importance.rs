@@ -123,6 +123,20 @@ mod tests {
         assert_eq!(score.value(), 0.85);
     }
 
+    #[test]
+    fn test_score_regex_bounds() {
+        let re = get_score_regex();
+
+        assert_eq!(re.find("0.0").map(|m| m.as_str()), Some("0.0"));
+        assert_eq!(re.find("0.55").map(|m| m.as_str()), Some("0.55"));
+        assert_eq!(re.find("1.0").map(|m| m.as_str()), Some("1.0"));
+        assert_eq!(
+            re.find("Score: 0.9 (high)").map(|m| m.as_str()),
+            Some("0.9")
+        );
+        assert_eq!(re.find("no number here").map(|m| m.as_str()), None);
+    }
+
     #[tokio::test]
     async fn test_score_importance_mock_invalid_response_error() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
