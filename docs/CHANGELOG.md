@@ -62,7 +62,6 @@
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error_dto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028). |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/traits.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/types/domain.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, DistanceMetric, Edge, Entity). |
-| `2026-08-30T21:51:46Z` | `crates/memfuse-core/src/types/domain.rs` | `ANCHOR` | `TEST:CORE-001` | `a43b7682` | `OPEN` | `0` | // ANCHOR[TEST:CORE-001] STATUS:OPEN (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682) |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/checkpoint.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate-internes MVCC Snapshot-Pinning und TxId-skopierte Rollbacks. |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | STCS-Compaction-Engine (Size-Tiered Compaction Strategy) |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |
