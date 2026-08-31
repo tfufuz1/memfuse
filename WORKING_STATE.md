@@ -12,7 +12,7 @@ Ergebnis: **2 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-checkpoint/src/lib.rs` | 42 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-30T22:00:34Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-30T22:00:34Z) (SESSION:a140747b) |
+| `crates/memfuse-checkpoint/src/lib.rs` | 37 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-29T17:21:26Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-25T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
 
 
@@ -20,20 +20,20 @@ Ergebnis: **2 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 7774 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | 1 | 1649 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-core` | 0 | 7775 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | 1 | 1468 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 1344 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 5222 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 7796 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 10574 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-index` | 1 | 7805 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | 1 | 10578 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 4035 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 12935 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 3033 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1113 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 2535 | 🟢 Clean |  |
+| `memfuse-ollama` | 3 | 2494 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1298 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 510 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2448 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2453 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 2609 | 🟢 Clean |  |
 
 

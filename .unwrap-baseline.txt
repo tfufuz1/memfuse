@@ -6,50 +6,52 @@ crates/memfuse-agent/src/audit.rs:91:        let index = Arc::new(HnswIndex::try
 crates/memfuse-agent/src/audit.rs:125:        audit_log.append(&entry1).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:126:        audit_log.append(&entry2).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:128:        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
-crates/memfuse-checkpoint/src/lib.rs:680:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:681:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:692:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:696:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:697:        let all = store.list_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:730:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:764:            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:778:        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:779:        let cp = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:802:        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:831:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:841:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:845:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:869:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:874:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:906:            let res = res.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:912:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:922:        let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:930:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:932:        let cp = guard.checkpoint().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:936:        let committed = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:948:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:951:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:953:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:959:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1050:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1055:            .expect("// expect #[cfg(test)]")
-crates/memfuse-checkpoint/src/lib.rs:1056:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1080:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1105:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1106:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
-crates/memfuse-checkpoint/src/lib.rs:1110:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1128:        let cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1154:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1172:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1174:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1193:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1195:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1226:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1228:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1229:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-core/src/error_dto.rs:374:        let details = dto.details.as_ref().expect("details should exist"); // unwrap allowed
-crates/memfuse-core/src/error_dto.rs:378:        let json_str = serde_json::to_string(&dto).expect("serde serialize"); // unwrap allowed
-crates/memfuse-core/src/error_dto.rs:380:            serde_json::from_str(&json_str).expect("serde deserialize"); // unwrap allowed
+crates/memfuse-checkpoint/src/lib.rs:715:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:716:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:727:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:731:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:732:        let all = store.list_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:765:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:799:            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:813:        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:814:        let cp = guard.commit().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:837:        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:866:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:876:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:880:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:904:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:909:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:941:            let res = res.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:947:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:957:        let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:965:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:967:        let cp = guard.checkpoint().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:971:        let committed = guard.commit().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:983:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:986:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:988:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:994:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1085:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1090:            .expect("// expect #[cfg(test)]")
+crates/memfuse-checkpoint/src/lib.rs:1091:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1115:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1140:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1141:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
+crates/memfuse-checkpoint/src/lib.rs:1145:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1163:        let cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1189:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1207:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1209:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1228:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1230:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1261:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1263:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1264:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1310:            let manifest = CheckpointManifest::new(meta, vec!["comp".to_string()]).unwrap();
+crates/memfuse-checkpoint/src/lib.rs:1311:            let val = serde_json::to_vec(&manifest).unwrap();
+crates/memfuse-core/src/error_dto.rs:359:        let details = dto.details.as_ref().expect("details should exist"); // unwrap allowed
+crates/memfuse-core/src/error_dto.rs:363:        let json_str = serde_json::to_string(&dto).expect("serde serialize"); // unwrap allowed
+crates/memfuse-core/src/error_dto.rs:365:            serde_json::from_str(&json_str).expect("serde deserialize"); // unwrap allowed
 crates/memfuse-core/src/ipc/memfuse_generated.rs:89:                unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap() }
 crates/memfuse-core/src/ipc/memfuse_generated.rs:253:                        .unwrap()
 crates/memfuse-core/src/ipc/memfuse_generated.rs:447:                        .unwrap()
@@ -155,68 +157,70 @@ crates/memfuse-core/src/types/saos.rs:458:        let deser: ContextWindow = ser
 crates/memfuse-core/src/types/saos.rs:512:        let chunk: ContextChunk = serde_json::from_str(json).expect("deserialize"); // expect
 crates/memfuse-core/src/types/filter.rs:207:        let ser = serde_json::to_string(&filter).unwrap(); // unwrap #[cfg(test)]
 crates/memfuse-core/src/types/filter.rs:208:        let deser: FilterExpr = serde_json::from_str(&ser).unwrap(); // unwrap #[cfg(test)]
-crates/memfuse-crypto/src/crypto.rs:196:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:199:        let (encrypted, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
-crates/memfuse-crypto/src/crypto.rs:200:        let decrypted = km.decrypt_auto_nonce(&encrypted, &nonce).expect("decrypt"); // expect
-crates/memfuse-crypto/src/crypto.rs:207:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:209:        let (encrypted, mut nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
-crates/memfuse-crypto/src/crypto.rs:218:        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:219:        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:222:        let (enc1, _) = km1.encrypt_auto_nonce(data).expect("enc1"); // expect
-crates/memfuse-crypto/src/crypto.rs:223:        let (enc2, _) = km2.encrypt_auto_nonce(data).expect("enc2"); // expect
-crates/memfuse-crypto/src/crypto.rs:231:        let km1 = KeyManager::try_new(pass, b"salt1").expect("km1"); // expect
-crates/memfuse-crypto/src/crypto.rs:232:        let km2 = KeyManager::try_new(pass, b"salt2").expect("km2"); // expect
-crates/memfuse-crypto/src/crypto.rs:239:        let master_km = KeyManager::try_new("master-secret", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:242:        let km_file1 = master_km.derive_file_key(b"file1").expect("derive1"); // expect
-crates/memfuse-crypto/src/crypto.rs:243:        let km_file2 = master_km.derive_file_key(b"file2").expect("derive2"); // expect
-crates/memfuse-crypto/src/crypto.rs:245:        let (enc1, n1) = km_file1.encrypt_auto_nonce(data).expect("enc1"); // expect
-crates/memfuse-crypto/src/crypto.rs:246:        let (enc2, _) = km_file2.encrypt_auto_nonce(data).expect("enc2"); // expect
-crates/memfuse-crypto/src/crypto.rs:251:        let dec1 = km_file1.decrypt_auto_nonce(&enc1, &n1).expect("dec1"); // expect
-crates/memfuse-crypto/src/crypto.rs:257:        let (km1, salt1) = KeyManager::try_new_random_salt("password").unwrap(); // unwrap
-crates/memfuse-crypto/src/crypto.rs:258:        let (km2, salt2) = KeyManager::try_new_random_salt("password").unwrap(); // unwrap
-crates/memfuse-crypto/src/crypto.rs:269:        let mut km = KeyManager::try_new("password", b"salt").unwrap(); // unwrap
-crates/memfuse-crypto/src/crypto.rs:282:        let km = KeyManager::try_new("secret", b"salt").expect("init"); // expect
-crates/memfuse-crypto/src/crypto.rs:283:        let key1 = km.derive_file_key(b"segment_001.sst").expect("k1"); // expect
-crates/memfuse-crypto/src/crypto.rs:284:        let key2 = km.derive_file_key(b"segment_002.sst").expect("k2"); // expect
-crates/memfuse-crypto/src/crypto.rs:294:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
-crates/memfuse-crypto/src/crypto.rs:295:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
-crates/memfuse-crypto/src/crypto.rs:296:        let k1 = km1.derive_file_key(b"data.sst").expect("k1"); // expect
-crates/memfuse-crypto/src/crypto.rs:297:        let k2 = km2.derive_file_key(b"data.sst").expect("k2"); // expect
-crates/memfuse-crypto/src/crypto.rs:307:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
-crates/memfuse-crypto/src/crypto.rs:308:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
-crates/memfuse-crypto/src/crypto.rs:311:                .expect("k1") // expect
-crates/memfuse-crypto/src/crypto.rs:314:                .expect("k2") // expect
-crates/memfuse-crypto/src/crypto.rs:330:        let (km, _) = KeyManager::try_new_random_salt("test-passphrase").unwrap(); // unwrap
-crates/memfuse-crypto/src/crypto.rs:338:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:342:            let (_, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
-crates/memfuse-crypto/src/crypto.rs:349:        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:350:        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
-crates/memfuse-crypto/src/crypto.rs:353:        let (encrypted, nonce) = km1.encrypt_auto_nonce(data).expect("encrypt"); // expect
-crates/memfuse-crypto/src/crypto.rs:360:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
-crates/memfuse-crypto/src/crypto.rs:361:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
-crates/memfuse-crypto/src/crypto.rs:362:        let sub1 = km1.derive_file_key(b"file_123").expect("sub1"); // expect
-crates/memfuse-crypto/src/crypto.rs:363:        let sub2 = km2.derive_file_key(b"file_123").expect("sub2"); // expect
-crates/memfuse-crypto/src/crypto.rs:373:        let km = KeyManager::try_new("secret", b"salt").expect("km"); // expect
-crates/memfuse-crypto/src/crypto.rs:374:        let sub1 = km.derive_file_key(b"file_A").expect("sub1"); // expect
-crates/memfuse-crypto/src/crypto.rs:375:        let sub2 = km.derive_file_key(b"file_B").expect("sub2"); // expect
-crates/memfuse-crypto/src/crypto.rs:404:        let km = KeyManager::try_new("pass", b"salt").expect("km");
-crates/memfuse-crypto/src/crypto.rs:411:        let km = KeyManager::try_new("pass", b"salt").expect("km");
-crates/memfuse-crypto/src/crypto.rs:430:            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
-crates/memfuse-crypto/src/crypto.rs:441:                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
-crates/memfuse-crypto/src/crypto.rs:442:                    let mut guard = nonces_clone.lock().expect("lock nonces");
-crates/memfuse-crypto/src/crypto.rs:452:            handle.await.expect("task handle joined");
-crates/memfuse-crypto/src/crypto.rs:455:        let final_count = nonces.lock().expect("lock nonces").len();
-crates/memfuse-crypto/src/wal_crypto.rs:273:        let mut hmac = WalHmac::new(key).unwrap(); // unwrap
-crates/memfuse-crypto/src/wal_crypto.rs:288:        verifier.verify_and_update(&e1, 100).expect("e1 valid"); // expect
-crates/memfuse-crypto/src/wal_crypto.rs:294:        verifier.verify_and_update(&e2, 200).expect("e2 valid"); // expect
-crates/memfuse-crypto/src/wal_crypto.rs:366:        let mut hmac = WalHmac::new(key).expect("hmac init"); // expect
-crates/memfuse-crypto/src/wal_crypto.rs:436:        verifier.verify_and_update(&e1, 10).expect("e1 valid"); // expect
-crates/memfuse-crypto/src/wal_crypto.rs:453:        verifier.verify_and_update(&e1, 10).expect("e1 valid"); // expect
-crates/memfuse-crypto/src/wal_crypto.rs:467:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-crates/memfuse-crypto/src/wal_crypto.rs:477:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-crates/memfuse-crypto/src/wal_crypto.rs:478:        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
-crates/memfuse-crypto/src/wal_crypto.rs:488:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-crates/memfuse-crypto/src/wal_crypto.rs:489:        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+crates/memfuse-crypto/src/crypto.rs:204:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:207:        let (encrypted, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
+crates/memfuse-crypto/src/crypto.rs:208:        let decrypted = km.decrypt_auto_nonce(&encrypted, &nonce).expect("decrypt"); // expect
+crates/memfuse-crypto/src/crypto.rs:215:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:217:        let (encrypted, mut nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
+crates/memfuse-crypto/src/crypto.rs:226:        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:227:        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:230:        let (enc1, _) = km1.encrypt_auto_nonce(data).expect("enc1"); // expect
+crates/memfuse-crypto/src/crypto.rs:231:        let (enc2, _) = km2.encrypt_auto_nonce(data).expect("enc2"); // expect
+crates/memfuse-crypto/src/crypto.rs:239:        let km1 = KeyManager::try_new(pass, b"salt1").expect("km1"); // expect
+crates/memfuse-crypto/src/crypto.rs:240:        let km2 = KeyManager::try_new(pass, b"salt2").expect("km2"); // expect
+crates/memfuse-crypto/src/crypto.rs:247:        let master_km = KeyManager::try_new("master-secret", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:250:        let km_file1 = master_km.derive_file_key(b"file1").expect("derive1"); // expect
+crates/memfuse-crypto/src/crypto.rs:251:        let km_file2 = master_km.derive_file_key(b"file2").expect("derive2"); // expect
+crates/memfuse-crypto/src/crypto.rs:253:        let (enc1, n1) = km_file1.encrypt_auto_nonce(data).expect("enc1"); // expect
+crates/memfuse-crypto/src/crypto.rs:254:        let (enc2, _) = km_file2.encrypt_auto_nonce(data).expect("enc2"); // expect
+crates/memfuse-crypto/src/crypto.rs:259:        let dec1 = km_file1.decrypt_auto_nonce(&enc1, &n1).expect("dec1"); // expect
+crates/memfuse-crypto/src/crypto.rs:265:        let (km1, salt1) = KeyManager::try_new_random_salt("password").unwrap(); // unwrap
+crates/memfuse-crypto/src/crypto.rs:266:        let (km2, salt2) = KeyManager::try_new_random_salt("password").unwrap(); // unwrap
+crates/memfuse-crypto/src/crypto.rs:277:        let mut km = KeyManager::try_new("password", b"salt").unwrap(); // unwrap
+crates/memfuse-crypto/src/crypto.rs:290:        let km = KeyManager::try_new("secret", b"salt").expect("init"); // expect
+crates/memfuse-crypto/src/crypto.rs:291:        let key1 = km.derive_file_key(b"segment_001.sst").expect("k1"); // expect
+crates/memfuse-crypto/src/crypto.rs:292:        let key2 = km.derive_file_key(b"segment_002.sst").expect("k2"); // expect
+crates/memfuse-crypto/src/crypto.rs:302:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
+crates/memfuse-crypto/src/crypto.rs:303:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
+crates/memfuse-crypto/src/crypto.rs:304:        let k1 = km1.derive_file_key(b"data.sst").expect("k1"); // expect
+crates/memfuse-crypto/src/crypto.rs:305:        let k2 = km2.derive_file_key(b"data.sst").expect("k2"); // expect
+crates/memfuse-crypto/src/crypto.rs:315:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
+crates/memfuse-crypto/src/crypto.rs:316:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
+crates/memfuse-crypto/src/crypto.rs:319:                .expect("k1") // expect
+crates/memfuse-crypto/src/crypto.rs:322:                .expect("k2") // expect
+crates/memfuse-crypto/src/crypto.rs:338:        let (km, _) = KeyManager::try_new_random_salt("test-passphrase").unwrap(); // unwrap
+crates/memfuse-crypto/src/crypto.rs:346:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:350:            let (_, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
+crates/memfuse-crypto/src/crypto.rs:357:        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:358:        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:361:        let (encrypted, nonce) = km1.encrypt_auto_nonce(data).expect("encrypt"); // expect
+crates/memfuse-crypto/src/crypto.rs:368:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
+crates/memfuse-crypto/src/crypto.rs:369:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
+crates/memfuse-crypto/src/crypto.rs:370:        let sub1 = km1.derive_file_key(b"file_123").expect("sub1"); // expect
+crates/memfuse-crypto/src/crypto.rs:371:        let sub2 = km2.derive_file_key(b"file_123").expect("sub2"); // expect
+crates/memfuse-crypto/src/crypto.rs:381:        let km = KeyManager::try_new("secret", b"salt").expect("km"); // expect
+crates/memfuse-crypto/src/crypto.rs:382:        let sub1 = km.derive_file_key(b"file_A").expect("sub1"); // expect
+crates/memfuse-crypto/src/crypto.rs:383:        let sub2 = km.derive_file_key(b"file_B").expect("sub2"); // expect
+crates/memfuse-crypto/src/crypto.rs:412:        let km = KeyManager::try_new("pass", b"salt").expect("km");
+crates/memfuse-crypto/src/crypto.rs:419:        let km = KeyManager::try_new("pass", b"salt").expect("km");
+crates/memfuse-crypto/src/crypto.rs:438:            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
+crates/memfuse-crypto/src/crypto.rs:449:                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
+crates/memfuse-crypto/src/crypto.rs:450:                    let mut guard = nonces_clone.lock().expect("lock nonces");
+crates/memfuse-crypto/src/crypto.rs:460:            handle.await.expect("task handle joined");
+crates/memfuse-crypto/src/crypto.rs:463:        let final_count = nonces.lock().expect("lock nonces").len();
+crates/memfuse-crypto/src/wal_crypto.rs:315:        let mut hmac = WalHmac::new(key).unwrap(); // unwrap
+crates/memfuse-crypto/src/wal_crypto.rs:330:        verifier.verify_and_update(&e1, 100).expect("e1 valid"); // expect
+crates/memfuse-crypto/src/wal_crypto.rs:336:        verifier.verify_and_update(&e2, 200).expect("e2 valid"); // expect
+crates/memfuse-crypto/src/wal_crypto.rs:408:        let mut hmac = WalHmac::new(key).expect("hmac init"); // expect
+crates/memfuse-crypto/src/wal_crypto.rs:478:        verifier.verify_and_update(&e1, 10).expect("e1 valid"); // expect
+crates/memfuse-crypto/src/wal_crypto.rs:495:        verifier.verify_and_update(&e1, 10).expect("e1 valid"); // expect
+crates/memfuse-crypto/src/wal_crypto.rs:509:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+crates/memfuse-crypto/src/wal_crypto.rs:519:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+crates/memfuse-crypto/src/wal_crypto.rs:520:        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+crates/memfuse-crypto/src/wal_crypto.rs:530:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+crates/memfuse-crypto/src/wal_crypto.rs:531:        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+crates/memfuse-crypto/src/wal_crypto.rs:551:        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+crates/memfuse-crypto/src/wal_crypto.rs:552:        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
 crates/memfuse-db/src/fusion.rs:356:        let meta = doc.metadata.as_ref().unwrap().as_object().unwrap(); // unwrap
 crates/memfuse-db/src/fusion.rs:357:        assert_eq!(meta.get("vec_key").unwrap(), "val1"); // unwrap
 crates/memfuse-db/src/fusion.rs:358:        assert_eq!(meta.get("graph_key").unwrap(), "val2"); // unwrap
@@ -971,14 +975,14 @@ crates/memfuse-index/src/persistence.rs:9:// TEST: grep -c ".unwrap()" crates/me
 crates/memfuse-index/src/persistence.rs:10:// DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.
 crates/memfuse-index/src/persistence.rs:322:        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes");
 crates/memfuse-index/src/persistence.rs:348:        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes");
-crates/memfuse-index/src/distance.rs:1285:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1291:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1296:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1535:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1579:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1586:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1670:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1677:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1281:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1287:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1292:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1507:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1551:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1558:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1642:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1649:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
 crates/memfuse-index/src/diskann.rs:972:        let index = DiskAnnIndex::try_new(DiskAnnConfig::default()).expect("valid config");
 crates/memfuse-index/src/diskann.rs:994:        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // expect
 crates/memfuse-index/src/diskann.rs:1000:        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
@@ -1138,21 +1142,21 @@ crates/memfuse-index/src/hnsw.rs:2989:                let index = HnswIndex::try
 crates/memfuse-index/src/hnsw.rs:3022:                    let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
 crates/memfuse-index/src/hnsw.rs:3028:            }).unwrap();
 crates/memfuse-index/src/hnsw.rs:3034:        let index = HnswIndex::try_new(test_config(4)).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:257:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:289:        let sandbox = McpSandbox::new(policy).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:307:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:310:        sandbox.store_volatile("res1", data).expect("store"); // expect
-crates/memfuse-mcp/src/sandbox.rs:312:        let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists"); // expect
-crates/memfuse-mcp/src/sandbox.rs:320:                .unwrap();
-crates/memfuse-mcp/src/sandbox.rs:322:        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:323:        let decrypted = result.decrypt(&key).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:331:                .unwrap();
-crates/memfuse-mcp/src/sandbox.rs:333:        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:355:        let sandbox = McpSandbox::new(policy).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:371:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:393:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:413:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
-crates/memfuse-mcp/src/sandbox.rs:417:            sandbox.store_volatile(&key, b"value").unwrap();
+crates/memfuse-mcp/src/sandbox.rs:256:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:287:        let sandbox = McpSandbox::new(policy).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:302:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:305:        sandbox.store_volatile("res1", data).expect("store"); // expect
+crates/memfuse-mcp/src/sandbox.rs:307:        let retrieved = sandbox.get_volatile("res1").expect("get").expect("exists"); // expect
+crates/memfuse-mcp/src/sandbox.rs:315:                .unwrap();
+crates/memfuse-mcp/src/sandbox.rs:317:        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:318:        let decrypted = result.decrypt(&key).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:326:                .unwrap();
+crates/memfuse-mcp/src/sandbox.rs:328:        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:350:        let sandbox = McpSandbox::new(policy).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:366:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:388:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:408:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+crates/memfuse-mcp/src/sandbox.rs:412:            sandbox.store_volatile(&key, b"value").unwrap();
 crates/memfuse-mcp/src/tests.rs:32:    let tmp = TempDir::new().expect("temp dir"); // expect
 crates/memfuse-mcp/src/tests.rs:33:    let db = MemFuse::open(tmp.path()).await.expect("open db"); // expect
 crates/memfuse-mcp/src/tests.rs:34:    let collection = db.collection("default").await.expect("collection"); // expect
