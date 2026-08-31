@@ -103,6 +103,51 @@ Basierend auf den empirischen Messungen wird der Schweregrad wie folgt differenz
 ```text
 running 1 test
 
+                           EMPIRICAL COMPOUND SPLIT RECALL IMPACT AUDIT MATRIX
+
+---------------------------------------------------------------------------------------------------------
+| Query Term     | Compound Word                              | Mode    | Rank (Split) | Rank (Bug) | Delta |
+---------------------------------------------------------------------------------------------------------
+| Kapitän        | donaudampfschifffahrtsgesellschaftskapi... | BM25    | MISS         | MISS       | 0     |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 2            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+| Kontext        | softwareentwicklungskontext                | BM25    | 2            | MISS       | DROP_OUT |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 1            | 2          | +1    |
+---------------------------------------------------------------------------------------------------------
+| Administrator  | systemadministrator                        | BM25    | 2            | MISS       | DROP_OUT |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 2            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+| Aufsicht       | finanzdienstleistungsaufsichtsbehoerde     | BM25    | 2            | MISS       | DROP_OUT |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 2            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+| Kommission     | datenschutzgrundverordnungskommission      | BM25    | 2            | MISS       | DROP_OUT |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 2            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+| Umstrukturierung | unternehmensumstrukturierungsplan          | BM25    | 2            | MISS       | DROP_OUT |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 1            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+| Überwachung    | telekommunikationsueberwachungsverordnung  | BM25    | MISS         | MISS       | 0     |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 2            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+| Strategie      | risikomanagementstrategiepapier            | BM25    | 2            | MISS       | DROP_OUT |
+|                |                                            | Vector  | 1            | 1          | 0     |
+|                |                                            | Hybrid  | 2            | 2          | +0    |
+---------------------------------------------------------------------------------------------------------
+
+SUMMARY METRICS:
+Total Queries Tested: 8
+BM25 Recall (Bug / Un-split): 0/8 (0.0%)
+BM25 Recall (Split):          6/8 (75.0%)
+Hybrid Recall (Bug / Un-split): 8/8 (100.0%)
+Hybrid Recall (Split):          8/8 (100.0%)
+test test_compound_split_recall_impact_evaluation ... ok
 === EMPIRICAL EVALUATION: GERMAN COMPOUND SPLIT RECALL IMPACT ===
 Query Sub-Term  | BM25 (Split) | BM25 (Unsplit) | Hybr (Split) | Hybr (Unsplit) | Delta
 --------------------------------------------------------------------------------
