@@ -21,6 +21,7 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 test-utils = []
 
 [dev-dependencies]
+memfuse-crypto = { path = ".", features = ["test-utils"] }
 tokio = { workspace = true, features = ["full"] }
 proptest = "1.4"
 criterion = { workspace = true }

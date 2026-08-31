@@ -759,10 +759,6 @@ mod tests {
         );
         assert_eq!(dto.kind, "CustomKind");
         assert_eq!(dto.message, "Custom message");
-        if let Some(details) = dto.details {
-            assert_eq!(details["trace_id"], "12345");
-        } else {
-            panic!("details missing");
-        }
+        assert_eq!(dto.details.expect("details present")["trace_id"], "12345");
     }
 }
