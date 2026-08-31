@@ -46,7 +46,14 @@ fn create_valid_entry(
 #[test]
 fn test_exhaustive_bit_flip_payload_and_header() {
     let integrity_key = b"master-integrity-key-32-bytes---";
-    let entry = create_valid_entry(integrity_key, [0u8; 32], 1001, 0, b"user_key_42", b"user_val_99999");
+    let entry = create_valid_entry(
+        integrity_key,
+        [0u8; 32],
+        1001,
+        0,
+        b"user_key_42",
+        b"user_val_99999",
+    );
 
     // 1. Verify baseline valid entry passes
     let mut verifier = IntegrityVerifier::new(integrity_key);
@@ -102,13 +109,19 @@ fn test_exhaustive_bit_flip_payload_and_header() {
         let mut tampered = entry.clone();
         tampered.seq_no += 1;
         let mut v = IntegrityVerifier::new(integrity_key);
-        assert!(v.verify_and_update(&tampered, 0).is_err(), "Modified seq_no NOT detected!");
+        assert!(
+            v.verify_and_update(&tampered, 0).is_err(),
+            "Modified seq_no NOT detected!"
+        );
     }
     {
         let mut tampered = entry.clone();
         tampered.op_type ^= 1;
         let mut v = IntegrityVerifier::new(integrity_key);
-        assert!(v.verify_and_update(&tampered, 0).is_err(), "Modified op_type NOT detected!");
+        assert!(
+            v.verify_and_update(&tampered, 0).is_err(),
+            "Modified op_type NOT detected!"
+        );
     }
 }
 

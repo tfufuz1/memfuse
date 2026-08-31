@@ -27,22 +27,32 @@ fn test_passphrase_length_variations() {
 
     // Single character passphrase
     let km_short = CryptoKey::try_new("a", salt).expect("short passphrase");
-    let (ct_short, nonce_short) = km_short.encrypt_auto_nonce(b"hello").expect("encrypt short");
-    let dec_short = km_short.decrypt_auto_nonce(&ct_short, &nonce_short).expect("decrypt short");
+    let (ct_short, nonce_short) = km_short
+        .encrypt_auto_nonce(b"hello")
+        .expect("encrypt short");
+    let dec_short = km_short
+        .decrypt_auto_nonce(&ct_short, &nonce_short)
+        .expect("decrypt short");
     assert_eq!(dec_short, b"hello");
 
     // Very long passphrase (> 1000 chars)
     let long_passphrase = "a".repeat(2000);
     let km_long = CryptoKey::try_new(&long_passphrase, salt).expect("long passphrase");
     let (ct_long, nonce_long) = km_long.encrypt_auto_nonce(b"hello").expect("encrypt long");
-    let dec_long = km_long.decrypt_auto_nonce(&ct_long, &nonce_long).expect("decrypt long");
+    let dec_long = km_long
+        .decrypt_auto_nonce(&ct_long, &nonce_long)
+        .expect("decrypt long");
     assert_eq!(dec_long, b"hello");
 
     // Unicode passphrase
     let unicode_pass = "🔒SicherheitsSchlüssel🔑-Passphrase-üöä-😀";
     let km_uni = CryptoKey::try_new(unicode_pass, salt).expect("unicode passphrase");
-    let (ct_uni, nonce_uni) = km_uni.encrypt_auto_nonce(b"hello unicode").expect("encrypt unicode");
-    let dec_uni = km_uni.decrypt_auto_nonce(&ct_uni, &nonce_uni).expect("decrypt unicode");
+    let (ct_uni, nonce_uni) = km_uni
+        .encrypt_auto_nonce(b"hello unicode")
+        .expect("encrypt unicode");
+    let dec_uni = km_uni
+        .decrypt_auto_nonce(&ct_uni, &nonce_uni)
+        .expect("decrypt unicode");
     assert_eq!(dec_uni, b"hello unicode");
 }
 
@@ -53,13 +63,18 @@ fn test_decryption_wrong_key_fails() {
 
     let (ct, nonce) = km1.encrypt_auto_nonce(b"sensitive data").expect("encrypt");
     let res = km2.decrypt_auto_nonce(&ct, &nonce);
-    assert!(res.is_err(), "Decryption with wrong key MUST fail gracefully without panic");
+    assert!(
+        res.is_err(),
+        "Decryption with wrong key MUST fail gracefully without panic"
+    );
 }
 
 #[test]
 fn test_decryption_truncated_ciphertext_fails() {
     let km = CryptoKey::try_new("passphrase", b"salt").expect("km");
-    let (ct, nonce) = km.encrypt_auto_nonce(b"sensitive data payload").expect("encrypt");
+    let (ct, nonce) = km
+        .encrypt_auto_nonce(b"sensitive data payload")
+        .expect("encrypt");
 
     // Truncate tag (last 16 bytes of AES-GCM-SIV output)
     let truncated_ct = &ct[..ct.len() - 8];
@@ -72,7 +87,11 @@ fn test_zero_byte_plaintext() {
     let km = CryptoKey::try_new("passphrase", b"salt").expect("km");
     let empty_payload = b"";
     let (ct, nonce) = km.encrypt_auto_nonce(empty_payload).expect("encrypt empty");
-    assert_eq!(ct.len(), 16, "AES-GCM-SIV tag size for 0-byte plaintext is 16 bytes");
+    assert_eq!(
+        ct.len(),
+        16,
+        "AES-GCM-SIV tag size for 0-byte plaintext is 16 bytes"
+    );
 
     let decrypted = km.decrypt_auto_nonce(&ct, &nonce).expect("decrypt empty");
     assert_eq!(decrypted, empty_payload);
@@ -87,7 +106,9 @@ fn test_large_100mb_payload_roundtrip() {
         *byte = (i % 251) as u8;
     }
 
-    let (ct, nonce) = km.encrypt_auto_nonce(&large_payload).expect("encrypt 100MB");
+    let (ct, nonce) = km
+        .encrypt_auto_nonce(&large_payload)
+        .expect("encrypt 100MB");
     assert_eq!(ct.len(), payload_size + 16);
 
     let decrypted = km.decrypt_auto_nonce(&ct, &nonce).expect("decrypt 100MB");
@@ -104,12 +125,18 @@ fn test_passphrase_reuse_behavior() {
     let km2 = CryptoKey::try_new(pass, salt).expect("km2");
 
     // Key bytes are deterministic for same passphrase and salt
-    assert_eq!(km1.inspect_key_bytes_for_test(), km2.inspect_key_bytes_for_test());
+    assert_eq!(
+        km1.inspect_key_bytes_for_test(),
+        km2.inspect_key_bytes_for_test()
+    );
 
     // However, nonces generated are non-deterministic (OsRng)
     let (ct1, nonce1) = km1.encrypt_auto_nonce(b"data").expect("ct1");
     let (ct2, nonce2) = km2.encrypt_auto_nonce(b"data").expect("ct2");
 
-    assert_ne!(nonce1, nonce2, "Nonces MUST be non-deterministic across calls/instances");
+    assert_ne!(
+        nonce1, nonce2,
+        "Nonces MUST be non-deterministic across calls/instances"
+    );
     assert_ne!(ct1, ct2, "Ciphertexts MUST differ due to random nonces");
 }

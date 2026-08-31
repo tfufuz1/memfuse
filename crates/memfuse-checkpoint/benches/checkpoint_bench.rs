@@ -134,7 +134,13 @@ fn bench_checkpoint_operations(c: &mut Criterion) {
     let store_hit = PersistentCheckpointStore::new(storage_hit, "bench_cache");
     rt.block_on(async {
         store_hit
-            .create_checkpoint("cp_hit_target", "col", 1, TxId::new(1), serde_json::json!({}))
+            .create_checkpoint(
+                "cp_hit_target",
+                "col",
+                1,
+                TxId::new(1),
+                serde_json::json!({}),
+            )
             .await
             .unwrap();
     });
@@ -149,7 +155,13 @@ fn bench_checkpoint_operations(c: &mut Criterion) {
     let store_populator = PersistentCheckpointStore::new(storage_miss.clone(), "bench_cache");
     rt.block_on(async {
         store_populator
-            .create_checkpoint("cp_miss_target", "col", 1, TxId::new(1), serde_json::json!({}))
+            .create_checkpoint(
+                "cp_miss_target",
+                "col",
+                1,
+                TxId::new(1),
+                serde_json::json!({}),
+            )
             .await
             .unwrap();
     });
@@ -167,7 +179,13 @@ fn bench_checkpoint_operations(c: &mut Criterion) {
     let store_rb = PersistentCheckpointStore::new(storage_rb, "bench_rb");
     rt.block_on(async {
         store_rb
-            .create_checkpoint("cp_rb_target", "col", 1, TxId::new(1), serde_json::json!({}))
+            .create_checkpoint(
+                "cp_rb_target",
+                "col",
+                1,
+                TxId::new(1),
+                serde_json::json!({}),
+            )
             .await
             .unwrap();
     });

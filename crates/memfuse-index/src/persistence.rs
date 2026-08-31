@@ -201,9 +201,9 @@ impl MmapIndex {
         let mmap = unsafe { memmap2::Mmap::map(&file) } // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
             .map_err(|e| MemFuseError::Storage(format!("Failed to mmap HNSW: {}", e)))?;
 
-        let header_slice = mmap.get(0..HnswHeader::SIZE).ok_or_else(|| {
-            MemFuseError::Storage("HNSW file too small for header".into())
-        })?;
+        let header_slice = mmap
+            .get(0..HnswHeader::SIZE)
+            .ok_or_else(|| MemFuseError::Storage("HNSW file too small for header".into()))?;
         let header = HnswHeader::try_from_bytes(header_slice)?;
         Ok(Self {
             mmap: std::sync::Arc::new(mmap),

@@ -635,10 +635,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         relation: memfuse_core::types::domain::LinkRelation,
     ) -> Result<()> {
         let _guard = self.insert_lock.lock().await;
-        
+
         let tx = self.allocate_tx()?;
         let doc_key = self.namespaced_key(&from.inner().to_le_bytes(), 1);
-        
+
         if let Some(bytes) = self.storage.get_at_seq(&doc_key, u64::MAX).await? {
             // Determine which struct it was saved as
             if let Ok(mut meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
@@ -647,15 +647,18 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         .get("links")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                         .unwrap_or_default();
-                        
+
                     // Check if link already exists to avoid duplicates
-                    if !links.iter().any(|l| l.target == to && l.relation == relation) {
+                    if !links
+                        .iter()
+                        .any(|l| l.target == to && l.relation == relation)
+                    {
                         links.push(memfuse_core::types::domain::MemoryLink {
                             target: to,
                             relation,
                             created_at_tx: tx,
                         });
-                        
+
                         obj.insert("links".to_string(), serde_json::to_value(links).unwrap());
                         let updated_bytes = serde_json::to_vec(&meta).unwrap();
                         self.storage.put(tx, &doc_key, &updated_bytes).await?;
@@ -667,14 +670,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         .get("links")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                         .unwrap_or_default();
-                        
-                    if !links.iter().any(|l| l.target == to && l.relation == relation) {
+
+                    if !links
+                        .iter()
+                        .any(|l| l.target == to && l.relation == relation)
+                    {
                         links.push(memfuse_core::types::domain::MemoryLink {
                             target: to,
                             relation,
                             created_at_tx: tx,
                         });
-                        
+
                         obj.insert("links".to_string(), serde_json::to_value(links).unwrap());
                         let updated_bytes = serde_json::to_vec(&full).unwrap();
                         self.storage.put(tx, &doc_key, &updated_bytes).await?;
@@ -682,12 +688,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Retrieves all links for a given document.
-    pub async fn get_links(&self, doc_id: DocId) -> Result<Vec<memfuse_core::types::domain::MemoryLink>> {
+    pub async fn get_links(
+        &self,
+        doc_id: DocId,
+    ) -> Result<Vec<memfuse_core::types::domain::MemoryLink>> {
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         if let Some(bytes) = self.storage.get_at_seq(&doc_key, u64::MAX).await? {
             if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {

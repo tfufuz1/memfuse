@@ -99,7 +99,13 @@ async fn test_cache_hit_and_miss_reloading() {
 
     // Create checkpoint via store1 (populates cache)
     store1
-        .create_checkpoint("cp_cache", "col1", 100, TxId::new(1), serde_json::json!({"v": 1}))
+        .create_checkpoint(
+            "cp_cache",
+            "col1",
+            100,
+            TxId::new(1),
+            serde_json::json!({"v": 1}),
+        )
         .await
         .unwrap();
 
@@ -108,19 +114,30 @@ async fn test_cache_hit_and_miss_reloading() {
     // First read on store1 -> Cache Hit! Storage `get()` should NOT be called
     let cp_hit = store1.get_checkpoint("cp_cache").await.unwrap().unwrap();
     assert_eq!(cp_hit.seq_no, 100);
-    assert_eq!(*storage.get_count.lock(), initial_get_count, "Cache hit must not touch storage");
+    assert_eq!(
+        *storage.get_count.lock(),
+        initial_get_count,
+        "Cache hit must not touch storage"
+    );
 
     // Fresh store instance over same storage -> Cache Miss! Must reload from storage
     let store2 = PersistentCheckpointStore::new(storage.clone(), "ns_cache");
     let cp_miss = store2.get_checkpoint("cp_cache").await.unwrap().unwrap();
     assert_eq!(cp_miss.seq_no, 100);
-    assert!(*storage.get_count.lock() > initial_get_count, "Cache miss must reload from storage");
+    assert!(
+        *storage.get_count.lock() > initial_get_count,
+        "Cache miss must reload from storage"
+    );
 
     // Subsequent read on store2 -> Now Cache Hit!
     let get_count_after_miss = *storage.get_count.lock();
     let cp_hit2 = store2.get_checkpoint("cp_cache").await.unwrap().unwrap();
     assert_eq!(cp_hit2.seq_no, 100);
-    assert_eq!(*storage.get_count.lock(), get_count_after_miss, "Subsequent lookup on store2 must hit cache");
+    assert_eq!(
+        *storage.get_count.lock(),
+        get_count_after_miss,
+        "Subsequent lookup on store2 must hit cache"
+    );
 }
 
 /// Test Concurrency: N writers creating checkpoints, M readers querying concurrently.
@@ -140,7 +157,13 @@ async fn test_concurrent_stress_read_write() {
         set.spawn(async move {
             let cp_name = format!("stress_cp_{i}");
             let _ = store_clone
-                .create_checkpoint(&cp_name, "col_stress", i as u64, TxId::new(i as u64 + 1), serde_json::json!({"i": i}))
+                .create_checkpoint(
+                    &cp_name,
+                    "col_stress",
+                    i as u64,
+                    TxId::new(i as u64 + 1),
+                    serde_json::json!({"i": i}),
+                )
                 .await?;
             Ok(())
         });
@@ -163,12 +186,20 @@ async fn test_concurrent_stress_read_write() {
     // Await all tasks and verify no panics or corruptions
     while let Some(res) = set.join_next().await {
         let task_res = res.expect("Task must not panic");
-        assert!(task_res.is_ok(), "Operation failed under concurrency: {:?}", task_res.err());
+        assert!(
+            task_res.is_ok(),
+            "Operation failed under concurrency: {:?}",
+            task_res.err()
+        );
     }
 
     // Verify all writer checkpoints were saved intact
     let final_list = store.list_checkpoints().await.unwrap();
-    assert_eq!(final_list.len(), num_writers, "All writer checkpoints must be present and consistent");
+    assert_eq!(
+        final_list.len(),
+        num_writers,
+        "All writer checkpoints must be present and consistent"
+    );
 }
 
 /// Test GC & Pinning Lifecycle: verifying `pin_checkpoint` and `unpin_checkpoint` invariants.
@@ -213,5 +244,8 @@ async fn test_pinning_and_gc_exclusion_lifecycle() {
         !storage.pinned.lock().contains(&20),
         "Sequence number 20 must be unpinned after drop_checkpoint"
     );
-    assert!(storage.pinned.lock().is_empty(), "No pinned checkpoints should remain");
+    assert!(
+        storage.pinned.lock().is_empty(),
+        "No pinned checkpoints should remain"
+    );
 }

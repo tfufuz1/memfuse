@@ -462,6 +462,7 @@ mod tests {
             token_count: 1,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         let window = ContextWindow {
             chunks: vec![chunk],
@@ -484,6 +485,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: Some("Dokument Kontext".to_string()),
+            links: Vec::new(),
         };
         assert_eq!(
             chunk.combined_text_owned(),
@@ -501,6 +503,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         assert_eq!(chunk.combined_text_owned(), "Raw content");
         assert!(!chunk.has_context_prefix());
@@ -515,6 +518,7 @@ mod tests {
             token_count: 2,
             metadata: None,
             contextual_prefix: Some("".to_string()),
+            links: Vec::new(),
         };
         assert_eq!(chunk.combined_text_owned(), "Raw content");
         assert!(!chunk.has_context_prefix());
@@ -536,6 +540,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
         assert_eq!(chunk_no_prefix.combined_token_count(), 10);
 
@@ -546,6 +551,7 @@ mod tests {
             token_count: 10,
             metadata: None,
             contextual_prefix: Some("1234567812345678".to_string()), // 16 chars -> +4 tokens
+            links: Vec::new(),
         };
         assert_eq!(chunk_with_prefix.combined_token_count(), 14);
         assert!(chunk_with_prefix.combined_token_count() > chunk_with_prefix.token_count);

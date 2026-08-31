@@ -48,7 +48,9 @@ fn dot_product_f64_ref(a: &[f32], b: &[f32]) -> f64 {
 
 #[test]
 fn test_simd_vs_scalar_vs_f64_all_metrics() {
-    let dimensions = [1, 2, 7, 8, 13, 16, 31, 32, 64, 128, 129, 384, 768, 1536, 4096];
+    let dimensions = [
+        1, 2, 7, 8, 13, 16, 31, 32, 64, 128, 129, 384, 768, 1536, 4096,
+    ];
     let mut max_cos_diff = 0.0f64;
     let mut max_euc_diff = 0.0f64;
     let mut max_dot_diff = 0.0f64;

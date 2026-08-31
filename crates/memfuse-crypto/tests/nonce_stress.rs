@@ -14,7 +14,9 @@ async fn test_1m_nonce_uniqueness_stress() {
     const NUM_THREADS: usize = 10;
     const NONCES_PER_THREAD: usize = TOTAL_NONCES / NUM_THREADS;
 
-    let km = Arc::new(CryptoKey::try_new("nonce-stress-passphrase", b"salt-stress-9999").expect("CryptoKey init"));
+    let km = Arc::new(
+        CryptoKey::try_new("nonce-stress-passphrase", b"salt-stress-9999").expect("CryptoKey init"),
+    );
     let nonces_set = Arc::new(Mutex::new(HashSet::with_capacity(TOTAL_NONCES)));
 
     let mut handles = Vec::new();
@@ -52,16 +54,22 @@ async fn test_1m_nonce_uniqueness_stress() {
     // Birthday paradox approximation for collision probability: p ~ 1 - exp(-n^2 / (2 * d))
     let n = TOTAL_NONCES as f64;
     let d = (2.0f64).powi(64);
-    let p_collision = 1.0 - (- (n * n) / (2.0 * d)).exp();
+    let p_collision = 1.0 - (-(n * n) / (2.0 * d)).exp();
 
     println!("--- NONCE UNICITY STRESS TEST STATS ---");
     println!("Total Nonces Tested: {}", TOTAL_NONCES);
     println!("Unique Nonces Generated: {}", total_unique);
     println!("Empirical Collision Count: 0");
-    println!("Theoretical Birthday Collision Probability (64-bit suffix): {:.10e}", p_collision);
+    println!(
+        "Theoretical Birthday Collision Probability (64-bit suffix): {:.10e}",
+        p_collision
+    );
     println!("---------------------------------------");
 
-    assert!(p_collision < 1e-7, "Theoretical collision probability should be extremely low");
+    assert!(
+        p_collision < 1e-7,
+        "Theoretical collision probability should be extremely low"
+    );
 }
 
 #[test]
@@ -77,5 +85,9 @@ fn test_multi_instance_prefix_isolation() {
     }
 
     // 100 random 4-byte prefixes should all be distinct with probability > 99.998%
-    assert_eq!(prefixes.len(), INSTANCES, "All instance prefixes must be distinct");
+    assert_eq!(
+        prefixes.len(),
+        INSTANCES,
+        "All instance prefixes must be distinct"
+    );
 }

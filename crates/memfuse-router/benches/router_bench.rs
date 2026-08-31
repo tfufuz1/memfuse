@@ -22,7 +22,11 @@ fn bench_router_engine(c: &mut Criterion) {
             let key = format!("doc_{i}");
             let vec = vec![(i as f32) * 0.1, 0.5, 0.2, 0.1];
             collection
-                .insert(&key, &vec, Some(json!({"text": format!("Document text content for entity {i}")})))
+                .insert(
+                    &key,
+                    &vec,
+                    Some(json!({"text": format!("Document text content for entity {i}")})),
+                )
                 .await
                 .unwrap();
 

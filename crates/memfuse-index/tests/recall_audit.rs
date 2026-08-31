@@ -164,7 +164,9 @@ async fn test_diskann_recall_matrix() {
     for &n in &dataset_sizes {
         for &dim in &dimensions {
             let temp_dir = tempfile::tempdir().unwrap();
-            let index_path = temp_dir.path().join(format!("diskann_recall_{n}_{dim}.idx"));
+            let index_path = temp_dir
+                .path()
+                .join(format!("diskann_recall_{n}_{dim}.idx"));
 
             let mut vectors = Vec::with_capacity(n);
             let mut ids = Vec::with_capacity(n);
@@ -345,7 +347,11 @@ async fn test_edge_cases_and_tombstones() {
     dup_index.commit(tx3).await.unwrap();
 
     let dup_res = dup_index.search(&vec![0.5f32; dim], 5).await.unwrap();
-    assert_eq!(dup_res.len(), 5, "Duplicate vectors search must return 5 results");
+    assert_eq!(
+        dup_res.len(),
+        5,
+        "Duplicate vectors search must return 5 results"
+    );
 
     // 5. Tombstone Deletes Safety Check
     let del_index = HnswIndex::try_new(config.clone()).unwrap();
@@ -375,7 +381,11 @@ async fn test_edge_cases_and_tombstones() {
         !returned_ids.contains(&DocId::new(7)),
         "Tombstoned DocId 7 must not appear in search results"
     );
-    assert_eq!(returned_ids.len(), 8, "Expected 8 active documents after deleting 2");
+    assert_eq!(
+        returned_ids.len(),
+        8,
+        "Expected 8 active documents after deleting 2"
+    );
 }
 
 #[tokio::test]
@@ -436,6 +446,13 @@ async fn test_concurrency_stress_inserts_and_searches() {
     }
 
     // Final integrity checks
-    assert_eq!(index.len().await, 150, "Expected 150 active documents post stress test");
-    assert!(index.check_connectivity().is_ok(), "Graph connectivity must remain healthy");
+    assert_eq!(
+        index.len().await,
+        150,
+        "Expected 150 active documents post stress test"
+    );
+    assert!(
+        index.check_connectivity().is_ok(),
+        "Graph connectivity must remain healthy"
+    );
 }

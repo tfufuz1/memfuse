@@ -597,9 +597,9 @@ impl DiskAnnIndex {
             #[allow(unsafe_code)]
             let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
-            let header_slice = mmap.get(0..DiskAnnHeader::SIZE).ok_or_else(|| {
-                MemFuseError::Storage("DiskANN file too small for header".into())
-            })?;
+            let header_slice = mmap
+                .get(0..DiskAnnHeader::SIZE)
+                .ok_or_else(|| MemFuseError::Storage("DiskANN file too small for header".into()))?;
             let header = DiskAnnHeader::try_from_bytes(header_slice)?;
 
             if inner.config.sector_size != header.sector_size as usize {

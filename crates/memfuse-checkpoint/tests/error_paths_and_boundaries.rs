@@ -107,7 +107,10 @@ async fn test_storage_put_failure_handling() {
         .create_checkpoint("fail_cp", "col1", 99, TxId::new(1), serde_json::json!({}))
         .await;
 
-    assert!(res.is_err(), "Storage write failure must return Result::Err");
+    assert!(
+        res.is_err(),
+        "Storage write failure must return Result::Err"
+    );
     if let Err(e) = res {
         assert!(
             matches!(e, MemFuseError::Storage(_)),
@@ -127,10 +130,19 @@ async fn test_storage_commit_failure_handling() {
     let store = PersistentCheckpointStore::new(storage.clone(), "ns_err");
 
     let res = store
-        .create_checkpoint("commit_fail_cp", "col1", 100, TxId::new(1), serde_json::json!({}))
+        .create_checkpoint(
+            "commit_fail_cp",
+            "col1",
+            100,
+            TxId::new(1),
+            serde_json::json!({}),
+        )
         .await;
 
-    assert!(res.is_err(), "Storage commit failure must return Result::Err");
+    assert!(
+        res.is_err(),
+        "Storage commit failure must return Result::Err"
+    );
     assert!(
         !storage.pinned.lock().contains(&100),
         "Failed sequence number must be unpinned upon storage commit error"

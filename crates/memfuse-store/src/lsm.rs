@@ -1073,7 +1073,8 @@ impl StorageEngine for LsmStorage {
         // INVARIANT (Task C - Single snapshot boundary):
         // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
-        let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> = std::collections::BTreeMap::new();
+        let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
+            std::collections::BTreeMap::new();
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
 

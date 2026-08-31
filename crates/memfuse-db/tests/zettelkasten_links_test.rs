@@ -1,4 +1,4 @@
-use memfuse_core::types::domain::{DocId, LinkRelation, MemoryLink, TxId};
+use memfuse_core::types::domain::{DocId, LinkRelation, TxId};
 use memfuse_core::HybridQuery;
 use memfuse_db::MemFuse;
 use tempfile::tempdir;
@@ -12,15 +12,27 @@ async fn test_zettelkasten_memory_links_and_traversal() {
     let dummy_emb = vec![0.1f32; 768];
 
     // Insert 3 documents: doc-1, doc-2, doc-3
-    db.insert("doc-1", &dummy_emb, Some(serde_json::json!({"text": "Document 1 content"})))
-        .await
-        .unwrap();
-    db.insert("doc-2", &dummy_emb, Some(serde_json::json!({"text": "Document 2 content"})))
-        .await
-        .unwrap();
-    db.insert("doc-3", &dummy_emb, Some(serde_json::json!({"text": "Document 3 content"})))
-        .await
-        .unwrap();
+    db.insert(
+        "doc-1",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Document 1 content"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-2",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Document 2 content"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-3",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Document 3 content"})),
+    )
+    .await
+    .unwrap();
 
     let doc1_id = DocId::from_key("doc-1").unwrap();
     let doc2_id = DocId::from_key("doc-2").unwrap();
@@ -60,10 +72,7 @@ async fn test_zettelkasten_memory_links_and_traversal() {
 
     // Test traverse_links with max_depth 3 (cycle doc-3 -> doc-1 must be avoided)
     let traversed_depth3 = col.traverse_links(doc1_id, 3).await.unwrap();
-    assert_eq!(
-        traversed_depth3,
-        vec![(doc2_id, 1), (doc3_id, 2)]
-    );
+    assert_eq!(traversed_depth3, vec![(doc2_id, 1), (doc3_id, 2)]);
 }
 
 #[tokio::test]
@@ -75,12 +84,20 @@ async fn test_supersedes_displacement_logic() {
     let dummy_emb = vec![0.1f32; 768];
 
     // Insert doc-old and doc-new
-    db.insert("doc-old", &dummy_emb, Some(serde_json::json!({"text": "Old outdated specification"})))
-        .await
-        .unwrap();
-    db.insert("doc-new", &dummy_emb, Some(serde_json::json!({"text": "New updated specification"})))
-        .await
-        .unwrap();
+    db.insert(
+        "doc-old",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Old outdated specification"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-new",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "New updated specification"})),
+    )
+    .await
+    .unwrap();
 
     let old_id = DocId::from_key("doc-old").unwrap();
     let new_id = DocId::from_key("doc-new").unwrap();

@@ -232,7 +232,9 @@ async fn test_hnsw_and_diskann_persistence_roundtrip() {
         assert_eq!(pre.doc_id, post.doc_id, "HNSW DocId mismatch post reload");
         assert!(
             (pre.score - post.score).abs() < 1e-5,
-            "HNSW score mismatch post reload: pre={}, post={}", pre.score, post.score
+            "HNSW score mismatch post reload: pre={}, post={}",
+            pre.score,
+            post.score
         );
     }
 
@@ -262,7 +264,10 @@ async fn test_hnsw_and_diskann_persistence_roundtrip() {
 
     assert_eq!(diskann_pre_results.len(), diskann_post_results.len());
     for (pre, post) in diskann_pre_results.iter().zip(diskann_post_results.iter()) {
-        assert_eq!(pre.doc_id, post.doc_id, "DiskANN DocId mismatch post reload");
+        assert_eq!(
+            pre.doc_id, post.doc_id,
+            "DiskANN DocId mismatch post reload"
+        );
         assert!(
             (pre.score - post.score).abs() < 1e-5,
             "DiskANN score mismatch post reload"
@@ -293,7 +298,9 @@ async fn test_corrupted_mmap_file_handling() {
 
     // 3. DiskANN Corrupt Magic Bytes
     let bad_diskann_path = temp_dir.path().join("bad_magic.idx");
-    tokio::fs::write(&bad_diskann_path, &bad_bytes).await.unwrap();
+    tokio::fs::write(&bad_diskann_path, &bad_bytes)
+        .await
+        .unwrap();
     let diskann = DiskAnnIndex::try_new(DiskAnnConfig {
         index_path: bad_diskann_path,
         ..Default::default()
@@ -318,7 +325,9 @@ async fn test_corrupted_mmap_file_handling() {
     ];
     let mut trunc_data = Vec::from(header_bytes);
     trunc_data.resize(4096, 0u8); // Pad header sector
-    tokio::fs::write(&trunc_diskann_path, &trunc_data).await.unwrap();
+    tokio::fs::write(&trunc_diskann_path, &trunc_data)
+        .await
+        .unwrap();
 
     let trunc_diskann = DiskAnnIndex::try_new(DiskAnnConfig {
         index_path: trunc_diskann_path,

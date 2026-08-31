@@ -177,10 +177,7 @@ async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
     );
 
     // Verify storage received the rollback immediately
-    assert_eq!(
-        storage.rolled_back_txs.lock().clone(),
-        vec![TxId::new(404)]
-    );
+    assert_eq!(storage.rolled_back_txs.lock().clone(), vec![TxId::new(404)]);
 
     // Now let `guard` drop here. Check that drop does NOT attempt a second rollback.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;

@@ -208,6 +208,7 @@ mod tests {
             token_count: 5,
             metadata: None,
             contextual_prefix: None,
+            links: Vec::new(),
         };
 
         let context_window = memfuse_core::ContextWindow {

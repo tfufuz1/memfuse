@@ -56,10 +56,7 @@ impl StorageEngine for VersionedMockStorage {
 
     async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
         let mut store = self.store.lock();
-        store
-            .entry(key.to_vec())
-            .or_default()
-            .insert(tx_id.0, None);
+        store.entry(key.to_vec()).or_default().insert(tx_id.0, None);
         Ok(())
     }
 
@@ -160,11 +157,20 @@ async fn test_time_travel_sequence_byte_exact_recovery() {
 
     // 2. Transition to State B
     let tx_b = TxId::new(20);
-    storage.put(tx_b, b"doc_1", b"content_B1_updated").await.unwrap();
-    storage.put(tx_b, b"doc_3", b"content_B3_new").await.unwrap();
+    storage
+        .put(tx_b, b"doc_1", b"content_B1_updated")
+        .await
+        .unwrap();
+    storage
+        .put(tx_b, b"doc_3", b"content_B3_new")
+        .await
+        .unwrap();
 
     let checksum_b = storage.state_checksum();
-    assert_ne!(checksum_a, checksum_b, "State B checksum must differ from State A");
+    assert_ne!(
+        checksum_a, checksum_b,
+        "State B checksum must differ from State A"
+    );
 
     // Create Checkpoint 2 at State B
     let _cp2 = store
@@ -178,7 +184,10 @@ async fn test_time_travel_sequence_byte_exact_recovery() {
     storage.put(tx_c, b"doc_4", b"content_C4").await.unwrap();
 
     let checksum_c = storage.state_checksum();
-    assert_ne!(checksum_b, checksum_c, "State C checksum must differ from State B");
+    assert_ne!(
+        checksum_b, checksum_c,
+        "State C checksum must differ from State B"
+    );
 
     // 4. Time-Travel: Restore Checkpoint 1 (State A)
     let restored_meta = store.restore_checkpoint("cp1").await.unwrap();
@@ -193,8 +202,14 @@ async fn test_time_travel_sequence_byte_exact_recovery() {
     );
 
     // Verify individual key contents
-    assert_eq!(storage.get(b"doc_1").await.unwrap(), Some(b"content_A1".to_vec()));
-    assert_eq!(storage.get(b"doc_2").await.unwrap(), Some(b"content_A2".to_vec()));
+    assert_eq!(
+        storage.get(b"doc_1").await.unwrap(),
+        Some(b"content_A1".to_vec())
+    );
+    assert_eq!(
+        storage.get(b"doc_2").await.unwrap(),
+        Some(b"content_A2".to_vec())
+    );
     assert_eq!(storage.get(b"doc_3").await.unwrap(), None);
     assert_eq!(storage.get(b"doc_4").await.unwrap(), None);
 }

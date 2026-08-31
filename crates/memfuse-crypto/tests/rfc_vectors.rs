@@ -77,7 +77,9 @@ fn test_rfc_5869_hkdf_sha256_case_1() {
     let salt = hex_decode("000102030405060708090a0b0c");
     let info = hex_decode("f0f1f2f3f4f5f6f7f8f9");
     let okm_len = 42;
-    let expected_okm = hex_decode("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865");
+    let expected_okm = hex_decode(
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865",
+    );
 
     let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
     let mut okm = vec![0u8; okm_len];
@@ -115,7 +117,8 @@ fn test_rfc_4231_hmac_sha256_case_1() {
     // RFC 4231 Test Case 1
     let key = hex_decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
     let data = b"Hi There";
-    let expected_digest = hex_decode("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7");
+    let expected_digest =
+        hex_decode("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7");
 
     let mut mac = <HmacSha256 as KeyInit>::new_from_slice(&key).expect("hmac key init");
     Mac::update(&mut mac, data);
@@ -133,7 +136,8 @@ fn test_rfc_4231_hmac_sha256_case_2() {
     // RFC 4231 Test Case 2 ("Jefe")
     let key = b"Jefe";
     let data = b"what do ya want for nothing?";
-    let expected_digest = hex_decode("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+    let expected_digest =
+        hex_decode("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
 
     let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key).expect("hmac key init");
     Mac::update(&mut mac, data);
