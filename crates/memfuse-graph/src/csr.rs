@@ -614,17 +614,21 @@ impl CsrGraph {
         &self,
         entity_ids: &[EntityId],
     ) -> Result<HashMap<EntityId, u64>> {
-        let inner = self.inner.read();
-        let mut map = HashMap::with_capacity(entity_ids.len());
-        for &eid in entity_ids {
-            if let Some(&comm_id) = inner.communities.get(&eid) {
-                map.insert(eid, comm_id);
+        let (map, done) = {
+            let inner = self.inner.read();
+            let mut map = HashMap::with_capacity(entity_ids.len());
+            for &eid in entity_ids {
+                if let Some(&comm_id) = inner.communities.get(&eid) {
+                    map.insert(eid, comm_id);
+                }
             }
-        }
-        if inner.communities_loaded || self.storage.is_none() || entity_ids.is_empty() {
+            let done = inner.communities_loaded || self.storage.is_none() || entity_ids.is_empty();
+            (map, done)
+        };
+
+        if done {
             return Ok(map);
         }
-        drop(inner);
 
         if let Some(ref storage) = self.storage {
             let entries = storage.scan_prefix(GRAPH_COMMUNITY_PREFIX).await?;

@@ -2012,7 +2012,10 @@ async fn test_concurrent_insert_many_collision_safety() {
     for i in 0..20 {
         let key = format!("batch_doc_{i}");
         let doc = col.get(&key).await.unwrap();
-        assert!(doc.is_some(), "Document {key} must exist after concurrent insert_many");
+        assert!(
+            doc.is_some(),
+            "Document {key} must exist after concurrent insert_many"
+        );
     }
 
     // 2. Synthetically test DocId collision rejection within insert_many
@@ -2036,12 +2039,19 @@ async fn test_concurrent_insert_many_collision_safety() {
     // Attempt insert_many with a batch containing "colliding_target_key"
     let batch_with_collision = vec![
         ("safe_doc_1".to_string(), vec![1.0, 0.0, 0.0, 0.0], None),
-        ("colliding_target_key".to_string(), vec![2.0, 0.0, 0.0, 0.0], None),
+        (
+            "colliding_target_key".to_string(),
+            vec![2.0, 0.0, 0.0, 0.0],
+            None,
+        ),
         ("safe_doc_2".to_string(), vec![3.0, 0.0, 0.0, 0.0], None),
     ];
 
     let err_res = col.insert_many(&batch_with_collision).await;
-    assert!(err_res.is_err(), "insert_many must fail when DocId collision is detected");
+    assert!(
+        err_res.is_err(),
+        "insert_many must fail when DocId collision is detected"
+    );
     assert!(matches!(err_res, Err(MemFuseError::Internal(_))));
 
     // Verify all-or-nothing rollback (Option a): safe_doc_1 and safe_doc_2 must NOT exist

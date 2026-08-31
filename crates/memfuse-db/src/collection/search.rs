@@ -529,11 +529,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             None
         };
 
-        let (vector_results, text_results, graph_results) = if let Some(target_comm) = target_community_id {
-            let mut candidate_eids = Vec::with_capacity(
-                vector_results.len() + text_results.len() + graph_results.len(),
-            );
-            for res in vector_results.iter().chain(text_results.iter()).chain(graph_results.iter()) {
+        let (vector_results, text_results, graph_results) = if let Some(target_comm) =
+            target_community_id
+        {
+            let mut candidate_eids =
+                Vec::with_capacity(vector_results.len() + text_results.len() + graph_results.len());
+            for res in vector_results
+                .iter()
+                .chain(text_results.iter())
+                .chain(graph_results.iter())
+            {
                 if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
                     candidate_eids.push(eid);
                 }
@@ -683,10 +688,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
 
         let community_map = if target_community_id.is_some() {
-            let mut candidate_eids = Vec::with_capacity(
-                vector_results.len() + text_results.len() + graph_results.len(),
-            );
-            for res in vector_results.iter().chain(text_results.iter()).chain(graph_results.iter()) {
+            let mut candidate_eids =
+                Vec::with_capacity(vector_results.len() + text_results.len() + graph_results.len());
+            for res in vector_results
+                .iter()
+                .chain(text_results.iter())
+                .chain(graph_results.iter())
+            {
                 if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
                     candidate_eids.push(eid);
                 }

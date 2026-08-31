@@ -107,6 +107,63 @@ async fn test_ingest_folder() {
 }
 
 #[tokio::test]
+async fn test_batch_ingest_folder_best_effort_semantics() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db
+        .collection("best-effort-ingest")
+        .await
+        .expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let folder_path = tmp.path().join("batch_docs");
+    std::fs::create_dir(&folder_path).expect("create folder");
+
+    let valid_file = folder_path.join("valid.md");
+    let corrupt_pdf = folder_path.join("corrupt.pdf");
+
+    std::fs::write(&valid_file, "# Valid Markdown\nThis content is valid.").expect("write valid");
+    std::fs::write(&corrupt_pdf, b"Not a valid PDF content").expect("write corrupt pdf");
+
+    let reports = pipeline
+        .ingest_folder(&folder_path, &collection)
+        .await
+        .expect("ingest_folder should succeed with best-effort results");
+
+    assert_eq!(
+        reports.len(),
+        2,
+        "Batch report should contain reports for both supported files"
+    );
+
+    let valid_report = reports
+        .iter()
+        .find(|r| r.file_path.contains("valid.md"))
+        .unwrap();
+    assert!(valid_report.chunks_created > 0);
+    assert!(valid_report.errors.is_empty());
+
+    let corrupt_report = reports
+        .iter()
+        .find(|r| r.file_path.contains("corrupt.pdf"))
+        .unwrap();
+    assert_eq!(corrupt_report.chunks_created, 0);
+    assert!(!corrupt_report.errors.is_empty());
+    assert!(corrupt_report.errors[0].contains("PDF extraction failed"));
+}
+
+#[tokio::test]
 async fn test_ingestion_creates_graph_entities() {
     let tmp = TempDir::new().expect("temp dir");
     let db_path = tmp.path().join("db");
