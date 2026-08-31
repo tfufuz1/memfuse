@@ -22,6 +22,12 @@
 | `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate entry point exposing audit, context, engine, event_source, graph, and step submodules. |
 | `TS:2026-08-30T21:15:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection. |
 | `TS:2026-08-30T21:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/query_builder.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fluent HybridQueryBuilder Fassade für Konsolidierung aller Search-Signaturen. |
+| `TS:2026-08-30T19:50:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/benches/crypto_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Criterion benchmark suite for memfuse-crypto throughput and latency measurement. |
+| `TS:2026-08-30T19:50:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/proptests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Property-based testing suite for memfuse-crypto using proptest. |
+| `TS:2026-08-30T19:45:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/anti_tamper_matrix.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Systematic WAL anti-tamper matrix, single bit-flip analysis, replay attack protection, and constant-time check. |
+| `TS:2026-08-30T19:40:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/key_separation_and_edge_cases.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Key separation and cryptographic edge cases test suite for memfuse-crypto. |
+| `TS:2026-08-30T19:35:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/nonce_stress.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-threaded nonce uniqueness stress testing & empirical vs theoretical collision probability verification. |
+| `TS:2026-08-30T19:25:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/rfc_vectors.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verification of cryptographic primitives against official RFC and reference test vectors. |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
@@ -146,3 +152,8 @@
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
+| `` | `crates/memfuse-text/benches/text_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantifiziert Durchsatz (Words/sec), Latencies p50/p95/p99 für Tokenisierungen, Morphologie & BM25-Suche. |
+| `` | `crates/memfuse-text/tests/bm25_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert BM25 Scoring gegen handberechnete mathematische Werte. |
+| `` | `crates/memfuse-text/tests/inverted_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert CRUD-Semantik, MVCC Snapshot Isolation und Nebenläufigkeits-Konsistenz. |
+| `` | `crates/memfuse-text/tests/morphology_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Kompositazerlegung, Umlautnormalisierung, False-Positive-Rate & End-to-End Tokenisierung. |
+| `` | `crates/memfuse-text/tests/tokenizer_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert Fuzz-Robustheit (0 Panics), BM25-Score-Monotonie und Tokenisierungs-Grenzfälle. |
