@@ -1681,5 +1681,74 @@ mod tests {
                 "Euclidean dispatch mismatch: simd={}, scalar={}", euc_simd, euc_scalar
             );
         }
+
+        #[test]
+        fn prop_u8_f32_asymmetric_distance_parity(
+            v1 in proptest::collection::vec(-5.0..5.0f32, 1..128),
+            v2 in proptest::collection::vec(0..255u8, 1..128),
+            alphas in proptest::collection::vec(0.01..2.0f32, 1..128),
+            mins in proptest::collection::vec(-10.0..10.0f32, 1..128),
+        ) {
+            let len = v1.len().min(v2.len()).min(alphas.len()).min(mins.len());
+            let a = &v1[..len];
+            let b = &v2[..len];
+            let al = &alphas[..len];
+            let mi = &mins[..len];
+
+            // Test dot_product_f32_u8
+            let dot_actual = dot_product_f32_u8(a, b);
+            let dot_expected: f32 = a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum();
+            proptest::prop_assert!(
+                (dot_actual - dot_expected).abs() < 1e-3,
+                "dot_product_f32_u8 parity mismatch: actual={}, expected={}", dot_actual, dot_expected
+            );
+
+            // Test euclidean_distance_sq_f32_u8
+            let euc_sq_actual = euclidean_distance_sq_f32_u8(a, b, al, mi);
+            let euc_sq_expected: f32 = a
+                .iter()
+                .zip(b.iter())
+                .zip(al.iter())
+                .zip(mi.iter())
+                .map(|(((&x, &y), &alpha), &min)| {
+                    let y_f32 = (y as f32) * alpha + min;
+                    (x - y_f32) * (x - y_f32)
+                })
+                .sum();
+            proptest::prop_assert!(
+                (euc_sq_actual - euc_sq_expected).abs() < 1e-3,
+                "euclidean_distance_sq_f32_u8 parity mismatch: actual={}, expected={}", euc_sq_actual, euc_sq_expected
+            );
+
+            // Test cosine_similarity_parts_f32_u8
+            let parts = cosine_similarity_parts_f32_u8(a, b);
+            let sum_u8_expected: u32 = b.iter().map(|&y| y as u32).sum();
+            let norm_u8_sq_expected: u32 = b.iter().map(|&y| (y as u32) * (y as u32)).sum();
+            proptest::prop_assert_eq!(parts.sum_u8, sum_u8_expected);
+            proptest::prop_assert_eq!(parts.norm_u8_sq, norm_u8_sq_expected);
+        }
+    }
+
+    #[test]
+    fn test_normalize_inplace_edge_cases() {
+        // Zero vector remain zero
+        let mut zero = vec![0.0, 0.0, 0.0];
+        normalize_inplace(&mut zero);
+        assert_eq!(zero, vec![0.0, 0.0, 0.0]);
+
+        // 1-element vector normalized to 1.0 or -1.0
+        let mut single = vec![5.0];
+        normalize_inplace(&mut single);
+        assert!((single[0] - 1.0).abs() < 1e-6);
+
+        let mut single_neg = vec![-3.0];
+        normalize_inplace(&mut single_neg);
+        assert!((single_neg[0] - (-1.0)).abs() < 1e-6);
+
+        // Standard vector unit norm assertion (3, 4 vector length = 5)
+        let mut v = vec![3.0, 4.0];
+        normalize_inplace(&mut v);
+        assert!((v[0] - 0.6).abs() < 1e-6);
+        assert!((v[1] - 0.8).abs() < 1e-6);
     }
 }
