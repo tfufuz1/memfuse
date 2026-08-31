@@ -2665,6 +2665,7 @@ dependencies = [
  "parking_lot",
  "proptest",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
@@ -2750,11 +2751,12 @@ dependencies = [
 name = "memfuse-router"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "memfuse-core",
  "memfuse-db",
- "memfuse-mcp",
  "memfuse-ollama",
  "memfuse-store",
+ "proptest",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2785,6 +2787,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
