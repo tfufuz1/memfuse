@@ -560,7 +560,7 @@ mod tests {
         interfix_type: &'static str,
     }
 
-    // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-31T21:13:26Z) (SESSION:4d3320ef)
+    // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-31T21:13:26Z) (SESSION:4d3320ef)
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
