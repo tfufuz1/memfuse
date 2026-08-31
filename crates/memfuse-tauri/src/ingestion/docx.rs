@@ -53,3 +53,29 @@ pub async fn extract_docx_text(path: &Path) -> Result<String> {
     .map_err(|e| MemFuseError::Internal(format!("DOCX extraction task panicked: {e:?}")))?
     .map_err(|_| MemFuseError::Internal("DOCX extraction panicked on malformed file".into()))?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_docx_bytes_empty() {
+        let res = extract_docx_bytes(&[]);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), "");
+    }
+
+    #[test]
+    fn test_extract_docx_bytes_invalid_zip() {
+        let invalid_bytes = b"This is not a zip or docx archive.";
+        let res = extract_docx_bytes(invalid_bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_extract_docx_bytes_corrupted_zip_header() {
+        let corrupted_bytes = b"PK\x03\x04corrupted_header";
+        let res = extract_docx_bytes(corrupted_bytes);
+        assert!(res.is_err());
+    }
+}

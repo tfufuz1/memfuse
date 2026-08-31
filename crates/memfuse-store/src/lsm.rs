@@ -2478,6 +2478,35 @@ mod tests {
             storage.delete_many(tx, too_many_keys).await,
             Err(MemFuseError::InvalidInput(_))
         ));
+
+        // 4. Oversized value check (> 128MB)
+        let huge_val = vec![b'v'; MAX_VALUE_SIZE + 1];
+        assert!(matches!(
+            storage.put(tx, b"valid_key", &huge_val).await,
+            Err(MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_rollback_to_tx_edge_cases() {
+        let (storage, _tmp) = test_storage().await;
+
+        // Rollback on empty storage with non-existent TxId (e.g. TxId::new(999))
+        let res = storage.rollback_to_tx(TxId::new(999)).await;
+        // WAL find_tx_offset for non-existent tx returns an error
+        assert!(matches!(res, Err(MemFuseError::Storage(_))));
+
+        // Put and commit a transaction
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.expect("put");
+        storage.commit(tx1).await.expect("commit");
+
+        // Rollback to TxId::new(0) -> should wipe key1
+        storage
+            .rollback_to_tx(TxId::new(0))
+            .await
+            .expect("rollback to 0");
+        assert_eq!(storage.get(b"key1").await.expect("get"), None);
     }
 
     #[tokio::test]
