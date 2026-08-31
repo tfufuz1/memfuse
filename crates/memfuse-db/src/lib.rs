@@ -435,7 +435,11 @@ impl MemFuse {
     /// Returns a specific collection (namespace) with a specified tokenizer language.
     /// Creates the collection if it does not already exist.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn collection_with_language(&self, name: &str, language: Language) -> Result<Arc<Collection<LsmStorage>>> {
+    pub async fn collection_with_language(
+        &self,
+        name: &str,
+        language: Language,
+    ) -> Result<Arc<Collection<LsmStorage>>> {
         // Validation
         if name.len() > 64 {
             return Err(memfuse_core::MemFuseError::invalid_input(

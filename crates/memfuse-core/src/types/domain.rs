@@ -1045,6 +1045,97 @@ mod tests {
     }
 
     #[test]
+    fn test_tx_id_range_boundary_exhaustion_simulation() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        // 1. Invariant assertions: strict gap between collection sequence and internal system range
+        assert!(
+            TxId::INTERNAL_BASE > TxId::MAX_COLLECTION_SEQUENCE,
+            "INTERNAL_BASE must strictly exceed MAX_COLLECTION_SEQUENCE"
+        );
+        let gap_size = TxId::INTERNAL_BASE - TxId::MAX_COLLECTION_SEQUENCE;
+        assert!(
+            gap_size > 1_000_000_000_000_000,
+            "Gap between collection range and internal range must be large enough to catch unmanaged TxIds"
+        );
+
+        // 2. Exact boundary origin checks
+        let boundary_collection_max = TxId::new(TxId::MAX_COLLECTION_SEQUENCE);
+        let boundary_gap_start = TxId::new(TxId::MAX_COLLECTION_SEQUENCE + 1);
+        let boundary_gap_end = TxId::new(TxId::INTERNAL_BASE - 1);
+        let boundary_internal_base = TxId::new(TxId::INTERNAL_BASE);
+        let boundary_u64_max = TxId::new(u64::MAX);
+
+        assert!(
+            boundary_collection_max.is_valid_origin(),
+            "MAX_COLLECTION_SEQUENCE must be a valid origin"
+        );
+        assert!(
+            !boundary_gap_start.is_valid_origin(),
+            "MAX_COLLECTION_SEQUENCE + 1 must fall in invalid gap"
+        );
+        assert!(
+            !boundary_gap_end.is_valid_origin(),
+            "INTERNAL_BASE - 1 must fall in invalid gap"
+        );
+        assert!(
+            boundary_internal_base.is_valid_origin(),
+            "INTERNAL_BASE must be a valid origin"
+        );
+        assert!(
+            boundary_u64_max.is_valid_origin(),
+            "u64::MAX must be a valid origin"
+        );
+
+        // 3. Exhaustion simulation via test hook (AtomicU64 counter positioned near MAX_COLLECTION_SEQUENCE boundary)
+        let simulated_next_tx = AtomicU64::new(TxId::MAX_COLLECTION_SEQUENCE - 2);
+
+        // Helper allocation function matching Collection::allocate_tx logic
+        let allocate_simulated = |counter: &AtomicU64| -> Result<TxId> {
+            let id = counter.fetch_add(1, Ordering::SeqCst);
+            if id > TxId::MAX_COLLECTION_SEQUENCE {
+                return Err(MemFuseError::Transaction(
+                    "TxId counter exhausted: MAX_COLLECTION_SEQUENCE range exceeded. Collection must be recreated.".into(),
+                ));
+            }
+            Ok(TxId::new(id))
+        };
+
+        // Tx #1: MAX_COLLECTION_SEQUENCE - 2 (Valid)
+        let tx1 =
+            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 2 should succeed");
+        assert_eq!(tx1.inner(), TxId::MAX_COLLECTION_SEQUENCE - 2);
+        assert!(tx1.is_valid_origin());
+
+        // Tx #2: MAX_COLLECTION_SEQUENCE - 1 (Valid)
+        let tx2 =
+            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 1 should succeed");
+        assert_eq!(tx2.inner(), TxId::MAX_COLLECTION_SEQUENCE - 1);
+        assert!(tx2.is_valid_origin());
+
+        // Tx #3: MAX_COLLECTION_SEQUENCE (Exact upper boundary - Valid)
+        let tx3 = allocate_simulated(&simulated_next_tx).expect("Allocation at MAX should succeed");
+        assert_eq!(tx3.inner(), TxId::MAX_COLLECTION_SEQUENCE);
+        assert!(tx3.is_valid_origin());
+
+        // Tx #4: Attempt allocation at MAX_COLLECTION_SEQUENCE + 1 (Boundary breach -> Controlled Error)
+        let err = allocate_simulated(&simulated_next_tx)
+            .expect_err("Allocation beyond MAX_COLLECTION_SEQUENCE must return error");
+        assert!(
+            matches!(err, MemFuseError::Transaction(ref msg) if msg.contains("MAX_COLLECTION_SEQUENCE range exceeded")),
+            "Expected controlled MemFuseError::Transaction on counter exhaustion, got: {:?}",
+            err
+        );
+
+        // Verify counter position did not cause collision with INTERNAL_BASE
+        let current_counter = simulated_next_tx.load(Ordering::SeqCst);
+        assert!(
+            current_counter < TxId::INTERNAL_BASE,
+            "Counter increment must not silently collide with TxId::INTERNAL_BASE"
+        );
+    }
+
+    #[test]
     fn test_entity_and_edge() {
         let entity = Entity::new(EntityId::new(1), "node1", "typeA");
         assert_eq!(entity.id.inner(), 1);

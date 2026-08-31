@@ -123,7 +123,11 @@ async fn test_cross_signal_isolation_100_iterations_stress() -> Result<()> {
         if let Some(doc) = results.iter().find(|r| r.id == "doc-target") {
             let has_text = doc.matched_signals.contains(&"text".to_string());
             let has_vec = doc.matched_signals.contains(&"vector".to_string());
-            let ver = doc.metadata.as_ref().and_then(|m| m.get("ver")).and_then(|v| v.as_u64());
+            let ver = doc
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("ver"))
+                .and_then(|v| v.as_u64());
 
             // If matched by text (snapshot) AND vector (live state) AND hydrated version is v1,
             // we have a split-brain read across signals.
