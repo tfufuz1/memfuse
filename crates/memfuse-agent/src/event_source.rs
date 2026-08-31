@@ -3,7 +3,7 @@
 // INVARIANTEN: Enforces MAX_EVENT_SOURCE_CAPACITY (10,000) on pending queue and event list; validates event source string.
 // NICHT-OFFENSICHTLICH: PollingDocumentEventSource performs delta scanning via scan_prefix_at; drops over-capacity events gracefully.
 // HOTSPOTS: BackgroundEvent::try_new (ll. 30-60), PollingDocumentEventSource::next_event (ll. 120-175).
-// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+// STAND: TS:2026-08-31T21:07:58Z (SESSION: 5f1a7b8e)
 
 //! Continuous event source abstractions for background telemetry and triggers.
 //!
@@ -31,7 +31,7 @@ pub struct BackgroundEvent {
 
 impl BackgroundEvent {
     /// Constructs a `BackgroundEvent` with input validation on the source identifier.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty event source to prevent silent telemetry attribution loss. (TS:2026-08-31T21:07:58Z) (SESSION: 5f1a7b8e)
     pub fn try_new(
         payload: serde_json::Value,
         source: impl Into<String>,
@@ -105,7 +105,7 @@ impl<S: StorageEngine> PollingDocumentEventSource<S> {
     }
 
     /// Creates a new `PollingDocumentEventSource` with specified maximum queue capacity bound.
-    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f)
+    // AI-TAG[HARDENING][CRITICAL] RESOLVED: Enforces bounded event queue capacity to guard against unbounded memory growth. (TS:2026-08-31T21:07:58Z) (SESSION: 5f1a7b8e)
     pub fn with_capacity(
         collection: Arc<Collection<S>>,
         poll_interval: Duration,
@@ -232,20 +232,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_background_event_validation() {
+    fn test_background_event_serde_roundtrip_CASE_valid() {
+        let event = BackgroundEvent::try_new(
+            serde_json::json!({"metric": "cpu", "value": 85.5}),
+            "sensor_123",
+            42,
+        )
+        .expect("Valid event construction failed");
+
+        let serialized = serde_json::to_string(&event).expect("Serde error");
+        let deserialized: BackgroundEvent =
+            serde_json::from_str(&serialized).expect("Deserialization error");
+
+        assert_eq!(deserialized, event);
+        assert_eq!(deserialized.source, "sensor_123");
+        assert_eq!(deserialized.observed_at_seq, 42);
+        assert_eq!(deserialized.payload["metric"], "cpu");
+    }
+
+    #[test]
+    fn test_background_event_validation_CASE_edge_cases() {
         assert!(BackgroundEvent::try_new(serde_json::json!({}), "valid_source", 1).is_ok());
 
+        // Unicode source name
+        assert!(BackgroundEvent::try_new(serde_json::json!({}), "sensor_gehäuse_🌡️", 1).is_ok());
+
+        // Empty source
         assert!(matches!(
             BackgroundEvent::try_new(serde_json::json!({}), "", 1),
             Err(MemFuseError::InvalidInput(_))
         ));
 
+        // Whitespace-only source
+        assert!(matches!(
+            BackgroundEvent::try_new(serde_json::json!({}), "   ", 1),
+            Err(MemFuseError::InvalidInput(_))
+        ));
+
+        // Null byte in source
         assert!(matches!(
             BackgroundEvent::try_new(serde_json::json!({}), "source\0null", 1),
             Err(MemFuseError::InvalidInput(_))
         ));
 
-        let huge_source = "s".repeat(300);
+        // Oversized source (> 256 bytes)
+        let huge_source = "s".repeat(257);
         assert!(matches!(
             BackgroundEvent::try_new(serde_json::json!({}), &huge_source, 1),
             Err(MemFuseError::InvalidInput(_))
@@ -253,15 +284,32 @@ mod tests {
     }
 
     #[test]
-    fn test_vec_event_source_capacity_limit() {
+    fn test_vec_event_source_capacity_limit_CASE_overflow() {
         let mut events = Vec::new();
         for i in 0..10_001 {
-            events.push(BackgroundEvent::new(serde_json::json!({}), "source", i));
+            events.push(
+                BackgroundEvent::try_new(serde_json::json!({}), "source", i).expect("Valid event"),
+            );
         }
 
         assert!(matches!(
             VecEventSource::try_new(events),
             Err(MemFuseError::MemoryBudgetExceeded { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn test_vec_event_source_exhaustion_CASE_drain() {
+        let ev1 = BackgroundEvent::try_new(serde_json::json!({"step": 1}), "src", 100).unwrap();
+        let ev2 = BackgroundEvent::try_new(serde_json::json!({"step": 2}), "src", 101).unwrap();
+
+        let mut source = VecEventSource::try_new(vec![ev1.clone(), ev2.clone()]).unwrap();
+
+        assert!(!source.is_exhausted());
+        assert_eq!(source.next_event().await.unwrap(), Some(ev1));
+        assert!(!source.is_exhausted());
+        assert_eq!(source.next_event().await.unwrap(), Some(ev2));
+        assert!(source.is_exhausted());
+        assert_eq!(source.next_event().await.unwrap(), None);
     }
 }
