@@ -174,6 +174,27 @@ mod tests {
     }
 
     #[test]
+    fn test_german_morph_tokenizer_hyphenated_compounds_determinism() {
+        let tokenizer = GermanMorphTokenizer::new();
+        let text = "KMU-Sicherheitsnetzwerk und KI-Entwickler";
+
+        // Tokenize twice to verify determinism between index and query paths
+        let tokens1 = tokenizer.tokenize(text);
+        let tokens2 = tokenizer.tokenize(text);
+        assert_eq!(
+            tokens1, tokens2,
+            "Tokenizer output must be strictly deterministic"
+        );
+
+        // Check constituent tokens (note: 'und' is a stopword; 'it' is an English stopword)
+        assert!(tokens1.contains(&"kmu".to_string()));
+        assert!(tokens1.contains(&"sicherheitsnetzwerk".to_string()));
+        assert!(tokens1.contains(&"netzwerk".to_string()));
+        assert!(tokens1.contains(&"ki".to_string()));
+        assert!(tokens1.contains(&"entwickler".to_string()));
+    }
+
+    #[test]
     fn german_morph_tokenizer_case_default_constructor() {
         let tokenizer = GermanMorphTokenizer::default();
         let tokens = tokenizer.tokenize("Datenschutzrichtlinie");

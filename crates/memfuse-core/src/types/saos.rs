@@ -556,4 +556,45 @@ mod tests {
         assert_eq!(chunk_with_prefix.combined_token_count(), 14);
         assert!(chunk_with_prefix.combined_token_count() > chunk_with_prefix.token_count);
     }
+
+    #[test]
+    fn test_hybrid_query_builder_all_options() {
+        use crate::types::domain::MemoryType;
+        use crate::types::filter::FilterExpr;
+        use crate::types::saos::GraphTraversalStrategy;
+
+        let filter = FilterExpr::Eq {
+            field: "author".to_string(),
+            value: serde_json::json!("Alice"),
+        };
+
+        let query = HybridQuery::builder()
+            .with_text_query("knowledge graph")
+            .with_vector_query(vec![0.5, 0.5])
+            .with_graph_start_node("node_42")
+            .with_graph_strategy(GraphTraversalStrategy::Hops { max_hops: 3 })
+            .with_filter(filter.clone())
+            .with_same_community_as(EntityId::new(100))
+            .with_memory_type_filter(vec![MemoryType::Episodic, MemoryType::Semantic])
+            .with_include_superseded(true)
+            .with_k(25)
+            .build()
+            .expect("build hybrid query");
+
+        assert_eq!(query.text_query.as_deref(), Some("knowledge graph"));
+        assert_eq!(query.vector_query.as_deref(), Some(&[0.5, 0.5][..]));
+        assert_eq!(query.graph_start_node.as_deref(), Some("node_42"));
+        assert_eq!(
+            query.graph_strategy,
+            GraphTraversalStrategy::Hops { max_hops: 3 }
+        );
+        assert_eq!(query.filter, Some(filter));
+        assert_eq!(query.same_community_as, Some(EntityId::new(100)));
+        assert_eq!(
+            query.memory_type_filter,
+            Some(vec![MemoryType::Episodic, MemoryType::Semantic])
+        );
+        assert!(query.include_superseded);
+        assert_eq!(query.k, 25);
+    }
 }

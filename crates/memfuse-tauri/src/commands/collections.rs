@@ -168,13 +168,22 @@ mod tests {
 
     #[test]
     fn test_validate_collection_name_too_long() {
+        let exact_limit = "a".repeat(256);
+        assert!(validate_collection_name(&exact_limit).is_ok());
+
         let long_name = "a".repeat(257);
         assert!(validate_collection_name(&long_name).is_err());
     }
 
     #[test]
     fn test_validate_collection_name_reserved_prefix() {
+        assert!(validate_collection_name("_single_underscore_allowed").is_ok());
         assert!(validate_collection_name("__internal").is_err());
+    }
+
+    #[test]
+    fn test_validate_collection_name_unicode_rejected() {
+        assert!(validate_collection_name("sammlung_öäü").is_err());
     }
 
     #[test]

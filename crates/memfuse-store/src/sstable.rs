@@ -2193,6 +2193,25 @@ mod tests {
     }
 
     #[test]
+    fn test_bloom_filter_roundtrip_and_too_short_bytes() {
+        // Test roundtrip
+        let mut bf = BloomFilter::new(50, 0.01);
+        bf.insert(b"test-key-1");
+        bf.insert(b"test-key-2");
+        let bytes = bf.to_bytes();
+
+        let restored = BloomFilter::from_bytes(&bytes).expect("deserialization should succeed");
+        assert!(restored.may_contain(b"test-key-1"));
+        assert!(restored.may_contain(b"test-key-2"));
+        assert!(!restored.may_contain(b"non-existent-key"));
+
+        // Test deserialization with too short data (< 16 bytes)
+        let short_bytes = vec![0u8; 15];
+        let err = BloomFilter::from_bytes(&short_bytes);
+        assert!(matches!(err, Err(MemFuseError::Storage(_))));
+    }
+
+    #[test]
     fn test_block_builder_min_size() {
         let builder = BlockBuilder::new(10);
         assert_eq!(builder.block_size, 512);
