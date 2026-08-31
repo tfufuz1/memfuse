@@ -11,7 +11,7 @@ fn bench_distances(c: &mut Criterion) {
     let mut group = c.benchmark_group("Distances");
 
     group.bench_function("cosine_simd", |b_bench| {
-        b_bench.iter(|| cosine_distance(black_box(&a), black_box(&b)))
+        b_bench.iter(|| cosine_distance(black_box(&a), black_box(&b)).unwrap())
     });
 
     group.bench_function("cosine_scalar", |b_bench| {
@@ -19,7 +19,7 @@ fn bench_distances(c: &mut Criterion) {
     });
 
     group.bench_function("euclidean_simd", |b_bench| {
-        b_bench.iter(|| euclidean_distance(black_box(&a), black_box(&b)))
+        b_bench.iter(|| euclidean_distance(black_box(&a), black_box(&b)).unwrap())
     });
 
     group.bench_function("euclidean_scalar", |b_bench| {
@@ -27,7 +27,7 @@ fn bench_distances(c: &mut Criterion) {
     });
 
     group.bench_function("dot_product_simd", |b_bench| {
-        b_bench.iter(|| dot_product_distance(black_box(&a), black_box(&b)))
+        b_bench.iter(|| dot_product_distance(black_box(&a), black_box(&b)).unwrap())
     });
 
     group.bench_function("dot_product_scalar", |b_bench| {

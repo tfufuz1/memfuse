@@ -1,6 +1,7 @@
 //! Unit tests for memfuse-router.
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::{dispatch_to_slm, RouterEngine, RoutingDecision, SlmProfile};
     use memfuse_core::{EntityId, MemFuseError, StorageEngine, TokenBudget};
@@ -30,7 +31,7 @@ mod tests {
             .insert(
                 coding_key,
                 &vec_coding,
-                Some(json!({"text": "function rust_code() { return 42; }"}).into()),
+                Some(json!({"text": "function rust_code() { return 42; }"})),
             )
             .await
             .unwrap();
@@ -39,7 +40,7 @@ mod tests {
             .insert(
                 docs_key,
                 &vec_docs,
-                Some(json!({"text": "Dokumentation über Unternehmensrichtlinien."}).into()),
+                Some(json!({"text": "Dokumentation über Unternehmensrichtlinien."})),
             )
             .await
             .unwrap();
@@ -125,7 +126,7 @@ mod tests {
             .insert(
                 "unrelated_doc",
                 &vec_unrelated,
-                Some(json!({"text": "unrelated content"}).into()),
+                Some(json!({"text": "unrelated content"})),
             )
             .await
             .unwrap();
