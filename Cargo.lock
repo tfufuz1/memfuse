@@ -2571,8 +2571,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
+ "criterion",
  "memfuse-core",
  "parking_lot",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",
@@ -2602,9 +2604,11 @@ name = "memfuse-crypto"
 version = "0.1.0"
 dependencies = [
  "aes-gcm-siv",
+ "criterion",
  "hkdf",
  "hmac",
  "memfuse-core",
+ "proptest",
  "rand 0.8.8",
  "sha2",
  "subtle",

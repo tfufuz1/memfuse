@@ -6,47 +6,47 @@ crates/memfuse-agent/src/context.rs:141:            .expect("Invalid task_id or 
 crates/memfuse-agent/src/context.rs:229:        assert_eq!(attached_vec.last().unwrap().observed_at_seq, 10_004);
 crates/memfuse-agent/src/engine.rs:80:            .expect("Invalid tool name in register_tool");
 crates/memfuse-agent/src/event_source.rs:215:            .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")
-crates/memfuse-checkpoint/src/lib.rs:1050:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1055:            .expect("// expect #[cfg(test)]")
-crates/memfuse-checkpoint/src/lib.rs:1056:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1080:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1105:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1106:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
-crates/memfuse-checkpoint/src/lib.rs:1110:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1128:        let cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1154:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1172:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1174:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1193:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1195:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1226:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1228:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1229:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:680:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:681:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:692:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:696:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:697:        let all = store.list_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:730:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:764:            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:778:        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:779:        let cp = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:802:        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:831:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1060:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1065:            .expect("// expect #[cfg(test)]")
+crates/memfuse-checkpoint/src/lib.rs:1066:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1090:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1115:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1116:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
+crates/memfuse-checkpoint/src/lib.rs:1120:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1138:        let cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1164:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1182:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1184:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1203:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1205:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1236:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1238:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1239:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:690:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:691:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:702:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:706:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:707:        let all = store.list_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:740:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:774:            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:788:        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:789:        let cp = guard.commit().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:812:        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:841:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:845:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:869:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:874:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:906:            let res = res.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:912:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:922:        let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:930:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:932:        let cp = guard.checkpoint().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:936:        let committed = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:948:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:951:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:953:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:959:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:851:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:855:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:879:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:884:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:916:            let res = res.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:922:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:932:        let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:940:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:942:        let cp = guard.checkpoint().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:946:        let committed = guard.commit().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:958:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:961:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:963:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:969:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
 crates/memfuse-core/src/error_dto.rs:374:        let details = dto.details.as_ref().expect("details should exist"); // unwrap allowed
 crates/memfuse-core/src/error_dto.rs:378:        let json_str = serde_json::to_string(&dto).expect("serde serialize"); // unwrap allowed
 crates/memfuse-core/src/error_dto.rs:380:            serde_json::from_str(&json_str).expect("serde deserialize"); // unwrap allowed
