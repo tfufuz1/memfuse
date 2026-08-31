@@ -425,10 +425,17 @@ impl MemFuse {
         Ok(pending)
     }
 
-    /// Returns a specific collection (namespace).
+    /// Returns a specific collection (namespace) with standard English tokenizer.
     /// Creates the collection if it does not already exist.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn collection(&self, name: &str) -> Result<Arc<Collection<LsmStorage>>> {
+        self.collection_with_language(name, Language::English).await
+    }
+
+    /// Returns a specific collection (namespace) with a specified tokenizer language.
+    /// Creates the collection if it does not already exist.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn collection_with_language(&self, name: &str, language: Language) -> Result<Arc<Collection<LsmStorage>>> {
         // Validation
         if name.len() > 64 {
             return Err(memfuse_core::MemFuseError::invalid_input(
@@ -472,7 +479,7 @@ impl MemFuse {
             graph_index,
             Arc::clone(&self.next_tx),
             self.dimension,
-            Language::English,
+            language,
         );
 
         // Inherit global embedder if set
