@@ -1,9 +1,0 @@
-@AGENTS.md
-
-# Cursor-Spezifische Regeln
-
-Dieses File importiert alle Regeln aus `@AGENTS.md`. Hier stehen NUR Cursor-spezifische Ergänzungen.
-
-## Composer-Verhalten
-- Chat und Composer gemäß Rollentrennung (§6 Schleife 7) nutzen: Plan → Implement → Verify.
-- Vor Abschluss jeder Composer-Aufgabe: Gate-Stack (§6 Schleife 3) ausführen.
