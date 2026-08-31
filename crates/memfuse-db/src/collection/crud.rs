@@ -459,7 +459,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z)
     // instead of silently mapping them to u64::MAX (ID: AGT-DB-001).
     // Consistent with every other error-propagation path in this file.
-    pub(super) async fn snapshot_seq(&self) -> Result<u64> {
+    pub async fn snapshot_seq(&self) -> Result<u64> {
         self.storage.last_seq_no().await
     }
 
