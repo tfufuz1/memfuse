@@ -6,10 +6,10 @@
 - Pure-Rust USP wahren durch leere Default-Features (ADR-005, ADR-008).
 
 ## Bekannte Fallstricke
-- `SessionPool` wurde refactored; `OnnxReranker` nutzt ein eigenes `Arc<Mutex<Session>>` getrennt von `TextEmbedder`s `Semaphore`-Pool.
+- `.expect()` in `SessionPool` (3 Stellen) als Sprint-2-Ausnahme dokumentiert (ADR-005).
 
 ## Relevante rules/*.md
 - `rules/dependencies.md` — Feature-Gated ONNX Dependency Isolation
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:EMB-001] STATUS:DONE — Zero-Panic Refactoring
+- ANCHOR[TEST:EMB-001] STATUS:DONE — Zero-Panic Refactoring für SessionPool

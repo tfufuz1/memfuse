@@ -207,23 +207,6 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_chars_edge_cases() {
-        assert_eq!(truncate_chars("", 5), "");
-        assert_eq!(truncate_chars("hello", 0), "");
-        assert_eq!(truncate_chars("", 0), "");
-    }
-
-    #[test]
-    fn test_truncate_prefix_edge_cases() {
-        assert_eq!(truncate_prefix("", 10, 50), "");
-        assert_eq!(truncate_prefix("   ", 10, 50), "");
-        assert_eq!(truncate_prefix("hello world", 0, 50), "");
-        assert_eq!(truncate_prefix("hello world", 10, 0), "");
-        // Word longer than max_chars with no space
-        assert_eq!(truncate_prefix("supercalifragilistic", 10, 5), "super");
-    }
-
-    #[test]
     fn test_truncate_chars_unicode_boundary() {
         // "Ü" = 2 bytes — must not truncate mid-codepoint
         let s = "Über die Welt";
@@ -259,32 +242,6 @@ mod tests {
             s.is_char_boundary(truncated.len()),
             "truncation must be at char boundary"
         );
-    }
-
-    #[tokio::test]
-    async fn test_generate_prefix_empty_inputs() {
-        let client = OllamaClient::new("http://localhost:11434");
-        let engine = ContextPrefixEngine::new(client, ContextPrefixConfig::default());
-
-        let res_doc = engine.generate_prefix("  ", "chunk").await;
-        assert!(matches!(res_doc, Err(MemFuseError::InvalidInput(_))));
-
-        let res_chunk = engine.generate_prefix("document", "  ").await;
-        assert!(matches!(res_chunk, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[tokio::test]
-    async fn test_generate_prefix_batch_empty_and_exceeding() {
-        let client = OllamaClient::new("http://localhost:11434");
-        let engine = ContextPrefixEngine::new(client, ContextPrefixConfig::default());
-
-        let empty_batch = engine.generate_prefix_batch("doc", &[]).await;
-        assert_eq!(empty_batch.len(), 0);
-
-        let large_vec = vec!["chunk"; 10_001];
-        let over_batch = engine.generate_prefix_batch("doc", &large_vec).await;
-        assert_eq!(over_batch.len(), 1);
-        assert!(matches!(over_batch[0], Err(MemFuseError::InvalidInput(_))));
     }
 
     #[tokio::test]

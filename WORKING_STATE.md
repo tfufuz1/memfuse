@@ -28,12 +28,12 @@ Ergebnis: **2 offene Tags**
 | `memfuse-store` | 1 | 11394 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 4084 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 14105 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 3033 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-agent` | 3 | 3719 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1113 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 2493 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1298 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 591 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2836 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2397 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3387 | 🟢 Clean |  |
 
 
