@@ -2757,10 +2757,12 @@ dependencies = [
 name = "memfuse-router"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "memfuse-core",
  "memfuse-db",
  "memfuse-ollama",
  "memfuse-store",
+ "proptest",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
