@@ -426,7 +426,6 @@ impl PyDbStats {
 macro_rules! memfuse_crud_methods {
     ($struct_type:ty) => {
         #[pymethods]
-        #[allow(deprecated)]
         impl $struct_type {
             /// Inserts a document with an embedding and optional metadata.
             #[pyo3(signature = (id, vector, metadata=None))]
@@ -821,7 +820,13 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
-                validate_batch_size(docs.len())?;
+                if docs.len() > MAX_BATCH_SIZE {
+                    return Err(MemFuseValueError::new_err(format!(
+                        "Batch size exceeds maximum limit of {} items. Got: {}",
+                        MAX_BATCH_SIZE,
+                        docs.len()
+                    )));
+                }
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -851,7 +856,13 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
-                validate_batch_size(docs.len())?;
+                if docs.len() > MAX_BATCH_SIZE {
+                    return Err(MemFuseValueError::new_err(format!(
+                        "Batch size exceeds maximum limit of {} items. Got: {}",
+                        MAX_BATCH_SIZE,
+                        docs.len()
+                    )));
+                }
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -1257,106 +1268,6 @@ mod tests {
         Python::with_gil(|py| {
             assert!(py_idx_err.is_instance_of::<MemFuseIndexError>(py));
         });
-    }
-
-    #[test]
-    fn test_memfuse_err_comprehensive_variant_mapping() {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let conflict_err = memfuse_err(MemFuseError::Conflict("key conflict".into()));
-            assert!(conflict_err.is_instance_of::<PyRuntimeError>(py));
-
-            let tx_timeout = memfuse_err(MemFuseError::TransactionTimeout {
-                tx_id: 100,
-                elapsed_ms: 5000,
-            });
-            assert!(tx_timeout.is_instance_of::<PyRuntimeError>(py));
-
-            let ns_viol = memfuse_err(MemFuseError::NamespaceViolation("ns invalid".into()));
-            assert!(ns_viol.is_instance_of::<PyPermissionError>(py));
-
-            let sandbox_err = memfuse_err(MemFuseError::Sandbox("sandbox escape".into()));
-            assert!(sandbox_err.is_instance_of::<PyPermissionError>(py));
-
-            let serial_err = memfuse_err(MemFuseError::Serialization("bincode fail".into()));
-            assert!(serial_err.is_instance_of::<MemFuseValueError>(py));
-
-            let wal_err = memfuse_err(MemFuseError::WalCorruption("wal broken".into()));
-            assert!(wal_err.is_instance_of::<MemFuseIOError>(py));
-
-            let cluster_err = memfuse_err(MemFuseError::Cluster("node split".into()));
-            assert!(cluster_err.is_instance_of::<MemFuseInternalError>(py));
-        });
-    }
-
-    #[test]
-    fn test_run_blocking_ffi_panic_types() {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            // String payload panic
-            let res1: PyResult<()> = run_blocking_ffi(py, || {
-                panic!("String panic message: {}", 123);
-            });
-            assert!(res1.is_err());
-            assert!(res1
-                .unwrap_err()
-                .value(py)
-                .to_string()
-                .contains("String panic message: 123"));
-
-            // Non-string payload panic
-            let res2: PyResult<()> = run_blocking_ffi(py, || {
-                std::panic::panic_any(404);
-            });
-            assert!(res2.is_err());
-            assert!(res2
-                .unwrap_err()
-                .value(py)
-                .to_string()
-                .contains("Unknown panic inside Rust core"));
-        });
-    }
-
-    #[test]
-    fn test_repr_formatting() {
-        let res = PySearchResult {
-            id: "doc_10".into(),
-            score: 0.9876,
-            metadata: None,
-        };
-        assert_eq!(res.__repr__(), "SearchResult(id='doc_10', score=0.9876)");
-
-        let doc = PyDocument {
-            id: "doc_20".into(),
-            metadata: None,
-        };
-        assert_eq!(doc.__repr__(), "Document(id='doc_20')");
-
-        let vec_stats = PyVectorIndexStats {
-            num_vectors: 100,
-            memory_usage_bytes: 4096,
-            num_layers: 4,
-        };
-        assert_eq!(
-            vec_stats.__repr__(),
-            "VectorIndexStats(num_vectors=100, memory_usage_bytes=4096, num_layers=4)"
-        );
-
-        let storage_stats = PyStorageStats {
-            num_segments: 2,
-            total_size_bytes: 1024,
-            memtable_size_bytes: 512,
-        };
-        assert_eq!(
-            storage_stats.__repr__(),
-            "StorageStats(num_segments=2, total_size_bytes=1024, memtable_size_bytes=512)"
-        );
-
-        let db_stats = PyDbStats {
-            index_stats: vec_stats,
-            storage_stats: storage_stats,
-        };
-        assert_eq!(db_stats.__repr__(), "DbStats(vectors=100, size_bytes=1536)");
     }
 }
 

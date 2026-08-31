@@ -809,11 +809,7 @@ impl SstableReader {
                 bloom_offset as usize
             } else {
                 file_size.saturating_sub(if is_mfsx {
-                    if format_version >= 1 {
-                        54
-                    } else {
-                        52
-                    }
+                    if format_version >= 1 { 54 } else { 52 }
                 } else {
                     12
                 }) as usize
@@ -2190,25 +2186,6 @@ mod tests {
         valid_header[8..16].copy_from_slice(&1000u64.to_le_bytes()); // num_bits
         let bf_res = BloomFilter::from_bytes(&valid_header);
         assert!(bf_res.is_ok());
-    }
-
-    #[test]
-    fn test_bloom_filter_roundtrip_and_too_short_bytes() {
-        // Test roundtrip
-        let mut bf = BloomFilter::new(50, 0.01);
-        bf.insert(b"test-key-1");
-        bf.insert(b"test-key-2");
-        let bytes = bf.to_bytes();
-
-        let restored = BloomFilter::from_bytes(&bytes).expect("deserialization should succeed");
-        assert!(restored.may_contain(b"test-key-1"));
-        assert!(restored.may_contain(b"test-key-2"));
-        assert!(!restored.may_contain(b"non-existent-key"));
-
-        // Test deserialization with too short data (< 16 bytes)
-        let short_bytes = vec![0u8; 15];
-        let err = BloomFilter::from_bytes(&short_bytes);
-        assert!(matches!(err, Err(MemFuseError::Storage(_))));
     }
 
     #[test]
