@@ -2724,8 +2724,10 @@ name = "memfuse-ollama"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "criterion",
  "futures-util",
  "memfuse-core",
+ "proptest",
  "rand 0.8.8",
  "regex",
  "reqwest 0.12.28",

@@ -245,6 +245,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_generate_prefix_empty_inputs_error() {
+        let client = OllamaClient::new("http://localhost:11434");
+        let engine = ContextPrefixEngine::new(client, ContextPrefixConfig::default());
+
+        let res1 = engine.generate_prefix("", "chunk").await;
+        assert!(matches!(res1, Err(MemFuseError::InvalidInput(_))));
+
+        let res2 = engine.generate_prefix("doc", "   ").await;
+        assert!(matches!(res2, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
     async fn test_generate_prefix_mock() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
         let addr = listener.local_addr().unwrap(); // unwrap
