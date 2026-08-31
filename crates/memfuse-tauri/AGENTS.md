@@ -12,5 +12,5 @@
 ## Relevante rules/*.md
 - `rules/async-io.md` — Non-blocking IPC & UI Responsiveness
 
-## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:TAU-001] STATUS:OPEN — Ingestion Pipeline End-to-End Test
+## Pflicht-Tests (ANCHOR-Status)
+- ANCHOR[TEST:TAU-001] STATUS:DONE — Ingestion Pipeline End-to-End Test (in `tests/e2e_test.rs`)

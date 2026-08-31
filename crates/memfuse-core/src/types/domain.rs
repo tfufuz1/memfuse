@@ -1134,7 +1134,7 @@ mod tests {
         }
     }
 
-    // ANCHOR[TEST:CORE-001] STATUS:OPEN (TS:2026-08-30T21:51:46Z) (SESSION: a43b7682)
+    // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-31T21:13:44Z) (SESSION: e459bd5f)
     // Benchmark & Collision Test suite for DocId::from_key 64-bit BLAKE3 hash truncation
     #[test]
     fn test_doc_id_from_key_collisions_and_distribution() {
@@ -1153,5 +1153,101 @@ mod tests {
         }
 
         assert_eq!(seen.len(), KEY_COUNT);
+    }
+
+    #[test]
+    fn test_entity_try_new_invalid_inputs() {
+        let res_empty_name = Entity::try_new(EntityId::new(1), "", "Person");
+        assert!(
+            matches!(res_empty_name, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Entity name cannot be empty"))
+        );
+
+        let res_empty_type = Entity::try_new(EntityId::new(1), "Alice", "");
+        assert!(
+            matches!(res_empty_type, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Entity type cannot be empty"))
+        );
+    }
+
+    #[test]
+    fn test_edge_try_new_invalid_inputs() {
+        let e1 = EntityId::new(1);
+        let e2 = EntityId::new(2);
+
+        let res_empty_type = Edge::try_new(e1, e2, "", 0.5);
+        assert!(
+            matches!(res_empty_type, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Edge label cannot be empty"))
+        );
+
+        let res_nan = Edge::try_new(e1, e2, "KNOWS", f32::NAN);
+        assert!(
+            matches!(res_nan, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Edge weight must be finite"))
+        );
+
+        let res_inf = Edge::try_new(e1, e2, "KNOWS", f32::INFINITY);
+        assert!(
+            matches!(res_inf, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Edge weight must be finite"))
+        );
+
+        let res_negative = Edge::try_new(e1, e2, "KNOWS", -0.1);
+        assert!(
+            matches!(res_negative, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Edge weight must be finite and non-negative"))
+        );
+    }
+
+    #[test]
+    fn test_distance_metric_dimension_mismatch() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0];
+
+        let res_cos = DistanceMetric::Cosine.compute(&a, &b);
+        assert!(matches!(
+            res_cos,
+            Err(MemFuseError::InvalidInput(msg)) if msg.contains("Vector dimensions must match")
+        ));
+
+        let res_euc = DistanceMetric::Euclidean.compute(&a, &b);
+        assert!(matches!(
+            res_euc,
+            Err(MemFuseError::InvalidInput(msg)) if msg.contains("Vector dimensions must match")
+        ));
+
+        let res_dot = DistanceMetric::DotProduct.compute(&a, &b);
+        assert!(matches!(
+            res_dot,
+            Err(MemFuseError::InvalidInput(msg)) if msg.contains("Vector dimensions must match")
+        ));
+    }
+
+    #[test]
+    fn test_embedding_normalize_edge_cases() {
+        let zero_emb = Embedding::new(vec![0.0, 0.0, 0.0]);
+        let norm_zero = zero_emb.normalize();
+        assert_eq!(norm_zero.as_slice(), &[0.0, 0.0, 0.0]);
+
+        let single_emb = Embedding::new(vec![5.0]);
+        let norm_single = single_emb.normalize();
+        assert_eq!(norm_single.as_slice(), &[1.0]);
+    }
+
+    #[test]
+    fn test_doc_id_and_entity_id_unicode_keys() {
+        let unicode_keys = vec![
+            "Gedächtnis_01",
+            "記憶_メモリ_99",
+            "🧠_cognitive_memory_node",
+            "Crème_brûlée_recipe",
+        ];
+
+        for key in unicode_keys {
+            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key");
+            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key");
+            assert_eq!(doc_id1, doc_id2);
+            assert_ne!(doc_id1.inner(), 0);
+
+            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key");
+            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key");
+            assert_eq!(ent_id1, ent_id2);
+            assert_ne!(ent_id1.inner(), 0);
+        }
     }
 }

@@ -719,4 +719,46 @@ mod tests {
             display
         );
     }
+
+    #[test]
+    fn test_error_constructor_helpers() {
+        let err_cap = MemFuseError::capability_unsupported("vector_search", "no_gpu");
+        assert!(matches!(
+            err_cap,
+            MemFuseError::CapabilityUnsupported {
+                ref capability,
+                ref reason
+            } if capability == "vector_search" && reason == "no_gpu"
+        ));
+
+        let err_inv = MemFuseError::invalid_input("key cannot be empty");
+        assert!(
+            matches!(err_inv, MemFuseError::InvalidInput(ref msg) if msg == "key cannot be empty")
+        );
+
+        let err_wal = MemFuseError::wal_corruption(1024, "bad crc");
+        assert!(matches!(
+            err_wal,
+            MemFuseError::WalCorruption { offset: 1024, ref reason } if reason == "bad crc"
+        ));
+
+        let err_chk = MemFuseError::checksum_mismatch("/var/data.sst", 7);
+        assert!(matches!(
+            err_chk,
+            MemFuseError::ChecksumMismatch { ref path, block_id: 7 } if path == "/var/data.sst"
+        ));
+    }
+
+    #[test]
+    fn test_dto_with_details_override() {
+        use crate::error_dto::MemFuseErrorDto;
+        let dto = MemFuseErrorDto::with_details(
+            "CustomKind",
+            "Custom message",
+            serde_json::json!({"trace_id": "12345"}),
+        );
+        assert_eq!(dto.kind, "CustomKind");
+        assert_eq!(dto.message, "Custom message");
+        assert_eq!(dto.details.expect("details present")["trace_id"], "12345");
+    }
 }
