@@ -21,7 +21,13 @@ fn get_vm_rss_kb() -> Option<u64> {
 }
 
 /// Helper function to record RSS measurements to benches/results/rrf_scale_rss.csv
-fn log_rss_measurement(stage: &str, hits_per_signal: usize, total_hits: usize, rss_kb: u64, latency_micros: f64) {
+fn log_rss_measurement(
+    stage: &str,
+    hits_per_signal: usize,
+    total_hits: usize,
+    rss_kb: u64,
+    latency_micros: f64,
+) {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     let workspace_root = Path::new(&manifest_dir)
         .parent()
@@ -55,7 +61,11 @@ fn log_rss_measurement(stage: &str, hits_per_signal: usize, total_hits: usize, r
     }
 }
 
-fn generate_signal_results(signal_name: &str, count: usize, overlap_factor: usize) -> Vec<SearchResult> {
+fn generate_signal_results(
+    signal_name: &str,
+    count: usize,
+    overlap_factor: usize,
+) -> Vec<SearchResult> {
     let mut results = Vec::with_capacity(count);
     for i in 0..count {
         // overlap_factor controls how many IDs collide across signals vs unique
@@ -120,9 +130,19 @@ fn bench_rrf_scaling(c: &mut Criterion) {
 
         let rss_after = get_vm_rss_kb().unwrap_or(0);
         let peak_rss_kb = rss_before.max(rss_after);
-        let avg_latency_micros = dur_samples.iter().map(|d| d.as_secs_f64() * 1_000_000.0).sum::<f64>() / dur_samples.len() as f64;
+        let avg_latency_micros = dur_samples
+            .iter()
+            .map(|d| d.as_secs_f64() * 1_000_000.0)
+            .sum::<f64>()
+            / dur_samples.len() as f64;
 
-        log_rss_measurement("rrf_fusion", count, total_input_hits, peak_rss_kb, avg_latency_micros);
+        log_rss_measurement(
+            "rrf_fusion",
+            count,
+            total_input_hits,
+            peak_rss_kb,
+            avg_latency_micros,
+        );
 
         println!(
             "\n[RRF-BENCH] Hits/Signal: {:7} | Total Hits: {:7} | Latency: {:10.2} µs ({:7.2} ms) | Peak RSS: {:.2} MB",
@@ -133,16 +153,12 @@ fn bench_rrf_scaling(c: &mut Criterion) {
             (peak_rss_kb as f64) / 1024.0
         );
 
-        group.bench_with_input(
-            BenchmarkId::new("weighted_rrf", count),
-            &count,
-            |b, _| {
-                b.iter_with_setup(
-                    || result_sets.clone(),
-                    |sets| weighted_reciprocal_rank_fusion(sets, max_results),
-                );
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("weighted_rrf", count), &count, |b, _| {
+            b.iter_with_setup(
+                || result_sets.clone(),
+                |sets| weighted_reciprocal_rank_fusion(sets, max_results),
+            );
+        });
     }
 
     group.finish();

@@ -249,10 +249,7 @@ async fn test_compound_split_recall_impact_evaluation() {
     let db_actual = MemFuse::open_with_config(dir_actual.path(), config_actual)
         .await
         .unwrap();
-    let col_actual = db_actual
-        .collection("unsplit_col")
-        .await
-        .unwrap();
+    let col_actual = db_actual.collection("unsplit_col").await.unwrap();
 
     for doc in &corpus {
         col_actual
@@ -275,10 +272,7 @@ async fn test_compound_split_recall_impact_evaluation() {
     let db_ref = MemFuse::open_with_config(dir_ref.path(), config_ref)
         .await
         .unwrap();
-    let col_ref = db_ref
-        .collection("split_col")
-        .await
-        .unwrap();
+    let col_ref = db_ref.collection("split_col").await.unwrap();
 
     for doc in &corpus {
         col_ref
@@ -314,31 +308,73 @@ async fn test_compound_split_recall_impact_evaluation() {
         let q_vec = create_embedding(q.query_vector_seed, dim);
 
         // A. BM25 Text Only
-        let res_actual_text = col_actual.hybrid_search_with_weights(q.subterm, &[], 10, None, Some(&weights_bm25_only)).await.unwrap();
-        let res_split_text = col_ref.hybrid_search_with_weights(q.subterm, &[], 10, None, Some(&weights_bm25_only)).await.unwrap();
+        let res_actual_text = col_actual
+            .hybrid_search_with_weights(q.subterm, &[], 10, None, Some(&weights_bm25_only))
+            .await
+            .unwrap();
+        let res_split_text = col_ref
+            .hybrid_search_with_weights(q.subterm, &[], 10, None, Some(&weights_bm25_only))
+            .await
+            .unwrap();
 
-        let rank_bug_text = res_actual_text.iter().position(|r| r.id == q.target_doc_id).map(|p| p + 1);
-        let rank_split_text = res_split_text.iter().position(|r| r.id == q.target_doc_id).map(|p| p + 1);
+        let rank_bug_text = res_actual_text
+            .iter()
+            .position(|r| r.id == q.target_doc_id)
+            .map(|p| p + 1);
+        let rank_split_text = res_split_text
+            .iter()
+            .position(|r| r.id == q.target_doc_id)
+            .map(|p| p + 1);
 
         // B. Vector Only
-        let res_actual_vec = col_actual.hybrid_search_with_weights("", &q_vec, 10, None, Some(&weights_vec_only)).await.unwrap();
-        let rank_actual_vec = res_actual_vec.iter().position(|r| r.id == q.target_doc_id).map(|p| p + 1);
+        let res_actual_vec = col_actual
+            .hybrid_search_with_weights("", &q_vec, 10, None, Some(&weights_vec_only))
+            .await
+            .unwrap();
+        let rank_actual_vec = res_actual_vec
+            .iter()
+            .position(|r| r.id == q.target_doc_id)
+            .map(|p| p + 1);
 
         // C. Hybrid (BM25 + Vector)
-        let res_actual_hyb = col_actual.hybrid_search_with_weights(q.subterm, &q_vec, 10, None, Some(&weights_hybrid_equal)).await.unwrap();
-        let res_split_hyb = col_ref.hybrid_search_with_weights(q.subterm, &q_vec, 10, None, Some(&weights_hybrid_equal)).await.unwrap();
+        let res_actual_hyb = col_actual
+            .hybrid_search_with_weights(q.subterm, &q_vec, 10, None, Some(&weights_hybrid_equal))
+            .await
+            .unwrap();
+        let res_split_hyb = col_ref
+            .hybrid_search_with_weights(q.subterm, &q_vec, 10, None, Some(&weights_hybrid_equal))
+            .await
+            .unwrap();
 
-        let rank_bug_hyb = res_actual_hyb.iter().position(|r| r.id == q.target_doc_id).map(|p| p + 1);
-        let rank_split_hyb = res_split_hyb.iter().position(|r| r.id == q.target_doc_id).map(|p| p + 1);
+        let rank_bug_hyb = res_actual_hyb
+            .iter()
+            .position(|r| r.id == q.target_doc_id)
+            .map(|p| p + 1);
+        let rank_split_hyb = res_split_hyb
+            .iter()
+            .position(|r| r.id == q.target_doc_id)
+            .map(|p| p + 1);
 
         total_queries += 1;
-        if rank_bug_text.is_some() { bm25_recalled_bug += 1; }
-        if rank_split_text.is_some() { bm25_recalled_split += 1; }
-        if rank_bug_hyb.is_some() { hybrid_recalled_bug += 1; }
-        if rank_split_hyb.is_some() { hybrid_recalled_split += 1; }
+        if rank_bug_text.is_some() {
+            bm25_recalled_bug += 1;
+        }
+        if rank_split_text.is_some() {
+            bm25_recalled_split += 1;
+        }
+        if rank_bug_hyb.is_some() {
+            hybrid_recalled_bug += 1;
+        }
+        if rank_split_hyb.is_some() {
+            hybrid_recalled_split += 1;
+        }
 
-        let r_bug_str = rank_bug_hyb.map(|r| r.to_string()).unwrap_or_else(|| "MISS (>10)".to_string());
-        let r_split_str = rank_split_hyb.map(|r| r.to_string()).unwrap_or_else(|| "MISS (>10)".to_string());
+        let r_bug_str = rank_bug_hyb
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "MISS (>10)".to_string());
+        let r_split_str = rank_split_hyb
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "MISS (>10)".to_string());
         let delta_str = match (rank_split_hyb, rank_bug_hyb) {
             (Some(s), Some(b)) => {
                 let delta = b as i32 - s as i32;
@@ -362,8 +398,12 @@ async fn test_compound_split_recall_impact_evaluation() {
             "| {:<14} | {:<42} | BM25    | {:<12} | {:<10} | {:<5} |",
             q.subterm,
             comp_truncated,
-            rank_split_text.map(|r| r.to_string()).unwrap_or_else(|| "MISS".to_string()),
-            rank_bug_text.map(|r| r.to_string()).unwrap_or_else(|| "MISS".to_string()),
+            rank_split_text
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "MISS".to_string()),
+            rank_bug_text
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "MISS".to_string()),
             match (rank_split_text, rank_bug_text) {
                 (Some(s), Some(b)) => format!("{:+}", b as i32 - s as i32),
                 (Some(_), None) => "DROP_OUT".to_string(),
@@ -374,30 +414,56 @@ async fn test_compound_split_recall_impact_evaluation() {
             "| {:<14} | {:<42} | Vector  | {:<12} | {:<10} | {:<5} |",
             "",
             "",
-            rank_actual_vec.map(|r| r.to_string()).unwrap_or_else(|| "MISS".to_string()),
-            rank_actual_vec.map(|r| r.to_string()).unwrap_or_else(|| "MISS".to_string()),
+            rank_actual_vec
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "MISS".to_string()),
+            rank_actual_vec
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "MISS".to_string()),
             "0"
         );
         println!(
             "| {:<14} | {:<42} | Hybrid  | {:<12} | {:<10} | {:<5} |",
-            "",
-            "",
-            r_split_str,
-            r_bug_str,
-            delta_str
+            "", "", r_split_str, r_bug_str, delta_str
         );
         println!("---------------------------------------------------------------------------------------------------------");
     }
 
     println!("\nSUMMARY METRICS:");
     println!("Total Queries Tested: {}", total_queries);
-    println!("BM25 Recall (Bug / Un-split): {}/{} ({:.1}%)", bm25_recalled_bug, total_queries, (bm25_recalled_bug as f64 / total_queries as f64) * 100.0);
-    println!("BM25 Recall (Split):          {}/{} ({:.1}%)", bm25_recalled_split, total_queries, (bm25_recalled_split as f64 / total_queries as f64) * 100.0);
-    println!("Hybrid Recall (Bug / Un-split): {}/{} ({:.1}%)", hybrid_recalled_bug, total_queries, (hybrid_recalled_bug as f64 / total_queries as f64) * 100.0);
-    println!("Hybrid Recall (Split):          {}/{} ({:.1}%)", hybrid_recalled_split, total_queries, (hybrid_recalled_split as f64 / total_queries as f64) * 100.0);
+    println!(
+        "BM25 Recall (Bug / Un-split): {}/{} ({:.1}%)",
+        bm25_recalled_bug,
+        total_queries,
+        (bm25_recalled_bug as f64 / total_queries as f64) * 100.0
+    );
+    println!(
+        "BM25 Recall (Split):          {}/{} ({:.1}%)",
+        bm25_recalled_split,
+        total_queries,
+        (bm25_recalled_split as f64 / total_queries as f64) * 100.0
+    );
+    println!(
+        "Hybrid Recall (Bug / Un-split): {}/{} ({:.1}%)",
+        hybrid_recalled_bug,
+        total_queries,
+        (hybrid_recalled_bug as f64 / total_queries as f64) * 100.0
+    );
+    println!(
+        "Hybrid Recall (Split):          {}/{} ({:.1}%)",
+        hybrid_recalled_split,
+        total_queries,
+        (hybrid_recalled_split as f64 / total_queries as f64) * 100.0
+    );
 
     // Assertions to verify our test harness executed properly
     assert_eq!(total_queries, 8);
-    assert_eq!(bm25_recalled_bug, 0, "BM25 with un-split compounds must fail 100% of subterm queries");
-    assert!(bm25_recalled_split >= 6, "BM25 with split compounds must recall subterm queries");
+    assert_eq!(
+        bm25_recalled_bug, 0,
+        "BM25 with un-split compounds must fail 100% of subterm queries"
+    );
+    assert!(
+        bm25_recalled_split >= 6,
+        "BM25 with split compounds must recall subterm queries"
+    );
 }
