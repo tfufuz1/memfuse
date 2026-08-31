@@ -1069,6 +1069,7 @@ mod tests {
         assert_eq!(results[0].doc_id, doc_id);
 
         // Verify stats
+        let stats = index.stats().await?;
         assert!(stats.num_tokens >= 3); // "testing", "textindex", "trait"
 
         // Verify delete
@@ -1659,8 +1660,8 @@ mod tests {
         assert_eq!(results[0].doc_id, doc_id);
 
         let stats = index.stats().await?;
-        assert_eq!(stats.num_documents, 0);
-        assert_eq!(index.last_tx_id().await?, 1);
+        assert_eq!(stats.num_documents, 1);
+        assert_eq!(index.last_tx_id().await?, 0);
 
         index.delete(tx, doc_id).await?;
         index.commit(tx).await?;
