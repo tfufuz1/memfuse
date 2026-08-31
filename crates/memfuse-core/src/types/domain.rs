@@ -1230,7 +1230,7 @@ mod tests {
     }
 
     #[test]
-    fn test_doc_id_and_entity_id_unicode_keys() {
+    fn test_doc_id_and_entity_id_unicode_keys() -> Result<()> {
         let unicode_keys = vec![
             "Gedächtnis_01",
             "記憶_メモリ_99",
@@ -1239,15 +1239,16 @@ mod tests {
         ];
 
         for key in unicode_keys {
-            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key");
-            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key");
+            let doc_id1 = DocId::from_key(key)?;
+            let doc_id2 = DocId::from_key(key)?;
             assert_eq!(doc_id1, doc_id2);
             assert_ne!(doc_id1.inner(), 0);
 
-            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key");
-            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key");
+            let ent_id1 = EntityId::from_key(key)?;
+            let ent_id2 = EntityId::from_key(key)?;
             assert_eq!(ent_id1, ent_id2);
             assert_ne!(ent_id1.inner(), 0);
         }
+        Ok(())
     }
 }

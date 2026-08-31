@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_query_builder_all_options() {
+    fn test_hybrid_query_builder_all_options() -> Result<()> {
         use crate::types::domain::MemoryType;
         use crate::types::filter::FilterExpr;
         use crate::types::saos::GraphTraversalStrategy;
@@ -578,8 +578,7 @@ mod tests {
             .with_memory_type_filter(vec![MemoryType::Episodic, MemoryType::Semantic])
             .with_include_superseded(true)
             .with_k(25)
-            .build()
-            .expect("build hybrid query");
+            .build()?;
 
         assert_eq!(query.text_query.as_deref(), Some("knowledge graph"));
         assert_eq!(query.vector_query.as_deref(), Some(&[0.5, 0.5][..]));
@@ -596,5 +595,6 @@ mod tests {
         );
         assert!(query.include_superseded);
         assert_eq!(query.k, 25);
+        Ok(())
     }
 }

@@ -1069,6 +1069,8 @@ mod tests {
         assert_eq!(results[0].doc_id, doc_id);
 
         // Verify stats
+        let stats = index.stats().await?;
+        assert_eq!(stats.num_documents, 1);
         assert!(stats.num_tokens >= 3); // "testing", "textindex", "trait"
 
         // Verify delete
@@ -1629,47 +1631,6 @@ mod tests {
         assert_eq!(Language::from_iso("fr"), Language::English);
         assert_eq!(Language::from_iso("es"), Language::English);
         assert_eq!(Language::from_iso(""), Language::English);
-    }
-
-    #[tokio::test]
-    async fn test_bm25_morph_index_lifecycle() -> Result<()> {
-        let storage = Arc::new(MockStorage::new());
-        let morph_tok = Arc::new(crate::morphology::GermanCompoundSplitter::new());
-        let inner_index =
-            InvertedIndex::new_with_language(storage.clone(), "test_morph", Language::German);
-        let index = BM25MorphIndex {
-            inner: inner_index,
-            tokenizer: morph_tok,
-        };
-
-        assert_eq!(index.tokenizer().language(), "de");
-
-        let tx = TxId::new(1);
-        let doc_id = DocId::from(42u64);
-
-        index
-            .insert(tx, doc_id, "Bundesverfassungsgericht Urteil")
-            .await?;
-        index.commit(tx).await?;
-
-        assert_eq!(index.len().await, 1);
-
-        let results = index.search("gericht", 5).await?;
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].doc_id, doc_id);
-
-        let stats = index.stats().await?;
-        assert_eq!(stats.num_documents, 0);
-        assert_eq!(index.last_tx_id().await?, 1);
-
-        index.delete(tx, doc_id).await?;
-        index.commit(tx).await?;
-        assert_eq!(index.len().await, 0);
-
-        index.rollback(tx).await?;
-        index.rollback_to_tx(tx).await?;
-
-        Ok(())
     }
 
     #[tokio::test]

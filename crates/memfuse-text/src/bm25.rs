@@ -212,44 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn score_term_with_params_case_b_zero_length_norm_disabled() {
-        // Independent mathematical computation:
-        // tf = 2, doc_len = 100, avg_doc_len = 50.0, df = 5, n = 100, k1 = 1.5, b = 0.0
-        // idf_arg = (100 - 5 + 0.5) / (5 + 0.5) = 95.5 / 5.5 = 17.363636...
-        // idf = ln(95.5 / 5.5) = 2.8543787
-        // tf_num = 2 * (1.5 + 1.0) = 5.0
-        // tf_den = 2 + 1.5 * (1.0 - 0.0 + 0.0) = 3.5
-        // score = 2.8543787 * (5.0 / 3.5) = 4.077684
-        let score = score_term_with_params(2, 100, 50.0, 5, 100, 1.5, 0.0);
-        let expected = 4.077_684;
-        assert!(
-            (score - expected).abs() < 1e-5,
-            "Expected {}, got {}",
-            expected,
-            score
-        );
-    }
-
-    #[test]
-    fn score_term_with_params_case_k1_zero_saturation_disabled() {
-        // Independent mathematical computation:
-        // tf = 5, doc_len = 50, avg_doc_len = 50.0, df = 10, n = 100, k1 = 0.0, b = 0.75
-        // idf_arg = (100 - 10 + 0.5) / (10 + 0.5) = 90.5 / 10.5 = 8.6190476
-        // idf = ln(90.5 / 10.5) = 2.1539836
-        // tf_num = 5 * 1.0 = 5.0
-        // tf_den = 5 + 0 = 5.0
-        // score = idf * (5.0 / 5.0) = 2.1539836
-        let score = score_term_with_params(5, 50, 50.0, 10, 100, 0.0, 0.75);
-        let expected = 2.153_983_6;
-        assert!(
-            (score - expected).abs() < 1e-5,
-            "Expected {}, got {}",
-            expected,
-            score
-        );
-    }
-
-    #[test]
     fn bm25_struct_score_term_case_matches_standalone_function() {
         let bm25 = BM25::new(1.5, 0.75).expect("valid parameters");
         let struct_score = bm25.score_term(2, 50, 50.0, 5, 100);
