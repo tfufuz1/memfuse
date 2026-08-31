@@ -328,8 +328,12 @@ impl CompactionEngine {
                 // Reverse key comparison for min-heap (smallest key first)
                 match other.key.cmp(&self.key) {
                     std::cmp::Ordering::Equal => {
-                        // Max-heap for seq (largest seq first)
-                        self.seq.cmp(&other.seq)
+                        // Max-heap for raw_seq (largest logical seq first)
+                        let self_raw = self.seq & !TOMBSTONE_BIT;
+                        let other_raw = other.seq & !TOMBSTONE_BIT;
+                        self_raw
+                            .cmp(&other_raw)
+                            .then_with(|| self.source_idx.cmp(&other.source_idx))
                     }
                     ord => ord,
                 }
@@ -387,16 +391,12 @@ impl CompactionEngine {
                 // FIND-STO-001: Tombstone-Retention
                 // Only GC tombstones during FULL compaction when no snapshot references them
                 // and no older SSTables outside this compaction round can contain older values.
-                if is_tombstone && is_full_compaction && raw_seq < min_snapshot_seq {
-                    // Full-Compaction includes ALL SSTables of the collection →
-                    // Tombstone can safely be discarded without risking older values leaking.
-                    continue;
+                let should_gc_tombstone = is_tombstone && is_full_compaction && raw_seq < min_snapshot_seq;
+                if !should_gc_tombstone {
+                    builder
+                        .add(&item.key, &item.value, item.seq, item.tx)
+                        .await?;
                 }
-                // Partial-Compaction or non-GC-able tombstone / non-tombstone entry:
-                // Entry MUST be preserved in the compacted output SSTable.
-                builder
-                    .add(&item.key, &item.value, item.seq, item.tx)
-                    .await?;
             }
 
             // Immediately fetch the next item from the source stream
