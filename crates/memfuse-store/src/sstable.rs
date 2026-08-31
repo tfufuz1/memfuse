@@ -403,8 +403,9 @@ impl SstableBuilder {
         self.key_count += 1;
         self.min_tx_id = self.min_tx_id.min(tx_id);
         self.max_tx_id = self.max_tx_id.max(tx_id);
-        self.min_seq = self.min_seq.min(seq_no);
-        self.max_seq = self.max_seq.max(seq_no);
+        let raw_seq = seq_no & !memfuse_core::TOMBSTONE_BIT;
+        self.min_seq = self.min_seq.min(raw_seq);
+        self.max_seq = self.max_seq.max(raw_seq);
         self.last_key = Some(Bytes::copy_from_slice(key));
         Ok(())
     }
@@ -691,7 +692,7 @@ impl SstableReader {
         }
 
         let mut has_bloom = false;
-        let mut has_crc = false;
+        let has_crc = is_mfsx;
         let mut bloom_offset = 0;
         let mut min_tx_id = 0;
         let mut max_tx_id = 0;
@@ -700,7 +701,6 @@ impl SstableReader {
 
         let index_offset = if is_mfsx {
             // MFSX trailer (v0 or v1)
-            has_crc = true;
             let base = if format_version >= 1 { 0 } else { 2 }; // Offset into our 54-byte buffer
             min_tx_id = u64::from_le_bytes(
                 trailer_data[base..base + 8]
@@ -808,7 +808,11 @@ impl SstableReader {
             let index_end = if has_bloom {
                 bloom_offset as usize
             } else {
-                (file_size - 12) as usize
+                file_size.saturating_sub(if is_mfsx {
+                    if format_version >= 1 { 54 } else { 52 }
+                } else {
+                    12
+                }) as usize
             };
             tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
                 let mut buf = vec![0u8; index_end.saturating_sub(index_offset as usize)];
