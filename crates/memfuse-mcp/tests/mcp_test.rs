@@ -232,6 +232,12 @@ async fn test_missing_arguments() {
 }
 
 // ANCHOR[TEST:MCP-002] STATUS:DONE (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:MCP-002) (TS: 2026-08-31T21:15:00Z) (SESSION: b8e4f1a2)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Error-path coverage verified for missing fields and unknown tools.
+// REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:MCP-002) (TS: 2026-08-31T21:20:00Z) (SESSION: c9f5e2b3)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Review pass verified JSON-RPC error response formats.
 #[tokio::test]
 async fn test_malformed_request_returns_error() {
     // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen

@@ -183,11 +183,11 @@ crates/memfuse-core/src/types/domain.rs:1124:            let ser = serde_json::t
 crates/memfuse-core/src/types/domain.rs:1125:            let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
 crates/memfuse-core/src/types/domain.rs:1131:            let ser = serde_json::to_string(&ent).unwrap(); // unwrap
 crates/memfuse-core/src/types/domain.rs:1132:            let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1148:            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed");
-crates/memfuse-core/src/types/domain.rs:1242:            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key");
-crates/memfuse-core/src/types/domain.rs:1243:            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key");
-crates/memfuse-core/src/types/domain.rs:1247:            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key");
-crates/memfuse-core/src/types/domain.rs:1248:            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key");
+crates/memfuse-core/src/types/domain.rs:1154:            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed");
+crates/memfuse-core/src/types/domain.rs:1248:            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key");
+crates/memfuse-core/src/types/domain.rs:1249:            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key");
+crates/memfuse-core/src/types/domain.rs:1253:            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key");
+crates/memfuse-core/src/types/domain.rs:1254:            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key");
 crates/memfuse-core/src/types/budget.rs:264:        tracker.consume_memory(500).expect("should consume"); // expect
 crates/memfuse-core/src/types/budget.rs:277:        tracker.consume_memory(900).expect("should consume"); // expect
 crates/memfuse-core/src/types/budget.rs:281:        match result.err().unwrap() {
