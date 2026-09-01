@@ -843,7 +843,13 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     let root = find_root_dir();
     let full_path = root.join(file_path);
     let output = std::process::Command::new("git")
-        .args(["log", "-1", "--format=%aI", "--", full_path.to_str().unwrap()])
+        .args([
+            "log",
+            "-1",
+            "--format=%aI",
+            "--",
+            full_path.to_str().unwrap(),
+        ])
         .output()
         .map_err(|e| format!("Failed to run git command: {}", e))?;
 
@@ -880,7 +886,9 @@ pub fn run_check_jules_context_freshness() -> bool {
     let stand_date = match re_stand.captures(&content) {
         Some(caps) => caps[1].to_string(),
         None => {
-            eprintln!("❌ Could not extract 'Stand: YYYY-MM-DD' from .jules/JULES_CONTEXT.md header");
+            eprintln!(
+                "❌ Could not extract 'Stand: YYYY-MM-DD' from .jules/JULES_CONTEXT.md header"
+            );
             return false;
         }
     };
@@ -1163,7 +1171,10 @@ pub fn parse_context_tag_args(args: &[String]) -> ContextTagFilter {
     filter
 }
 
-pub fn filter_tags<'a>(tags: &'a [TagItem], filter: &ContextTagFilter) -> Vec<ContextTagNdjson<'a>> {
+pub fn filter_tags<'a>(
+    tags: &'a [TagItem],
+    filter: &ContextTagFilter,
+) -> Vec<ContextTagNdjson<'a>> {
     tags.iter()
         .filter_map(|t| {
             let krate = extract_crate_name(&t.file_path);
