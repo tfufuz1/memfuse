@@ -3051,6 +3051,8 @@ mod tests {
         );
 
         // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-01T11:35:00Z) (SESSION: a7b8c9d0)
+        // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-01T11:40:00Z) (SESSION: e1f2a3b4)
         // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
         // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().
         // Regressionstest: tests/hnsw_snapshot_delete_test.rs
