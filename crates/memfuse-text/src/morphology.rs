@@ -223,7 +223,12 @@ impl GermanCompoundSplitter {
 
     /// Checks if a slice is a valid dictionary stem or stem + interfix.
     fn is_valid_component(&self, sub: &str, is_last: bool) -> bool {
-        let norm_sub = normalize_umlauts(sub);
+        let norm_sub = if sub.contains(['ä', 'ö', 'ü', 'ß']) {
+            std::borrow::Cow::Owned(normalize_umlauts(sub))
+        } else {
+            std::borrow::Cow::Borrowed(sub)
+        };
+
         if norm_sub.len() < 2 {
             return false;
         }
@@ -1020,5 +1025,34 @@ mod tests {
         assert_eq!(normalize_umlauts(""), "");
         assert_eq!(normalize_umlauts("ÄÖÜß"), "aeoeuess");
         assert_eq!(normalize_umlauts("Grüße aus Köln!"), "gruesse aus koeln!");
+    }
+
+    #[test]
+    fn test_rca_known_failures_fixed() {
+        let splitter = GermanCompoundSplitter::new();
+
+        assert_eq!(
+            splitter.decompose("donaudampfschifffahrtsgesellschaftskapitaen"),
+            vec![
+                "donau",
+                "dampf",
+                "schiff",
+                "fahrts",
+                "gesellschafts",
+                "kapitaen"
+            ]
+        );
+
+        assert_eq!(
+            splitter.decompose("softwareentwicklungskontext"),
+            vec!["software", "entwicklungs", "kontext"]
+        );
+
+        assert_eq!(
+            splitter.decompose("systemadministrator"),
+            vec!["system", "administrator"]
+        );
+
+        assert_eq!(splitter.decompose("huehnerei"), vec!["huehner", "ei"]);
     }
 }

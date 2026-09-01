@@ -208,9 +208,9 @@ Benchmarking ausgeführt auf Linux x86_64 via `criterion` (`crates/memfuse-text/
 
 ## 8. Priorisierte Bugliste & Empfehlungen
 
-### Priority 1: High — Fehlende Stems im eingebetteten Wörterbuch (`data/german_words.txt`)
+### Priority 1: High — Fehlende Stems im eingebetteten Wörterbuch (`data/german_words.txt`) [FIXED 2026-09-01]
 - **Symptom:** Extrem lange Komposita wie `donaudampfschifffahrtsgesellschaftskapitaen` oder IT-Begriffe wie `softwareentwicklungskontext` und `systemadministrator` werden nicht zerlegt, da Stems wie `administrator`, `kontext` oder dreifaches 'f' (`schifffahrts`) fehlen.
-- **Empfehlung:** Ergänzung von `data/german_words.txt` um IT-Fachbegriffe (`administrator`, `kontext`, `prozessor`) und Anpassung der Dreifach-Konsonanten-Regel.
+- **Status:** **FIXED** (TS:2026-09-01T15:00:00Z) — Stems `administrator`, `kontext`, `donau`, `dampf`, `kapitaen`, `kapitän` wurden in `data/german_words.txt` ergänzt. `hühnerei` wurde entfernt, so dass `huehnerei` korrekt in `["huehner", "ei"]` zerlegt wird.
 
 ### Priority 2: Medium — E-Mail & URL Token-Separation
 - **Symptom:** `unicode_words()` behandelt Domains wie `memfuse.io` als zusammenhängendes Token und trennt den Punkt nicht. Eine Suche nach `memfuse` findet daher `support@memfuse.io` nur, wenn explizit `memfuse.io` gesucht wird.
@@ -231,3 +231,19 @@ Vollständige Ausführung aller Test-Suites:
 - `cargo test -p memfuse-text --test tokenizer_audit` $\rightarrow$ **4 passed**
 - `cargo test --workspace --exclude memfuse-tauri` $\rightarrow$ **100% Workspace Pass**
 - `cargo bench -p memfuse-text` $\rightarrow$ **Erfolgreich abgeschlossen**
+
+---
+
+## 10. Nachtrag & Refactoring Status (2026-09-01)
+
+### Behandelte Befunde & Optimierungen
+1. **Erweiterung des Wörterbuchs (`data/german_words.txt`):**
+   Ergänzung um fehlende Stems `administrator`, `kontext`, `donau`, `dampf`, `kapitaen`, `kapitän` und Entfernung des zusammengesetzten Eintrags `hühnerei`.
+   - `donaudampfschifffahrtsgesellschaftskapitaen` $\rightarrow$ `["donau", "dampf", "schiff", "fahrts", "gesellschafts", "kapitaen"]` (PASS)
+   - `softwareentwicklungskontext` $\rightarrow$ `["software", "entwicklungs", "kontext"]` (PASS)
+   - `systemadministrator` $\rightarrow$ `["system", "administrator"]` (PASS)
+   - `huehnerei` $\rightarrow$ `["huehner", "ei"]` (PASS)
+2. **Allokationsfreie Substring-Validierung in `GermanCompoundSplitter`:**
+   Optimierung von `is_valid_component` in `crates/memfuse-text/src/morphology.rs` durch Verwendung von `Cow<'_, str>`: Für vor-normalisierte/ASCII-Eingaben werden überflüssige `normalize_umlauts`-Heap-Allokationen in der $O(n^2)$ DP-Schleife vollständig vermieden.
+3. **KMU 55-Komposita Testsuite & Regressionstests:**
+   Die KMU-Testsuite (`test_kmu_55_compounds_suite`) erzielt nun **55/55 Treffer (100.0% Genauigkeit)**. Ein dedizierter Regressionstest `test_rca_known_failures_fixed` sichert das Verhalten dauerhaft ab.

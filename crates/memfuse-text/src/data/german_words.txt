@@ -5,6 +5,7 @@ abrechnung
 absatz
 abteilung
 abwicklung
+administrator
 aenderungs
 akt
 amt
@@ -129,6 +130,7 @@ code
 compliance
 computer
 dach
+dampf
 datei
 daten
 datenbank
@@ -147,6 +149,7 @@ dienst
 dienstleistungs
 dokument
 dokumentation
+donau
 druck
 drucker
 durchführung
@@ -367,7 +370,6 @@ hunde
 hut
 hühn
 hühner
-hühnerei
 hülle
 hütte
 idee
@@ -412,6 +414,8 @@ kamm
 kampf
 kanal
 kante
+kapitaen
+kapitän
 kappe
 karte
 katalog
@@ -456,6 +460,7 @@ konto
 kontrakt
 kontroll
 kontrolle
+kontext
 konzept
 konzern
 kooperation
