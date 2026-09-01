@@ -70,6 +70,12 @@ impl RouterEngine {
         query_embedding: &[f32],
         query_text: &str,
     ) -> Result<RoutingDecision> {
+        if query_embedding.iter().any(|v| !v.is_finite()) {
+            return Err(MemFuseError::InvalidInput(
+                "query_embedding contains non-finite values (NaN/Inf)".to_string(),
+            ));
+        }
+
         // Snapshot profiles atomically to guarantee caller consistency during hot-reloads
         let profiles = self.profiles.read().clone();
 

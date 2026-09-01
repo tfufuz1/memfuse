@@ -48,9 +48,9 @@ impl SlmProfile {
                 "MCP endpoint cannot be empty".to_string(),
             ));
         }
-        if self.min_relevance_score.is_nan() {
+        if !self.min_relevance_score.is_finite() {
             return Err(MemFuseError::InvalidInput(
-                "min_relevance_score cannot be NaN".to_string(),
+                "min_relevance_score cannot be NaN or Infinite".to_string(),
             ));
         }
         Ok(())
