@@ -226,27 +226,29 @@ mod tests {
         }
 
         assert_eq!(attached_deque.len(), 10_000);
-        assert_eq!(attached_deque.back().unwrap().observed_at_seq, 10_004);
+        assert_eq!(
+            attached_deque
+                .back()
+                .map(|e| e.observed_at_seq),
+            Some(10_004)
+        );
     }
 
     #[tokio::test]
-    async fn test_agent_context_fifo_eviction() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
+    async fn test_agent_context_fifo_eviction() -> memfuse_core::Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
         let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
-                .await
-                .unwrap(),
+            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
         );
-        let state_coll = db.collection("test_fifo").await.unwrap();
+        let state_coll = db.collection("test_fifo").await?;
         let mut ctx = AgentContext::try_new(
             "test_fifo_task",
             "start",
             db,
             state_coll,
             TokenBudget::new(1000, 0),
-        )
-        .unwrap();
+        )?;
 
         let extra_events = 50;
         let total = MAX_TELEMETRY_EVENTS + extra_events;
@@ -261,28 +263,32 @@ mod tests {
 
         assert_eq!(ctx.events.len(), MAX_TELEMETRY_EVENTS);
         // The first remaining event in deque should have observed_at_seq = 50 (oldest 50 evicted)
-        assert_eq!(ctx.events.front().unwrap().observed_at_seq, extra_events as u64);
-        assert_eq!(ctx.events.back().unwrap().observed_at_seq, (total - 1) as u64);
+        assert_eq!(
+            ctx.events.front().map(|e| e.observed_at_seq),
+            Some(extra_events as u64)
+        );
+        assert_eq!(
+            ctx.events.back().map(|e| e.observed_at_seq),
+            Some((total - 1) as u64)
+        );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_try_attach_event_error_message_unit() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
+    async fn test_try_attach_event_error_message_unit() -> memfuse_core::Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
         let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
-                .await
-                .unwrap(),
+            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
         );
-        let state_coll = db.collection("test_try_attach").await.unwrap();
+        let state_coll = db.collection("test_try_attach").await?;
         let mut ctx = AgentContext::try_new(
             "test_try_attach_task",
             "start",
             db,
             state_coll,
             TokenBudget::new(1000, 0),
-        )
-        .unwrap();
+        )?;
 
         for i in 0..MAX_TELEMETRY_EVENTS {
             let ev = crate::event_source::BackgroundEvent {
@@ -301,7 +307,10 @@ mod tests {
 
         let res = ctx.try_attach_event(overflow_ev);
         assert!(res.is_err());
-        let err_msg = res.unwrap_err().to_string();
+        let err_msg = match res {
+            Err(e) => e.to_string(),
+            Ok(_) => unreachable!(),
+        };
         assert!(
             err_msg.contains("Telemetry event buffer limit reached"),
             "Expected 'Telemetry event buffer limit reached' in err_msg, got: {}",
@@ -317,26 +326,24 @@ mod tests {
             "Err msg must not contain misleading 'MB' unit, got: {}",
             err_msg
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_telemetry_event_performance_benchmark() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
+    async fn test_telemetry_event_performance_benchmark() -> memfuse_core::Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
         let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
-                .await
-                .unwrap(),
+            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
         );
-        let state_coll = db.collection("test_bench").await.unwrap();
+        let state_coll = db.collection("test_bench").await?;
         let mut ctx = AgentContext::try_new(
             "test_bench_task",
             "start",
             db,
             state_coll,
             TokenBudget::new(1000, 0),
-        )
-        .unwrap();
+        )?;
 
         let count = MAX_TELEMETRY_EVENTS + 1000;
         let start_time = std::time::Instant::now();
@@ -359,5 +366,6 @@ mod tests {
             "Expected operations to complete under 100ms, took {:?}",
             elapsed
         );
+        Ok(())
     }
 }
