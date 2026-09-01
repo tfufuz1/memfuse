@@ -20,6 +20,7 @@ Ergebnis: **2 offene Tags**
 
 | Agent | TS / Datum | ANCHOR / Beschreibung |
 |---|---|---|
+| `AGENT:1` | `2026-09-01T11:30:00Z` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) |
 | `AGENT:?` | `2026-08-31T21:12:53Z` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage |
 
 

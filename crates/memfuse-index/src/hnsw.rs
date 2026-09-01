@@ -3050,7 +3050,7 @@ mod tests {
             10..100,
         );
 
-        // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        // ANCHOR[TEST:AGT-INDEX-006] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
         // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
         // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().
         // Regressionstest: tests/hnsw_snapshot_delete_test.rs
