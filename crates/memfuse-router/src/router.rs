@@ -190,9 +190,7 @@ pub(crate) fn select_profile_from_chunks(
     let best_profile_idx = profile_scores
         .into_iter()
         .max_by(|(idx_a, score_a), (idx_b, score_b)| {
-            score_a
-                .total_cmp(score_b)
-                .then_with(|| idx_b.cmp(idx_a))
+            score_a.total_cmp(score_b).then_with(|| idx_b.cmp(idx_a))
         })
         .map(|(idx, _)| idx);
 

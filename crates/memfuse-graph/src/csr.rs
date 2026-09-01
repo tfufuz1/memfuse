@@ -1653,8 +1653,8 @@ mod tests {
         assert_eq!(results[0].0, EntityId::new(3));
 
         let stats = graph.stats().await.unwrap(); // unwrap
-        // With lazy index allocation, Tx1 rollback discards staged entities and edges,
-        // so Entity 2 is never registered in id_map/reverse_map.
+                                                  // With lazy index allocation, Tx1 rollback discards staged entities and edges,
+                                                  // so Entity 2 is never registered in id_map/reverse_map.
         assert_eq!(
             stats.num_entities, 2,
             "Only entities from Tx2 and common ones should exist"
