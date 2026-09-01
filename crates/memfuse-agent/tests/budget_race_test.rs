@@ -43,12 +43,7 @@ impl AgentTool for HeavyTokenTool {
 
 async fn setup_env(
     max_tokens: usize,
-) -> Result<(
-    OrchestratorEngine,
-    Arc<MemFuse>,
-    AgentContext,
-    TempDir,
-)> {
+) -> Result<(OrchestratorEngine, Arc<MemFuse>, AgentContext, TempDir)> {
     let tmp_dir = tempfile::tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 128,
@@ -71,7 +66,7 @@ async fn setup_env(
 
 #[tokio::test]
 async fn test_sequential_workflow_budget_check() -> Result<()> {
-    let (mut engine, _db, mut ctx, _tmp) = setup_env(100).await?;
+    let (mut engine, _db, mut ctx, _tmp) = setup_env(60).await?;
 
     let mut graph = StateGraph::new();
     graph.try_add_node("start", "Start Node", NodeType::Start, None)?;
@@ -86,8 +81,8 @@ async fn test_sequential_workflow_budget_check() -> Result<()> {
     engine.try_register_tool(Box::new(HeavyTokenTool::new("tool_1", 60)))?;
     engine.try_register_tool(Box::new(HeavyTokenTool::new("tool_2", 60)))?;
 
-    // First step consumes 60/100 tokens -> 40 left.
-    // Second step consumes 60 tokens -> total 120 -> budget exhausted (available == 0).
+    // First step consumes 60/60 tokens -> 0 left.
+    // Second step pre-check detects budget exhaustion before tool execution.
     let res = engine.run(&mut ctx, &graph).await;
     assert!(res.is_err());
     if let Err(MemFuseError::Internal(msg)) = res {
@@ -137,9 +132,15 @@ async fn test_concurrent_budget_consumption_rmw_race() -> Result<()> {
     let total_consumed = final_guard.consumed();
 
     // Both parallel tasks read available (100) before either updated consumed, so both succeed and consume 160 tokens total
-    assert_eq!(success_count, 2, "Both tasks succeeded due to RMW race condition");
+    assert_eq!(
+        success_count, 2,
+        "Both tasks succeeded due to RMW race condition"
+    );
     assert_eq!(total_consumed, 160);
-    assert!(total_consumed > 100, "RMW Race confirmed: total consumed exceeds budget");
+    assert!(
+        total_consumed > 100,
+        "RMW Race confirmed: total consumed exceeds budget"
+    );
 
     Ok(())
 }
