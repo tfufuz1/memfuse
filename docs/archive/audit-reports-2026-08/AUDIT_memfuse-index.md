@@ -251,21 +251,3 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ---
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
-
-
-## 14. Comprehensive Deep-Audit & Verification Status (2026-09-01)
-
-- **Auditor:** Senior Rust Performance & Vector Index Engineer (Jules Agent)
-- **Crate Scope:** `crates/memfuse-index` (Layer 1 HNSW, DiskANN, SQ8, Distance, Persistence)
-- **Quality & Safety Invariants Verified:**
-  - `cargo check -p memfuse-index --all-features`: 0 errors, 0 warnings.
-  - `cargo clippy -p memfuse-index --all-features --no-deps -- -D warnings`: 0 findings.
-  - `cargo fmt --check -p memfuse-index`: 0 diffs.
-  - Production code contains zero `.unwrap()` or `.expect()` calls outside `#[cfg(test)]`.
-  - All 147 `unsafe` blocks across SIMD intrinsics and memory-mapping routines are guarded with explicit `// SAFETY:` rationale headers adhering to ADR-017 / ADR-034.
-- **Verification Suite Summary:**
-  - **SIMD Numerical Parity (`simd_numerical_audit` & `distance_determinism`):** AVX2/NEON intrinsics vs. scalar vs. f64 reference max deviation $\le 2.54 \times 10^{-5}$ (within $\le 1 \times 10^{-4}$ tolerance).
-  - **Graph Recall & Recall@10 Quality (`recall_audit` & `recall`):** HNSW Recall@10 is $98.5\% - 100.0\%$; DiskANN Recall@10 is $96.0\% - 100.0\%$.
-  - **Quantization & RAM Reduction (`ram_reduction` & `quantize_persistence_audit`):** SQ8 Kendall-Tau correlation $\tau \ge 0.989$; RAM footprint reduction factor $2.37\times - 3.40\times$.
-  - **Mmap TOCTOU Fault-Injection (`mmap_toctou_test`):** Confirmed POSIX unlinking safety and SIGBUS process isolation under active file truncation.
-- **Status:** APPROVED / ALL GATES GREEN.
