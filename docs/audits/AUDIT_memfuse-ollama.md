@@ -129,6 +129,13 @@ No unresolved critical or blocking bugs were identified during this audit. Minor
 
 ---
 
+## 12. Audit Update: 2026-08-31
+
+- **XML Quote Escaping (`xml_escape`)**: Verified and tested escaping for double quotes (`"`) to `&quot;` and single quotes (`'`) to `&apos;` in `xml_escape()`. Added unit test `test_xml_escape`.
+- **Streaming NDJSON Line Buffer Hardening (`chat_with_rag_streaming`)**: Hardened stream chunk parsing by introducing an internal `line_buffer: Vec<u8>` for byte stream chunks. This prevents `MemFuseError::Serialization` failures when JSON lines are split across TCP chunk boundaries. Added unit test `test_chat_with_rag_streaming_split_chunks`.
+
+---
+
 ## 11. Appendix: Mock Server Configuration & Test Logs
 
 ### Test Suite Execution Summary:

@@ -1068,7 +1068,7 @@ impl HnswIndexCore {
         }
 
         // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f)
-        // RESOLVED: AGT-INDEX-b2c3d4e5 — try_write/read lock race condition replaced with guaranteed write lock (TS: 2026-09-01T11:02:04Z)
+        // RESOLVED: AGT-INDEX-b2c3d4e5 — try_write/read lock race condition replaced with guaranteed write lock (TS:2026-09-01T11:02:04Z)
         // AI-NOTE: Sobald P-J5 (loom-Harness) gemerged ist, ergänze hier einen loom-basierten Nebenläufigkeits-Beweis, siehe memfuse_neue_befunde.md NEU-02.
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
