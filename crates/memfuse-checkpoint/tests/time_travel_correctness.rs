@@ -367,33 +367,66 @@ async fn test_concurrent_two_session_time_travel_isolation() {
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
     // Agent Session Alpha (Namespace: ns_alpha, Collection: col_alpha)
-    let storage_alpha = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "alpha:"));
-    let store_alpha = Arc::new(PersistentCheckpointStore::new(storage_alpha.clone(), "ns_alpha"));
+    let storage_alpha = Arc::new(NamespaceStorageEngine::new(
+        shared_storage.clone(),
+        "alpha:",
+    ));
+    let store_alpha = Arc::new(PersistentCheckpointStore::new(
+        storage_alpha.clone(),
+        "ns_alpha",
+    ));
 
     // Agent Session Beta (Namespace: ns_beta, Collection: col_beta)
     let storage_beta = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "beta:"));
-    let store_beta = Arc::new(PersistentCheckpointStore::new(storage_beta.clone(), "ns_beta"));
+    let store_beta = Arc::new(PersistentCheckpointStore::new(
+        storage_beta.clone(),
+        "ns_beta",
+    ));
 
     // 1. Session Alpha establishes State A1
     let tx_a1 = TxId::new(101);
-    storage_alpha.put(tx_a1, b"doc_1", b"alpha_content_v1").await.unwrap();
-    storage_alpha.put(tx_a1, b"doc_2", b"alpha_content_v2").await.unwrap();
+    storage_alpha
+        .put(tx_a1, b"doc_1", b"alpha_content_v1")
+        .await
+        .unwrap();
+    storage_alpha
+        .put(tx_a1, b"doc_2", b"alpha_content_v2")
+        .await
+        .unwrap();
     let checksum_a1 = storage_alpha.user_state_checksum();
 
     let cp_a1 = store_alpha
-        .create_checkpoint("step_1", "col_alpha", 10, tx_a1, serde_json::json!({"session": "alpha", "step": 1}))
+        .create_checkpoint(
+            "step_1",
+            "col_alpha",
+            10,
+            tx_a1,
+            serde_json::json!({"session": "alpha", "step": 1}),
+        )
         .await
         .unwrap();
     assert_eq!(cp_a1.name, "step_1");
 
     // 2. Session Beta establishes State B1
     let tx_b1 = TxId::new(201);
-    storage_beta.put(tx_b1, b"doc_1", b"beta_content_v1").await.unwrap();
-    storage_beta.put(tx_b1, b"doc_2", b"beta_content_v2").await.unwrap();
+    storage_beta
+        .put(tx_b1, b"doc_1", b"beta_content_v1")
+        .await
+        .unwrap();
+    storage_beta
+        .put(tx_b1, b"doc_2", b"beta_content_v2")
+        .await
+        .unwrap();
     let checksum_b1 = storage_beta.user_state_checksum();
 
     let cp_b1 = store_beta
-        .create_checkpoint("step_1", "col_beta", 10, tx_b1, serde_json::json!({"session": "beta", "step": 1}))
+        .create_checkpoint(
+            "step_1",
+            "col_beta",
+            10,
+            tx_b1,
+            serde_json::json!({"session": "beta", "step": 1}),
+        )
         .await
         .unwrap();
     assert_eq!(cp_b1.name, "step_1");
@@ -403,18 +436,42 @@ async fn test_concurrent_two_session_time_travel_isolation() {
 
     // 3. Both sessions transition to State 2 concurrently
     let tx_a2 = TxId::new(102);
-    storage_alpha.put(tx_a2, b"doc_1", b"alpha_content_v1_updated").await.unwrap();
-    storage_alpha.put(tx_a2, b"doc_3", b"alpha_content_v3_new").await.unwrap();
+    storage_alpha
+        .put(tx_a2, b"doc_1", b"alpha_content_v1_updated")
+        .await
+        .unwrap();
+    storage_alpha
+        .put(tx_a2, b"doc_3", b"alpha_content_v3_new")
+        .await
+        .unwrap();
     let _cp_a2 = store_alpha
-        .create_checkpoint("step_2", "col_alpha", 20, tx_a2, serde_json::json!({"session": "alpha", "step": 2}))
+        .create_checkpoint(
+            "step_2",
+            "col_alpha",
+            20,
+            tx_a2,
+            serde_json::json!({"session": "alpha", "step": 2}),
+        )
         .await
         .unwrap();
 
     let tx_b2 = TxId::new(202);
-    storage_beta.put(tx_b2, b"doc_1", b"beta_content_v1_updated").await.unwrap();
-    storage_beta.put(tx_b2, b"doc_3", b"beta_content_v3_new").await.unwrap();
+    storage_beta
+        .put(tx_b2, b"doc_1", b"beta_content_v1_updated")
+        .await
+        .unwrap();
+    storage_beta
+        .put(tx_b2, b"doc_3", b"beta_content_v3_new")
+        .await
+        .unwrap();
     let _cp_b2 = store_beta
-        .create_checkpoint("step_2", "col_beta", 20, tx_b2, serde_json::json!({"session": "beta", "step": 2}))
+        .create_checkpoint(
+            "step_2",
+            "col_beta",
+            20,
+            tx_b2,
+            serde_json::json!({"session": "beta", "step": 2}),
+        )
         .await
         .unwrap();
 
@@ -452,10 +509,16 @@ async fn test_concurrent_two_session_time_travel_isolation() {
     );
 
     // Verify key contents
-    assert_eq!(storage_alpha.get(b"doc_1").await.unwrap(), Some(b"alpha_content_v1".to_vec()));
+    assert_eq!(
+        storage_alpha.get(b"doc_1").await.unwrap(),
+        Some(b"alpha_content_v1".to_vec())
+    );
     assert_eq!(storage_alpha.get(b"doc_3").await.unwrap(), None);
 
-    assert_eq!(storage_beta.get(b"doc_1").await.unwrap(), Some(b"beta_content_v1".to_vec()));
+    assert_eq!(
+        storage_beta.get(b"doc_1").await.unwrap(),
+        Some(b"beta_content_v1".to_vec())
+    );
     assert_eq!(storage_beta.get(b"doc_3").await.unwrap(), None);
 
     // 6. VERIFY CHECKPOINT HISTORY ISOLATION:
@@ -482,41 +545,81 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
         let shared = shared_storage.clone();
 
         join_set.spawn(async move {
-            let storage_a = Arc::new(NamespaceStorageEngine::new(shared.clone(), &format!("alpha_iter_{iter}:")));
-            let store_a = Arc::new(PersistentCheckpointStore::new(storage_a.clone(), &format!("ns_alpha_{iter}")));
+            let storage_a = Arc::new(NamespaceStorageEngine::new(
+                shared.clone(),
+                &format!("alpha_iter_{iter}:"),
+            ));
+            let store_a = Arc::new(PersistentCheckpointStore::new(
+                storage_a.clone(),
+                &format!("ns_alpha_{iter}"),
+            ));
 
-            let storage_b = Arc::new(NamespaceStorageEngine::new(shared.clone(), &format!("beta_iter_{iter}:")));
-            let store_b = Arc::new(PersistentCheckpointStore::new(storage_b.clone(), &format!("ns_beta_{iter}")));
+            let storage_b = Arc::new(NamespaceStorageEngine::new(
+                shared.clone(),
+                &format!("beta_iter_{iter}:"),
+            ));
+            let store_b = Arc::new(PersistentCheckpointStore::new(
+                storage_b.clone(),
+                &format!("ns_beta_{iter}"),
+            ));
 
             let tx_base_a = 100u64;
             let tx_base_b = 200u64;
 
             // Session Alpha: Establish baseline
             storage_a
-                .put(TxId::new(tx_base_a), b"state_doc", format!("alpha_v1_iter_{iter}").as_bytes())
+                .put(
+                    TxId::new(tx_base_a),
+                    b"state_doc",
+                    format!("alpha_v1_iter_{iter}").as_bytes(),
+                )
                 .await?;
             let checksum_a_base = storage_a.user_state_checksum();
             let cp_name_a = format!("cp_alpha_{iter}");
             store_a
-                .create_checkpoint(&cp_name_a, "col_alpha", tx_base_a, TxId::new(tx_base_a), serde_json::json!({"iter": iter}))
+                .create_checkpoint(
+                    &cp_name_a,
+                    "col_alpha",
+                    tx_base_a,
+                    TxId::new(tx_base_a),
+                    serde_json::json!({"iter": iter}),
+                )
                 .await?;
 
             // Session Beta: Establish baseline
             storage_b
-                .put(TxId::new(tx_base_b), b"state_doc", format!("beta_v1_iter_{iter}").as_bytes())
+                .put(
+                    TxId::new(tx_base_b),
+                    b"state_doc",
+                    format!("beta_v1_iter_{iter}").as_bytes(),
+                )
                 .await?;
             let checksum_b_base = storage_b.user_state_checksum();
             let cp_name_b = format!("cp_beta_{iter}");
             store_b
-                .create_checkpoint(&cp_name_b, "col_beta", tx_base_b, TxId::new(tx_base_b), serde_json::json!({"iter": iter}))
+                .create_checkpoint(
+                    &cp_name_b,
+                    "col_beta",
+                    tx_base_b,
+                    TxId::new(tx_base_b),
+                    serde_json::json!({"iter": iter}),
+                )
                 .await?;
 
             // Concurrent Mutations
             storage_a
-                .put(TxId::new(tx_base_a + 1), b"state_doc", format!("alpha_v2_iter_{iter}").as_bytes())
+                .put(
+                    TxId::new(tx_base_a + 1),
+                    b"state_doc",
+                    format!("alpha_v2_iter_{iter}").as_bytes(),
+                )
                 .await?;
             storage_b
-                .put(TxId::new(tx_base_b + 1), b"state_doc", format!("beta_v2_iter_{iter}").as_bytes())
+                .put(
+                    TxId::new(tx_base_b + 1),
+                    b"state_doc",
+                    format!("beta_v2_iter_{iter}").as_bytes(),
+                )
                 .await?;
 
             // Concurrent Rollback
@@ -550,7 +653,11 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
     let mut completed = 0;
     while let Some(res) = join_set.join_next().await {
         let task_res = res.expect("Task must not panic");
-        assert!(task_res.is_ok(), "Stress test iteration failed: {:?}", task_res.err());
+        assert!(
+            task_res.is_ok(),
+            "Stress test iteration failed: {:?}",
+            task_res.err()
+        );
         completed += 1;
     }
 
@@ -567,29 +674,47 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
 async fn test_concurrent_raii_guard_unwind_isolation() {
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
-    let storage_alpha = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "guard_alpha:"));
+    let storage_alpha = Arc::new(NamespaceStorageEngine::new(
+        shared_storage.clone(),
+        "guard_alpha:",
+    ));
     let store_alpha = PersistentCheckpointStore::new(storage_alpha.clone(), "ns_guard_alpha");
 
-    let storage_beta = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "guard_beta:"));
+    let storage_beta = Arc::new(NamespaceStorageEngine::new(
+        shared_storage.clone(),
+        "guard_beta:",
+    ));
     let store_beta = PersistentCheckpointStore::new(storage_beta.clone(), "ns_guard_beta");
 
     // Baseline state for both sessions
     let tx_base_a = TxId::new(10);
-    storage_alpha.put(tx_base_a, b"doc_1", b"alpha_init").await.unwrap();
+    storage_alpha
+        .put(tx_base_a, b"doc_1", b"alpha_init")
+        .await
+        .unwrap();
 
     let tx_base_b = TxId::new(20);
-    storage_beta.put(tx_base_b, b"doc_1", b"beta_init").await.unwrap();
+    storage_beta
+        .put(tx_base_b, b"doc_1", b"beta_init")
+        .await
+        .unwrap();
 
     let tx_mut_a = TxId::new(11);
     let tx_mut_b = TxId::new(21);
 
     // Session Alpha creates guard, mutates state
     let guard_alpha = store_alpha.create_guard(tx_base_a).unwrap();
-    storage_alpha.put(tx_mut_a, b"doc_1", b"alpha_uncommitted_mutation").await.unwrap();
+    storage_alpha
+        .put(tx_mut_a, b"doc_1", b"alpha_uncommitted_mutation")
+        .await
+        .unwrap();
 
     // Session Beta creates guard, mutates state, commits guard
     let guard_beta = store_beta.create_guard(tx_base_b).unwrap();
-    storage_beta.put(tx_mut_b, b"doc_1", b"beta_committed_mutation").await.unwrap();
+    storage_beta
+        .put(tx_mut_b, b"doc_1", b"beta_committed_mutation")
+        .await
+        .unwrap();
     let _cp_beta = guard_beta.commit().unwrap();
 
     // Drop Session Alpha's guard without calling commit (triggers background rollback)
@@ -599,10 +724,16 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // Verify Session Alpha's state was rolled back to alpha_init
-    assert_eq!(storage_alpha.get(b"doc_1").await.unwrap(), Some(b"alpha_init".to_vec()));
+    assert_eq!(
+        storage_alpha.get(b"doc_1").await.unwrap(),
+        Some(b"alpha_init".to_vec())
+    );
 
     // Verify Session Beta's state remains committed as beta_committed_mutation
-    assert_eq!(storage_beta.get(b"doc_1").await.unwrap(), Some(b"beta_committed_mutation".to_vec()));
+    assert_eq!(
+        storage_beta.get(b"doc_1").await.unwrap(),
+        Some(b"beta_committed_mutation".to_vec())
+    );
 }
 
 /// Verifies sequence number pinning and unpinning lifecycle isolation across concurrent sessions.
@@ -610,10 +741,16 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
 async fn test_concurrent_pinning_lifecycle_isolation() {
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
-    let storage_alpha = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "pin_alpha:"));
+    let storage_alpha = Arc::new(NamespaceStorageEngine::new(
+        shared_storage.clone(),
+        "pin_alpha:",
+    ));
     let store_alpha = PersistentCheckpointStore::new(storage_alpha, "ns_pin_alpha");
 
-    let storage_beta = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "pin_beta:"));
+    let storage_beta = Arc::new(NamespaceStorageEngine::new(
+        shared_storage.clone(),
+        "pin_beta:",
+    ));
     let store_beta = PersistentCheckpointStore::new(storage_beta, "ns_pin_beta");
 
     // Session Alpha creates CP_A1 (seq_no 100)

@@ -8,7 +8,8 @@ use memfuse_embed::{CrossEncoderReranker, RerankConfig};
 #[tokio::test]
 async fn test_adversarial_query_stuffing_quantification() {
     let config = RerankConfig::default();
-    let reranker = CrossEncoderReranker::new(config).expect("Failed to initialize CrossEncoderReranker");
+    let reranker =
+        CrossEncoderReranker::new(config).expect("Failed to initialize CrossEncoderReranker");
 
     let query = "Rust async concurrency memory safety";
 
@@ -31,7 +32,10 @@ async fn test_adversarial_query_stuffing_quantification() {
         prefix_injected_doc.clone(),
     ];
 
-    let results = reranker.rerank(query, &candidates).await.expect("Reranking failed");
+    let results = reranker
+        .rerank(query, &candidates)
+        .await
+        .expect("Reranking failed");
     assert_eq!(results.len(), 4);
 
     // In Passthrough-Fallback oder Inferenz: Ergebnisse müssen geordnet sein
@@ -44,7 +48,8 @@ async fn test_adversarial_query_stuffing_quantification() {
 #[tokio::test]
 async fn test_post_rrf_rerank_oversampling_hijack() {
     let config = RerankConfig::default();
-    let reranker = CrossEncoderReranker::new(config).expect("Failed to initialize CrossEncoderReranker");
+    let reranker =
+        CrossEncoderReranker::new(config).expect("Failed to initialize CrossEncoderReranker");
 
     let query = "database snapshot isolation MVCC";
 
@@ -59,6 +64,9 @@ async fn test_post_rrf_rerank_oversampling_hijack() {
     let adversarial_chunk = format!("Totally unrelated malicious payload or advertisement text. {query} {query} {query} {query}");
     candidates.push(adversarial_chunk);
 
-    let results = reranker.rerank(query, &candidates).await.expect("Rerank failed");
+    let results = reranker
+        .rerank(query, &candidates)
+        .await
+        .expect("Rerank failed");
     assert_eq!(results.len(), 15);
 }
