@@ -18,12 +18,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Quantization reduces the memory footprint of vector storage by 4x.
 /// Per-dimension scaling improves recall by adapting to different value ranges.
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct ScalarQuantizer {
-    pub(crate) mins: Vec<f32>,
-    pub(crate) maxes: Vec<f32>,
-    pub(crate) scales: Vec<f32>,
-    pub(crate) inv_scales: Vec<f32>,
-    pub(crate) dimension: usize,
+pub struct ScalarQuantizer {
+    pub mins: Vec<f32>,
+    pub maxes: Vec<f32>,
+    pub scales: Vec<f32>,
+    pub inv_scales: Vec<f32>,
+    pub dimension: usize,
     #[serde(skip, default)]
     pub(crate) total_queries: AtomicU64,
     #[serde(skip, default)]
@@ -53,7 +53,7 @@ impl ScalarQuantizer {
     /// leading to degraded quantization accuracy.
     /// Safely creates a new ScalarQuantizer trained on a batch of vectors.
     /// Returns `MemFuseError::InvalidInput` if dimension is 0 or any vector dimension mismatches.
-    pub(crate) fn try_train(batch: &[&[f32]], dimension: usize) -> memfuse_core::Result<Self> {
+    pub fn try_train(batch: &[&[f32]], dimension: usize) -> memfuse_core::Result<Self> {
         if dimension == 0 {
             return Err(memfuse_core::MemFuseError::invalid_input(
                 "Quantizer dimension must be greater than 0",
@@ -125,7 +125,7 @@ impl ScalarQuantizer {
     /// quantizer (e.g., during index rebuilds) using a representative sample of active vectors.
     /// Without recalibration, new vectors that fall outside the initial range will be clamped,
     /// leading to degraded quantization accuracy.
-    pub(crate) fn train(batch: &[&[f32]], dimension: usize) -> Self {
+    pub fn train(batch: &[&[f32]], dimension: usize) -> Self {
         Self::try_train(batch, dimension).unwrap_or_else(|_| Self {
             mins: vec![0.0; dimension],
             maxes: vec![1.0; dimension],
@@ -138,7 +138,7 @@ impl ScalarQuantizer {
     }
 
     /// Calculates quantization drift as the fraction of dimensions falling outside \[mins\[i\], maxes\[i\]\].
-    pub(crate) fn check_drift(&self, vector: &[f32]) -> f32 {
+    pub fn check_drift(&self, vector: &[f32]) -> f32 {
         if self.dimension == 0 || vector.is_empty() {
             return 0.0;
         }
@@ -152,7 +152,7 @@ impl ScalarQuantizer {
     }
 
     /// Expands mins/maxes to accommodate out-of-bounds vectors, recomputing scales.
-    pub(crate) fn expand_bounds_to_fit(&mut self, vector: &[f32]) -> bool {
+    pub fn expand_bounds_to_fit(&mut self, vector: &[f32]) -> bool {
         let mut changed = false;
         for (i, &val) in vector.iter().take(self.dimension).enumerate() {
             if val < self.mins[i] {
@@ -178,7 +178,7 @@ impl ScalarQuantizer {
     }
 
     /// Quantizes an `f32` vector to `u8`.
-    pub(crate) fn quantize(&self, vector: &[f32]) -> Vec<u8> {
+    pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
         let mut is_out = false;
         for (i, &v) in vector.iter().enumerate().take(self.dimension) {
             if v < self.mins[i] || v > self.maxes[i] {
@@ -216,7 +216,7 @@ impl ScalarQuantizer {
     }
 
     /// Dequantizes a `u8` vector back to `f32`.
-    pub(crate) fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
+    pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
         vector
             .iter()
             .enumerate()
@@ -226,7 +226,7 @@ impl ScalarQuantizer {
 
     /// Computes the asymmetric distance between an exact query and a quantized vector.
     /// Optimized for zero allocations via inline dequantization.
-    pub(crate) fn asymmetric_dist(
+    pub fn asymmetric_dist(
         &self,
         query: &[f32],
         quantized: &[u8],
@@ -281,7 +281,7 @@ impl ScalarQuantizer {
 
     /// Computes symmetric (approximate) distance purely in u8.
     /// Optimized for zero allocations via inline dequantization.
-    pub(crate) fn symmetric_dist(
+    pub fn symmetric_dist(
         &self,
         q1: &[u8],
         q2: &[u8],
