@@ -227,9 +227,7 @@ mod tests {
 
         assert_eq!(attached_deque.len(), 10_000);
         assert_eq!(
-            attached_deque
-                .back()
-                .map(|e| e.observed_at_seq),
+            attached_deque.back().map(|e| e.observed_at_seq),
             Some(10_004)
         );
     }
@@ -238,9 +236,7 @@ mod tests {
     async fn test_agent_context_fifo_eviction() -> memfuse_core::Result<()> {
         let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
-        let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
-        );
+        let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
         let state_coll = db.collection("test_fifo").await?;
         let mut ctx = AgentContext::try_new(
             "test_fifo_task",
@@ -278,9 +274,7 @@ mod tests {
     async fn test_try_attach_event_error_message_unit() -> memfuse_core::Result<()> {
         let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
-        let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
-        );
+        let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
         let state_coll = db.collection("test_try_attach").await?;
         let mut ctx = AgentContext::try_new(
             "test_try_attach_task",
@@ -333,9 +327,7 @@ mod tests {
     async fn test_telemetry_event_performance_benchmark() -> memfuse_core::Result<()> {
         let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
-        let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
-        );
+        let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
         let state_coll = db.collection("test_bench").await?;
         let mut ctx = AgentContext::try_new(
             "test_bench_task",
