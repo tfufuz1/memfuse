@@ -43,12 +43,7 @@ impl AgentTool for HeavyTokenTool {
 
 async fn setup_env(
     max_tokens: usize,
-) -> Result<(
-    OrchestratorEngine,
-    Arc<MemFuse>,
-    AgentContext,
-    TempDir,
-)> {
+) -> Result<(OrchestratorEngine, Arc<MemFuse>, AgentContext, TempDir)> {
     let tmp_dir = tempfile::tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 128,
@@ -137,9 +132,15 @@ async fn test_concurrent_budget_consumption_rmw_race() -> Result<()> {
     let total_consumed = final_guard.consumed();
 
     // Both parallel tasks read available (100) before either updated consumed, so both succeed and consume 160 tokens total
-    assert_eq!(success_count, 2, "Both tasks succeeded due to RMW race condition");
+    assert_eq!(
+        success_count, 2,
+        "Both tasks succeeded due to RMW race condition"
+    );
     assert_eq!(total_consumed, 160);
-    assert!(total_consumed > 100, "RMW Race confirmed: total consumed exceeds budget");
+    assert!(
+        total_consumed > 100,
+        "RMW Race confirmed: total consumed exceeds budget"
+    );
 
     Ok(())
 }
