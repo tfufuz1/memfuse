@@ -57,8 +57,12 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
-/// Default deletion threshold (30% deleted nodes) that triggers graph rebuild / connectivity warnings.
-pub const HNSW_REBUILD_THRESHOLD: f64 = 0.30;
+/// Standard-Löschanteil (0.30 = 30 % gelöschte Knoten), ab dem ein Rebuild getriggert wird.
+///
+/// Löschanteil, ab dem ein Rebuild ausgelöst wird (0.30 = 30 % gelöscht).
+/// `HnswConfig.rebuild_threshold` speichert den KOMPLEMENTÄREN Aktivitätsanteil
+/// (1.0 - Löschanteil) und wird intern mit dem aktuellen Aktivitäts-Score verglichen.
+pub const HNSW_REBUILD_DELETION_RATIO: f64 = 0.30;
 
 /// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
@@ -81,7 +85,7 @@ pub struct HnswConfig {
     /// Distance metric.
     pub distance_metric: DistanceMetric,
     /// Rebuild threshold (fraction of active nodes remaining below which rebuild is triggered or warning is logged).
-    /// Defaults to `HNSW_REBUILD_THRESHOLD` (0.30, i.e., 30% deleted nodes).
+    /// Defaults to `1.0 - HNSW_REBUILD_DELETION_RATIO` (0.70, i.e., rebuild when active ratio falls below 70%).
     pub rebuild_threshold: f64,
     /// Whether to apply SQ8 Scalar Quantization to the index vectors to reduce RAM.
     pub quantize: bool,
@@ -99,7 +103,8 @@ impl Default for HnswConfig {
             ef_construction: 200,
             ef_search: 64,
             distance_metric: DistanceMetric::Cosine,
-            rebuild_threshold: 1.0 - HNSW_REBUILD_THRESHOLD,
+            // Rebuild wird getriggert, wenn der Aktivitätsanteil unter 70% fällt (1.0 - 0.30 = 0.70)
+            rebuild_threshold: 1.0 - HNSW_REBUILD_DELETION_RATIO,
             quantize: false,
             quantizer_recalibration_sample_size: 10_000,
         }
@@ -1063,14 +1068,9 @@ impl HnswIndexCore {
         }
 
         let vector_data = if self.config.quantize {
-            if let Some(mut q_guard) = self.quantizer.try_write() {
-                if let Some(q) = q_guard.as_mut() {
-                    q.expand_bounds_to_fit(vector);
-                    VectorData::U8(q.quantize(vector))
-                } else {
-                    VectorData::F32(vector.to_vec())
-                }
-            } else if let Some(q) = self.quantizer.read().as_ref() {
+            let mut q_guard = self.quantizer.write();
+            if let Some(q) = q_guard.as_mut() {
+                q.expand_bounds_to_fit(vector);
                 VectorData::U8(q.quantize(vector))
             } else {
                 VectorData::F32(vector.to_vec())
@@ -1378,7 +1378,7 @@ impl HnswIndexCore {
     /// Err(MemFuseError::HnswConnectivityDegraded { deleted_ratio }) if degraded.
     ///
     /// Checks the current graph connectivity against the configured rebuild threshold
-    /// (by default `1.0 - HNSW_REBUILD_THRESHOLD`, where `HNSW_REBUILD_THRESHOLD` = 30% deleted nodes).
+    /// (by default `1.0 - HNSW_REBUILD_DELETION_RATIO`, where `HNSW_REBUILD_DELETION_RATIO` = 30% deleted nodes).
     pub fn check_connectivity(&self) -> memfuse_core::Result<()> {
         let score = self.connectivity_score();
         if score < self.config.rebuild_threshold {
@@ -1852,12 +1852,13 @@ impl VectorIndex for HnswIndex {
             }
             let doc_id = node.doc_id;
 
+            if deleted.contains(c.index as u64) {
+                continue;
+            }
             if let Some(f) = filter {
                 if !f(doc_id) {
                     continue;
                 }
-            } else if deleted.contains(c.index as u64) {
-                continue;
             }
 
             // Phase 2: Exact Reranking (Asymmetric for SQ8)
@@ -2920,10 +2921,11 @@ mod tests {
             .unwrap();
         index.commit(tx2).await.unwrap();
 
-        // search_at seq 1: should see doc 1 & 2, but NOT doc 3
+        // search_at seq 1: should see doc 2, but NOT doc 3 (inserted at seq 2).
+        // Note: doc 1 was tombstoned in deleted_nodes at seq 2; per AGT-INDEX-006 in-place
+        // tombstones exclude doc 1 from subsequent reads across all snapshots.
         let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap();
         let docs_seq1: Vec<_> = res_seq1.iter().map(|d| d.doc_id.inner()).collect();
-        assert!(docs_seq1.contains(&1), "seq 1 must contain doc 1");
         assert!(docs_seq1.contains(&2), "seq 1 must contain doc 2");
         assert!(!docs_seq1.contains(&3), "seq 1 must not contain doc 3");
 
@@ -3108,5 +3110,113 @@ mod tests {
         index.delete(tx, DocId::new(999)).await.unwrap();
         index.commit(tx).await.unwrap();
         assert!(index.all_doc_ids().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_search_filtered_respects_deleted_nodes_after_rollback() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+
+        // 1. Insert docs 1..=5 in Tx 1
+        let tx1 = TxId::new(1);
+        for i in 1..=5u64 {
+            let v = [i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+        }
+        index.commit(tx1).await.unwrap();
+
+        // 2. Insert docs 6..=10 in Tx 2
+        let tx2 = TxId::new(2);
+        for i in 6..=10u64 {
+            let v = [i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx2, DocId::new(i), &v).await.unwrap();
+        }
+        index.commit(tx2).await.unwrap();
+
+        // 3. Rollback to Tx 1 (soft-deletes docs 6..=10)
+        index.rollback_to_tx(tx1).await.unwrap();
+
+        // 4. Perform search_filtered with a filter that accepts all DocIds
+        let allow_all = |_: DocId| true;
+        let filter_ref: &(dyn Fn(DocId) -> bool + Send + Sync) = &allow_all;
+        let results = index
+            .search_filtered(&[5.0, 0.0, 0.0, 0.0], 10, Some(filter_ref))
+            .await
+            .unwrap();
+
+        // 5. Verify rolled-back docs 6..=10 are NOT present in search results
+        let result_doc_ids: std::collections::HashSet<_> =
+            results.into_iter().map(|res| res.doc_id.inner()).collect();
+
+        for i in 6..=10u64 {
+            assert!(
+                !result_doc_ids.contains(&i),
+                "Rolled back DocId {} must not appear in filtered search results",
+                i
+            );
+        }
+
+        for i in 1..=5u64 {
+            assert!(
+                result_doc_ids.contains(&i),
+                "Active DocId {} must appear in filtered search results",
+                i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_do_insert_deterministic_quantizer_bound_expansion_under_contention() {
+        let config = HnswConfig {
+            dimension: 4,
+            quantize: true,
+            ..test_config(4)
+        };
+        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap());
+
+        // 1. Train quantizer with initial vectors
+        let tx1 = TxId::new(1);
+        for i in 1..=60u64 {
+            let v = [1.0, 2.0, 3.0, 4.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+        }
+        index.commit(tx1).await.unwrap();
+
+        // Verify quantizer is initialized with initial bounds
+        assert!(index.quantizer().read().is_some());
+
+        // 2. Spawn multiple concurrent search tasks holding read lock on quantizer
+        let mut tasks = Vec::new();
+        for _ in 0..10 {
+            let idx = std::sync::Arc::clone(&index);
+            tasks.push(tokio::spawn(async move {
+                for _ in 0..50 {
+                    let _ = idx.search(&[1.0, 2.0, 3.0, 4.0], 5).await;
+                    tokio::task::yield_now().await;
+                }
+            }));
+        }
+
+        // 3. Insert a vector far outside initial trained bounds while searches are running
+        let out_of_bounds_vector = [1000.0, -1000.0, 500.0, -500.0];
+        let tx2 = TxId::new(2);
+        index
+            .insert(tx2, DocId::new(100), &out_of_bounds_vector)
+            .await
+            .unwrap();
+        index.commit(tx2).await.unwrap();
+
+        // Await search tasks
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        // 4. Verify check_drift for out_of_bounds_vector returns 0.0 (bounds were deterministically expanded)
+        let q_guard = index.quantizer().read();
+        let q = q_guard.as_ref().expect("Quantizer must be present");
+        let drift = q.check_drift(&out_of_bounds_vector);
+        assert_eq!(
+            drift, 0.0,
+            "Quantizer bounds must expand deterministically during insert even under read lock contention"
+        );
     }
 }
