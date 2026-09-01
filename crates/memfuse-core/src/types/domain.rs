@@ -629,7 +629,7 @@ impl Edge {
 /// (bisherige Dokumente ohne Klassifikation = faktisches Wissen).
 ///
 /// # Non-Exhaustive
-/// #[non_exhaustive] erlaubt in zukünftigen Releases neue Varianten ohne
+/// `#[non_exhaustive]` erlaubt in zukünftigen Releases neue Varianten ohne
 /// Breaking Change bei downstream match-Ausdrücken (KEIN wildcard-arm zwingend
 /// für Library-Consumer bis zur nächsten Major-Version).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]

@@ -463,7 +463,11 @@ impl McpServer {
                     .await
                     .map_err(|e| McpError::internal_error(e.to_string()))?;
                 let results = col
-                    .hybrid_search(query, &vec, k, None)
+                    .query()
+                    .text(query)
+                    .vector(&vec)
+                    .k(k)
+                    .execute()
                     .await
                     .map_err(McpError::from)?;
 
