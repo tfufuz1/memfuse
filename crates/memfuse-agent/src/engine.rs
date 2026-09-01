@@ -3,7 +3,7 @@
 // INVARIANTEN: Enforces Checkpoint -> Execute -> Commit -> Audit loop per step; atomic commit & RAII guard protection.
 // NICHT-OFFENSICHTLICH: Persists final state to LSM before final checkpoint; replay_from reconstructs state from checkpoint registry.
 // HOTSPOTS: run_internal (ll. 90-180), replay_from (ll. 185-230).
-// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+// STAND: TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)
 
 //! Deterministic, persistent graph-walker engine for agent workflows.
 //!
