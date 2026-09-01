@@ -1252,9 +1252,9 @@ impl HnswIndexCore {
             ));
         }
 
-        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für
+        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) — Write-Lock für
         //   SQ8-Quantizer-Bounds-Expansion bei Insert garantiert; loom-Regressionstest
-        //   in tests/loom_quantizer_race_test.rs (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        //   in tests/loom_quantizer_race_test.rs
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
