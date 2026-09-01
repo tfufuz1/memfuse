@@ -4,6 +4,12 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
+| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
+| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
+| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/event_source.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Continuous event stream abstractions delivering telemetry/trigger events to agents. |
+| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/graph.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Declarative StateGraph definition routing workflow step transitions. |
+| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate entry point exposing audit, context, engine, event_source, graph, and step submodules. |
 | `TS:2026-08-31T23:10:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/cross_signal_isolation_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Prüft Cross-Signal Snapshot-Isolation in memfuse-db während paralleler Writes/Updates. |
 | `TS:2026-08-31T22:30:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/fault_injection_2pc.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Prüft atomare 2PC-Transaktions-Kompensation und Crash-Recovery (repair_on_open) über alle 4 Sub-Engines. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/src/anti_tamper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cold-boot protection and explicit Zeroize discipline for volatile encryption keys. |
@@ -26,12 +32,6 @@
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/morphology.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen. |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
 | `TS:2026-08-30T21:55:29Z (SESSION: 10569099)` | `crates/memfuse-index/src/quantize.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | 8-Bit Skalare Quantisierung (SQ8) mit pro-Dimension Min/Max Skalierung. |
-| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
-| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
-| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
-| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/event_source.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Continuous event stream abstractions delivering telemetry/trigger events to agents. |
-| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/graph.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Declarative StateGraph definition routing workflow step transitions. |
-| `TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate entry point exposing audit, context, engine, event_source, graph, and step submodules. |
 | `TS:2026-08-30T21:15:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection. |
 | `TS:2026-08-30T21:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/query_builder.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fluent HybridQueryBuilder Fassade für Konsolidierung aller Search-Signaturen. |
 | `TS:2026-08-30T19:50:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/benches/crypto_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Criterion benchmark suite for memfuse-crypto throughput and latency measurement. |

@@ -3,7 +3,7 @@
 // INVARIANTEN: Keyed `audit:{task_id}:step:{n}`; zero deletion/update paths by design.
 // NICHT-OFFENSICHTLICH: replay_task scans prefix and sorts by step_count for deterministic replay.
 // HOTSPOTS: append (ll. 35-50), replay_task (ll. 52-70).
-// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
+// STAND: TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)
 
 //! Immutable audit trail for agent workflow executions.
 //!
