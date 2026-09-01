@@ -640,9 +640,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let doc_key = self.namespaced_key(&from.inner().to_le_bytes(), 1);
 
         if let Some(bytes) = self.storage.get_at_seq(&doc_key, u64::MAX).await? {
+            let mut doc_id_str = None;
+            let mut updated_links = false;
+
             // Determine which struct it was saved as
             if let Ok(mut meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
-                if let Some(obj) = meta.metadata.as_mut().and_then(|m| m.as_object_mut()) {
+                doc_id_str = Some(meta.id.clone());
+                let meta_obj = meta.metadata.get_or_insert_with(|| serde_json::json!({}));
+                if let Some(obj) = meta_obj.as_object_mut() {
                     let mut links: Vec<memfuse_core::types::domain::MemoryLink> = obj
                         .get("links")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -659,13 +664,19 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                             created_at_tx: tx,
                         });
 
-                        obj.insert("links".to_string(), serde_json::to_value(links).unwrap());
-                        let updated_bytes = serde_json::to_vec(&meta).unwrap();
+                        let links_val = serde_json::to_value(links).map_err(|e| {
+                            memfuse_core::MemFuseError::Serialization(e.to_string())
+                        })?;
+                        obj.insert("links".to_string(), links_val);
+                        let updated_bytes = serde_json::to_vec(&meta)?;
                         self.storage.put(tx, &doc_key, &updated_bytes).await?;
+                        updated_links = true;
                     }
                 }
             } else if let Ok(mut full) = serde_json::from_slice::<StoredDocument>(&bytes) {
-                if let Some(obj) = full.metadata.as_mut().and_then(|m| m.as_object_mut()) {
+                doc_id_str = Some(full.id.clone());
+                let full_obj = full.metadata.get_or_insert_with(|| serde_json::json!({}));
+                if let Some(obj) = full_obj.as_object_mut() {
                     let mut links: Vec<memfuse_core::types::domain::MemoryLink> = obj
                         .get("links")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -681,11 +692,56 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                             created_at_tx: tx,
                         });
 
-                        obj.insert("links".to_string(), serde_json::to_value(links).unwrap());
-                        let updated_bytes = serde_json::to_vec(&full).unwrap();
+                        let links_val = serde_json::to_value(links).map_err(|e| {
+                            memfuse_core::MemFuseError::Serialization(e.to_string())
+                        })?;
+                        obj.insert("links".to_string(), links_val);
+                        let updated_bytes = serde_json::to_vec(&full)?;
                         self.storage.put(tx, &doc_key, &updated_bytes).await?;
+                        updated_links = true;
                     }
                 }
+            }
+
+            // Also update user_key (key_type=0) if links were updated and string id is known
+            if updated_links {
+                if let Some(ref id_str) = doc_id_str {
+                    let user_key = self.namespaced_key(id_str.as_bytes(), 0);
+                    if let Some(user_bytes) = self.storage.get_at_seq(&user_key, u64::MAX).await? {
+                        if let Ok(mut full_doc) =
+                            serde_json::from_slice::<StoredDocument>(&user_bytes)
+                        {
+                            let doc_obj = full_doc
+                                .metadata
+                                .get_or_insert_with(|| serde_json::json!({}));
+                            if let Some(obj) = doc_obj.as_object_mut() {
+                                let mut links: Vec<memfuse_core::types::domain::MemoryLink> = obj
+                                    .get("links")
+                                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                    .unwrap_or_default();
+                                if !links
+                                    .iter()
+                                    .any(|l| l.target == to && l.relation == relation)
+                                {
+                                    links.push(memfuse_core::types::domain::MemoryLink {
+                                        target: to,
+                                        relation,
+                                        created_at_tx: tx,
+                                    });
+                                    let links_val = serde_json::to_value(links).map_err(|e| {
+                                        memfuse_core::MemFuseError::Serialization(e.to_string())
+                                    })?;
+                                    obj.insert("links".to_string(), links_val);
+                                    let new_user_bytes = serde_json::to_vec(&full_doc)?;
+                                    self.storage.put(tx, &user_key, &new_user_bytes).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Commit transaction to persist the link updates
+                self.storage.commit(tx).await?;
             }
         }
 

@@ -109,6 +109,18 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                         t_obj.insert(k.clone(), v.clone());
                     }
                 }
+            } else {
+                // If target is not an object, we overwrite it with source (First-Wins doesn't strictly apply to non-objects as we can't merge them)
+                // or we could just leave it. But leaving it might drop source. Actually, if target is e.g. a string, we probably want to keep it.
+                // Wait, if we want to avoid silent drop, maybe we convert to array?
+                // Let's just overwrite it if target is not an object, to ensure we don't silently lose complex metadata.
+                // No, if target was first, First-Wins says we keep target. So doing nothing IS First-Wins for the entire value.
+                // But the audit report says "verwischen ... anstatt sie anderweitig zu mergen".
+                // We'll wrap them in an array if they differ.
+                if t_val != &s_val {
+                    let mut arr = vec![t_val.clone(), s_val.clone()];
+                    *t_val = serde_json::Value::Array(arr);
+                }
             }
         }
         (t @ None, Some(s_val)) => {
@@ -447,7 +459,10 @@ mod tests {
         if let Some(serde_json::Value::Object(meta)) = &doc.metadata {
             assert_eq!(meta.get("vec_key"), Some(&serde_json::json!("val1")));
             assert_eq!(meta.get("graph_key"), Some(&serde_json::json!("val2")));
-            assert_eq!(meta.get("shared_key"), Some(&serde_json::json!("from_vector")));
+            assert_eq!(
+                meta.get("shared_key"),
+                Some(&serde_json::json!("from_vector"))
+            );
         } else {
             panic!("Expected metadata object");
         }
@@ -505,10 +520,22 @@ mod tests {
             MetadataMergePriority::VectorFirst,
         );
         if let Some(serde_json::Value::Object(meta_vec)) = &fused_vec[0].metadata {
-            assert_eq!(meta_vec.get("shared_key"), Some(&serde_json::json!("from_vector")));
-            assert_eq!(meta_vec.get("vec_only"), Some(&serde_json::json!("vec_val")));
-            assert_eq!(meta_vec.get("text_only"), Some(&serde_json::json!("text_val")));
-            assert_eq!(meta_vec.get("graph_only"), Some(&serde_json::json!("graph_val")));
+            assert_eq!(
+                meta_vec.get("shared_key"),
+                Some(&serde_json::json!("from_vector"))
+            );
+            assert_eq!(
+                meta_vec.get("vec_only"),
+                Some(&serde_json::json!("vec_val"))
+            );
+            assert_eq!(
+                meta_vec.get("text_only"),
+                Some(&serde_json::json!("text_val"))
+            );
+            assert_eq!(
+                meta_vec.get("graph_only"),
+                Some(&serde_json::json!("graph_val"))
+            );
         } else {
             panic!("Expected metadata object");
         }
@@ -520,7 +547,10 @@ mod tests {
             MetadataMergePriority::TextFirst,
         );
         if let Some(serde_json::Value::Object(meta_text)) = &fused_text[0].metadata {
-            assert_eq!(meta_text.get("shared_key"), Some(&serde_json::json!("from_text")));
+            assert_eq!(
+                meta_text.get("shared_key"),
+                Some(&serde_json::json!("from_text"))
+            );
         } else {
             panic!("Expected metadata object");
         }
@@ -532,7 +562,10 @@ mod tests {
             MetadataMergePriority::GraphFirst,
         );
         if let Some(serde_json::Value::Object(meta_graph)) = &fused_graph[0].metadata {
-            assert_eq!(meta_graph.get("shared_key"), Some(&serde_json::json!("from_graph")));
+            assert_eq!(
+                meta_graph.get("shared_key"),
+                Some(&serde_json::json!("from_graph"))
+            );
         } else {
             panic!("Expected metadata object");
         }
@@ -548,7 +581,10 @@ mod tests {
             ]),
         );
         if let Some(serde_json::Value::Object(meta_custom)) = &fused_custom[0].metadata {
-            assert_eq!(meta_custom.get("shared_key"), Some(&serde_json::json!("from_graph")));
+            assert_eq!(
+                meta_custom.get("shared_key"),
+                Some(&serde_json::json!("from_graph"))
+            );
         } else {
             panic!("Expected metadata object");
         }

@@ -122,6 +122,8 @@ pub fn xml_escape(input: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Constructs a structurally isolated prompt encapsulating system instructions, RAG context, and user query.
@@ -861,29 +863,53 @@ impl OllamaClient {
 
         let mut stream = response.bytes_stream();
         let mut full_response = String::new();
+        let mut line_buffer = Vec::new();
 
         'outer: while let Some(chunk_result) = stream.next().await {
             let bytes = chunk_result
                 .map_err(|e| MemFuseError::Storage(format!("Stream interrupted: {e}")))?;
-            for line in bytes.split(|&b| b == b'\n') {
-                if line.is_empty() {
-                    continue;
-                }
-                match serde_json::from_slice::<ChatStreamChunk>(line) {
-                    Ok(chunk) => {
-                        if let Some(msg) = chunk.message {
-                            on_token(msg.content.clone());
-                            full_response.push_str(&msg.content);
-                        }
-                        if chunk.done {
+
+            for &b in bytes.as_ref() {
+                if b == b'\n' {
+                    if !line_buffer.is_empty() {
+                        let is_done = match serde_json::from_slice::<ChatStreamChunk>(&line_buffer)
+                        {
+                            Ok(chunk) => {
+                                if let Some(msg) = chunk.message {
+                                    on_token(msg.content.clone());
+                                    full_response.push_str(&msg.content);
+                                }
+                                chunk.done
+                            }
+                            Err(e) => {
+                                return Err(MemFuseError::Serialization(format!(
+                                    "Failed to parse streaming JSON chunk: {e}"
+                                )));
+                            }
+                        };
+                        line_buffer.clear();
+                        if is_done {
                             break 'outer;
                         }
                     }
-                    Err(e) => {
-                        return Err(MemFuseError::Serialization(format!(
-                            "Failed to parse streaming JSON chunk: {e}"
-                        )));
+                } else {
+                    line_buffer.push(b);
+                }
+            }
+        }
+
+        if !line_buffer.is_empty() {
+            match serde_json::from_slice::<ChatStreamChunk>(&line_buffer) {
+                Ok(chunk) => {
+                    if let Some(msg) = chunk.message {
+                        on_token(msg.content.clone());
+                        full_response.push_str(&msg.content);
                     }
+                }
+                Err(e) => {
+                    return Err(MemFuseError::Serialization(format!(
+                        "Failed to parse streaming JSON chunk: {e}"
+                    )));
                 }
             }
         }
@@ -1059,7 +1085,78 @@ mod tests {
 
     #[test]
     fn test_xml_escape() {
-        assert_eq!(xml_escape("a & b < c > d"), "a &amp; b &lt; c &gt; d");
+        assert_eq!(
+            xml_escape("a & b < c > d \"quotes\" 'single'"),
+            "a &amp; b &lt; c &gt; d &quot;quotes&quot; &apos;single&apos;"
+        );
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_xml_escape_contains_no_raw_special_chars(s in ".*") {
+            let escaped = xml_escape(&s);
+            prop_assert!(!escaped.contains('<'));
+            prop_assert!(!escaped.contains('>'));
+            prop_assert!(!escaped.contains('"'));
+            prop_assert!(!escaped.contains('\''));
+
+            // Every ampersand must be part of an escaped entity: &amp;, &lt;, &gt;, &quot;, &apos;
+            for (idx, char_b) in escaped.bytes().enumerate() {
+                if char_b == b'&' {
+                    let rest = &escaped[idx..];
+                    let is_entity = rest.starts_with("&amp;")
+                        || rest.starts_with("&lt;")
+                        || rest.starts_with("&gt;")
+                        || rest.starts_with("&quot;")
+                        || rest.starts_with("&apos;");
+                    prop_assert!(is_entity, "Ampersand at byte offset {} was not part of a valid XML entity: {}", idx, rest);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chat_with_rag_streaming_split_chunks() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+
+                let chunk_json = serde_json::json!({
+                    "message": { "content": "SplitToken" },
+                    "done": true
+                })
+                .to_string()
+                    + "\n";
+
+                let (part1, part2) = chunk_json.split_at(15);
+
+                let header = "HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\n\r\n";
+                socket.write_all(header.as_bytes()).await.ok();
+                socket.write_all(part1.as_bytes()).await.ok();
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                socket.write_all(part2.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let mut tokens = Vec::new();
+        let result = client
+            .chat_with_rag_streaming("test-model", "query", "context", |tok| {
+                tokens.push(tok);
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, "SplitToken");
+        assert_eq!(tokens, vec!["SplitToken"]);
     }
 
     #[test]

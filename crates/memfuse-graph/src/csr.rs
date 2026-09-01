@@ -41,6 +41,9 @@ const SCORE_DECAY: f32 = 0.7;
 /// Maximum traversal depth.
 const MAX_TRAVERSAL_HOPS: u8 = 3;
 
+/// Maximum visited nodes limit during BFS traversal to prevent intermediate hub-node memory explosion.
+pub const MAX_VISITED_NODES: usize = 10_000;
+
 /// LSM-Key-Prefix für alle Graph-Entities.
 const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
 /// LSM-Key-Prefix für alle Graph-Edges.
@@ -986,6 +989,15 @@ impl GraphIndex for CsrGraph {
             }
 
             if hop < effective_max {
+                if visited.len() >= MAX_VISITED_NODES {
+                    tracing::warn!(
+                        visited_count = visited.len(),
+                        max_visited = MAX_VISITED_NODES,
+                        "traverse_at_time visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
+                    );
+                    break;
+                }
+
                 // 1. CSR traversal (compacted edges)
                 if node_idx < inner.offsets.len() - 1 {
                     let start_edge = inner.offsets[node_idx];
@@ -1011,6 +1023,16 @@ impl GraphIndex for CsrGraph {
                                 .get(neighbor_idx)
                                 .is_some_and(|e| e.is_some())
                         {
+                            if !visited.contains_key(&neighbor_idx)
+                                && visited.len() + queue.len() >= MAX_VISITED_NODES
+                            {
+                                tracing::warn!(
+                                    visited_and_queued = visited.len() + queue.len(),
+                                    max_visited = MAX_VISITED_NODES,
+                                    "traverse_at_time visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                );
+                                break;
+                            }
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
                     }
@@ -1035,6 +1057,16 @@ impl GraphIndex for CsrGraph {
                                 .get(neighbor_idx)
                                 .is_some_and(|e| e.is_some())
                         {
+                            if !visited.contains_key(&neighbor_idx)
+                                && visited.len() + queue.len() >= MAX_VISITED_NODES
+                            {
+                                tracing::warn!(
+                                    visited_and_queued = visited.len() + queue.len(),
+                                    max_visited = MAX_VISITED_NODES,
+                                    "traverse_at_time visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                );
+                                break;
+                            }
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
                     }
@@ -1101,6 +1133,15 @@ impl GraphIndex for CsrGraph {
             }
 
             if hop < effective_max {
+                if visited.len() >= MAX_VISITED_NODES {
+                    tracing::warn!(
+                        visited_count = visited.len(),
+                        max_visited = MAX_VISITED_NODES,
+                        "traverse visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
+                    );
+                    break;
+                }
+
                 // 1. CSR traversal (compacted edges)
                 if node_idx < inner.offsets.len() - 1 {
                     let start_edge = inner.offsets[node_idx];
@@ -1123,6 +1164,16 @@ impl GraphIndex for CsrGraph {
                                 .get(neighbor_idx)
                                 .is_some_and(|e| e.is_some())
                             {
+                                if !visited.contains_key(&neighbor_idx)
+                                    && visited.len() + queue.len() >= MAX_VISITED_NODES
+                                {
+                                    tracing::warn!(
+                                        visited_and_queued = visited.len() + queue.len(),
+                                        max_visited = MAX_VISITED_NODES,
+                                        "traverse visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                    );
+                                    break;
+                                }
                                 queue.push_back((neighbor_idx, hop + 1, next_score));
                             }
                         }
@@ -1145,6 +1196,16 @@ impl GraphIndex for CsrGraph {
                                 .get(neighbor_idx)
                                 .is_some_and(|e| e.is_some())
                         {
+                            if !visited.contains_key(&neighbor_idx)
+                                && visited.len() + queue.len() >= MAX_VISITED_NODES
+                            {
+                                tracing::warn!(
+                                    visited_and_queued = visited.len() + queue.len(),
+                                    max_visited = MAX_VISITED_NODES,
+                                    "traverse visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                );
+                                break;
+                            }
                             queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
                     }
@@ -1228,11 +1289,11 @@ impl GraphIndex for CsrGraph {
 
         let mut inner = self.inner.write();
 
-        // 1. Commit entities
-        if let Some(tx_entities) = inner.staged_entities.remove(&tx) {
-            let mut entities_sorted: Vec<_> = tx_entities.into_iter().collect();
-            entities_sorted.sort_by_key(|(id, _)| *id);
-            for (id, entity) in entities_sorted {
+        // 1. Commit entities (sort by EntityId to guarantee deterministic internal index allocation)
+        if let Some(mut tx_entities) = inner.staged_entities.remove(&tx) {
+            let mut sorted_entities: Vec<_> = tx_entities.drain().collect();
+            sorted_entities.sort_by_key(|(id, _)| *id);
+            for (id, entity) in sorted_entities {
                 let idx = inner.get_or_create_index(id);
                 if idx >= inner.entities.len() {
                     inner.entities.resize(idx + 1, None);
@@ -1242,11 +1303,11 @@ impl GraphIndex for CsrGraph {
             }
         }
 
-        // 2. Commit edges (lazy index resolution occurs here)
-        if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
-            let mut edges_sorted: Vec<_> = tx_edges.into_iter().collect();
-            edges_sorted.sort_by_key(|(from_id, _)| *from_id);
-            for (from_id, edges) in edges_sorted {
+        // 2. Commit edges (lazy index resolution occurs here; sort by from_id for determinism)
+        if let Some(mut tx_edges) = inner.staged_edges.remove(&tx) {
+            let mut sorted_edges: Vec<_> = tx_edges.drain().collect();
+            sorted_edges.sort_by_key(|(from_id, _)| *from_id);
+            for (from_id, edges) in sorted_edges {
                 let from_idx = inner.get_or_create_index(from_id);
                 let mut converted_edges = Vec::with_capacity(edges.len());
                 for edge in edges {
@@ -1505,6 +1566,7 @@ mod tests {
             assert_eq!(inner.targets.len(), 1);
             assert_eq!(inner.offsets[0], 0);
             assert_eq!(inner.offsets[1], 1);
+            assert_eq!(inner.offsets[2], 1);
         }
     }
 
@@ -1657,8 +1719,8 @@ mod tests {
         assert_eq!(results[0].0, EntityId::new(3));
 
         let stats = graph.stats().await.unwrap(); // unwrap
-        // With lazy index allocation, Tx1 rollback discards staged entities and edges,
-        // so Entity 2 is never registered in id_map/reverse_map.
+                                                  // With lazy index allocation, Tx1 rollback discards staged entities and edges,
+                                                  // so Entity 2 is never registered in id_map/reverse_map.
         assert_eq!(
             stats.num_entities, 2,
             "Only entities from Tx2 and common ones should exist"
@@ -2979,5 +3041,43 @@ mod tests {
             proptest::prop_assert_eq!(inner.targets.len(), inner.valid_froms.len());
             proptest::prop_assert_eq!(inner.targets.len(), inner.valid_tos.len());
         }
+    }
+
+    #[tokio::test]
+    async fn test_hub_node_visited_cap_enforced() -> memfuse_core::Result<()> {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let start = EntityId::new(1);
+        graph
+            .add_entity(tx, Entity::new(start, "Start", "Type"))
+            .await?;
+
+        let hub = EntityId::new(2);
+        graph
+            .add_entity(tx, Entity::new(hub, "Hub", "Type"))
+            .await?;
+        graph
+            .add_edge(tx, Edge::new(start, hub, "link").with_weight(1.0))
+            .await?;
+
+        // 12_000 leaf nodes connected to Hub (exceeding MAX_VISITED_NODES = 10_000)
+        for i in 0..12_000 {
+            let leaf = EntityId::new(3 + i as u64);
+            graph
+                .add_entity(tx, Entity::new(leaf, format!("L{i}"), "Leaf"))
+                .await?;
+            graph
+                .add_edge(tx, Edge::new(hub, leaf, "points_to").with_weight(0.9))
+                .await?;
+        }
+        graph.commit(tx).await?;
+
+        let results = graph.traverse(start, 2).await?;
+        assert!(
+            results.len() <= MAX_VISITED_NODES,
+            "Traversals through hub nodes must be bounded by MAX_VISITED_NODES ({MAX_VISITED_NODES}), got {}",
+            results.len()
+        );
+        Ok(())
     }
 }

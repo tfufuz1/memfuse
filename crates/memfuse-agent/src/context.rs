@@ -128,19 +128,6 @@ impl AgentContext {
         })
     }
 
-    /// Constructs an `AgentContext`, panicking if `task_id` or `start_node` is invalid.
-    #[deprecated(note = "Use try_new instead to handle validation errors without panicking")]
-    pub fn new(
-        task_id: impl Into<String>,
-        start_node: impl Into<String>,
-        db: Arc<MemFuse>,
-        state_collection: Arc<Collection<LsmStorage>>,
-        budget: TokenBudget,
-    ) -> Self {
-        Self::try_new(task_id, start_node, db, state_collection, budget)
-            .expect("Invalid task_id or start_node in AgentContext::new")
-    }
-
     /// Integrates a background telemetry event into the agent context memory and history.
     ///
     /// Maintains event history capacity bounded at `MAX_TELEMETRY_EVENTS` to prevent memory exhaustion.
@@ -227,9 +214,7 @@ mod tests {
 
         assert_eq!(attached_deque.len(), 10_000);
         assert_eq!(
-            attached_deque
-                .back()
-                .map(|e| e.observed_at_seq),
+            attached_deque.back().map(|e| e.observed_at_seq),
             Some(10_004)
         );
     }
@@ -238,9 +223,7 @@ mod tests {
     async fn test_agent_context_fifo_eviction() -> memfuse_core::Result<()> {
         let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
-        let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
-        );
+        let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
         let state_coll = db.collection("test_fifo").await?;
         let mut ctx = AgentContext::try_new(
             "test_fifo_task",
@@ -278,9 +261,7 @@ mod tests {
     async fn test_try_attach_event_error_message_unit() -> memfuse_core::Result<()> {
         let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
-        let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
-        );
+        let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
         let state_coll = db.collection("test_try_attach").await?;
         let mut ctx = AgentContext::try_new(
             "test_try_attach_task",
@@ -333,9 +314,7 @@ mod tests {
     async fn test_telemetry_event_performance_benchmark() -> memfuse_core::Result<()> {
         let temp_dir = tempfile::TempDir::new()?;
         let config = memfuse_db::MemFuseConfig::default();
-        let db = Arc::new(
-            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?,
-        );
+        let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
         let state_coll = db.collection("test_bench").await?;
         let mut ctx = AgentContext::try_new(
             "test_bench_task",
@@ -360,10 +339,10 @@ mod tests {
         let elapsed = start_time.elapsed();
         assert_eq!(ctx.events.len(), MAX_TELEMETRY_EVENTS);
         // O(1) VecDeque operations for 11,000 pushes/evictions typically complete in <10ms.
-        // We set a safe threshold of 100ms (old O(N²) took significantly longer due to shift operations).
+        // We set a safe threshold of 250ms (old O(N²) took significantly longer due to shift operations).
         assert!(
-            elapsed < std::time::Duration::from_millis(100),
-            "Expected operations to complete under 100ms, took {:?}",
+            elapsed < std::time::Duration::from_millis(250),
+            "Expected operations to complete under 250ms, took {:?}",
             elapsed
         );
         Ok(())

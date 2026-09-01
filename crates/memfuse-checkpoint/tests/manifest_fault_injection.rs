@@ -63,3 +63,16 @@ fn test_manifest_empty_components_valid() {
     let manifest = CheckpointManifest::new(meta, vec![]).unwrap();
     assert!(manifest.verify().is_ok());
 }
+
+/// Fault-Injection: Simulierter Absturz zwischen zwei Schreibschritten als Testkriterium
+#[test]
+fn test_manifest_crash_between_writes() {
+    let meta = sample_meta();
+    // Simulate partial JSON write (e.g. system crashed before closing braces)
+    let json = format!(
+        "{{\"meta\":{}, \"components\":[\"storage\"",
+        serde_json::to_string(&meta).unwrap()
+    );
+    let res: Result<CheckpointManifest, _> = serde_json::from_str(&json);
+    assert!(res.is_err(), "Partial write MUST be rejected");
+}

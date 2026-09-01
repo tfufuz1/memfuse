@@ -314,7 +314,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-042: Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-046: Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
@@ -658,6 +658,14 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Unmaskierte Übernahme in `max_seq`: Verworfen, da Bit 63 in `next_seq_no` wandert und nachfolgende reguläre Inserts fälschlich als gelöscht (Tombstone) markiert.
     - Maskierung beim Schreiben der SSTable-Metadaten verändern: Verworfen, um bestehende Metadatenformate und Disk-Layouts nicht zu verändern.
 *   **Begründung**: Bit 63 signalisiert ausschließlich das Lösch-Tombstone-Flag in Datenzeilen. Es stellt keinen numerischen Wertanteil der Sequenznummer dar. Maskierung an den Lesestellen schützt die Invariante "Bit 63 darf niemals in `next_seq_no` einfließen" vollständig vor stillem Datenverlust nach Rollbacks auf Delete-Operationen.
+
+---
+
+## ADR-042: Re-Integration von `memfuse-saos-agent`
+*   **Datum**: 2026-08-29
+*   **Status**: ✅ Final
+*   **Entscheidung**: Re-Integration der Funktionalitäten aus dem archivierten `memfuse-saos-agent` in das Hauptcrate `memfuse-agent`.
+*   **Begründung**: Konsolidierung des Agenten-Loops und Vereinfachung der Crate-Struktur im Workspace.
 
 ---
 

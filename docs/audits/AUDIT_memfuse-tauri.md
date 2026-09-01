@@ -133,6 +133,7 @@ Messwerte ermittelt mit `benches/parser_bench.rs` auf x86_64 Sandbox-Hardware:
 | **BUG-TAURI-001** | `csr.rs` / `chat.rs` | **HIGH** | `*mut ()` `Send`-Trait-Bound-Fehler bei `async` Tauri Command `chat_with_rag` durch Aufrufen von `hybrid_search` unter gehaltenem Read-Guard. | **GEFIXED** |
 | **SEC-TAURI-001** | `commands/mod.rs` | **MEDIUM** | Path-Traversal Risiko bei relativen Dateipfaden in `ingest_file`/`ingest_folder`. | **GEFIXED** (`validate_path_within_base` implementiert) |
 | **SEC-TAURI-002** | `ingestion/pipeline.rs` | **MEDIUM** | Unbegrenzter Speicherverbrauch bei extrem großen Dateien (>100MB). | **GEFIXED** (`MAX_INGEST_FILE_SIZE_BYTES = 100MB` durchgesetzt) |
+| **DEP-TAURI-001** | `commands/chat.rs` / `search.rs` | **LOW** | Deprecation-Warnungen bei Aufruf von `hybrid_search` & `search`. | **GEFIXED (2026-09-01)** (`Collection::query()` Fluent-API) |
 
 ---
 
@@ -150,3 +151,32 @@ Für die Test-Suite wurden folgende synthetische Test-Dateien und Generatoren er
    - Markdown & Folder Ingestion Tests.
 4. **`benches/parser_bench.rs`**:
    - Isoliertes Benchmark-Harness für PDF, DOCX und EML Durchsatzmessung.
+
+---
+
+## 11. Audit-Nachtrag: Deprecation Migration & Fluent Query API (2026-09-01)
+
+- **Befund**: Veraltete `Collection::hybrid_search()` und `Collection::search()` API-Aufrufe führten in `commands/chat.rs`, `commands/search.rs` sowie Testdateien (`e2e_test.rs`, `ingestion_test.rs`) zu Deprecation-Clippy-Warnungen.
+- **Maßnahme**: Alle Such-Invocations wurden konsistent (gemäß APM-6 Sibling-Konsistenz) auf das empfohlene `Collection::query()` Fluent Builder-Muster umgestellt:
+  ```rust
+  collection
+      .query()
+      .text(&query)
+      .embedding(&query_vector)
+      .k(k)
+      .execute()
+      .await?
+  ```
+- **Verifikation**: `cargo clippy -p memfuse-tauri --all-targets --no-deps -- -D warnings` verläuft mit 0 Fehlern und 0 Warnungen.
+
+## Tiefen-Audit 2026-09-01
+
+### Summary of Audit Execution
+- **Property-Based Testing**: Added `proptest` harness and 4 proptests covering arbitrary byte parsing (`extract_pdf_bytes`, `extract_docx_bytes`, `extract_email_bytes`, `extract_text_from_bytes`). All 100 random iterations per function completed without panics.
+- **Prompt-Injection Verification**: Added `test_ingestion_prompt_injection` in `tests/ingestion_test.rs` covering XML tag injection (`<system>`), `[INST]` directives, tag escape attempts (`</context>`), and delimiter manipulations. All payloads were safely ingested as standard document content.
+- **Concurrency Stress Testing**: Executed 10 runs of parallel test execution with `--test-threads=8`. 0 data races, 0 deadlocks.
+- **Gate-Stack Verification**:
+  - `cargo check -p memfuse-tauri --all-features` -> 0 errors
+  - `cargo clippy -p memfuse-tauri --no-deps -- -D warnings` -> 0 warnings
+  - `cargo fmt --check -p memfuse-tauri` -> Clean
+  - `cargo test -p memfuse-tauri --all-features` -> All 89 unit/integration/proptest cases passed.

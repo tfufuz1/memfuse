@@ -18,6 +18,9 @@ All errors propagate via `MemFuseError` + `?` — zero silent failures.
 | Flaky detection | `just triple-test` | Runs test suite 3× |
 | DAG enforcement | `just dag-check` | Layer dependency validation |
 | Debt scan | `just debt-audit` | Scans unwrap/expect/std::fs |
+| Cross-platform CI | GitHub Actions (`test-cross-platform`) | Informativer Check auf Windows/macOS für Kern-Crates; blockiert PRs nicht, bei Rot manuell prüfen vor Release-Tag |
+
+> **Hinweis:** Alle `just`-Rezepte funktionieren sowohl mit als auch ohne installiertes `nix` — bei fehlendem `nix` wird automatisch auf direkte `cargo`-Aufrufe zurückgefallen.
 
 ## 3. Workspace Inventory (15 Crates)
 
@@ -42,7 +45,7 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 - **Sync-Docs Nix-Fallback**: `just sync-docs` verwendet `nix develop -c` — bei fehlendem Nix direkt `cargo xtask sync-docs` aufrufen. Beide Pfade sind in der justfile mit `||`-Fallback abgesichert.
 - **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
 - **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
-- **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `grep -oP '(?<=^## ADR-)\d+' DECISIONS.md | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-042).
+- **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `grep -oP '(?<=^## ADR-)\d+' DECISIONS.md | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
 
 ## 5. Judgment Boundaries
 
@@ -98,4 +101,5 @@ Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
 | `.jules/AUDIT_INTAKE_PROTOCOL.md` | Verifying incoming external audit findings before implementation |
 | `.jules/SESSION_BOOTSTRAP.md` | Maschinenausführbare Session-Checkliste | Immer zu Beginn |
 | `.jules/COMMON_LLM_ERRORS.md` | Häufige LLM-Fehler und Korrekturen | Bei Unsicherheit über Korrektheit |
+| `.jules/JULES_CONTEXT.md` | Freshness automatisch geprüft via `xtask check-jules-context-freshness` (Gate 10) |
 | `rules/*.md` | Domain-specific rules (SIMD safety, WAL crypto, testing, etc.) |

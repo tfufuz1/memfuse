@@ -6,6 +6,7 @@ fn chrono_or_today() -> String {
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
 use regex::Regex;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -838,6 +839,109 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
     !failed
 }
 
+pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
+    let root = find_root_dir();
+    let full_path = root.join(file_path);
+    let output = std::process::Command::new("git")
+        .args([
+            "log",
+            "-1",
+            "--format=%aI",
+            "--",
+            full_path.to_str().unwrap(),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run git command: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("git log failed for {}", file_path));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        return Err(format!("No git history found for {}", file_path));
+    }
+
+    if stdout.len() >= 10 {
+        Ok(stdout[..10].to_string())
+    } else {
+        Ok(stdout)
+    }
+}
+
+pub fn run_check_jules_context_freshness() -> bool {
+    println!("=== xtask check-jules-context-freshness ===");
+    let root = find_root_dir();
+    let jules_context_path = root.join(".jules/JULES_CONTEXT.md");
+
+    let content = match fs::read_to_string(&jules_context_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("❌ Failed to read .jules/JULES_CONTEXT.md: {}", e);
+            return false;
+        }
+    };
+
+    let re_stand = Regex::new(r"Stand:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+    let stand_date = match re_stand.captures(&content) {
+        Some(caps) => caps[1].to_string(),
+        None => {
+            eprintln!(
+                "❌ Could not extract 'Stand: YYYY-MM-DD' from .jules/JULES_CONTEXT.md header"
+            );
+            return false;
+        }
+    };
+
+    let mut failed = false;
+
+    // Check against DECISIONS.md
+    match get_git_file_last_modified("DECISIONS.md") {
+        Ok(decisions_date) => {
+            if decisions_date.as_str() > stand_date.as_str() {
+                eprintln!(
+                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, DECISIONS.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den ADR-Tabellen-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
+                    stand_date, decisions_date
+                );
+                failed = true;
+            } else {
+                println!("✅ JULES_CONTEXT.md is up to date relative to DECISIONS.md (Stand: {}, DECISIONS.md: {})", stand_date, decisions_date);
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check DECISIONS.md git timestamp: {}", e);
+            failed = true;
+        }
+    }
+
+    // Check against WORKING_STATE.md
+    match get_git_file_last_modified("WORKING_STATE.md") {
+        Ok(working_state_date) => {
+            if working_state_date.as_str() > stand_date.as_str() {
+                eprintln!(
+                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, WORKING_STATE.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den Projektstatus-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
+                    stand_date, working_state_date
+                );
+                failed = true;
+            } else {
+                println!("✅ JULES_CONTEXT.md is up to date relative to WORKING_STATE.md (Stand: {}, WORKING_STATE.md: {})", stand_date, working_state_date);
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check WORKING_STATE.md git timestamp: {}", e);
+            failed = true;
+        }
+    }
+
+    if failed {
+        eprintln!("=== xtask check-jules-context-freshness FAILED ===");
+        false
+    } else {
+        println!("=== xtask check-jules-context-freshness PASSED ===");
+        true
+    }
+}
+
 pub fn run_check_consistency() -> bool {
     println!("=== xtask check-consistency ===");
     let mut failed = false;
@@ -1003,10 +1107,116 @@ fn main() {
             println!("Note: Community detection triggers should be invoked via collection.run_community_detection().await or embedded engine instances.");
             println!("=== xtask run-community-detection PASSED ===");
         }
+        "context-tags" => {
+            let tags = scan_tags("crates");
+            let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
+            run_context_tags(&tags, extra_args);
+        }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], check-consistency, run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], check-review-coverage, check-consistency, context-tags [*ARGS], run-community-detection");
             process::exit(1);
+        }
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ContextTagNdjson<'a> {
+    #[serde(rename = "crate")]
+    pub krate: &'a str,
+    pub file: &'a str,
+    pub line: usize,
+    pub tag_type: &'a str,
+    pub domain: Option<&'a str>,
+    pub severity: Option<&'a str>,
+    pub id: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub ts: &'a str,
+    pub session: Option<&'a str>,
+}
+
+#[derive(Debug, Default)]
+pub struct ContextTagFilter {
+    pub krate: Option<String>,
+    pub severity: Option<String>,
+    pub status: Option<String>,
+}
+
+pub fn extract_crate_name(file_path: &str) -> &str {
+    let p = Path::new(file_path);
+    let mut components = p.components();
+    if let Some(first) = components.next() {
+        if first.as_os_str() == "crates" {
+            if let Some(second) = components.next() {
+                return second.as_os_str().to_str().unwrap_or("");
+            }
+        } else {
+            return first.as_os_str().to_str().unwrap_or("");
+        }
+    }
+    ""
+}
+
+pub fn parse_context_tag_args(args: &[String]) -> ContextTagFilter {
+    let mut filter = ContextTagFilter::default();
+    for arg in args {
+        if let Some(val) = arg.strip_prefix("--crate=") {
+            filter.krate = Some(val.to_string());
+        } else if let Some(val) = arg.strip_prefix("--severity=") {
+            filter.severity = Some(val.to_string());
+        } else if let Some(val) = arg.strip_prefix("--status=") {
+            filter.status = Some(val.to_string());
+        }
+    }
+    filter
+}
+
+pub fn filter_tags<'a>(
+    tags: &'a [TagItem],
+    filter: &ContextTagFilter,
+) -> Vec<ContextTagNdjson<'a>> {
+    tags.iter()
+        .filter_map(|t| {
+            let krate = extract_crate_name(&t.file_path);
+            if let Some(ref req_crate) = filter.krate {
+                if !krate.eq_ignore_ascii_case(req_crate) {
+                    return None;
+                }
+            }
+            if let Some(ref req_sev) = filter.severity {
+                match &t.severity {
+                    Some(sev) if sev.eq_ignore_ascii_case(req_sev) => {}
+                    _ => return None,
+                }
+            }
+            if let Some(ref req_status) = filter.status {
+                match &t.status {
+                    Some(st) if st.eq_ignore_ascii_case(req_status) => {}
+                    _ => return None,
+                }
+            }
+            Some(ContextTagNdjson {
+                krate,
+                file: &t.file_path,
+                line: t.line_num,
+                tag_type: &t.tag_type,
+                domain: t.category.as_deref(),
+                severity: t.severity.as_deref(),
+                id: t.id.as_deref(),
+                status: t.status.as_deref(),
+                ts: &t.timestamp,
+                session: t.session.as_deref(),
+            })
+        })
+        .collect()
+}
+
+pub fn run_context_tags(tags: &[TagItem], args: &[String]) {
+    let filter = parse_context_tag_args(args);
+    let filtered = filter_tags(tags, &filter);
+    for item in filtered {
+        if let Ok(json) = serde_json::to_string(&item) {
+            println!("{}", json);
         }
     }
 }
@@ -1232,5 +1442,125 @@ mod tests {
         let tags = scan_tags("crates");
         let result = run_check_review_coverage(&tags);
         let _ = result;
+    }
+
+    #[test]
+    fn test_context_tags_filtering_by_crate() {
+        let sample_tags = vec![
+            TagItem {
+                file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+                line_num: 42,
+                tag_type: "AI-TAG".to_string(),
+                raw: "// AI-TAG[SMELL][CRITICAL] test".to_string(),
+                timestamp: "2026-08-29T10:00:00Z".to_string(),
+                category: Some("SMELL".to_string()),
+                severity: Some("CRITICAL".to_string()),
+                id: Some("AGT-STORE-111".to_string()),
+                session: Some("sess1".to_string()),
+                status: Some("OPEN".to_string()),
+                description: "test".to_string(),
+                is_resolved: false,
+            },
+            TagItem {
+                file_path: "crates/memfuse-index/src/hnsw.rs".to_string(),
+                line_num: 99,
+                tag_type: "AI-TAG".to_string(),
+                raw: "// AI-TAG[DEBT][WARN] test2".to_string(),
+                timestamp: "2026-08-29T10:05:00Z".to_string(),
+                category: Some("DEBT".to_string()),
+                severity: Some("WARN".to_string()),
+                id: Some("AGT-INDEX-222".to_string()),
+                session: Some("sess2".to_string()),
+                status: Some("OPEN".to_string()),
+                description: "test2".to_string(),
+                is_resolved: false,
+            },
+        ];
+
+        let filter = parse_context_tag_args(&["--crate=memfuse-store".to_string()]);
+        let res = filter_tags(&sample_tags, &filter);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].krate, "memfuse-store");
+        assert_eq!(res[0].id, Some("AGT-STORE-111"));
+    }
+
+    #[test]
+    fn test_context_tags_filtering_by_severity() {
+        let sample_tags = vec![
+            TagItem {
+                file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+                line_num: 42,
+                tag_type: "AI-TAG".to_string(),
+                raw: "// AI-TAG[SMELL][CRITICAL] test".to_string(),
+                timestamp: "2026-08-29T10:00:00Z".to_string(),
+                category: Some("SMELL".to_string()),
+                severity: Some("CRITICAL".to_string()),
+                id: Some("AGT-STORE-111".to_string()),
+                session: Some("sess1".to_string()),
+                status: Some("OPEN".to_string()),
+                description: "test".to_string(),
+                is_resolved: false,
+            },
+            TagItem {
+                file_path: "crates/memfuse-index/src/hnsw.rs".to_string(),
+                line_num: 99,
+                tag_type: "AI-TAG".to_string(),
+                raw: "// AI-TAG[DEBT][WARN] test2".to_string(),
+                timestamp: "2026-08-29T10:05:00Z".to_string(),
+                category: Some("DEBT".to_string()),
+                severity: Some("WARN".to_string()),
+                id: Some("AGT-INDEX-222".to_string()),
+                session: Some("sess2".to_string()),
+                status: Some("OPEN".to_string()),
+                description: "test2".to_string(),
+                is_resolved: false,
+            },
+        ];
+
+        let filter = parse_context_tag_args(&["--severity=CRITICAL".to_string()]);
+        let res = filter_tags(&sample_tags, &filter);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].severity, Some("CRITICAL"));
+        assert_eq!(res[0].id, Some("AGT-STORE-111"));
+    }
+
+    #[test]
+    fn test_context_tags_filtering_by_status() {
+        let sample_tags = vec![
+            TagItem {
+                file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
+                line_num: 42,
+                tag_type: "AI-TAG".to_string(),
+                raw: "// AI-TAG[SMELL][CRITICAL] test".to_string(),
+                timestamp: "2026-08-29T10:00:00Z".to_string(),
+                category: Some("SMELL".to_string()),
+                severity: Some("CRITICAL".to_string()),
+                id: Some("AGT-STORE-111".to_string()),
+                session: Some("sess1".to_string()),
+                status: Some("RESOLVED".to_string()),
+                description: "test".to_string(),
+                is_resolved: true,
+            },
+            TagItem {
+                file_path: "crates/memfuse-index/src/hnsw.rs".to_string(),
+                line_num: 99,
+                tag_type: "AI-TAG".to_string(),
+                raw: "// AI-TAG[DEBT][WARN] test2".to_string(),
+                timestamp: "2026-08-29T10:05:00Z".to_string(),
+                category: Some("DEBT".to_string()),
+                severity: Some("WARN".to_string()),
+                id: Some("AGT-INDEX-222".to_string()),
+                session: Some("sess2".to_string()),
+                status: Some("OPEN".to_string()),
+                description: "test2".to_string(),
+                is_resolved: false,
+            },
+        ];
+
+        let filter = parse_context_tag_args(&["--status=OPEN".to_string()]);
+        let res = filter_tags(&sample_tags, &filter);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].status, Some("OPEN"));
+        assert_eq!(res[0].id, Some("AGT-INDEX-222"));
     }
 }

@@ -56,7 +56,7 @@ pub enum WalVersion {
 /// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
-pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
+pub(crate) const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
 
 /// A single entry in the Write-Ahead Log.
 #[derive(Debug, Clone)]
@@ -425,18 +425,31 @@ impl Wal {
             (None, Some(key))
         };
 
-        let mut is_new = false;
-        if !path.exists() {
-            is_new = true;
-        }
-
-        let file = tokio::fs::OpenOptions::new()
-            .create(true)
+        let (file, is_new) = match tokio::fs::OpenOptions::new()
+            .create_new(true)
             .append(true)
             .read(true)
             .open(&path)
             .await
-            .map_err(|e| MemFuseError::Storage(format!("Failed to open WAL: {}", e)))?;
+        {
+            Ok(file) => (file, true),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let file = tokio::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .read(true)
+                    .open(&path)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("Failed to open WAL: {}", e)))?;
+                (file, false)
+            }
+            Err(e) => {
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to create WAL: {}",
+                    e
+                )));
+            }
+        };
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004 / Task G)
         if is_new {
@@ -755,8 +768,8 @@ impl Wal {
             std::path::PathBuf::from(p)
         };
 
-        if uuid_path.exists() {
-            let bytes = tokio::fs::read(&uuid_path).await.map_err(|e| {
+        async fn read_uuid_file(path: &Path) -> Result<[u8; 16]> {
+            let bytes = tokio::fs::read(path).await.map_err(|e| {
                 MemFuseError::Storage(format!("Failed to read WAL UUID sidecar: {}", e))
             })?;
             if bytes.len() != 16 {
@@ -768,13 +781,80 @@ impl Wal {
             let mut arr = [0u8; 16];
             arr.copy_from_slice(&bytes);
             Ok(arr)
+        }
+
+        if uuid_path.exists() {
+            read_uuid_file(&uuid_path).await
         } else {
-            // Generate and persist a fresh UUID v4.
+            use rand::RngCore;
+
             let uuid = uuid::Uuid::new_v4();
             let bytes = *uuid.as_bytes();
-            tokio::fs::write(&uuid_path, &bytes).await.map_err(|e| {
-                MemFuseError::Storage(format!("Failed to write WAL UUID sidecar: {}", e))
-            })?;
+
+            let uuid_filename = uuid_path
+                .file_name()
+                .map(|s| s.to_string_lossy())
+                .unwrap_or_default();
+            let tmp_filename = format!(
+                "{}.tmp.{}.{}",
+                uuid_filename,
+                std::process::id(),
+                rand::thread_rng().next_u64()
+            );
+
+            let parent = uuid_path.parent().unwrap_or_else(|| Path::new(""));
+            let tmp_path = if parent.as_os_str().is_empty() {
+                PathBuf::from(tmp_filename)
+            } else {
+                parent.join(tmp_filename)
+            };
+
+            let mut options = tokio::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+
+            let mut file = match options.open(&tmp_path).await {
+                Ok(f) => f,
+                Err(e) => {
+                    if uuid_path.exists() {
+                        return read_uuid_file(&uuid_path).await;
+                    }
+                    return Err(MemFuseError::Storage(format!(
+                        "Failed to create temporary WAL UUID sidecar at {}: {}",
+                        tmp_path.display(),
+                        e
+                    )));
+                }
+            };
+
+            if let Err(e) = file.write_all(&bytes).await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to write WAL UUID sidecar: {}",
+                    e
+                )));
+            }
+
+            if let Err(e) = file.sync_all().await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to sync WAL UUID sidecar file: {}",
+                    e
+                )));
+            }
+            drop(file);
+
+            if let Err(e) = tokio::fs::rename(&tmp_path, &uuid_path).await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                if uuid_path.exists() {
+                    return read_uuid_file(&uuid_path).await;
+                }
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to rename WAL UUID sidecar from {} to {}: {}",
+                    tmp_path.display(),
+                    uuid_path.display(),
+                    e
+                )));
+            }
 
             // FIND-STO-004: FSync parent directory to persist the new directory entry
             crate::util::fsync_parent_dir(&uuid_path).await?;
@@ -869,7 +949,7 @@ impl Wal {
 
     /// Prepares a batch of entries, ensuring correct HMAC chaining between them.
     pub async fn prepare_batch(&self, ops: Vec<(WalOp, u64)>) -> Result<Vec<WalEntry>> {
-        let last_hmac = self.last_hmac.lock().await;
+        let mut last_hmac = self.last_hmac.lock().await;
         let integrity_key = self.get_integrity_key()?;
 
         let mut entries = Vec::with_capacity(ops.len());
@@ -880,6 +960,8 @@ impl Wal {
             current_chain = entry.checksum;
             entries.push(entry);
         }
+
+        *last_hmac = current_chain;
 
         Ok(entries)
     }
@@ -1203,10 +1285,22 @@ impl Wal {
                                 );
                                 break;
                             }
-                            return Err(MemFuseError::wal_corruption(
-                                chunk_start_pos,
-                                format!("Decryption failed: {}", e),
-                            ));
+                            if version == WalVersion::V1 {
+                                if WalEntry::from_bytes(&entry_data_raw).is_ok() {
+                                    entry_data_raw.clone()
+                                } else {
+                                    return Err(MemFuseError::Storage(format!(
+                                        "WAL file uses legacy V1 format which has no unified batch encryption; found active KeyManager for {}. Decryption failed ({}); unencrypted parsing failed. Format mismatch.",
+                                        self.path.display(),
+                                        e
+                                    )));
+                                }
+                            } else {
+                                return Err(MemFuseError::wal_corruption(
+                                    chunk_start_pos,
+                                    format!("Decryption failed: {}", e),
+                                ));
+                            }
                         }
                     };
                     &decrypted_data
@@ -2572,5 +2666,127 @@ mod tests {
 
         let res_op = WalEntry::from_bytes(&data);
         assert!(matches!(res_op, Err(MemFuseError::Serialization(_))));
+    }
+
+    #[tokio::test]
+    async fn test_uuid_sidecar_crash_fault_injection() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("fault_uuid.wal");
+        let uuid_path = dir.path().join("fault_uuid.wal.uuid");
+
+        let km = Arc::new(
+            KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
+
+        // 1. Simulate a leftover interrupted temp file from a crashed write
+        let tmp_path = dir.path().join("fault_uuid.wal.uuid.tmp.99999.12345");
+        tokio::fs::write(&tmp_path, b"incomplete_uuid")
+            .await
+            .expect("write leftover tmp file");
+
+        // 2. Opening WAL should cleanly recover, create valid 16-byte UUID sidecar, and ignore leftover tmp file
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
+            .await
+            .expect("open wal should succeed despite leftover tmp file");
+
+        assert!(uuid_path.exists(), "UUID sidecar must exist");
+        let uuid_bytes = tokio::fs::read(&uuid_path).await.expect("read uuid");
+        assert_eq!(uuid_bytes.len(), 16);
+
+        drop(wal);
+
+        // 3. Re-opening should read the same valid UUID sidecar
+        let uuid_bytes_after = Wal::load_or_create_wal_uuid(&wal_path)
+            .await
+            .expect("load uuid");
+        assert_eq!(uuid_bytes.as_slice(), uuid_bytes_after);
+    }
+
+    #[tokio::test]
+    async fn test_prepare_batch_hmac_chain_concurrency() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("concurrency_batch.wal");
+
+        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal"));
+
+        let wal1 = wal.clone();
+        let wal2 = wal.clone();
+
+        let handle1 = tokio::spawn(async move {
+            let ops = vec![(
+                WalOp::Put {
+                    tx_id: TxId::new(1),
+                    key: b"k1".to_vec(),
+                    value: b"v1".to_vec(),
+                },
+                1,
+            )];
+            wal1.prepare_batch(ops).await.expect("batch 1")
+        });
+
+        let handle2 = tokio::spawn(async move {
+            let ops = vec![(
+                WalOp::Put {
+                    tx_id: TxId::new(2),
+                    key: b"k2".to_vec(),
+                    value: b"v2".to_vec(),
+                },
+                2,
+            )];
+            wal2.prepare_batch(ops).await.expect("batch 2")
+        });
+
+        let (res1, res2) = tokio::join!(handle1, handle2);
+        let batch1 = res1.expect("join 1");
+        let batch2 = res2.expect("join 2");
+
+        let prev1 = batch1[0].prev_hmac;
+        let prev2 = batch2[0].prev_hmac;
+
+        // One batch must have chained off the initial [0u8; 32] HMAC, and the second batch off the first's checksum.
+        // Crucially, their starting prev_hmac values must NOT be identical.
+        assert_ne!(
+            prev1, prev2,
+            "Concurrent prepare_batch calls must produce unique prev_hmac chain links"
+        );
+
+        if prev1 == [0u8; 32] {
+            assert_eq!(prev2, batch1[0].checksum);
+        } else {
+            assert_eq!(prev1, batch2[0].checksum);
+            assert_eq!(prev2, [0u8; 32]);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_open_with_key_manager_is_new_race_condition() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("race_open.wal");
+
+        let km = Arc::new(
+            KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
+
+        // Pre-create the UUID sidecar so both calls race purely on the WAL file open
+        Wal::load_or_create_wal_uuid(&wal_path)
+            .await
+            .expect("create uuid sidecar");
+
+        let path1 = wal_path.clone();
+        let path2 = wal_path.clone();
+        let km1 = km.clone();
+        let km2 = km.clone();
+
+        let h1 = tokio::spawn(async move { Wal::open_with_key_manager(path1, Some(km1)).await });
+        let h2 = tokio::spawn(async move { Wal::open_with_key_manager(path2, Some(km2)).await });
+
+        let (res1, res2) = tokio::join!(h1, h2);
+        let wal1 = res1.expect("join 1").expect("open 1");
+        let wal2 = res2.expect("join 2").expect("open 2");
+
+        // Both WAL instances are opened successfully
+        assert_eq!(wal1.path(), wal2.path());
     }
 }

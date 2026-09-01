@@ -58,7 +58,7 @@ async fn setup_test_environment() -> (OrchestratorEngine, Arc<MemFuse>, TempDir)
 
     let storage = db.inner_storage();
     let mut engine = OrchestratorEngine::new(storage);
-    engine.register_tool(Box::new(TelemetryTool));
+    engine.try_register_tool(Box::new(TelemetryTool)).unwrap();
 
     (engine, db, tmp)
 }
@@ -68,28 +68,38 @@ async fn test_event_loop_exhausted_source_exit_and_checkpointing() {
     let (engine, db, _tmp) = setup_test_environment().await;
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start node", NodeType::Start, None);
-    graph.add_node(
-        "task",
-        "Process event",
-        NodeType::Task,
-        Some("telemetry_tool"),
-    );
-    graph.add_node("end", "Finish step", NodeType::End, None);
+    graph
+        .try_add_node("start", "Start node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node(
+            "task",
+            "Process event",
+            NodeType::Task,
+            Some("telemetry_tool"),
+        )
+        .unwrap();
+    graph
+        .try_add_node("end", "Finish step", NodeType::End, None)
+        .unwrap();
 
-    graph.add_edge("start", "task", None, 1);
-    graph.add_edge("task", "end", None, 1);
+    graph.try_add_edge("start", "task", None, 1).unwrap();
+    graph.try_add_edge("task", "end", None, 1).unwrap();
 
     let state_col = db.collection("agent-state").await.expect("state col"); // unwrap allowed
     let budget = TokenBudget::new(1000, 0);
-    let mut ctx = AgentContext::new("task-evt-1", "start", db.clone(), state_col, budget);
+    let mut ctx =
+        AgentContext::try_new("task-evt-1", "start", db.clone(), state_col, budget).unwrap();
 
     let events = vec![
-        BackgroundEvent::new(json!({"type": "log", "msg": "event 1"}), "log_stream", 1),
-        BackgroundEvent::new(json!({"type": "log", "msg": "event 2"}), "log_stream", 2),
-        BackgroundEvent::new(json!({"type": "log", "msg": "event 3"}), "log_stream", 3),
+        BackgroundEvent::try_new(json!({"type": "log", "msg": "event 1"}), "log_stream", 1)
+            .unwrap(),
+        BackgroundEvent::try_new(json!({"type": "log", "msg": "event 2"}), "log_stream", 2)
+            .unwrap(),
+        BackgroundEvent::try_new(json!({"type": "log", "msg": "event 3"}), "log_stream", 3)
+            .unwrap(),
     ];
-    let mut source = VecEventSource::new(events);
+    let mut source = VecEventSource::try_new(events).unwrap();
     let shutdown = CancellationToken::new();
 
     let exit_reason = engine
@@ -117,22 +127,29 @@ async fn test_event_loop_cancellation_token_exit() {
     let (engine, db, _tmp) = setup_test_environment().await;
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start node", NodeType::Start, None);
-    graph.add_node("end", "End node", NodeType::End, None);
-    graph.add_edge("start", "end", None, 1);
+    graph
+        .try_add_node("start", "Start node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node("end", "End node", NodeType::End, None)
+        .unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let state_col = db.collection("agent-state").await.expect("state col"); // unwrap allowed
     let budget = TokenBudget::new(1000, 0);
-    let mut ctx = AgentContext::new("task-cancel-1", "start", db.clone(), state_col, budget);
+    let mut ctx =
+        AgentContext::try_new("task-cancel-1", "start", db.clone(), state_col, budget).unwrap();
 
     let shutdown = CancellationToken::new();
     shutdown.cancel();
 
-    let mut source = VecEventSource::new(vec![BackgroundEvent::new(
+    let mut source = VecEventSource::try_new(vec![BackgroundEvent::try_new(
         json!({"data": "ignored"}),
         "test",
         1,
-    )]);
+    )
+    .unwrap()])
+    .unwrap();
 
     let exit_reason = engine
         .run_event_loop(&mut ctx, &graph, &mut source, shutdown)
@@ -235,20 +252,23 @@ async fn test_custom_event_source_extensibility() {
     let (engine, db, _tmp) = setup_test_environment().await;
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start node", NodeType::Start, None);
-    graph.add_node("end", "End node", NodeType::End, None);
-    graph.add_edge("start", "end", None, 1);
+    graph
+        .try_add_node("start", "Start node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node("end", "End node", NodeType::End, None)
+        .unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let state_col = db.collection("agent-state").await.expect("state col"); // unwrap allowed
     let budget = TokenBudget::new(1000, 0);
-    let mut ctx = AgentContext::new("task-custom-1", "start", db.clone(), state_col, budget);
+    let mut ctx =
+        AgentContext::try_new("task-custom-1", "start", db.clone(), state_col, budget).unwrap();
 
     let mut custom_source = CustomStreamSource {
-        stream: vec![BackgroundEvent::new(
-            json!({"screen": "frame_001"}),
-            "camera",
-            10,
-        )],
+        stream: vec![
+            BackgroundEvent::try_new(json!({"screen": "frame_001"}), "camera", 10).unwrap(),
+        ],
         idx: 0,
     };
     let shutdown = CancellationToken::new();

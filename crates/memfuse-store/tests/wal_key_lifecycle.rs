@@ -53,3 +53,24 @@ async fn test_key_survives_restart() {
     let key2 = wal2.integrity_key_for_test().unwrap();
     assert_eq!(key1, key2, "Key MUST be identical across restarts");
 }
+
+/// Fault-Injection: Simulierter Absturz zwischen zwei Schreibschritten als Testkriterium (Tmp-Datei geschrieben, aber nicht umbenannt)
+#[tokio::test]
+async fn test_crash_between_tmp_write_and_rename() {
+    let dir = tempdir().unwrap();
+    let tmp_key_path = dir.path().join(".wal_integrity_key.tmp.123");
+    // Simulate crash after writing tmp file but before atomic rename
+    tokio::fs::write(&tmp_key_path, vec![42u8; 32])
+        .await
+        .unwrap();
+
+    // Wal::open should ignore the tmp file and create a new valid key
+    let wal = Wal::open(&dir.path().join("wal.log"))
+        .await
+        .expect("Must open successfully");
+    let key = wal.integrity_key_for_test().unwrap();
+    assert_eq!(key.len(), 32);
+
+    // The final key file must exist
+    assert!(dir.path().join(".wal_integrity_key").exists());
+}

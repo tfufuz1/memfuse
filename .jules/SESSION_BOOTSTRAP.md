@@ -75,20 +75,22 @@ grep "<TYPNAME>" docs/TYPE_REGISTRY.md
 ## Phase 5 — Session-Ende (VOR letztem Commit)
 
 ```bash
-# 1. Format erzwingen (nicht nur prüfen)
+# 1. Format & Lint (Formatierung erzwingen + Clippy/Check)
 cargo fmt --all
+just check
 
-# 2. Lint
-cargo clippy --workspace --exclude memfuse-tauri -- -D warnings
+# 2. DAG-Integrität & Tech-Debt Audit
+just dag-check
+just debt-audit
 
 # 3. Tests
-cargo test --workspace --exclude memfuse-tauri
+just test
 
 # 4. Sync-Docs (generiert WORKING_STATE.md, CHANGELOG, etc.)
-cargo xtask sync-docs
+just sync-docs
 
 # 5. Finaler Check
-cargo xtask sync-docs --check
+just sync-docs-check
 ```
 
 ## Notfall-Eskalation (Prompt-Thrashing)

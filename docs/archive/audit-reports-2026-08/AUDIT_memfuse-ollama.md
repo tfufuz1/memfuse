@@ -129,6 +129,32 @@ No unresolved critical or blocking bugs were identified during this audit. Minor
 
 ---
 
+## 12. Audit Update: 2026-08-31
+
+- **XML Quote Escaping (`xml_escape`)**: Verified and tested escaping for double quotes (`"`) to `&quot;` and single quotes (`'`) to `&apos;` in `xml_escape()`. Added unit test `test_xml_escape`.
+- **Streaming NDJSON Line Buffer Hardening (`chat_with_rag_streaming`)**: Hardened stream chunk parsing by introducing an internal `line_buffer: Vec<u8>` for byte stream chunks. This prevents `MemFuseError::Serialization` failures when JSON lines are split across TCP chunk boundaries. Added unit test `test_chat_with_rag_streaming_split_chunks`.
+
+---
+
+## 13. Deep Security & Concurrency Audit: 2026-09-01
+
+**Timestamp:** 2026-09-01T19:44:36Z
+**Auditor:** Senior Rust HTTP-Client + Prompt-Engineer — Injection-Sicherheit
+
+### Findings & Enhancements Summary:
+1. **Property-Based Testing Integration (`proptest`):**
+   - Added `proptest = "1.4"` under `[dev-dependencies]` in `crates/memfuse-ollama/Cargo.toml`.
+   - Added `prop_xml_escape_contains_no_raw_special_chars` in `client.rs` to fuzz `xml_escape` over arbitrary inputs, proving no unescaped `<`, `>`, `"`, `'` chars or invalid `&` entities remain.
+   - Added `prop_truncate_chars_unicode_safety` and `prop_truncate_prefix_bounds_and_safety` in `context_prefixer.rs` to fuzz Unicode scalar boundary alignment, char count upper bounds, and word/token limit preservation.
+2. **Concurrency & Thread Safety Stresstest:**
+   - Executed 10 consecutive multi-threaded test runs with `--test-threads=8` (`cargo test -p memfuse-ollama --all-features`).
+   - All 50 tests passed cleanly in every run without deadlocks, race conditions, or intermittent failures.
+3. **Prompt Injection Evasion & Structural Isolation Verification:**
+   - Re-verified all 15 prompt injection evasion techniques against static phrase denylists vs. structural XML escaping.
+   - Verified that `xml_escape` and tag isolation in `build_rag_prompt()` completely neutralize injection payloads across all categories.
+
+---
+
 ## 11. Appendix: Mock Server Configuration & Test Logs
 
 ### Test Suite Execution Summary:

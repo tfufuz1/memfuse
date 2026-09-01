@@ -44,28 +44,35 @@ async fn test_agent_persistence_and_recovery() {
     let state_collection = db.collection("agent_state").await.unwrap();
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start Node", NodeType::Start, None);
-    graph.add_node(
-        "task_1",
-        "Increment Task",
-        NodeType::Task,
-        Some("increment"),
-    );
-    graph.add_node("end", "End Node", NodeType::End, None);
+    graph
+        .try_add_node("start", "Start Node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node(
+            "task_1",
+            "Increment Task",
+            NodeType::Task,
+            Some("increment"),
+        )
+        .unwrap();
+    graph
+        .try_add_node("end", "End Node", NodeType::End, None)
+        .unwrap();
 
-    graph.add_edge("start", "task_1", None, 1);
-    graph.add_edge("task_1", "end", None, 1);
+    graph.try_add_edge("start", "task_1", None, 1).unwrap();
+    graph.try_add_edge("task_1", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(IncrementTool));
+    engine.try_register_tool(Box::new(IncrementTool)).unwrap();
 
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "test_task_123",
         "start",
         db.clone(),
         state_collection.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .unwrap();
 
     // Initial run
     engine.run(&mut ctx, &graph).await.expect("Run failed");
@@ -95,13 +102,14 @@ async fn test_agent_persistence_and_recovery() {
     );
     let state_collection2 = db2.collection("agent_state").await.unwrap();
 
-    let mut ctx2 = AgentContext::new(
+    let mut ctx2 = AgentContext::try_new(
         "test_task_123",
         "task_1", // Start from task_1 for replay
         db2.clone(),
         state_collection2.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .unwrap();
 
     engine
         .replay_from(&mut ctx2, "task_1")
@@ -115,7 +123,7 @@ async fn test_agent_persistence_and_recovery() {
     // Continue execution post-recovery to completion
     let engine2 = OrchestratorEngine::new(db2.inner_storage());
     let mut engine2 = engine2;
-    engine2.register_tool(Box::new(IncrementTool));
+    engine2.try_register_tool(Box::new(IncrementTool)).unwrap();
     engine2
         .run(&mut ctx2, &graph)
         .await

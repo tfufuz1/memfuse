@@ -202,7 +202,8 @@ pub struct MemFuse {
     task_tracker: tokio_util::task::TaskTracker,
     /// Optional Raft handle for cluster replication.
     #[cfg(feature = "cluster")]
-    raft: tokio::sync::OnceCell<memfuse_cluster::node::MemFuseRaft>,
+    #[allow(dead_code)]
+    raft: tokio::sync::OnceCell<()>,
     /// Global text embedder for default collection.
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
@@ -917,12 +918,6 @@ impl MemFuse {
     /// Gracefully closes the database, ensuring all data is persisted.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn close(self) -> Result<()> {
-        #[cfg(feature = "cluster")]
-        if let Some(raft) = self.raft.get() {
-            if let Err(e) = raft.shutdown().await {
-                tracing::warn!(error = %e, "Raft shutdown failed during MemFuse close");
-            }
-        }
         self.wait_shutdown().await;
         self.storage.close().await?;
         self.flush().await?;
@@ -932,106 +927,46 @@ impl MemFuse {
     /// Initializes this node as a single-node Raft cluster.
     #[cfg(feature = "cluster")]
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn init_cluster(&self, node_id: u64, addr: &str) -> Result<()> {
-        let node = memfuse_cluster::Node {
-            addr: addr.to_string(),
-        };
-        let raft =
-            memfuse_cluster::node::setup_raft(node_id, node.clone(), Arc::clone(&self.storage))
-                .await?;
-
-        raft.initialize(std::collections::BTreeMap::from([(node_id, node)]))
-            .await
-            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
-
-        self.raft.set(raft).map_err(|_| {
-            memfuse_core::MemFuseError::Internal("Cluster already initialized".into())
-        })?;
-        Ok(())
+    pub async fn init_cluster(&self, _node_id: u64, _addr: &str) -> Result<()> {
+        Err(memfuse_core::MemFuseError::Internal(
+            "Cluster feature is archived/disabled".into(),
+        ))
     }
 
     /// Joins an existing Raft cluster.
     #[cfg(feature = "cluster")]
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn join_cluster(&self, node_id: u64, addr: &str) -> Result<()> {
-        let node = memfuse_cluster::Node {
-            addr: addr.to_string(),
-        };
-        let raft =
-            memfuse_cluster::node::setup_raft(node_id, node, Arc::clone(&self.storage)).await?;
-
-        self.raft.set(raft).map_err(|_| {
-            memfuse_core::MemFuseError::Internal("Cluster already initialized".into())
-        })?;
-        Ok(())
+    pub async fn join_cluster(&self, _node_id: u64, _addr: &str) -> Result<()> {
+        Err(memfuse_core::MemFuseError::Internal(
+            "Cluster feature is archived/disabled".into(),
+        ))
     }
 
     /// Adds a new node to the cluster.
     #[cfg(feature = "cluster")]
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn add_node(&self, node_id: u64, addr: &str) -> Result<()> {
-        let raft = self
-            .raft
-            .get()
-            .ok_or_else(|| memfuse_core::MemFuseError::Index("Not in cluster mode".into()))?;
-        let node = memfuse_cluster::Node {
-            addr: addr.to_string(),
-        };
-        raft.add_learner(node_id, node, true)
-            .await
-            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
-
-        let mut members = raft
-            .metrics()
-            .borrow()
-            .membership_config
-            .membership()
-            .voter_ids()
-            .collect::<std::collections::BTreeSet<_>>();
-        members.insert(node_id);
-
-        raft.change_membership(members, false)
-            .await
-            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
-
-        Ok(())
+    pub async fn add_node(&self, _node_id: u64, _addr: &str) -> Result<()> {
+        Err(memfuse_core::MemFuseError::Internal(
+            "Cluster feature is archived/disabled".into(),
+        ))
     }
 
     /// Removes a node from the cluster.
     #[cfg(feature = "cluster")]
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn remove_node(&self, node_id: u64) -> Result<()> {
-        let raft = self
-            .raft
-            .get()
-            .ok_or_else(|| memfuse_core::MemFuseError::Index("Not in cluster mode".into()))?;
-
-        let mut members = raft
-            .metrics()
-            .borrow()
-            .membership_config
-            .membership()
-            .voter_ids()
-            .collect::<std::collections::BTreeSet<_>>();
-        members.remove(&node_id);
-
-        raft.change_membership(members, false)
-            .await
-            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
-
-        Ok(())
+    pub async fn remove_node(&self, _node_id: u64) -> Result<()> {
+        Err(memfuse_core::MemFuseError::Internal(
+            "Cluster feature is archived/disabled".into(),
+        ))
     }
 
     /// Returns Raft metrics.
     #[cfg(feature = "cluster")]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn raft_metrics(&self) -> Result<String> {
-        let raft = self
-            .raft
-            .get()
-            .ok_or_else(|| memfuse_core::MemFuseError::Index("Not in cluster mode".into()))?;
-        let metrics = raft.metrics().borrow().clone();
-        Ok(format!("{:?}", metrics))
+        Err(memfuse_core::MemFuseError::Internal(
+            "Cluster feature is archived/disabled".into(),
+        ))
     }
 
     /// Sets the text embedder for default collection operations.

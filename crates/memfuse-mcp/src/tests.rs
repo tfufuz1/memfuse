@@ -385,3 +385,92 @@ async fn test_read_tools_always_allowed_regardless_of_flag() {
     let res_rw = serde_json::to_value(&resp_rw).unwrap();
     assert_ne!(res_rw["result"]["isError"], true);
 }
+
+proptest::proptest! {
+    #[test]
+    fn prop_read_line_bounded_behavior(
+        line in "[^\r\n]{0,500}\n",
+        limit in 1usize..1000,
+    ) {
+        use crate::read_line_bounded;
+        use std::io::Cursor;
+        use tokio::io::BufReader;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let mut reader = BufReader::new(Cursor::new(line.as_bytes()));
+            let mut buf = String::new();
+            let res = read_line_bounded(&mut reader, &mut buf, limit).await;
+
+            if line.len() <= limit {
+                proptest::prop_assert!(res.is_ok());
+                proptest::prop_assert_eq!(buf, line);
+            } else {
+                proptest::prop_assert!(res.is_err());
+                let err = res.unwrap_err();
+                proptest::prop_assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+            }
+            Ok(())
+        })?;
+    }
+
+    #[test]
+    fn prop_volatile_storage_bounds(
+        key in ".*",
+        output in proptest::collection::vec(proptest::num::u8::ANY, 0..1024),
+    ) {
+        use crate::sandbox::{McpSandbox, SandboxPolicy, MAX_VOLATILE_KEY_BYTES};
+
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let res = sandbox.store_volatile(&key, &output);
+
+        if key.is_empty() || key.len() > MAX_VOLATILE_KEY_BYTES {
+            proptest::prop_assert!(res.is_err());
+        } else {
+            proptest::prop_assert!(res.is_ok());
+            let retrieved = sandbox.get_volatile(&key).unwrap().unwrap();
+            proptest::prop_assert_eq!(retrieved.as_slice(), output.as_slice());
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_memfuse_search_executes_query_builder_successfully() {
+    let (server, _tmp) = create_mock_server().await;
+
+    // First insert a test document
+    let insert_req = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "doc_search_test",
+            "text": "hybrid query builder search content"
+        }),
+    );
+    let insert_resp = server.handle(insert_req).await;
+    assert!(insert_resp.error.is_none());
+
+    // Search using memfuse_search tool (triggers col.query().text().vector().k().execute())
+    let search_req = make_request(
+        "memfuse_search",
+        json!({
+            "query": "hybrid query builder",
+            "k": 5
+        }),
+    );
+    let search_resp = server.handle(search_req).await;
+    assert!(search_resp.error.is_none());
+    if let Some(res_vec) = search_resp.result {
+        if let Some(arr) = res_vec.as_array() {
+            assert!(!arr.is_empty(), "expected search results");
+            assert_eq!(arr[0]["content_provenance"], "retrieved_untrusted_data");
+        } else {
+            assert!(false, "result must be array");
+        }
+    } else {
+        assert!(false, "search result expected");
+    }
+}

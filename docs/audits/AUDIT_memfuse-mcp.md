@@ -159,7 +159,7 @@ Gemessen mit Criterion (`cargo bench -p memfuse-mcp`):
 
 1. **[RESOLVED - HIGH] Deprecated Search Method Usage**:
    - *Problem*: `lib.rs` nutzte die veraltete Methode `hybrid_search`.
-   - *Fix*: Umgestellt auf die moderne Fassade `col.query().text(...).vector(...).k(...).execute()`.
+   - *Fix*: Umgestellt auf die moderne Fassade `col.query().text(...).vector(...).k(...).execute()` (FIXED 2026-09-01).
 2. **[RESOLVED - MEDIUM] Missing Batch Support in stdio Loop**:
    - *Problem*: Batch Arrays `[req1, req2]` wurden zuvor als single request interpretiert und abgewiesen.
    - *Fix*: Vollständiger JSON-RPC 2.0 Batch Support in `run_stdio` integriert.
@@ -172,3 +172,24 @@ Gemessen mit Criterion (`cargo bench -p memfuse-mcp`):
 - Linter Check: `cargo clippy -p memfuse-mcp --no-deps --all-targets -- -D warnings` -> 0 Warnings
 - Formatter Check: `cargo fmt --check -p memfuse-mcp` -> OK
 - Unit & Integration Test Suite: `cargo test -p memfuse-mcp` -> 35 passed, 0 failed
+
+---
+
+## 13. Tiefen-Audit (Phase 1-5, 2026-09-01)
+
+### A. Property-Based Testing (proptest)
+Implementierte Property-Tests in `crates/memfuse-mcp/src/tests.rs`:
+1. `prop_read_line_bounded_behavior`: Validiert, dass zeilenweises Einlesen unter dem Limit exakt die Eingabe wiedergibt und über dem Limit verlässlich `std::io::ErrorKind::InvalidData` liefert.
+2. `prop_volatile_storage_bounds`: Validiert den verschlüsselten Rountrip im Arbeitsspeicher für Schlüssel und Nutzdaten sowie die Ablehnung ungültiger oder überlanger Schlüssel (`MAX_VOLATILE_KEY_BYTES`).
+
+Status: **PASSED** (2 proptests passed, 256 cases per prop).
+
+### B. Concurrency-Stresstest
+10 Läufe der gesamten Test-Suite mit `--test-threads=8`:
+```text
+Run 1..10 passed (0 FAILED, 0 Deadlocks, 0 Data Races)
+```
+
+### C. Security & DoS Shield Summary
+- Stdio Slowloris-Schutz: Verifiziert durch `test_slowloris_stdio_attack_simulation` (16MB hard bound, async non-blocking execution via `fill_buf().await`).
+- Arbitrary input fuzzing & bounds checks: Proptests & boundary unit tests grün.

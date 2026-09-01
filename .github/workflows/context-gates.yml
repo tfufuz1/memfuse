@@ -107,3 +107,8 @@ jobs:
         run: |
           cargo run -p xtask -- check-consistency
           echo "✅ Konsistenzprüfung erfolgreich"
+
+      - name: "Gate 10: Jules Context Frischeprüfung"
+        run: |
+          cargo run -p xtask -- check-jules-context-freshness
+          echo "✅ Jules Context Frischeprüfung erfolgreich"
