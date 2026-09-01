@@ -1067,8 +1067,8 @@ impl HnswIndexCore {
             ));
         }
 
-        // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f)
-        // RESOLVED: AGT-INDEX-b2c3d4e5 — try_write/read lock race condition replaced with guaranteed write lock (TS: 2026-09-01T11:02:04Z)
+        // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f)
+        // RESOLVED: AGT-INDEX-b2c3d4e5 — try_write/read lock race condition replaced with guaranteed write lock (TS:2026-09-01T11:02:04Z)
         // AI-NOTE: Sobald P-J5 (loom-Harness) gemerged ist, ergänze hier einen loom-basierten Nebenläufigkeits-Beweis, siehe memfuse_neue_befunde.md NEU-02.
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
@@ -1847,7 +1847,7 @@ impl VectorIndex for HnswIndex {
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
-            // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f)
+            // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f)
             if deleted.contains(c.index as u64) {
                 continue;
             }
