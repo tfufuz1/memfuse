@@ -3,814 +3,622 @@
 #![allow(missing_docs, clippy::all)]
 extern crate alloc;
 
+
 #[allow(unused_imports, dead_code)]
 pub mod mem_fuse {
 
-    #[allow(unused_imports, dead_code)]
-    pub mod ipc {
+#[allow(unused_imports, dead_code)]
+pub mod ipc {
 
-        pub enum EmbeddingOffset {}
-        #[derive(Copy, Clone, PartialEq)]
 
-        pub struct Embedding<'a> {
-            pub _tab: ::flatbuffers::Table<'a>,
-        }
+pub enum EmbeddingOffset {}
+#[derive(Copy, Clone, PartialEq)]
 
-        impl<'a> ::flatbuffers::Follow<'a> for Embedding<'a> {
-            type Inner = Embedding<'a>;
-            #[inline]
-            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-                Self {
-                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
-                }
-            }
-        }
+pub struct Embedding<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
 
-        impl<'a> Embedding<'a> {
-            pub const VT_DATA: ::flatbuffers::VOffsetT = 4;
-            pub const VT_QUANTIZED_U8: ::flatbuffers::VOffsetT = 6;
-            pub const VT_METRIC: ::flatbuffers::VOffsetT = 8;
+impl<'a> ::flatbuffers::Follow<'a> for Embedding<'a> {
+  type Inner = Embedding<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
 
-            #[inline]
-            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-                Embedding { _tab: table }
-            }
-            #[allow(unused_mut)]
-            pub fn create<
-                'bldr: 'args,
-                'args: 'mut_bldr,
-                'mut_bldr,
-                A: ::flatbuffers::Allocator + 'bldr,
-            >(
-                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-                args: &'args EmbeddingArgs<'args>,
-            ) -> ::flatbuffers::WIPOffset<Embedding<'bldr>> {
-                let mut builder = EmbeddingBuilder::new(_fbb);
-                if let Some(x) = args.quantized_u8 {
-                    builder.add_quantized_u8(x);
-                }
-                if let Some(x) = args.data {
-                    builder.add_data(x);
-                }
-                builder.add_metric(args.metric);
-                builder.finish()
-            }
+impl<'a> Embedding<'a> {
+  pub const VT_DATA: ::flatbuffers::VOffsetT = 4;
+  pub const VT_QUANTIZED_U8: ::flatbuffers::VOffsetT = 6;
+  pub const VT_METRIC: ::flatbuffers::VOffsetT = 8;
 
-            #[inline]
-            pub fn data(&self) -> Option<::flatbuffers::Vector<'a, f32>> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f32>>>(
-                            Embedding::VT_DATA,
-                            None,
-                        )
-                }
-            }
-            #[inline]
-            pub fn quantized_u8(&self) -> Option<::flatbuffers::Vector<'a, u8>> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u8>>>(
-                            Embedding::VT_QUANTIZED_U8,
-                            None,
-                        )
-                }
-            }
-            #[inline]
-            pub fn metric(&self) -> i8 {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap() }
-            }
-        }
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    Embedding { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args EmbeddingArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<Embedding<'bldr>> {
+    let mut builder = EmbeddingBuilder::new(_fbb);
+    if let Some(x) = args.quantized_u8 { builder.add_quantized_u8(x); }
+    if let Some(x) = args.data { builder.add_data(x); }
+    builder.add_metric(args.metric);
+    builder.finish()
+  }
 
-        impl ::flatbuffers::Verifiable for Embedding<'_> {
-            #[inline]
-            fn run_verifier(
-                v: &mut ::flatbuffers::Verifier,
-                pos: usize,
-            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-                v.visit_table(pos)?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f32>>>(
-                        "data",
-                        Self::VT_DATA,
-                        false,
-                    )?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u8>>>(
-                        "quantized_u8",
-                        Self::VT_QUANTIZED_U8,
-                        false,
-                    )?
-                    .visit_field::<i8>("metric", Self::VT_METRIC, false)?
-                    .finish();
-                Ok(())
-            }
-        }
-        pub struct EmbeddingArgs<'a> {
-            pub data: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f32>>>,
-            pub quantized_u8: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u8>>>,
-            pub metric: i8,
-        }
-        impl<'a> Default for EmbeddingArgs<'a> {
-            #[inline]
-            fn default() -> Self {
-                EmbeddingArgs {
-                    data: None,
-                    quantized_u8: None,
-                    metric: 0,
-                }
-            }
-        }
 
-        pub struct EmbeddingBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-        }
-        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> EmbeddingBuilder<'a, 'b, A> {
-            #[inline]
-            pub fn add_data(
-                &mut self,
-                data: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b, f32>>,
-            ) {
-                self.fbb_
-                    .push_slot_always::<::flatbuffers::WIPOffset<_>>(Embedding::VT_DATA, data);
-            }
-            #[inline]
-            pub fn add_quantized_u8(
-                &mut self,
-                quantized_u8: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b, u8>>,
-            ) {
-                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-                    Embedding::VT_QUANTIZED_U8,
-                    quantized_u8,
-                );
-            }
-            #[inline]
-            pub fn add_metric(&mut self, metric: i8) {
-                self.fbb_.push_slot::<i8>(Embedding::VT_METRIC, metric, 0);
-            }
-            #[inline]
-            pub fn new(
-                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            ) -> EmbeddingBuilder<'a, 'b, A> {
-                let start = _fbb.start_table();
-                EmbeddingBuilder {
-                    fbb_: _fbb,
-                    start_: start,
-                }
-            }
-            #[inline]
-            pub fn finish(self) -> ::flatbuffers::WIPOffset<Embedding<'a>> {
-                let o = self.fbb_.end_table(self.start_);
-                ::flatbuffers::WIPOffset::new(o.value())
-            }
-        }
+  #[inline]
+  pub fn data(&self) -> Option<::flatbuffers::Vector<'a, f32>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, f32>>>(Embedding::VT_DATA, None)}
+  }
+  #[inline]
+  pub fn quantized_u8(&self) -> Option<::flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, u8>>>(Embedding::VT_QUANTIZED_U8, None)}
+  }
+  #[inline]
+  pub fn metric(&self) -> i8 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap()}
+  }
+}
 
-        impl ::core::fmt::Debug for Embedding<'_> {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                let mut ds = f.debug_struct("Embedding");
-                ds.field("data", &self.data());
-                ds.field("quantized_u8", &self.quantized_u8());
-                ds.field("metric", &self.metric());
-                ds.finish()
-            }
-        }
-        pub enum ScoredDocumentOffset {}
-        #[derive(Copy, Clone, PartialEq)]
+impl ::flatbuffers::Verifiable for Embedding<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, f32>>>("data", Self::VT_DATA, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, u8>>>("quantized_u8", Self::VT_QUANTIZED_U8, false)?
+     .visit_field::<i8>("metric", Self::VT_METRIC, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct EmbeddingArgs<'a> {
+    pub data: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, f32>>>,
+    pub quantized_u8: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, u8>>>,
+    pub metric: i8,
+}
+impl<'a> Default for EmbeddingArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    EmbeddingArgs {
+      data: None,
+      quantized_u8: None,
+      metric: 0,
+    }
+  }
+}
 
-        pub struct ScoredDocument<'a> {
-            pub _tab: ::flatbuffers::Table<'a>,
-        }
+pub struct EmbeddingBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> EmbeddingBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_data(&mut self, data: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , f32>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Embedding::VT_DATA, data);
+  }
+  #[inline]
+  pub fn add_quantized_u8(&mut self, quantized_u8: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Embedding::VT_QUANTIZED_U8, quantized_u8);
+  }
+  #[inline]
+  pub fn add_metric(&mut self, metric: i8) {
+    self.fbb_.push_slot::<i8>(Embedding::VT_METRIC, metric, 0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> EmbeddingBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    EmbeddingBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<Embedding<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
 
-        impl<'a> ::flatbuffers::Follow<'a> for ScoredDocument<'a> {
-            type Inner = ScoredDocument<'a>;
-            #[inline]
-            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-                Self {
-                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
-                }
-            }
-        }
+impl ::core::fmt::Debug for Embedding<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("Embedding");
+      ds.field("data", &self.data());
+      ds.field("quantized_u8", &self.quantized_u8());
+      ds.field("metric", &self.metric());
+      ds.finish()
+  }
+}
+pub enum ScoredDocumentOffset {}
+#[derive(Copy, Clone, PartialEq)]
 
-        impl<'a> ScoredDocument<'a> {
-            pub const VT_ID: ::flatbuffers::VOffsetT = 4;
-            pub const VT_SCORE: ::flatbuffers::VOffsetT = 6;
-            pub const VT_METADATA: ::flatbuffers::VOffsetT = 8;
-            pub const VT_EMBEDDING: ::flatbuffers::VOffsetT = 10;
+pub struct ScoredDocument<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
 
-            #[inline]
-            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-                ScoredDocument { _tab: table }
-            }
-            #[allow(unused_mut)]
-            pub fn create<
-                'bldr: 'args,
-                'args: 'mut_bldr,
-                'mut_bldr,
-                A: ::flatbuffers::Allocator + 'bldr,
-            >(
-                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-                args: &'args ScoredDocumentArgs<'args>,
-            ) -> ::flatbuffers::WIPOffset<ScoredDocument<'bldr>> {
-                let mut builder = ScoredDocumentBuilder::new(_fbb);
-                if let Some(x) = args.embedding {
-                    builder.add_embedding(x);
-                }
-                if let Some(x) = args.metadata {
-                    builder.add_metadata(x);
-                }
-                builder.add_score(args.score);
-                if let Some(x) = args.id {
-                    builder.add_id(x);
-                }
-                builder.finish()
-            }
+impl<'a> ::flatbuffers::Follow<'a> for ScoredDocument<'a> {
+  type Inner = ScoredDocument<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
 
-            #[inline]
-            pub fn id(&self) -> Option<&'a str> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<::flatbuffers::ForwardsUOffset<&str>>(ScoredDocument::VT_ID, None)
-                }
-            }
-            #[inline]
-            pub fn score(&self) -> f32 {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<f32>(ScoredDocument::VT_SCORE, Some(0.0))
-                        .unwrap()
-                }
-            }
-            #[inline]
-            pub fn metadata(&self) -> Option<&'a str> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
-                        ScoredDocument::VT_METADATA,
-                        None,
-                    )
-                }
-            }
-            #[inline]
-            pub fn embedding(&self) -> Option<Embedding<'a>> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab.get::<::flatbuffers::ForwardsUOffset<Embedding>>(
-                        ScoredDocument::VT_EMBEDDING,
-                        None,
-                    )
-                }
-            }
-        }
+impl<'a> ScoredDocument<'a> {
+  pub const VT_ID: ::flatbuffers::VOffsetT = 4;
+  pub const VT_SCORE: ::flatbuffers::VOffsetT = 6;
+  pub const VT_METADATA: ::flatbuffers::VOffsetT = 8;
+  pub const VT_EMBEDDING: ::flatbuffers::VOffsetT = 10;
 
-        impl ::flatbuffers::Verifiable for ScoredDocument<'_> {
-            #[inline]
-            fn run_verifier(
-                v: &mut ::flatbuffers::Verifier,
-                pos: usize,
-            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-                v.visit_table(pos)?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, false)?
-                    .visit_field::<f32>("score", Self::VT_SCORE, false)?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
-                        "metadata",
-                        Self::VT_METADATA,
-                        false,
-                    )?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<Embedding>>(
-                        "embedding",
-                        Self::VT_EMBEDDING,
-                        false,
-                    )?
-                    .finish();
-                Ok(())
-            }
-        }
-        pub struct ScoredDocumentArgs<'a> {
-            pub id: Option<::flatbuffers::WIPOffset<&'a str>>,
-            pub score: f32,
-            pub metadata: Option<::flatbuffers::WIPOffset<&'a str>>,
-            pub embedding: Option<::flatbuffers::WIPOffset<Embedding<'a>>>,
-        }
-        impl<'a> Default for ScoredDocumentArgs<'a> {
-            #[inline]
-            fn default() -> Self {
-                ScoredDocumentArgs {
-                    id: None,
-                    score: 0.0,
-                    metadata: None,
-                    embedding: None,
-                }
-            }
-        }
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    ScoredDocument { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ScoredDocumentArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<ScoredDocument<'bldr>> {
+    let mut builder = ScoredDocumentBuilder::new(_fbb);
+    if let Some(x) = args.embedding { builder.add_embedding(x); }
+    if let Some(x) = args.metadata { builder.add_metadata(x); }
+    builder.add_score(args.score);
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
 
-        pub struct ScoredDocumentBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-        }
-        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ScoredDocumentBuilder<'a, 'b, A> {
-            #[inline]
-            pub fn add_id(&mut self, id: ::flatbuffers::WIPOffset<&'b str>) {
-                self.fbb_
-                    .push_slot_always::<::flatbuffers::WIPOffset<_>>(ScoredDocument::VT_ID, id);
-            }
-            #[inline]
-            pub fn add_score(&mut self, score: f32) {
-                self.fbb_
-                    .push_slot::<f32>(ScoredDocument::VT_SCORE, score, 0.0);
-            }
-            #[inline]
-            pub fn add_metadata(&mut self, metadata: ::flatbuffers::WIPOffset<&'b str>) {
-                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-                    ScoredDocument::VT_METADATA,
-                    metadata,
-                );
-            }
-            #[inline]
-            pub fn add_embedding(&mut self, embedding: ::flatbuffers::WIPOffset<Embedding<'b>>) {
-                self.fbb_
-                    .push_slot_always::<::flatbuffers::WIPOffset<Embedding>>(
-                        ScoredDocument::VT_EMBEDDING,
-                        embedding,
-                    );
-            }
-            #[inline]
-            pub fn new(
-                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            ) -> ScoredDocumentBuilder<'a, 'b, A> {
-                let start = _fbb.start_table();
-                ScoredDocumentBuilder {
-                    fbb_: _fbb,
-                    start_: start,
-                }
-            }
-            #[inline]
-            pub fn finish(self) -> ::flatbuffers::WIPOffset<ScoredDocument<'a>> {
-                let o = self.fbb_.end_table(self.start_);
-                ::flatbuffers::WIPOffset::new(o.value())
-            }
-        }
 
-        impl ::core::fmt::Debug for ScoredDocument<'_> {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                let mut ds = f.debug_struct("ScoredDocument");
-                ds.field("id", &self.id());
-                ds.field("score", &self.score());
-                ds.field("metadata", &self.metadata());
-                ds.field("embedding", &self.embedding());
-                ds.finish()
-            }
-        }
-        pub enum SearchResponseOffset {}
-        #[derive(Copy, Clone, PartialEq)]
+  #[inline]
+  pub fn id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(ScoredDocument::VT_ID, None)}
+  }
+  #[inline]
+  pub fn score(&self) -> f32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f32>(ScoredDocument::VT_SCORE, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn metadata(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(ScoredDocument::VT_METADATA, None)}
+  }
+  #[inline]
+  pub fn embedding(&self) -> Option<Embedding<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<Embedding>>(ScoredDocument::VT_EMBEDDING, None)}
+  }
+}
 
-        pub struct SearchResponse<'a> {
-            pub _tab: ::flatbuffers::Table<'a>,
-        }
+impl ::flatbuffers::Verifiable for ScoredDocument<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, false)?
+     .visit_field::<f32>("score", Self::VT_SCORE, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("metadata", Self::VT_METADATA, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<Embedding>>("embedding", Self::VT_EMBEDDING, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ScoredDocumentArgs<'a> {
+    pub id: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub score: f32,
+    pub metadata: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub embedding: Option<::flatbuffers::WIPOffset<Embedding<'a>>>,
+}
+impl<'a> Default for ScoredDocumentArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    ScoredDocumentArgs {
+      id: None,
+      score: 0.0,
+      metadata: None,
+      embedding: None,
+    }
+  }
+}
 
-        impl<'a> ::flatbuffers::Follow<'a> for SearchResponse<'a> {
-            type Inner = SearchResponse<'a>;
-            #[inline]
-            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-                Self {
-                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
-                }
-            }
-        }
+pub struct ScoredDocumentBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ScoredDocumentBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(ScoredDocument::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_score(&mut self, score: f32) {
+    self.fbb_.push_slot::<f32>(ScoredDocument::VT_SCORE, score, 0.0);
+  }
+  #[inline]
+  pub fn add_metadata(&mut self, metadata: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(ScoredDocument::VT_METADATA, metadata);
+  }
+  #[inline]
+  pub fn add_embedding(&mut self, embedding: ::flatbuffers::WIPOffset<Embedding<'b >>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<Embedding>>(ScoredDocument::VT_EMBEDDING, embedding);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> ScoredDocumentBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ScoredDocumentBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<ScoredDocument<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
 
-        impl<'a> SearchResponse<'a> {
-            pub const VT_RESULTS: ::flatbuffers::VOffsetT = 4;
-            pub const VT_TOTAL_HITS: ::flatbuffers::VOffsetT = 6;
-            pub const VT_PROCESSING_TIME_MS: ::flatbuffers::VOffsetT = 8;
+impl ::core::fmt::Debug for ScoredDocument<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("ScoredDocument");
+      ds.field("id", &self.id());
+      ds.field("score", &self.score());
+      ds.field("metadata", &self.metadata());
+      ds.field("embedding", &self.embedding());
+      ds.finish()
+  }
+}
+pub enum SearchResponseOffset {}
+#[derive(Copy, Clone, PartialEq)]
 
-            #[inline]
-            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-                SearchResponse { _tab: table }
-            }
-            #[allow(unused_mut)]
-            pub fn create<
-                'bldr: 'args,
-                'args: 'mut_bldr,
-                'mut_bldr,
-                A: ::flatbuffers::Allocator + 'bldr,
-            >(
-                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-                args: &'args SearchResponseArgs<'args>,
-            ) -> ::flatbuffers::WIPOffset<SearchResponse<'bldr>> {
-                let mut builder = SearchResponseBuilder::new(_fbb);
-                builder.add_processing_time_ms(args.processing_time_ms);
-                builder.add_total_hits(args.total_hits);
-                if let Some(x) = args.results {
-                    builder.add_results(x);
-                }
-                builder.finish()
-            }
+pub struct SearchResponse<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
 
-            #[inline]
-            pub fn results(
-                &self,
-            ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ScoredDocument<'a>>>>
-            {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab.get::<::flatbuffers::ForwardsUOffset<
-                        ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ScoredDocument>>,
-                    >>(SearchResponse::VT_RESULTS, None)
-                }
-            }
-            #[inline]
-            pub fn total_hits(&self) -> u32 {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<u32>(SearchResponse::VT_TOTAL_HITS, Some(0))
-                        .unwrap()
-                }
-            }
-            #[inline]
-            pub fn processing_time_ms(&self) -> f32 {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<f32>(SearchResponse::VT_PROCESSING_TIME_MS, Some(0.0))
-                        .unwrap()
-                }
-            }
-        }
+impl<'a> ::flatbuffers::Follow<'a> for SearchResponse<'a> {
+  type Inner = SearchResponse<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
 
-        impl ::flatbuffers::Verifiable for SearchResponse<'_> {
-            #[inline]
-            fn run_verifier(
-                v: &mut ::flatbuffers::Verifier,
-                pos: usize,
-            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-                v.visit_table(pos)?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<
-                        ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<ScoredDocument>>,
-                    >>("results", Self::VT_RESULTS, false)?
-                    .visit_field::<u32>("total_hits", Self::VT_TOTAL_HITS, false)?
-                    .visit_field::<f32>("processing_time_ms", Self::VT_PROCESSING_TIME_MS, false)?
-                    .finish();
-                Ok(())
-            }
-        }
-        pub struct SearchResponseArgs<'a> {
-            pub results: Option<
-                ::flatbuffers::WIPOffset<
-                    ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ScoredDocument<'a>>>,
-                >,
-            >,
-            pub total_hits: u32,
-            pub processing_time_ms: f32,
-        }
-        impl<'a> Default for SearchResponseArgs<'a> {
-            #[inline]
-            fn default() -> Self {
-                SearchResponseArgs {
-                    results: None,
-                    total_hits: 0,
-                    processing_time_ms: 0.0,
-                }
-            }
-        }
+impl<'a> SearchResponse<'a> {
+  pub const VT_RESULTS: ::flatbuffers::VOffsetT = 4;
+  pub const VT_TOTAL_HITS: ::flatbuffers::VOffsetT = 6;
+  pub const VT_PROCESSING_TIME_MS: ::flatbuffers::VOffsetT = 8;
 
-        pub struct SearchResponseBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-        }
-        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> SearchResponseBuilder<'a, 'b, A> {
-            #[inline]
-            pub fn add_results(
-                &mut self,
-                results: ::flatbuffers::WIPOffset<
-                    ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<ScoredDocument<'b>>>,
-                >,
-            ) {
-                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-                    SearchResponse::VT_RESULTS,
-                    results,
-                );
-            }
-            #[inline]
-            pub fn add_total_hits(&mut self, total_hits: u32) {
-                self.fbb_
-                    .push_slot::<u32>(SearchResponse::VT_TOTAL_HITS, total_hits, 0);
-            }
-            #[inline]
-            pub fn add_processing_time_ms(&mut self, processing_time_ms: f32) {
-                self.fbb_.push_slot::<f32>(
-                    SearchResponse::VT_PROCESSING_TIME_MS,
-                    processing_time_ms,
-                    0.0,
-                );
-            }
-            #[inline]
-            pub fn new(
-                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            ) -> SearchResponseBuilder<'a, 'b, A> {
-                let start = _fbb.start_table();
-                SearchResponseBuilder {
-                    fbb_: _fbb,
-                    start_: start,
-                }
-            }
-            #[inline]
-            pub fn finish(self) -> ::flatbuffers::WIPOffset<SearchResponse<'a>> {
-                let o = self.fbb_.end_table(self.start_);
-                ::flatbuffers::WIPOffset::new(o.value())
-            }
-        }
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    SearchResponse { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args SearchResponseArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<SearchResponse<'bldr>> {
+    let mut builder = SearchResponseBuilder::new(_fbb);
+    builder.add_processing_time_ms(args.processing_time_ms);
+    builder.add_total_hits(args.total_hits);
+    if let Some(x) = args.results { builder.add_results(x); }
+    builder.finish()
+  }
 
-        impl ::core::fmt::Debug for SearchResponse<'_> {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                let mut ds = f.debug_struct("SearchResponse");
-                ds.field("results", &self.results());
-                ds.field("total_hits", &self.total_hits());
-                ds.field("processing_time_ms", &self.processing_time_ms());
-                ds.finish()
-            }
-        }
-        pub enum VectorIndexUpdateOffset {}
-        #[derive(Copy, Clone, PartialEq)]
 
-        pub struct VectorIndexUpdate<'a> {
-            pub _tab: ::flatbuffers::Table<'a>,
-        }
+  #[inline]
+  pub fn results(&self) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ScoredDocument<'a>>>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ScoredDocument>>>>(SearchResponse::VT_RESULTS, None)}
+  }
+  #[inline]
+  pub fn total_hits(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(SearchResponse::VT_TOTAL_HITS, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn processing_time_ms(&self) -> f32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f32>(SearchResponse::VT_PROCESSING_TIME_MS, Some(0.0)).unwrap()}
+  }
+}
 
-        impl<'a> ::flatbuffers::Follow<'a> for VectorIndexUpdate<'a> {
-            type Inner = VectorIndexUpdate<'a>;
-            #[inline]
-            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-                Self {
-                    _tab: unsafe { ::flatbuffers::Table::new(buf, loc) },
-                }
-            }
-        }
+impl ::flatbuffers::Verifiable for SearchResponse<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<ScoredDocument>>>>("results", Self::VT_RESULTS, false)?
+     .visit_field::<u32>("total_hits", Self::VT_TOTAL_HITS, false)?
+     .visit_field::<f32>("processing_time_ms", Self::VT_PROCESSING_TIME_MS, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SearchResponseArgs<'a> {
+    pub results: Option<::flatbuffers::WIPOffset<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<ScoredDocument<'a>>>>>,
+    pub total_hits: u32,
+    pub processing_time_ms: f32,
+}
+impl<'a> Default for SearchResponseArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SearchResponseArgs {
+      results: None,
+      total_hits: 0,
+      processing_time_ms: 0.0,
+    }
+  }
+}
 
-        impl<'a> VectorIndexUpdate<'a> {
-            pub const VT_ID: ::flatbuffers::VOffsetT = 4;
-            pub const VT_EMBEDDING: ::flatbuffers::VOffsetT = 6;
-            pub const VT_METADATA: ::flatbuffers::VOffsetT = 8;
+pub struct SearchResponseBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> SearchResponseBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_results(&mut self, results: ::flatbuffers::WIPOffset<::flatbuffers::Vector<'b , ::flatbuffers::ForwardsUOffset<ScoredDocument<'b >>>>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(SearchResponse::VT_RESULTS, results);
+  }
+  #[inline]
+  pub fn add_total_hits(&mut self, total_hits: u32) {
+    self.fbb_.push_slot::<u32>(SearchResponse::VT_TOTAL_HITS, total_hits, 0);
+  }
+  #[inline]
+  pub fn add_processing_time_ms(&mut self, processing_time_ms: f32) {
+    self.fbb_.push_slot::<f32>(SearchResponse::VT_PROCESSING_TIME_MS, processing_time_ms, 0.0);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> SearchResponseBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    SearchResponseBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<SearchResponse<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
 
-            #[inline]
-            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
-                VectorIndexUpdate { _tab: table }
-            }
-            #[allow(unused_mut)]
-            pub fn create<
-                'bldr: 'args,
-                'args: 'mut_bldr,
-                'mut_bldr,
-                A: ::flatbuffers::Allocator + 'bldr,
-            >(
-                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-                args: &'args VectorIndexUpdateArgs<'args>,
-            ) -> ::flatbuffers::WIPOffset<VectorIndexUpdate<'bldr>> {
-                let mut builder = VectorIndexUpdateBuilder::new(_fbb);
-                if let Some(x) = args.metadata {
-                    builder.add_metadata(x);
-                }
-                if let Some(x) = args.embedding {
-                    builder.add_embedding(x);
-                }
-                if let Some(x) = args.id {
-                    builder.add_id(x);
-                }
-                builder.finish()
-            }
+impl ::core::fmt::Debug for SearchResponse<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("SearchResponse");
+      ds.field("results", &self.results());
+      ds.field("total_hits", &self.total_hits());
+      ds.field("processing_time_ms", &self.processing_time_ms());
+      ds.finish()
+  }
+}
+pub enum VectorIndexUpdateOffset {}
+#[derive(Copy, Clone, PartialEq)]
 
-            #[inline]
-            pub fn id(&self) -> Option<&'a str> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab
-                        .get::<::flatbuffers::ForwardsUOffset<&str>>(VectorIndexUpdate::VT_ID, None)
-                }
-            }
-            #[inline]
-            pub fn embedding(&self) -> Option<Embedding<'a>> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab.get::<::flatbuffers::ForwardsUOffset<Embedding>>(
-                        VectorIndexUpdate::VT_EMBEDDING,
-                        None,
-                    )
-                }
-            }
-            #[inline]
-            pub fn metadata(&self) -> Option<&'a str> {
-                // Safety:
-                // Created from valid Table for this object
-                // which contains a valid value in this slot
-                unsafe {
-                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
-                        VectorIndexUpdate::VT_METADATA,
-                        None,
-                    )
-                }
-            }
-        }
+pub struct VectorIndexUpdate<'a> {
+  pub _tab: ::flatbuffers::Table<'a>,
+}
 
-        impl ::flatbuffers::Verifiable for VectorIndexUpdate<'_> {
-            #[inline]
-            fn run_verifier(
-                v: &mut ::flatbuffers::Verifier,
-                pos: usize,
-            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
-                v.visit_table(pos)?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, false)?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<Embedding>>(
-                        "embedding",
-                        Self::VT_EMBEDDING,
-                        false,
-                    )?
-                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
-                        "metadata",
-                        Self::VT_METADATA,
-                        false,
-                    )?
-                    .finish();
-                Ok(())
-            }
-        }
-        pub struct VectorIndexUpdateArgs<'a> {
-            pub id: Option<::flatbuffers::WIPOffset<&'a str>>,
-            pub embedding: Option<::flatbuffers::WIPOffset<Embedding<'a>>>,
-            pub metadata: Option<::flatbuffers::WIPOffset<&'a str>>,
-        }
-        impl<'a> Default for VectorIndexUpdateArgs<'a> {
-            #[inline]
-            fn default() -> Self {
-                VectorIndexUpdateArgs {
-                    id: None,
-                    embedding: None,
-                    metadata: None,
-                }
-            }
-        }
+impl<'a> ::flatbuffers::Follow<'a> for VectorIndexUpdate<'a> {
+  type Inner = VectorIndexUpdate<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+  }
+}
 
-        pub struct VectorIndexUpdateBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
-            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
-        }
-        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> VectorIndexUpdateBuilder<'a, 'b, A> {
-            #[inline]
-            pub fn add_id(&mut self, id: ::flatbuffers::WIPOffset<&'b str>) {
-                self.fbb_
-                    .push_slot_always::<::flatbuffers::WIPOffset<_>>(VectorIndexUpdate::VT_ID, id);
-            }
-            #[inline]
-            pub fn add_embedding(&mut self, embedding: ::flatbuffers::WIPOffset<Embedding<'b>>) {
-                self.fbb_
-                    .push_slot_always::<::flatbuffers::WIPOffset<Embedding>>(
-                        VectorIndexUpdate::VT_EMBEDDING,
-                        embedding,
-                    );
-            }
-            #[inline]
-            pub fn add_metadata(&mut self, metadata: ::flatbuffers::WIPOffset<&'b str>) {
-                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
-                    VectorIndexUpdate::VT_METADATA,
-                    metadata,
-                );
-            }
-            #[inline]
-            pub fn new(
-                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            ) -> VectorIndexUpdateBuilder<'a, 'b, A> {
-                let start = _fbb.start_table();
-                VectorIndexUpdateBuilder {
-                    fbb_: _fbb,
-                    start_: start,
-                }
-            }
-            #[inline]
-            pub fn finish(self) -> ::flatbuffers::WIPOffset<VectorIndexUpdate<'a>> {
-                let o = self.fbb_.end_table(self.start_);
-                ::flatbuffers::WIPOffset::new(o.value())
-            }
-        }
+impl<'a> VectorIndexUpdate<'a> {
+  pub const VT_ID: ::flatbuffers::VOffsetT = 4;
+  pub const VT_EMBEDDING: ::flatbuffers::VOffsetT = 6;
+  pub const VT_METADATA: ::flatbuffers::VOffsetT = 8;
 
-        impl ::core::fmt::Debug for VectorIndexUpdate<'_> {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                let mut ds = f.debug_struct("VectorIndexUpdate");
-                ds.field("id", &self.id());
-                ds.field("embedding", &self.embedding());
-                ds.field("metadata", &self.metadata());
-                ds.finish()
-            }
-        }
-        #[inline]
-        /// Verifies that a buffer of bytes contains a `SearchResponse`
-        /// and returns it.
-        /// Note that verification is still experimental and may not
-        /// catch every error, or be maximally performant. For the
-        /// previous, unchecked, behavior use
-        /// `root_as_search_response_unchecked`.
-        pub fn root_as_search_response(
-            buf: &[u8],
-        ) -> Result<SearchResponse<'_>, ::flatbuffers::InvalidFlatbuffer> {
-            ::flatbuffers::root::<SearchResponse>(buf)
-        }
-        #[inline]
-        /// Verifies that a buffer of bytes contains a size prefixed
-        /// `SearchResponse` and returns it.
-        /// Note that verification is still experimental and may not
-        /// catch every error, or be maximally performant. For the
-        /// previous, unchecked, behavior use
-        /// `size_prefixed_root_as_search_response_unchecked`.
-        pub fn size_prefixed_root_as_search_response(
-            buf: &[u8],
-        ) -> Result<SearchResponse<'_>, ::flatbuffers::InvalidFlatbuffer> {
-            ::flatbuffers::size_prefixed_root::<SearchResponse>(buf)
-        }
-        #[inline]
-        /// Verifies, with the given options, that a buffer of bytes
-        /// contains a `SearchResponse` and returns it.
-        /// Note that verification is still experimental and may not
-        /// catch every error, or be maximally performant. For the
-        /// previous, unchecked, behavior use
-        /// `root_as_search_response_unchecked`.
-        pub fn root_as_search_response_with_opts<'b, 'o>(
-            opts: &'o ::flatbuffers::VerifierOptions,
-            buf: &'b [u8],
-        ) -> Result<SearchResponse<'b>, ::flatbuffers::InvalidFlatbuffer> {
-            ::flatbuffers::root_with_opts::<SearchResponse<'b>>(opts, buf)
-        }
-        #[inline]
-        /// Verifies, with the given verifier options, that a buffer of
-        /// bytes contains a size prefixed `SearchResponse` and returns
-        /// it. Note that verification is still experimental and may not
-        /// catch every error, or be maximally performant. For the
-        /// previous, unchecked, behavior use
-        /// `root_as_search_response_unchecked`.
-        pub fn size_prefixed_root_as_search_response_with_opts<'b, 'o>(
-            opts: &'o ::flatbuffers::VerifierOptions,
-            buf: &'b [u8],
-        ) -> Result<SearchResponse<'b>, ::flatbuffers::InvalidFlatbuffer> {
-            ::flatbuffers::size_prefixed_root_with_opts::<SearchResponse<'b>>(opts, buf)
-        }
-        #[inline]
-        /// Assumes, without verification, that a buffer of bytes contains a SearchResponse and returns it.
-        /// # Safety
-        /// Callers must trust the given bytes do indeed contain a valid `SearchResponse`.
-        pub unsafe fn root_as_search_response_unchecked(buf: &[u8]) -> SearchResponse<'_> {
-            unsafe { ::flatbuffers::root_unchecked::<SearchResponse>(buf) }
-        }
-        #[inline]
-        /// Assumes, without verification, that a buffer of bytes contains a size prefixed SearchResponse and returns it.
-        /// # Safety
-        /// Callers must trust the given bytes do indeed contain a valid size prefixed `SearchResponse`.
-        pub unsafe fn size_prefixed_root_as_search_response_unchecked(
-            buf: &[u8],
-        ) -> SearchResponse<'_> {
-            unsafe { ::flatbuffers::size_prefixed_root_unchecked::<SearchResponse>(buf) }
-        }
-        #[inline]
-        pub fn finish_search_response_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(
-            fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            root: ::flatbuffers::WIPOffset<SearchResponse<'a>>,
-        ) {
-            fbb.finish(root, None);
-        }
+  #[inline]
+  pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+    VectorIndexUpdate { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: ::flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args VectorIndexUpdateArgs<'args>
+  ) -> ::flatbuffers::WIPOffset<VectorIndexUpdate<'bldr>> {
+    let mut builder = VectorIndexUpdateBuilder::new(_fbb);
+    if let Some(x) = args.metadata { builder.add_metadata(x); }
+    if let Some(x) = args.embedding { builder.add_embedding(x); }
+    if let Some(x) = args.id { builder.add_id(x); }
+    builder.finish()
+  }
 
-        #[inline]
-        pub fn finish_size_prefixed_search_response_buffer<
-            'a,
-            'b,
-            A: ::flatbuffers::Allocator + 'a,
-        >(
-            fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
-            root: ::flatbuffers::WIPOffset<SearchResponse<'a>>,
-        ) {
-            fbb.finish_size_prefixed(root, None);
-        }
-    } // pub mod IPC
-} // pub mod MemFuse
+
+  #[inline]
+  pub fn id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(VectorIndexUpdate::VT_ID, None)}
+  }
+  #[inline]
+  pub fn embedding(&self) -> Option<Embedding<'a>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<Embedding>>(VectorIndexUpdate::VT_EMBEDDING, None)}
+  }
+  #[inline]
+  pub fn metadata(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(VectorIndexUpdate::VT_METADATA, None)}
+  }
+}
+
+impl ::flatbuffers::Verifiable for VectorIndexUpdate<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut ::flatbuffers::Verifier, pos: usize
+  ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+    v.visit_table(pos)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<Embedding>>("embedding", Self::VT_EMBEDDING, false)?
+     .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("metadata", Self::VT_METADATA, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct VectorIndexUpdateArgs<'a> {
+    pub id: Option<::flatbuffers::WIPOffset<&'a str>>,
+    pub embedding: Option<::flatbuffers::WIPOffset<Embedding<'a>>>,
+    pub metadata: Option<::flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for VectorIndexUpdateArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    VectorIndexUpdateArgs {
+      id: None,
+      embedding: None,
+      metadata: None,
+    }
+  }
+}
+
+pub struct VectorIndexUpdateBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> VectorIndexUpdateBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_id(&mut self, id: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(VectorIndexUpdate::VT_ID, id);
+  }
+  #[inline]
+  pub fn add_embedding(&mut self, embedding: ::flatbuffers::WIPOffset<Embedding<'b >>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<Embedding>>(VectorIndexUpdate::VT_EMBEDDING, embedding);
+  }
+  #[inline]
+  pub fn add_metadata(&mut self, metadata: ::flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(VectorIndexUpdate::VT_METADATA, metadata);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>) -> VectorIndexUpdateBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    VectorIndexUpdateBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> ::flatbuffers::WIPOffset<VectorIndexUpdate<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    ::flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl ::core::fmt::Debug for VectorIndexUpdate<'_> {
+  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    let mut ds = f.debug_struct("VectorIndexUpdate");
+      ds.field("id", &self.id());
+      ds.field("embedding", &self.embedding());
+      ds.field("metadata", &self.metadata());
+      ds.finish()
+  }
+}
+#[inline]
+/// Verifies that a buffer of bytes contains a `SearchResponse`
+/// and returns it.
+/// Note that verification is still experimental and may not
+/// catch every error, or be maximally performant. For the
+/// previous, unchecked, behavior use
+/// `root_as_search_response_unchecked`.
+pub fn root_as_search_response(buf: &[u8]) -> Result<SearchResponse<'_>, ::flatbuffers::InvalidFlatbuffer> {
+  ::flatbuffers::root::<SearchResponse>(buf)
+}
+#[inline]
+/// Verifies that a buffer of bytes contains a size prefixed
+/// `SearchResponse` and returns it.
+/// Note that verification is still experimental and may not
+/// catch every error, or be maximally performant. For the
+/// previous, unchecked, behavior use
+/// `size_prefixed_root_as_search_response_unchecked`.
+pub fn size_prefixed_root_as_search_response(buf: &[u8]) -> Result<SearchResponse<'_>, ::flatbuffers::InvalidFlatbuffer> {
+  ::flatbuffers::size_prefixed_root::<SearchResponse>(buf)
+}
+#[inline]
+/// Verifies, with the given options, that a buffer of bytes
+/// contains a `SearchResponse` and returns it.
+/// Note that verification is still experimental and may not
+/// catch every error, or be maximally performant. For the
+/// previous, unchecked, behavior use
+/// `root_as_search_response_unchecked`.
+pub fn root_as_search_response_with_opts<'b, 'o>(
+  opts: &'o ::flatbuffers::VerifierOptions,
+  buf: &'b [u8],
+) -> Result<SearchResponse<'b>, ::flatbuffers::InvalidFlatbuffer> {
+  ::flatbuffers::root_with_opts::<SearchResponse<'b>>(opts, buf)
+}
+#[inline]
+/// Verifies, with the given verifier options, that a buffer of
+/// bytes contains a size prefixed `SearchResponse` and returns
+/// it. Note that verification is still experimental and may not
+/// catch every error, or be maximally performant. For the
+/// previous, unchecked, behavior use
+/// `root_as_search_response_unchecked`.
+pub fn size_prefixed_root_as_search_response_with_opts<'b, 'o>(
+  opts: &'o ::flatbuffers::VerifierOptions,
+  buf: &'b [u8],
+) -> Result<SearchResponse<'b>, ::flatbuffers::InvalidFlatbuffer> {
+  ::flatbuffers::size_prefixed_root_with_opts::<SearchResponse<'b>>(opts, buf)
+}
+#[inline]
+/// Assumes, without verification, that a buffer of bytes contains a SearchResponse and returns it.
+/// # Safety
+/// Callers must trust the given bytes do indeed contain a valid `SearchResponse`.
+pub unsafe fn root_as_search_response_unchecked(buf: &[u8]) -> SearchResponse<'_> {
+  unsafe { ::flatbuffers::root_unchecked::<SearchResponse>(buf) }
+}
+#[inline]
+/// Assumes, without verification, that a buffer of bytes contains a size prefixed SearchResponse and returns it.
+/// # Safety
+/// Callers must trust the given bytes do indeed contain a valid size prefixed `SearchResponse`.
+pub unsafe fn size_prefixed_root_as_search_response_unchecked(buf: &[u8]) -> SearchResponse<'_> {
+  unsafe { ::flatbuffers::size_prefixed_root_unchecked::<SearchResponse>(buf) }
+}
+#[inline]
+pub fn finish_search_response_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(
+    fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+    root: ::flatbuffers::WIPOffset<SearchResponse<'a>>) {
+  fbb.finish(root, None);
+}
+
+#[inline]
+pub fn finish_size_prefixed_search_response_buffer<'a, 'b, A: ::flatbuffers::Allocator + 'a>(fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>, root: ::flatbuffers::WIPOffset<SearchResponse<'a>>) {
+  fbb.finish_size_prefixed(root, None);
+}
+}  // pub mod IPC
+}  // pub mod MemFuse
+
