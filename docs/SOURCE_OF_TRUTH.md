@@ -112,22 +112,49 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 
 ## Aktive Sprint-Roadmap
 
-### Phase 1 — RAG-Fundament (✅ Abgeschlossen, HEAD 4162ebb)
+### Phase 1 — RAG-Fundament (✅ Abgeschlossen)
 Sprint RAG-01: Contextual Retrieval (ADR-019) ✅
 Sprint RAG-02: Cross-Encoder Reranking ✅
 Sprint RAG-03: Multi-Step Query Engine ✅
 Sprint RAG-04: Context Compaction ✅
 Sprint RAG-05: Session DAG + MCP Sandbox ✅
 
-### Phase 2 — Cognitive Memory (📋 Geplant, Q4 2026)
-- Kognitive Gedächtnistypen (Episodic / Semantic / Procedural / Working)
-- Temporaler Wissensgraph (bi-temporal: Validitätszeit + Transaktionszeit)
-- Memory Importance Scoring (LLM-bewertet)
+### Phase 1.5 — Härtung & Stabilität (🔄 Laufend)
+- ✅ TOMBSTONE_BIT-Maskierung in `rollback_to_tx` (ADR-041)
+- ✅ Atomare SSTable-Umbenennung in Compaction
+- ✅ Flush-Race-Window behoben (ADR-043)
+- ✅ DAG-Verletzung Router→MCP behoben (ADR-045)
+- ✅ Collection.rs Modularisierung (ADR-040)
+- ✅ `TxBuffer` Kapazitätsgrenze (AGT-CORE-001)
+- ✅ `MemFuseErrorDto` FFI-Fehlertypen
+- 🔲 Zero-Panic in `memfuse-agent` (3 verbleibende `.expect()`)
+- 🔲 `overflow-checks = true` im Release-Profil
+- 🔲 Aktiver Decay-/TTL-Sweep (Enforcement-Loop für Reaper)
 
-### Phase 3 — Selbstorganisierung (📋 Geplant, Q1 2027)
-- Memory Consolidation & Reflection
-- Personalized PageRank (PPR) für Multi-Hop-Retrieval
-- Community Detection & GraphRAG
+### Phase 2 — Cognitive Memory (🔄 Teilweise implementiert, Q4 2026)
+Grundbausteine implementiert:
+- ✅ Kognitive Gedächtnistypen: `MemoryType`-Enum (Episodic/Semantic/Procedural/Working) mit `default_decay()`, `default_ttl_tx()` (ADR-025)
+- ✅ Bi-temporale Graph-Kanten: `valid_from`/`valid_to` via TxId (ADR-033)
+- ✅ Memory Importance Scoring: `ImportanceScore`, `decay_factor()` (ADR-025)
+- ✅ Recency Decay: `DecayFunction::Exponential`/`StepFloor`/`None`
+- ✅ A-MEM Zettelkasten Memory Links: `ContextChunk.links` mit `LinkRelation` (ADR-038)
+
+Noch offen:
+- 🔲 ProvenanceRecord (abfragbarer Herkunftsnachweis pro Suchergebnis)
+- 🔲 Kalibriertes Kaskaden-Routing in `memfuse-router` (statt Score-Aggregation)
+- 🔲 DiskANN-Reifung: Feature-Flag → Produktionsintegration in Collection (ADR-037)
+- 🔲 Benchmark-Suite vs. Mem0/Zep/MemOS
+
+### Phase 3 — Selbstorganisierung (🔄 Teilweise implementiert, Q1 2027)
+Bereits implementiert:
+- ✅ Personalized PageRank (PPR) — Power-Iteration mit L1-Norm-Abbruch (ADR-026)
+- ✅ Community Detection — Label Propagation, deterministisch (ADR-027)
+
+Noch offen:
+- 🔲 Memory Consolidation & Reflection (Sleep-Cycle-Konsolidierung)
+- 🔲 PathRAG: `GraphTraversalStrategy::PathExtraction`
+- 🔲 CausalEdge (4. Graph-Dimension)
+- 🔲 Verified Forgetting (kryptographischer Löschbeweis)
 
 ### Phase 4 — Enterprise (📋 Geplant, Q2 2027)
-- OAuth 2.0, RBAC, Multi-Tenant, Audit-Trail
+- 🔲 OAuth 2.0, RBAC, Multi-Tenant, Audit-Trail
