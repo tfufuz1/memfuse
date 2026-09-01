@@ -213,15 +213,15 @@ crates/memfuse-crypto/src/crypto.rs:308:        let km2 = KeyManager::try_new("s
 crates/memfuse-crypto/src/crypto.rs:311:                .expect("k1") // expect
 crates/memfuse-crypto/src/crypto.rs:314:                .expect("k2") // expect
 crates/memfuse-crypto/src/crypto.rs:330:        let (km, _) = KeyManager::try_new_random_salt("test-passphrase").unwrap(); // unwrap
-crates/memfuse-crypto/src/crypto.rs:338:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
+crates/memfuse-crypto/src/crypto.rs:376:        let km = KeyManager::try_new("secret-passphrase", b"salt1").expect("try_new"); // expect
 crates/memfuse-crypto/src/crypto.rs:342:            let (_, nonce) = km.encrypt_auto_nonce(data).expect("encrypt"); // expect
 crates/memfuse-crypto/src/crypto.rs:349:        let km1 = KeyManager::try_new("pass1", b"salt1").expect("try_new"); // expect
 crates/memfuse-crypto/src/crypto.rs:350:        let km2 = KeyManager::try_new("pass2", b"salt1").expect("try_new"); // expect
 crates/memfuse-crypto/src/crypto.rs:353:        let (encrypted, nonce) = km1.encrypt_auto_nonce(data).expect("encrypt"); // expect
 crates/memfuse-crypto/src/crypto.rs:360:        let km1 = KeyManager::try_new("secret", b"salt").expect("km1"); // expect
-crates/memfuse-crypto/src/crypto.rs:361:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
+crates/memfuse-crypto/src/crypto.rs:399:        let km2 = KeyManager::try_new("secret", b"salt").expect("km2"); // expect
 crates/memfuse-crypto/src/crypto.rs:362:        let sub1 = km1.derive_file_key(b"file_123").expect("sub1"); // expect
-crates/memfuse-crypto/src/crypto.rs:363:        let sub2 = km2.derive_file_key(b"file_123").expect("sub2"); // expect
+crates/memfuse-crypto/src/crypto.rs:401:        let sub2 = km2.derive_file_key(b"file_123").expect("sub2"); // expect
 crates/memfuse-crypto/src/crypto.rs:373:        let km = KeyManager::try_new("secret", b"salt").expect("km"); // expect
 crates/memfuse-crypto/src/crypto.rs:374:        let sub1 = km.derive_file_key(b"file_A").expect("sub1"); // expect
 crates/memfuse-crypto/src/crypto.rs:375:        let sub2 = km.derive_file_key(b"file_B").expect("sub2"); // expect
@@ -492,7 +492,7 @@ crates/memfuse-db/src/multistep.rs:297:            .expect("search"); // expect
 crates/memfuse-db/src/multistep.rs:313:        .expect("insert"); // expect
 crates/memfuse-db/src/multistep.rs:332:            .expect("search"); // expect
 crates/memfuse-db/src/multistep.rs:348:            .expect("search"); // expect
-crates/memfuse-db/src/multistep.rs:363:        .expect("insert"); // expect
+crates/memfuse-db/src/multistep.rs:401:        .expect("insert"); // expect
 crates/memfuse-db/src/multistep.rs:379:            .expect("search"); // expect
 crates/memfuse-db/src/multistep.rs:410:        .expect("insert");
 crates/memfuse-db/src/multistep.rs:423:            .expect("search should succeed gracefully even if rewriter fails");
@@ -1049,7 +1049,7 @@ crates/memfuse-graph/src/csr.rs:2949:                graph.insert_entity_direct(
 crates/memfuse-graph/src/csr.rs:2955:                graph.insert_edge_direct(src_id, dst_id, w).unwrap();
 crates/memfuse-graph/src/csr.rs:2971:            proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len());
 crates/memfuse-index/src/quantize.rs:337:        let serialized = bincode::serialize(&original).expect("serialize");
-crates/memfuse-index/src/quantize.rs:338:        let deserialized: ScalarQuantizer = bincode::deserialize(&serialized).expect("deserialize");
+crates/memfuse-index/src/quantize.rs:376:        let deserialized: ScalarQuantizer = bincode::deserialize(&serialized).expect("deserialize");
 crates/memfuse-index/src/quantize.rs:456:                    .expect("dist"); // unwrap allowed in tests
 crates/memfuse-index/src/quantize.rs:693:            .unwrap();
 crates/memfuse-index/src/quantize.rs:698:            .unwrap();
@@ -1284,12 +1284,12 @@ crates/memfuse-mcp/src/tests.rs:241:    let err_huge = resp_huge.error.expect("e
 crates/memfuse-mcp/src/tests.rs:259:    let err = resp.error.expect("error expected for empty vector");
 crates/memfuse-mcp/src/tests.rs:272:    let err_inf = resp_inf.error.expect("error expected for Inf in vector");
 crates/memfuse-mcp/src/tests.rs:290:    let err = resp.error.expect("error expected for long ID");
-crates/memfuse-mcp/src/tests.rs:336:        let res_val = serde_json::to_value(&resp).unwrap();
-crates/memfuse-mcp/src/tests.rs:338:        let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
-crates/memfuse-mcp/src/tests.rs:361:    let res_val = serde_json::to_value(&resp).unwrap();
-crates/memfuse-mcp/src/tests.rs:363:    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
-crates/memfuse-mcp/src/tests.rs:381:    let res_ro = serde_json::to_value(&resp_ro).unwrap();
-crates/memfuse-mcp/src/tests.rs:385:    let res_rw = serde_json::to_value(&resp_rw).unwrap();
+crates/memfuse-mcp/src/tests.rs:374:        let res_val = serde_json::to_value(&resp).unwrap();
+crates/memfuse-mcp/src/tests.rs:376:        let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+crates/memfuse-mcp/src/tests.rs:399:    let res_val = serde_json::to_value(&resp).unwrap();
+crates/memfuse-mcp/src/tests.rs:401:    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+crates/memfuse-mcp/src/tests.rs:419:    let res_ro = serde_json::to_value(&resp_ro).unwrap();
+crates/memfuse-mcp/src/tests.rs:423:    let res_rw = serde_json::to_value(&resp_rw).unwrap();
 crates/memfuse-ollama/src/context_prefixer.rs:249:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
 crates/memfuse-ollama/src/context_prefixer.rs:250:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/context_prefixer.rs:283:            .unwrap(); // unwrap
@@ -1395,7 +1395,7 @@ crates/memfuse-router/src/tests.rs:327:        let db = MemFuse::open_with_confi
 crates/memfuse-router/src/tests.rs:328:        let collection = db.collection("default").await.unwrap();
 crates/memfuse-router/src/tests.rs:335:            .unwrap();
 crates/memfuse-router/src/tests.rs:337:        let eid = EntityId::from_key(key).unwrap();
-crates/memfuse-router/src/tests.rs:338:        let tx = db.allocate_tx().unwrap();
+crates/memfuse-router/src/tests.rs:376:        let tx = db.allocate_tx().unwrap();
 crates/memfuse-router/src/tests.rs:341:            .put(tx, &comm_key, &serde_json::to_vec(&42u64).unwrap())
 crates/memfuse-router/src/tests.rs:343:            .unwrap();
 crates/memfuse-router/src/tests.rs:344:        db.inner_storage().commit(tx).await.unwrap();
@@ -2054,7 +2054,7 @@ crates/memfuse-store/src/lsm.rs:2772:            .unwrap(); // unwrap #[cfg(test
 crates/memfuse-store/src/lsm.rs:2785:            .expect("LsmStorage startup must succeed");
 crates/memfuse-tauri/src/commands/transform.rs:324:                .unwrap() // unwrap
 crates/memfuse-tauri/src/commands/transform.rs:331:        let result = transform!(r"\b\w+\b", "g", "X", "hello world").unwrap(); // unwrap
-crates/memfuse-tauri/src/commands/transform.rs:338:        let result = transform!("foo", "", "bar", "foo baz foo").unwrap(); // unwrap
+crates/memfuse-tauri/src/commands/transform.rs:376:        let result = transform!("foo", "", "bar", "foo baz foo").unwrap(); // unwrap
 crates/memfuse-tauri/src/commands/transform.rs:348:        let result = transform!("foo", "g", "bar", "foo baz foo").unwrap(); // unwrap
 crates/memfuse-tauri/src/commands/transform.rs:358:        let result = transform!("xyz", "g", "bar", "foo baz foo").unwrap(); // unwrap
 crates/memfuse-tauri/src/commands/transform.rs:368:        let result = transform!(r"(\w+)\s(\w+)", "", "$2 $1", "hello world").unwrap(); // unwrap
