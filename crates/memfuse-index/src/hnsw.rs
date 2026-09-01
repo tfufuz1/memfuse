@@ -663,6 +663,206 @@ impl HnswIndex {
         *guard = Some(mmap_index);
         Ok(())
     }
+
+    pub(crate) async fn search_filtered_internal(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        snapshot_seq: Option<u64>,
+    ) -> Result<Vec<ScoredDocument>> {
+        if let Some(ref err) = self.inner.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
+        if query.len() != self.inner.config.dimension {
+            return Err(MemFuseError::invalid_input(format!(
+                "Expected dimension {}, got {}",
+                self.inner.config.dimension,
+                query.len()
+            )));
+        }
+
+        let query_quantized = if self.inner.config.quantize {
+            self.inner
+                .quantizer
+                .read()
+                .as_ref()
+                .map(|q| q.quantize(query))
+        } else {
+            None
+        };
+
+        let mut ep = Vec::new();
+        if let Some(global_ep) = *self.inner.entry_point.read() {
+            ep.push(global_ep);
+        }
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
+            if !ep.contains(&ram_ep) {
+                ep.push(ram_ep);
+            }
+        }
+
+        let mut filter_eps = Vec::new();
+
+        if let Some(f) = filter {
+            let nodes = self.inner.nodes.read();
+            let mmap_guard = self.inner.mmap_index.read();
+            let mmap_node_count = mmap_guard
+                .as_ref()
+                .map(|m| m.header.node_count as usize)
+                .unwrap_or(0);
+            let ctx = SearchContext {
+                nodes: &nodes,
+                mmap: mmap_guard.as_ref(),
+                mmap_node_count,
+            };
+
+            let total_nodes = mmap_node_count + nodes.len();
+            let mut added = 0;
+            for i in (0..total_nodes).rev() {
+                if !ep.contains(&i) {
+                    if let Ok(doc_id) = self.inner.resolve_doc_id(i, &ctx) {
+                        if f(doc_id) {
+                            ep.push(i);
+                            filter_eps.push(i);
+                            added += 1;
+                            if added >= 16 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ep.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let max_layer = self.inner.max_layer.load(Ordering::SeqCst) as usize;
+
+        for layer in (1..=max_layer).rev() {
+            let best = self
+                .inner
+                .search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            if let Some(closest) = best.first() {
+                ep = vec![closest.index];
+            }
+        }
+
+        // Add RAM entry point back for the final layer search to ensure hybrid recall
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
+            if !ep.contains(&ram_ep) {
+                ep.push(ram_ep);
+            }
+        }
+
+        // Add filter entry points back for layer 0 search to ensure filtered/snapshot recall
+        for &fe in &filter_eps {
+            if !ep.contains(&fe) {
+                ep.push(fe);
+            }
+        }
+
+        // Over-fetch to compensate for filtered-out results and reranking
+        let factor = if self.inner.config.quantize { 4 } else { 2 };
+        let ef = self.inner.config.ef_search.max(k) * factor;
+        let candidates = self
+            .inner
+            .search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+
+        let score = self.inner.connectivity_score();
+        if score < self.inner.config.rebuild_threshold {
+            let deleted_ratio = (1.0 - score) * 100.0;
+            let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
+            tracing::warn!(
+                error = %err,
+                connectivity_score = score,
+                rebuild_threshold = self.inner.config.rebuild_threshold,
+                "HNSW index degraded — consider calling rebuild()"
+            );
+        }
+
+        let nodes = self.inner.nodes.read();
+        let mmap_guard = self.inner.mmap_index.read();
+        let mmap_node_count = mmap_guard
+            .as_ref()
+            .map(|m| m.header.node_count as usize)
+            .unwrap_or(0);
+        let ctx = SearchContext {
+            nodes: &nodes,
+            mmap: mmap_guard.as_ref(),
+            mmap_node_count,
+        };
+        let deleted = self.inner.deleted_nodes.read();
+        let seq_log = self.inner.seq_log.read();
+        let mut results = Vec::with_capacity(k);
+
+        for c in candidates.iter() {
+            let doc_id = self.inner.resolve_doc_id(c.index, &ctx)?;
+
+            if let Some(snap_seq) = snapshot_seq {
+                if !seq_log.is_visible(doc_id, snap_seq) {
+                    continue;
+                }
+            } else {
+                if deleted.contains(c.index as u64) {
+                    continue;
+                }
+            }
+
+            if c.index >= mmap_node_count {
+                if let Some(node) = nodes.get(c.index - mmap_node_count) {
+                    if node.committed_tx == 0 {
+                        continue;
+                    }
+                    if let Some(snap_seq) = snapshot_seq {
+                        if node.committed_tx > snap_seq {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let Some(f) = filter {
+                if !f(doc_id) {
+                    continue;
+                }
+            }
+
+            if results.iter().any(|r: &ScoredDocument| r.doc_id == doc_id) {
+                continue;
+            }
+
+            // Phase 2: Exact Reranking (Asymmetric for SQ8)
+            let final_dist = if self.inner.config.quantize {
+                self.inner.resolve_dist(c.index, query, None, &ctx)?
+            } else {
+                c.distance
+            };
+
+            let score = match self.inner.config.distance_metric {
+                DistanceMetric::Cosine => 1.0 - final_dist,
+                DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
+                DistanceMetric::DotProduct => -final_dist,
+                other => {
+                    return Err(MemFuseError::Index(format!(
+                        "Unsupported DistanceMetric variant in search_filtered(): {other:?}"
+                    )));
+                }
+            };
+            results.push(ScoredDocument::new(doc_id, score));
+        }
+
+        // Must re-sort and truncate after Phase 2 reranking
+        results.sort_by(|a, b| b.score.total_cmp(&a.score));
+        results.truncate(k);
+
+        Ok(results)
+    }
 }
 
 /// Helper for hybrid resolution of nodes (RAM vs Mmap).
@@ -1067,9 +1267,9 @@ impl HnswIndexCore {
             ));
         }
 
-        // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f)
-        // RESOLVED: AGT-INDEX-b2c3d4e5 — try_write/read lock race condition replaced with guaranteed write lock (TS:2026-09-01T11:02:04Z)
-        // AI-NOTE: Sobald P-J5 (loom-Harness) gemerged ist, ergänze hier einen loom-basierten Nebenläufigkeits-Beweis, siehe memfuse_neue_befunde.md NEU-02.
+        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für
+        //   SQ8-Quantizer-Bounds-Expansion bei Insert garantiert; loom-Regressionstest
+        //   in tests/loom_quantizer_race_test.rs (TS:2026-09-01T12:00:00Z) (SESSION:3c7c8a84)
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
@@ -1737,168 +1937,7 @@ impl VectorIndex for HnswIndex {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<ScoredDocument>> {
-        if let Some(ref err) = self.inner.validation_error {
-            return Err(MemFuseError::invalid_input(format!(
-                "Invalid index configuration: {}",
-                err
-            )));
-        }
-        if query.len() != self.inner.config.dimension {
-            return Err(MemFuseError::invalid_input(format!(
-                "Expected dimension {}, got {}",
-                self.inner.config.dimension,
-                query.len()
-            )));
-        }
-
-        let query_quantized = if self.inner.config.quantize {
-            self.inner
-                .quantizer
-                .read()
-                .as_ref()
-                .map(|q| q.quantize(query))
-        } else {
-            None
-        };
-
-        let mut ep = Vec::new();
-        if let Some(global_ep) = *self.inner.entry_point.read() {
-            ep.push(global_ep);
-        }
-        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
-            if !ep.contains(&ram_ep) {
-                ep.push(ram_ep);
-            }
-        }
-
-        if let Some(f) = filter {
-            let nodes = self.inner.nodes.read();
-            let mmap_guard = self.inner.mmap_index.read();
-            let mmap_node_count = mmap_guard
-                .as_ref()
-                .map(|m| m.header.node_count as usize)
-                .unwrap_or(0);
-            let ctx = SearchContext {
-                nodes: &nodes,
-                mmap: mmap_guard.as_ref(),
-                mmap_node_count,
-            };
-
-            let total_nodes = mmap_node_count + nodes.len();
-            let mut added = 0;
-            for i in (0..total_nodes).rev() {
-                if !ep.contains(&i) {
-                    if let Ok(doc_id) = self.inner.resolve_doc_id(i, &ctx) {
-                        if f(doc_id) {
-                            ep.push(i);
-                            added += 1;
-                            if added >= 16 {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if ep.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let max_layer = self.inner.max_layer.load(Ordering::SeqCst) as usize;
-
-        for layer in (1..=max_layer).rev() {
-            let best = self
-                .inner
-                .search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
-            if let Some(closest) = best.first() {
-                ep = vec![closest.index];
-            }
-        }
-
-        // Add RAM entry point back for the final layer search to ensure hybrid recall
-        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
-            if !ep.contains(&ram_ep) {
-                ep.push(ram_ep);
-            }
-        }
-
-        // Over-fetch to compensate for filtered-out results and reranking
-        let factor = if self.inner.config.quantize { 4 } else { 2 };
-        let ef = self.inner.config.ef_search.max(k) * factor;
-        let candidates = self
-            .inner
-            .search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
-
-        let score = self.inner.connectivity_score();
-        if score < self.inner.config.rebuild_threshold {
-            let deleted_ratio = (1.0 - score) * 100.0;
-            let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
-            tracing::warn!(
-                error = %err,
-                connectivity_score = score,
-                rebuild_threshold = self.inner.config.rebuild_threshold,
-                "HNSW index degraded — consider calling rebuild()"
-            );
-        }
-
-        let nodes = self.inner.nodes.read();
-        let deleted = self.inner.deleted_nodes.read();
-        let mut results = Vec::with_capacity(k);
-
-        for c in candidates.iter() {
-            // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f)
-            if deleted.contains(c.index as u64) {
-                continue;
-            }
-
-            let node = nodes.get(c.index).ok_or_else(|| {
-                MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
-            })?;
-            if node.committed_tx == 0 {
-                continue;
-            }
-            let doc_id = node.doc_id;
-
-            if let Some(f) = filter {
-                if !f(doc_id) {
-                    continue;
-                }
-            }
-
-            // Phase 2: Exact Reranking (Asymmetric for SQ8)
-            let final_dist = if self.inner.config.quantize {
-                if let VectorData::U8(v) = &node.vector {
-                    let guard = self.inner.quantizer.read();
-                    let q = guard.as_ref().ok_or_else(|| {
-                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
-                    })?;
-                    q.asymmetric_dist(query, v, self.inner.config.distance_metric)?
-                } else {
-                    c.distance
-                }
-            } else {
-                c.distance
-            };
-
-            let score = match self.inner.config.distance_metric {
-                DistanceMetric::Cosine => 1.0 - final_dist,
-                DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
-                DistanceMetric::DotProduct => -final_dist,
-                other => {
-                    return Err(MemFuseError::Index(format!(
-                        "Unsupported DistanceMetric variant in search_filtered(): {other:?}"
-                    )));
-                }
-            };
-            results.push(ScoredDocument::new(doc_id, score));
-        }
-
-        // Must re-sort and truncate after Phase 2 reranking
-        results.sort_by(|a, b| b.score.total_cmp(&a.score));
-        results.truncate(k);
-
-        Ok(results)
+        self.search_filtered_internal(query, k, filter, None).await
     }
 
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
@@ -2053,7 +2092,8 @@ impl VectorIndex for HnswIndex {
     async fn search_at(&self, query: &[f32], k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
         let log = self.inner.seq_log.read().clone();
         let filter_fn = move |doc_id: DocId| -> bool { log.is_visible(doc_id, seq_no) };
-        self.search_filtered(query, k, Some(&filter_fn)).await
+        self.search_filtered_internal(query, k, Some(&filter_fn), Some(seq_no))
+            .await
     }
 
     async fn rollback(&self, tx: TxId) -> Result<()> {
@@ -3006,7 +3046,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Known flakiness: in-memory HNSW node deletion mutates graph in-place (AGT-INDEX-006)"]
     fn prop_hnsw_search_at_consistency() {
         use proptest::prelude::*;
 
@@ -3024,9 +3063,10 @@ mod tests {
             10..100,
         );
 
-        // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T21:56:10Z) (SESSION: a140747b)
-        // FLAKINESS: In-memory HNSW node deletion marks nodes as deleted in-place, causing historical snapshot queries
-        // (search_at at target_seq < current_seq) to omit nodes that were deleted at higher sequence numbers.
+        // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T12:00:00Z) (SESSION:3c7c8a84)
+        // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
+        // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().
+        // Regressionstest: tests/hnsw_snapshot_delete_test.rs
         proptest!(ProptestConfig::with_cases(20), |(ops in op_strategy)| {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
