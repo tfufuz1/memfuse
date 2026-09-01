@@ -108,7 +108,6 @@
 | `2026-08-30T15:00:19Z` | `crates/memfuse-agent/src/graph.rs` | `AI-TAG` | `-` | `283abf0f` | `RESOLVED` | `-` | // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f) |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
-| `2026-08-29T17:21:26Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `e6e9abca` | `OPEN` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
@@ -161,6 +160,7 @@
 | `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/wal.rs` | `ANCHOR` | `MIGRATION:WAL-HMAC-001` | `-` | `DONE` | `0` | /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
+| `` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `-` | `RESOLVED` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] RESOLVED: AGT-CKPT-001 — |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
