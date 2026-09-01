@@ -34,6 +34,7 @@ tempfile = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
 zip = "2"
+proptest = "1"
 
 [[bench]]
 name = "parser_bench"
