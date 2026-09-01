@@ -2478,4 +2478,3 @@ crates/memfuse-text/src/lib.rs:101:            Ok(self.data.lock().unwrap().get(
 crates/memfuse-text/src/lib.rs:107:                .unwrap() // unwrap allowed
 crates/memfuse-text/src/lib.rs:113:            self.data.lock().unwrap().remove(key); // unwrap allowed
 crates/memfuse-text/src/lib.rs:170:            let data = self.data.lock().unwrap(); // unwrap allowed
-crates/memfuse-text/src/tokenizer.rs:23:            .expect("Invalid regex pattern")
