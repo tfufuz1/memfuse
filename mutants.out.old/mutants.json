@@ -1,0 +1,2498 @@
+[
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace compute_ppr -> Vec<(EntityId, f32)> with vec![]\n@@ -23,184 +23,17 @@\n /// If `config.max_iterations` is reached without convergence, the intermediate best-effort rank\n /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with\n /// `max_iterations`, `last_diff`, and `convergence_epsilon`.\n pub(crate) fn compute_ppr(\n     inner: &GraphInner,\n     seed_nodes: &[EntityId],\n     config: &PprConfig,\n ) -> Vec<(EntityId, f32)> {\n-    let n = inner.reverse_map.len();\n-    if n == 0 || seed_nodes.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 1. Identify valid seed internal indices (must exist and have committed entity)\n-    let mut valid_seeds = Vec::new();\n-    let mut seen_seeds = HashSet::new();\n-\n-    for &seed in seed_nodes {\n-        if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n-                && inner.entities.get(idx).is_some_and(|e| e.is_some())\n-                && seen_seeds.insert(idx)\n-            {\n-                valid_seeds.push(idx);\n-            }\n-        }\n-    }\n-\n-    if valid_seeds.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 2. Build restart / teleport vector p (uniform over valid seed nodes)\n-    let seed_count = valid_seeds.len() as f32;\n-    let restart_prob = 1.0 / seed_count;\n-    let mut p = vec![0.0f32; n];\n-    for &seed_idx in &valid_seeds {\n-        p[seed_idx] = restart_prob;\n-    }\n-\n-    // 3. Precompute active outgoing edges & total weight per node\n-    #[derive(Clone)]\n-    struct OutgoingEdge {\n-        target: usize,\n-        weight: f32,\n-    }\n-\n-    let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n-    let mut out_weight_sums = vec![0.0f32; n];\n-\n-    for i in 0..n {\n-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n-            continue;\n-        }\n-\n-        let start = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i]\n-        } else {\n-            0\n-        };\n-        let end = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i + 1]\n-        } else {\n-            0\n-        };\n-\n-        let mut sum = 0.0f32;\n-        let mut edges = Vec::with_capacity(end.saturating_sub(start));\n-\n-        for edge_idx in start..end {\n-            let target = inner.targets[edge_idx];\n-            let weight = inner.weights[edge_idx];\n-\n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n-                sum += weight;\n-                edges.push(OutgoingEdge { target, weight });\n-            }\n-        }\n-\n-        out_weight_sums[i] = sum;\n-        out_edges[i] = edges;\n-    }\n-\n-    // Validate config parameters defensively\n-    let damping = if config.damping_factor.is_nan()\n-        || config.damping_factor <= 0.0\n-        || config.damping_factor >= 1.0\n-    {\n-        0.85\n-    } else {\n-        config.damping_factor\n-    };\n-\n-    let max_iters = config.max_iterations.min(1000); // hard ceiling\n-    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n-        1e-6\n-    } else {\n-        config.convergence_epsilon\n-    };\n-\n-    // 4. Power Iteration\n-    let mut ranks = p.clone();\n-    let mut last_diff = 0.0f32;\n-    let mut converged = false;\n-\n-    for _iter in 0..max_iters {\n-        let mut next_ranks = vec![0.0f32; n];\n-\n-        // Rank mass accumulated at dead-end (dangling) nodes\n-        let mut dangling_sum = 0.0f32;\n-        for i in 0..n {\n-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n-                dangling_sum += ranks[i];\n-            }\n-        }\n-\n-        // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n-        for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n-        }\n-\n-        // Rank distribution across outgoing edges\n-        for i in 0..n {\n-            let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n-                for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n-                }\n-            }\n-        }\n-\n-        // Convergence check via L1 norm diff\n-        let diff: f32 = ranks\n-            .iter()\n-            .zip(next_ranks.iter())\n-            .map(|(a, b)| (a - b).abs())\n-            .sum();\n-\n-        ranks = next_ranks;\n-        last_diff = diff;\n-\n-        if diff < epsilon {\n-            converged = true;\n-            break;\n-        }\n-    }\n-\n-    if !converged && config.warn_on_non_convergence {\n-        tracing::warn!(\n-            max_iterations = max_iters,\n-            last_diff = last_diff,\n-            convergence_epsilon = epsilon,\n-            \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n-        );\n-    }\n-\n-    // 5. Build and sort result vector\n-    let mut results = Vec::new();\n-    for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n-            if let Some(&id) = inner.reverse_map.get(idx) {\n-                results.push((id, rank));\n-            }\n-        }\n-    }\n-\n-    // Deterministic sort: score descending, tie-break by EntityId ascending\n-    results.sort_by(|a, b| {\n-        b.1.partial_cmp(&a.1)\n-            .unwrap_or(std::cmp::Ordering::Equal)\n-            .then_with(|| a.0.cmp(&b.0))\n-    });\n-\n-    results\n+    vec![] /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use crate::csr::CsrGraph;\n     use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![]",
+    "package": "memfuse-graph",
+    "replacement": "vec![]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 198
+      },
+      "start": {
+        "column": 5,
+        "line": 31
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), 0.0)]\n@@ -23,184 +23,17 @@\n /// If `config.max_iterations` is reached without convergence, the intermediate best-effort rank\n /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with\n /// `max_iterations`, `last_diff`, and `convergence_epsilon`.\n pub(crate) fn compute_ppr(\n     inner: &GraphInner,\n     seed_nodes: &[EntityId],\n     config: &PprConfig,\n ) -> Vec<(EntityId, f32)> {\n-    let n = inner.reverse_map.len();\n-    if n == 0 || seed_nodes.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 1. Identify valid seed internal indices (must exist and have committed entity)\n-    let mut valid_seeds = Vec::new();\n-    let mut seen_seeds = HashSet::new();\n-\n-    for &seed in seed_nodes {\n-        if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n-                && inner.entities.get(idx).is_some_and(|e| e.is_some())\n-                && seen_seeds.insert(idx)\n-            {\n-                valid_seeds.push(idx);\n-            }\n-        }\n-    }\n-\n-    if valid_seeds.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 2. Build restart / teleport vector p (uniform over valid seed nodes)\n-    let seed_count = valid_seeds.len() as f32;\n-    let restart_prob = 1.0 / seed_count;\n-    let mut p = vec![0.0f32; n];\n-    for &seed_idx in &valid_seeds {\n-        p[seed_idx] = restart_prob;\n-    }\n-\n-    // 3. Precompute active outgoing edges & total weight per node\n-    #[derive(Clone)]\n-    struct OutgoingEdge {\n-        target: usize,\n-        weight: f32,\n-    }\n-\n-    let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n-    let mut out_weight_sums = vec![0.0f32; n];\n-\n-    for i in 0..n {\n-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n-            continue;\n-        }\n-\n-        let start = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i]\n-        } else {\n-            0\n-        };\n-        let end = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i + 1]\n-        } else {\n-            0\n-        };\n-\n-        let mut sum = 0.0f32;\n-        let mut edges = Vec::with_capacity(end.saturating_sub(start));\n-\n-        for edge_idx in start..end {\n-            let target = inner.targets[edge_idx];\n-            let weight = inner.weights[edge_idx];\n-\n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n-                sum += weight;\n-                edges.push(OutgoingEdge { target, weight });\n-            }\n-        }\n-\n-        out_weight_sums[i] = sum;\n-        out_edges[i] = edges;\n-    }\n-\n-    // Validate config parameters defensively\n-    let damping = if config.damping_factor.is_nan()\n-        || config.damping_factor <= 0.0\n-        || config.damping_factor >= 1.0\n-    {\n-        0.85\n-    } else {\n-        config.damping_factor\n-    };\n-\n-    let max_iters = config.max_iterations.min(1000); // hard ceiling\n-    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n-        1e-6\n-    } else {\n-        config.convergence_epsilon\n-    };\n-\n-    // 4. Power Iteration\n-    let mut ranks = p.clone();\n-    let mut last_diff = 0.0f32;\n-    let mut converged = false;\n-\n-    for _iter in 0..max_iters {\n-        let mut next_ranks = vec![0.0f32; n];\n-\n-        // Rank mass accumulated at dead-end (dangling) nodes\n-        let mut dangling_sum = 0.0f32;\n-        for i in 0..n {\n-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n-                dangling_sum += ranks[i];\n-            }\n-        }\n-\n-        // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n-        for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n-        }\n-\n-        // Rank distribution across outgoing edges\n-        for i in 0..n {\n-            let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n-                for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n-                }\n-            }\n-        }\n-\n-        // Convergence check via L1 norm diff\n-        let diff: f32 = ranks\n-            .iter()\n-            .zip(next_ranks.iter())\n-            .map(|(a, b)| (a - b).abs())\n-            .sum();\n-\n-        ranks = next_ranks;\n-        last_diff = diff;\n-\n-        if diff < epsilon {\n-            converged = true;\n-            break;\n-        }\n-    }\n-\n-    if !converged && config.warn_on_non_convergence {\n-        tracing::warn!(\n-            max_iterations = max_iters,\n-            last_diff = last_diff,\n-            convergence_epsilon = epsilon,\n-            \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n-        );\n-    }\n-\n-    // 5. Build and sort result vector\n-    let mut results = Vec::new();\n-    for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n-            if let Some(&id) = inner.reverse_map.get(idx) {\n-                results.push((id, rank));\n-            }\n-        }\n-    }\n-\n-    // Deterministic sort: score descending, tie-break by EntityId ascending\n-    results.sort_by(|a, b| {\n-        b.1.partial_cmp(&a.1)\n-            .unwrap_or(std::cmp::Ordering::Equal)\n-            .then_with(|| a.0.cmp(&b.0))\n-    });\n-\n-    results\n+    vec![(Default::default(), 0.0)] /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use crate::csr::CsrGraph;\n     use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), 0.0)]",
+    "package": "memfuse-graph",
+    "replacement": "vec![(Default::default(), 0.0)]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 198
+      },
+      "start": {
+        "column": 5,
+        "line": 31
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), 1.0)]\n@@ -23,184 +23,17 @@\n /// If `config.max_iterations` is reached without convergence, the intermediate best-effort rank\n /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with\n /// `max_iterations`, `last_diff`, and `convergence_epsilon`.\n pub(crate) fn compute_ppr(\n     inner: &GraphInner,\n     seed_nodes: &[EntityId],\n     config: &PprConfig,\n ) -> Vec<(EntityId, f32)> {\n-    let n = inner.reverse_map.len();\n-    if n == 0 || seed_nodes.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 1. Identify valid seed internal indices (must exist and have committed entity)\n-    let mut valid_seeds = Vec::new();\n-    let mut seen_seeds = HashSet::new();\n-\n-    for &seed in seed_nodes {\n-        if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n-                && inner.entities.get(idx).is_some_and(|e| e.is_some())\n-                && seen_seeds.insert(idx)\n-            {\n-                valid_seeds.push(idx);\n-            }\n-        }\n-    }\n-\n-    if valid_seeds.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 2. Build restart / teleport vector p (uniform over valid seed nodes)\n-    let seed_count = valid_seeds.len() as f32;\n-    let restart_prob = 1.0 / seed_count;\n-    let mut p = vec![0.0f32; n];\n-    for &seed_idx in &valid_seeds {\n-        p[seed_idx] = restart_prob;\n-    }\n-\n-    // 3. Precompute active outgoing edges & total weight per node\n-    #[derive(Clone)]\n-    struct OutgoingEdge {\n-        target: usize,\n-        weight: f32,\n-    }\n-\n-    let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n-    let mut out_weight_sums = vec![0.0f32; n];\n-\n-    for i in 0..n {\n-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n-            continue;\n-        }\n-\n-        let start = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i]\n-        } else {\n-            0\n-        };\n-        let end = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i + 1]\n-        } else {\n-            0\n-        };\n-\n-        let mut sum = 0.0f32;\n-        let mut edges = Vec::with_capacity(end.saturating_sub(start));\n-\n-        for edge_idx in start..end {\n-            let target = inner.targets[edge_idx];\n-            let weight = inner.weights[edge_idx];\n-\n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n-                sum += weight;\n-                edges.push(OutgoingEdge { target, weight });\n-            }\n-        }\n-\n-        out_weight_sums[i] = sum;\n-        out_edges[i] = edges;\n-    }\n-\n-    // Validate config parameters defensively\n-    let damping = if config.damping_factor.is_nan()\n-        || config.damping_factor <= 0.0\n-        || config.damping_factor >= 1.0\n-    {\n-        0.85\n-    } else {\n-        config.damping_factor\n-    };\n-\n-    let max_iters = config.max_iterations.min(1000); // hard ceiling\n-    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n-        1e-6\n-    } else {\n-        config.convergence_epsilon\n-    };\n-\n-    // 4. Power Iteration\n-    let mut ranks = p.clone();\n-    let mut last_diff = 0.0f32;\n-    let mut converged = false;\n-\n-    for _iter in 0..max_iters {\n-        let mut next_ranks = vec![0.0f32; n];\n-\n-        // Rank mass accumulated at dead-end (dangling) nodes\n-        let mut dangling_sum = 0.0f32;\n-        for i in 0..n {\n-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n-                dangling_sum += ranks[i];\n-            }\n-        }\n-\n-        // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n-        for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n-        }\n-\n-        // Rank distribution across outgoing edges\n-        for i in 0..n {\n-            let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n-                for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n-                }\n-            }\n-        }\n-\n-        // Convergence check via L1 norm diff\n-        let diff: f32 = ranks\n-            .iter()\n-            .zip(next_ranks.iter())\n-            .map(|(a, b)| (a - b).abs())\n-            .sum();\n-\n-        ranks = next_ranks;\n-        last_diff = diff;\n-\n-        if diff < epsilon {\n-            converged = true;\n-            break;\n-        }\n-    }\n-\n-    if !converged && config.warn_on_non_convergence {\n-        tracing::warn!(\n-            max_iterations = max_iters,\n-            last_diff = last_diff,\n-            convergence_epsilon = epsilon,\n-            \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n-        );\n-    }\n-\n-    // 5. Build and sort result vector\n-    let mut results = Vec::new();\n-    for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n-            if let Some(&id) = inner.reverse_map.get(idx) {\n-                results.push((id, rank));\n-            }\n-        }\n-    }\n-\n-    // Deterministic sort: score descending, tie-break by EntityId ascending\n-    results.sort_by(|a, b| {\n-        b.1.partial_cmp(&a.1)\n-            .unwrap_or(std::cmp::Ordering::Equal)\n-            .then_with(|| a.0.cmp(&b.0))\n-    });\n-\n-    results\n+    vec![(Default::default(), 1.0)] /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use crate::csr::CsrGraph;\n     use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), 1.0)]",
+    "package": "memfuse-graph",
+    "replacement": "vec![(Default::default(), 1.0)]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 198
+      },
+      "start": {
+        "column": 5,
+        "line": 31
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), -1.0)]\n@@ -23,184 +23,17 @@\n /// If `config.max_iterations` is reached without convergence, the intermediate best-effort rank\n /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with\n /// `max_iterations`, `last_diff`, and `convergence_epsilon`.\n pub(crate) fn compute_ppr(\n     inner: &GraphInner,\n     seed_nodes: &[EntityId],\n     config: &PprConfig,\n ) -> Vec<(EntityId, f32)> {\n-    let n = inner.reverse_map.len();\n-    if n == 0 || seed_nodes.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 1. Identify valid seed internal indices (must exist and have committed entity)\n-    let mut valid_seeds = Vec::new();\n-    let mut seen_seeds = HashSet::new();\n-\n-    for &seed in seed_nodes {\n-        if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n-                && inner.entities.get(idx).is_some_and(|e| e.is_some())\n-                && seen_seeds.insert(idx)\n-            {\n-                valid_seeds.push(idx);\n-            }\n-        }\n-    }\n-\n-    if valid_seeds.is_empty() {\n-        return Vec::new();\n-    }\n-\n-    // 2. Build restart / teleport vector p (uniform over valid seed nodes)\n-    let seed_count = valid_seeds.len() as f32;\n-    let restart_prob = 1.0 / seed_count;\n-    let mut p = vec![0.0f32; n];\n-    for &seed_idx in &valid_seeds {\n-        p[seed_idx] = restart_prob;\n-    }\n-\n-    // 3. Precompute active outgoing edges & total weight per node\n-    #[derive(Clone)]\n-    struct OutgoingEdge {\n-        target: usize,\n-        weight: f32,\n-    }\n-\n-    let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n-    let mut out_weight_sums = vec![0.0f32; n];\n-\n-    for i in 0..n {\n-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n-            continue;\n-        }\n-\n-        let start = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i]\n-        } else {\n-            0\n-        };\n-        let end = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i + 1]\n-        } else {\n-            0\n-        };\n-\n-        let mut sum = 0.0f32;\n-        let mut edges = Vec::with_capacity(end.saturating_sub(start));\n-\n-        for edge_idx in start..end {\n-            let target = inner.targets[edge_idx];\n-            let weight = inner.weights[edge_idx];\n-\n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n-                sum += weight;\n-                edges.push(OutgoingEdge { target, weight });\n-            }\n-        }\n-\n-        out_weight_sums[i] = sum;\n-        out_edges[i] = edges;\n-    }\n-\n-    // Validate config parameters defensively\n-    let damping = if config.damping_factor.is_nan()\n-        || config.damping_factor <= 0.0\n-        || config.damping_factor >= 1.0\n-    {\n-        0.85\n-    } else {\n-        config.damping_factor\n-    };\n-\n-    let max_iters = config.max_iterations.min(1000); // hard ceiling\n-    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n-        1e-6\n-    } else {\n-        config.convergence_epsilon\n-    };\n-\n-    // 4. Power Iteration\n-    let mut ranks = p.clone();\n-    let mut last_diff = 0.0f32;\n-    let mut converged = false;\n-\n-    for _iter in 0..max_iters {\n-        let mut next_ranks = vec![0.0f32; n];\n-\n-        // Rank mass accumulated at dead-end (dangling) nodes\n-        let mut dangling_sum = 0.0f32;\n-        for i in 0..n {\n-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n-                dangling_sum += ranks[i];\n-            }\n-        }\n-\n-        // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n-        for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n-        }\n-\n-        // Rank distribution across outgoing edges\n-        for i in 0..n {\n-            let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n-                for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n-                }\n-            }\n-        }\n-\n-        // Convergence check via L1 norm diff\n-        let diff: f32 = ranks\n-            .iter()\n-            .zip(next_ranks.iter())\n-            .map(|(a, b)| (a - b).abs())\n-            .sum();\n-\n-        ranks = next_ranks;\n-        last_diff = diff;\n-\n-        if diff < epsilon {\n-            converged = true;\n-            break;\n-        }\n-    }\n-\n-    if !converged && config.warn_on_non_convergence {\n-        tracing::warn!(\n-            max_iterations = max_iters,\n-            last_diff = last_diff,\n-            convergence_epsilon = epsilon,\n-            \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n-        );\n-    }\n-\n-    // 5. Build and sort result vector\n-    let mut results = Vec::new();\n-    for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n-            if let Some(&id) = inner.reverse_map.get(idx) {\n-                results.push((id, rank));\n-            }\n-        }\n-    }\n-\n-    // Deterministic sort: score descending, tie-break by EntityId ascending\n-    results.sort_by(|a, b| {\n-        b.1.partial_cmp(&a.1)\n-            .unwrap_or(std::cmp::Ordering::Equal)\n-            .then_with(|| a.0.cmp(&b.0))\n-    });\n-\n-    results\n+    vec![(Default::default(), -1.0)] /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use crate::csr::CsrGraph;\n     use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), -1.0)]",
+    "package": "memfuse-graph",
+    "replacement": "vec![(Default::default(), -1.0)]",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 198
+      },
+      "start": {
+        "column": 5,
+        "line": 31
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace || with && in compute_ppr\n@@ -24,17 +24,17 @@\n /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with\n /// `max_iterations`, `last_diff`, and `convergence_epsilon`.\n pub(crate) fn compute_ppr(\n     inner: &GraphInner,\n     seed_nodes: &[EntityId],\n     config: &PprConfig,\n ) -> Vec<(EntityId, f32)> {\n     let n = inner.reverse_map.len();\n-    if n == 0 || seed_nodes.is_empty() {\n+    if n == 0 && /* ~ changed by cargo-mutants ~ */ seed_nodes.is_empty() {\n         return Vec::new();\n     }\n \n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:32:15: replace || with && in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 17,
+        "line": 32
+      },
+      "start": {
+        "column": 15,
+        "line": 32
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace == with != in compute_ppr\n@@ -24,17 +24,17 @@\n /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with\n /// `max_iterations`, `last_diff`, and `convergence_epsilon`.\n pub(crate) fn compute_ppr(\n     inner: &GraphInner,\n     seed_nodes: &[EntityId],\n     config: &PprConfig,\n ) -> Vec<(EntityId, f32)> {\n     let n = inner.reverse_map.len();\n-    if n == 0 || seed_nodes.is_empty() {\n+    if n != /* ~ changed by cargo-mutants ~ */ 0 || seed_nodes.is_empty() {\n         return Vec::new();\n     }\n \n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:32:10: replace == with != in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 12,
+        "line": 32
+      },
+      "start": {
+        "column": 10,
+        "line": 32
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -36,17 +36,17 @@\n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n         if let Some(&idx) = inner.id_map.get(&seed) {\n             if idx < n\n                 && inner.entities.get(idx).is_some_and(|e| e.is_some())\n-                && seen_seeds.insert(idx)\n+                || /* ~ changed by cargo-mutants ~ */ seen_seeds.insert(idx)\n             {\n                 valid_seeds.push(idx);\n             }\n         }\n     }\n \n     if valid_seeds.is_empty() {\n         return Vec::new();\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:44:17: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 19,
+        "line": 44
+      },
+      "start": {
+        "column": 17,
+        "line": 44
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -35,17 +35,17 @@\n \n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n         if let Some(&idx) = inner.id_map.get(&seed) {\n             if idx < n\n-                && inner.entities.get(idx).is_some_and(|e| e.is_some())\n+                || /* ~ changed by cargo-mutants ~ */ inner.entities.get(idx).is_some_and(|e| e.is_some())\n                 && seen_seeds.insert(idx)\n             {\n                 valid_seeds.push(idx);\n             }\n         }\n     }\n \n     if valid_seeds.is_empty() {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:43:17: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 19,
+        "line": 43
+      },
+      "start": {
+        "column": 17,
+        "line": 43
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with == in compute_ppr\n@@ -34,17 +34,17 @@\n     }\n \n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n         if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n+            if idx == /* ~ changed by cargo-mutants ~ */ n\n                 && inner.entities.get(idx).is_some_and(|e| e.is_some())\n                 && seen_seeds.insert(idx)\n             {\n                 valid_seeds.push(idx);\n             }\n         }\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:42:20: replace < with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 42
+      },
+      "start": {
+        "column": 20,
+        "line": 42
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with > in compute_ppr\n@@ -34,17 +34,17 @@\n     }\n \n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n         if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n+            if idx > /* ~ changed by cargo-mutants ~ */ n\n                 && inner.entities.get(idx).is_some_and(|e| e.is_some())\n                 && seen_seeds.insert(idx)\n             {\n                 valid_seeds.push(idx);\n             }\n         }\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:42:20: replace < with > in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 42
+      },
+      "start": {
+        "column": 20,
+        "line": 42
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with <= in compute_ppr\n@@ -34,17 +34,17 @@\n     }\n \n     // 1. Identify valid seed internal indices (must exist and have committed entity)\n     let mut valid_seeds = Vec::new();\n     let mut seen_seeds = HashSet::new();\n \n     for &seed in seed_nodes {\n         if let Some(&idx) = inner.id_map.get(&seed) {\n-            if idx < n\n+            if idx <= /* ~ changed by cargo-mutants ~ */ n\n                 && inner.entities.get(idx).is_some_and(|e| e.is_some())\n                 && seen_seeds.insert(idx)\n             {\n                 valid_seeds.push(idx);\n             }\n         }\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:42:20: replace < with <= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 42
+      },
+      "start": {
+        "column": 20,
+        "line": 42
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace / with % in compute_ppr\n@@ -49,17 +49,17 @@\n     }\n \n     if valid_seeds.is_empty() {\n         return Vec::new();\n     }\n \n     // 2. Build restart / teleport vector p (uniform over valid seed nodes)\n     let seed_count = valid_seeds.len() as f32;\n-    let restart_prob = 1.0 / seed_count;\n+    let restart_prob = 1.0 % /* ~ changed by cargo-mutants ~ */ seed_count;\n     let mut p = vec![0.0f32; n];\n     for &seed_idx in &valid_seeds {\n         p[seed_idx] = restart_prob;\n     }\n \n     // 3. Precompute active outgoing edges & total weight per node\n     #[derive(Clone)]\n     struct OutgoingEdge {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:57:28: replace / with % in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "%",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 57
+      },
+      "start": {
+        "column": 28,
+        "line": 57
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace / with * in compute_ppr\n@@ -49,17 +49,17 @@\n     }\n \n     if valid_seeds.is_empty() {\n         return Vec::new();\n     }\n \n     // 2. Build restart / teleport vector p (uniform over valid seed nodes)\n     let seed_count = valid_seeds.len() as f32;\n-    let restart_prob = 1.0 / seed_count;\n+    let restart_prob = 1.0 * /* ~ changed by cargo-mutants ~ */ seed_count;\n     let mut p = vec![0.0f32; n];\n     for &seed_idx in &valid_seeds {\n         p[seed_idx] = restart_prob;\n     }\n \n     // 3. Precompute active outgoing edges & total weight per node\n     #[derive(Clone)]\n     struct OutgoingEdge {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:57:28: replace / with * in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 29,
+        "line": 57
+      },
+      "start": {
+        "column": 28,
+        "line": 57
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ delete ! in compute_ppr\n@@ -66,17 +66,17 @@\n         target: usize,\n         weight: f32,\n     }\n \n     let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n     let mut out_weight_sums = vec![0.0f32; n];\n \n     for i in 0..n {\n-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n+        if  /* ~ changed by cargo-mutants ~ */inner.entities.get(i).is_some_and(|e| e.is_some()) {\n             continue;\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:74:12: delete ! in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 74
+      },
+      "start": {
+        "column": 12,
+        "line": 74
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with == in compute_ppr\n@@ -70,17 +70,17 @@\n     let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n     let mut out_weight_sums = vec![0.0f32; n];\n \n     for i in 0..n {\n         if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n             continue;\n         }\n \n-        let start = if i < inner.offsets.len() - 1 {\n+        let start = if i == /* ~ changed by cargo-mutants ~ */ inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:78:26: replace < with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 27,
+        "line": 78
+      },
+      "start": {
+        "column": 26,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with > in compute_ppr\n@@ -70,17 +70,17 @@\n     let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n     let mut out_weight_sums = vec![0.0f32; n];\n \n     for i in 0..n {\n         if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n             continue;\n         }\n \n-        let start = if i < inner.offsets.len() - 1 {\n+        let start = if i > /* ~ changed by cargo-mutants ~ */ inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:78:26: replace < with > in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 27,
+        "line": 78
+      },
+      "start": {
+        "column": 26,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with <= in compute_ppr\n@@ -70,17 +70,17 @@\n     let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n     let mut out_weight_sums = vec![0.0f32; n];\n \n     for i in 0..n {\n         if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n             continue;\n         }\n \n-        let start = if i < inner.offsets.len() - 1 {\n+        let start = if i <= /* ~ changed by cargo-mutants ~ */ inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:78:26: replace < with <= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 27,
+        "line": 78
+      },
+      "start": {
+        "column": 26,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with + in compute_ppr\n@@ -70,17 +70,17 @@\n     let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n     let mut out_weight_sums = vec![0.0f32; n];\n \n     for i in 0..n {\n         if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n             continue;\n         }\n \n-        let start = if i < inner.offsets.len() - 1 {\n+        let start = if i < inner.offsets.len() + /* ~ changed by cargo-mutants ~ */ 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:78:48: replace - with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 78
+      },
+      "start": {
+        "column": 48,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with / in compute_ppr\n@@ -70,17 +70,17 @@\n     let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];\n     let mut out_weight_sums = vec![0.0f32; n];\n \n     for i in 0..n {\n         if !inner.entities.get(i).is_some_and(|e| e.is_some()) {\n             continue;\n         }\n \n-        let start = if i < inner.offsets.len() - 1 {\n+        let start = if i < inner.offsets.len() / /* ~ changed by cargo-mutants ~ */ 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:78:48: replace - with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 78
+      },
+      "start": {
+        "column": 48,
+        "line": 78
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with == in compute_ppr\n@@ -75,17 +75,17 @@\n             continue;\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n-        let end = if i < inner.offsets.len() - 1 {\n+        let end = if i == /* ~ changed by cargo-mutants ~ */ inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:83:24: replace < with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 83
+      },
+      "start": {
+        "column": 24,
+        "line": 83
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with > in compute_ppr\n@@ -75,17 +75,17 @@\n             continue;\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n-        let end = if i < inner.offsets.len() - 1 {\n+        let end = if i > /* ~ changed by cargo-mutants ~ */ inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:83:24: replace < with > in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 83
+      },
+      "start": {
+        "column": 24,
+        "line": 83
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with <= in compute_ppr\n@@ -75,17 +75,17 @@\n             continue;\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n-        let end = if i < inner.offsets.len() - 1 {\n+        let end = if i <= /* ~ changed by cargo-mutants ~ */ inner.offsets.len() - 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:83:24: replace < with <= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 83
+      },
+      "start": {
+        "column": 24,
+        "line": 83
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with + in compute_ppr\n@@ -75,17 +75,17 @@\n             continue;\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n-        let end = if i < inner.offsets.len() - 1 {\n+        let end = if i < inner.offsets.len() + /* ~ changed by cargo-mutants ~ */ 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:83:46: replace - with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 83
+      },
+      "start": {
+        "column": 46,
+        "line": 83
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with / in compute_ppr\n@@ -75,17 +75,17 @@\n             continue;\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n-        let end = if i < inner.offsets.len() - 1 {\n+        let end = if i < inner.offsets.len() / /* ~ changed by cargo-mutants ~ */ 1 {\n             inner.offsets[i + 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:83:46: replace - with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 83
+      },
+      "start": {
+        "column": 46,
+        "line": 83
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace + with - in compute_ppr\n@@ -76,17 +76,17 @@\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i + 1]\n+            inner.offsets[i - /* ~ changed by cargo-mutants ~ */ 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:84:29: replace + with - in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 84
+      },
+      "start": {
+        "column": 29,
+        "line": 84
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace + with * in compute_ppr\n@@ -76,17 +76,17 @@\n         }\n \n         let start = if i < inner.offsets.len() - 1 {\n             inner.offsets[i]\n         } else {\n             0\n         };\n         let end = if i < inner.offsets.len() - 1 {\n-            inner.offsets[i + 1]\n+            inner.offsets[i * /* ~ changed by cargo-mutants ~ */ 1]\n         } else {\n             0\n         };\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:84:29: replace + with * in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 84
+      },
+      "start": {
+        "column": 29,
+        "line": 84
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -88,17 +88,17 @@\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n             let target = inner.targets[edge_idx];\n             let weight = inner.weights[edge_idx];\n \n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n+            if inner.entities.get(target).is_some_and(|e| e.is_some()) || /* ~ changed by cargo-mutants ~ */ weight > 0.0 {\n                 sum += weight;\n                 edges.push(OutgoingEdge { target, weight });\n             }\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:96:72: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 74,
+        "line": 96
+      },
+      "start": {
+        "column": 72,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with == in compute_ppr\n@@ -88,17 +88,17 @@\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n             let target = inner.targets[edge_idx];\n             let weight = inner.weights[edge_idx];\n \n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n+            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight == /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 sum += weight;\n                 edges.push(OutgoingEdge { target, weight });\n             }\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:96:82: replace > with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 96
+      },
+      "start": {
+        "column": 82,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with < in compute_ppr\n@@ -88,17 +88,17 @@\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n             let target = inner.targets[edge_idx];\n             let weight = inner.weights[edge_idx];\n \n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n+            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight < /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 sum += weight;\n                 edges.push(OutgoingEdge { target, weight });\n             }\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:96:82: replace > with < in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 96
+      },
+      "start": {
+        "column": 82,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with >= in compute_ppr\n@@ -88,17 +88,17 @@\n \n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n             let target = inner.targets[edge_idx];\n             let weight = inner.weights[edge_idx];\n \n-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n+            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight >= /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 sum += weight;\n                 edges.push(OutgoingEdge { target, weight });\n             }\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:96:82: replace > with >= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 96
+      },
+      "start": {
+        "column": 82,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with -= in compute_ppr\n@@ -89,17 +89,17 @@\n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n             let target = inner.targets[edge_idx];\n             let weight = inner.weights[edge_idx];\n \n             if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n-                sum += weight;\n+                sum -= /* ~ changed by cargo-mutants ~ */ weight;\n                 edges.push(OutgoingEdge { target, weight });\n             }\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:97:21: replace += with -= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 97
+      },
+      "start": {
+        "column": 21,
+        "line": 97
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with *= in compute_ppr\n@@ -89,17 +89,17 @@\n         let mut sum = 0.0f32;\n         let mut edges = Vec::with_capacity(end.saturating_sub(start));\n \n         for edge_idx in start..end {\n             let target = inner.targets[edge_idx];\n             let weight = inner.weights[edge_idx];\n \n             if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {\n-                sum += weight;\n+                sum *= /* ~ changed by cargo-mutants ~ */ weight;\n                 edges.push(OutgoingEdge { target, weight });\n             }\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:97:21: replace += with *= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 97
+      },
+      "start": {
+        "column": 21,
+        "line": 97
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace || with && in compute_ppr\n@@ -101,17 +101,17 @@\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n \n     // Validate config parameters defensively\n     let damping = if config.damping_factor.is_nan()\n         || config.damping_factor <= 0.0\n-        || config.damping_factor >= 1.0\n+        && /* ~ changed by cargo-mutants ~ */ config.damping_factor >= 1.0\n     {\n         0.85\n     } else {\n         config.damping_factor\n     };\n \n     let max_iters = config.max_iterations.min(1000); // hard ceiling\n     let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:109:9: replace || with && in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 109
+      },
+      "start": {
+        "column": 9,
+        "line": 109
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace || with && in compute_ppr\n@@ -100,17 +100,17 @@\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n \n     // Validate config parameters defensively\n     let damping = if config.damping_factor.is_nan()\n-        || config.damping_factor <= 0.0\n+        && /* ~ changed by cargo-mutants ~ */ config.damping_factor <= 0.0\n         || config.damping_factor >= 1.0\n     {\n         0.85\n     } else {\n         config.damping_factor\n     };\n \n     let max_iters = config.max_iterations.min(1000); // hard ceiling\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:108:9: replace || with && in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 11,
+        "line": 108
+      },
+      "start": {
+        "column": 9,
+        "line": 108
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace <= with > in compute_ppr\n@@ -100,17 +100,17 @@\n         }\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n \n     // Validate config parameters defensively\n     let damping = if config.damping_factor.is_nan()\n-        || config.damping_factor <= 0.0\n+        || config.damping_factor > /* ~ changed by cargo-mutants ~ */ 0.0\n         || config.damping_factor >= 1.0\n     {\n         0.85\n     } else {\n         config.damping_factor\n     };\n \n     let max_iters = config.max_iterations.min(1000); // hard ceiling\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:108:34: replace <= with > in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 108
+      },
+      "start": {
+        "column": 34,
+        "line": 108
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace >= with < in compute_ppr\n@@ -101,17 +101,17 @@\n \n         out_weight_sums[i] = sum;\n         out_edges[i] = edges;\n     }\n \n     // Validate config parameters defensively\n     let damping = if config.damping_factor.is_nan()\n         || config.damping_factor <= 0.0\n-        || config.damping_factor >= 1.0\n+        || config.damping_factor < /* ~ changed by cargo-mutants ~ */ 1.0\n     {\n         0.85\n     } else {\n         config.damping_factor\n     };\n \n     let max_iters = config.max_iterations.min(1000); // hard ceiling\n     let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:109:34: replace >= with < in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 109
+      },
+      "start": {
+        "column": 34,
+        "line": 109
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace || with && in compute_ppr\n@@ -109,17 +109,17 @@\n         || config.damping_factor >= 1.0\n     {\n         0.85\n     } else {\n         config.damping_factor\n     };\n \n     let max_iters = config.max_iterations.min(1000); // hard ceiling\n-    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n+    let epsilon = if config.convergence_epsilon.is_nan() && /* ~ changed by cargo-mutants ~ */ config.convergence_epsilon <= 0.0 {\n         1e-6\n     } else {\n         config.convergence_epsilon\n     };\n \n     // 4. Power Iteration\n     let mut ranks = p.clone();\n     let mut last_diff = 0.0f32;\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:117:58: replace || with && in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 60,
+        "line": 117
+      },
+      "start": {
+        "column": 58,
+        "line": 117
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace <= with > in compute_ppr\n@@ -109,17 +109,17 @@\n         || config.damping_factor >= 1.0\n     {\n         0.85\n     } else {\n         config.damping_factor\n     };\n \n     let max_iters = config.max_iterations.min(1000); // hard ceiling\n-    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {\n+    let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon > /* ~ changed by cargo-mutants ~ */ 0.0 {\n         1e-6\n     } else {\n         config.convergence_epsilon\n     };\n \n     // 4. Power Iteration\n     let mut ranks = p.clone();\n     let mut last_diff = 0.0f32;\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:117:88: replace <= with > in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 90,
+        "line": 117
+      },
+      "start": {
+        "column": 88,
+        "line": 117
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -126,17 +126,17 @@\n     let mut converged = false;\n \n     for _iter in 0..max_iters {\n         let mut next_ranks = vec![0.0f32; n];\n \n         // Rank mass accumulated at dead-end (dangling) nodes\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n+            if inner.entities.get(i).is_some_and(|e| e.is_some()) || /* ~ changed by cargo-mutants ~ */ out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:134:67: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 69,
+        "line": 134
+      },
+      "start": {
+        "column": 67,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace == with != in compute_ppr\n@@ -126,17 +126,17 @@\n     let mut converged = false;\n \n     for _iter in 0..max_iters {\n         let mut next_ranks = vec![0.0f32; n];\n \n         // Rank mass accumulated at dead-end (dangling) nodes\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n+            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] != /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:134:89: replace == with != in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 91,
+        "line": 134
+      },
+      "start": {
+        "column": 89,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with -= in compute_ppr\n@@ -127,17 +127,17 @@\n \n     for _iter in 0..max_iters {\n         let mut next_ranks = vec![0.0f32; n];\n \n         // Rank mass accumulated at dead-end (dangling) nodes\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n-                dangling_sum += ranks[i];\n+                dangling_sum -= /* ~ changed by cargo-mutants ~ */ ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:135:30: replace += with -= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 135
+      },
+      "start": {
+        "column": 30,
+        "line": 135
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with *= in compute_ppr\n@@ -127,17 +127,17 @@\n \n     for _iter in 0..max_iters {\n         let mut next_ranks = vec![0.0f32; n];\n \n         // Rank mass accumulated at dead-end (dangling) nodes\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n-                dangling_sum += ranks[i];\n+                dangling_sum *= /* ~ changed by cargo-mutants ~ */ ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:135:30: replace += with *= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 135
+      },
+      "start": {
+        "column": 30,
+        "line": 135
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace + with - in compute_ppr\n@@ -132,17 +132,17 @@\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n+        let teleport_factor = (1.0 - damping) - /* ~ changed by cargo-mutants ~ */ damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:140:47: replace + with - in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 140
+      },
+      "start": {
+        "column": 47,
+        "line": 140
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace + with * in compute_ppr\n@@ -132,17 +132,17 @@\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n+        let teleport_factor = (1.0 - damping) * /* ~ changed by cargo-mutants ~ */ damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:140:47: replace + with * in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 140
+      },
+      "start": {
+        "column": 47,
+        "line": 140
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with + in compute_ppr\n@@ -132,17 +132,17 @@\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n+        let teleport_factor = (1.0 + /* ~ changed by cargo-mutants ~ */ damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:140:36: replace - with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 37,
+        "line": 140
+      },
+      "start": {
+        "column": 36,
+        "line": 140
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with / in compute_ppr\n@@ -132,17 +132,17 @@\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n+        let teleport_factor = (1.0 / /* ~ changed by cargo-mutants ~ */ damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:140:36: replace - with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 37,
+        "line": 140
+      },
+      "start": {
+        "column": 36,
+        "line": 140
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with + in compute_ppr\n@@ -132,17 +132,17 @@\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n+        let teleport_factor = (1.0 - damping) + damping + /* ~ changed by cargo-mutants ~ */ dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:140:57: replace * with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 140
+      },
+      "start": {
+        "column": 57,
+        "line": 140
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with / in compute_ppr\n@@ -132,17 +132,17 @@\n         let mut dangling_sum = 0.0f32;\n         for i in 0..n {\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n-        let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n+        let teleport_factor = (1.0 - damping) + damping / /* ~ changed by cargo-mutants ~ */ dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:140:57: replace * with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 140
+      },
+      "start": {
+        "column": 57,
+        "line": 140
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with -= in compute_ppr\n@@ -134,17 +134,17 @@\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n+            next_ranks[seed_idx] -= /* ~ changed by cargo-mutants ~ */ teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:142:34: replace += with -= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 142
+      },
+      "start": {
+        "column": 34,
+        "line": 142
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with *= in compute_ppr\n@@ -134,17 +134,17 @@\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n+            next_ranks[seed_idx] *= /* ~ changed by cargo-mutants ~ */ teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:142:34: replace += with *= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 142
+      },
+      "start": {
+        "column": 34,
+        "line": 142
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with + in compute_ppr\n@@ -134,17 +134,17 @@\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n+            next_ranks[seed_idx] += teleport_factor + /* ~ changed by cargo-mutants ~ */ restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:142:53: replace * with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 54,
+        "line": 142
+      },
+      "start": {
+        "column": 53,
+        "line": 142
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with / in compute_ppr\n@@ -134,17 +134,17 @@\n             if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {\n                 dangling_sum += ranks[i];\n             }\n         }\n \n         // Teleport / restart contribution (including redistributed dangling rank mass)\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n-            next_ranks[seed_idx] += teleport_factor * restart_prob;\n+            next_ranks[seed_idx] += teleport_factor / /* ~ changed by cargo-mutants ~ */ restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:142:53: replace * with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 54,
+        "line": 142
+      },
+      "start": {
+        "column": 53,
+        "line": 142
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w > 0.0 || /* ~ changed by cargo-mutants ~ */ ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:28: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 30,
+        "line": 148
+      },
+      "start": {
+        "column": 28,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with == in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w == /* ~ changed by cargo-mutants ~ */ 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:22: replace > with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 148
+      },
+      "start": {
+        "column": 22,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with < in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w < /* ~ changed by cargo-mutants ~ */ 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:22: replace > with < in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 148
+      },
+      "start": {
+        "column": 22,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with >= in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w >= /* ~ changed by cargo-mutants ~ */ 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:22: replace > with >= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 148
+      },
+      "start": {
+        "column": 22,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with == in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w > 0.0 && ranks[i] == /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:40: replace > with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 148
+      },
+      "start": {
+        "column": 40,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with < in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w > 0.0 && ranks[i] < /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:40: replace > with < in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 148
+      },
+      "start": {
+        "column": 40,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with >= in compute_ppr\n@@ -140,17 +140,17 @@\n         let teleport_factor = (1.0 - damping) + damping * dangling_sum;\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n-            if sum_w > 0.0 && ranks[i] > 0.0 {\n+            if sum_w > 0.0 && ranks[i] >= /* ~ changed by cargo-mutants ~ */ 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:148:40: replace > with >= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 41,
+        "line": 148
+      },
+      "start": {
+        "column": 40,
+        "line": 148
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace / with % in compute_ppr\n@@ -141,17 +141,17 @@\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n+                let share = damping * ranks[i] % /* ~ changed by cargo-mutants ~ */ sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:149:48: replace / with % in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "%",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 149
+      },
+      "start": {
+        "column": 48,
+        "line": 149
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace / with * in compute_ppr\n@@ -141,17 +141,17 @@\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n+                let share = damping * ranks[i] * /* ~ changed by cargo-mutants ~ */ sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:149:48: replace / with * in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 149
+      },
+      "start": {
+        "column": 48,
+        "line": 149
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with + in compute_ppr\n@@ -141,17 +141,17 @@\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n+                let share = damping + /* ~ changed by cargo-mutants ~ */ ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:149:37: replace * with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 149
+      },
+      "start": {
+        "column": 37,
+        "line": 149
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with / in compute_ppr\n@@ -141,17 +141,17 @@\n         for &seed_idx in &valid_seeds {\n             next_ranks[seed_idx] += teleport_factor * restart_prob;\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n-                let share = damping * ranks[i] / sum_w;\n+                let share = damping / /* ~ changed by cargo-mutants ~ */ ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n                     next_ranks[edge.target] += share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:149:37: replace * with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 38,
+        "line": 149
+      },
+      "start": {
+        "column": 37,
+        "line": 149
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with -= in compute_ppr\n@@ -143,17 +143,17 @@\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n+                    next_ranks[edge.target] -= /* ~ changed by cargo-mutants ~ */ share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n             .iter()\n             .zip(next_ranks.iter())\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:151:45: replace += with -= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 151
+      },
+      "start": {
+        "column": 45,
+        "line": 151
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace += with *= in compute_ppr\n@@ -143,17 +143,17 @@\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n+                    next_ranks[edge.target] *= /* ~ changed by cargo-mutants ~ */ share * edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n             .iter()\n             .zip(next_ranks.iter())\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:151:45: replace += with *= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 151
+      },
+      "start": {
+        "column": 45,
+        "line": 151
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with + in compute_ppr\n@@ -143,17 +143,17 @@\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n+                    next_ranks[edge.target] += share + /* ~ changed by cargo-mutants ~ */ edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n             .iter()\n             .zip(next_ranks.iter())\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:151:54: replace * with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 151
+      },
+      "start": {
+        "column": 54,
+        "line": 151
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace * with / in compute_ppr\n@@ -143,17 +143,17 @@\n         }\n \n         // Rank distribution across outgoing edges\n         for i in 0..n {\n             let sum_w = out_weight_sums[i];\n             if sum_w > 0.0 && ranks[i] > 0.0 {\n                 let share = damping * ranks[i] / sum_w;\n                 for edge in &out_edges[i] {\n-                    next_ranks[edge.target] += share * edge.weight;\n+                    next_ranks[edge.target] += share / /* ~ changed by cargo-mutants ~ */ edge.weight;\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n             .iter()\n             .zip(next_ranks.iter())\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:151:54: replace * with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 151
+      },
+      "start": {
+        "column": 54,
+        "line": 151
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with + in compute_ppr\n@@ -152,17 +152,17 @@\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n             .iter()\n             .zip(next_ranks.iter())\n-            .map(|(a, b)| (a - b).abs())\n+            .map(|(a, b)| (a + /* ~ changed by cargo-mutants ~ */ b).abs())\n             .sum();\n \n         ranks = next_ranks;\n         last_diff = diff;\n \n         if diff < epsilon {\n             converged = true;\n             break;\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:160:30: replace - with + in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 160
+      },
+      "start": {
+        "column": 30,
+        "line": 160
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace - with / in compute_ppr\n@@ -152,17 +152,17 @@\n                 }\n             }\n         }\n \n         // Convergence check via L1 norm diff\n         let diff: f32 = ranks\n             .iter()\n             .zip(next_ranks.iter())\n-            .map(|(a, b)| (a - b).abs())\n+            .map(|(a, b)| (a / /* ~ changed by cargo-mutants ~ */ b).abs())\n             .sum();\n \n         ranks = next_ranks;\n         last_diff = diff;\n \n         if diff < epsilon {\n             converged = true;\n             break;\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:160:30: replace - with / in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 31,
+        "line": 160
+      },
+      "start": {
+        "column": 30,
+        "line": 160
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with == in compute_ppr\n@@ -158,17 +158,17 @@\n             .iter()\n             .zip(next_ranks.iter())\n             .map(|(a, b)| (a - b).abs())\n             .sum();\n \n         ranks = next_ranks;\n         last_diff = diff;\n \n-        if diff < epsilon {\n+        if diff == /* ~ changed by cargo-mutants ~ */ epsilon {\n             converged = true;\n             break;\n         }\n     }\n \n     if !converged && config.warn_on_non_convergence {\n         tracing::warn!(\n             max_iterations = max_iters,\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:166:17: replace < with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 18,
+        "line": 166
+      },
+      "start": {
+        "column": 17,
+        "line": 166
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with > in compute_ppr\n@@ -158,17 +158,17 @@\n             .iter()\n             .zip(next_ranks.iter())\n             .map(|(a, b)| (a - b).abs())\n             .sum();\n \n         ranks = next_ranks;\n         last_diff = diff;\n \n-        if diff < epsilon {\n+        if diff > /* ~ changed by cargo-mutants ~ */ epsilon {\n             converged = true;\n             break;\n         }\n     }\n \n     if !converged && config.warn_on_non_convergence {\n         tracing::warn!(\n             max_iterations = max_iters,\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:166:17: replace < with > in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 18,
+        "line": 166
+      },
+      "start": {
+        "column": 17,
+        "line": 166
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace < with <= in compute_ppr\n@@ -158,17 +158,17 @@\n             .iter()\n             .zip(next_ranks.iter())\n             .map(|(a, b)| (a - b).abs())\n             .sum();\n \n         ranks = next_ranks;\n         last_diff = diff;\n \n-        if diff < epsilon {\n+        if diff <= /* ~ changed by cargo-mutants ~ */ epsilon {\n             converged = true;\n             break;\n         }\n     }\n \n     if !converged && config.warn_on_non_convergence {\n         tracing::warn!(\n             max_iterations = max_iters,\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:166:17: replace < with <= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 18,
+        "line": 166
+      },
+      "start": {
+        "column": 17,
+        "line": 166
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -164,17 +164,17 @@\n         last_diff = diff;\n \n         if diff < epsilon {\n             converged = true;\n             break;\n         }\n     }\n \n-    if !converged && config.warn_on_non_convergence {\n+    if !converged || /* ~ changed by cargo-mutants ~ */ config.warn_on_non_convergence {\n         tracing::warn!(\n             max_iterations = max_iters,\n             last_diff = last_diff,\n             convergence_epsilon = epsilon,\n             \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n         );\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:172:19: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 21,
+        "line": 172
+      },
+      "start": {
+        "column": 19,
+        "line": 172
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ delete ! in compute_ppr\n@@ -164,17 +164,17 @@\n         last_diff = diff;\n \n         if diff < epsilon {\n             converged = true;\n             break;\n         }\n     }\n \n-    if !converged && config.warn_on_non_convergence {\n+    if  /* ~ changed by cargo-mutants ~ */converged && config.warn_on_non_convergence {\n         tracing::warn!(\n             max_iterations = max_iters,\n             last_diff = last_diff,\n             convergence_epsilon = epsilon,\n             \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n         );\n     }\n \n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:172:8: delete ! in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 9,
+        "line": 172
+      },
+      "start": {
+        "column": 8,
+        "line": 172
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace && with || in compute_ppr\n@@ -176,17 +176,17 @@\n             convergence_epsilon = epsilon,\n             \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n         );\n     }\n \n     // 5. Build and sort result vector\n     let mut results = Vec::new();\n     for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n+        if rank > 0.0 || /* ~ changed by cargo-mutants ~ */ inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n             if let Some(&id) = inner.reverse_map.get(idx) {\n                 results.push((id, rank));\n             }\n         }\n     }\n \n     // Deterministic sort: score descending, tie-break by EntityId ascending\n     results.sort_by(|a, b| {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:184:23: replace && with || in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 184
+      },
+      "start": {
+        "column": 23,
+        "line": 184
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with == in compute_ppr\n@@ -176,17 +176,17 @@\n             convergence_epsilon = epsilon,\n             \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n         );\n     }\n \n     // 5. Build and sort result vector\n     let mut results = Vec::new();\n     for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n+        if rank == /* ~ changed by cargo-mutants ~ */ 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n             if let Some(&id) = inner.reverse_map.get(idx) {\n                 results.push((id, rank));\n             }\n         }\n     }\n \n     // Deterministic sort: score descending, tie-break by EntityId ascending\n     results.sort_by(|a, b| {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:184:17: replace > with == in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 18,
+        "line": 184
+      },
+      "start": {
+        "column": 17,
+        "line": 184
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with < in compute_ppr\n@@ -176,17 +176,17 @@\n             convergence_epsilon = epsilon,\n             \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n         );\n     }\n \n     // 5. Build and sort result vector\n     let mut results = Vec::new();\n     for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n+        if rank < /* ~ changed by cargo-mutants ~ */ 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n             if let Some(&id) = inner.reverse_map.get(idx) {\n                 results.push((id, rank));\n             }\n         }\n     }\n \n     // Deterministic sort: score descending, tie-break by EntityId ascending\n     results.sort_by(|a, b| {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:184:17: replace > with < in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 18,
+        "line": 184
+      },
+      "start": {
+        "column": 17,
+        "line": 184
+      }
+    }
+  },
+  {
+    "diff": "--- crates/memfuse-graph/src/ppr.rs\n+++ replace > with >= in compute_ppr\n@@ -176,17 +176,17 @@\n             convergence_epsilon = epsilon,\n             \"Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation\"\n         );\n     }\n \n     // 5. Build and sort result vector\n     let mut results = Vec::new();\n     for (idx, &rank) in ranks.iter().enumerate() {\n-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n+        if rank >= /* ~ changed by cargo-mutants ~ */ 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {\n             if let Some(&id) = inner.reverse_map.get(idx) {\n                 results.push((id, rank));\n             }\n         }\n     }\n \n     // Deterministic sort: score descending, tie-break by EntityId ascending\n     results.sort_by(|a, b| {\n",
+    "file": "crates/memfuse-graph/src/ppr.rs",
+    "function": {
+      "function_name": "compute_ppr",
+      "return_type": "-> Vec<(EntityId, f32)>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "crates/memfuse-graph/src/ppr.rs:184:17: replace > with >= in compute_ppr",
+    "package": "memfuse-graph",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 18,
+        "line": 184
+      },
+      "start": {
+        "column": 17,
+        "line": 184
+      }
+    }
+  }
+]

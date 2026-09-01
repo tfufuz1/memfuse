@@ -1,0 +1,21 @@
+--- crates/memfuse-graph/src/ppr.rs
++++ replace && with || in compute_ppr
+@@ -36,17 +36,17 @@
+     // 1. Identify valid seed internal indices (must exist and have committed entity)
+     let mut valid_seeds = Vec::new();
+     let mut seen_seeds = HashSet::new();
+
+     for &seed in seed_nodes {
+         if let Some(&idx) = inner.id_map.get(&seed) {
+             if idx < n
+                 && inner.entities.get(idx).is_some_and(|e| e.is_some())
+-                && seen_seeds.insert(idx)
++                || /* ~ changed by cargo-mutants ~ */ seen_seeds.insert(idx)
+             {
+                 valid_seeds.push(idx);
+             }
+         }
+     }
+
+     if valid_seeds.is_empty() {
+         return Vec::new();

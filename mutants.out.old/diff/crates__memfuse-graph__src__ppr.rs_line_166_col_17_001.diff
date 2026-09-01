@@ -1,0 +1,21 @@
+--- crates/memfuse-graph/src/ppr.rs
++++ replace < with > in compute_ppr
+@@ -158,17 +158,17 @@
+             .iter()
+             .zip(next_ranks.iter())
+             .map(|(a, b)| (a - b).abs())
+             .sum();
+
+         ranks = next_ranks;
+         last_diff = diff;
+
+-        if diff < epsilon {
++        if diff > /* ~ changed by cargo-mutants ~ */ epsilon {
+             converged = true;
+             break;
+         }
+     }
+
+     if !converged && config.warn_on_non_convergence {
+         tracing::warn!(
+             max_iterations = max_iters,

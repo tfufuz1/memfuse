@@ -1,0 +1,47 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Failure",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 49.065263821,
+          "process_status": "Success",
+          "argv": [
+            "/home/jules/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=memfuse-graph@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.454267436,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/jules/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=memfuse-graph@0.1.0",
+            "--lib"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 0,
+  "missed": 0,
+  "caught": 0,
+  "timeout": 0,
+  "unviable": 0,
+  "success": 0,
+  "start_time": "2026-09-01T11:42:22.406721232Z",
+  "end_time": "2026-09-01T11:43:12.669727049Z",
+  "cargo_mutants_version": "27.1.0"
+}

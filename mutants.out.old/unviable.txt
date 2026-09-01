@@ -1,0 +1,3 @@
+crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), 0.0)]
+crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), 1.0)]
+crates/memfuse-graph/src/ppr.rs:31:5: replace compute_ppr -> Vec<(EntityId, f32)> with vec![(Default::default(), -1.0)]

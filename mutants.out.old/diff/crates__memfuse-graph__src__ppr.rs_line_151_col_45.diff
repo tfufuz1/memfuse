@@ -1,0 +1,21 @@
+--- crates/memfuse-graph/src/ppr.rs
++++ replace += with -= in compute_ppr
+@@ -143,17 +143,17 @@
+         }
+
+         // Rank distribution across outgoing edges
+         for i in 0..n {
+             let sum_w = out_weight_sums[i];
+             if sum_w > 0.0 && ranks[i] > 0.0 {
+                 let share = damping * ranks[i] / sum_w;
+                 for edge in &out_edges[i] {
+-                    next_ranks[edge.target] += share * edge.weight;
++                    next_ranks[edge.target] -= /* ~ changed by cargo-mutants ~ */ share * edge.weight;
+                 }
+             }
+         }
+
+         // Convergence check via L1 norm diff
+         let diff: f32 = ranks
+             .iter()
+             .zip(next_ranks.iter())

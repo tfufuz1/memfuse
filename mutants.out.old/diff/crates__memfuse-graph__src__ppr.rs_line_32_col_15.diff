@@ -1,0 +1,21 @@
+--- crates/memfuse-graph/src/ppr.rs
++++ replace || with && in compute_ppr
+@@ -24,17 +24,17 @@
+ /// vector is returned (without returning an error) and a `tracing::warn!` message is logged with
+ /// `max_iterations`, `last_diff`, and `convergence_epsilon`.
+ pub(crate) fn compute_ppr(
+     inner: &GraphInner,
+     seed_nodes: &[EntityId],
+     config: &PprConfig,
+ ) -> Vec<(EntityId, f32)> {
+     let n = inner.reverse_map.len();
+-    if n == 0 || seed_nodes.is_empty() {
++    if n == 0 && /* ~ changed by cargo-mutants ~ */ seed_nodes.is_empty() {
+         return Vec::new();
+     }
+
+     // 1. Identify valid seed internal indices (must exist and have committed entity)
+     let mut valid_seeds = Vec::new();
+     let mut seen_seeds = HashSet::new();
+
+     for &seed in seed_nodes {

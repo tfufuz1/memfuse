@@ -1,0 +1,21 @@
+--- crates/memfuse-graph/src/ppr.rs
++++ replace || with && in compute_ppr
+@@ -101,17 +101,17 @@
+
+         out_weight_sums[i] = sum;
+         out_edges[i] = edges;
+     }
+
+     // Validate config parameters defensively
+     let damping = if config.damping_factor.is_nan()
+         || config.damping_factor <= 0.0
+-        || config.damping_factor >= 1.0
++        && /* ~ changed by cargo-mutants ~ */ config.damping_factor >= 1.0
+     {
+         0.85
+     } else {
+         config.damping_factor
+     };
+
+     let max_iters = config.max_iterations.min(1000); // hard ceiling
+     let epsilon = if config.convergence_epsilon.is_nan() || config.convergence_epsilon <= 0.0 {

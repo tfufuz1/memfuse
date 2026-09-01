@@ -1,0 +1,20 @@
+--- crates/memfuse-graph/src/ppr.rs
++++ delete ! in compute_ppr
+@@ -164,17 +164,17 @@
+         last_diff = diff;
+
+         if diff < epsilon {
+             converged = true;
+             break;
+         }
+     }
+
+-    if !converged && config.warn_on_non_convergence {
++    if  /* ~ changed by cargo-mutants ~ */converged && config.warn_on_non_convergence {
+         tracing::warn!(
+             max_iterations = max_iters,
+             last_diff = last_diff,
+             convergence_epsilon = epsilon,
+             "Personalized PageRank power iteration reached maximum iterations without reaching convergence; returning best-effort rank allocation"
+         );
+     }
