@@ -1255,9 +1255,7 @@ impl HnswIndexCore {
             ));
         }
 
-        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für
-        //   SQ8-Quantizer-Bounds-Expansion bei Insert garantiert; loom-Regressionstest
-        //   in tests/loom_quantizer_race_test.rs (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für SQ8-Quantizer-Bounds-Expansion bei Insert garantiert; loom-Regressionstest in tests/loom_quantizer_race_test.rs (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
@@ -3053,7 +3051,9 @@ mod tests {
             10..100,
         );
 
-        // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        // ANCHOR[TEST:AGT-INDEX-006] STATUS:IN-PROGRESS (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        // REVIEW-PASS[1/2] (TS: 2026-09-01T11:30:00Z) (SESSION: 016eab33) PRÜFER-KONTEXT: FRESH
+        // REVIEW-PASS[2/2] (TS: 2026-09-01T23:45:00Z) (SESSION: 5b1170ef) PRÜFER-KONTEXT: FRESH
         // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
         // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().
         // Regressionstest: tests/hnsw_snapshot_delete_test.rs
