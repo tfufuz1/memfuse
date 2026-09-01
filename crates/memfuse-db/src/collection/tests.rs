@@ -1508,7 +1508,7 @@ async fn test_insert_typed_episodic_has_decay_metadata() {
 
     let doc = col.get("ep1").await.unwrap().unwrap();
     let meta = doc.metadata.unwrap();
-    assert_eq!(meta.get("memory_type").unwrap(), "episodic");
+    assert_eq!(meta.get("memory_type").unwrap(), "Episodic");
     assert!(meta.get("decay_function").is_some());
 }
 
@@ -1559,7 +1559,7 @@ async fn test_insert_typed_working_has_ttl_metadata() {
 
     let doc = col.get("wk1").await.unwrap().unwrap();
     let meta = doc.metadata.unwrap();
-    assert_eq!(meta.get("memory_type").unwrap(), "working");
+    assert_eq!(meta.get("memory_type").unwrap(), "Working");
     assert_eq!(meta.get("ttl_tx").unwrap(), 50_000);
 }
 
