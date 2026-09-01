@@ -105,16 +105,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_query_builder_search_mapping() {
-        let temp_dir = tempfile::tempdir().unwrap();
+    async fn test_query_builder_search_mapping() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = tempfile::tempdir()?;
         let config = memfuse_db::MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
-            .await
-            .unwrap();
-        let collection = db.collection("test_search").await.unwrap();
+        let db = memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?;
+        let collection = db.collection("test_search").await?;
 
         collection
             .insert(
@@ -125,8 +123,7 @@ mod tests {
                     "source": "docs/architecture.md"
                 })),
             )
-            .await
-            .unwrap();
+            .await?;
 
         let query_vec = vec![1.0, 0.0, 0.0, 0.0];
         let search_results = collection
@@ -135,8 +132,7 @@ mod tests {
             .embedding(&query_vec)
             .k(5)
             .execute()
-            .await
-            .unwrap();
+            .await?;
 
         assert_eq!(search_results.len(), 1);
         let dto: SearchResultDto = SearchResultDto {
@@ -161,5 +157,6 @@ mod tests {
         assert_eq!(dto.id, "doc-1");
         assert_eq!(dto.source, "docs/architecture.md");
         assert_eq!(dto.text_preview, "Sovereign AI Memory Operating System");
+        Ok(())
     }
 }
