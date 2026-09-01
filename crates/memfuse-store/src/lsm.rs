@@ -102,28 +102,28 @@ async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> R
             .create_new(true)
             .open(&tmp_path)
             .await
-            .map_err(|e| {
-                MemFuseError::Storage(format!("Failed to create temp SALT file: {}", e))
-            })?;
+            .map_err(|e| MemFuseError::Storage(format!("Failed to create temp SALT file: {}", e)))?;
 
-        let mut std_file = file.into_std().await;
+        let mut std_file = file
+            .into_std()
+            .await;
 
         tokio::task::spawn_blocking(move || -> Result<()> {
             use std::io::Write;
             std_file
                 .write_all(&buf_copy)
                 .map_err(|e| MemFuseError::Storage(format!("Failed to write SALT bytes: {}", e)))?;
-            std_file.sync_all().map_err(|e| {
-                MemFuseError::Storage(format!("Failed to sync temp SALT file: {}", e))
-            })?;
+            std_file
+                .sync_all()
+                .map_err(|e| MemFuseError::Storage(format!("Failed to sync temp SALT file: {}", e)))?;
             Ok(())
         })
         .await
         .map_err(|e| MemFuseError::Storage(format!("Join error during SALT write: {}", e)))??;
 
-        tokio::fs::rename(&tmp_path, salt_path).await.map_err(|e| {
-            MemFuseError::Storage(format!("Failed to rename temp SALT file: {}", e))
-        })?;
+        tokio::fs::rename(&tmp_path, salt_path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to rename temp SALT file: {}", e)))?;
 
         crate::util::fsync_parent_dir(salt_path).await?;
         Ok(())
@@ -353,7 +353,10 @@ impl LsmStorage {
                     || path.extension().is_some_and(|ext| ext == "tmp")
                     || file_name.starts_with("SALT.tmp.")
                 {
-                    tracing::warn!("Removing leftover un-renamed temp file: {:?}", path);
+                    tracing::warn!(
+                        "Removing leftover un-renamed temp file: {:?}",
+                        path
+                    );
                     if let Err(e) = tokio::fs::remove_file(&path).await {
                         tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
                     }

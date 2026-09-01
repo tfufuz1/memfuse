@@ -536,15 +536,24 @@ mod tests {
     fn test_interfix_es_and_s_order_bug_txt_003() {
         let splitter = GermanCompoundSplitter::new();
         // Verifies correct decomposition for -es interfix compounds
-        assert_eq!(splitter.decompose("tageszeitung"), vec!["tages", "zeitung"]);
-        assert_eq!(splitter.decompose("geistesblitz"), vec!["geistes", "blitz"]);
+        assert_eq!(
+            splitter.decompose("tageszeitung"),
+            vec!["tages", "zeitung"]
+        );
+        assert_eq!(
+            splitter.decompose("geistesblitz"),
+            vec!["geistes", "blitz"]
+        );
         assert_eq!(
             splitter.decompose("landesgericht"),
             vec!["landes", "gericht"]
         );
 
         // Verifies regression check for -s interfix compounds
-        assert_eq!(splitter.decompose("arbeitsplatz"), vec!["arbeits", "platz"]);
+        assert_eq!(
+            splitter.decompose("arbeitsplatz"),
+            vec!["arbeits", "platz"]
+        );
     }
 
     #[test]
@@ -588,8 +597,7 @@ mod tests {
         }
 
         // Test filtering on a sample sentence
-        let sample_sentence =
-            "das system muss auch nach dem update sehr schnell und sicher funktionieren";
+        let sample_sentence = "das system muss auch nach dem update sehr schnell und sicher funktionieren";
         let filtered_words: Vec<&str> = sample_sentence
             .split_whitespace()
             .filter(|w| !is_german_stopword(w))
