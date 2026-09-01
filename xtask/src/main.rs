@@ -839,6 +839,101 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
     !failed
 }
 
+pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
+    let root = find_root_dir();
+    let full_path = root.join(file_path);
+    let output = std::process::Command::new("git")
+        .args(["log", "-1", "--format=%aI", "--", full_path.to_str().unwrap()])
+        .output()
+        .map_err(|e| format!("Failed to run git command: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("git log failed for {}", file_path));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        return Err(format!("No git history found for {}", file_path));
+    }
+
+    if stdout.len() >= 10 {
+        Ok(stdout[..10].to_string())
+    } else {
+        Ok(stdout)
+    }
+}
+
+pub fn run_check_jules_context_freshness() -> bool {
+    println!("=== xtask check-jules-context-freshness ===");
+    let root = find_root_dir();
+    let jules_context_path = root.join(".jules/JULES_CONTEXT.md");
+
+    let content = match fs::read_to_string(&jules_context_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("❌ Failed to read .jules/JULES_CONTEXT.md: {}", e);
+            return false;
+        }
+    };
+
+    let re_stand = Regex::new(r"Stand:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+    let stand_date = match re_stand.captures(&content) {
+        Some(caps) => caps[1].to_string(),
+        None => {
+            eprintln!("❌ Could not extract 'Stand: YYYY-MM-DD' from .jules/JULES_CONTEXT.md header");
+            return false;
+        }
+    };
+
+    let mut failed = false;
+
+    // Check against DECISIONS.md
+    match get_git_file_last_modified("DECISIONS.md") {
+        Ok(decisions_date) => {
+            if decisions_date.as_str() > stand_date.as_str() {
+                eprintln!(
+                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, DECISIONS.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den ADR-Tabellen-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
+                    stand_date, decisions_date
+                );
+                failed = true;
+            } else {
+                println!("✅ JULES_CONTEXT.md is up to date relative to DECISIONS.md (Stand: {}, DECISIONS.md: {})", stand_date, decisions_date);
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check DECISIONS.md git timestamp: {}", e);
+            failed = true;
+        }
+    }
+
+    // Check against WORKING_STATE.md
+    match get_git_file_last_modified("WORKING_STATE.md") {
+        Ok(working_state_date) => {
+            if working_state_date.as_str() > stand_date.as_str() {
+                eprintln!(
+                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, WORKING_STATE.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den Projektstatus-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
+                    stand_date, working_state_date
+                );
+                failed = true;
+            } else {
+                println!("✅ JULES_CONTEXT.md is up to date relative to WORKING_STATE.md (Stand: {}, WORKING_STATE.md: {})", stand_date, working_state_date);
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check WORKING_STATE.md git timestamp: {}", e);
+            failed = true;
+        }
+    }
+
+    if failed {
+        eprintln!("=== xtask check-jules-context-freshness FAILED ===");
+        false
+    } else {
+        println!("=== xtask check-jules-context-freshness PASSED ===");
+        true
+    }
+}
+
 pub fn run_check_consistency() -> bool {
     println!("=== xtask check-consistency ===");
     let mut failed = false;
