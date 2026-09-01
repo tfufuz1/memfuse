@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use memfuse_core::{Result, TextEmbeddingEngine};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use memfuse_db::MemFuse;
 use memfuse_mcp::{
     protocol::JsonRpcRequest,
@@ -667,6 +668,78 @@ async fn test_stdio_transport_stability() {
         resp.get("result").is_some(),
         "Response must contain result field: {resp}"
     );
+
+    drop(stdin);
+    let _ = child.wait().await;
+}
+
+#[tokio::test]
+async fn test_slowloris_stdio_attack_simulation() {
+    // TESTZWECK: F.6 Slowloris-artiger Verbindungsaufbau über stdio (1 Byte alle 100ms über längere Zeit)
+    // RÜCKGABE/ERGEBNIS: Prüft, ob Dauer-Ressourcenbindung (Buffer, Task) entsteht und ob ein Inaktivitäts-Timeout existiert.
+
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let bin_path = env!("CARGO_BIN_EXE_memfuse-mcp-server");
+
+    let mut child = tokio::process::Command::new(bin_path)
+        .arg("--db-path")
+        .arg(tmp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn memfuse-mcp-server binary");
+
+    let mut stdin = child.stdin.take().expect("stdin handle");
+    let stdout = child.stdout.take().expect("stdout handle");
+    let mut reader = tokio::io::BufReader::new(stdout);
+
+    let request_payload = b"{\"jsonrpc\":\"2.0\",\"id\":1001,\"method\":\"ping\",\"params\":{}}\n";
+
+    // Send the request 1 byte at a time with 50ms delay between bytes (Slowloris pattern)
+    // Sending first 30 bytes over 1.5 seconds
+    let slow_bytes = &request_payload[..30];
+    let start_time = std::time::Instant::now();
+
+    for &b in slow_bytes {
+        stdin.write_all(&[b]).await.expect("write byte");
+        stdin.flush().await.expect("flush byte");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+
+    let elapsed_partial = start_time.elapsed();
+    assert!(
+        elapsed_partial >= std::time::Duration::from_millis(1400),
+        "Partial send should take at least 1.4s"
+    );
+
+    // Verify process is still running and bound (no inactivity timeout kicked in after 1.5s)
+    let try_wait = child.try_wait().expect("try wait child");
+    assert!(
+        try_wait.is_none(),
+        "Server process should still be alive during active slow byte stream"
+    );
+
+    // Send the rest of the payload
+    let rest_bytes = &request_payload[30..];
+    stdin.write_all(rest_bytes).await.expect("write rest");
+    stdin.flush().await.expect("flush rest");
+
+    // Read the response line
+    let mut response_line = String::new();
+    let read_res = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        reader.read_line(&mut response_line),
+    )
+    .await;
+
+    assert!(read_res.is_ok(), "Response should be read within timeout");
+    let line_len = read_res.unwrap().expect("read line ok");
+    assert!(line_len > 0, "Response line should not be empty");
+
+    let resp: serde_json::Value = serde_json::from_str(&response_line).expect("valid JSON response");
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert_eq!(resp["id"], 1001);
 
     drop(stdin);
     let _ = child.wait().await;

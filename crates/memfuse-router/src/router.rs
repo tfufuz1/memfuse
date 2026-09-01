@@ -4,6 +4,7 @@ use crate::profile::SlmProfile;
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
 use memfuse_store::LsmStorage;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,7 +21,7 @@ pub struct RoutingDecision {
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
-    profiles: Vec<SlmProfile>,
+    profiles: RwLock<Vec<SlmProfile>>,
 }
 
 impl RouterEngine {
@@ -28,8 +29,18 @@ impl RouterEngine {
     pub fn new(collection: Arc<Collection<LsmStorage>>, profiles: Vec<SlmProfile>) -> Self {
         Self {
             collection,
-            profiles,
+            profiles: RwLock::new(profiles),
         }
+    }
+
+    /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
+    pub fn update_profiles(&self, new_profiles: Vec<SlmProfile>) {
+        *self.profiles.write() = new_profiles;
+    }
+
+    /// Returns a copy of the active SLM profiles.
+    pub fn profiles(&self) -> Vec<SlmProfile> {
+        self.profiles.read().clone()
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
@@ -38,7 +49,10 @@ impl RouterEngine {
         query_embedding: &[f32],
         query_text: &str,
     ) -> Result<RoutingDecision> {
-        if self.profiles.is_empty() {
+        // Snapshot profiles atomically to guarantee caller consistency during hot-reloads
+        let profiles = self.profiles.read().clone();
+
+        if profiles.is_empty() {
             return Err(MemFuseError::NotFound(
                 "Keine SLM-Profile für Routing konfiguriert".to_string(),
             ));
@@ -86,7 +100,7 @@ impl RouterEngine {
             ));
         }
 
-        for (idx, profile) in self.profiles.iter().enumerate() {
+        for (idx, profile) in profiles.iter().enumerate() {
             let mut aggregated_score = 0.0f32;
             let mut matched_community = false;
 
@@ -123,10 +137,15 @@ impl RouterEngine {
             }
         }
 
-        // 3. Select profile with highest aggregated relevance score
+        // 3. Select profile with highest aggregated relevance score (with deterministic tie-breaking on lower index)
         let best_profile_idx = profile_scores
             .into_iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|(idx_a, score_a), (idx_b, score_b)| {
+                score_a
+                    .partial_cmp(score_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| idx_b.cmp(idx_a))
+            })
             .map(|(idx, _)| idx);
 
         let selected_profile_idx = match best_profile_idx {
@@ -138,7 +157,7 @@ impl RouterEngine {
             }
         };
 
-        let selected_profile = self.profiles[selected_profile_idx].clone();
+        let selected_profile = profiles[selected_profile_idx].clone();
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();

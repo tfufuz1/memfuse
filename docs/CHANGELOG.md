@@ -14,7 +14,6 @@
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/namespace_isolation.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Namespace isolation test suite for memfuse-crypto (SD-09-CRYPTO-002). |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/nonce_reuse.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Nonce reuse demonstration and mitigation verification suite. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/proptests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Property-based testing suite for memfuse-crypto using proptest. |
-| `TS:2026-08-31T00:00:00Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/tests/budget_race_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Test token budget concurrency and RMW race condition in memfuse-agent workflow steps. |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/benches/audit_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit Benchmark Suite zur Ermittlung von Durchsatz, Speedup, Latenz-Perzentilen, Pareto-Front und RAM-Footprint |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/quantize_persistence_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für SQ8 Kendall-Tau Rangkorrelation, Persistence Roundtrips und Mmap Fault-Tolerance |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/recall_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für HNSW & DiskANN Graph-Korrektheit & Brute-Force Recall |

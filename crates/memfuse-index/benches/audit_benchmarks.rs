@@ -296,7 +296,9 @@ async fn main() {
     }
 
     // 5. HNSW Concurrent Write Throughput Scaling (50,000 base vectors, 1,000 parallel inserts)
-    println!("\n--- 5. HNSW WRITE THROUGHPUT SCALING (50,000 Base Vectors, 1,000 Total Inserts) ---");
+    println!(
+        "\n--- 5. HNSW WRITE THROUGHPUT SCALING (50,000 Base Vectors, 1,000 Total Inserts) ---"
+    );
     let base_n = 50_000;
     let extra_n = 1_000;
     let dim_s = 128;
@@ -322,11 +324,18 @@ async fn main() {
         for i in 0..batch_size {
             let idx = batch_idx * batch_size + i;
             let doc_id = DocId::new((idx + 1) as u64);
-            base_index.insert(tx, doc_id, &base_vectors[idx]).await.unwrap();
+            base_index
+                .insert(tx, doc_id, &base_vectors[idx])
+                .await
+                .unwrap();
         }
         base_index.commit(tx).await.unwrap();
     }
-    println!("Base index of {} vectors built in {:.2}s", base_n, t_base_start.elapsed().as_secs_f64());
+    println!(
+        "Base index of {} vectors built in {:.2}s",
+        base_n,
+        t_base_start.elapsed().as_secs_f64()
+    );
 
     let temp_dir = tempfile::tempdir().unwrap();
     let base_file = temp_dir.path().join("base_50k.hnsw");
@@ -356,7 +365,11 @@ async fn main() {
             let vecs = std::sync::Arc::clone(&extra_vectors_arc);
             let idx_ref = std::sync::Arc::clone(&index_arc);
             let start = t_idx * items_per_thread;
-            let end = if t_idx == num_threads - 1 { extra_n } else { start + items_per_thread };
+            let end = if t_idx == num_threads - 1 {
+                extra_n
+            } else {
+                start + items_per_thread
+            };
 
             handles.push(tokio::spawn(async move {
                 for i in start..end {
@@ -416,7 +429,10 @@ async fn main() {
     let b_mean = baseline_search_latencies.iter().sum::<f64>() / num_searches as f64;
 
     println!("Baseline Search Latency (Idle Index, 50k vectors):");
-    println!("  Mean: {:.1} µs, P50: {:.1} µs, P95: {:.1} µs, P99: {:.1} µs", b_mean, b_p50, b_p95, b_p99);
+    println!(
+        "  Mean: {:.1} µs, P50: {:.1} µs, P95: {:.1} µs, P99: {:.1} µs",
+        b_mean, b_p50, b_p95, b_p99
+    );
 
     // Mixed Workload: 16 Writer Tasks inserting 1,000 vectors while Reader Tasks perform 500 searches
     let extra_vectors_arc = std::sync::Arc::new(extra_vectors.clone());
@@ -444,7 +460,11 @@ async fn main() {
         let idx_ref = std::sync::Arc::clone(&idx_writer);
         let vecs = std::sync::Arc::clone(&vecs_writer);
         let start = w_idx * items_per_writer;
-        let end = if w_idx == num_writers - 1 { extra_n } else { start + items_per_writer };
+        let end = if w_idx == num_writers - 1 {
+            extra_n
+        } else {
+            start + items_per_writer
+        };
 
         writer_handles.push(tokio::spawn(async move {
             for i in start..end {
@@ -470,8 +490,14 @@ async fn main() {
     let degradation_factor = m_mean / b_mean;
 
     println!("\nMixed Workload Search Latency (Under 16 Parallel Insert Tasks):");
-    println!("  Mean: {:.1} µs, P50: {:.1} µs, P95: {:.1} µs, P99: {:.1} µs", m_mean, m_p50, m_p95, m_p99);
-    println!("  Search Latency Degradation Factor: {:.2}x (under concurrent write load)", degradation_factor);
+    println!(
+        "  Mean: {:.1} µs, P50: {:.1} µs, P95: {:.1} µs, P99: {:.1} µs",
+        m_mean, m_p50, m_p95, m_p99
+    );
+    println!(
+        "  Search Latency Degradation Factor: {:.2}x (under concurrent write load)",
+        degradation_factor
+    );
 
     println!("\n===============================================================================");
     println!("                          AUDIT BENCHMARKS COMPLETE                            ");
