@@ -256,7 +256,9 @@ mod tests {
     fn test_vec_event_source_capacity_limit() {
         let mut events = Vec::new();
         for i in 0..10_001 {
-            events.push(BackgroundEvent::new(serde_json::json!({}), "source", i));
+            if let Ok(event) = BackgroundEvent::try_new(serde_json::json!({}), "source", i) {
+                events.push(event);
+            }
         }
 
         assert!(matches!(
