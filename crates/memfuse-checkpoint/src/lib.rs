@@ -1049,7 +1049,10 @@ mod tests {
 
         let guard = store.create_guard(TxId::new(909)).unwrap();
         let res = guard.rollback_blocking();
-        assert!(res.is_ok(), "rollback_blocking must succeed in sync context");
+        assert!(
+            res.is_ok(),
+            "rollback_blocking must succeed in sync context"
+        );
 
         let rolled_back = storage.rolled_back_tx.lock().clone();
         assert_eq!(rolled_back, vec![TxId::new(909)]);

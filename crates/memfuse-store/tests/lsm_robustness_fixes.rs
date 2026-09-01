@@ -33,7 +33,9 @@ async fn test_salt_atomic_write_crash_simulation() {
 
     // Case B: Leftover SALT.tmp.<pid>.<rand> temp file from crash before rename
     let tmp_salt_path = tmp.path().join("SALT.tmp.12345.67890");
-    tokio::fs::write(&tmp_salt_path, b"incomplete salt write").await.unwrap();
+    tokio::fs::write(&tmp_salt_path, b"incomplete salt write")
+        .await
+        .unwrap();
 
     // Opening storage must succeed, create proper SALT, and clean up leftover SALT.tmp.* file
     let storage = LsmStorage::new(config.clone())
@@ -78,9 +80,13 @@ async fn test_commit_failure_no_deadlock() {
         // Verify key2 is gone and key1 remains
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
         assert_eq!(storage.get(b"key2").await.unwrap(), None);
-    }).await;
+    })
+    .await;
 
-    assert!(result.is_ok(), "Operation timed out — potential deadlock detected!");
+    assert!(
+        result.is_ok(),
+        "Operation timed out — potential deadlock detected!"
+    );
 }
 
 /// Test 3: Simuliert mehrere Crash-Recovery-Zyklen (Öffnen → Schreiben → hartes Schließen)
