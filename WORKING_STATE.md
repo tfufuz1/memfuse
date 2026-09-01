@@ -20,8 +20,7 @@ Ergebnis: **2 offene Tags**
 
 | Agent | TS / Datum | ANCHOR / Beschreibung |
 |---|---|---|
-| `AGENT:1` | `2026-09-01T21:17:37Z` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T21:17:37Z) (SESSION:1e20c9bd) |
-| `AGENT:1` | `2026-09-01T21:17:37Z` | // ANCHOR[TEST:TXT-001] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T21:17:37Z) (SESSION:1e20c9bd) |
+| `AGENT:?` | `2026-08-31T21:12:53Z` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage |
 
 
 ## Crate-Inventar & Status
@@ -38,10 +37,10 @@ Ergebnis: **2 offene Tags**
 | `memfuse-db` | 2 | 16342 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 3792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1189 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 2707 | 🟢 Clean |  |
+| `memfuse-ollama` | 3 | 2647 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1285 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 1575 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2512 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2513 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3462 | 🟢 Clean |  |
 
 

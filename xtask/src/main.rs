@@ -897,7 +897,7 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
         .args([
             "log",
             "-1",
-            "--format=%aI",
+            "--format=%at",
             "--",
             full_path.to_str().unwrap(),
         ])
@@ -911,6 +911,12 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if stdout.is_empty() {
         return Err(format!("No git history found for {}", file_path));
+    }
+
+    if let Ok(ts) = stdout.parse::<i64>() {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            return Ok(dt.format("%Y-%m-%d").to_string());
+        }
     }
 
     if stdout.len() >= 10 {
