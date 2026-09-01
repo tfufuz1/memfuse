@@ -385,3 +385,40 @@ async fn test_read_tools_always_allowed_regardless_of_flag() {
     let res_rw = serde_json::to_value(&resp_rw).unwrap();
     assert_ne!(res_rw["result"]["isError"], true);
 }
+
+#[tokio::test]
+async fn test_memfuse_search_executes_query_builder_successfully() {
+    let (server, _tmp) = create_mock_server().await;
+
+    // First insert a test document
+    let insert_req = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "doc_search_test",
+            "text": "hybrid query builder search content"
+        }),
+    );
+    let insert_resp = server.handle(insert_req).await;
+    assert!(insert_resp.error.is_none());
+
+    // Search using memfuse_search tool (triggers col.query().text().vector().k().execute())
+    let search_req = make_request(
+        "memfuse_search",
+        json!({
+            "query": "hybrid query builder",
+            "k": 5
+        }),
+    );
+    let search_resp = server.handle(search_req).await;
+    assert!(search_resp.error.is_none());
+    if let Some(res_vec) = search_resp.result {
+        if let Some(arr) = res_vec.as_array() {
+            assert!(!arr.is_empty(), "expected search results");
+            assert_eq!(arr[0]["content_provenance"], "retrieved_untrusted_data");
+        } else {
+            assert!(false, "result must be array");
+        }
+    } else {
+        assert!(false, "search result expected");
+    }
+}

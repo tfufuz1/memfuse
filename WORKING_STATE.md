@@ -23,7 +23,7 @@ Ergebnis: **3 offene Tags**
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 8398 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 3663 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2312 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-crypto` | 1 | 2272 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 6067 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 10109 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 12899 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
@@ -35,7 +35,7 @@ Ergebnis: **3 offene Tags**
 | `memfuse-py` | 3 | 1298 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 1003 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2471 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 3387 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 3462 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

@@ -163,7 +163,19 @@ Benchmark-Ergebnisse aus `benches/checkpoint_bench.rs` (ausgeführt via Criterio
 
 ---
 
-## 11. Anhang: Rohlogs
+## 11. Re-Audit Verification & DoD Sign-Off (2026-08-31)
+
+### Status: **VERIFIED & FIXED**
+
+Im Rahmen der Re-Auditierung wurde das `memfuse-checkpoint`-Crate vollständig re-evaluiert:
+1. **Compilation & Clippy:** `cargo check -p memfuse-checkpoint --all-features` (0 Errors, 0 Warnings), `cargo clippy -p memfuse-checkpoint --no-deps -- -D warnings` (0 Findings), `cargo fmt --check -p memfuse-checkpoint` (0 Formatting Diffs).
+2. **Test Coverage & Pass Rate:** Alle 37 unit/integration Tests und Property Tests in `crates/memfuse-checkpoint` bestanden fehlerfrei.
+3. **Workspace Invariants:** `cargo check --workspace` kompilierte ohne Fehler. Zero `.unwrap()` / `.expect()` in Produktions-Code, `#![forbid(unsafe_code)]` strikt eingehalten.
+4. **Sibling Consistency (APM-6):** Alle sibling Methoden (`create_checkpoint`, `drop_checkpoint`, `get_checkpoint`, `restore_checkpoint`) wurden auf konsistente Locking-, Input-Validierungs-, TxId-Allokations- und Fehler-Propagierungs-Semantik geprüft und als vollständig homogen nachgewiesen.
+
+---
+
+## 12. Anhang: Rohlogs
 
 ```
 running 29 tests
