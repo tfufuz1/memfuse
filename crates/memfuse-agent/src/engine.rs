@@ -71,15 +71,6 @@ impl OrchestratorEngine {
         Ok(())
     }
 
-    /// Registers an agent tool, panicking if validation fails.
-    #[deprecated(
-        note = "Use try_register_tool instead to handle validation errors without panicking"
-    )]
-    pub fn register_tool(&mut self, tool: Box<dyn AgentTool>) {
-        self.try_register_tool(tool)
-            .expect("Invalid tool name in register_tool");
-    }
-
     pub async fn run(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
         ctx.status = crate::context::AgentStatus::Running;
         let res = self.run_internal(ctx, graph).await;

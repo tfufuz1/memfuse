@@ -128,19 +128,6 @@ impl AgentContext {
         })
     }
 
-    /// Constructs an `AgentContext`, panicking if `task_id` or `start_node` is invalid.
-    #[deprecated(note = "Use try_new instead to handle validation errors without panicking")]
-    pub fn new(
-        task_id: impl Into<String>,
-        start_node: impl Into<String>,
-        db: Arc<MemFuse>,
-        state_collection: Arc<Collection<LsmStorage>>,
-        budget: TokenBudget,
-    ) -> Self {
-        Self::try_new(task_id, start_node, db, state_collection, budget)
-            .expect("Invalid task_id or start_node in AgentContext::new")
-    }
-
     /// Integrates a background telemetry event into the agent context memory and history.
     ///
     /// Maintains event history capacity bounded at `MAX_TELEMETRY_EVENTS` to prevent memory exhaustion.

@@ -207,13 +207,6 @@ impl VecEventSource {
             events: events.into(),
         })
     }
-
-    /// Constructs a `VecEventSource`, panicking if event count exceeds maximum capacity.
-    #[deprecated(note = "Use try_new instead to handle capacity limits without panicking")]
-    pub fn new(events: Vec<BackgroundEvent>) -> Self {
-        Self::try_new(events)
-            .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")
-    }
 }
 
 #[async_trait]

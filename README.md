@@ -17,10 +17,10 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **Zero-IT-Setup** — ein Installer, fertig. Kein Docker, kein Server, kein Admin
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
-- **Contextual Retrieval** — Chunks erhalten vor BM25/Embedding ein
-  LLM-generiertes Kontext-Präfix (Anthropic Pattern, 49% weniger Retrieval-Fehler)
+- **Contextual Retrieval** — Automatisches Anreichern zerschnittener Chunks durch ein
+  LLM-generiertes Kontext-Präfix (Anthropic Pattern, 49% weniger Retrieval-Fehler)*
 - **Cross-Encoder Reranking** — Post-RRF Neuordnung via lokalem ONNX Cross-Encoder
-  (optionales Feature, 67% weniger Fehler kombiniert)
+  (optionales Feature, 67% weniger Fehler kombiniert)*
 - **Multi-Step Query Engine** — Iteratives Query-Rewriting für komplexe
   Agenten-Abfragen (OpenAI o-series Pattern, bis zu 3 Runden)
 - **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
@@ -143,7 +143,7 @@ MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- -
 - [x] Temporaler Wissensgraph: bi-temporale Zeitachsen (Validitätszeit + Transaktionszeit)
 - [x] Memory Importance Score (`ImportanceScore`, `decay_factor()`)
 - [x] Recency-Decay-Funktionen (`DecayFunction`)
-- [ ] Aktiver Sweep-Enforcement-Loop (Reaper)
+- [x] Aktiver Sweep-Enforcement-Loop (Reaper)
 - [ ] ProvenanceRecord (abfragbarer Herkunftsnachweis pro Suchergebnis)
 - [ ] Kalibriertes Kaskaden-Routing (`memfuse-router`)
 - [ ] DiskANN Produktionsreife & Integration (`experimental-diskann` -> Default)
@@ -177,6 +177,8 @@ MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LL
 | Contextual Retrieval | ✅ | ❌ | ❌ | ❌ |
 | Session DAG | ✅ | ❌ | ❌ | ❌ |
 | Kein Docker | ✅ | ❌ | ❌ | ❌ |
+
+*\*Hinweis: Alle Positionierungsclaims und Fehlerreduktions-Prozentangaben (Anthropic Pattern) sind fremdreferenzierte Forschungswerte bzw. architektonisch begründet, empirisch an MemFuse selbst jedoch noch nicht validiert.*
 
 ## Lizenz
 

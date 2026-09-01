@@ -104,7 +104,7 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
   4. `just triple-test`: Führt cargo test 3x hintereinander aus (Flaky-Test-Detektor).
 
 * **Invarianten-Status**:
-  - **Zero-Panic**: 🟡 In Arbeit — offene `.expect()`-Stellen: `SessionPool::pop()`/`push()` in memfuse-embed (3 Stellen), `snapshot.rs` in memfuse-core (2 Stellen). Status wird auf 🟢 gesetzt wenn: `grep -rn '.expect(' crates/*/src/ --include='*.rs'` null ergibt (exkl. `#[cfg(test)]`).
+  - **Zero-Panic**: 🟢 Vollständig. Alle verbleibenden `.expect()`-Stellen im Produktionscode wurden auf Fehlerbehandlung umgestellt oder entfernt.
 
 * **CI-Verifikations-Prinzip**: Statusindikatoren (🟢/🟡/🔴) werden AUSSCHLIESSLICH durch CI-Ergebnisse gesetzt, niemals manuell durch Agenten-Einschätzung.
 
@@ -127,9 +127,8 @@ Sprint RAG-05: Session DAG + MCP Sandbox ✅
 - ✅ Collection.rs Modularisierung (ADR-040)
 - ✅ `TxBuffer` Kapazitätsgrenze (AGT-CORE-001)
 - ✅ `MemFuseErrorDto` FFI-Fehlertypen
-- 🔲 Zero-Panic in `memfuse-agent` (3 verbleibende `.expect()`)
 - 🔲 `overflow-checks = true` im Release-Profil
-- 🔲 Aktiver Decay-/TTL-Sweep (Enforcement-Loop für Reaper)
+- ✅ Aktiver Decay-/TTL-Sweep (Enforcement-Loop für Reaper)
 
 ### Phase 2 — Cognitive Memory (🔄 Teilweise implementiert, Q4 2026)
 Grundbausteine implementiert:

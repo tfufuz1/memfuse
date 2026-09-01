@@ -104,6 +104,7 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+overflow-checks = true
 
 [profile.bench]
 inherits = "release"

@@ -314,7 +314,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-042: Wiederherstellung von `memfuse-agent` aus dem Archiv
+## ADR-046: Wiederherstellung von `memfuse-agent` aus dem Archiv
 
 - **Datum**: 2026-08-27
 - **Status**: ✅ Final
