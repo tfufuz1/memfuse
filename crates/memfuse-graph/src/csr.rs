@@ -118,6 +118,15 @@ struct EdgePayload {
     valid_to: Option<TxId>,
 }
 
+/// Staging representation of an edge before index allocation at commit time.
+#[derive(Debug, Clone, PartialEq)]
+struct StagedEdgePayload {
+    target: EntityId,
+    weight: f32,
+    valid_from: Option<TxId>,
+    valid_to: Option<TxId>,
+}
+
 /// Inner state of the CsrGraph to manage contiguous storage.
 pub(crate) struct GraphInner {
     /// Mapping from public EntityId to internal contiguous index.
@@ -146,9 +155,9 @@ pub(crate) struct GraphInner {
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
     /// Staging for edges not yet committed, grouped by TxId.
-    staged_edges: HashMap<TxId, HashMap<InternalIndex, Vec<EdgePayload>>>,
+    staged_edges: HashMap<TxId, HashMap<EntityId, Vec<StagedEdgePayload>>>,
     /// Staging for edge removals not yet committed, grouped by TxId.
-    staged_removals: HashMap<TxId, Vec<(InternalIndex, InternalIndex)>>,
+    staged_removals: HashMap<TxId, Vec<(EntityId, EntityId)>>,
     /// Edges that have been committed but not yet compacted into CSR arrays (delta buffer).
     pending_edges: HashMap<InternalIndex, Vec<EdgePayload>>,
     /// Tombstoned edges that have been removed and should be excluded during compaction and traversal.
@@ -198,13 +207,18 @@ impl GraphInner {
 
     /// Compacts pending edges in the delta buffer into the main CSR arrays.
     fn compact(&mut self) {
-        if !self.is_dirty || (self.pending_edges.is_empty() && self.tombstoned_edges.is_empty()) {
+        let num_nodes = self.reverse_map.len();
+
+        if self.pending_edges.is_empty() && self.tombstoned_edges.is_empty() {
+            while self.offsets.len() < num_nodes + 1 {
+                let last = *self.offsets.last().unwrap_or(&0);
+                self.offsets.push(last);
+            }
             self.pending_edge_count = 0;
             self.is_dirty = false;
             return;
         }
 
-        let num_nodes = self.reverse_map.len();
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
         let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
         let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
@@ -263,6 +277,11 @@ impl GraphInner {
             }
 
             new_offsets.push(current_offset);
+        }
+
+        while new_offsets.len() < num_nodes + 1 {
+            let last = *new_offsets.last().unwrap_or(&0);
+            new_offsets.push(last);
         }
 
         self.offsets = new_offsets;
@@ -558,16 +577,23 @@ impl CsrGraph {
     pub fn compact(&self) {
         // Double-checked locking to avoid unnecessary write locks (FIND-GRA-002)
         let inner_read = self.inner.read();
+        let num_nodes = inner_read.reverse_map.len();
         if !inner_read.is_dirty
             && inner_read.pending_edges.is_empty()
             && inner_read.tombstoned_edges.is_empty()
+            && inner_read.offsets.len() == num_nodes + 1
         {
             return;
         }
         drop(inner_read);
 
         let mut inner = self.inner.write();
-        if inner.is_dirty || !inner.pending_edges.is_empty() || !inner.tombstoned_edges.is_empty() {
+        let num_nodes = inner.reverse_map.len();
+        if inner.is_dirty
+            || !inner.pending_edges.is_empty()
+            || !inner.tombstoned_edges.is_empty()
+            || inner.offsets.len() != num_nodes + 1
+        {
             inner.compact();
         }
     }
@@ -576,9 +602,11 @@ impl CsrGraph {
     pub async fn compact_async(self: &Arc<Self>) -> Result<()> {
         let is_needed = {
             let inner_read = self.inner.read();
+            let num_nodes = inner_read.reverse_map.len();
             inner_read.is_dirty
                 || !inner_read.pending_edges.is_empty()
                 || !inner_read.tombstoned_edges.is_empty()
+                || inner_read.offsets.len() != num_nodes + 1
         };
         if !is_needed {
             return Ok(());
@@ -587,9 +615,11 @@ impl CsrGraph {
         let self_clone = self.clone();
         tokio::task::spawn_blocking(move || {
             let mut inner = self_clone.inner.write();
+            let num_nodes = inner.reverse_map.len();
             if inner.is_dirty
                 || !inner.pending_edges.is_empty()
                 || !inner.tombstoned_edges.is_empty()
+                || inner.offsets.len() != num_nodes + 1
             {
                 inner.compact();
             }
@@ -842,6 +872,8 @@ impl GraphIndex for CsrGraph {
                  Rollback-Korrelation kann verletzt sein."
             );
         }
+        // Lazy index allocation: Entity indices are assigned in commit(),
+        // avoiding premature mutation of id_map/reverse_map on rollback.
         let mut inner = self.inner.write();
         inner
             .staged_entities
@@ -868,19 +900,19 @@ impl GraphIndex for CsrGraph {
             );
         }
         let mut inner = self.inner.write();
-        let from_idx = inner.get_or_create_index(edge.from);
-        let to_idx = inner.get_or_create_index(edge.to);
-
         let valid_from = edge.valid_from.or(Some(tx));
 
+        // Lazy index allocation: Store EntityIds directly in staged_edges.
+        // Internal indices via get_or_create_index are allocated only during commit(),
+        // ensuring rollback does not leak entity indices into id_map/reverse_map.
         inner
             .staged_edges
             .entry(tx)
             .or_default()
-            .entry(from_idx)
+            .entry(edge.from)
             .or_default()
-            .push(EdgePayload {
-                target: to_idx,
+            .push(StagedEdgePayload {
+                target: edge.to,
                 weight: edge.weight,
                 valid_from,
                 valid_to: edge.valid_to,
@@ -918,6 +950,13 @@ impl GraphIndex for CsrGraph {
             return Err(MemFuseError::InvalidInput(format!(
                 "max_hops {max_hops} exceeds upper safety limit of 100"
             )));
+        }
+        if max_hops > MAX_TRAVERSAL_HOPS as usize {
+            tracing::warn!(
+                requested_max_hops = max_hops,
+                effective_max_hops = MAX_TRAVERSAL_HOPS,
+                "traverse_at_time requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
+            );
         }
         let inner = self.inner.read();
         let start_idx = match inner.id_map.get(&start) {
@@ -1020,6 +1059,13 @@ impl GraphIndex for CsrGraph {
             return Err(MemFuseError::InvalidInput(format!(
                 "max_hops {max_hops} exceeds upper safety limit of 100"
             )));
+        }
+        if max_hops > MAX_TRAVERSAL_HOPS as usize {
+            tracing::warn!(
+                requested_max_hops = max_hops,
+                effective_max_hops = MAX_TRAVERSAL_HOPS,
+                "traverse requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
+            );
         }
 
         // Merge-read: read directly from both compacted CSR arrays AND uncompacted pending_edges delta buffer.
@@ -1141,36 +1187,22 @@ impl GraphIndex for CsrGraph {
             let entities = inner.staged_entities.get(&tx).cloned();
             let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
                 let mut list = Vec::new();
-                for (&from_idx, to_list) in tx_edges {
-                    if let Some(&from_id) = inner.reverse_map.get(from_idx) {
-                        for edge in to_list {
-                            if let Some(&to_id) = inner.reverse_map.get(edge.target) {
-                                list.push((
-                                    from_id,
-                                    to_id,
-                                    PersistedEdgePayload {
-                                        weight: edge.weight,
-                                        valid_from: edge.valid_from,
-                                        valid_to: edge.valid_to,
-                                    },
-                                ));
-                            }
-                        }
+                for (&from_id, to_list) in tx_edges {
+                    for edge in to_list {
+                        list.push((
+                            from_id,
+                            edge.target,
+                            PersistedEdgePayload {
+                                weight: edge.weight,
+                                valid_from: edge.valid_from,
+                                valid_to: edge.valid_to,
+                            },
+                        ));
                     }
                 }
                 list
             });
-            let removals = inner.staged_removals.get(&tx).map(|tx_removals| {
-                let mut list = Vec::new();
-                for &(f_idx, t_idx) in tx_removals {
-                    if let (Some(&from_id), Some(&to_id)) =
-                        (inner.reverse_map.get(f_idx), inner.reverse_map.get(t_idx))
-                    {
-                        list.push((from_id, to_id, f_idx, t_idx));
-                    }
-                }
-                list
-            });
+            let removals = inner.staged_removals.get(&tx).cloned();
             (entities, edges, removals)
         };
 
@@ -1187,7 +1219,7 @@ impl GraphIndex for CsrGraph {
                 }
             }
             if let Some(ref removals) = removals_to_commit {
-                for (from_id, to_id, _, _) in removals {
+                for (from_id, to_id) in removals {
                     self.delete_edge_persistence(storage.as_ref(), tx, from_id, to_id)
                         .await?;
                 }
@@ -1208,15 +1240,26 @@ impl GraphIndex for CsrGraph {
             }
         }
 
-        // 2. Commit edges
+        // 2. Commit edges (lazy index resolution occurs here)
         if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
-            for (from_idx, edges) in tx_edges {
-                let count = edges.len();
+            for (from_id, edges) in tx_edges {
+                let from_idx = inner.get_or_create_index(from_id);
+                let mut converted_edges = Vec::with_capacity(edges.len());
+                for edge in edges {
+                    let to_idx = inner.get_or_create_index(edge.target);
+                    converted_edges.push(EdgePayload {
+                        target: to_idx,
+                        weight: edge.weight,
+                        valid_from: edge.valid_from,
+                        valid_to: edge.valid_to,
+                    });
+                }
+                let count = converted_edges.len();
                 inner
                     .pending_edges
                     .entry(from_idx)
                     .or_default()
-                    .extend(edges);
+                    .extend(converted_edges);
                 inner.pending_edge_count += count;
             }
             inner.is_dirty = true;
@@ -1224,12 +1267,16 @@ impl GraphIndex for CsrGraph {
 
         // 3. Commit removals
         if let Some(tx_removals) = inner.staged_removals.remove(&tx) {
-            for (f_idx, t_idx) in tx_removals {
-                if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
-                    pending.retain(|edge| edge.target != t_idx);
+            for (from_id, to_id) in tx_removals {
+                let from_idx = inner.id_map.get(&from_id).copied();
+                let to_idx = inner.id_map.get(&to_id).copied();
+                if let (Some(f_idx), Some(t_idx)) = (from_idx, to_idx) {
+                    if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
+                        pending.retain(|edge| edge.target != t_idx);
+                    }
+                    inner.tombstoned_edges.insert((f_idx, t_idx));
+                    inner.is_dirty = true;
                 }
-                inner.tombstoned_edges.insert((f_idx, t_idx));
-                inner.is_dirty = true;
             }
         }
 
@@ -1253,16 +1300,11 @@ impl GraphIndex for CsrGraph {
             );
         }
         let mut inner = self.inner.write();
-        let from_idx = inner.id_map.get(&from).copied();
-        let to_idx = inner.id_map.get(&to).copied();
-
-        if let (Some(f_idx), Some(t_idx)) = (from_idx, to_idx) {
-            inner
-                .staged_removals
-                .entry(tx)
-                .or_default()
-                .push((f_idx, t_idx));
-        }
+        inner
+            .staged_removals
+            .entry(tx)
+            .or_default()
+            .push((from, to));
         Ok(())
     }
 
@@ -1386,6 +1428,41 @@ mod tests {
         graph.commit(tx).await.expect("commit"); // expect
         graph.compact();
         graph
+    }
+
+    #[tokio::test]
+    async fn test_compact_entities_without_edges_syncs_offsets() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        // Add 5 entities without adding any edges
+        for id in 1..=5 {
+            graph
+                .add_entity(
+                    tx,
+                    Entity::new(EntityId::new(id), format!("E{id}"), "Entity"),
+                )
+                .await
+                .unwrap();
+        }
+
+        graph.commit(tx).await.unwrap();
+
+        // Before compact(), reverse_map has 5 entities
+        {
+            let inner = graph.inner.read();
+            assert_eq!(inner.reverse_map.len(), 5);
+        }
+
+        graph.compact();
+
+        // After compact(), offsets length MUST equal reverse_map.len() + 1 = 6
+        {
+            let inner = graph.inner.read();
+            assert_eq!(inner.reverse_map.len(), 5);
+            assert_eq!(inner.offsets.len(), 6);
+            assert_eq!(inner.offsets, vec![0, 0, 0, 0, 0, 0]);
+        }
     }
 
     #[tokio::test]
@@ -1576,8 +1653,8 @@ mod tests {
         assert_eq!(results[0].0, EntityId::new(3));
 
         let stats = graph.stats().await.unwrap(); // unwrap
-                                                  // Wenn Isolation für Entities funktioniert, sollten es 2 sein (1 und 3).
-                                                  // Aktuell ist es aber wahrscheinlich 3 (1, 2 und 3).
+        // With lazy index allocation, Tx1 rollback discards staged entities and edges,
+        // so Entity 2 is never registered in id_map/reverse_map.
         assert_eq!(
             stats.num_entities, 2,
             "Only entities from Tx2 and common ones should exist"
@@ -1670,6 +1747,42 @@ mod tests {
             + (inner.weights.len() * std::mem::size_of::<f32>());
 
         assert_eq!(stats.memory_usage_bytes, expected_mem);
+    }
+
+    #[tokio::test]
+    async fn test_add_edge_rollback_no_index_growth() {
+        let graph = CsrGraph::new();
+
+        {
+            let inner = graph.inner.read();
+            assert_eq!(inner.id_map.len(), 0);
+            assert_eq!(inner.reverse_map.len(), 0);
+        }
+
+        for i in 1..=100 {
+            let tx = TxId::new(i);
+            let from = EntityId::new(i * 10);
+            let to = EntityId::new(i * 10 + 1);
+
+            graph
+                .add_edge(tx, Edge::new(from, to, "test_rel"))
+                .await
+                .unwrap();
+
+            graph.rollback(tx).await.unwrap();
+
+            let inner = graph.inner.read();
+            assert_eq!(
+                inner.id_map.len(),
+                0,
+                "id_map must remain empty after rollback at iteration {i}"
+            );
+            assert_eq!(
+                inner.reverse_map.len(),
+                0,
+                "reverse_map must remain empty after rollback at iteration {i}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -2338,6 +2451,31 @@ mod tests {
 
     proptest::proptest! {
         #[test]
+        fn prop_add_edge_rollback_no_index_growth(
+            edge_specs in proptest::collection::vec((1u64..1000, 1001u64..2000), 10..100)
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
+                let graph = CsrGraph::new();
+                let initial_id_len = graph.inner.read().id_map.len();
+                let initial_rev_len = graph.inner.read().reverse_map.len();
+
+                for (i, (from_val, to_val)) in edge_specs.into_iter().enumerate() {
+                    let tx = TxId::new(i as u64 + 1);
+                    let edge = Edge::new(EntityId::new(from_val), EntityId::new(to_val), "rel");
+                    let _ = graph.add_edge(tx, edge).await;
+                    let _ = graph.rollback(tx).await;
+
+                    let inner = graph.inner.read();
+                    proptest::prop_assert_eq!(inner.id_map.len(), initial_id_len);
+                    proptest::prop_assert_eq!(inner.reverse_map.len(), initial_rev_len);
+                }
+                Ok(())
+            });
+            res?;
+        }
+
+        #[test]
         fn prop_edge_visible_monotone(
             vf in 0u64..100,
             vt in 100u64..200,
@@ -2684,6 +2822,55 @@ mod tests {
 
         let loaded_graph = CsrGraph::load_from_storage(&storage).await.unwrap(); // unwrap allowed
         assert_eq!(loaded_graph.edge_count(), 1);
+    }
+
+    #[derive(Clone)]
+    struct LogCaptureLayer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for LogCaptureLayer {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = StringVisitor(String::new());
+            event.record(&mut visitor);
+            self.0.lock().unwrap().push(visitor.0);
+        }
+    }
+
+    struct StringVisitor(String);
+    impl tracing::field::Visit for StringVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            use std::fmt::Write;
+            write!(self.0, "{}={:?} ", field.name(), value).ok();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_traverse_max_hops_exceeded_emits_warning() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture_layer = LogCaptureLayer(logs.clone());
+        let subscriber = tracing_subscriber::registry().with(capture_layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let graph = setup_test_graph().await;
+
+        let _ = graph.traverse(EntityId::new(1), 5).await.unwrap();
+
+        let captured = logs.lock().unwrap();
+        let warning_found = captured.iter().any(|msg| {
+            msg.contains("exceeds internal cap MAX_TRAVERSAL_HOPS")
+                && msg.contains("requested_max_hops=5")
+        });
+
+        assert!(
+            warning_found,
+            "Expected warning log when max_hops > MAX_TRAVERSAL_HOPS, got: {:?}",
+            *captured
+        );
     }
 
     #[tokio::test]
