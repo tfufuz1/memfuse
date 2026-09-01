@@ -641,7 +641,7 @@ mod tests {
             f32::NAN,
         );
         assert!(
-            matches!(nan_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("cannot be NaN"))
+            matches!(nan_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
         );
     }
 
@@ -1112,5 +1112,213 @@ mod tests {
                 prop_assert!(idx < profiles.len());
             }
         });
+    }
+
+    #[tokio::test]
+    async fn test_router_engine_try_new_and_try_update_profiles_validation_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let invalid_profile = SlmProfile::new(
+            "",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let valid_profile = SlmProfile::new(
+            "valid",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let res_try_new = RouterEngine::try_new(
+            collection.clone(),
+            vec![valid_profile.clone(), invalid_profile.clone()],
+        );
+        assert!(matches!(res_try_new, Err(MemFuseError::InvalidInput(_))));
+
+        let router = RouterEngine::new(collection, vec![valid_profile.clone()]);
+        let res_try_update = router.try_update_profiles(vec![valid_profile, invalid_profile]);
+        assert!(matches!(res_try_update, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_select_profile_from_chunks_empty_chunks_and_unmatched_community() {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+
+        let profile = SlmProfile::new(
+            "slm-test",
+            "http://localhost/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.5,
+        );
+
+        let err_empty = select_profile_from_chunks(&[profile.clone()], &[]);
+        assert!(
+            matches!(err_empty, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
+        );
+
+        let chunk_unmatched = (
+            ContextChunk {
+                doc_id: DocId::new(1),
+                content: "unmatched community chunk".to_string(),
+                relevance: 0.9,
+                token_count: 5,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            },
+            Some(999),
+        );
+
+        let err_unmatched = select_profile_from_chunks(&[profile.clone()], &[chunk_unmatched]);
+        assert!(
+            matches!(err_unmatched, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
+        );
+
+        let chunk_low_score = (
+            ContextChunk {
+                doc_id: DocId::new(2),
+                content: "matched community low score".to_string(),
+                relevance: 0.01,
+                token_count: 5,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            },
+            Some(100),
+        );
+
+        let err_low = select_profile_from_chunks(&[profile.clone()], &[chunk_low_score]);
+        assert!(
+            matches!(err_low, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_invalid_json_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let http_response =
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 12\r\n\r\n{invalid json";
+                socket.write_all(http_response.as_bytes()).await.ok();
+            }
+        });
+
+        let profile = SlmProfile::new(
+            "bad-json-slm",
+            format!("http://{}", addr),
+            vec![1],
+            TokenBudget::new(50, 0),
+            0.1,
+        );
+
+        let chunk = memfuse_core::ContextChunk {
+            doc_id: memfuse_core::DocId::new(1),
+            content: "test content".to_string(),
+            relevance: 0.9,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let decision = RoutingDecision {
+            profile,
+            context: memfuse_core::ContextWindow {
+                chunks: vec![chunk],
+                total_tokens: 5,
+                truncated: false,
+            },
+        };
+
+        let res = dispatch_to_slm(&decision).await;
+        assert!(
+            matches!(res, Err(MemFuseError::Internal(msg)) if msg.contains("Ungültige MCP JSON-RPC Antwort"))
+        );
+    }
+
+    #[test]
+    fn test_slm_profile_validation_extended() {
+        let inf_score = SlmProfile::try_new(
+            "coding",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            f32::INFINITY,
+        );
+        assert!(
+            matches!(inf_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
+        );
+
+        let neg_inf_score = SlmProfile::try_new(
+            "coding",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            f32::NEG_INFINITY,
+        );
+        assert!(
+            matches!(neg_inf_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
+        );
+
+        let neg_score = SlmProfile::try_new(
+            "coding",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            -0.1,
+        );
+        assert!(
+            matches!(neg_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_route_with_missing_community_or_corrupt_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let key = "entity_no_community";
+        collection
+            .insert(
+                key,
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"text": "sample text"})),
+            )
+            .await
+            .unwrap();
+
+        let profile = SlmProfile::new(
+            "slm-no-comm",
+            "http://localhost:9999/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.0,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+        let res = router.route(&[1.0, 0.0, 0.0, 0.0], "sample text").await;
+        assert!(matches!(res, Err(MemFuseError::NotFound(_))));
     }
 }
