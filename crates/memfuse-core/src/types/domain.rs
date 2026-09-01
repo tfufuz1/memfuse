@@ -685,9 +685,6 @@ pub struct PprConfig {
     /// Damping factor (probability of continuing random walk vs restarting). Default: 0.85.
     pub damping_factor: f32,
     /// Maximum power-iteration steps before terminating. Default: 100.
-    ///
-    /// Hinweis: Werte über 1000 werden intern stillschweigend auf 1000 gekappt
-    /// (Performance-Schutz gegen pathologische Konfigurationen).
     pub max_iterations: u32,
     /// L1 norm threshold for early termination convergence check. Default: 1e-6.
     pub convergence_epsilon: f32,
@@ -701,24 +698,6 @@ pub struct PprConfig {
 
 fn default_warn_on_non_convergence() -> bool {
     true
-}
-
-impl PprConfig {
-    /// Validates `PprConfig` parameters.
-    ///
-    /// If `max_iterations > 1000`, emits a `tracing::warn!` message notifying
-    /// that `max_iterations` will be capped at 1000 to prevent pathological power iteration execution.
-    /// Does not return an error to preserve existing configuration behavior.
-    pub fn validate(&self) -> Result<()> {
-        if self.max_iterations > 1000 {
-            tracing::warn!(
-                max_iterations = self.max_iterations,
-                capped_iterations = 1000,
-                "PprConfig max_iterations exceeds hard cap of 1000; power iteration will be capped at 1000"
-            );
-        }
-        Ok(())
-    }
 }
 
 impl Default for PprConfig {
