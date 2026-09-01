@@ -2938,6 +2938,7 @@ dependencies = [
  "memfuse-core",
  "parking_lot",
  "proptest",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
