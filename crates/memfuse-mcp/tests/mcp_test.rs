@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use memfuse_core::{Result, TextEmbeddingEngine};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use memfuse_db::MemFuse;
 use memfuse_mcp::{
     protocol::JsonRpcRequest,
@@ -10,6 +9,7 @@ use memfuse_mcp::{
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 #[derive(Debug)]
 struct MockEmbedder {
@@ -737,7 +737,8 @@ async fn test_slowloris_stdio_attack_simulation() {
     let line_len = read_res.unwrap().expect("read line ok");
     assert!(line_len > 0, "Response line should not be empty");
 
-    let resp: serde_json::Value = serde_json::from_str(&response_line).expect("valid JSON response");
+    let resp: serde_json::Value =
+        serde_json::from_str(&response_line).expect("valid JSON response");
     assert_eq!(resp["jsonrpc"], "2.0");
     assert_eq!(resp["id"], 1001);
 
