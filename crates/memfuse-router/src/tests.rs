@@ -1081,6 +1081,92 @@ mod tests {
         });
     }
 
+    #[tokio::test]
+    async fn test_router_engine_profiles_accessor() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let profile = SlmProfile::new(
+            "p-acc",
+            "http://localhost/mcp",
+            vec![1],
+            TokenBudget::new(100, 10),
+            0.1,
+        );
+        let router = RouterEngine::new(collection, vec![profile.clone()]);
+        let profiles = router.profiles();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].name, "p-acc");
+    }
+
+    #[test]
+    fn test_select_profile_from_chunks_empty_chunks() {
+        use crate::router::select_profile_from_chunks;
+        let profile = SlmProfile::new(
+            "p-empty",
+            "http://localhost/mcp",
+            vec![1],
+            TokenBudget::new(100, 10),
+            0.1,
+        );
+        let res = select_profile_from_chunks(&[profile], &[]);
+        assert!(
+            matches!(res, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
+        );
+    }
+
+    #[test]
+    fn test_select_profile_max_score_meets_threshold_when_aggregated_does_not() {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+
+        // Profile requires min_relevance_score = 0.8
+        let profile = SlmProfile::new(
+            "p-max-score",
+            "http://localhost/mcp",
+            vec![10],
+            TokenBudget::new(1000, 100),
+            0.8,
+        );
+
+        // Single chunk with base relevance 0.7. With community boost (10) s = 0.7 * 1.2 = 0.84.
+        // Aggregated score = 0.84 (wait, aggregated_score = 0.84 >= 0.8 too).
+        // Let's make aggregated_score < 0.8, but max_score >= 0.8:
+        // Wait, max_score is max(s). aggregated_score is sum(s).
+        // Since s >= 0, sum(s) >= max(s).
+        // BUT if there are negative relevance scores or negative chunk relevance?
+        // Let's test with a negative chunk relevance and a positive chunk relevance:
+        let chunk_neg = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "neg".to_string(),
+            relevance: -0.5,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let chunk_pos = ContextChunk {
+            doc_id: DocId::new(2),
+            content: "pos".to_string(),
+            relevance: 0.8,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        // aggregated_score = -0.5*1.2 + 0.8*1.2 = -0.6 + 0.96 = 0.36 < 0.8
+        // max_score = max(-0.6, 0.96) = 0.96 >= 0.8
+        // This exercises the `|| max_score >= profile.min_relevance_score` right side of short-circuit!
+        let chunks = vec![(chunk_neg, Some(10)), (chunk_pos, Some(10))];
+        let idx = select_profile_from_chunks(&[profile], &chunks).unwrap();
+        assert_eq!(idx, 0);
+    }
+
     #[test]
     fn prop_routing_decision_profile_in_input() {
         use crate::router::select_profile_from_chunks;
