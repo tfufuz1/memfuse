@@ -1,7 +1,7 @@
 # MemFuse Brain — GitHub Projekt- & Commit-Historie
 
 > **Kanonische Dokumentation der Entwicklungshistorie von MemFuse Brain**
-> *Zeitraum: August 2026 — Heute*
+> *Zeitraum: August 2026 — September 2026*
 
 ---
 
@@ -17,7 +17,7 @@ MemFuse Brain ist ein eingebettetes, air-gapped kognitives Betriebssystem und ei
 | **Phase 2: RAG, Session-DAG & Cryptographic Hardening** | 25.08.2026 – 26.08.2026 | Anthropic Contextual Retrieval, Pure-Rust Session-DAG Branching, OsRng/AES-256-GCM-SIV & WAL HMAC Chaining, JSON-RPC 2.0 MCP-Server Basis. |
 | **Phase 3: MVCC Durability, 2PC Transactions & Sync-Docs** | 27.08.2026 – 28.08.2026 | Full 4-Index 2-Phase Commit (2PC) in `memfuse-db`, WAL V3 Format mit `tx_id` HMAC Binding, Bi-temporale Graph-Gültigkeitsachsen, `xtask sync-docs` Werkzeuge. |
 | **Phase 4: Robustness & Security Hardening Sprint** | 29.08.2026 – 30.08.2026 | Agent Event Loops, Memory Importance Decay, Zettelkasten Memory Links, Structured `MemFuseErrorDto`, Prompt Injection Guards in MCP, Zero-Copy LSM Scan, Write-Temp-Then-Rename für SSTables & DiskANN. |
-| **Phase 5: Governance, Consistency & Quality Audit Pass** | 31.08.2026 – Heute | Erweiterung von `xtask check-consistency` (README, AGENTS.md, ADR Checks), CI Review Coverage Gates, `memfuse-index` Code Quality Refactoring (#1150). |
+| **Phase 5: Governance, Quality & Round 2 Audit Pass** | 31.08.2026 – 01.09.2026 | Erweiterung von `xtask check-consistency` (README, AGENTS.md, ADR Checks), CI Review Coverage Gates, `memfuse-index` Code Quality Refactoring (#1150), Token Budget Race Audit & Tests (#1239). |
 
 ---
 
@@ -211,9 +211,13 @@ Hier sind die präzisen Commits der Entwicklungshistorie (chronologisch von den 
 - `6b540a7` | **google-labs-jules[bot]** | `refactor(core): fulfill ANCHOR[TEST:CORE-001], consolidate headers & sync docs`
   *Erfüllung der Core-Test-Anforderungen und Synchronisation der Arbeitsstände.*
 
-### 31. August 2026 (Heute)
+### 31. August 2026
 - `5b067ad` | **tfufuz1** | `refactor(index): audit and clean up memfuse-index code quality (#1150)`
   *Umfassendes Audit und Bereinigung von `memfuse-index`: Infallible Float-Konvertierungen (`f32::from`), Inlined Format Arguments, Validierung von NaN/Inf Query-Vektoren in `HnswIndex::search`, Aktualisierung der Session-Hashes.*
+
+### 1. September 2026
+- `1d38f70` | **tfufuz1** (Co-authored-by **google-labs-jules[bot]**, **tfufuu**) | `Audit Report: memfuse-agent token budget race condition analysis (#1239)`
+  *Audit-Bericht (`docs/audits/round2/AUDIT_memfuse-agent_budget-race.md`) und Integrationstest (`crates/memfuse-agent/tests/budget_race_test.rs`) zur Analyse der Sequenzschritt-Isolierung und Ermittlung von Nicht-Atomaren TokenBudget RMW Race Vectors in `memfuse-agent`.*
 
 ---
 
@@ -272,7 +276,7 @@ Das Repository ist als modularer Workspace aufgebaut. Die Historie spiegelt die 
 ### Layer 3: FFI, Models & Agenten
 - **`memfuse-py`**: PyO3-Bindings mit automatischer GIL-Freigabe bei zeitintensiven Operationen und Konvertierung von `MemFuseErrorDto` in strukturierte Python-Exceptions.
 - **`memfuse-ollama`**: HTTP-Client mit Batch-Embedding-Unterstützung (`/api/embed`), Automatischer Fallback und Anthropic Contextual Retrieval Präfixerstellung.
-- **`memfuse-agent`**: Hintergrund-Workflow-Engine mit Event-Loop (`EventSource`), State Checkpointing und speicherbeschränkten Event-Queues.
+- **`memfuse-agent`**: Hintergrund-Workflow-Engine mit Event-Loop (`EventSource`), State Checkpointing, Token Budget Race Audits und speicherbeschränkten Event-Queues.
 - **`memfuse-embed`**: Optionaler in-process ONNX Session Pool für Cross-Encoder Reranking.
 - **`memfuse-router`**: SLM-basiertes Kontext-Routing zur dynamischen Modell-Auswahl.
 
@@ -287,7 +291,7 @@ Das Repository ist als modularer Workspace aufgebaut. Die Historie spiegelt die 
 Die Projekt-Historie zeichnet sich durch ein streng durchgesetztes Governance-System aus:
 
 1. **Architecture Decision Records (ADRs)**: Strikte Einhaltung von Vorgaben bezüglich MVCC Isolation (ADR-012/ADR-043), MCP Stdio-Kommunikation (ADR-010), Error Propagation via DTOs (ADR-028) und Governance System Hardening (ADR-029).
-2. **Inline Code Tags & Review Passes**: Verwendung von `ANCHOR[...]`, `AI-TAG[...]` und `REVIEW-PASS[...]` Annotationen mit ISO-8601 Zeitstempeln (`TS:2026-08-30T...`) und Session-Hashes.
+2. **Inline Code Tags & Review Passes**: Verwendung von `ANCHOR[...]`, `AI-TAG[...]` und `REVIEW-PASS[...]` Annotationen mit ISO-8601 Zeitstempeln (`TS:2026-08-31T...`) und Session-Hashes.
 3. **Automatisierte CI Enforcement Gates**:
    - `cargo xtask check-consistency`: Überprüft Workspace-Crate-Anzahlen, `AGENTS.md` Abdeckung, ADR-Eindeutigkeit.
    - `cargo xtask sync-docs`: Verhindert Drift zwischen Quellcode-Annotationen und Dokumentationsdateien (`WORKING_STATE.md`, `ARCHITECTURE.md`).
@@ -298,8 +302,8 @@ Die Projekt-Historie zeichnet sich durch ein streng durchgesetztes Governance-Sy
 ## 5. Statistische Kennzahlen
 
 - **Aktive Workspace Crates**: 15 Crates (Layer 0 bis Layer 4)
-- **Commits insgesamt**: >210 Merges und Direkt-Commits
-- **Verteilte Autoren**: `google-labs-jules[bot]`, `tfufuz1`
+- **Commits insgesamt**: >215 Merges und Direkt-Commits
+- **Verteilte Autoren**: `google-labs-jules[bot]`, `tfufuz1`, `tfufuu`
 - **Programmiersprache**: 100% Rust (mit Tauri UI HTML/JS Frontend & PyO3 Python-Interface)
 - **Sicherheit & Zero-Panic Policy**: Volle Beseitigung aller unkontrollierten `.unwrap()` Aufrufe in Produktivpfaden (abgesichert via `// unwrap allowed` mit nachgewiesenen Invarianten).
 
