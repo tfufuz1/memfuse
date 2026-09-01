@@ -66,7 +66,7 @@ async fn setup_env(
 
 #[tokio::test]
 async fn test_sequential_workflow_budget_check() -> Result<()> {
-    let (mut engine, _db, mut ctx, _tmp) = setup_env(100).await?;
+    let (mut engine, _db, mut ctx, _tmp) = setup_env(60).await?;
 
     let mut graph = StateGraph::new();
     graph.try_add_node("start", "Start Node", NodeType::Start, None)?;
@@ -81,8 +81,8 @@ async fn test_sequential_workflow_budget_check() -> Result<()> {
     engine.try_register_tool(Box::new(HeavyTokenTool::new("tool_1", 60)))?;
     engine.try_register_tool(Box::new(HeavyTokenTool::new("tool_2", 60)))?;
 
-    // First step consumes 60/100 tokens -> 40 left.
-    // Second step consumes 60 tokens -> total 120 -> budget exhausted (available == 0).
+    // First step consumes 60/60 tokens -> 0 left.
+    // Second step pre-check detects budget exhaustion before tool execution.
     let res = engine.run(&mut ctx, &graph).await;
     assert!(res.is_err());
     if let Err(MemFuseError::Internal(msg)) = res {
