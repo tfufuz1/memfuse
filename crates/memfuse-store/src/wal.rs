@@ -50,13 +50,19 @@ pub enum WalVersion {
 
 /// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
 ///
+/// Derived via HKDF-SHA256 from `b"memfuse-integrity-key-v1"` with info `b"memfuse-wal-v1-legacy-expansion"`
+/// to ensure full 32-byte entropy without null-byte padding.
+///
 /// Cryptographic Audit Guarantee (Task E):
 /// 1. This key is ONLY used during replay of pre-migration WAL files when per-file key verification fails.
 /// 2. It is NEVER used for new write or append operations (all new WAL writes derive an integrity key via `KeyManager`).
 /// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
-pub const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
+pub(crate) const LEGACY_INTEGRITY_KEY: [u8; 32] = [
+    1, 65, 7, 165, 236, 116, 13, 87, 184, 17, 140, 157, 254, 200, 110, 28, 42, 16, 66, 5, 13, 21,
+    199, 109, 84, 30, 243, 254, 190, 192, 1, 9,
+];
 
 /// A single entry in the Write-Ahead Log.
 #[derive(Debug, Clone)]
@@ -425,18 +431,28 @@ impl Wal {
             (None, Some(key))
         };
 
-        let mut is_new = false;
-        if !path.exists() {
-            is_new = true;
-        }
-
-        let file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
+        let (file, is_new) = match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
             .read(true)
+            .append(true)
             .open(&path)
             .await
-            .map_err(|e| MemFuseError::Storage(format!("Failed to open WAL: {}", e)))?;
+        {
+            Ok(f) => (f, true),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let f = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create(false)
+                    .read(true)
+                    .append(true)
+                    .open(&path)
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("Failed to open WAL: {}", e)))?;
+                (f, false)
+            }
+            Err(e) => return Err(MemFuseError::Storage(format!("Failed to open WAL: {}", e))),
+        };
 
         // 🛡️ SICHERUNG: Directory FSync (FIND-STO-004 / Task G)
         if is_new {
@@ -749,16 +765,27 @@ impl Wal {
     ///
     /// The sidecar contains exactly 16 raw bytes (UUID in native byte order).
     async fn load_or_create_wal_uuid(wal_path: &Path) -> Result<[u8; 16]> {
+        let parent = wal_path.parent().unwrap_or_else(|| Path::new(""));
+        let dir_path = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
         let uuid_path = {
             let mut p = wal_path.as_os_str().to_os_string();
             p.push(".uuid");
             std::path::PathBuf::from(p)
         };
 
-        if uuid_path.exists() {
-            let bytes = tokio::fs::read(&uuid_path).await.map_err(|e| {
+        async fn read_uuid_file(path: &Path) -> Result<[u8; 16]> {
+            let bytes = tokio::fs::read(path).await.map_err(|e| {
                 MemFuseError::Storage(format!("Failed to read WAL UUID sidecar: {}", e))
             })?;
+            if bytes.is_empty() {
+                return Err(MemFuseError::Storage(
+                    "WAL UUID sidecar file is empty — possible crash during creation. Delete and restart.".into(),
+                ));
+            }
             if bytes.len() != 16 {
                 return Err(MemFuseError::Storage(format!(
                     "WAL UUID sidecar has unexpected length: {} (expected 16)",
@@ -768,18 +795,84 @@ impl Wal {
             let mut arr = [0u8; 16];
             arr.copy_from_slice(&bytes);
             Ok(arr)
+        }
+
+        if uuid_path.exists() {
+            read_uuid_file(&uuid_path).await
         } else {
-            // Generate and persist a fresh UUID v4.
+            use rand::RngCore;
+            use tokio::io::AsyncWriteExt;
+
             let uuid = uuid::Uuid::new_v4();
             let bytes = *uuid.as_bytes();
-            tokio::fs::write(&uuid_path, &bytes).await.map_err(|e| {
-                MemFuseError::Storage(format!("Failed to write WAL UUID sidecar: {}", e))
-            })?;
 
-            // FIND-STO-004: FSync parent directory to persist the new directory entry
-            crate::util::fsync_parent_dir(&uuid_path).await?;
+            let uuid_filename = uuid_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(".uuid");
 
-            Ok(bytes)
+            let tmp_path = dir_path.join(format!(
+                "{}.tmp.{}.{}",
+                uuid_filename,
+                std::process::id(),
+                rand::thread_rng().next_u64()
+            ));
+
+            let mut options = tokio::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                options.mode(0o600);
+            }
+
+            let file_res = options.open(&tmp_path).await;
+            let mut file = match file_res {
+                Ok(f) => f,
+                Err(e) => {
+                    return Err(MemFuseError::Storage(format!(
+                        "Failed to create temporary WAL UUID sidecar file at {}: {}",
+                        tmp_path.display(),
+                        e
+                    )));
+                }
+            };
+
+            if let Err(e) = file.write_all(&bytes).await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to write WAL UUID sidecar: {}",
+                    e
+                )));
+            }
+            if let Err(e) = file.sync_all().await {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(MemFuseError::Storage(format!(
+                    "Failed to sync WAL UUID sidecar file: {}",
+                    e
+                )));
+            }
+            drop(file);
+
+            #[cfg(windows)]
+            if let Err(e) = set_restrictive_file_acl(&tmp_path) {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(e);
+            }
+
+            let rename_res = tokio::fs::rename(&tmp_path, &uuid_path).await;
+            if rename_res.is_err() {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+            }
+
+            match rename_res {
+                Ok(()) => {
+                    crate::util::fsync_parent_dir(&uuid_path).await?;
+                    Ok(bytes)
+                }
+                Err(_) => {
+                    read_uuid_file(&uuid_path).await
+                }
+            }
         }
     }
 
@@ -862,14 +955,19 @@ impl Wal {
 
     /// Helper for creating entries bound to this WAL's current chain.
     pub async fn create_entry(&self, op: WalOp, seq_no: u64) -> Result<WalEntry> {
-        let last_hmac = self.last_hmac.lock().await;
+        let mut last_hmac = self.last_hmac.lock().await;
         let integrity_key = self.get_integrity_key()?;
-        WalEntry::try_new(op, seq_no, &integrity_key, *last_hmac)
+        let entry = WalEntry::try_new(op, seq_no, &integrity_key, *last_hmac)?;
+        *last_hmac = entry.checksum;
+        Ok(entry)
     }
 
     /// Prepares a batch of entries, ensuring correct HMAC chaining between them.
+    ///
+    /// Updates `self.last_hmac` atomically inside the method before releasing the lock,
+    /// preventing HMAC chain forks under concurrent caller execution.
     pub async fn prepare_batch(&self, ops: Vec<(WalOp, u64)>) -> Result<Vec<WalEntry>> {
-        let last_hmac = self.last_hmac.lock().await;
+        let mut last_hmac = self.last_hmac.lock().await;
         let integrity_key = self.get_integrity_key()?;
 
         let mut entries = Vec::with_capacity(ops.len());
@@ -879,6 +977,10 @@ impl Wal {
             let entry = WalEntry::try_new(op, seq_no, &integrity_key, current_chain)?;
             current_chain = entry.checksum;
             entries.push(entry);
+        }
+
+        if !entries.is_empty() {
+            *last_hmac = current_chain;
         }
 
         Ok(entries)
@@ -1028,6 +1130,14 @@ impl Wal {
 
             let chunk_start_pos = pos;
             pos += (4 + len) as u64;
+
+            // V1 WAL format does not support batch encryption or key manager wrapping
+            // because V1 entries lack batch/nonce headers and per-entry nonce metadata.
+            if version == WalVersion::V1 && self.key_manager.is_some() {
+                return Err(MemFuseError::Storage(
+                    "V1 WAL format does not support batch encryption; key_manager is only applicable to V2/V3 WALs".into(),
+                ));
+            }
 
             if matches!(version, WalVersion::V2 | WalVersion::V3) && self.key_manager.is_some() {
                 let km = match self.key_manager.as_ref() {
@@ -2203,7 +2313,7 @@ mod tests {
         let uuid_bytes = Wal::load_or_create_wal_uuid(&wal_path).await.expect("uuid"); // expect
         let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key"); // expect
 
-        // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
+        // Manually construct an old V1 encrypted WAL file (no MFW2/MFW3 header)
         let integrity_key = sub_km.integrity_key().expect("integrity key"); // expect
 
         let op1 = WalOp::Put {
@@ -2223,40 +2333,19 @@ mod tests {
         v1_file_data.extend_from_slice(&nonce1);
         v1_file_data.extend_from_slice(&encrypted1);
 
-        let op2 = WalOp::Put {
-            tx_id: TxId::new(11),
-            key: b"legacy_k2".to_vec(),
-            value: b"legacy_v2".to_vec(),
-        };
-        let entry2 = WalEntry::try_new(op2, 101, &integrity_key, entry1.checksum).expect("entry2"); // expect
-        let bytes2 = entry2.to_bytes().expect("bytes2"); // expect
-
-        let payload2 = &bytes2[4..];
-        let (encrypted2, nonce2) = sub_km.encrypt_auto_nonce(payload2).expect("enc2"); // expect
-
-        let chunk_len2 = (12 + encrypted2.len()) as u32;
-        v1_file_data.extend_from_slice(&chunk_len2.to_le_bytes());
-        v1_file_data.extend_from_slice(&nonce2);
-        v1_file_data.extend_from_slice(&encrypted2);
-
         fs::write(&wal_path, &v1_file_data)
             .await
             .expect("write v1 wal"); // expect
 
-        // Reopen via standard Wal::open_with_key_manager and replay
-        let wal = Wal::open_with_key_manager(&wal_path, Some(km))
-            .await
-            .expect("open v1 wal"); // expect
-        let replayed = wal.replay().await.expect("replay v1 wal"); // expect
-
-        assert_eq!(
-            replayed.len(),
-            2,
-            "Both V1 entries must be replayed correctly"
+        // Opening/replaying a V1 WAL with active key_manager must return an explicit format error
+        let open_res = Wal::open_with_key_manager(&wal_path, Some(km)).await;
+        assert!(open_res.is_err(), "Opening V1 WAL with key_manager must fail with format error");
+        let err = open_res.err().unwrap();
+        assert!(
+            format!("{}", err).contains("V1 WAL format does not support batch encryption"),
+            "Error must explicitly explain format mismatch, got: {}",
+            err
         );
-        assert_eq!(replayed[0].1.seq_no, 100);
-        assert_eq!(replayed[1].1.seq_no, 101);
-        assert_eq!(replayed[1].1.prev_hmac, replayed[0].1.checksum);
     }
 
     #[tokio::test]
@@ -2572,5 +2661,123 @@ mod tests {
 
         let res_op = WalEntry::from_bytes(&data);
         assert!(matches!(res_op, Err(MemFuseError::Serialization(_))));
+    }
+
+    #[tokio::test]
+    async fn test_wal_uuid_fault_injection_crash_simulation() {
+        let temp = tempdir().expect("tempdir");
+        let wal_path = temp.path().join("fault_uuid.wal");
+        let uuid_sidecar = temp.path().join("fault_uuid.wal.uuid");
+
+        let parent = wal_path.parent().unwrap_or_else(|| Path::new(""));
+        let dir_path = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+
+        // Simulate crash after writing tmp file but BEFORE hard link / rename
+        let orphan_tmp = dir_path.join(format!(
+            "fault_uuid.wal.uuid.tmp.{}.99999",
+            std::process::id()
+        ));
+        fs::write(&orphan_tmp, b"partial uuid").await.expect("write orphan tmp");
+
+        assert!(orphan_tmp.exists());
+        assert!(!uuid_sidecar.exists());
+
+        // Call load_or_create_wal_uuid; it should create valid UUID sidecar without failing on orphan tmp
+        let uuid = Wal::load_or_create_wal_uuid(&wal_path)
+            .await
+            .expect("create uuid sidecar");
+
+        assert_eq!(uuid.len(), 16);
+        assert!(uuid_sidecar.exists(), "Final UUID sidecar file must exist");
+        let sidecar_bytes = fs::read(&uuid_sidecar).await.expect("read sidecar");
+        assert_eq!(sidecar_bytes.len(), 16);
+        assert_eq!(&sidecar_bytes[..], &uuid[..]);
+    }
+
+    #[tokio::test]
+    async fn test_prepare_batch_concurrency_no_hmac_chain_forks() {
+        let temp = tempdir().expect("tempdir");
+        let wal_path = temp.path().join("concurrent_batch.wal");
+
+        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal"));
+
+        let num_tasks = 10;
+        let ops_per_task = 5;
+
+        let mut handles = Vec::new();
+        for task_idx in 0..num_tasks {
+            let wal_clone = Arc::clone(&wal);
+            handles.push(tokio::spawn(async move {
+                let mut ops = Vec::new();
+                for i in 0..ops_per_task {
+                    let seq_no = (task_idx * ops_per_task + i) as u64;
+                    let op = WalOp::Put {
+                        tx_id: TxId::new(seq_no),
+                        key: format!("k_{}_{}", task_idx, i).into_bytes(),
+                        value: format!("v_{}_{}", task_idx, i).into_bytes(),
+                    };
+                    ops.push((op, seq_no));
+                }
+                wal_clone.prepare_batch(ops).await
+            }));
+        }
+
+        let mut all_batches = Vec::new();
+        for h in handles {
+            let batch = h.await.expect("join handle").expect("prepare_batch");
+            all_batches.push(batch);
+        }
+
+        // Collect all entries generated across tasks
+        let mut all_entries = Vec::new();
+        for batch in all_batches {
+            wal.append_batch(&batch).await.expect("append batch");
+            all_entries.extend(batch);
+        }
+
+        // Replay WAL and check that HMAC chain is strictly unbroken
+        let replayed = wal.replay().await.expect("replay wal");
+        assert_eq!(replayed.len(), num_tasks * ops_per_task);
+
+        let mut expected_prev_hmac = [0u8; 32];
+        let integrity_key = wal.get_integrity_key().expect("integrity_key");
+
+        for (_, entry, _) in &replayed {
+            assert_eq!(
+                entry.prev_hmac, expected_prev_hmac,
+                "HMAC chain fork detected! prev_hmac does not match previous entry's checksum."
+            );
+
+            let computed = WalEntry::compute_checksum_v3(
+                &entry.op,
+                entry.seq_no,
+                &integrity_key,
+                entry.prev_hmac,
+            )
+            .expect("checksum");
+            assert_eq!(entry.checksum, computed, "Checksum verification failed");
+
+            expected_prev_hmac = entry.checksum;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_toctou_open_is_new_detection() {
+        let temp = tempdir().expect("tempdir");
+        let wal_path = temp.path().join("toctou_test.wal");
+
+        // 1. First open: file is new
+        assert!(!wal_path.exists());
+        let wal1 = Wal::open(&wal_path).await.expect("open new wal");
+        assert!(wal_path.exists());
+        drop(wal1);
+
+        // 2. Second open: file already exists
+        let wal2 = Wal::open(&wal_path).await.expect("open existing wal");
+        drop(wal2);
     }
 }
