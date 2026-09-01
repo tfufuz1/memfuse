@@ -391,7 +391,9 @@ mod tests {
         ) {
             let mut visitor = StringVisitor(String::new());
             event.record(&mut visitor);
-            self.0.lock().unwrap().push(visitor.0);
+            if let Ok(mut guard) = self.0.lock() {
+                guard.push(visitor.0);
+            }
         }
     }
 
@@ -404,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nan_single_chunk_ignored_in_max_score() {
+    fn test_nan_single_chunk_ignored_in_max_score() -> Result<(), Box<dyn std::error::Error>> {
         use crate::router::{compute_max_score, select_profile_from_chunks};
         use memfuse_core::{ContextChunk, DocId};
 
@@ -464,13 +466,14 @@ mod tests {
             max_score
         );
 
-        let selected_idx = select_profile_from_chunks(&[profile], &chunks)
-            .expect("Profile selection must succeed ignoring NaN chunk");
+        let selected_idx = select_profile_from_chunks(&[profile], &chunks)?;
         assert_eq!(selected_idx, 0);
+
+        Ok(())
     }
 
     #[test]
-    fn test_nan_all_chunks_fallback_and_tracing_error() {
+    fn test_nan_all_chunks_fallback_and_tracing_error() -> Result<(), Box<dyn std::error::Error>> {
         use crate::router::select_profile_from_chunks;
         use memfuse_core::{ContextChunk, DocId};
         use tracing_subscriber::layer::SubscriberExt;
@@ -520,7 +523,7 @@ mod tests {
             other => panic!("Expected NotFound error, got {:?}", other),
         }
 
-        let captured = logs.lock().unwrap();
+        let captured = logs.lock().map_err(|e| e.to_string())?;
         let found_log = captured.iter().any(|msg| {
             msg.contains("Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung")
         });
@@ -530,10 +533,12 @@ mod tests {
             "Expected tracing::error! message in logs, got: {:?}",
             *captured
         );
+
+        Ok(())
     }
 
     #[test]
-    fn test_nan_routing_determinism_repeats() {
+    fn test_nan_routing_determinism_repeats() -> Result<(), Box<dyn std::error::Error>> {
         use crate::router::select_profile_from_chunks;
         use memfuse_core::{ContextChunk, DocId};
 
@@ -582,16 +587,17 @@ mod tests {
             ),
         ];
 
-        let first_result = select_profile_from_chunks(&profiles, &chunks).expect("First selection");
+        let first_result = select_profile_from_chunks(&profiles, &chunks)?;
 
         for i in 0..100 {
-            let res = select_profile_from_chunks(&profiles, &chunks)
-                .unwrap_or_else(|_| panic!("Selection failed on iteration {}", i));
+            let res = select_profile_from_chunks(&profiles, &chunks)?;
             assert_eq!(
                 res, first_result,
                 "Routing selection must be bit-identical across runs (iteration {})",
                 i
             );
         }
+
+        Ok(())
     }
 }
