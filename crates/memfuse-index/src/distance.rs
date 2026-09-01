@@ -225,7 +225,7 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> Result<f32, MemFuseError> {
 }
 
 /// Scalar implementation of cosine distance.
-pub(crate) fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
+pub fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
     let mut dot = 0.0;
     let mut norm_a = 0.0;
     let mut norm_b = 0.0;
@@ -244,7 +244,7 @@ pub(crate) fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Scalar implementation of Euclidean distance.
-pub(crate) fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
+pub fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .map(|(x, y)| (x - y).powi(2))
@@ -253,7 +253,7 @@ pub(crate) fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Scalar implementation of dot product.
-pub(crate) fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
+pub fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
@@ -675,7 +675,7 @@ unsafe fn hsum512_ps_avx(v: __m512) -> f32 {
 }
 
 /// Normalizes a vector in-place to unit length (L2 norm = 1.0).
-pub(crate) fn normalize_inplace(v: &mut [f32]) {
+pub fn normalize_inplace(v: &mut [f32]) {
     let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
         for x in v.iter_mut() {
@@ -687,7 +687,7 @@ pub(crate) fn normalize_inplace(v: &mut [f32]) {
 /// Computes the dot product of two u8 vectors.
 #[inline]
 #[allow(unsafe_code)]
-pub(crate) fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
+pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -707,7 +707,7 @@ pub(crate) fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
-pub(crate) fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
+pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| x as u32 * y as u32)
@@ -717,7 +717,7 @@ pub(crate) fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 /// Computes the squared Euclidean distance between two u8 vectors.
 #[inline]
 #[allow(unsafe_code)]
-pub(crate) fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
+pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -737,7 +737,7 @@ pub(crate) fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
-pub(crate) fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
+pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| {
@@ -758,7 +758,7 @@ pub struct CosineSimilarityPartsU8 {
 /// Computes the parts required for cosine similarity between two u8 vectors.
 #[inline]
 #[allow(unsafe_code)]
-pub(crate) fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -781,7 +781,7 @@ pub(crate) fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarity
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
-pub(crate) fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut norm_a_sq = 0;
     let mut norm_b_sq = 0;
@@ -802,18 +802,13 @@ pub(crate) fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSim
 }
 
 /// Computes the dot product between an f32 vector and a u8 vector.
-pub(crate) fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
+pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization with per-dimension scaling.
-pub(crate) fn euclidean_distance_sq_f32_u8(
-    a: &[f32],
-    b: &[u8],
-    alphas: &[f32],
-    mins: &[f32],
-) -> f32 {
+pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .zip(alphas.iter())
@@ -835,7 +830,7 @@ pub struct CosineSimilarityPartsF32U8 {
 }
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
-pub(crate) fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
     let mut dot_f32_u8 = 0.0;
     let mut sum_u8 = 0;
     let mut norm_u8_sq = 0;
