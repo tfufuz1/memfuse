@@ -635,10 +635,7 @@ mod tests {
         interfix_type: &'static str,
     }
 
-    // ANCHOR[TEST:TXT-001] STATUS:DONE (TS:2026-08-30T22:15:00Z) (SESSION:95d21388)
-    // Recall-Evaluation abgeschlossen: Pass-Rate >= 90% verifiziert.
-    // DoS-Timing-Test: tests/compound_dos_timing_test.rs
-    // Alle Langkomposita terminieren in < 100ms.
+    // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6)
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();

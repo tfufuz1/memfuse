@@ -56,7 +56,6 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-09-01T20:04:08Z` | `crates/memfuse-mcp/tests/mcp_test.rs` | `ANCHOR` | `TEST:MCP-002` | `a42a25a3` | `DONE` | `0` | // ANCHOR[TEST:MCP-002] STATUS:DONE (TS:2026-09-01T20:04:08Z) (SESSION:a42a25a3) |
 | `2026-09-01T11:02:04Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-b2c3d4e5` | `dba1473f` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f) |
 | `2026-09-01T11:02:04Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-a1b2c3d4` | `dba1473f` | `RESOLVED` | `0` | // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f) |
 | `2026-08-31T21:20:00Z` | `crates/memfuse-core/src/types/domain.rs` | `REVIEW-PASS` | `TEST:CORE-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CORE-001) (TS: 2026-08-31T21:20:00Z) (SESSION: c9f5e2b3) |
@@ -64,9 +63,10 @@
 | `2026-08-31T21:13:44Z` | `crates/memfuse-core/src/types/domain.rs` | `ANCHOR` | `TEST:CORE-001` | `e459bd5f` | `DONE` | `2` | // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-31T21:13:44Z) (SESSION: e459bd5f) |
 | `2026-08-31T21:13:05Z` | `crates/memfuse-crypto/src/crypto.rs` | `ANCHOR` | `TEST:CRY-001` | `8427f167` | `DONE` | `2` | // ANCHOR[TEST:CRY-001] STATUS:DONE (TS:2026-08-31T21:13:05Z) (SESSION:8427f167) — Nonce-Uniqueness verification bei paralleler Verschlüsselung |
 | `2026-08-31T21:13:05Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `8427f167` | `PASS` | `2` | // REVIEW-PASS[3/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-31T21:13:05Z) (SESSION: 8427f167) |
+| `2026-08-31T21:12:53Z` | `crates/memfuse-mcp/tests/mcp_test.rs` | `ANCHOR` | `TEST:MCP-002` | `2c814094` | `IN-PROGRESS` | `0` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage |
 | `2026-08-31T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-31` | `crates/memfuse-embed/tests/reranker_adversarial_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantitativer Test- & Benchmark-Suite für Cross-Encoder Reranker Adversarial Attacks. |
-| `2026-08-30T22:15:00Z` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `95d21388` | `DONE` | `0` | // ANCHOR[TEST:TXT-001] STATUS:DONE (TS:2026-08-30T22:15:00Z) (SESSION:95d21388) |
+| `2026-08-30T22:01:55Z` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `cf1f75c6` | `OPEN` | `0` | // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6) |
 | `2026-08-30T21:56:10Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `a140747b` | `OPEN` | `0` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:OPEN (TS:2026-08-30T21:56:10Z) (SESSION: a140747b) |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische unified MemFuseError Enum für den gesamten Workspace. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error_dto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028). |
@@ -108,6 +108,7 @@
 | `2026-08-30T15:00:19Z` | `crates/memfuse-agent/src/graph.rs` | `AI-TAG` | `-` | `283abf0f` | `RESOLVED` | `-` | // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f) |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
+| `2026-08-29T17:21:26Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `e6e9abca` | `OPEN` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
@@ -159,7 +160,6 @@
 | `2026-06-01T00:00:00Z` | `crates/memfuse-store/src/wal.rs` | `ANCHOR` | `MIGRATION:WAL-HMAC-001` | `-` | `DONE` | `0` | /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
-| `` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-001` | `-` | `RESOLVED` | `0` | /// AI-TAG[INPUT-VALIDATION][MED] RESOLVED: AGT-CKPT-001 — |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
