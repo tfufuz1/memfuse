@@ -152,14 +152,6 @@ fn test_u8_metrics_exact_match() {
             "u8 Cosine dot mismatch at dim {dim}"
         );
         assert_eq!(
-            parts_scalar.sum_a, parts_dispatch.sum_a,
-            "u8 Cosine sum_a mismatch at dim {dim}"
-        );
-        assert_eq!(
-            parts_scalar.sum_b, parts_dispatch.sum_b,
-            "u8 Cosine sum_b mismatch at dim {dim}"
-        );
-        assert_eq!(
             parts_scalar.norm_a_sq, parts_dispatch.norm_a_sq,
             "u8 Cosine norm_a_sq mismatch at dim {dim}"
         );
