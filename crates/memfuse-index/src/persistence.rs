@@ -388,7 +388,7 @@ mod tests {
 
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), HnswHeader::SIZE);
-        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes");
+        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes"); // expect
         assert_eq!(header, parsed);
 
         // Error path 1: header bytes too small
@@ -414,7 +414,7 @@ mod tests {
 
         let bytes = record.to_bytes();
         assert_eq!(bytes.len(), NodeRecord::SIZE);
-        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes");
+        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes"); // expect
         assert_eq!(record.doc_id, parsed.doc_id);
         assert_eq!(record.max_layer, parsed.max_layer);
         assert_eq!(record.vector_offset, parsed.vector_offset);
