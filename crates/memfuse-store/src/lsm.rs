@@ -84,6 +84,63 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
+/// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
+/// tmp file -> fsync -> rename -> parent dir fsync.
+async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> Result<()> {
+    let parent = salt_path
+        .parent()
+        .ok_or_else(|| MemFuseError::Storage("Invalid salt path parent".into()))?;
+
+    let pid = std::process::id();
+    let rand_val: u64 = rand::random();
+    let tmp_path = parent.join(format!("SALT.tmp.{}.{}", pid, rand_val));
+
+    let buf_copy = *buf;
+    let write_res: Result<()> = async {
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to create temp SALT file: {}", e)))?;
+
+        let mut std_file = file
+            .into_std()
+            .await;
+
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            use std::io::Write;
+            std_file
+                .write_all(&buf_copy)
+                .map_err(|e| MemFuseError::Storage(format!("Failed to write SALT bytes: {}", e)))?;
+            std_file
+                .sync_all()
+                .map_err(|e| MemFuseError::Storage(format!("Failed to sync temp SALT file: {}", e)))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| MemFuseError::Storage(format!("Join error during SALT write: {}", e)))??;
+
+        tokio::fs::rename(&tmp_path, salt_path)
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("Failed to rename temp SALT file: {}", e)))?;
+
+        crate::util::fsync_parent_dir(salt_path).await?;
+        Ok(())
+    }
+    .await;
+
+    if write_res.is_err() {
+        if let Err(e) = tokio::fs::remove_file(&tmp_path).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!("Failed to remove temporary SALT file {:?}: {}", tmp_path, e);
+            }
+        }
+    }
+
+    write_res
+}
+
 fn validate_key(key: &[u8]) -> Result<()> {
     if key.is_empty() {
         return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
@@ -191,9 +248,7 @@ impl LsmStorage {
             let mut buf = [0u8; 32];
             use rand::Rng;
             rand::thread_rng().fill(&mut buf);
-            tokio::fs::write(&salt_path, &buf)
-                .await
-                .map_err(|e| MemFuseError::Storage(format!("Failed to write SALT: {}", e)))?;
+            write_salt_atomically(&salt_path, &buf).await?;
             buf.to_vec()
         };
 
@@ -294,9 +349,12 @@ impl LsmStorage {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let path = entry.path();
                 let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if file_name.ends_with(".tmp") || path.extension().is_some_and(|ext| ext == "tmp") {
+                if file_name.ends_with(".tmp")
+                    || path.extension().is_some_and(|ext| ext == "tmp")
+                    || file_name.starts_with("SALT.tmp.")
+                {
                     tracing::warn!(
-                        "Removing leftover un-renamed compaction temp file: {:?}",
+                        "Removing leftover un-renamed temp file: {:?}",
                         path
                     );
                     if let Err(e) = tokio::fs::remove_file(&path).await {
@@ -343,6 +401,20 @@ impl LsmStorage {
         // COMP-001 — Implementiere CompactionEngine::run_loop.
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
+        // Cleanup old replayed WAL files except the active WAL
+        if wal_files.len() > 1 {
+            let active_wal_path = wal.path();
+            for (_ts, old_wal_path) in &wal_files[..wal_files.len() - 1] {
+                if old_wal_path != active_wal_path {
+                    if let Err(e) = tokio::fs::remove_file(old_wal_path).await {
+                        tracing::warn!("Failed to remove old WAL file {:?}: {}", old_wal_path, e);
+                    } else {
+                        tracing::info!("Removed old replayed WAL file: {:?}", old_wal_path);
+                    }
+                }
+            }
+        }
+
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
@@ -434,6 +506,15 @@ impl LsmStorage {
     /// This is a destructive operation that removes all data after the target TX.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
+        self.rollback_to_tx_locked(target_tx).await
+    }
+
+    /// Internal rollback implementation.
+    ///
+    /// # Safety / Concurrency Invariant
+    /// **MUST ONLY** be called while holding `commit_mutex`. Calling this function without
+    /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
+    async fn rollback_to_tx_locked(&self, target_tx: TxId) -> Result<()> {
         let mut state = self.state.write().await;
 
         // 1. Truncate WAL to the position after target_tx
@@ -833,10 +914,6 @@ impl StorageEngine for LsmStorage {
         }
         let state = self.state.read().await;
 
-        // --- PHASE 1: WAL Snapshot for atomic rollback ---
-        let pre_tx_offset = state.wal.size();
-        let pre_tx_hmac = state.wal.last_hmac_snapshot().await;
-
         let mut wal_ops = Vec::with_capacity(ops.len());
         let mut mem_updates = Vec::with_capacity(ops.len());
 
@@ -878,8 +955,15 @@ impl StorageEngine for LsmStorage {
         // --- PHASE 2: Group Commit to WAL ---
         let wal_entries = state.wal.prepare_batch(wal_ops).await?;
         if let Err(e) = state.wal.append_batch(&wal_entries).await {
-            // FATAL I/O ERROR: Physical Rollback of the WAL to pre-tx state
-            state.wal.truncate(pre_tx_offset, pre_tx_hmac).await?;
+            // FATAL I/O ERROR: Physical Rollback to last committed transaction state
+            drop(state);
+            let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
+            if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx).await {
+                tracing::error!(
+                    "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
+                    rollback_err
+                );
+            }
             return Err(MemFuseError::Storage(format!(
                 "Commit failed (at WAL append), WAL rollback executed: {}",
                 e

@@ -1010,7 +1010,8 @@ mod tests {
             let initial_skipped = checkpoint_guard_skipped_rollback_count();
 
             {
-                let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
+                let _guard = store.create_guard(TxId::new(999)).unwrap();
+                // _guard drops here at end of inner scope
             }
 
             assert_eq!(
@@ -1029,7 +1030,8 @@ mod tests {
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         {
-            let _guard = store.create_guard(TxId::new(808)).unwrap(); // unwrap
+            let _guard = store.create_guard(TxId::new(808)).unwrap();
+            // Drop without commit inside tokio runtime
         }
 
         // Await pending auto-rollback tasks explicitly
@@ -1045,12 +1047,9 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
-        let guard = store.create_guard(TxId::new(909)).unwrap(); // unwrap
+        let guard = store.create_guard(TxId::new(909)).unwrap();
         let res = guard.rollback_blocking();
-        assert!(
-            res.is_ok(),
-            "rollback_blocking must succeed in sync context"
-        );
+        assert!(res.is_ok(), "rollback_blocking must succeed in sync context");
 
         let rolled_back = storage.rolled_back_tx.lock().clone();
         assert_eq!(rolled_back, vec![TxId::new(909)]);
@@ -1061,7 +1060,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
-        let guard = store.create_guard(TxId::new(1010)).unwrap(); // unwrap
+        let guard = store.create_guard(TxId::new(1010)).unwrap();
         let res = guard.rollback_blocking();
         assert!(
             res.is_err(),
