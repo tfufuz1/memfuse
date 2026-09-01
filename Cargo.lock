@@ -2871,6 +2871,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2937,6 +2938,7 @@ dependencies = [
  "memfuse-core",
  "parking_lot",
  "proptest",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
