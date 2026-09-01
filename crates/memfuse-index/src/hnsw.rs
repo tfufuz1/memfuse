@@ -1067,6 +1067,9 @@ impl HnswIndexCore {
             ));
         }
 
+        // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f)
+        // RESOLVED: AGT-INDEX-b2c3d4e5 — try_write/read lock race condition replaced with guaranteed write lock (TS: 2026-09-01T11:02:04Z)
+        // AI-NOTE: Sobald P-J5 (loom-Harness) gemerged ist, ergänze hier einen loom-basierten Nebenläufigkeits-Beweis, siehe memfuse_neue_befunde.md NEU-02.
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
@@ -1844,6 +1847,12 @@ impl VectorIndex for HnswIndex {
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
+            // AI-TAG[BUG-FIX][CRITICAL] Tombstone filter must be evaluated unconditionally before custom filter (ID: AGT-INDEX-a1b2c3d4) (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f)
+            // RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone check executed unconditionally before custom filter (TS: 2026-09-01T11:02:04Z)
+            if deleted.contains(c.index as u64) {
+                continue;
+            }
+
             let node = nodes.get(c.index).ok_or_else(|| {
                 MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
             })?;
@@ -1852,9 +1861,6 @@ impl VectorIndex for HnswIndex {
             }
             let doc_id = node.doc_id;
 
-            if deleted.contains(c.index as u64) {
-                continue;
-            }
             if let Some(f) = filter {
                 if !f(doc_id) {
                     continue;
@@ -2429,6 +2435,35 @@ mod tests {
                 "Deleted entry point node 0 must not be returned"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_search_filtered_tombstone_precedes_custom_filter_match() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+
+        // 1. Insert vector and commit
+        let tx1 = TxId::new(1);
+        let doc_id = DocId::new(42);
+        index.insert(tx1, doc_id, &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
+        index.commit(tx1).await.unwrap();
+
+        // 2. Rollback to Tx 0 (marks node as deleted/tombstoned in rollback_to_tx)
+        index.rollback_to_tx(TxId::new(0)).await.unwrap();
+
+        // 3. Perform search_filtered with a filter that explicitly returns true for DocId 42
+        //    (simulates storage/index inconsistency where custom filter matches deleted doc_id)
+        let custom_filter = move |id: DocId| id == doc_id;
+        let filter_ref: &(dyn Fn(DocId) -> bool + Send + Sync) = &custom_filter;
+        let results = index
+            .search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter_ref))
+            .await
+            .unwrap();
+
+        // 4. Verify search_filtered results do NOT contain the rolled back document
+        assert!(
+            results.is_empty(),
+            "Rolled back tombstoned document must not be returned even if custom filter returns true"
+        );
     }
 
     #[tokio::test]
@@ -3218,5 +3253,67 @@ mod tests {
             drift, 0.0,
             "Quantizer bounds must expand deterministically during insert even under read lock contention"
         );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_search_and_insert_expands_quantizer_bounds() {
+        let config = HnswConfig {
+            dimension: 4,
+            quantize: true,
+            ..test_config(4)
+        };
+        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap());
+
+        // 1. Train quantizer with initial vectors
+        let tx1 = TxId::new(1);
+        for i in 1..=60u64 {
+            let v = [1.0, 2.0, 3.0, 4.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+        }
+        index.commit(tx1).await.unwrap();
+
+        let initial_mins = index.quantizer().read().as_ref().unwrap().mins.clone();
+        let initial_maxes = index.quantizer().read().as_ref().unwrap().maxes.clone();
+
+        // 2. Parallele search() und insert() Aufrufe via tokio::join!
+        let out_of_bounds_vector = [1000.0, -1000.0, 500.0, -500.0];
+        let idx_search = std::sync::Arc::clone(&index);
+        let idx_insert = std::sync::Arc::clone(&index);
+
+        let search_handle = tokio::spawn(async move {
+            for _ in 0..100 {
+                let _ = idx_search.search(&[1.0, 2.0, 3.0, 4.0], 5).await;
+                tokio::task::yield_now().await;
+            }
+        });
+
+        let insert_handle = tokio::spawn(async move {
+            let tx2 = TxId::new(2);
+            idx_insert
+                .insert(tx2, DocId::new(100), &out_of_bounds_vector)
+                .await
+                .unwrap();
+            idx_insert.commit(tx2).await.unwrap();
+        });
+
+        let (res_search, res_insert) = tokio::join!(search_handle, insert_handle);
+        res_search.unwrap();
+        res_insert.unwrap();
+
+        // 3. Verifiziere min/max Grenzen des Quantizers direkt
+        let q_guard = index.quantizer().read();
+        let q = q_guard.as_ref().expect("Quantizer must be present");
+        assert!(
+            q.maxes[0] >= 1000.0,
+            "maxes[0] was {}, expected >= 1000.0",
+            q.maxes[0]
+        );
+        assert!(
+            q.mins[1] <= -1000.0,
+            "mins[1] was {}, expected <= -1000.0",
+            q.mins[1]
+        );
+        assert!(q.maxes[0] > initial_maxes[0]);
+        assert!(q.mins[1] < initial_mins[1]);
     }
 }
