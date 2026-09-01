@@ -444,44 +444,16 @@ mod tests {
         assert_eq!(doc.id, "doc1");
 
         // Verify metadata merging (earlier signal key is retained, missing keys supplemented)
-        let meta = doc.metadata.as_ref().unwrap().as_object().unwrap(); // unwrap
-        assert_eq!(meta.get("vec_key").unwrap(), "val1"); // unwrap
-        assert_eq!(meta.get("graph_key").unwrap(), "val2"); // unwrap
-        assert_eq!(meta.get("shared_key").unwrap(), "from_vector"); // unwrap
+        if let Some(serde_json::Value::Object(meta)) = &doc.metadata {
+            assert_eq!(meta.get("vec_key"), Some(&serde_json::json!("val1")));
+            assert_eq!(meta.get("graph_key"), Some(&serde_json::json!("val2")));
+            assert_eq!(meta.get("shared_key"), Some(&serde_json::json!("from_vector")));
+        } else {
+            panic!("Expected metadata object");
+        }
 
         // Verify matched signals tracking
         assert_eq!(doc.matched_signals, vec!["vector", "graph"]);
-    }
-
-    #[test]
-    fn test_weights_to_signal_factors_none_returns_equal_thirds() {
-        let (vec_w, text_w, graph_w) = weights_to_signal_factors(None);
-        // Anti-mirroring check: Expected 1/3 = 0.33333334
-        assert!((vec_w - 0.33333334).abs() < 1e-5);
-        assert!((text_w - 0.33333334).abs() < 1e-5);
-        assert!((graph_w - 0.33333334).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_weights_to_signal_factors_some_returns_exact_weights() {
-        use memfuse_core::FusionWeights;
-        let weights = FusionWeights::new(0.5, 0.3, 0.2).unwrap();
-        let (v, t, g) = weights_to_signal_factors(Some(&weights));
-        assert!((v - 0.5).abs() < 1e-5);
-        assert!((t - 0.3).abs() < 1e-5);
-        assert!((g - 0.2).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_weighted_rrf_zero_max_results_returns_empty() {
-        let set = vec![SearchResult {
-            id: "doc1".to_string(),
-            score: 0.9,
-            metadata: None,
-            matched_signals: vec![],
-        }];
-        let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, 1.0)], 0);
-        assert!(fused.is_empty());
     }
 
     #[test]
@@ -532,11 +504,14 @@ mod tests {
             1,
             MetadataMergePriority::VectorFirst,
         );
-        let meta_vec = fused_vec[0].metadata.as_ref().unwrap().as_object().unwrap();
-        assert_eq!(meta_vec.get("shared_key").unwrap(), "from_vector");
-        assert_eq!(meta_vec.get("vec_only").unwrap(), "vec_val");
-        assert_eq!(meta_vec.get("text_only").unwrap(), "text_val");
-        assert_eq!(meta_vec.get("graph_only").unwrap(), "graph_val");
+        if let Some(serde_json::Value::Object(meta_vec)) = &fused_vec[0].metadata {
+            assert_eq!(meta_vec.get("shared_key"), Some(&serde_json::json!("from_vector")));
+            assert_eq!(meta_vec.get("vec_only"), Some(&serde_json::json!("vec_val")));
+            assert_eq!(meta_vec.get("text_only"), Some(&serde_json::json!("text_val")));
+            assert_eq!(meta_vec.get("graph_only"), Some(&serde_json::json!("graph_val")));
+        } else {
+            panic!("Expected metadata object");
+        }
 
         // 2. TextFirst -> Text wins shared_key
         let fused_text = weighted_reciprocal_rank_fusion_with_priority(
@@ -544,8 +519,11 @@ mod tests {
             1,
             MetadataMergePriority::TextFirst,
         );
-        let meta_text = fused_text[0].metadata.as_ref().unwrap().as_object().unwrap();
-        assert_eq!(meta_text.get("shared_key").unwrap(), "from_text");
+        if let Some(serde_json::Value::Object(meta_text)) = &fused_text[0].metadata {
+            assert_eq!(meta_text.get("shared_key"), Some(&serde_json::json!("from_text")));
+        } else {
+            panic!("Expected metadata object");
+        }
 
         // 3. GraphFirst -> Graph wins shared_key
         let fused_graph = weighted_reciprocal_rank_fusion_with_priority(
@@ -553,8 +531,11 @@ mod tests {
             1,
             MetadataMergePriority::GraphFirst,
         );
-        let meta_graph = fused_graph[0].metadata.as_ref().unwrap().as_object().unwrap();
-        assert_eq!(meta_graph.get("shared_key").unwrap(), "from_graph");
+        if let Some(serde_json::Value::Object(meta_graph)) = &fused_graph[0].metadata {
+            assert_eq!(meta_graph.get("shared_key"), Some(&serde_json::json!("from_graph")));
+        } else {
+            panic!("Expected metadata object");
+        }
 
         // 4. Custom priority (Graph -> Text -> Vector) -> Graph wins shared_key
         let fused_custom = weighted_reciprocal_rank_fusion_with_priority(
@@ -566,8 +547,45 @@ mod tests {
                 SignalKind::Vector,
             ]),
         );
-        let meta_custom = fused_custom[0].metadata.as_ref().unwrap().as_object().unwrap();
-        assert_eq!(meta_custom.get("shared_key").unwrap(), "from_graph");
+        if let Some(serde_json::Value::Object(meta_custom)) = &fused_custom[0].metadata {
+            assert_eq!(meta_custom.get("shared_key"), Some(&serde_json::json!("from_graph")));
+        } else {
+            panic!("Expected metadata object");
+        }
+    }
+
+    #[test]
+    fn test_weights_to_signal_factors_none_returns_equal_thirds() {
+        let (vec_w, text_w, graph_w) = weights_to_signal_factors(None);
+        // Anti-mirroring check: Expected 1/3 = 0.33333334
+        assert!((vec_w - 0.33333334).abs() < 1e-5);
+        assert!((text_w - 0.33333334).abs() < 1e-5);
+        assert!((graph_w - 0.33333334).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_weights_to_signal_factors_some_returns_exact_weights() {
+        use memfuse_core::FusionWeights;
+        if let Ok(weights) = FusionWeights::new(0.5, 0.3, 0.2) {
+            let (v, t, g) = weights_to_signal_factors(Some(&weights));
+            assert!((v - 0.5).abs() < 1e-5);
+            assert!((t - 0.3).abs() < 1e-5);
+            assert!((g - 0.2).abs() < 1e-5);
+        } else {
+            panic!("Expected valid weights");
+        }
+    }
+
+    #[test]
+    fn test_weighted_rrf_zero_max_results_returns_empty() {
+        let set = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+        }];
+        let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, 1.0)], 0);
+        assert!(fused.is_empty());
     }
 
     #[test]
