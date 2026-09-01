@@ -68,21 +68,22 @@ async fn setup_env() -> (Arc<MemFuse>, TempDir) {
 async fn test_agent_auto_checkpoint_before_step() {
     let (db, _tmp) = setup_env().await;
     let state_col = db.collection("agent_state").await.expect("col failed");
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "t1",
         "start",
         db.clone(),
         state_col.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start", NodeType::Start, Some("success_tool"));
-    graph.add_node("end", "End", NodeType::End, None);
-    graph.add_edge("start", "end", None, 1);
+    graph.try_add_node("start", "Start", NodeType::Start, Some("success_tool")).unwrap();
+    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(SuccessTool));
+    engine.try_register_tool(Box::new(SuccessTool)).unwrap();
 
     engine.run(&mut ctx, &graph).await.expect("run failed");
 
@@ -101,23 +102,24 @@ async fn test_agent_auto_checkpoint_before_step() {
 async fn test_agent_replay_from_checkpoint() {
     let (db, _tmp) = setup_env().await;
     let state_col = db.collection("agent_state").await.expect("col failed");
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "t1",
         "start",
         db.clone(),
         state_col.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start", NodeType::Start, Some("success_tool"));
-    graph.add_node("step2", "Step 2", NodeType::Task, Some("success_tool"));
-    graph.add_node("end", "End", NodeType::End, None);
-    graph.add_edge("start", "step2", None, 1);
-    graph.add_edge("step2", "end", None, 1);
+    graph.try_add_node("start", "Start", NodeType::Start, Some("success_tool")).unwrap();
+    graph.try_add_node("step2", "Step 2", NodeType::Task, Some("success_tool")).unwrap();
+    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph.try_add_edge("start", "step2", None, 1).unwrap();
+    graph.try_add_edge("step2", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(SuccessTool));
+    engine.try_register_tool(Box::new(SuccessTool)).unwrap();
 
     // Run first step
     engine.run(&mut ctx, &graph).await.expect("run failed");
@@ -139,21 +141,22 @@ async fn test_agent_replay_from_checkpoint() {
 async fn test_agent_error_handling() {
     let (db, _tmp) = setup_env().await;
     let state_col = db.collection("agent_state").await.expect("col failed");
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "t1",
         "start",
         db.clone(),
         state_col.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start", NodeType::Start, Some("failing_tool"));
-    graph.add_node("end", "End", NodeType::End, None);
-    graph.add_edge("start", "end", None, 1);
+    graph.try_add_node("start", "Start", NodeType::Start, Some("failing_tool")).unwrap();
+    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(FailingTool));
+    engine.try_register_tool(Box::new(FailingTool)).unwrap();
 
     let result = engine.run(&mut ctx, &graph).await;
     assert!(result.is_err());
@@ -177,21 +180,22 @@ async fn test_agent_error_handling() {
 async fn test_agent_audit_log_immutable() {
     let (db, _tmp) = setup_env().await;
     let state_col = db.collection("agent_state").await.expect("col failed");
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "t1",
         "start",
         db.clone(),
         state_col.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start", NodeType::Start, Some("success_tool"));
-    graph.add_node("end", "End", NodeType::End, None);
-    graph.add_edge("start", "end", None, 1);
+    graph.try_add_node("start", "Start", NodeType::Start, Some("success_tool")).unwrap();
+    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(SuccessTool));
+    engine.try_register_tool(Box::new(SuccessTool)).unwrap();
 
     engine.run(&mut ctx, &graph).await.expect("run failed");
 
@@ -212,21 +216,22 @@ async fn test_agent_audit_log_immutable() {
 async fn test_crash_during_execute_recovery() {
     let (db, _tmp) = setup_env().await;
     let state_col = db.collection("agent_state").await.expect("col failed");
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "crash-task",
         "start",
         db.clone(),
         state_col.clone(),
         TokenBudget::new(100, 0),
-    );
+    )
+    .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.add_node("start", "Start", NodeType::Start, Some("failing_tool"));
-    graph.add_node("end", "End", NodeType::End, None);
-    graph.add_edge("start", "end", None, 1);
+    graph.try_add_node("start", "Start", NodeType::Start, Some("failing_tool")).unwrap();
+    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(FailingTool));
+    engine.try_register_tool(Box::new(FailingTool)).unwrap();
 
     // Execution fails during execute()
     let res = engine.run(&mut ctx, &graph).await;
@@ -256,27 +261,28 @@ async fn test_crash_during_execute_recovery() {
 async fn test_loop_rollback_integrity() {
     let (db, _tmp) = setup_env().await;
     let state_col = db.collection("agent_state").await.expect("col failed");
-    let mut ctx = AgentContext::new(
+    let mut ctx = AgentContext::try_new(
         "loop-task",
         "A",
         db.clone(),
         state_col,
         TokenBudget::new(100, 0),
-    );
+    )
+    .expect("ctx failed");
 
     // Graph: A -> B -> A (Loop)
     let mut graph = StateGraph::new();
-    graph.add_node("A", "Node A", NodeType::Start, Some("success_tool"));
-    graph.add_node("B", "Node B", NodeType::Task, Some("success_tool"));
-    graph.add_node("end", "End", NodeType::End, None);
+    graph.try_add_node("A", "Node A", NodeType::Start, Some("success_tool")).unwrap();
+    graph.try_add_node("B", "Node B", NodeType::Task, Some("success_tool")).unwrap();
+    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
 
-    graph.add_edge("A", "B", None, 1);
-    graph.add_edge("B", "A", None, 1);
+    graph.try_add_edge("A", "B", None, 1).unwrap();
+    graph.try_add_edge("B", "A", None, 1).unwrap();
     // Add a way out of the loop after 2 iterations (manual intervention simulated)
-    graph.add_edge("A", "end", None, 1);
+    graph.try_add_edge("A", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine.register_tool(Box::new(SuccessTool));
+    engine.try_register_tool(Box::new(SuccessTool)).unwrap();
 
     // Run 5 steps: A(0) -> B(1) -> A(2) -> B(3) -> A(4)
     // We stop before it continues to B or end.

@@ -50,7 +50,7 @@ async fn setup_engine(dim: usize) -> (OrchestratorEngine, Arc<MemFuse>, TempDir)
 
     let storage = db.inner_storage();
     let mut engine = OrchestratorEngine::new(storage);
-    engine.register_tool(Box::new(EchoTool));
+    engine.try_register_tool(Box::new(EchoTool)).unwrap();
 
     (engine, db, tmp)
 }
@@ -61,21 +61,25 @@ async fn test_e2e_agent_workflow() {
 
     // Build a simple Start → Task → End graph
     let mut graph = StateGraph::new();
-    graph.add_node(
-        "start",
-        "Begin workflow",
-        NodeType::Start,
-        Some("echo_tool"),
-    );
-    graph.add_node("process", "Process data", NodeType::Task, Some("echo_tool"));
-    graph.add_node("done", "Finished", NodeType::End, None);
+    graph
+        .try_add_node(
+            "start",
+            "Begin workflow",
+            NodeType::Start,
+            Some("echo_tool"),
+        )
+        .unwrap();
+    graph
+        .try_add_node("process", "Process data", NodeType::Task, Some("echo_tool"))
+        .unwrap();
+    graph.try_add_node("done", "Finished", NodeType::End, None).unwrap();
 
-    graph.add_edge("start", "process", None, 1);
-    graph.add_edge("process", "done", None, 1);
+    graph.try_add_edge("start", "process", None, 1).unwrap();
+    graph.try_add_edge("process", "done", None, 1).unwrap();
 
     let state_col = db.collection("agent-state").await.expect("collection");
     let budget = TokenBudget::new(100, 0);
-    let mut ctx = AgentContext::new("test-task-1", "start", db.clone(), state_col, budget);
+    let mut ctx = AgentContext::try_new("test-task-1", "start", db.clone(), state_col, budget).unwrap();
 
     engine.run(&mut ctx, &graph).await.expect("workflow run");
 
@@ -171,7 +175,7 @@ async fn test_stress_concurrent_agent_ops() {
                     .await
                     .expect("insert");
 
-                let res = col.search(&vec, 1).await.expect("search");
+                let res = col.query().vector(&vec).k(1).execute().await.expect("query");
                 assert_eq!(res[0].id, id);
 
                 col.delete(&id).await.expect("delete");
