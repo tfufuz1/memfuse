@@ -6,6 +6,29 @@ crates/memfuse-agent/src/audit.rs:91:        let index = Arc::new(HnswIndex::try
 crates/memfuse-agent/src/audit.rs:125:        audit_log.append(&entry1).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:126:        audit_log.append(&entry2).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:128:        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
+crates/memfuse-agent/src/audit.rs:91:        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap()); // unwrap allowed
+crates/memfuse-agent/src/context.rs:141:            .expect("Invalid task_id or start_node in AgentContext::new")
+crates/memfuse-agent/src/context.rs:229:        assert_eq!(attached_deque.back().map(|e| e.observed_at_seq), Some(10_004));
+crates/memfuse-agent/src/engine.rs:80:            .expect("Invalid tool name in register_tool");
+crates/memfuse-agent/src/event_source.rs:215:            .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")
+crates/memfuse-checkpoint/src/lib.rs:1060:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1065:            .expect("// expect #[cfg(test)]")
+crates/memfuse-checkpoint/src/lib.rs:1066:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1090:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1115:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1116:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
+crates/memfuse-checkpoint/src/lib.rs:1120:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1138:        let cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1164:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1182:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1184:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1203:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1205:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1236:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1238:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1239:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1273:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1344:                let manifest = manifest.expect("// expect #[cfg(test)]");
 crates/memfuse-checkpoint/src/lib.rs:690:            .unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:691:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:702:            .unwrap(); // unwrap
@@ -1055,14 +1078,14 @@ crates/memfuse-index/src/persistence.rs:9:// TEST: grep -c ".unwrap()" crates/me
 crates/memfuse-index/src/persistence.rs:10:// DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.
 crates/memfuse-index/src/persistence.rs:325:        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes");
 crates/memfuse-index/src/persistence.rs:351:        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes");
-crates/memfuse-index/src/distance.rs:1220:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1226:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1231:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1468:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1512:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1519:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1603:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1610:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1285:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1291:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1296:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1535:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1579:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1586:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1670:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1677:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
 crates/memfuse-index/src/diskann.rs:1002:        let index = DiskAnnIndex::try_new(DiskAnnConfig::default()).expect("valid config");
 crates/memfuse-index/src/diskann.rs:1024:        let index = DiskAnnIndex::try_new(valid_config).expect("valid config"); // expect
 crates/memfuse-index/src/diskann.rs:1030:        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
@@ -1108,128 +1131,164 @@ crates/memfuse-index/src/diskann.rs:1291:        let index = DiskAnnIndex::try_n
 crates/memfuse-index/src/diskann.rs:1294:        index.build(&vectors, &ids).await.expect("build"); // expect
 crates/memfuse-index/src/diskann.rs:1305:        let reloaded_index = DiskAnnIndex::try_new(load_config).expect("valid config"); // expect
 crates/memfuse-index/src/diskann.rs:1308:        let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
-crates/memfuse-index/src/hnsw.rs:2268:        let err_msg = format!("{}", result.err().unwrap()); // unwrap
-crates/memfuse-index/src/hnsw.rs:2288:            .expect("valid builder config");
-crates/memfuse-index/src/hnsw.rs:2321:        let index = HnswIndex::try_new(config).expect("valid config");
-crates/memfuse-index/src/hnsw.rs:2326:        index.insert(tx, doc_id, &vec).await.expect("insert");
-crates/memfuse-index/src/hnsw.rs:2327:        index.commit(tx).await.expect("commit");
-crates/memfuse-index/src/hnsw.rs:2353:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2360:            .expect("insert 1"); // expect
-crates/memfuse-index/src/hnsw.rs:2364:            .expect("insert 2"); // expect
-crates/memfuse-index/src/hnsw.rs:2368:            .expect("insert 3"); // expect
-crates/memfuse-index/src/hnsw.rs:2369:        index.commit(tx).await.expect("commit"); // expect
-crates/memfuse-index/src/hnsw.rs:2375:            .expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2382:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2388:            .expect("insert"); // expect
-crates/memfuse-index/src/hnsw.rs:2389:        index.commit(tx1).await.expect("commit"); // expect
-crates/memfuse-index/src/hnsw.rs:2394:        index.delete(tx2, DocId::new(1)).await.expect("delete"); // expect
-crates/memfuse-index/src/hnsw.rs:2395:        index.commit(tx2).await.expect("commit"); // expect
-crates/memfuse-index/src/hnsw.rs:2402:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2408:            index.insert(tx1, DocId::new(i), &v).await.expect("insert"); // expect
-crates/memfuse-index/src/hnsw.rs:2410:        index.commit(tx1).await.expect("commit"); // expect
-crates/memfuse-index/src/hnsw.rs:2414:        index.delete(tx2, DocId::new(0)).await.expect("delete"); // expect
-crates/memfuse-index/src/hnsw.rs:2415:        index.commit(tx2).await.expect("commit"); // expect
-crates/memfuse-index/src/hnsw.rs:2421:            .expect("search should succeed after entry point deletion"); // expect
-crates/memfuse-index/src/hnsw.rs:2435:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2441:            .expect("insert"); // expect
-crates/memfuse-index/src/hnsw.rs:2442:        index.rollback(tx).await.expect("rollback"); // expect
-crates/memfuse-index/src/hnsw.rs:2449:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2453:            .expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2459:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2467:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2473:            .expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2477:            .expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2481:            .expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2482:        index.commit(tx).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2490:            .expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2503:        .unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2510:                .expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2512:        index.commit(tx).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2520:        index.delete(tx2, DocId::new(2)).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2521:        index.delete(tx2, DocId::new(4)).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2522:        index.commit(tx2).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2528:        let stats_pre = index.stats().await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2532:        index.rebuild().await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2538:        let stats_post = index.stats().await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2542:        let results = index.search(&[1.0, 0.0], 1).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2555:        .unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2561:            index.insert(tx, DocId::new(i), &v).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2563:        index.commit(tx).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2572:            index.delete(tx2, DocId::new(i)).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2574:        index.commit(tx2).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2579:        index.rebuild().await.expect("rebuild"); // expect
-crates/memfuse-index/src/hnsw.rs:2592:            .expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2607:            let index = HnswIndex::try_new(config).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2616:        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2626:        let index = HnswIndex::try_new(config.clone()).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2632:            index.insert(tx1, DocId::new(i), &v).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2634:        index.commit(tx1).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2637:        index.save(&index_path).await.expect("save"); // expect
-crates/memfuse-index/src/hnsw.rs:2640:        let index_mmap = HnswIndex::try_new(config.clone()).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2641:        index_mmap.load_mmap(&index_path).await.expect("load mmap"); // expect
-crates/memfuse-index/src/hnsw.rs:2649:            .expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2659:                .expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2661:        index_mmap.commit(tx2).await.expect("test"); // expect
-crates/memfuse-index/src/hnsw.rs:2669:            .expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2676:            .expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2699:        let index = HnswIndex::try_new(config).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2714:                .expect("insert"); // expect
-crates/memfuse-index/src/hnsw.rs:2716:        index.commit(tx).await.expect("commit"); // expect
-crates/memfuse-index/src/hnsw.rs:2723:            let results = index.search(query, 1).await.expect("search"); // expect
-crates/memfuse-index/src/hnsw.rs:2736:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2743:                .unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2745:        index.commit(tx).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2747:        let ids = index.all_doc_ids().await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2755:        index.delete(tx2, DocId::new(5)).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2756:        index.delete(tx2, DocId::new(8)).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2757:        index.commit(tx2).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2759:        let ids2 = index.all_doc_ids().await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2772:        let index = HnswIndex::try_new(config).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2777:            index.insert(tx, DocId::new(i), &v).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2779:        index.commit(tx).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2783:        index.delete(tx2, DocId::new(0)).await.unwrap(); // #[test] // unwrap
-crates/memfuse-index/src/hnsw.rs:2784:        index.delete(tx2, DocId::new(1)).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2785:        index.commit(tx2).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2809:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2822:        let idx = HnswIndex::try_new(config).unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2828:            idx.insert(tx, DocId::new(i), &v).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2830:        idx.commit(tx).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2835:            idx.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2837:        idx.commit(tx2).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2844:        let results = idx.search(&query, 5).await.unwrap(); // unwrap
-crates/memfuse-index/src/hnsw.rs:2865:        let index = HnswIndex::try_new(config).unwrap();
-crates/memfuse-index/src/hnsw.rs:2879:                .unwrap();
-crates/memfuse-index/src/hnsw.rs:2881:        index.commit(tx).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2885:            index.delete(tx2, DocId::new(i)).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2889:        index.commit(tx2).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2900:        let index = HnswIndex::try_new(test_config(4)).unwrap();
-crates/memfuse-index/src/hnsw.rs:2907:            .unwrap();
-crates/memfuse-index/src/hnsw.rs:2911:            .unwrap();
-crates/memfuse-index/src/hnsw.rs:2912:        index.commit(tx1).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2916:        index.delete(tx2, DocId::new(1)).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2920:            .unwrap();
-crates/memfuse-index/src/hnsw.rs:2921:        index.commit(tx2).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2924:        let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2931:        let res_seq2 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 2).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2945:        let index = HnswIndex::try_new(config).unwrap();
-crates/memfuse-index/src/hnsw.rs:2951:                .unwrap();
-crates/memfuse-index/src/hnsw.rs:2953:        index.commit(tx).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2959:            index.delete(tx2, DocId::new(i)).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2961:        index.commit(tx2).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2964:            let res = handle.await.unwrap();
-crates/memfuse-index/src/hnsw.rs:2995:                .unwrap();
-crates/memfuse-index/src/hnsw.rs:3002:                let index = HnswIndex::try_new(config).unwrap();
-crates/memfuse-index/src/hnsw.rs:3035:                    let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:3041:            }).unwrap();
-crates/memfuse-index/src/hnsw.rs:3047:        let index = HnswIndex::try_new(test_config(4)).unwrap();
-crates/memfuse-index/src/hnsw.rs:3091:        let index = HnswIndex::try_new(test_config(4)).unwrap();
-crates/memfuse-index/src/hnsw.rs:3096:            .unwrap();
-crates/memfuse-index/src/hnsw.rs:3097:        index.commit(tx).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:3099:        let results = index.search(&[1.0, 0.0, 0.0, 0.0], 0).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:3105:        let index = HnswIndex::try_new(test_config(4)).unwrap();
-crates/memfuse-index/src/hnsw.rs:3108:        index.delete(tx, DocId::new(999)).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:3109:        index.commit(tx).await.unwrap();
-crates/memfuse-index/src/hnsw.rs:3110:        assert!(index.all_doc_ids().await.unwrap().is_empty());
+crates/memfuse-index/src/distance.rs:1285:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1291:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1296:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1535:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1579:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1586:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1670:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1677:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2269:        let err_msg = format!("{}", result.err().unwrap()); // unwrap
+crates/memfuse-index/src/hnsw.rs:2289:            .expect("valid builder config");
+crates/memfuse-index/src/hnsw.rs:2322:        let index = HnswIndex::try_new(config).expect("valid config");
+crates/memfuse-index/src/hnsw.rs:2327:        index.insert(tx, doc_id, &vec).await.expect("insert");
+crates/memfuse-index/src/hnsw.rs:2328:        index.commit(tx).await.expect("commit");
+crates/memfuse-index/src/hnsw.rs:2354:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2361:            .expect("insert 1"); // expect
+crates/memfuse-index/src/hnsw.rs:2365:            .expect("insert 2"); // expect
+crates/memfuse-index/src/hnsw.rs:2369:            .expect("insert 3"); // expect
+crates/memfuse-index/src/hnsw.rs:2370:        index.commit(tx).await.expect("commit"); // expect
+crates/memfuse-index/src/hnsw.rs:2376:            .expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2383:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2389:            .expect("insert"); // expect
+crates/memfuse-index/src/hnsw.rs:2390:        index.commit(tx1).await.expect("commit"); // expect
+crates/memfuse-index/src/hnsw.rs:2395:        index.delete(tx2, DocId::new(1)).await.expect("delete"); // expect
+crates/memfuse-index/src/hnsw.rs:2396:        index.commit(tx2).await.expect("commit"); // expect
+crates/memfuse-index/src/hnsw.rs:2403:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2409:            index.insert(tx1, DocId::new(i), &v).await.expect("insert"); // expect
+crates/memfuse-index/src/hnsw.rs:2411:        index.commit(tx1).await.expect("commit"); // expect
+crates/memfuse-index/src/hnsw.rs:2415:        index.delete(tx2, DocId::new(0)).await.expect("delete"); // expect
+crates/memfuse-index/src/hnsw.rs:2416:        index.commit(tx2).await.expect("commit"); // expect
+crates/memfuse-index/src/hnsw.rs:2422:            .expect("search should succeed after entry point deletion"); // expect
+crates/memfuse-index/src/hnsw.rs:2436:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2442:            .expect("insert"); // expect
+crates/memfuse-index/src/hnsw.rs:2443:        index.rollback(tx).await.expect("rollback"); // expect
+crates/memfuse-index/src/hnsw.rs:2450:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2454:            .expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2460:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2468:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2474:            .expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2478:            .expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2482:            .expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2483:        index.commit(tx).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2491:            .expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2504:        .unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2511:                .expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2513:        index.commit(tx).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2521:        index.delete(tx2, DocId::new(2)).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2522:        index.delete(tx2, DocId::new(4)).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2523:        index.commit(tx2).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2529:        let stats_pre = index.stats().await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2533:        index.rebuild().await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2539:        let stats_post = index.stats().await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2543:        let results = index.search(&[1.0, 0.0], 1).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2556:        .unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2562:            index.insert(tx, DocId::new(i), &v).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2564:        index.commit(tx).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2573:            index.delete(tx2, DocId::new(i)).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2575:        index.commit(tx2).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2580:        index.rebuild().await.expect("rebuild"); // expect
+crates/memfuse-index/src/hnsw.rs:2593:            .expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2608:            let index = HnswIndex::try_new(config).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2617:        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2627:        let index = HnswIndex::try_new(config.clone()).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2633:            index.insert(tx1, DocId::new(i), &v).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2635:        index.commit(tx1).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2638:        index.save(&index_path).await.expect("save"); // expect
+crates/memfuse-index/src/hnsw.rs:2641:        let index_mmap = HnswIndex::try_new(config.clone()).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2642:        index_mmap.load_mmap(&index_path).await.expect("load mmap"); // expect
+crates/memfuse-index/src/hnsw.rs:2650:            .expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2660:                .expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2662:        index_mmap.commit(tx2).await.expect("test"); // expect
+crates/memfuse-index/src/hnsw.rs:2670:            .expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2677:            .expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2700:        let index = HnswIndex::try_new(config).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2715:                .expect("insert"); // expect
+crates/memfuse-index/src/hnsw.rs:2717:        index.commit(tx).await.expect("commit"); // expect
+crates/memfuse-index/src/hnsw.rs:2724:            let results = index.search(query, 1).await.expect("search"); // expect
+crates/memfuse-index/src/hnsw.rs:2737:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2744:                .unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2746:        index.commit(tx).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2748:        let ids = index.all_doc_ids().await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2756:        index.delete(tx2, DocId::new(5)).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2757:        index.delete(tx2, DocId::new(8)).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2758:        index.commit(tx2).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2760:        let ids2 = index.all_doc_ids().await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2773:        let index = HnswIndex::try_new(config).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2778:            index.insert(tx, DocId::new(i), &v).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2780:        index.commit(tx).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2784:        index.delete(tx2, DocId::new(0)).await.unwrap(); // #[test] // unwrap
+crates/memfuse-index/src/hnsw.rs:2785:        index.delete(tx2, DocId::new(1)).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2786:        index.commit(tx2).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2810:        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2823:        let idx = HnswIndex::try_new(config).unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2829:            idx.insert(tx, DocId::new(i), &v).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2831:        idx.commit(tx).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2836:            idx.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2838:        idx.commit(tx2).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2845:        let results = idx.search(&query, 5).await.unwrap(); // unwrap
+crates/memfuse-index/src/hnsw.rs:2866:        let index = HnswIndex::try_new(config).unwrap();
+crates/memfuse-index/src/hnsw.rs:2880:                .unwrap();
+crates/memfuse-index/src/hnsw.rs:2882:        index.commit(tx).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2886:            index.delete(tx2, DocId::new(i)).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2890:        index.commit(tx2).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2901:        let index = HnswIndex::try_new(test_config(4)).unwrap();
+crates/memfuse-index/src/hnsw.rs:2908:            .unwrap();
+crates/memfuse-index/src/hnsw.rs:2912:            .unwrap();
+crates/memfuse-index/src/hnsw.rs:2913:        index.commit(tx1).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2917:        index.delete(tx2, DocId::new(1)).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2921:            .unwrap();
+crates/memfuse-index/src/hnsw.rs:2922:        index.commit(tx2).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2927:        let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2933:        let res_seq2 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 2).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2947:        let index = HnswIndex::try_new(config).unwrap();
+crates/memfuse-index/src/hnsw.rs:2953:                .unwrap();
+crates/memfuse-index/src/hnsw.rs:2955:        index.commit(tx).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2961:            index.delete(tx2, DocId::new(i)).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2963:        index.commit(tx2).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2966:            let res = handle.await.unwrap();
+crates/memfuse-index/src/hnsw.rs:2997:                .unwrap();
+crates/memfuse-index/src/hnsw.rs:3004:                let index = HnswIndex::try_new(config).unwrap();
+crates/memfuse-index/src/hnsw.rs:3037:                    let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3043:            }).unwrap();
+crates/memfuse-index/src/hnsw.rs:3049:        let index = HnswIndex::try_new(test_config(4)).unwrap();
+crates/memfuse-index/src/hnsw.rs:3093:        let index = HnswIndex::try_new(test_config(4)).unwrap();
+crates/memfuse-index/src/hnsw.rs:3098:            .unwrap();
+crates/memfuse-index/src/hnsw.rs:3099:        index.commit(tx).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3101:        let results = index.search(&[1.0, 0.0, 0.0, 0.0], 0).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3107:        let index = HnswIndex::try_new(test_config(4)).unwrap();
+crates/memfuse-index/src/hnsw.rs:3110:        index.delete(tx, DocId::new(999)).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3111:        index.commit(tx).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3112:        assert!(index.all_doc_ids().await.unwrap().is_empty());
+crates/memfuse-index/src/hnsw.rs:3117:        let index = HnswIndex::try_new(test_config(4)).unwrap();
+crates/memfuse-index/src/hnsw.rs:3123:            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3125:        index.commit(tx1).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3131:            index.insert(tx2, DocId::new(i), &v).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3133:        index.commit(tx2).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3136:        index.rollback_to_tx(tx1).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3144:            .unwrap();
+crates/memfuse-index/src/hnsw.rs:3174:        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap());
+crates/memfuse-index/src/hnsw.rs:3180:            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3182:        index.commit(tx1).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3205:            .unwrap();
+crates/memfuse-index/src/hnsw.rs:3206:        index.commit(tx2).await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3210:            task.await.unwrap();
+crates/memfuse-index/src/hnsw.rs:3215:        let q = q_guard.as_ref().expect("Quantizer must be present");
+crates/memfuse-index/src/persistence.rs:10:// DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.
+crates/memfuse-index/src/persistence.rs:325:        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes");
+crates/memfuse-index/src/persistence.rs:351:        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes");
+crates/memfuse-index/src/persistence.rs:8:// ANCHOR[DEBT:WP-0.0-ZEROPANIC] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Eradicate .unwrap() in persistence.rs
+crates/memfuse-index/src/persistence.rs:9:// TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs
+crates/memfuse-index/src/quantize.rs:337:        let serialized = bincode::serialize(&original).expect("serialize");
+crates/memfuse-index/src/quantize.rs:338:        let deserialized: ScalarQuantizer = bincode::deserialize(&serialized).expect("deserialize");
+crates/memfuse-index/src/quantize.rs:456:                    .expect("dist"); // unwrap allowed in tests
+crates/memfuse-index/src/quantize.rs:693:            .unwrap();
+crates/memfuse-index/src/quantize.rs:698:            .unwrap();
+crates/memfuse-index/src/quantize.rs:704:            .unwrap();
+crates/memfuse-index/src/quantize.rs:712:            .unwrap();
+crates/memfuse-index/src/quantize.rs:717:            .unwrap();
+crates/memfuse-index/src/quantize.rs:722:            .unwrap();
 crates/memfuse-mcp/src/sandbox.rs:257:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
 crates/memfuse-mcp/src/sandbox.rs:289:        let sandbox = McpSandbox::new(policy).unwrap();
 crates/memfuse-mcp/src/sandbox.rs:307:        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
@@ -1284,39 +1343,39 @@ crates/memfuse-ollama/src/client.rs:954:        let addr = listener.local_addr()
 crates/memfuse-ollama/src/client.rs:984:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
 crates/memfuse-ollama/src/client.rs:985:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/client.rs:1014:        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1162:        let result = embedder.embed_batch(&[]).await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1168:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1169:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1197:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1198:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1233:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1234:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1273:            .unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1302:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1303:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1325:            .unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1331:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1332:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1363:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1364:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1392:            .unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1403:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1404:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1434:        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1444:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1445:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1474:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1475:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1534:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1535:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1561:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1562:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1603:            .unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1622:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1623:        let addr = listener.local_addr().unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1667:        assert_eq!(res_ok.unwrap(), vec![0.42]);
-crates/memfuse-ollama/src/client.rs:1682:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-crates/memfuse-ollama/src/client.rs:1683:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1166:        let result = embedder.embed_batch(&[]).await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1172:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1173:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1201:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1202:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1237:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1238:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1277:            .unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1306:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1307:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1329:            .unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1335:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1336:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1367:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1368:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1396:            .unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1407:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1408:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1438:        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1448:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1449:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1478:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1479:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1538:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1539:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1565:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1566:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1607:            .unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1626:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1627:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1671:        assert_eq!(res_ok.unwrap(), vec![0.42]);
+crates/memfuse-ollama/src/client.rs:1686:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:1687:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/importance.rs:21:        Regex::new(r"(?:0(?:\.\d+)?|1(?:\.0+)?)").expect("Invalid score regex pattern")
 crates/memfuse-ollama/src/importance.rs:94:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
 crates/memfuse-ollama/src/importance.rs:95:        let addr = listener.local_addr().unwrap(); // unwrap
@@ -2061,7 +2120,9 @@ crates/memfuse-tauri/src/ingestion/email.rs:182:        let content = extract_em
 crates/memfuse-tauri/src/ingestion/email.rs:191:        let content = extract_email_bytes(eml).unwrap(); // unwrap
 crates/memfuse-text/src/inverted.rs:1612:        let bytes = bincode::serialize(&meta).expect("serialization succeeds"); // unwrap allowed
 crates/memfuse-text/src/inverted.rs:1614:            bincode::deserialize(&bytes).expect("deserialization succeeds"); // unwrap allowed
+crates/memfuse-text/src/tokenizer.rs:23:            .expect("Invalid regex pattern")
 crates/memfuse-text/src/lib.rs:101:            Ok(self.data.lock().unwrap().get(key).cloned()) // unwrap allowed
 crates/memfuse-text/src/lib.rs:107:                .unwrap() // unwrap allowed
 crates/memfuse-text/src/lib.rs:113:            self.data.lock().unwrap().remove(key); // unwrap allowed
 crates/memfuse-text/src/lib.rs:170:            let data = self.data.lock().unwrap(); // unwrap allowed
+crates/memfuse-text/src/tokenizer.rs:23:            .expect("Invalid regex pattern")

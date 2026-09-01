@@ -25,7 +25,7 @@
 
 use async_trait::async_trait;
 use memfuse_core::{MemFuseError, Result, TxId, WorkflowState};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -33,6 +33,41 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
+static SKIPPED_ROLLBACKS: AtomicU64 = AtomicU64::new(0);
+static PENDING_ROLLBACKS: Mutex<Vec<tokio::task::JoinHandle<()>>> = Mutex::new(Vec::new());
+
+fn register_pending_rollback(handle: tokio::task::JoinHandle<()>) {
+    let mut lock = PENDING_ROLLBACKS.lock();
+    lock.retain(|h| !h.is_finished());
+    lock.push(handle);
+}
+
+/// Wartet auf den Abschluss aller im Hintergrund gespawnten Auto-Rollback-Tasks.
+///
+/// Sollte beispielsweise beim geordneten Anwendungs-Shutdown aufgerufen werden,
+/// um sicherzustellen, dass alle Hintergrund-Rollbacks vor dem Beenden abgeschlossen sind.
+pub async fn await_pending_rollbacks() {
+    let handles = {
+        let mut lock = PENDING_ROLLBACKS.lock();
+        std::mem::take(&mut *lock)
+    };
+    for handle in handles {
+        let _ = handle.await;
+    }
+}
+
+/// Liefert die Anzahl der aktuell noch ausstehenden Auto-Rollback-Tasks im Hintergrund.
+pub fn pending_rollback_count() -> usize {
+    let mut lock = PENDING_ROLLBACKS.lock();
+    lock.retain(|h| !h.is_finished());
+    lock.len()
+}
+
+/// Liefert die Gesamtzahl der Auto-Rollbacks, die beim Drop eines [`CheckpointGuard`]
+/// mangels einer laufenden Tokio-Runtime übersprungen wurden.
+pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
+    SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
+}
 
 /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca)
 /// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace or size limits.
@@ -135,8 +170,17 @@ pub struct StateCheckpoint {
     pub timestamp_ms: u64,
 }
 
-/// RAII Guard that rolls back a checkpoint if not explicitly committed.
-/// Prevents transaction leaks if the process panics or drops early.
+/// RAII Guard, der bei Verlassen des Gültigkeitsbereichs automatisch einen Rollback
+/// auslöst, falls nicht vorher explizit [`commit`](Self::commit) oder [`rollback`](Self::rollback) aufgerufen wurde.
+///
+/// # RAII-Kontrakt und Betriebshinweise
+/// Bevorzuge **immer** explizites `commit()` oder `rollback().await` gegenüber dem impliziten Drop.
+/// Der Drop-Pfad ist ein **Best-Effort-Sicherheitsnetz**, KEINE garantierte Transaktionsgrenze —
+/// insbesondere bei Prozess-Shutdown oder außerhalb einer laufenden Tokio-Runtime kann der Rollback ausbleiben.
+///
+/// Ausstehende Auto-Rollback-Tasks im Hintergrund können vor dem Prozess-Shutdown über
+/// [`await_pending_rollbacks`] synchronisiert werden. Übersprungene Rollbacks außerhalb einer Tokio-Runtime
+/// werden über [`checkpoint_guard_skipped_rollback_count`] erfasst.
 pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<S>,
@@ -180,6 +224,38 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
             Err(MemFuseError::Internal("Checkpoint already consumed".into()))
         }
     }
+
+    /// Führt ein synchrones, blockierendes Rollback des Checkpoints aus.
+    ///
+    /// # Einschränkung
+    /// Diese Methode darf **nicht** aus einem laufenden asynchronen Tokio-Kontext heraus aufgerufen werden.
+    /// In asynchronem Kontext führt ein Aufruf von `rollback_blocking` zu einem Fehler
+    /// [`MemFuseError::Internal`], um Deadlocks und Tokio-Panics zu verhindern. Verwende in async-Kontexten
+    /// stattdessen [`rollback`](Self::rollback).
+    pub fn rollback_blocking(mut self) -> Result<()> {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return Err(MemFuseError::Internal(
+                "Cannot call rollback_blocking from within an active async Tokio runtime context; use rollback().await instead"
+                    .to_string(),
+            ));
+        }
+
+        let cp = self
+            .checkpoint
+            .take()
+            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))?;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                MemFuseError::Internal(format!(
+                    "Failed to create Tokio runtime for rollback_blocking: {e}"
+                ))
+            })?;
+
+        rt.block_on(self.storage.rollback_to_tx(cp.tx_id))
+    }
 }
 
 impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
@@ -188,12 +264,14 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
             tracing::warn!(tx_id = ?cp.tx_id, "CheckpointGuard ohne commit gedroppt.");
             let storage_clone = Arc::clone(&self.storage);
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move {
+                let task_handle = handle.spawn(async move {
                     if let Err(e) = storage_clone.rollback_to_tx(cp.tx_id).await {
                         tracing::error!("CheckpointGuard auto-rollback fehlgeschlagen: {e}");
                     }
                 });
+                register_pending_rollback(task_handle);
             } else {
+                SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
                 tracing::error!(
                     tx_id = ?cp.tx_id,
                     "CheckpointGuard außerhalb tokio-Runtime gedroppt. Rollback übersprungen."
@@ -925,11 +1003,74 @@ mod tests {
 
     #[test]
     fn test_checkpoint_guard_dropped_outside_tokio_runtime() {
+        std::thread::spawn(|| {
+            let storage = Arc::new(MockStorage::new());
+            let store = PersistentCheckpointStore::new(storage, "test");
+
+            let initial_skipped = checkpoint_guard_skipped_rollback_count();
+
+            {
+                let _guard = store.create_guard(TxId::new(999)).unwrap();
+                // _guard drops here at end of inner scope
+            }
+
+            assert_eq!(
+                checkpoint_guard_skipped_rollback_count(),
+                initial_skipped + 1,
+                "Skipped rollback counter must increment when guard is dropped outside Tokio runtime"
+            );
+        })
+        .join()
+        .expect("Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
+    }
+
+    #[tokio::test]
+    async fn test_auto_rollback_tracking_and_await() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        {
+            let _guard = store.create_guard(TxId::new(808)).unwrap();
+            // Drop without commit inside tokio runtime
+        }
+
+        // Await pending auto-rollback tasks explicitly
+        await_pending_rollbacks().await;
+
+        let rolled_back = storage.rolled_back_tx.lock().clone();
+        assert_eq!(rolled_back, vec![TxId::new(808)]);
+        assert_eq!(pending_rollback_count(), 0);
+    }
+
+    #[test]
+    fn test_rollback_blocking_in_sync_context() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
+
+        let guard = store.create_guard(TxId::new(909)).unwrap();
+        let res = guard.rollback_blocking();
+        assert!(res.is_ok(), "rollback_blocking must succeed in sync context");
+
+        let rolled_back = storage.rolled_back_tx.lock().clone();
+        assert_eq!(rolled_back, vec![TxId::new(909)]);
+    }
+
+    #[tokio::test]
+    async fn test_rollback_blocking_in_async_context_returns_error() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
-        // Should not panic when dropped outside a tokio runtime context
-        let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
+        let guard = store.create_guard(TxId::new(1010)).unwrap();
+        let res = guard.rollback_blocking();
+        assert!(
+            res.is_err(),
+            "rollback_blocking called from async context must return error to prevent deadlock"
+        );
+        if let Err(MemFuseError::Internal(msg)) = res {
+            assert!(msg.contains("active async Tokio runtime context"));
+        } else {
+            panic!("Expected MemFuseError::Internal error message");
+        }
     }
 
     #[tokio::test]
