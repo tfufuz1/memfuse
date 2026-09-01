@@ -1,0 +1,99 @@
+name: Scheduled Proactive Audit
+on:
+  schedule:
+    # Jeden Freitag 22:00 UTC
+    - cron: "0 22 * * 5"
+  workflow_dispatch: {}
+
+jobs:
+  prepare-audit-context:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Sammle Commits der letzten 7 Tage
+        id: commits
+        run: |
+          echo "commits<<EOF" >> "$GITHUB_OUTPUT"
+          git log --since="7 days ago" --oneline --no-merges >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Erstelle Audit-Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const commits = `${{ steps.commits.outputs.commits }}`;
+            const body = `## Woechentlicher Proaktiv-Audit-Auftrag
+
+WICHTIG: Befolge .jules/AUDIT_INTAKE_PROTOCOL.md — verifiziere JEDEN Fund
+gegen den AKTUELLEN Code, bevor du etwas aenderst.
+
+### Auftrag
+Analysiere die folgenden Commits der letzten 7 Tage auf:
+1. Race Conditions / TOCTOU-Fehler (insbesondere in neu hinzugefuegten
+   Mutex/RwLock/Atomic-Nutzungen)
+2. Neue .unwrap()/.expect() in Produktionscode ausserhalb der Baseline
+   (.unwrap-baseline.txt)
+3. Silent-Failure-Pattern (let _ = ... bei IO-Operationen)
+4. DAG-Grenzverletzungen in neuen Cargo.toml-Dependencies
+
+Fuer jeden gefundenen, verifizierten Fehler:
+- Schreibe zuerst einen Test, der den Fehler reproduzierbar beweist (roter Test)
+- Behebe den Fehler
+- Verifiziere: Test ist jetzt gruen, just check und just dag-check sind gruen
+- Oeffne einen PR mit Verweis auf diesen Issue
+
+Falls KEIN Fund verifiziert werden kann: Kommentiere das explizit im Issue statt
+einen PR mit spekulativen Aenderungen zu oeffnen.
+
+### Commits dieser Woche
+\`\`\`
+${commits || "(keine Commits in den letzten 7 Tagen)"}
+\`\`\`
+`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Proaktiv-Audit ${new Date().toISOString().slice(0,10)}`,
+              body: body,
+              labels: ["jules-audit", "automated"]
+            });
+
+  trigger-mutation-testing:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Trigger Rotating Mutation Testing Workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const crates = ["memfuse-graph", "memfuse-index", "memfuse-agent", "memfuse-db"];
+
+            // Berechne ISO-Kalenderwoche fuer konsistente woechentliche Rotation
+            const d = new Date();
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+            const yearStart = new Date(d.getFullYear(), 0, 1);
+            const weekNumber = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+
+            const targetCrate = crates[weekNumber % crates.length];
+            console.log(`KW ${weekNumber}: Rotierendes Fokus-Crate fuer Mutation-Testing ist '${targetCrate}'`);
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "mutation-testing.yml",
+                ref: context.ref || "main",
+                inputs: {
+                  crate: targetCrate
+                }
+              });
+              console.log(`Workflow mutation-testing.yml fuer Crate '${targetCrate}' erfolgreich via workflow_dispatch ausgeloest.`);
+            } catch (err) {
+              console.log(`Hinweis beim Ausloesen von mutation-testing.yml fuer ${targetCrate}:`, err.message);
+            }
