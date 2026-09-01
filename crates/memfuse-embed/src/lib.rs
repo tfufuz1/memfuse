@@ -497,9 +497,13 @@ mod tests {
         File::create(dir.path().join("model.onnx"))?;
         File::create(dir.path().join("tokenizer.json"))?;
 
+        let minimal_tokenizer_json = r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":null,"post_processor":null,"decoder":null,"model":{"type":"WordPiece","unk_token":"[UNK]","vocab":{"[UNK]":0}}}"#;
+        let tokenizer = Tokenizer::from_bytes(minimal_tokenizer_json.as_bytes())
+            .map_err(|e| format!("Tokenizer parse failed: {e}"))?;
+
         let embedder = TextEmbedder {
             session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(Tokenizer::default()),
+            tokenizer: Arc::new(tokenizer),
             semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
             config: TextEmbedderConfig::default(),
             expected_dim: None,
