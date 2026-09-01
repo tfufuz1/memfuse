@@ -134,7 +134,6 @@
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/crud.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/mod.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
-| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-003` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-004` | `-` | `RESOLVED` | `0` | // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `AGT-STORE-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-STORE-002 — Indices computed before the lock was taken. (TS:2026-08-25T00:00:00Z) |
@@ -163,4 +162,5 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |

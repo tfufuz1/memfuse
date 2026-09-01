@@ -13,7 +13,7 @@ Ergebnis: **3 offene Tags**
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
 | `crates/memfuse-checkpoint/src/lib.rs` | 72 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-29T17:21:26Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
-| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-25T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
+| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
 | `crates/memfuse-index/src/hnsw.rs` | 1070 | `AGT-INDEX-b2c3d4e5` | `CONCURRENCY` | `MAJOR` | `2026-09-01T11:02:04Z` | // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f) |
 
 
@@ -25,7 +25,7 @@ Ergebnis: **3 offene Tags**
 | `memfuse-checkpoint` | 1 | 3676 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2312 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 6167 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 10112 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 1 | 10233 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 13136 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 4967 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 16342 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
