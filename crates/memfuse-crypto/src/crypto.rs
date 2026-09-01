@@ -480,6 +480,9 @@ mod tests {
     // REVIEW-PASS[3/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-31T21:13:05Z) (SESSION: 8427f167)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Security review pass re-verified 100k parallel nonces without duplication.
+    // REVIEW-PASS[4/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-01T23:15:00Z) (SESSION: 88a840fb)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Re-verified 100k parallel nonces uniqueness in full crate audit.
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;

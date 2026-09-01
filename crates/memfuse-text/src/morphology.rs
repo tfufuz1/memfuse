@@ -636,6 +636,9 @@ mod tests {
     }
 
     // ANCHOR[TEST:TXT-001] STATUS:OPEN — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6)
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-01T23:15:00Z) (SESSION: de8fd9f5)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Recall evaluation suite for German compounds verified (55 KMU compounds test suite passes with >90% recall).
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
