@@ -231,7 +231,9 @@ async fn test_ppr_graph_3_group_of_dangling_nodes() {
         .await
         .expect("PPR execution failed");
 
-    println!("\n=== GRAPH 3: GROUP OF DANGLING NODES (12 Nodes, Nodes 10,11,12 Dangling Group) ===");
+    println!(
+        "\n=== GRAPH 3: GROUP OF DANGLING NODES (12 Nodes, Nodes 10,11,12 Dangling Group) ==="
+    );
     let mut total_mass = 0.0f32;
     let score_map: HashMap<EntityId, f32> = results.into_iter().collect();
 

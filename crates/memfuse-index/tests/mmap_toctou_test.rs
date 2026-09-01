@@ -3,8 +3,8 @@
 // INVARIANTEN: Nutzt Subprozess-Isolierung (`std::process::Command`) zur sicheren Erfassung von SIGBUS (Signal 7 / Exit-Code 135).
 // STAND: TS:2026-08-30T22:30:00Z (SESSION: 37b1d991)
 
-use std::process::{Command, ExitStatus};
 use std::env;
+use std::process::{Command, ExitStatus};
 
 /// Helper to run child process runner with explicit CLI args and env.
 fn run_child_process(test_type: &str) -> (ExitStatus, String, String) {
@@ -84,10 +84,10 @@ fn child_truncation_runner() {
         .unwrap();
 
     rt.block_on(async {
-        use memfuse_core::{DocId, TxId, VectorIndex, DistanceMetric};
+        use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
         use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
-        use memfuse_index::persistence::MmapIndex;
         use memfuse_index::hnsw::{HnswConfig, HnswIndex};
+        use memfuse_index::persistence::MmapIndex;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let diskann_path = temp_dir.path().join("diskann_trunc.idx");
@@ -136,11 +136,17 @@ fn child_truncation_runner() {
 
         // 3. Truncate files in-place
         println!("Truncating DiskANN and HNSW files to 10 bytes in-place...");
-        let f1 = std::fs::OpenOptions::new().write(true).open(&diskann_path).unwrap();
+        let f1 = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&diskann_path)
+            .unwrap();
         f1.set_len(10).unwrap();
         drop(f1);
 
-        let f2 = std::fs::OpenOptions::new().write(true).open(&hnsw_path).unwrap();
+        let f2 = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&hnsw_path)
+            .unwrap();
         f2.set_len(10).unwrap();
         drop(f2);
 
@@ -171,7 +177,7 @@ fn child_deletion_runner() {
         .unwrap();
 
     rt.block_on(async {
-        use memfuse_core::{DocId, TxId, VectorIndex, DistanceMetric};
+        use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
         use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
         use memfuse_index::hnsw::{HnswConfig, HnswIndex};
 

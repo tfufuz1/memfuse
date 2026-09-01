@@ -32,8 +32,8 @@ Ergebnis: **2 offene Tags**
 | `memfuse-embed` | 3 | 1113 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 2493 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1298 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 752 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2397 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 591 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2470 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3387 | 🟢 Clean |  |
 
 
