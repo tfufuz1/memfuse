@@ -3,7 +3,7 @@
 // INVARIANTEN: Enforces MAX_EVENT_SOURCE_CAPACITY (10,000) on pending queue and event list; validates event source string.
 // NICHT-OFFENSICHTLICH: PollingDocumentEventSource performs delta scanning via scan_prefix_at; drops over-capacity events gracefully.
 // HOTSPOTS: BackgroundEvent::try_new (ll. 30-60), PollingDocumentEventSource::next_event (ll. 120-175).
-// STAND: TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
 //! Continuous event source abstractions for background telemetry and triggers.
 //!

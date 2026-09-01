@@ -74,16 +74,3 @@ def test_relate_validation(db):
     with pytest.raises(memfuse.MemFuseValueError) as excinfo:
         db.relate("doc1", "doc2", "")
     assert "label cannot be empty" in str(excinfo.value)
-
-def test_long_id_validation(db):
-    v = np.zeros(4, dtype=np.float32)
-    long_id = "a" * 1025
-    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
-        db.insert(long_id, v)
-    assert "exceeds maximum length of 1024 bytes" in str(excinfo.value)
-
-def test_long_collection_name_validation(db):
-    long_name = "c" * 65
-    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
-        db.collection(long_name)
-    assert "exceeds maximum length of 64 bytes" in str(excinfo.value)

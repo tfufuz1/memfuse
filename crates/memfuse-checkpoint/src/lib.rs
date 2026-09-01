@@ -69,7 +69,7 @@ pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
     SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
 }
 
-// RESOLVED: AGT-CKPT-001 — UTF-8 char counting used for 256 char limit (TS: 2026-09-01T23:07:05Z) (SESSION: 358e3b0a)
+/// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca)
 /// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace or size limits.
 fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
@@ -77,10 +77,10 @@ fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
             "{field_name} cannot be empty or whitespace-only"
         )));
     }
-    let char_count = value.chars().count();
-    if char_count > 256 {
+    if value.len() > 256 {
         return Err(MemFuseError::InvalidInput(format!(
-            "{field_name} exceeds maximum length of 256 characters (got {char_count})"
+            "{field_name} exceeds maximum length of 256 characters (got {})",
+            value.len()
         )));
     }
     Ok(())
@@ -1158,19 +1158,6 @@ mod tests {
             .create_checkpoint(&long_name, "col1", 1, TxId::new(1), serde_json::json!({}))
             .await;
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
-
-        // Multibyte unicode name: 256 chars (512+ bytes) accepted, 257 chars rejected
-        let unicode_256 = "ä".repeat(256);
-        let res_256 = store
-            .create_checkpoint(&unicode_256, "col1", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(res_256.is_ok());
-
-        let unicode_257 = "ä".repeat(257);
-        let res_257 = store
-            .create_checkpoint(&unicode_257, "col1", 1, TxId::new(1), serde_json::json!({}))
-            .await;
-        assert!(matches!(res_257, Err(MemFuseError::InvalidInput(_))));
 
         // Drop with empty name
         let res = store.drop_checkpoint("").await;

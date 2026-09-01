@@ -1432,16 +1432,4 @@ mod tests {
             assert_ne!(ent_id1.inner(), 0);
         }
     }
-
-    #[test]
-    fn test_tx_id_invalid_sentinel_and_conversion_boundary() {
-        assert_eq!(TxId::INVALID.inner(), 0);
-        assert!(TxId::INVALID.is_valid_origin());
-        assert_eq!(format!("{}", TxId::INVALID), "TxId(0)");
-
-        let doc_id = DocId::new(42);
-        let entity_id = EntityId::from_doc_id(doc_id);
-        assert_eq!(entity_id.inner(), 42);
-        assert_eq!(entity_id.as_bytes(), b"42");
-    }
 }

@@ -3,7 +3,7 @@
 // INVARIANTEN: Distinct from memfuse-graph::csr; validates node IDs, handler names, descriptions, and edge conditions.
 // NICHT-OFFENSICHTLICH: try_add_node validates handler when present; add_node/add_edge marked #[deprecated].
 // HOTSPOTS: try_add_node (ll. 60-110), try_add_edge (ll. 130-160).
-// STAND: TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
 //! Declarative StateGraph definition for Agent Workflows.
 

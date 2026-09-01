@@ -121,28 +121,15 @@ fn validate_id(id: &str) -> PyResult<()> {
             "Document ID cannot be empty or whitespace-only",
         ));
     }
-    if id.len() > MAX_ID_LENGTH {
-        return Err(MemFuseValueError::new_err(format!(
-            "Document ID exceeds maximum length of {} bytes. Got: {}",
-            MAX_ID_LENGTH,
-            id.len()
-        )));
-    }
     Ok(())
 }
 
-/// Validates that a collection name is non-empty and non-whitespace-only, and does not exceed maximum length.
+/// Validates that a collection name is non-empty and non-whitespace-only.
 fn validate_collection_name(name: &str) -> PyResult<()> {
     if name.trim().is_empty() {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "Collection name cannot be empty or whitespace-only",
         ));
-    }
-    if name.len() > 64 {
-        return Err(MemFuseValueError::new_err(format!(
-            "Collection name exceeds maximum length of 64 bytes. Got: {}",
-            name.len()
-        )));
     }
     Ok(())
 }

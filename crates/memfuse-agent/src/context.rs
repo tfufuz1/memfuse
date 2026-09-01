@@ -3,7 +3,7 @@
 // INVARIANTEN: Task ID & node ID must be non-empty, <=256 bytes, null-byte free; event history capped at 10,000 items.
 // NICHT-OFFENSICHTLICH: attach_event evicts oldest event to strictly limit memory growth.
 // HOTSPOTS: validate_task_id/validate_node_id (ll. 20-55), attach_event (ll. 140-155).
-// STAND: TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)
+// STAND: TS:2026-08-30T21:53:49Z (SESSION: 8a7c2f1e)
 
 //! Operational context for an agent workflow execution.
 //!

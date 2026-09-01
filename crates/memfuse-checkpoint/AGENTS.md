@@ -12,4 +12,4 @@
 - `rules/async-io.md` — Transaction & Checkpoint Durability
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:CKPT-001] STATUS:IN-PROGRESS (REVIEW-PASS 1/2) — Concurrent Checkpoint Pinning & GC Exclusions
+- ANCHOR[TEST:CKPT-001] STATUS:OPEN — Concurrent Checkpoint Pinning & GC Exclusions

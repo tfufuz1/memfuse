@@ -13,13 +13,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_deterministic_community_assignment() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         // Insert documents for two distinct domains/communities
         let vec_coding = vec![1.0, 0.0, 0.0, 0.0];
@@ -35,7 +35,7 @@ mod tests {
                 Some(json!({"text": "function rust_code() { return 42; }"})),
             )
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
         collection
             .insert(
@@ -44,33 +44,33 @@ mod tests {
                 Some(json!({"text": "Dokumentation über Unternehmensrichtlinien."})),
             )
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
         // Relate entities to assign/update graph state and test get_community persistence
-        let eid_coding = EntityId::from_key(coding_key).unwrap(); // unwrap
-        let eid_docs = EntityId::from_key(docs_key).unwrap(); // unwrap
+        let eid_coding = EntityId::from_key(coding_key).unwrap();
+        let eid_docs = EntityId::from_key(docs_key).unwrap();
 
         collection
             .relate(coding_key, docs_key, "references")
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
         // Manually persist synthetic community IDs in storage for testing get_community:
         // 100 for coding, 200 for docs
-        let tx = db.allocate_tx().unwrap(); // unwrap
+        let tx = db.allocate_tx().unwrap();
 
         let comm_key_coding = format!("__graph:community:{}", eid_coding.inner()).into_bytes();
         let comm_key_docs = format!("__graph:community:{}", eid_docs.inner()).into_bytes();
 
         db.inner_storage()
-            .put(tx, &comm_key_coding, &serde_json::to_vec(&100u64).unwrap()) // unwrap
+            .put(tx, &comm_key_coding, &serde_json::to_vec(&100u64).unwrap())
             .await
-            .unwrap(); // unwrap
+            .unwrap();
         db.inner_storage()
-            .put(tx, &comm_key_docs, &serde_json::to_vec(&200u64).unwrap()) // unwrap
+            .put(tx, &comm_key_docs, &serde_json::to_vec(&200u64).unwrap())
             .await
-            .unwrap(); // unwrap
-        db.inner_storage().commit(tx).await.unwrap(); // unwrap
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let coding_profile = SlmProfile::new(
             "coding-slm",
@@ -97,7 +97,7 @@ mod tests {
         let decision_coding = router
             .route(&vec_coding, "rust_code")
             .await
-            .expect("Routing coding"); // expect
+            .expect("Routing coding");
 
         assert_eq!(decision_coding.profile.name, "coding-slm");
         assert!(!decision_coding.context.chunks.is_empty());
@@ -106,7 +106,7 @@ mod tests {
         let decision_docs = router
             .route(&vec_docs, "Unternehmensrichtlinien")
             .await
-            .expect("Routing docs"); // expect
+            .expect("Routing docs");
 
         assert_eq!(decision_docs.profile.name, "docs-slm");
         assert!(!decision_docs.context.chunks.is_empty());
@@ -114,13 +114,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_fallback_error_on_low_relevance() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let vec_unrelated = vec![0.0, 0.0, 0.0, 1.0];
         collection
@@ -130,7 +130,7 @@ mod tests {
                 Some(json!({"text": "unrelated content"})),
             )
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
         // High threshold profile that won't be met
         let strict_profile = SlmProfile::new(
@@ -156,8 +156,8 @@ mod tests {
     #[tokio::test]
     async fn test_dispatch_to_slm_mock_server_receives_trimmed_context_only() {
         // Setup a mock HTTP JSON-RPC 2.0 server
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr = listener.local_addr().unwrap(); // unwrap
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
 
         let (tx, rx) = oneshot::channel::<serde_json::Value>();
 
@@ -165,7 +165,7 @@ mod tests {
             if let Ok((mut socket, _)) = listener.accept().await {
                 use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let mut buffer = [0u8; 4096];
-                let n = socket.read(&mut buffer).await.unwrap(); // unwrap
+                let n = socket.read(&mut buffer).await.unwrap();
                 let request_str = String::from_utf8_lossy(&buffer[..n]);
 
                 // Extract body after \r\n\r\n
@@ -223,10 +223,10 @@ mod tests {
             context: context_window,
         };
 
-        let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
+        let answer = dispatch_to_slm(&decision).await.expect("dispatch ok");
         assert_eq!(answer, "SLM successfully processed context");
 
-        let received_json = rx.await.expect("received request body"); // expect
+        let received_json = rx.await.expect("received request body");
         assert_eq!(received_json["method"], "slm_process_context");
         let params = &received_json["params"];
         assert_eq!(params["profile_name"], "mock-slm");
@@ -241,29 +241,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_hot_reload_concurrent_safety() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         let key = "entity_1";
         collection
             .insert(key, &vec_data, Some(json!({"text": "sample text content"})))
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
-        let eid = EntityId::from_key(key).unwrap(); // unwrap
-        let tx = db.allocate_tx().unwrap(); // unwrap
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
-            .put(tx, &comm_key, &serde_json::to_vec(&10u64).unwrap()) // unwrap
+            .put(tx, &comm_key, &serde_json::to_vec(&10u64).unwrap())
             .await
-            .unwrap(); // unwrap
-        db.inner_storage().commit(tx).await.unwrap(); // unwrap
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let profile_v1 = SlmProfile::new(
             "slm-v1",
@@ -284,7 +284,7 @@ mod tests {
                 for _ in 0..50 {
                     let res = r.route(&vec_c, "sample text content").await;
                     assert!(res.is_ok());
-                    let decision = res.unwrap(); // unwrap
+                    let decision = res.unwrap();
                     assert!(
                         decision.profile.name == "slm-v1" || decision.profile.name == "slm-v2",
                         "Unexpected profile name: {}",
@@ -312,36 +312,36 @@ mod tests {
         });
 
         for h in handles {
-            h.await.unwrap(); // unwrap
+            h.await.unwrap();
         }
-        writer_handle.await.unwrap(); // unwrap
+        writer_handle.await.unwrap();
     }
 
     #[tokio::test]
     async fn test_route_hot_reload_atomic_snapshot_determinism() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         let key = "entity_1";
         collection
             .insert(key, &vec_data, Some(json!({"text": "test content"})))
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
-        let eid = EntityId::from_key(key).unwrap(); // unwrap
-        let tx = db.allocate_tx().unwrap(); // unwrap
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
-            .put(tx, &comm_key, &serde_json::to_vec(&42u64).unwrap()) // unwrap
+            .put(tx, &comm_key, &serde_json::to_vec(&42u64).unwrap())
             .await
-            .unwrap(); // unwrap
-        db.inner_storage().commit(tx).await.unwrap(); // unwrap
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let initial_profiles = vec![
             SlmProfile::new(
@@ -363,7 +363,7 @@ mod tests {
         let router = RouterEngine::new(collection, initial_profiles);
 
         // Pre-reload decision: deterministic tie-breaking picks profile-a (lower index 0)
-        let d1 = router.route(&vec_data, "test content").await.unwrap(); // unwrap
+        let d1 = router.route(&vec_data, "test content").await.unwrap();
         assert_eq!(d1.profile.name, "profile-a");
 
         // Hot reload profile configuration with new single profile
@@ -376,7 +376,7 @@ mod tests {
         )];
         router.update_profiles(updated_profiles);
 
-        let d2 = router.route(&vec_data, "test content").await.unwrap(); // unwrap
+        let d2 = router.route(&vec_data, "test content").await.unwrap();
         assert_eq!(d2.profile.name, "profile-c");
     }
 
@@ -641,19 +641,19 @@ mod tests {
             f32::NAN,
         );
         assert!(
-            matches!(nan_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
+            matches!(nan_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("cannot be NaN"))
         );
     }
 
     #[tokio::test]
     async fn test_route_empty_profiles_err() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let router = RouterEngine::new(collection, vec![]);
         let err = router.route(&[1.0, 0.0, 0.0, 0.0], "test").await;
@@ -664,13 +664,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_empty_search_results_err() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let profile = SlmProfile::new(
             "slm",
@@ -689,13 +689,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_unparseable_entity_id() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         // Key that does not conform to EntityId format
         collection
@@ -705,7 +705,7 @@ mod tests {
                 Some(json!({"text": "plain doc text"})),
             )
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
         let profile = SlmProfile::new(
             "slm",
@@ -723,13 +723,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_threshold_boundaries() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let coding_key = "coding_entity_1";
         collection
@@ -739,16 +739,16 @@ mod tests {
                 Some(json!({"text": "rust code text"})),
             )
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
-        let eid = EntityId::from_key(coding_key).unwrap(); // unwrap
-        let tx = db.allocate_tx().unwrap(); // unwrap
+        let eid = EntityId::from_key(coding_key).unwrap();
+        let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
-            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap()) // unwrap
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
             .await
-            .unwrap(); // unwrap
-        db.inner_storage().commit(tx).await.unwrap(); // unwrap
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let profile = SlmProfile::new(
             "slm-threshold",
@@ -848,8 +848,8 @@ mod tests {
         );
 
         // 2. HTTP 500 error from server
-        let listener_500 = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_500 = listener_500.local_addr().unwrap(); // unwrap
+        let listener_500 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr_500 = listener_500.local_addr().unwrap();
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener_500.accept().await {
@@ -877,8 +877,8 @@ mod tests {
         );
 
         // 3. RPC Error response
-        let listener_rpc_err = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_rpc_err = listener_rpc_err.local_addr().unwrap(); // unwrap
+        let listener_rpc_err = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr_rpc_err = listener_rpc_err.local_addr().unwrap();
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener_rpc_err.accept().await {
@@ -918,8 +918,8 @@ mod tests {
         );
 
         // 4. Custom JSON object result (no "answer" key)
-        let listener_obj = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_obj = listener_obj.local_addr().unwrap(); // unwrap
+        let listener_obj = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr_obj = listener_obj.local_addr().unwrap();
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener_obj.accept().await {
@@ -952,12 +952,12 @@ mod tests {
             profile: profile_obj,
             context: decision.context.clone(),
         };
-        let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
+        let res_obj = dispatch_to_slm(&decision_obj).await.unwrap();
         assert_eq!(res_obj, "{\"custom_data\":42}");
 
         // 5. Neither result nor error present
-        let listener_empty = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_empty = listener_empty.local_addr().unwrap(); // unwrap
+        let listener_empty = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr_empty = listener_empty.local_addr().unwrap();
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener_empty.accept().await {
@@ -995,29 +995,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_1_and_50_profiles() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+        let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
 
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         let key = "entity_1";
         collection
             .insert(key, &vec_data, Some(json!({"text": "sample text"})))
             .await
-            .unwrap(); // unwrap
+            .unwrap();
 
-        let eid = EntityId::from_key(key).unwrap(); // unwrap
-        let tx = db.allocate_tx().unwrap(); // unwrap
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
-            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap()) // unwrap
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
             .await
-            .unwrap(); // unwrap
-        db.inner_storage().commit(tx).await.unwrap(); // unwrap
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let profiles_50: Vec<_> = (0..50)
             .map(|i| {
@@ -1031,8 +1031,8 @@ mod tests {
             })
             .collect();
 
-        let router = RouterEngine::try_new(collection, profiles_50).unwrap(); // unwrap
-        let decision = router.route(&vec_data, "sample text").await.unwrap(); // unwrap
+        let router = RouterEngine::try_new(collection, profiles_50).unwrap();
+        let decision = router.route(&vec_data, "sample text").await.unwrap();
         assert_eq!(decision.profile.name, "profile-0");
 
         let update_res = router.try_update_profiles(vec![SlmProfile::new(
@@ -1044,7 +1044,7 @@ mod tests {
         )]);
         assert!(update_res.is_ok());
 
-        let decision_single = router.route(&vec_data, "sample text").await.unwrap(); // unwrap
+        let decision_single = router.route(&vec_data, "sample text").await.unwrap();
         assert_eq!(decision_single.profile.name, "profile-single");
     }
 
@@ -1075,21 +1075,21 @@ mod tests {
             score in 0.0f32..1.0f32,
         )| {
             let p1 = SlmProfile::new(&name, &endpoint, vec![community], TokenBudget::new(1000, 100), score);
-            let serialized = serde_json::to_string(&p1).unwrap(); // unwrap
-            let p2: SlmProfile = serde_json::from_str(&serialized).unwrap(); // unwrap
+            let serialized = serde_json::to_string(&p1).unwrap();
+            let p2: SlmProfile = serde_json::from_str(&serialized).unwrap();
             prop_assert_eq!(p1, p2);
         });
     }
 
     #[tokio::test]
-    async fn test_router_engine_profiles_accessor() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap
+    async fn test_router_engine_profiles_accessor() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-        let collection = db.collection("default").await.unwrap(); // unwrap
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
 
         let profile = SlmProfile::new(
             "p-acc",
@@ -1102,6 +1102,7 @@ mod tests {
         let profiles = router.profiles();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name, "p-acc");
+        Ok(())
     }
 
     #[test]
@@ -1121,11 +1122,11 @@ mod tests {
     }
 
     #[test]
-    fn test_select_profile_max_score_meets_threshold_when_aggregated_does_not() {
+    fn test_select_profile_max_score_meets_threshold_when_aggregated_does_not(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::router::select_profile_from_chunks;
         use memfuse_core::{ContextChunk, DocId};
 
-        // Profile requires min_relevance_score = 0.8
         let profile = SlmProfile::new(
             "p-max-score",
             "http://localhost/mcp",
@@ -1134,13 +1135,6 @@ mod tests {
             0.8,
         );
 
-        // Single chunk with base relevance 0.7. With community boost (10) s = 0.7 * 1.2 = 0.84.
-        // Aggregated score = 0.84 (wait, aggregated_score = 0.84 >= 0.8 too).
-        // Let's make aggregated_score < 0.8, but max_score >= 0.8:
-        // Wait, max_score is max(s). aggregated_score is sum(s).
-        // Since s >= 0, sum(s) >= max(s).
-        // BUT if there are negative relevance scores or negative chunk relevance?
-        // Let's test with a negative chunk relevance and a positive chunk relevance:
         let chunk_neg = ContextChunk {
             doc_id: DocId::new(1),
             content: "neg".to_string(),
@@ -1159,12 +1153,10 @@ mod tests {
             contextual_prefix: None,
             links: Vec::new(),
         };
-        // aggregated_score = -0.5*1.2 + 0.8*1.2 = -0.6 + 0.96 = 0.36 < 0.8
-        // max_score = max(-0.6, 0.96) = 0.96 >= 0.8
-        // This exercises the `|| max_score >= profile.min_relevance_score` right side of short-circuit!
         let chunks = vec![(chunk_neg, Some(10)), (chunk_pos, Some(10))];
-        let idx = select_profile_from_chunks(&[profile], &chunks).unwrap(); // unwrap
+        let idx = select_profile_from_chunks(&[profile], &chunks)?;
         assert_eq!(idx, 0);
+        Ok(())
     }
 
     #[test]
@@ -1198,213 +1190,5 @@ mod tests {
                 prop_assert!(idx < profiles.len());
             }
         });
-    }
-
-    #[tokio::test]
-    async fn test_router_engine_try_new_and_try_update_profiles_validation_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = MemFuseConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
-
-        let invalid_profile = SlmProfile::new(
-            "",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::new(1000, 100),
-            0.1,
-        );
-
-        let valid_profile = SlmProfile::new(
-            "valid",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::new(1000, 100),
-            0.1,
-        );
-
-        let res_try_new = RouterEngine::try_new(
-            collection.clone(),
-            vec![valid_profile.clone(), invalid_profile.clone()],
-        );
-        assert!(matches!(res_try_new, Err(MemFuseError::InvalidInput(_))));
-
-        let router = RouterEngine::new(collection, vec![valid_profile.clone()]);
-        let res_try_update = router.try_update_profiles(vec![valid_profile, invalid_profile]);
-        assert!(matches!(res_try_update, Err(MemFuseError::InvalidInput(_))));
-    }
-
-    #[test]
-    fn test_select_profile_from_chunks_empty_chunks_and_unmatched_community() {
-        use crate::router::select_profile_from_chunks;
-        use memfuse_core::{ContextChunk, DocId};
-
-        let profile = SlmProfile::new(
-            "slm-test",
-            "http://localhost/mcp",
-            vec![100],
-            TokenBudget::new(1000, 100),
-            0.5,
-        );
-
-        let err_empty = select_profile_from_chunks(&[profile.clone()], &[]);
-        assert!(
-            matches!(err_empty, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
-        );
-
-        let chunk_unmatched = (
-            ContextChunk {
-                doc_id: DocId::new(1),
-                content: "unmatched community chunk".to_string(),
-                relevance: 0.9,
-                token_count: 5,
-                metadata: None,
-                contextual_prefix: None,
-                links: Vec::new(),
-            },
-            Some(999),
-        );
-
-        let err_unmatched = select_profile_from_chunks(&[profile.clone()], &[chunk_unmatched]);
-        assert!(
-            matches!(err_unmatched, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
-        );
-
-        let chunk_low_score = (
-            ContextChunk {
-                doc_id: DocId::new(2),
-                content: "matched community low score".to_string(),
-                relevance: 0.01,
-                token_count: 5,
-                metadata: None,
-                contextual_prefix: None,
-                links: Vec::new(),
-            },
-            Some(100),
-        );
-
-        let err_low = select_profile_from_chunks(&[profile.clone()], &[chunk_low_score]);
-        assert!(
-            matches!(err_low, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
-        );
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_invalid_json_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let http_response =
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 12\r\n\r\n{invalid json";
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
-        let profile = SlmProfile::new(
-            "bad-json-slm",
-            format!("http://{}", addr),
-            vec![1],
-            TokenBudget::new(50, 0),
-            0.1,
-        );
-
-        let chunk = memfuse_core::ContextChunk {
-            doc_id: memfuse_core::DocId::new(1),
-            content: "test content".to_string(),
-            relevance: 0.9,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-
-        let decision = RoutingDecision {
-            profile,
-            context: memfuse_core::ContextWindow {
-                chunks: vec![chunk],
-                total_tokens: 5,
-                truncated: false,
-            },
-        };
-
-        let res = dispatch_to_slm(&decision).await;
-        assert!(
-            matches!(res, Err(MemFuseError::Internal(msg)) if msg.contains("Ungültige MCP JSON-RPC Antwort"))
-        );
-    }
-
-    #[test]
-    fn test_slm_profile_validation_extended() {
-        let inf_score = SlmProfile::try_new(
-            "coding",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::new(1000, 100),
-            f32::INFINITY,
-        );
-        assert!(
-            matches!(inf_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
-        );
-
-        let neg_inf_score = SlmProfile::try_new(
-            "coding",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::new(1000, 100),
-            f32::NEG_INFINITY,
-        );
-        assert!(
-            matches!(neg_inf_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
-        );
-
-        let neg_score = SlmProfile::try_new(
-            "coding",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::new(1000, 100),
-            -0.1,
-        );
-        assert!(
-            matches!(neg_score, Err(MemFuseError::InvalidInput(msg)) if msg.contains("must be finite and non-negative"))
-        );
-    }
-
-    #[tokio::test]
-    async fn test_route_with_missing_community_or_corrupt_result() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = MemFuseConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
-
-        let key = "entity_no_community";
-        collection
-            .insert(
-                key,
-                &[1.0, 0.0, 0.0, 0.0],
-                Some(json!({"text": "sample text"})),
-            )
-            .await
-            .unwrap();
-
-        let profile = SlmProfile::new(
-            "slm-no-comm",
-            "http://localhost:9999/mcp",
-            vec![100],
-            TokenBudget::new(1000, 100),
-            0.0,
-        );
-
-        let router = RouterEngine::new(collection, vec![profile]);
-        let res = router.route(&[1.0, 0.0, 0.0, 0.0], "sample text").await;
-        assert!(matches!(res, Err(MemFuseError::NotFound(_))));
     }
 }

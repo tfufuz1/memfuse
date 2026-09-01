@@ -13,7 +13,7 @@ async fn test_failing_proptest_sequence() -> memfuse_core::Result<()> {
         ..Default::default()
     };
 
-    let storage = LsmStorage::new(config.clone()).await?;
+    let mut storage = LsmStorage::new(config.clone()).await?;
 
     // 1. Delete(0)
     let tx1 = TxId::new(1);
