@@ -14,7 +14,7 @@ Ergebnis: **3 offene Tags**
 |---|---|---|---|---|---|---|
 | `crates/memfuse-checkpoint/src/lib.rs` | 72 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-29T17:21:26Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-08-25T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] Stable SIMD Migration when std::simd stabilizes (ID: AGT-INDEX-002) (TS:2026-08-25T00:00:00Z) |
-| `crates/memfuse-index/src/hnsw.rs` | 1070 | `AGT-INDEX-b2c3d4e5` | `CONCURRENCY` | `MAJOR` | `2026-09-01T11:02:04Z` | // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f) |
+| `crates/memfuse-index/src/hnsw.rs` | 1070 | `AGT-INDEX-b2c3d4e5` | `CONCURRENCY` | `MAJOR` | `2026-09-01T11:02:04Z` | // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f) |
 
 
 ## Crate-Inventar & Status
@@ -33,7 +33,7 @@ Ergebnis: **3 offene Tags**
 | `memfuse-embed` | 3 | 1185 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 2576 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1298 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 1575 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 1003 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2471 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3387 | 🟢 Clean |  |
 
