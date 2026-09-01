@@ -2,7 +2,7 @@
 // ZWECK: HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer).
 // INVARIANTEN: Lock-Hierarchie: write_mutex (exklusive Mutation/Rebuild) -> entry_point -> nodes / doc_to_node / deleted_nodes.
 // NICHT-OFFENSICHTLICH: Multi-threaded Reads sperren nie write_mutex; background rebuild tauscht Core atomar via Swap.
-// HOTSPOTS: hnsw.rs (HnswIndex::insert, search, delete, rebuild, save)
+// HOTSPOTS:hnsw.rs (HnswIndex::insert, search, delete, rebuild, save)
 // STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
 
 //! HNSW (Hierarchical Navigable Small World) vector index.
@@ -11,7 +11,7 @@
 //! This module implements the HNSW algorithm for efficient approximate nearest neighbor (ANN) search.
 // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z)
 // INVARIANT: Hierarchical Navigable Small World Index.
-// IMPLEMENTS: VectorIndex Trait (memfuse-core/traits.rs)
+// IMPLEMENTS:VectorIndex Trait (memfuse-core/traits.rs)
 // CONSTRUCT: Greedyensuche + Heuristik für Diversitätsauswahl der Nachbarn.
 // SEARCH: Layer Descent (von max_layer bis 0), dann EF-Search in Layer 0.
 // DELETE: Soft-Delete (Tombstone via deleted_nodes Roaring Bitmap).
@@ -39,7 +39,7 @@
 // STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
 // ZWECK:       HNSW-Vektorindex (Insert/Search/Delete/Persist) für Approximate Nearest Neighbor Search
 // INVARIANTEN: No NaN/Inf distance, ef_construction >= M, entry point updated post-delete, SQ8 quantization safe
-// HOTSPOTS:    greedy_search(), insert(), search_at(), trigger_rebuild_async()
+// HOTSPOTS:   greedy_search(), insert(), search_at(), trigger_rebuild_async()
 // SIEHE AUCH:  rules/simd_safety.md, ADR-017, ADR-034
 
 use crate::distance::compute_distance;
