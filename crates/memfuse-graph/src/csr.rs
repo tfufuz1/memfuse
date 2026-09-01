@@ -3039,44 +3039,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hub_node_visited_cap_enforced() {
+    async fn test_hub_node_visited_cap_enforced() -> memfuse_core::Result<()> {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
         let start = EntityId::new(1);
         graph
             .add_entity(tx, Entity::new(start, "Start", "Type"))
-            .await
-            .unwrap();
+            .await?;
 
         let hub = EntityId::new(2);
         graph
             .add_entity(tx, Entity::new(hub, "Hub", "Type"))
-            .await
-            .unwrap();
+            .await?;
         graph
             .add_edge(tx, Edge::new(start, hub, "link").with_weight(1.0))
-            .await
-            .unwrap();
+            .await?;
 
         // 12_000 leaf nodes connected to Hub (exceeding MAX_VISITED_NODES = 10_000)
         for i in 0..12_000 {
             let leaf = EntityId::new(3 + i as u64);
             graph
                 .add_entity(tx, Entity::new(leaf, format!("L{i}"), "Leaf"))
-                .await
-                .unwrap();
+                .await?;
             graph
                 .add_edge(tx, Edge::new(hub, leaf, "points_to").with_weight(0.9))
-                .await
-                .unwrap();
+                .await?;
         }
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await?;
 
-        let results = graph.traverse(start, 2).await.unwrap();
+        let results = graph.traverse(start, 2).await?;
         assert!(
             results.len() <= MAX_VISITED_NODES,
             "Traversals through hub nodes must be bounded by MAX_VISITED_NODES ({MAX_VISITED_NODES}), got {}",
             results.len()
         );
+        Ok(())
     }
 }
