@@ -201,31 +201,21 @@ async fn test_pre_execution_budget_check_prevents_tool_execution() {
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     let mut graph = StateGraph::new();
-    graph
-        .try_add_node("start", "Start Node", NodeType::Start, None)
-        .unwrap();
-    graph
-        .try_add_node("task_1", "Task Node 1", NodeType::Task, Some("count_tool"))
-        .unwrap();
-    graph
-        .try_add_node("task_2", "Task Node 2", NodeType::Task, Some("count_tool"))
-        .unwrap();
-    graph
-        .try_add_node("end", "End Node", NodeType::End, None)
-        .unwrap();
+    graph.try_add_node("start", "Start Node", NodeType::Start, None).unwrap();
+    graph.try_add_node("task_1", "Task Node 1", NodeType::Task, Some("count_tool")).unwrap();
+    graph.try_add_node("task_2", "Task Node 2", NodeType::Task, Some("count_tool")).unwrap();
+    graph.try_add_node("end", "End Node", NodeType::End, None).unwrap();
 
     graph.try_add_edge("start", "task_1", None, 1).unwrap();
     graph.try_add_edge("task_1", "task_2", None, 1).unwrap();
     graph.try_add_edge("task_2", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine
-        .try_register_tool(Box::new(CountingTool {
-            name: "count_tool".to_string(),
-            tokens: 10,
-            call_count: counter.clone(),
-        }))
-        .unwrap();
+    engine.try_register_tool(Box::new(CountingTool {
+        name: "count_tool".to_string(),
+        tokens: 10,
+        call_count: counter.clone(),
+    })).unwrap();
 
     let res = engine.run(&mut ctx, &graph).await;
     assert!(res.is_err(), "Run should fail due to budget exhaustion");
@@ -280,37 +270,26 @@ async fn test_replay_from_restores_budget_state() {
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     let mut graph = StateGraph::new();
-    graph
-        .try_add_node("start", "Start Node", NodeType::Start, None)
-        .unwrap();
-    graph
-        .try_add_node("step_a", "Step A", NodeType::Task, Some("count_tool"))
-        .unwrap();
-    graph
-        .try_add_node("end", "End Node", NodeType::End, None)
-        .unwrap();
+    graph.try_add_node("start", "Start Node", NodeType::Start, None).unwrap();
+    graph.try_add_node("step_a", "Step A", NodeType::Task, Some("count_tool")).unwrap();
+    graph.try_add_node("end", "End Node", NodeType::End, None).unwrap();
 
     graph.try_add_edge("start", "step_a", None, 1).unwrap();
     graph.try_add_edge("step_a", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine
-        .try_register_tool(Box::new(CountingTool {
-            name: "count_tool".to_string(),
-            tokens: 30,
-            call_count: counter,
-        }))
-        .unwrap();
+    engine.try_register_tool(Box::new(CountingTool {
+        name: "count_tool".to_string(),
+        tokens: 30,
+        call_count: counter,
+    })).unwrap();
 
     engine.run(&mut ctx, &graph).await.expect("run");
     assert_eq!(ctx.budget.consumed(), 30);
     assert_eq!(ctx.budget.available(), 70);
 
     // Now replay_from step_a
-    engine
-        .replay_from(&mut ctx, "step_a")
-        .await
-        .expect("replay");
+    engine.replay_from(&mut ctx, "step_a").await.expect("replay");
 
     // At step_a checkpoint (before step_a execution), consumed was 0, available was 100
     assert_eq!(ctx.budget.consumed(), 0);
@@ -351,15 +330,9 @@ async fn test_replay_from_identifier_resolution() {
 
     let mut graph = StateGraph::new();
     // Node is named "1"
-    graph
-        .try_add_node("1", "Node named 1", NodeType::Start, None)
-        .unwrap();
-    graph
-        .try_add_node("step_b", "Step B", NodeType::Task, Some("count_tool"))
-        .unwrap();
-    graph
-        .try_add_node("end", "End Node", NodeType::End, None)
-        .unwrap();
+    graph.try_add_node("1", "Node named 1", NodeType::Start, None).unwrap();
+    graph.try_add_node("step_b", "Step B", NodeType::Task, Some("count_tool")).unwrap();
+    graph.try_add_node("end", "End Node", NodeType::End, None).unwrap();
 
     graph.try_add_edge("1", "step_b", None, 1).unwrap();
     graph.try_add_edge("step_b", "end", None, 1).unwrap();
@@ -367,13 +340,11 @@ async fn test_replay_from_identifier_resolution() {
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
-    engine
-        .try_register_tool(Box::new(CountingTool {
-            name: "count_tool".to_string(),
-            tokens: 5,
-            call_count: counter,
-        }))
-        .unwrap();
+    engine.try_register_tool(Box::new(CountingTool {
+        name: "count_tool".to_string(),
+        tokens: 5,
+        call_count: counter,
+    })).unwrap();
 
     engine.run(&mut ctx, &graph).await.expect("run");
 
@@ -385,10 +356,7 @@ async fn test_replay_from_identifier_resolution() {
     // Test resolution formats against checkpoints:
     // 1. Explicit step addressing: replay_from "step:0" -> current_node == "1", step_count == 0
     let mut ctx1 = ctx;
-    engine
-        .replay_from(&mut ctx1, "step:0")
-        .await
-        .expect("replay step:0");
+    engine.replay_from(&mut ctx1, "step:0").await.expect("replay step:0");
     assert_eq!(ctx1.current_node, "1");
     assert_eq!(ctx1.step_count, 0);
 
@@ -404,10 +372,7 @@ async fn test_replay_from_identifier_resolution() {
     engine.run(&mut ctx2, &graph).await.expect("run 2");
 
     // 2. Explicit node addressing: replay_from "node:1" -> current_node == "1", step_count == 0
-    engine
-        .replay_from(&mut ctx2, "node:1")
-        .await
-        .expect("replay node:1");
+    engine.replay_from(&mut ctx2, "node:1").await.expect("replay node:1");
     assert_eq!(ctx2.current_node, "1");
     assert_eq!(ctx2.step_count, 0);
 
@@ -423,10 +388,7 @@ async fn test_replay_from_identifier_resolution() {
     engine.run(&mut ctx3, &graph).await.expect("run 3");
 
     // 3. Fallback un-prefixed numeric addressing: replay_from "1" -> matches step 1 (node step_b)
-    engine
-        .replay_from(&mut ctx3, "1")
-        .await
-        .expect("replay fallback step 1");
+    engine.replay_from(&mut ctx3, "1").await.expect("replay fallback step 1");
     assert_eq!(ctx3.current_node, "step_b");
     assert_eq!(ctx3.step_count, 1);
 
@@ -442,10 +404,7 @@ async fn test_replay_from_identifier_resolution() {
     engine.run(&mut ctx4, &graph).await.expect("run 4");
 
     // 4. Fallback non-numeric addressing: replay_from "step_b" -> matches node step_b
-    engine
-        .replay_from(&mut ctx4, "step_b")
-        .await
-        .expect("replay fallback step_b");
+    engine.replay_from(&mut ctx4, "step_b").await.expect("replay fallback step_b");
     assert_eq!(ctx4.current_node, "step_b");
     assert_eq!(ctx4.step_count, 1);
 

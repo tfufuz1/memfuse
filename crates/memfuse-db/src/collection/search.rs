@@ -542,14 +542,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion(signal_sets, usize::MAX);
+        let fused = crate::fusion::weighted_reciprocal_rank_fusion(
+            signal_sets,
+            usize::MAX,
+        );
 
         let mut boosted = self
-            .apply_community_boost_post_rrf(
-                fused,
-                target_community_id,
-                Self::DEFAULT_COMMUNITY_BOOST,
-            )
+            .apply_community_boost_post_rrf(fused, target_community_id, Self::DEFAULT_COMMUNITY_BOOST)
             .await?;
         boosted.truncate(k);
         Ok(boosted)
@@ -641,8 +640,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Vec::new()
         };
 
-        if !text_results.is_empty() && graph_results.is_empty() && query.graph_start_node.is_none()
-        {
+        if !text_results.is_empty() && graph_results.is_empty() && query.graph_start_node.is_none() {
             tracing::warn!(
                 text_count = text_results.len(),
                 "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
@@ -700,14 +698,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion(signal_sets, usize::MAX);
+        let fused = crate::fusion::weighted_reciprocal_rank_fusion(
+            signal_sets,
+            usize::MAX,
+        );
 
         let mut fused_results = self
-            .apply_community_boost_post_rrf(
-                fused,
-                target_community_id,
-                Self::DEFAULT_COMMUNITY_BOOST,
-            )
+            .apply_community_boost_post_rrf(fused, target_community_id, Self::DEFAULT_COMMUNITY_BOOST)
             .await?;
         fused_results.truncate(k);
 
