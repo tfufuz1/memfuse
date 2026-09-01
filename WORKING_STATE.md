@@ -33,7 +33,7 @@ Ergebnis: **2 offene Tags**
 | `memfuse-ollama` | 3 | 2647 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1285 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 1575 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2512 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2692 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3462 | 🟢 Clean |  |
 
 
