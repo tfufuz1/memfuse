@@ -6,6 +6,34 @@
 // STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
 
 use std::collections::HashSet;
+use std::sync::OnceLock;
+
+static GERMAN_STOPWORDS: OnceLock<HashSet<String>> = OnceLock::new();
+
+/// Returns the static German stopword list.
+///
+/// Erweitert um hochfrequente deutsche Funktionswörter gemäß DACH-KMU-Domänenanalyse, 2026-09-01.
+pub fn get_german_stopwords() -> &'static HashSet<String> {
+    GERMAN_STOPWORDS.get_or_init(|| {
+        let words = [
+            "nicht", "auch", "noch", "sehr", "mehr", "dann", "beim", "nach", "wenn", "aber",
+            "durch", "für", "mit", "von", "zum", "zur", "ist", "sind", "war", "waren", "wird",
+            "werden", "kann", "können", "soll", "sollen", "muss", "müssen", "hat", "haben", "ein",
+            "eine", "einen", "einem", "einer", "des", "dem", "den", "der", "die", "das", "eines",
+            "am", "im", "in", "an", "zu", "und", "oder", "auf", "über",
+        ];
+        let mut set = HashSet::with_capacity(words.len());
+        for &w in &words {
+            set.insert(w.to_string());
+        }
+        set
+    })
+}
+
+/// Checks if a normalized lowercased word is a German stopword.
+pub fn is_german_stopword(word: &str) -> bool {
+    get_german_stopwords().contains(word)
+}
 
 /// KMU-Fachvokabular und allgemeiner deutscher Wortschatz.
 ///
@@ -205,9 +233,10 @@ impl GermanCompoundSplitter {
             return true;
         }
 
-        // Interfix candidates (Fugenelemente) — allowed strictly between components
+        // Interfix candidates (Fugenelemente) — allowed strictly between components.
+        // Längste-Zuerst-Prüfung verhindert, dass ein kürzeres Fugenelement (z. B. 's') vorzeitig matcht, obwohl ein längeres, spezifischeres Element (z. B. 'es') das eigentlich korrekte Fugenelement wäre.
         if !is_last {
-            const INTERFIXES: &[&str] = &["s", "en", "e", "er", "n", "es"];
+            const INTERFIXES: &[&str] = &["en", "er", "es", "e", "n", "s"];
             for &fuge in INTERFIXES {
                 if norm_sub.ends_with(fuge) && norm_sub.len() > fuge.len() {
                     let norm_stem = &norm_sub[..norm_sub.len() - fuge.len()];
@@ -504,6 +533,30 @@ mod tests {
     }
 
     #[test]
+    fn test_interfix_es_and_s_order_bug_txt_003() {
+        let splitter = GermanCompoundSplitter::new();
+        // Verifies correct decomposition for -es interfix compounds
+        assert_eq!(
+            splitter.decompose("tageszeitung"),
+            vec!["tages", "zeitung"]
+        );
+        assert_eq!(
+            splitter.decompose("geistesblitz"),
+            vec!["geistes", "blitz"]
+        );
+        assert_eq!(
+            splitter.decompose("landesgericht"),
+            vec!["landes", "gericht"]
+        );
+
+        // Verifies regression check for -s interfix compounds
+        assert_eq!(
+            splitter.decompose("arbeitsplatz"),
+            vec!["arbeits", "platz"]
+        );
+    }
+
+    #[test]
     fn test_kmu_domain_compounds() {
         let splitter = GermanCompoundSplitter::new();
         let result = splitter.decompose("lagerbestandsverwaltung");
@@ -524,6 +577,36 @@ mod tests {
         let tok = PassthroughTokenizer::new("en");
         assert_eq!(tok.decompose("hello"), vec!["hello"]);
         assert_eq!(tok.language(), "en");
+    }
+
+    #[test]
+    fn test_german_stopwords_extension_bug_txt_004() {
+        let required_stopwords = [
+            "nicht", "auch", "noch", "sehr", "mehr", "dann", "beim", "nach", "wenn", "aber",
+            "durch", "für", "mit", "von", "zum", "zur", "ist", "sind", "war", "waren", "wird",
+            "werden", "kann", "können", "soll", "sollen", "muss", "müssen", "hat", "haben", "ein",
+            "eine", "einen", "einem", "einer", "des", "dem", "den",
+        ];
+
+        for &word in &required_stopwords {
+            assert!(
+                is_german_stopword(word),
+                "Stopword '{}' should be recognized in german stopwords set",
+                word
+            );
+        }
+
+        // Test filtering on a sample sentence
+        let sample_sentence = "das system muss auch nach dem update sehr schnell und sicher funktionieren";
+        let filtered_words: Vec<&str> = sample_sentence
+            .split_whitespace()
+            .filter(|w| !is_german_stopword(w))
+            .collect();
+
+        assert_eq!(
+            filtered_words,
+            vec!["system", "update", "schnell", "sicher", "funktionieren"]
+        );
     }
 
     #[test]
