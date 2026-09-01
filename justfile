@@ -55,9 +55,8 @@ context-tags *ARGS:
     cargo xtask context-tags {{ARGS}}
 
 # Zeigt offene kritische AI-TAGs und ANCHORs an — primärer manueller
-# Weg, den aktuellen Governance-Status einer Session zu prüfen
-# (das früher hier referenzierte Context-Engineering-Framework-Dokument
-# und context-cli existieren nicht mehr im Repository).
+# Weg, den aktuellen Governance-Status einer Session zu prüfen.
+# Für einen strukturierten NDJSON-Export aller Tags steht `just context-tags` zur Verfügung.
 session-context:
     #!/usr/bin/env bash
     echo "OFFENE KRITISCHE TAGS:"
