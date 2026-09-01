@@ -45,7 +45,15 @@
 -   Agents must NEVER self-assess a status as "green" without CI proof.
 
 ### 4. Tag-Taxonomie (Inline-Kommentar-System)
-Die kanonische, CI-durchgesetzte Definition aller Tag-Typen (AI-TAG, ANCHOR, REVIEW-PASS, FILE-CONTEXT) lebt ausschließlich in `rules/tag_taxonomy.md` — siehe dort. Dieser Abschnitt wurde entfernt, um Duplikation entgegen dem MECE-Prinzip dieses Dokuments zu vermeiden (Fix für F-05, 2026-09-01T21:17:37Z).
+```rust
+// <TAG>[<DOMAIN>][<SEVERITY>] <Ein-Satz-Beschreibung>
+// KONTEXT: <Beleg — Zeile/Funktion/Aufrufpfad/Version>
+// ANWEISUNG: <konkrete Handlung>
+// ID: <eindeutige Kennung, z.B. AGT-0042>
+```
+TAG types: `TODO`, `AI-TAG`, `SAFETY`, `AI-NOTE`, `DECISION-REF`
+DOMAIN: `HALLUCINATION` · `DUPLICATION` · `SPEC-DRIFT` · `CONTEXT-GAP` · `CONCURRENCY` · `PANIC-SAFETY` · `SMELL`
+SEVERITY: `BLOCKER` · `CRITICAL` · `MAJOR` · `MINOR`
 
 ### 5. Exit Criteria (Definition of Done)
 A code change is complete when:

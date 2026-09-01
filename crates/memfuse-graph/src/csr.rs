@@ -1289,11 +1289,9 @@ impl GraphIndex for CsrGraph {
 
         let mut inner = self.inner.write();
 
-        // 1. Commit entities in deterministic order sorted by EntityId
+        // 1. Commit entities
         if let Some(tx_entities) = inner.staged_entities.remove(&tx) {
-            let mut sorted_entities: Vec<(EntityId, Entity)> = tx_entities.into_iter().collect();
-            sorted_entities.sort_by_key(|(id, _)| *id);
-            for (id, entity) in sorted_entities {
+            for (id, entity) in tx_entities {
                 let idx = inner.get_or_create_index(id);
                 if idx >= inner.entities.len() {
                     inner.entities.resize(idx + 1, None);

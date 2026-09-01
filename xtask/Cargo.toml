@@ -5,7 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-chrono = "0.4"
 regex = "1"
 toml = "0.8"
 walkdir = "2"

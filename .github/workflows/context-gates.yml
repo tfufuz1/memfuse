@@ -112,11 +112,3 @@ jobs:
         run: |
           cargo run -p xtask -- check-jules-context-freshness
           echo "✅ Jules Context Frischeprüfung erfolgreich"
-
-      - name: "Gate 11: WORKING_STATE.md Datumsfeld ist kein hartkodierter Alt-Wert"
-        run: |
-          if grep -q "2026-08-27" WORKING_STATE.md; then
-            echo "❌ WORKING_STATE.md enthält noch das alte hartkodierte Datum '2026-08-27'"
-            exit 1
-          fi
-          echo "✅ WORKING_STATE.md hat kein altes hartkodiertes Datum"

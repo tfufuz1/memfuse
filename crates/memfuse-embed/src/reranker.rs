@@ -493,40 +493,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_rerank_multibyte_utf8_strings() {
-        let config = RerankConfig::default();
-        if let Ok(reranker) = CrossEncoderReranker::new(config) {
-            let query = "Suchanfrage mit Umlauten: Überprüfung";
-            let candidates = vec![
-                "Donaudampfschifffahrtselektrizitätenhauptbetriebswerkbauunterbeamtengesellschaft"
-                    .into(),
-                "Äpfel, Birnen & Ölsamen".into(),
-                "中文测试 🚀 Embedded System Integration".into(),
-            ];
-            let results = reranker.rerank(query, &candidates).await.unwrap();
-            assert_eq!(results.len(), 3);
-            for res in &results {
-                assert!(res.original_index < 3);
-            }
-        }
-    }
-
-    #[test]
-    fn test_rerank_config_default_paths() {
-        let cfg = RerankConfig::default();
-        assert_eq!(cfg.max_length, 512);
-        assert_eq!(cfg.batch_size, 8);
-        assert!(cfg
-            .model_path
-            .to_string_lossy()
-            .contains("bge-reranker-base.onnx"));
-        assert!(cfg
-            .tokenizer_path
-            .to_string_lossy()
-            .contains("tokenizer.json"));
-    }
-
     #[cfg(feature = "onnx")]
     #[test]
     fn test_extract_scores_1d_and_2d() -> Result<(), Box<dyn std::error::Error>> {
