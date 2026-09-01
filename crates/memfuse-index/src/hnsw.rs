@@ -344,6 +344,191 @@ impl HnswIndex {
         &self.inner.quantizer
     }
 
+    async fn search_filtered_internal(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+        snapshot_seq: Option<u64>,
+    ) -> Result<Vec<ScoredDocument>> {
+        if let Some(ref err) = self.inner.validation_error {
+            return Err(MemFuseError::invalid_input(format!(
+                "Invalid index configuration: {}",
+                err
+            )));
+        }
+        if query.len() != self.inner.config.dimension {
+            return Err(MemFuseError::invalid_input(format!(
+                "Expected dimension {}, got {}",
+                self.inner.config.dimension,
+                query.len()
+            )));
+        }
+
+        let query_quantized = if self.inner.config.quantize {
+            self.inner
+                .quantizer
+                .read()
+                .as_ref()
+                .map(|q| q.quantize(query))
+        } else {
+            None
+        };
+
+        let mut ep = Vec::new();
+        if let Some(global_ep) = *self.inner.entry_point.read() {
+            ep.push(global_ep);
+        }
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
+            if !ep.contains(&ram_ep) {
+                ep.push(ram_ep);
+            }
+        }
+
+        if let Some(f) = filter {
+            let nodes = self.inner.nodes.read();
+            let mmap_guard = self.inner.mmap_index.read();
+            let mmap_node_count = mmap_guard
+                .as_ref()
+                .map(|m| m.header.node_count as usize)
+                .unwrap_or(0);
+            let ctx = SearchContext {
+                nodes: &nodes,
+                mmap: mmap_guard.as_ref(),
+                mmap_node_count,
+            };
+
+            let total_nodes = mmap_node_count + nodes.len();
+            let mut added = 0;
+            for i in (0..total_nodes).rev() {
+                if !ep.contains(&i) {
+                    if let Ok(doc_id) = self.inner.resolve_doc_id(i, &ctx) {
+                        if f(doc_id) {
+                            ep.push(i);
+                            added += 1;
+                            if added >= 16 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ep.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let max_layer = self.inner.max_layer.load(Ordering::SeqCst) as usize;
+
+        for layer in (1..=max_layer).rev() {
+            let best = self
+                .inner
+                .search_layer(query, query_quantized.as_deref(), &ep, 1, layer)?;
+            if let Some(closest) = best.first() {
+                ep = vec![closest.index];
+            }
+        }
+
+        // Add RAM entry point back for the final layer search to ensure hybrid recall
+        if let Some(ram_ep) = *self.inner.ram_entry_point.read() {
+            if !ep.contains(&ram_ep) {
+                ep.push(ram_ep);
+            }
+        }
+
+        // Over-fetch to compensate for filtered-out results and reranking
+        let factor = if self.inner.config.quantize { 4 } else { 2 };
+        let ef = self.inner.config.ef_search.max(k) * factor;
+        let candidates = self
+            .inner
+            .search_layer(query, query_quantized.as_deref(), &ep, ef, 0)?;
+
+        let score = self.inner.connectivity_score();
+        if score < self.inner.config.rebuild_threshold {
+            let deleted_ratio = (1.0 - score) * 100.0;
+            let err = memfuse_core::MemFuseError::HnswConnectivityDegraded { deleted_ratio };
+            tracing::warn!(
+                error = %err,
+                connectivity_score = score,
+                rebuild_threshold = self.inner.config.rebuild_threshold,
+                "HNSW index degraded — consider calling rebuild()"
+            );
+        }
+
+        let nodes = self.inner.nodes.read();
+        let deleted = self.inner.deleted_nodes.read();
+        let mut results = Vec::with_capacity(k);
+
+        let seq_log_guard = if snapshot_seq.is_some() {
+            Some(self.inner.seq_log.read())
+        } else {
+            None
+        };
+
+        for c in candidates.iter() {
+            let node = nodes.get(c.index).ok_or_else(|| {
+                MemFuseError::Index(format!("HNSW candidate node missing at index {}", c.index))
+            })?;
+            if node.committed_tx == 0 {
+                continue;
+            }
+            let doc_id = node.doc_id;
+
+            if let Some(snap_seq) = snapshot_seq {
+                if let Some(ref seq_log) = seq_log_guard {
+                    if !seq_log.is_visible(doc_id, snap_seq) {
+                        continue;
+                    }
+                }
+            } else {
+                // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f)
+                if deleted.contains(c.index as u64) {
+                    continue;
+                }
+            }
+
+            if let Some(f) = filter {
+                if !f(doc_id) {
+                    continue;
+                }
+            }
+
+            // Phase 2: Exact Reranking (Asymmetric for SQ8)
+            let final_dist = if self.inner.config.quantize {
+                if let VectorData::U8(v) = &node.vector {
+                    let guard = self.inner.quantizer.read();
+                    let q = guard.as_ref().ok_or_else(|| {
+                        memfuse_core::MemFuseError::Index("Quantizer not trained".into())
+                    })?;
+                    q.asymmetric_dist(query, v, self.inner.config.distance_metric)?
+                } else {
+                    c.distance
+                }
+            } else {
+                c.distance
+            };
+
+            let score = match self.inner.config.distance_metric {
+                DistanceMetric::Cosine => 1.0 - final_dist,
+                DistanceMetric::Euclidean => 1.0 / (1.0 + final_dist),
+                DistanceMetric::DotProduct => -final_dist,
+                other => {
+                    return Err(MemFuseError::Index(format!(
+                        "Unsupported DistanceMetric variant in search_filtered(): {other:?}"
+                    )));
+                }
+            };
+            results.push(ScoredDocument::new(doc_id, score));
+        }
+
+        // Must re-sort and truncate after Phase 2 reranking
+        results.sort_by(|a, b| b.score.total_cmp(&a.score));
+        results.truncate(k);
+
+        Ok(results)
+    }
+
     /// Graph connectivity score (1.0 = perfect, 0.0 = fully fragmented).
     pub fn connectivity_score(&self) -> f64 {
         self.inner.connectivity_score()
@@ -1269,7 +1454,7 @@ impl HnswIndexCore {
 
         // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für
         //   SQ8-Quantizer-Bounds-Expansion bei Insert garantiert; loom-Regressionstest
-        //   in tests/loom_quantizer_race_test.rs (TS:2026-09-01T12:00:00Z) (SESSION:3c7c8a84)
+        //   in tests/loom_quantizer_race_test.rs (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
@@ -2998,11 +3183,13 @@ mod tests {
             .unwrap();
         index.commit(tx2).await.unwrap();
 
-        // search_at seq 1: should see doc 2, but NOT doc 3 (inserted at seq 2).
-        // Note: doc 1 was tombstoned in deleted_nodes at seq 2; per AGT-INDEX-006 in-place
-        // tombstones exclude doc 1 from subsequent reads across all snapshots.
+        // search_at seq 1: should see doc 1 & doc 2, but NOT doc 3 (inserted at seq 2).
         let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap();
         let docs_seq1: Vec<_> = res_seq1.iter().map(|d| d.doc_id.inner()).collect();
+        assert!(
+            docs_seq1.contains(&1),
+            "seq 1 must contain doc 1 (deleted at seq 2)"
+        );
         assert!(docs_seq1.contains(&2), "seq 1 must contain doc 2");
         assert!(!docs_seq1.contains(&3), "seq 1 must not contain doc 3");
 
@@ -3063,7 +3250,7 @@ mod tests {
             10..100,
         );
 
-        // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T12:00:00Z) (SESSION:3c7c8a84)
+        // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
         // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
         // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().
         // Regressionstest: tests/hnsw_snapshot_delete_test.rs

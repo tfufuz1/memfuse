@@ -46,6 +46,7 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 - **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
 - **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
 - **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `grep -oP '(?<=^## ADR-)\d+' DECISIONS.md | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
+- **Gate-Verdrahtung in xtask**: Beim Erstellen oder Ändern von `xtask`-Subcommands den Aufruf in `fn main()` IMMER gegen `.github/workflows/context-gates.yml` abgleichen, damit kein Gate-Schritt silent in den `other`-Zweig fällt.
 
 ## 5. Judgment Boundaries
 

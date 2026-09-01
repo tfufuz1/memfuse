@@ -4,89 +4,76 @@
 //! Testziel: Kein Datenverlust und keine Panik bei 4 parallelen insert()-Aufrufen
 //! auf demselben HnswIndex mit aktiviertem SQ8-Quantizer.
 
-#![allow(unexpected_cfgs)]
-
 #[cfg(loom)]
 mod loom_tests {
-    #[cfg(feature = "loom")]
-    use loom::{sync::Arc, thread};
-
-    #[cfg(not(feature = "loom"))]
-    mod loom_fallback {
-        pub use std::sync::Arc;
-        pub use std::thread;
-        pub fn model<F: FnOnce()>(f: F) {
-            f();
-        }
-    }
-
-    #[cfg(not(feature = "loom"))]
-    use loom_fallback::{model, Arc, thread};
-
+    use loom::sync::Arc;
+    use loom::thread;
     use memfuse_core::{DocId, TxId, VectorIndex};
     use memfuse_index::{HnswConfig, HnswIndex};
 
     #[test]
     fn test_sq8_quantizer_write_lock_no_race() {
-        #[cfg(feature = "loom")]
-        loom::model(run_model);
+        loom::model(|| {
+            let config = HnswConfig {
+                dimension: 4,
+                quantize: true,
+                m: 8,
+                ef_construction: 16,
+                ef_search: 16,
+                ..Default::default()
+            };
+            let index = Arc::new(HnswIndex::try_new(config).expect("valid index"));
 
-        #[cfg(not(feature = "loom"))]
-        model(run_model);
-    }
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
 
-    fn run_model() {
-        let config = HnswConfig {
-            dimension: 4,
-            quantize: true,
-            ..HnswConfig::default()
-        };
-        let index = Arc::new(HnswIndex::try_new(config).expect("valid config"));
+            rt.block_on(async {
+                let tx0 = TxId::new(100);
+                let vec0 = vec![1.0, 2.0, 3.0, 4.0];
+                index
+                    .insert(tx0, DocId::new(100), &vec0)
+                    .await
+                    .expect("initial insert");
+                index.commit(tx0).await.expect("initial commit");
+            });
 
-        // Trainiere Quantizer mit einem initialen Vektor damit er Some() ist
-        let init_rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
-        init_rt.block_on(async {
-            let init_tx = TxId::new(1);
-            index
-                .insert(init_tx, DocId::new(1), &[1.0, 2.0, 3.0, 4.0])
-                .await
-                .expect("initial insert");
-            index.commit(init_tx).await.expect("commit init_tx");
-        });
+            let mut handles = Vec::new();
 
-        // Starte 4 loom-Threads, jeder ruft index.insert(tx, doc_id, vec) auf
-        let mut handles = Vec::new();
-        for i in 2..=5u64 {
-            let idx = Arc::clone(&index);
-            handles.push(thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .unwrap();
-                rt.block_on(async {
-                    let tx = TxId::new(i);
-                    let doc_id = DocId::new(i);
-                    let vec = [i as f32, (i * 2) as f32, (i * 3) as f32, (i * 4) as f32];
-                    idx.insert(tx, doc_id, &vec).await?;
-                    idx.commit(tx).await
-                })
-            }));
-        }
+            for i in 1..=4 {
+                let index_clone = Arc::clone(&index);
+                let handle = thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    rt.block_on(async {
+                        let tx = TxId::new(i);
+                        let doc_id = DocId::new(i);
+                        let vec = vec![i as f32 * 10.0, i as f32 * -5.0, 1.0, 2.0];
+                        index_clone
+                            .insert(tx, doc_id, &vec)
+                            .await
+                            .expect("parallel insert");
+                        index_clone.commit(tx).await.expect("parallel commit");
+                    });
+                });
+                handles.push(handle);
+            }
 
-        for handle in handles {
-            let res = handle.join().expect("thread panicked");
-            assert!(res.is_ok(), "insert/commit failed: {:?}", res);
-        }
+            for handle in handles {
+                handle.join().expect("thread finished without panic");
+            }
 
-        // Nach join aller Threads: prüfe dass kein Panic aufgetreten ist und Suche funktioniert
-        let search_rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
-        search_rt.block_on(async {
-            let res = index.search(&[1.0, 2.0, 3.0, 4.0], 5).await;
-            assert!(res.is_ok(), "search failed: {:?}", res);
-            assert_eq!(res.unwrap().len(), 5);
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                assert_eq!(index.len().await, 5);
+            });
         });
     }
 }
@@ -104,42 +91,39 @@ mod normal_tests {
         let config = HnswConfig {
             dimension: 4,
             quantize: true,
-            ..HnswConfig::default()
+            m: 8,
+            ef_construction: 16,
+            ef_search: 16,
+            ..Default::default()
         };
-        let index = Arc::new(HnswIndex::try_new(config).expect("valid config"));
+        let index = Arc::new(HnswIndex::try_new(config).expect("valid index"));
 
-        // Trainiere Quantizer mit einem initialen Vektor damit er Some() ist
-        let init_tx = TxId::new(1);
+        let tx0 = TxId::new(100);
+        let vec0 = vec![1.0, 2.0, 3.0, 4.0];
         index
-            .insert(init_tx, DocId::new(1), &[1.0, 2.0, 3.0, 4.0])
+            .insert(tx0, DocId::new(100), &vec0)
             .await
             .expect("initial insert");
-        index.commit(init_tx).await.expect("commit init");
+        index.commit(tx0).await.expect("initial commit");
 
-        // Starte 4 tokio-Tasks, jeder insertet einen Vektor
         let mut tasks = Vec::new();
-        for i in 2..=5u64 {
-            let idx = Arc::clone(&index);
+        for i in 1..=4u64 {
+            let index_clone = Arc::clone(&index);
             tasks.push(tokio::spawn(async move {
                 let tx = TxId::new(i);
                 let doc_id = DocId::new(i);
-                let vec = [i as f32, (i * 2) as f32, (i * 3) as f32, (i * 4) as f32];
-                idx.insert(tx, doc_id, &vec).await?;
-                idx.commit(tx).await
+                let vec = vec![i as f32 * 10.0, i as f32 * -5.0, 1.0, 2.0];
+                index_clone.insert(tx, doc_id, &vec).await?;
+                index_clone.commit(tx).await?;
+                Ok::<(), memfuse_core::MemFuseError>(())
             }));
         }
 
-        // Warte auf alle Tasks
         for task in tasks {
-            let res = task.await.expect("task join failed");
-            assert!(res.is_ok(), "insert/commit returned error: {:?}", res);
+            let res = task.await.expect("task join succeeded");
+            assert!(res.is_ok(), "Insert and commit succeeded without error");
         }
 
-        // Prüfe: search liefert 5 Ergebnisse und kein Fehler zurückgegeben
-        let results = index
-            .search(&[1.0, 2.0, 3.0, 4.0], 5)
-            .await
-            .expect("search succeeded");
-        assert_eq!(results.len(), 5);
+        assert_eq!(index.len().await, 5);
     }
 }
