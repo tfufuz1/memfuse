@@ -47,7 +47,11 @@ pub async fn chat_with_rag(
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let search_results = collection
-        .hybrid_search(&message, &query_vector, 5, None)
+        .query()
+        .text(&message)
+        .embedding(&query_vector)
+        .k(5)
+        .execute()
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
