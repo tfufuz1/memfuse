@@ -164,12 +164,10 @@ fn validate_query_text(text: &str) -> PyResult<()> {
 /// Validates batch size against maximum resource allocation limits.
 fn validate_batch_size(size: usize) -> PyResult<()> {
     if size == 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(
-            "Batch cannot be empty",
-        ));
+        return Err(MemFuseValueError::new_err("Batch cannot be empty"));
     }
     if size > MAX_BATCH_SIZE {
-        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+        return Err(MemFuseValueError::new_err(format!(
             "Batch size {} exceeds maximum allowed limit of {}",
             size, MAX_BATCH_SIZE
         )));
@@ -426,6 +424,7 @@ impl PyDbStats {
 macro_rules! memfuse_crud_methods {
     ($struct_type:ty) => {
         #[pymethods]
+        #[allow(deprecated)]
         impl $struct_type {
             /// Inserts a document with an embedding and optional metadata.
             #[pyo3(signature = (id, vector, metadata=None))]
@@ -820,13 +819,7 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
-                if docs.len() > MAX_BATCH_SIZE {
-                    return Err(MemFuseValueError::new_err(format!(
-                        "Batch size exceeds maximum limit of {} items. Got: {}",
-                        MAX_BATCH_SIZE,
-                        docs.len()
-                    )));
-                }
+                validate_batch_size(docs.len())?;
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
@@ -856,13 +849,7 @@ macro_rules! memfuse_batch_methods {
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
             ) -> PyResult<()> {
-                if docs.len() > MAX_BATCH_SIZE {
-                    return Err(MemFuseValueError::new_err(format!(
-                        "Batch size exceeds maximum limit of {} items. Got: {}",
-                        MAX_BATCH_SIZE,
-                        docs.len()
-                    )));
-                }
+                validate_batch_size(docs.len())?;
                 let rt = get_runtime()?;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());

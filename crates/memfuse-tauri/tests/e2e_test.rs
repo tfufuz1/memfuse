@@ -99,7 +99,11 @@ async fn test_full_pipeline_ingest_search_and_chat_context() {
     let query_vector = embedder.embed(query).await.unwrap();
 
     let results = collection
-        .hybrid_search(query, &query_vector, 5, None)
+        .query()
+        .text(query)
+        .embedding(&query_vector)
+        .k(5)
+        .execute()
         .await
         .expect("Hybrid-Suche");
 
@@ -123,7 +127,11 @@ async fn test_full_pipeline_ingest_search_and_chat_context() {
     let lager_query = "Wie hoch ist der aktuelle Lagerbestand?";
     let lager_vector = embedder.embed(lager_query).await.unwrap();
     let lager_results = collection
-        .hybrid_search(lager_query, &lager_vector, 3, None)
+        .query()
+        .text(lager_query)
+        .embedding(&lager_vector)
+        .k(3)
+        .execute()
         .await
         .expect("Lager-Suche");
 

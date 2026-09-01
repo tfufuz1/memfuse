@@ -33,9 +33,29 @@ impl RouterEngine {
         }
     }
 
+    /// Validates all profiles and creates a new `RouterEngine` instance.
+    pub fn try_new(
+        collection: Arc<Collection<LsmStorage>>,
+        profiles: Vec<SlmProfile>,
+    ) -> Result<Self> {
+        for p in &profiles {
+            p.validate()?;
+        }
+        Ok(Self::new(collection, profiles))
+    }
+
     /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
     pub fn update_profiles(&self, new_profiles: Vec<SlmProfile>) {
         *self.profiles.write() = new_profiles;
+    }
+
+    /// Validates all profiles and updates configured SLM profiles at runtime (Hot-Reload).
+    pub fn try_update_profiles(&self, new_profiles: Vec<SlmProfile>) -> Result<()> {
+        for p in &new_profiles {
+            p.validate()?;
+        }
+        self.update_profiles(new_profiles);
+        Ok(())
     }
 
     /// Returns a copy of the active SLM profiles.
