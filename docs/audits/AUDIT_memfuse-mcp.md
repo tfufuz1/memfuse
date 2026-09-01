@@ -159,7 +159,7 @@ Gemessen mit Criterion (`cargo bench -p memfuse-mcp`):
 
 1. **[RESOLVED - HIGH] Deprecated Search Method Usage**:
    - *Problem*: `lib.rs` nutzte die veraltete Methode `hybrid_search`.
-   - *Fix*: Umgestellt auf die moderne Fassade `col.query().text(...).vector(...).k(...).execute()`.
+   - *Fix*: Umgestellt auf die moderne Fassade `col.query().text(...).vector(...).k(...).execute()` (FIXED 2026-09-01).
 2. **[RESOLVED - MEDIUM] Missing Batch Support in stdio Loop**:
    - *Problem*: Batch Arrays `[req1, req2]` wurden zuvor als single request interpretiert und abgewiesen.
    - *Fix*: Vollständiger JSON-RPC 2.0 Batch Support in `run_stdio` integriert.
