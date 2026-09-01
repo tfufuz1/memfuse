@@ -196,6 +196,25 @@ pub struct IntegrityVerifier {
 }
 
 impl IntegrityVerifier {
+    /// Creates a new `IntegrityVerifier` with input validation on the integrity key.
+    pub fn try_new(integrity_key: &[u8]) -> Result<Self> {
+        if integrity_key.is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "integrity_key cannot be empty".to_string(),
+            ));
+        }
+        if integrity_key.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "integrity_key length {} exceeds maximum allowed bound of 10000 bytes",
+                integrity_key.len()
+            )));
+        }
+        Ok(Self {
+            last_hmac: [0u8; 32],
+            integrity_key: Zeroizing::new(integrity_key.to_vec()),
+        })
+    }
+
     pub fn new(integrity_key: &[u8]) -> Self {
         Self {
             last_hmac: [0u8; 32],
@@ -654,5 +673,31 @@ mod tests {
             actual_checksum, expected_checksum,
             "WalHmac checksum MUST match independent HMAC-SHA256 reference calculation!"
         );
+    }
+
+    #[test]
+    fn test_integrity_verifier_try_new_empty_key() {
+        let res = IntegrityVerifier::try_new(b"");
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_integrity_verifier_try_new_oversized_key() {
+        let oversized = vec![0xABu8; 10_001];
+        let res = IntegrityVerifier::try_new(&oversized);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_integrity_verifier_try_new_valid() {
+        let key = b"integrity-key-32-bytes-long-----";
+        let verifier = IntegrityVerifier::try_new(key);
+        assert!(verifier.is_ok(), "Valid key MUST be accepted");
     }
 }
