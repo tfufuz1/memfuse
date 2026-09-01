@@ -20,7 +20,7 @@ pub type Result<T> = std::result::Result<T, MemFuseError>;
 /// Unified error type for all `MemFuse` operations across the entire workspace.
 ///
 /// # Non-Exhaustive Variant Guarantee
-/// This enum is marked [`#[non_exhaustive]`][non_exhaustive] to allow appending new error variants
+/// This enum is marked `#[non_exhaustive]` to allow appending new error variants
 /// in future minor releases without breaking downstream `match` statements across crate boundaries
 /// (such as `memfuse-py` and `memfuse-mcp`).
 ///

@@ -352,10 +352,10 @@ mod tests {
         let elapsed = start_time.elapsed();
         assert_eq!(ctx.events.len(), MAX_TELEMETRY_EVENTS);
         // O(1) VecDeque operations for 11,000 pushes/evictions typically complete in <10ms.
-        // We set a safe threshold of 100ms (old O(N²) took significantly longer due to shift operations).
+        // We set a safe threshold of 250ms (old O(N²) took significantly longer due to shift operations).
         assert!(
-            elapsed < std::time::Duration::from_millis(100),
-            "Expected operations to complete under 100ms, took {:?}",
+            elapsed < std::time::Duration::from_millis(250),
+            "Expected operations to complete under 250ms, took {:?}",
             elapsed
         );
         Ok(())

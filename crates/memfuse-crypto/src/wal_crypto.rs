@@ -40,6 +40,12 @@ pub struct EncryptedWal {
     key_manager: KeyManager,
 }
 
+const MAX_CHUNK_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+const AES_GCM_SIV_NONCE_LEN: usize = 12;
+const AES_GCM_SIV_TAG_LEN: usize = 16;
+const MAX_ENCRYPTED_CHUNK_SIZE: usize =
+    MAX_CHUNK_SIZE + AES_GCM_SIV_NONCE_LEN + AES_GCM_SIV_TAG_LEN;
+
 impl EncryptedWal {
     /// Creates a new EncryptedWal with per-file key derivation to prevent nonce-reuse.
     /// `file_id` (e.g., filename) is used to derive a unique sub-key for this stream.
@@ -64,6 +70,13 @@ impl EncryptedWal {
     /// Wraps the internal WAL chunk in AES-256-GCM stream.
     /// Prepends the 12-byte nonce to the encrypted ciphertext.
     pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
+        if payload.len() > MAX_CHUNK_SIZE {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "Payload size {} exceeds maximum permitted limit of {} bytes",
+                payload.len(),
+                MAX_CHUNK_SIZE
+            )));
+        }
         let (ciphertext, nonce) = self.key_manager.encrypt_auto_nonce(payload)?;
         let mut out = Vec::with_capacity(12 + ciphertext.len());
         out.extend_from_slice(&nonce);
@@ -73,17 +86,16 @@ impl EncryptedWal {
 
     /// Decrypts the WAL chunk by extracting the prepended 12-byte nonce from the data.
     pub fn decrypt_chunk(&self, data: &[u8]) -> Result<Vec<u8>> {
-        if data.len() < 12 {
+        if data.len() < AES_GCM_SIV_NONCE_LEN {
             return Err(memfuse_core::MemFuseError::InvalidInput(
                 "Encrypted WAL chunk too short for 12-byte nonce".into(),
             ));
         }
-        const MAX_CHUNK_SIZE: usize = 100 * 1024 * 1024; // 100 MB
-        if data.len() > MAX_CHUNK_SIZE {
+        if data.len() > MAX_ENCRYPTED_CHUNK_SIZE {
             return Err(memfuse_core::MemFuseError::InvalidInput(format!(
                 "Encrypted chunk size {} exceeds maximum permitted limit of {} bytes",
                 data.len(),
-                MAX_CHUNK_SIZE
+                MAX_ENCRYPTED_CHUNK_SIZE
             )));
         }
         let mut nonce = [0u8; 12];
@@ -119,6 +131,12 @@ impl WalHmac {
             return Err(memfuse_core::MemFuseError::InvalidInput(
                 "Key cannot be empty".to_string(),
             ));
+        }
+        if integrity_key.len() > 10_000 {
+            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                "integrity_key length {} exceeds maximum allowed bound of 10000 bytes",
+                integrity_key.len()
+            )));
         }
         let mut mac = Hmac::<Sha256>::new_from_slice(integrity_key)
             .map_err(|e| memfuse_core::MemFuseError::Crypto(format!("HMAC key error: {}", e)))?;
@@ -473,6 +491,28 @@ mod tests {
     }
 
     #[test]
+    fn test_wal_hmac_oversized_key() {
+        let oversized_key = vec![0x55u8; 10_001];
+        let res = WalHmac::new(&oversized_key);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn test_encrypt_chunk_oversized() {
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let payload = vec![0u8; MAX_CHUNK_SIZE + 1];
+        let res = wal.encrypt_chunk(&payload);
+        assert!(matches!(
+            res,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
     fn test_decrypt_chunk_too_short() {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
         let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
@@ -487,7 +527,7 @@ mod tests {
     fn test_decrypt_chunk_oversized() {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
         let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
-        let data = vec![0u8; 100 * 1024 * 1024 + 1];
+        let data = vec![0u8; MAX_ENCRYPTED_CHUNK_SIZE + 1];
         let res = wal.decrypt_chunk(&data);
         assert!(matches!(
             res,
