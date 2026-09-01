@@ -379,4 +379,219 @@ mod tests {
         let d2 = router.route(&vec_data, "test content").await.unwrap();
         assert_eq!(d2.profile.name, "profile-c");
     }
+
+    #[derive(Clone)]
+    struct LogCaptureLayer(Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for LogCaptureLayer {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = StringVisitor(String::new());
+            event.record(&mut visitor);
+            self.0.lock().unwrap().push(visitor.0);
+        }
+    }
+
+    struct StringVisitor(String);
+    impl tracing::field::Visit for StringVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            use std::fmt::Write;
+            write!(self.0, "{}={:?} ", field.name(), value).ok();
+        }
+    }
+
+    #[test]
+    fn test_nan_single_chunk_ignored_in_max_score() {
+        use crate::router::{compute_max_score, select_profile_from_chunks};
+        use memfuse_core::{ContextChunk, DocId};
+
+        let profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let chunk_valid_1 = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "valid 1".to_string(),
+            relevance: 0.5,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let chunk_nan = ContextChunk {
+            doc_id: DocId::new(2),
+            content: "corrupted nan".to_string(),
+            relevance: f32::NAN,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let chunk_valid_2 = ContextChunk {
+            doc_id: DocId::new(3),
+            content: "valid 2".to_string(),
+            relevance: 0.8,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let chunks = vec![
+            (chunk_valid_1, Some(100)),
+            (chunk_nan, Some(100)),
+            (chunk_valid_2, Some(100)),
+        ];
+
+        let max_score = compute_max_score(&profile, &chunks);
+        assert!(!max_score.is_nan(), "max_score must not be NaN");
+
+        // Expected max score = 0.8 * 1.2 (community boost for community 100) = 0.96
+        let expected = 0.8f32 * 1.2f32;
+        assert!(
+            (max_score - expected).abs() < 1e-5,
+            "Expected max score {}, got {}",
+            expected,
+            max_score
+        );
+
+        let selected_idx = select_profile_from_chunks(&[profile], &chunks)
+            .expect("Profile selection must succeed ignoring NaN chunk");
+        assert_eq!(selected_idx, 0);
+    }
+
+    #[test]
+    fn test_nan_all_chunks_fallback_and_tracing_error() {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let logs = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture_layer = LogCaptureLayer(logs.clone());
+        let subscriber = tracing_subscriber::registry().with(capture_layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let chunk_nan_1 = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "nan 1".to_string(),
+            relevance: f32::NAN,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let chunk_nan_2 = ContextChunk {
+            doc_id: DocId::new(2),
+            content: "nan 2".to_string(),
+            relevance: f32::NAN,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let chunks = vec![(chunk_nan_1, Some(100)), (chunk_nan_2, Some(100))];
+
+        let result = select_profile_from_chunks(&[profile], &chunks);
+        assert!(result.is_err(), "Expected error when all chunks are NaN");
+
+        match result {
+            Err(MemFuseError::NotFound(msg)) => {
+                assert!(msg.contains("NaN/Inf"));
+            }
+            other => panic!("Expected NotFound error, got {:?}", other),
+        }
+
+        let captured = logs.lock().unwrap();
+        let found_log = captured.iter().any(|msg| {
+            msg.contains("Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung")
+        });
+
+        assert!(
+            found_log,
+            "Expected tracing::error! message in logs, got: {:?}",
+            *captured
+        );
+    }
+
+    #[test]
+    fn test_nan_routing_determinism_repeats() {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+
+        let profile_a = SlmProfile::new(
+            "slm-a",
+            "http://localhost/a",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let profile_b = SlmProfile::new(
+            "slm-b",
+            "http://localhost/b",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let profiles = vec![profile_a, profile_b];
+
+        let chunks = vec![
+            (
+                ContextChunk {
+                    doc_id: DocId::new(1),
+                    content: "corrupted nan".to_string(),
+                    relevance: f32::NAN,
+                    token_count: 5,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                },
+                Some(100),
+            ),
+            (
+                ContextChunk {
+                    doc_id: DocId::new(2),
+                    content: "valid chunk".to_string(),
+                    relevance: 0.7,
+                    token_count: 5,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                },
+                Some(100),
+            ),
+        ];
+
+        let first_result = select_profile_from_chunks(&profiles, &chunks).expect("First selection");
+
+        for i in 0..100 {
+            let res = select_profile_from_chunks(&profiles, &chunks)
+                .unwrap_or_else(|_| panic!("Selection failed on iteration {}", i));
+            assert_eq!(
+                res, first_result,
+                "Routing selection must be bit-identical across runs (iteration {})",
+                i
+            );
+        }
+    }
 }
