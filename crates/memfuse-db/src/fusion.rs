@@ -14,6 +14,73 @@
 use crate::SearchResult;
 use std::collections::HashMap;
 
+/// Identifies the kind of search signal used during fusion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SignalKind {
+    /// Vector (semantic k-NN) search signal.
+    Vector,
+    /// Text (BM25 keyword) search signal.
+    Text,
+    /// Graph (traversal / PageRank) search signal.
+    Graph,
+}
+
+impl SignalKind {
+    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph").
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "vector" | "vec" => Some(SignalKind::Vector),
+            "text" | "bm25" | "keyword" => Some(SignalKind::Text),
+            "graph" => Some(SignalKind::Graph),
+            _ => None,
+        }
+    }
+}
+
+/// Configures signal priority order for metadata merging during Reciprocal Rank Fusion.
+///
+/// The metadata merge strategy uses a "First-Wins" policy: for any given key, the value from
+/// the earliest processed signal set is kept. `MetadataMergePriority` controls the order in which
+/// signal sets are processed during metadata merging.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum MetadataMergePriority {
+    /// Vector metadata is processed first (default behavior). Order: Vector, Text, Graph.
+    #[default]
+    VectorFirst,
+    /// Text metadata is processed first. Order: Text, Vector, Graph.
+    TextFirst,
+    /// Graph metadata is processed first (preserving graph entity/community metadata). Order: Graph, Vector, Text.
+    GraphFirst,
+    /// Custom signal priority order. Signals listed earlier have precedence over signals listed later.
+    Custom(Vec<SignalKind>),
+}
+
+impl MetadataMergePriority {
+    /// Returns the precedence rank (lower number = processed earlier) for a given signal name.
+    pub fn signal_rank(&self, signal_name: &str) -> usize {
+        let kind = SignalKind::from_name(signal_name);
+        let order = match self {
+            MetadataMergePriority::VectorFirst => {
+                vec![SignalKind::Vector, SignalKind::Text, SignalKind::Graph]
+            }
+            MetadataMergePriority::TextFirst => {
+                vec![SignalKind::Text, SignalKind::Vector, SignalKind::Graph]
+            }
+            MetadataMergePriority::GraphFirst => {
+                vec![SignalKind::Graph, SignalKind::Vector, SignalKind::Text]
+            }
+            MetadataMergePriority::Custom(custom_order) => custom_order.clone(),
+        };
+
+        if let Some(k) = kind {
+            if let Some(pos) = order.iter().position(|&x| x == k) {
+                return pos;
+            }
+        }
+        usize::MAX
+    }
+}
+
 /// Fuses multiple sets of ranked search results into a single ranked list using Reciprocal Rank Fusion (RRF).
 /// RRF score = sum(1 / (k + rank)) for each result set, where k = 60 by default.
 pub fn reciprocal_rank_fusion(
@@ -28,7 +95,11 @@ pub fn reciprocal_rank_fusion(
 }
 
 /// Helper function to perform shallow merge of JSON metadata objects.
-/// Later metadata keys supplement missing keys in existing metadata without overwriting.
+///
+/// Erstes-Signal-gewinnt-Merge: Für jeden Metadata-Key wird der Wert des zuerst verarbeiteten
+/// Signal-Sets übernommen; nachfolgende Signal-Sets überschreiben existierende Keys NICHT.
+/// Da `result_sets` in der Reihenfolge (vector, text, graph) iteriert wird, hat Vektor-Metadata
+/// faktisch Vorrang vor Text- und Graph-Metadata bei Key-Kollisionen.
 fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_json::Value>) {
     match (target, source) {
         (Some(t_val), Some(s_val)) => {
@@ -47,7 +118,7 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
     }
 }
 
-/// Weighted Reciprocal Rank Fusion.
+/// Weighted Reciprocal Rank Fusion with default signal metadata priority (`VectorFirst`).
 /// Multiplies the RRF contribution of each search signal set by its configured weight.
 ///
 /// Accepts tuples of `(signal_name, result_set, weight)`.
@@ -55,6 +126,26 @@ pub fn weighted_reciprocal_rank_fusion(
     result_sets: Vec<(String, Vec<SearchResult>, f32)>,
     max_results: usize,
 ) -> Vec<SearchResult> {
+    weighted_reciprocal_rank_fusion_with_priority(
+        result_sets,
+        max_results,
+        MetadataMergePriority::default(),
+    )
+}
+
+/// Weighted Reciprocal Rank Fusion with explicit metadata merge priority.
+///
+/// Multiplies the RRF contribution of each search signal set by its configured weight,
+/// and applies metadata merging in the order dictated by `priority`.
+pub fn weighted_reciprocal_rank_fusion_with_priority(
+    mut result_sets: Vec<(String, Vec<SearchResult>, f32)>,
+    max_results: usize,
+    priority: MetadataMergePriority,
+) -> Vec<SearchResult> {
+    // Sort result sets according to configured metadata merge priority.
+    // Stable sort preserves original relative order for signals with equal rank.
+    result_sets.sort_by_key(|(signal_name, _, _)| priority.signal_rank(signal_name));
+
     // The constant k=60 is the industry standard (Cormack et al., 2009).
     // It balances the precision/recall trade-off by smoothing rank impact:
     // higher k prevents top-ranked outliers in one signal from completely dominating,
@@ -391,6 +482,92 @@ mod tests {
         }];
         let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, 1.0)], 0);
         assert!(fused.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_merge_priority_colliding_keys() {
+        let vec_set = (
+            "vector".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: Some(serde_json::json!({
+                    "shared_key": "from_vector",
+                    "vec_only": "vec_val"
+                })),
+                matched_signals: vec![],
+            }],
+            1.0,
+        );
+        let text_set = (
+            "text".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.85,
+                metadata: Some(serde_json::json!({
+                    "shared_key": "from_text",
+                    "text_only": "text_val"
+                })),
+                matched_signals: vec![],
+            }],
+            1.0,
+        );
+        let graph_set = (
+            "graph".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.8,
+                metadata: Some(serde_json::json!({
+                    "shared_key": "from_graph",
+                    "graph_only": "graph_val"
+                })),
+                matched_signals: vec![],
+            }],
+            1.0,
+        );
+
+        // 1. VectorFirst (Default) -> Vector wins shared_key
+        let fused_vec = weighted_reciprocal_rank_fusion_with_priority(
+            vec![vec_set.clone(), text_set.clone(), graph_set.clone()],
+            1,
+            MetadataMergePriority::VectorFirst,
+        );
+        let meta_vec = fused_vec[0].metadata.as_ref().unwrap().as_object().unwrap();
+        assert_eq!(meta_vec.get("shared_key").unwrap(), "from_vector");
+        assert_eq!(meta_vec.get("vec_only").unwrap(), "vec_val");
+        assert_eq!(meta_vec.get("text_only").unwrap(), "text_val");
+        assert_eq!(meta_vec.get("graph_only").unwrap(), "graph_val");
+
+        // 2. TextFirst -> Text wins shared_key
+        let fused_text = weighted_reciprocal_rank_fusion_with_priority(
+            vec![vec_set.clone(), text_set.clone(), graph_set.clone()],
+            1,
+            MetadataMergePriority::TextFirst,
+        );
+        let meta_text = fused_text[0].metadata.as_ref().unwrap().as_object().unwrap();
+        assert_eq!(meta_text.get("shared_key").unwrap(), "from_text");
+
+        // 3. GraphFirst -> Graph wins shared_key
+        let fused_graph = weighted_reciprocal_rank_fusion_with_priority(
+            vec![vec_set.clone(), text_set.clone(), graph_set.clone()],
+            1,
+            MetadataMergePriority::GraphFirst,
+        );
+        let meta_graph = fused_graph[0].metadata.as_ref().unwrap().as_object().unwrap();
+        assert_eq!(meta_graph.get("shared_key").unwrap(), "from_graph");
+
+        // 4. Custom priority (Graph -> Text -> Vector) -> Graph wins shared_key
+        let fused_custom = weighted_reciprocal_rank_fusion_with_priority(
+            vec![vec_set.clone(), text_set.clone(), graph_set.clone()],
+            1,
+            MetadataMergePriority::Custom(vec![
+                SignalKind::Graph,
+                SignalKind::Text,
+                SignalKind::Vector,
+            ]),
+        );
+        let meta_custom = fused_custom[0].metadata.as_ref().unwrap().as_object().unwrap();
+        assert_eq!(meta_custom.get("shared_key").unwrap(), "from_graph");
     }
 
     #[test]
