@@ -2066,7 +2066,8 @@ async fn test_concurrent_insert_many_collision_safety() {
 }
 
 #[tokio::test]
-async fn test_community_boost_post_rrf_preserves_non_community_and_reranks() {
+async fn test_community_boost_post_rrf_preserves_non_community_and_reranks(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     use memfuse_core::EntityId;
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -2075,22 +2076,18 @@ async fn test_community_boost_post_rrf_preserves_non_community_and_reranks() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir()?;
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
-        .await
-        .unwrap(),
+        .await?,
     );
-    let index = Arc::new(
-        HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        })
-        .unwrap(),
-    );
+    let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    })?);
     let graph = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -2110,22 +2107,20 @@ async fn test_community_boost_post_rrf_preserves_non_community_and_reranks() {
         &[1.0, 0.0, 0.0, 0.0],
         Some(serde_json::json!({"text": "alpha topic"})),
     )
-    .await
-    .unwrap();
+    .await?;
     col.insert(
         "doc_b",
         &[1.0, 0.0, 0.0, 0.0],
         Some(serde_json::json!({"text": "alpha topic"})),
     )
-    .await
-    .unwrap();
+    .await?;
 
-    let eid_a = EntityId::from_key("doc_a").unwrap();
+    let eid_a = EntityId::from_key("doc_a")?;
 
     // Relate doc_a to doc_c and run community detection so get_community(eid_a) finds target_community_id
-    col.relate("doc_a", "doc_c", "knows").await.unwrap();
-    col.run_community_detection().await.unwrap();
-    assert!(col.get_community(eid_a).await.unwrap().is_some());
+    col.relate("doc_a", "doc_c", "knows").await?;
+    col.run_community_detection().await?;
+    assert!(col.get_community(eid_a).await?.is_some());
 
     // Perform hybrid search with same_community_as = doc_a
     let results_boosted = col
@@ -2138,8 +2133,7 @@ async fn test_community_boost_post_rrf_preserves_non_community_and_reranks() {
             None,
             Some(eid_a),
         )
-        .await
-        .unwrap();
+        .await?;
 
     // Verification 1: Non-community doc_b is NOT eliminated and remains in results!
     assert_eq!(
@@ -2164,10 +2158,12 @@ async fn test_community_boost_post_rrf_preserves_non_community_and_reranks() {
         results_boosted[0].score,
         results_boosted[1].score
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_search_k_zero_returns_canonical_error_message() {
+async fn test_search_k_zero_returns_canonical_error_message(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -2175,22 +2171,18 @@ async fn test_search_k_zero_returns_canonical_error_message() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir()?;
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
-        .await
-        .unwrap(),
+        .await?,
     );
-    let index = Arc::new(
-        HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        })
-        .unwrap(),
-    );
+    let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    })?);
     let col = super::Collection::new(
         "default".to_string(),
         storage,
@@ -2205,7 +2197,10 @@ async fn test_search_k_zero_returns_canonical_error_message() {
 
     let err_search = col.search(&query_vec, 0).await;
     assert!(err_search.is_err());
-    let err_msg_1 = err_search.unwrap_err().to_string();
+    let err_msg_1 = match err_search {
+        Err(e) => e.to_string(),
+        Ok(_) => unreachable!(),
+    };
     assert!(
         err_msg_1.contains("Search k must be greater than 0"),
         "Expected 'Search k must be greater than 0', got: {err_msg_1}"
@@ -2213,15 +2208,20 @@ async fn test_search_k_zero_returns_canonical_error_message() {
 
     let err_expr = col.search_with_filter_expr(&query_vec, 0, None).await;
     assert!(err_expr.is_err());
-    let err_msg_2 = err_expr.unwrap_err().to_string();
+    let err_msg_2 = match err_expr {
+        Err(e) => e.to_string(),
+        Ok(_) => unreachable!(),
+    };
     assert!(
         err_msg_2.contains("Search k must be greater than 0"),
         "Expected 'Search k must be greater than 0', got: {err_msg_2}"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_graph_mapping_invariant_missing_entity_graceful_degradation() {
+async fn test_graph_mapping_invariant_missing_entity_graceful_degradation(
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -2229,22 +2229,18 @@ async fn test_graph_mapping_invariant_missing_entity_graceful_degradation() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir()?;
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
-        .await
-        .unwrap(),
+        .await?,
     );
-    let index = Arc::new(
-        HnswIndex::try_new(memfuse_index::HnswConfig {
-            dimension: 4,
-            ..Default::default()
-        })
-        .unwrap(),
-    );
+    let index = Arc::new(HnswIndex::try_new(memfuse_index::HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    })?);
     let col = super::Collection::new(
         "default".to_string(),
         storage,
@@ -2261,8 +2257,7 @@ async fn test_graph_mapping_invariant_missing_entity_graceful_degradation() {
         &[0.5, 0.5, 0.0, 0.0],
         Some(serde_json::json!({"text": "specialized retrieval architecture"})),
     )
-    .await
-    .unwrap();
+    .await?;
 
     // Perform hybrid search where text signal finds "doc_text_only", but graph index has no node for it.
     // The graph signal will become empty, but the overall search must succeed using vector and text signals.
@@ -2276,12 +2271,12 @@ async fn test_graph_mapping_invariant_missing_entity_graceful_degradation() {
             None,
             None,
         )
-        .await
-        .unwrap();
+        .await?;
 
     assert!(
         !results.is_empty(),
         "Hybrid search must return results from remaining signals"
     );
     assert_eq!(results[0].id, "doc_text_only");
+    Ok(())
 }
