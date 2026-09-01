@@ -635,7 +635,10 @@ mod tests {
         interfix_type: &'static str,
     }
 
-    // ANCHOR[TEST:TXT-001] STATUS:DONE (TS:2026-08-30T22:15:00Z) (SESSION:95d21388)
+    // ANCHOR[TEST:TXT-001] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T21:17:37Z) (SESSION:1e20c9bd)
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:TXT-001) (TS:2026-09-01T21:17:37Z) (SESSION:1e20c9bd)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Recall-Evaluation für deutsche Zusammensetzungen verifiziert.
     // Recall-Evaluation abgeschlossen: Pass-Rate >= 90% verifiziert.
     // DoS-Timing-Test: tests/compound_dos_timing_test.rs
     // Alle Langkomposita terminieren in < 100ms.

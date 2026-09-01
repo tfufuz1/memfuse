@@ -232,7 +232,10 @@ async fn test_missing_arguments() {
     assert!(text.contains("id fehlt") || text.contains("text fehlt"));
 }
 
-// ANCHOR[TEST:MCP-002] STATUS:DONE (TS:2026-09-01T20:04:08Z) (SESSION:a42a25a3)
+// ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T21:17:37Z) (SESSION:1e20c9bd)
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:MCP-002) (TS:2026-09-01T21:17:37Z) (SESSION:1e20c9bd)
+// PRÜFER-KONTEXT: FRESH
+// BEFUND: Error-Path-Tests in mcp_test.rs verifiziert.
 // Error-Path-Coverage vollständig: 6 neue Tests hinzugefügt.
 // Abgedeckte Fehler-Pfade:
 //   - memfuse_search ohne collection → Fehler
