@@ -4,7 +4,6 @@ use memfuse_db::MemFuse;
 use tempfile::tempdir;
 
 #[tokio::test]
-#[ignore = "link_memories uncommitted transaction bug in crud.rs"]
 async fn test_zettelkasten_memory_links_and_traversal() {
     let dir = tempdir().unwrap();
     let db = MemFuse::open(dir.path()).await.unwrap();
@@ -77,7 +76,6 @@ async fn test_zettelkasten_memory_links_and_traversal() {
 }
 
 #[tokio::test]
-#[ignore = "link_memories uncommitted transaction bug in crud.rs"]
 async fn test_supersedes_displacement_logic() {
     let dir = tempdir().unwrap();
     let db = MemFuse::open(dir.path()).await.unwrap();
@@ -152,7 +150,7 @@ async fn test_txid_boundary_hardening() {
     // Manually set internal next_tx atomic near boundary to test boundary check
     // Collection next_tx is Arc<AtomicU64> initialized from storage last_tx.
     // We test allocating when next_tx = MAX_COLLECTION_SEQUENCE + 1
-    let exhausted_db = MemFuse::open(dir.path()).await.unwrap();
+    let _exhausted_db = MemFuse::open(dir.path()).await.unwrap();
     // Verify allocate_tx returns error if next_tx > TxId::MAX_COLLECTION_SEQUENCE
     // (We simulate this by testing TxId boundary logic)
     assert!(TxId::new(TxId::MAX_COLLECTION_SEQUENCE).is_valid_origin());

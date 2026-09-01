@@ -177,6 +177,22 @@ Während des Audits identifizierte und behobene Punkte:
 | **BUG-DB-001** | Medium | `fusion.rs` | Fehlende explizite Anti-Mirroring Referenz-Tests für 4-Signal RRF-Score Berechnungen. | **BEHOBEN:** Anti-Mirroring Referenz-Testsuite und Edge-Case Matrix in `fusion.rs` integriert. |
 | **BUG-DB-002** | Low | `fusion.rs` | Unvollständiger Abgleich bei extrem unterscheidlichen Trefferzahlen ($1$ vs $10.000$). | **BEHOBEN:** Edge-Case Testfall ergänzt, verifiziert dass Top-Treffer aus kleinem Set korrekt dominiert. |
 | **WARN-DB-001**| Low | `lib.rs` / `search.rs` | Veraltete Deprecated-Warnungen bei der Verwendung von `hybrid_search()` statt `query()`. | **DOKUMENTIERT:** Für Abwärtskompatibilität beibehalten, interne Aufrufe schrittweise auf `query()` portierbar. |
+| **BUG-DB-003** | High | `crud.rs` | Uncommitted Transaction in `link_memories()` (Memory-Links wurden staged, aber nie committet). | **FIXED (2026-09-01):** Transaktions-Commit `self.storage.commit(tx).await?` hinzugefügt, `metadata` Initialisierung abgesichert & Zettelkasten-Tests re-aktiviert. |
+| **BUG-DB-004** | Medium | `lib.rs` / `tests.rs` | Kompilierungsfehler bei `--all-features` durch veraltete `memfuse_cluster`-Aufrufe und fehlende Imports. | **FIXED (2026-09-01):** Stub-Methoden in `lib.rs` bereinigt, `StorageEngine`/`TextIndex` Imports in `tests.rs` ergänzt. |
+
+---
+
+## 11. Nachtrag: Fix & Refactoring Protocol (2026-09-01)
+
+Am 1. September 2026 wurden folgende Korrekturen an `memfuse-db` durchgeführt:
+1. **Uncommitted Transaction Fix in `Collection::link_memories` (`crud.rs`)**:
+   - `link_memories` hatte allokierte Transaktions-IDs (`allocate_tx()`) zwar in den LSM-Storage geschrieben, die Transaktion jedoch nie via `self.storage.commit(tx)` abgeschlossen.
+   - Der Fix stellt sicher, dass `metadata` Objekte sicher initialisiert werden (auch wenn das Dokument ursprünglich ohne Metadaten eingefügt wurde), sowohl `doc_key` (Metadaten-Index) als auch `user_key` (Vollständiges Dokument) mit den Verknüpfungen aktualisiert werden und die Transaktion atomar committet wird.
+   - Die ignorierten Tests `test_zettelkasten_memory_links_and_traversal` und `test_supersedes_displacement_logic` in `tests/zettelkasten_links_test.rs` wurden wieder aktiviert und sind 100% grün.
+
+2. **Fix der `--all-features` Kompilierung (`lib.rs` & `collection/tests.rs`)**:
+   - Veraltete Aufrufe an das in Phase 0 archivierte `memfuse_cluster`-Crate innerhalb von `#[cfg(feature = "cluster")]` wurden in `lib.rs` auf saubere Fehler-Stubs umgestellt.
+   - Fehlende Trait-Imports (`StorageEngine`, `TextIndex`, `LsmStorage`, `Language`) in `collection/tests.rs` unter `#[cfg(feature = "experimental-diskann")]` wurden ergänzt.
 
 ---
 
