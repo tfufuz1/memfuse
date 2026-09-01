@@ -44,6 +44,7 @@ impl RouterEngine {
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
+    #[allow(deprecated)]
     pub async fn route(
         &self,
         query_embedding: &[f32],
@@ -71,10 +72,6 @@ impl RouterEngine {
         }
 
         // 2. Identify communities and score candidate profiles
-        // We aggregate relevance scores across top-K results.
-        // If candidate entity belongs to a domain community of a profile, apply 1.2x boost.
-        let mut profile_scores: HashMap<usize, f32> = HashMap::new();
-
         // Convert search results into ContextChunks first using TryFrom / ContextChunk construction
         let mut chunks: Vec<(ContextChunk, Option<u64>)> = Vec::new();
 
@@ -94,69 +91,8 @@ impl RouterEngine {
             }
         }
 
-        if chunks.is_empty() {
-            return Err(MemFuseError::NotFound(
-                "Keine gültigen Chunks aus Suchergebnissen ermittelbar".to_string(),
-            ));
-        }
-
-        for (idx, profile) in profiles.iter().enumerate() {
-            let mut aggregated_score = 0.0f32;
-            let mut matched_community = false;
-
-            for (chunk, comm_id) in &chunks {
-                let mut score = chunk.relevance;
-                if let Some(c_id) = comm_id {
-                    if profile.domain_communities.contains(c_id) {
-                        score *= 1.2;
-                        matched_community = true;
-                    }
-                }
-                aggregated_score += score;
-            }
-
-            // Check if profile matched community and any single result or aggregated score meets min_relevance_score
-            let max_score = chunks
-                .iter()
-                .map(|(c, c_id)| {
-                    let mut s = c.relevance;
-                    if let Some(id) = c_id {
-                        if profile.domain_communities.contains(id) {
-                            s *= 1.2;
-                        }
-                    }
-                    s
-                })
-                .fold(0.0f32, f32::max);
-
-            if matched_community
-                && (aggregated_score >= profile.min_relevance_score
-                    || max_score >= profile.min_relevance_score)
-            {
-                profile_scores.insert(idx, aggregated_score);
-            }
-        }
-
-        // 3. Select profile with highest aggregated relevance score (with deterministic tie-breaking on lower index)
-        let best_profile_idx = profile_scores
-            .into_iter()
-            .max_by(|(idx_a, score_a), (idx_b, score_b)| {
-                score_a
-                    .partial_cmp(score_b)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| idx_b.cmp(idx_a))
-            })
-            .map(|(idx, _)| idx);
-
-        let selected_profile_idx = match best_profile_idx {
-            Some(idx) => idx,
-            None => {
-                return Err(MemFuseError::NotFound(
-                    "Kein SLM-Profil erreicht den erforderlichen min_relevance_score oder die Community-Zuordnung".to_string(),
-                ));
-            }
-        };
-
+        // 3. Select profile with highest aggregated relevance score
+        let selected_profile_idx = select_profile_from_chunks(&profiles, &chunks)?;
         let selected_profile = profiles[selected_profile_idx].clone();
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
@@ -169,5 +105,101 @@ impl RouterEngine {
             profile: selected_profile,
             context: context_window,
         })
+    }
+}
+
+/// Computes the NaN-safe maximum score across chunks for a given profile.
+///
+/// Filters out non-finite scores (`NaN` and `Inf`) before performing the fold aggregation.
+pub(crate) fn compute_max_score(
+    profile: &SlmProfile,
+    chunks: &[(ContextChunk, Option<u64>)],
+) -> f32 {
+    chunks
+        .iter()
+        .map(|(c, c_id)| {
+            let mut s = c.relevance;
+            if let Some(id) = c_id {
+                if profile.domain_communities.contains(id) {
+                    s *= 1.2;
+                }
+            }
+            s
+        })
+        .filter(|score| score.is_finite())
+        .fold(0.0f32, f32::max)
+}
+
+/// Selects the best matching SLM profile index based on candidate chunks and domain community matches.
+///
+/// # Errors
+/// Returns `MemFuseError::NotFound` if:
+/// - `chunks` is empty.
+/// - All chunk relevance scores are non-finite (`NaN`/`Inf`), indicating possible upstream corruption.
+/// - No candidate SLM profile satisfies the minimum relevance threshold or community match.
+pub(crate) fn select_profile_from_chunks(
+    profiles: &[SlmProfile],
+    chunks: &[(ContextChunk, Option<u64>)],
+) -> Result<usize> {
+    if chunks.is_empty() {
+        return Err(MemFuseError::NotFound(
+            "Keine gültigen Chunks aus Suchergebnissen ermittelbar".to_string(),
+        ));
+    }
+
+    // Explicitly check for upstream distance corruption where all relevance scores are NaN/Inf
+    if !chunks.iter().any(|(c, _)| c.relevance.is_finite()) {
+        tracing::error!(
+            "Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung"
+        );
+        return Err(MemFuseError::NotFound(
+            "Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung".to_string(),
+        ));
+    }
+
+    let mut profile_scores: HashMap<usize, f32> = HashMap::new();
+
+    for (idx, profile) in profiles.iter().enumerate() {
+        let mut aggregated_score = 0.0f32;
+        let mut matched_community = false;
+
+        for (chunk, comm_id) in chunks {
+            if !chunk.relevance.is_finite() {
+                continue;
+            }
+            let mut score = chunk.relevance;
+            if let Some(c_id) = comm_id {
+                if profile.domain_communities.contains(c_id) {
+                    score *= 1.2;
+                    matched_community = true;
+                }
+            }
+            aggregated_score += score;
+        }
+
+        let max_score = compute_max_score(profile, chunks);
+
+        if matched_community
+            && (aggregated_score >= profile.min_relevance_score
+                || max_score >= profile.min_relevance_score)
+        {
+            profile_scores.insert(idx, aggregated_score);
+        }
+    }
+
+    let best_profile_idx = profile_scores
+        .into_iter()
+        .max_by(|(idx_a, score_a), (idx_b, score_b)| {
+            score_a
+                .total_cmp(score_b)
+                .then_with(|| idx_b.cmp(idx_a))
+        })
+        .map(|(idx, _)| idx);
+
+    match best_profile_idx {
+        Some(idx) => Ok(idx),
+        None => Err(MemFuseError::NotFound(
+            "Kein SLM-Profil erreicht den erforderlichen min_relevance_score oder die Community-Zuordnung".to_string(),
+        )),
     }
 }
