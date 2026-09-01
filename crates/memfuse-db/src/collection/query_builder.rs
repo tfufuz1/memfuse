@@ -38,7 +38,7 @@ impl SignalWeights {
 impl From<SignalWeights> for FusionWeights {
     fn from(w: SignalWeights) -> Self {
         FusionWeights::new(w.vector, w.text, w.graph)
-            .unwrap_or_else(|_| FusionWeights::new(1.0, 0.0, 0.0).unwrap())
+            .unwrap_or_default()
     }
 }
 
