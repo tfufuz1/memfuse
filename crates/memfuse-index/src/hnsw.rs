@@ -2443,7 +2443,10 @@ mod tests {
         // 1. Insert vector and commit
         let tx1 = TxId::new(1);
         let doc_id = DocId::new(42);
-        index.insert(tx1, doc_id, &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
+        index
+            .insert(tx1, doc_id, &[1.0, 0.0, 0.0, 0.0])
+            .await
+            .unwrap();
         index.commit(tx1).await.unwrap();
 
         // 2. Rollback to Tx 0 (marks node as deleted/tombstoned in rollback_to_tx)

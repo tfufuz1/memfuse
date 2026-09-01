@@ -1566,9 +1566,11 @@ async fn test_insert_typed_working_has_ttl_metadata() {
 #[tokio::test]
 #[cfg(feature = "experimental-diskann")]
 async fn test_collection_with_diskann_index_hybrid_search() {
-    use memfuse_core::DocId;
+    use memfuse_core::{DocId, StorageEngine, TextIndex};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{DiskAnnConfig, DiskAnnIndex};
+    use memfuse_store::LsmStorage;
+    use memfuse_text::Language;
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
     use tempfile::tempdir;
