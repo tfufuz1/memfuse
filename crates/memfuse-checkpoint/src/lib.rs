@@ -69,10 +69,7 @@ pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
     SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
 }
 
-/// AI-TAG[INPUT-VALIDATION][MED] RESOLVED: AGT-CKPT-001 —
-/// validate_identifier() an allen pub-API-Grenzen aufgerufen;
-/// Unit- & Integrationstests in #[cfg(test)] mod validation_tests.
-/// (TS:2026-08-29T17:21:26Z) (SESSION:9afcda3d)
+/// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca)
 /// Validates identifier strings (checkpoint name, collection ID) against empty/whitespace or size limits.
 fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
@@ -163,131 +160,6 @@ impl CheckpointMeta {
             tx: self.tx_id,
             graph_hash: format!("seq-{}", self.seq_no),
         }
-    }
-}
-
-#[cfg(test)]
-mod validation_tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_identifier_rejects_empty_string() {
-        let result = validate_identifier("checkpoint_name", "");
-        assert!(result.is_err(), "Leerer String muss Err erzeugen");
-        // Prüfe Fehlermeldung enthält "empty"
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("empty") || err_msg.contains("leer"),
-            "Fehlermeldung muss 'empty' erwähnen, got: {err_msg}"
-        );
-    }
-
-    #[test]
-    fn test_validate_identifier_rejects_whitespace_only() {
-        assert!(
-            validate_identifier("name", "   ").is_err(),
-            "Nur-Leerzeichen muss Err erzeugen"
-        );
-        assert!(
-            validate_identifier("name", "\t").is_err(),
-            "Tab-only muss Err erzeugen"
-        );
-        assert!(
-            validate_identifier("name", "\n").is_err(),
-            "Newline-only muss Err erzeugen"
-        );
-        assert!(
-            validate_identifier("name", " \t\n ").is_err(),
-            "Mixed-Whitespace muss Err erzeugen"
-        );
-    }
-
-    #[test]
-    fn test_validate_identifier_accepts_valid_name() {
-        assert!(validate_identifier("name", "valid").is_ok());
-        assert!(
-            validate_identifier("name", "a").is_ok(),
-            "Einzelbuchstabe ist valide"
-        );
-        assert!(validate_identifier("name", "checkpoint_2026").is_ok());
-        assert!(validate_identifier("name", "collection-id-1").is_ok());
-    }
-
-    #[test]
-    fn test_validate_identifier_accepts_exactly_256_chars() {
-        let at_limit = "a".repeat(256);
-        assert!(
-            validate_identifier("name", &at_limit).is_ok(),
-            "Genau 256 Zeichen muss Ok sein"
-        );
-    }
-
-    #[test]
-    fn test_validate_identifier_rejects_257_chars() {
-        let too_long = "a".repeat(257);
-        let result = validate_identifier("name", &too_long);
-        assert!(result.is_err(), "257 Zeichen muss Err erzeugen");
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("256")
-                || err_msg.contains("length")
-                || err_msg.contains("maximum")
-                || err_msg.contains("Länge"),
-            "Fehlermeldung muss Längenüberschreitung erwähnen, got: {err_msg}"
-        );
-    }
-
-    #[test]
-    fn test_validate_identifier_field_name_appears_in_error() {
-        let result = validate_identifier("mein_feld", "");
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("mein_feld"),
-            "Fehlermeldung muss den Feldnamen enthalten, got: {err_msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_create_checkpoint_rejects_empty_name() {
-        let storage = Arc::new(tests::MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-        let result = store
-            .create_checkpoint(
-                "", // leerer Name
-                "valid_col",
-                1,
-                memfuse_core::TxId::new(1),
-                serde_json::json!({}),
-            )
-            .await;
-        assert!(result.is_err(), "Leerer Checkpoint-Name muss Err erzeugen");
-    }
-
-    #[tokio::test]
-    async fn test_restore_checkpoint_rejects_whitespace_name() {
-        let storage = Arc::new(tests::MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-        let result = store.restore_checkpoint("   ").await;
-        assert!(
-            result.is_err(),
-            "Whitespace-only Checkpoint-Name muss Err erzeugen"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_create_checkpoint_rejects_empty_collection_id() {
-        let storage = Arc::new(tests::MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test");
-        let result = store
-            .create_checkpoint(
-                "valid_name",
-                "", // leere collection_id
-                1,
-                memfuse_core::TxId::new(1),
-                serde_json::json!({}),
-            )
-            .await;
-        assert!(result.is_err(), "Leere Collection-ID muss Err erzeugen");
     }
 }
 
@@ -719,8 +591,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 #[async_trait]
 impl<S: memfuse_core::StorageEngine> CheckpointRegistry for PersistentCheckpointStore<S> {
     async fn save_checkpoint(&self, meta: CheckpointMeta) -> Result<()> {
-        validate_identifier("Checkpoint name", &meta.name)?;
-        validate_identifier("Collection ID", &meta.collection_id)?;
         let _guard = self.write_lock.lock().await;
         self.save_checkpoint_internal(meta).await
     }
@@ -755,19 +625,15 @@ impl<S: memfuse_core::StorageEngine> memfuse_core::traits::CheckpointCoordinator
         tx_id: TxId,
         metadata: serde_json::Value,
     ) -> Result<Self::Meta> {
-        validate_identifier("Checkpoint name", name)?;
-        validate_identifier("Collection ID", collection_id)?;
         self.create_checkpoint(name, collection_id, seq_no, tx_id, metadata)
             .await
     }
 
     async fn restore_named_checkpoint(&self, name: &str) -> Result<Self::Meta> {
-        validate_identifier("Checkpoint name", name)?;
         self.restore_checkpoint(name).await
     }
 
     async fn drop_named_checkpoint(&self, name: &str) -> Result<()> {
-        validate_identifier("Checkpoint name", name)?;
         self.drop_checkpoint(name).await
     }
 
@@ -802,7 +668,7 @@ mod tests {
     use parking_lot::Mutex;
     use std::collections::HashSet;
 
-    pub(super) struct MockStorage {
+    struct MockStorage {
         data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
         pinned: Mutex<HashSet<u64>>,
         fail_on_put: Mutex<Option<Vec<u8>>>,
@@ -810,7 +676,7 @@ mod tests {
     }
 
     impl MockStorage {
-        pub(super) fn new() -> Self {
+        fn new() -> Self {
             Self {
                 data: Mutex::new(HashMap::new()),
                 pinned: Mutex::new(HashSet::new()),

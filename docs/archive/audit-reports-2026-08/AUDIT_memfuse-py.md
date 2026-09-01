@@ -228,13 +228,3 @@ t.join()
 assert py_ran > 0
 print(f"Audit verification completed successfully! BG thread iterations: {py_ran}")
 ```
-
-## 11. Tiefen-Audit 2026-09-01
-
-### Summary & Safety Invariants Verification
-- **Zero-Panic FFI Boundary**: VERIFIED (PASSED). `run_blocking_ffi` releases GIL and wraps Rust execution in `std::panic::catch_unwind(std::panic::AssertUnwindSafe(...))`. Unwound panics are caught and converted to `PyRuntimeError("Rust panic caught at FFI boundary: ...")`.
-- **Sub-Interpreter Isolation**: VERIFIED (PASSED). Attempting to import `memfuse` inside a CPython 3.12/3.13 sub-interpreter is deterministically rejected at C-import boundary with `ImportError: module _memfuse does not support loading in subinterpreters` before any Rust code runs. Shared process-global Tokio runtime (`OnceLock<Runtime>`) remains completely isolated to the main interpreter.
-- **GIL Release Dynamics**: VERIFIED (PASSED). `py.allow_threads()` releases the GIL during async Tokio `rt.block_on(...)` calls, enabling multi-threaded Python worker threads to execute concurrently during search and batch operations.
-- **Geschwister-Konsistenz (APM-6)**: VERIFIED (PASSED). All exposed methods in `PyMemFuse` and `PyCollection` (`insert`, `get`, `update`, `upsert`, `delete`, `search`, `search_fb`, `hybrid_search`, `hybrid_search_fb`, `relate`, `scan_prefix`, `scan`, `insert_many`, `upsert_many`) consistently enforce boundary validation guards (`validate_id`, `validate_vector`, `validate_query_text`, `validate_batch_size`, `validate_id_and_vector`).
-- **Property & Boundary Fuzzing (Phase 1 & 3)**: VERIFIED (PASSED). Dedicated property and boundary fuzz suite implemented in `crates/memfuse-py/tests/test_fuzz_boundary.py` testing invalid open configurations, ultra-long string IDs (>1024 chars), NaN/Inf floats, empty batches, missing weights, invalid k bounds, and randomized input fuzzing.
-- **Test Matrix Status**: 43 / 43 PyO3 & Python integration tests PASSED (36 baseline + 7 fuzz boundary tests).

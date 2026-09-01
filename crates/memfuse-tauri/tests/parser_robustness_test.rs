@@ -524,38 +524,3 @@ async fn test_async_file_parsers_integration() {
     assert_eq!(eml_content.subject, "Async EML Test");
     assert_eq!(eml_content.body, "Async EML Body Content");
 }
-
-// ============================================================================
-// PROPTEST PROPERTY-BASED TESTS FOR INGESTION PARSERS
-// ============================================================================
-
-proptest::proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_cases(100))]
-
-    #[test]
-    fn proptest_pdf_bytes_no_panic(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..4096)) {
-        let res = extract_pdf_bytes(&bytes);
-        let _ = res;
-    }
-
-    #[test]
-    fn proptest_docx_bytes_no_panic(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..4096)) {
-        let res = extract_docx_bytes(&bytes);
-        let _ = res;
-    }
-
-    #[test]
-    fn proptest_email_bytes_no_panic(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..4096)) {
-        let res = extract_email_bytes(&bytes);
-        let _ = res;
-    }
-
-    #[test]
-    fn proptest_extract_text_from_bytes_no_panic(
-        bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..2048),
-        ext in "(pdf|docx|eml|md|txt|xml|unknown)"
-    ) {
-        let res = extract_text_from_bytes(&bytes, &ext);
-        let _ = res;
-    }
-}

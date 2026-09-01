@@ -23,47 +23,23 @@ pub const HNSW_VERSION: u16 = 1;
 /// The header of an HNSW persistent file.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HnswHeader {
-    pub(crate) magic: u32,
-    pub(crate) version: u16,
-    pub(crate) dimension: u32,
-    pub(crate) m: u32,
-    pub(crate) metric: u8,
-    pub(crate) quantized: u8,
-    pub(crate) q_min: f32, // Added for ScalarQuantizer
-    pub(crate) q_max: f32, // Added for ScalarQuantizer
-    pub(crate) node_count: u64,
-    pub(crate) entry_point: i64,
-    pub(crate) nodes_offset: u64,
-    pub(crate) connections_offset: u64,
-    pub(crate) last_tx_id: u64, // Added for Repair-on-Open
+    pub magic: u32,
+    pub version: u16,
+    pub dimension: u32,
+    pub m: u32,
+    pub metric: u8,
+    pub quantized: u8,
+    pub q_min: f32, // Added for ScalarQuantizer
+    pub q_max: f32, // Added for ScalarQuantizer
+    pub node_count: u64,
+    pub entry_point: i64,
+    pub nodes_offset: u64,
+    pub connections_offset: u64,
+    pub last_tx_id: u64, // Added for Repair-on-Open
 }
 
 impl HnswHeader {
     pub const SIZE: usize = 64;
-
-    pub fn node_count(&self) -> u64 {
-        self.node_count
-    }
-
-    pub fn last_tx_id(&self) -> u64 {
-        self.last_tx_id
-    }
-
-    pub fn dimension(&self) -> u32 {
-        self.dimension
-    }
-
-    pub fn entry_point(&self) -> i64 {
-        self.entry_point
-    }
-
-    pub fn is_quantized(&self) -> bool {
-        self.quantized != 0
-    }
-
-    pub fn q_range(&self) -> (f32, f32) {
-        (self.q_min, self.q_max)
-    }
 
     pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
@@ -244,19 +220,11 @@ impl MmapIndex {
     }
 
     pub fn get_node_record(&self, index: usize) -> Result<NodeRecord> {
-        let node_record_offset = index
-            .checked_mul(NodeRecord::SIZE)
-            .ok_or_else(|| MemFuseError::Storage("Node index overflow in mmap".into()))?;
-        let offset = (self.header.nodes_offset as usize)
-            .checked_add(node_record_offset)
-            .ok_or_else(|| MemFuseError::Storage("Node record offset overflow".into()))?;
-        let end = offset
-            .checked_add(NodeRecord::SIZE)
-            .ok_or_else(|| MemFuseError::Storage("Node record end offset overflow".into()))?;
-        if end > self.mmap.len() {
+        let offset = self.header.nodes_offset as usize + index * NodeRecord::SIZE;
+        if offset + NodeRecord::SIZE > self.mmap.len() {
             return Err(MemFuseError::Storage("Node record out of bounds".into()));
         }
-        NodeRecord::from_bytes(&self.mmap[offset..end])
+        NodeRecord::from_bytes(&self.mmap[offset..offset + NodeRecord::SIZE])
     }
 
     pub fn get_vector(&self, record: &NodeRecord) -> Result<&[u8]> {
@@ -264,17 +232,13 @@ impl MmapIndex {
         let size = if self.header.quantized != 0 {
             dim
         } else {
-            dim.checked_mul(4)
-                .ok_or_else(|| MemFuseError::Storage("Vector size overflow".into()))?
+            dim * 4
         };
         let offset = record.vector_offset as usize;
-        let end = offset
-            .checked_add(size)
-            .ok_or_else(|| MemFuseError::Storage("Vector data offset overflow".into()))?;
-        if end > self.mmap.len() {
+        if offset + size > self.mmap.len() {
             return Err(MemFuseError::Storage("Vector data out of bounds".into()));
         }
-        Ok(&self.mmap[offset..end])
+        Ok(&self.mmap[offset..offset + size])
     }
 
     pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Result<Vec<u32>> {
@@ -288,54 +252,30 @@ impl MmapIndex {
             return Ok(Vec::new());
         }
 
-        let mut current_pos = offset
-            .checked_add(1)
-            .ok_or_else(|| MemFuseError::Storage("Offset overflow in connections header".into()))?;
+        let mut current_pos = offset + 1;
         for _ in 0..layer {
-            let next_pos = current_pos.checked_add(4).ok_or_else(|| {
-                MemFuseError::Storage("Offset overflow in connections layer header".into())
-            })?;
-            if next_pos > self.mmap.len() {
+            if current_pos + 4 > self.mmap.len() {
                 return Ok(Vec::new());
             }
             let len = u32::from_le_bytes(
-                self.mmap[current_pos..next_pos]
+                self.mmap[current_pos..current_pos + 4]
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("Corrupt connection length".into()))?,
             ) as usize;
-            let connections_size = len.checked_mul(4).ok_or_else(|| {
-                MemFuseError::Storage("Connection count overflow in node record".into())
-            })?;
-            let new_pos = current_pos
-                .checked_add(4)
-                .and_then(|p| p.checked_add(connections_size))
-                .ok_or_else(|| {
-                    MemFuseError::Storage("Offset overflow in node connections".into())
-                })?;
-            current_pos = new_pos;
+            current_pos += 4 + len * 4;
         }
 
-        let next_pos = current_pos.checked_add(4).ok_or_else(|| {
-            MemFuseError::Storage("Offset overflow in connection length header".into())
-        })?;
-        if next_pos > self.mmap.len() {
+        if current_pos + 4 > self.mmap.len() {
             return Ok(Vec::new());
         }
 
         let len = u32::from_le_bytes(
-            self.mmap[current_pos..next_pos]
+            self.mmap[current_pos..current_pos + 4]
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("Corrupt connection length".into()))?,
         ) as usize;
-        let connections_size = len.checked_mul(4).ok_or_else(|| {
-            MemFuseError::Storage("Connection count overflow in node record".into())
-        })?;
-        let start = current_pos
-            .checked_add(4)
-            .ok_or_else(|| MemFuseError::Storage("Offset overflow in connection start".into()))?;
-        let end = start
-            .checked_add(connections_size)
-            .ok_or_else(|| MemFuseError::Storage("Offset overflow in connection end".into()))?;
+        let start = current_pos + 4;
+        let end = start + len * 4;
 
         if end > self.mmap.len() {
             return Err(MemFuseError::Storage(
@@ -346,14 +286,8 @@ impl MmapIndex {
         let raw = &self.mmap[start..end];
         let mut connections = Vec::with_capacity(len);
         for i in 0..len {
-            let elem_offset = i.checked_mul(4).ok_or_else(|| {
-                MemFuseError::Storage("Connection element offset overflow".into())
-            })?;
-            let elem_end = elem_offset.checked_add(4).ok_or_else(|| {
-                MemFuseError::Storage("Connection element end offset overflow".into())
-            })?;
             let val = u32::from_le_bytes(
-                raw[elem_offset..elem_end]
+                raw[i * 4..(i + 1) * 4]
                     .try_into()
                     .map_err(|_| MemFuseError::Storage("Corrupt connection value".into()))?,
             );
@@ -388,7 +322,7 @@ mod tests {
 
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), HnswHeader::SIZE);
-        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes");
+        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes"); // expect
         assert_eq!(header, parsed);
 
         // Error path 1: header bytes too small
@@ -414,7 +348,7 @@ mod tests {
 
         let bytes = record.to_bytes();
         assert_eq!(bytes.len(), NodeRecord::SIZE);
-        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes");
+        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes"); // expect
         assert_eq!(record.doc_id, parsed.doc_id);
         assert_eq!(record.max_layer, parsed.max_layer);
         assert_eq!(record.vector_offset, parsed.vector_offset);
