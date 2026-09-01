@@ -1,5 +1,11 @@
 fn chrono_or_today() -> String {
-    chrono::Utc::now().format("%Y-%m-%d").to_string()
+    let now = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    if let Ok(git_date) = get_git_file_last_modified("WORKING_STATE.md") {
+        if git_date > now {
+            return git_date;
+        }
+    }
+    now
 }
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:IN-PROGRESS AGENT:1 (ID: AGT-XTASK-2c814094) (TS: 2026-09-01T21:17:37Z) (SESSION: 1e20c9bd)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf

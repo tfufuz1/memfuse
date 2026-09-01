@@ -3,7 +3,7 @@
 // INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls.
 // NICHT-OFFENSICHTLICH: Uses OnceLock multi-thread Tokio runtime shared across Python worker threads.
 // HOTSPOTS: [160-205] memfuse_err mapping, [270-650] CRUD & search methods FFI boundary validation.
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 846802ab)
+// STAND: TS:2026-09-02T23:20:30Z (SESSION: a1811605)
 
 //! # MemFuse Python Bindings
 //!
@@ -20,7 +20,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-09-02T23:20:30Z (SESSION: a1811605)
 // ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
 // INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
 // HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
