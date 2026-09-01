@@ -12,7 +12,39 @@
 // SIEHE AUCH: DECISIONS.md ADR-003, crates/memfuse-db/AGENTS.md §4-Signal Fusion
 
 use crate::SearchResult;
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap};
+
+struct HeapEntry {
+    result: SearchResult,
+}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for HeapEntry {}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
+        // so that peek() returns the candidate with the lowest score (or highest ID on tie).
+        // Therefore, lower score => Greater priority in max-heap.
+        other
+            .result
+            .score
+            .partial_cmp(&self.result.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| self.result.id.cmp(&other.result.id))
+    }
+}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 /// Identifies the kind of search signal used during fusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,7 +150,7 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                 // But the audit report says "verwischen ... anstatt sie anderweitig zu mergen".
                 // We'll wrap them in an array if they differ.
                 if t_val != &s_val {
-                    let mut arr = vec![t_val.clone(), s_val.clone()];
+                    let arr = vec![t_val.clone(), s_val.clone()];
                     *t_val = serde_json::Value::Array(arr);
                 }
             }
@@ -154,6 +186,10 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
     max_results: usize,
     priority: MetadataMergePriority,
 ) -> Vec<SearchResult> {
+    if max_results == 0 {
+        return Vec::new();
+    }
+
     // Sort result sets according to configured metadata merge priority.
     // Stable sort preserves original relative order for signals with equal rank.
     result_sets.sort_by_key(|(signal_name, _, _)| priority.signal_rank(signal_name));
@@ -171,7 +207,7 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
             continue;
         }
         for (rank, doc) in result_set.into_iter().enumerate() {
-            let score = weight / ((k + rank + 1) as f32);
+            let score = weight / (k as f32 + rank as f32 + 1.0);
             let entry = fused.entry(doc.id).or_insert((0.0, None, Vec::new()));
             entry.0 += score;
             merge_metadata(&mut entry.1, doc.metadata);
@@ -184,25 +220,36 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
         }
     }
 
-    let mut ranked: Vec<SearchResult> = fused
-        .into_iter()
-        .map(|(id, (score, metadata, matched_signals))| SearchResult {
-            id,
-            score,
-            metadata,
-            matched_signals,
-        })
-        .collect();
-
     // AGT-DB-001 [CONCURRENCY][MAJOR]: Deterministic tie-breaking via secondary sort by ID.
-    ranked.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    ranked.truncate(max_results);
-    ranked
+    // Bounded Min-Heap O(U log K) top-K selection instead of full O(U log U) sort.
+    // Bound capacity to min(fused.len(), max_results) to avoid allocation overflow when max_results is large (e.g. usize::MAX).
+    let target_cap = fused.len().min(max_results);
+    let mut heap = BinaryHeap::with_capacity(target_cap.saturating_add(1));
+
+    for (id, (score, metadata, matched_signals)) in fused {
+        let entry = HeapEntry {
+            result: SearchResult {
+                id,
+                score,
+                metadata,
+                matched_signals,
+            },
+        };
+
+        if heap.len() < max_results {
+            heap.push(entry);
+        } else if let Some(worst) = heap.peek() {
+            if entry < *worst {
+                heap.pop();
+                heap.push(entry);
+            }
+        }
+    }
+
+    heap.into_sorted_vec()
+        .into_iter()
+        .map(|e| e.result)
+        .collect()
 }
 
 /// Converts optional FusionWeights into (vector, text, graph) weight tuple.
@@ -610,6 +657,27 @@ mod tests {
         } else {
             panic!("Expected valid weights");
         }
+    }
+
+    #[test]
+    fn test_bounded_min_heap_top_k_selection() {
+        let set = (0..50)
+            .map(|i| SearchResult {
+                id: format!("doc_{:02}", i),
+                score: 0.0,
+                metadata: None,
+                matched_signals: vec![],
+            })
+            .collect();
+        // In RRF, rank 0 (doc_00) gets score 1/(60+1) = 0.01639..., rank 49 gets score 1/(60+50) = 0.00909...
+        // Top 5 results must be doc_00, doc_01, doc_02, doc_03, doc_04 in exact order.
+        let fused = weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 5);
+        assert_eq!(fused.len(), 5);
+        assert_eq!(fused[0].id, "doc_00");
+        assert_eq!(fused[1].id, "doc_01");
+        assert_eq!(fused[2].id, "doc_02");
+        assert_eq!(fused[3].id, "doc_03");
+        assert_eq!(fused[4].id, "doc_04");
     }
 
     #[test]
