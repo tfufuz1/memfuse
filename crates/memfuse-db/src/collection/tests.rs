@@ -2064,3 +2064,224 @@ async fn test_concurrent_insert_many_collision_safety() {
         "safe_doc_2 must be rolled back on collision error in insert_many"
     );
 }
+
+#[tokio::test]
+async fn test_community_boost_post_rrf_preserves_non_community_and_reranks() {
+    use memfuse_core::EntityId;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let graph = Arc::new(CsrGraph::new());
+    let next_tx = Arc::new(AtomicU64::new(1));
+
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        graph,
+        next_tx,
+        4,
+        memfuse_text::Language::English,
+    );
+
+    // Insert doc_a (community member) and doc_b (non-community member)
+    col.insert(
+        "doc_a",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "alpha topic"})),
+    )
+    .await
+    .unwrap();
+    col.insert(
+        "doc_b",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "alpha topic"})),
+    )
+    .await
+    .unwrap();
+
+    let eid_a = EntityId::from_key("doc_a").unwrap();
+
+    // Relate doc_a to doc_c and run community detection so get_community(eid_a) finds target_community_id
+    col.relate("doc_a", "doc_c", "knows").await.unwrap();
+    col.run_community_detection().await.unwrap();
+    assert!(col.get_community(eid_a).await.unwrap().is_some());
+
+    // Perform hybrid search with same_community_as = doc_a
+    let results_boosted = col
+        .hybrid_search_with_strategy(
+            "alpha",
+            &[1.0, 0.0, 0.0, 0.0],
+            10,
+            None,
+            None,
+            None,
+            Some(eid_a),
+        )
+        .await
+        .unwrap();
+
+    // Verification 1: Non-community doc_b is NOT eliminated and remains in results!
+    assert_eq!(
+        results_boosted.len(),
+        2,
+        "Non-community doc_b must not be filtered out"
+    );
+    let ids: Vec<&str> = results_boosted.iter().map(|r| r.id.as_str()).collect();
+    assert!(
+        ids.contains(&"doc_b"),
+        "doc_b must remain in search results"
+    );
+
+    // Verification 2: Community doc_a gets boosted post-RRF and ranks #1 ahead of doc_b
+    assert_eq!(
+        results_boosted[0].id, "doc_a",
+        "Community member doc_a must rank ahead after boost"
+    );
+    assert!(
+        results_boosted[0].score > results_boosted[1].score,
+        "Boosted community doc score ({}) must exceed non-community score ({})",
+        results_boosted[0].score,
+        results_boosted[1].score
+    );
+}
+
+#[tokio::test]
+async fn test_search_k_zero_returns_canonical_error_message() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let query_vec = vec![1.0, 0.0, 0.0, 0.0];
+
+    let err_search = col.search(&query_vec, 0).await;
+    assert!(err_search.is_err());
+    let err_msg_1 = err_search.unwrap_err().to_string();
+    assert!(
+        err_msg_1.contains("Search k must be greater than 0"),
+        "Expected 'Search k must be greater than 0', got: {err_msg_1}"
+    );
+
+    let err_expr = col.search_with_filter_expr(&query_vec, 0, None).await;
+    assert!(err_expr.is_err());
+    let err_msg_2 = err_expr.unwrap_err().to_string();
+    assert!(
+        err_msg_2.contains("Search k must be greater than 0"),
+        "Expected 'Search k must be greater than 0', got: {err_msg_2}"
+    );
+}
+
+#[tokio::test]
+async fn test_graph_mapping_invariant_missing_entity_graceful_degradation() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    // Insert text document "doc_text_only" without creating any graph entities
+    col.insert(
+        "doc_text_only",
+        &[0.5, 0.5, 0.0, 0.0],
+        Some(serde_json::json!({"text": "specialized retrieval architecture"})),
+    )
+    .await
+    .unwrap();
+
+    // Perform hybrid search where text signal finds "doc_text_only", but graph index has no node for it.
+    // The graph signal will become empty, but the overall search must succeed using vector and text signals.
+    let results = col
+        .hybrid_search_with_strategy(
+            "retrieval",
+            &[0.5, 0.5, 0.0, 0.0],
+            10,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        !results.is_empty(),
+        "Hybrid search must return results from remaining signals"
+    );
+    assert_eq!(results[0].id, "doc_text_only");
+}
