@@ -58,7 +58,10 @@ HNSW provides fast k-NN vector search over document embeddings.
     assert!(report.errors.is_empty());
 
     let results = collection
-        .search(&[0.1, 0.1, 0.1, 0.1], 5)
+        .query()
+        .embedding(&[0.1, 0.1, 0.1, 0.1])
+        .k(5)
+        .execute()
         .await
         .expect("search");
 
