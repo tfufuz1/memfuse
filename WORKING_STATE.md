@@ -13,7 +13,7 @@ Ergebnis: **2 offene Tags**
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
 | `crates/memfuse-checkpoint/src/lib.rs` | 72 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-29T17:21:26Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
-| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
+| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-09-01T23:05:53Z` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 (TS:2026-09-01T23:05:53Z) (SESSION:297af137) — Stable SIMD Migration: |
 
 
 ## Aktive Agenten

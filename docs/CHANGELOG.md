@@ -163,6 +163,4 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
-| `` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
-| `` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-b2c3d4e5` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |

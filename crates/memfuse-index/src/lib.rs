@@ -31,3 +31,4 @@ pub use hnsw::{HnswConfig, HnswIndex, RebuildStatus};
 #[cfg(feature = "graph")]
 pub use memfuse_graph::CsrGraph;
 pub use persistence::{HnswHeader, MmapIndex};
+pub use quantize::ScalarQuantizer;
