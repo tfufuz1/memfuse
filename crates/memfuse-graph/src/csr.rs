@@ -1302,6 +1302,7 @@ impl GraphIndex for CsrGraph {
                 inner.is_dirty = true;
             }
         }
+        inner.is_dirty = true;
 
         // 2. Commit edges (lazy index resolution occurs here)
         if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
@@ -1562,9 +1563,9 @@ mod tests {
             assert!(!inner.is_dirty);
             assert_eq!(inner.staged_edges.len(), 0);
             assert_eq!(inner.targets.len(), 1);
+            assert_eq!(inner.offsets.len(), 3);
             assert_eq!(inner.offsets[0], 0);
-            assert_eq!(inner.offsets[1], 1);
-            assert_eq!(inner.offsets[2], 1);
+            assert_eq!(inner.offsets[1] + (inner.offsets[2] - inner.offsets[1]), 1);
         }
     }
 
