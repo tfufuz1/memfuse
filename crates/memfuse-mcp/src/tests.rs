@@ -386,6 +386,58 @@ async fn test_read_tools_always_allowed_regardless_of_flag() {
     assert_ne!(res_rw["result"]["isError"], true);
 }
 
+proptest::proptest! {
+    #[test]
+    fn prop_read_line_bounded_behavior(
+        line in "[^\r\n]{0,500}\n",
+        limit in 1usize..1000,
+    ) {
+        use crate::read_line_bounded;
+        use std::io::Cursor;
+        use tokio::io::BufReader;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let mut reader = BufReader::new(Cursor::new(line.as_bytes()));
+            let mut buf = String::new();
+            let res = read_line_bounded(&mut reader, &mut buf, limit).await;
+
+            if line.len() <= limit {
+                proptest::prop_assert!(res.is_ok());
+                proptest::prop_assert_eq!(buf, line);
+            } else {
+                proptest::prop_assert!(res.is_err());
+                let err = res.unwrap_err();
+                proptest::prop_assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+            }
+            Ok(())
+        })?;
+    }
+
+    #[test]
+    fn prop_volatile_storage_bounds(
+        key in ".*",
+        output in proptest::collection::vec(proptest::num::u8::ANY, 0..1024),
+    ) {
+        use crate::sandbox::{McpSandbox, SandboxPolicy, MAX_VOLATILE_KEY_BYTES};
+
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let res = sandbox.store_volatile(&key, &output);
+
+        if key.is_empty() || key.len() > MAX_VOLATILE_KEY_BYTES {
+            proptest::prop_assert!(res.is_err());
+        } else {
+            proptest::prop_assert!(res.is_ok());
+            let retrieved = sandbox.get_volatile(&key).unwrap().unwrap();
+            proptest::prop_assert_eq!(retrieved.as_slice(), output.as_slice());
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_memfuse_search_executes_query_builder_successfully() {
     let (server, _tmp) = create_mock_server().await;

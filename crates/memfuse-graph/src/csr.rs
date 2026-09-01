@@ -1289,9 +1289,11 @@ impl GraphIndex for CsrGraph {
 
         let mut inner = self.inner.write();
 
-        // 1. Commit entities
-        if let Some(tx_entities) = inner.staged_entities.remove(&tx) {
-            for (id, entity) in tx_entities {
+        // 1. Commit entities (sort by EntityId to guarantee deterministic internal index allocation)
+        if let Some(mut tx_entities) = inner.staged_entities.remove(&tx) {
+            let mut sorted_entities: Vec<_> = tx_entities.drain().collect();
+            sorted_entities.sort_by_key(|(id, _)| *id);
+            for (id, entity) in sorted_entities {
                 let idx = inner.get_or_create_index(id);
                 if idx >= inner.entities.len() {
                     inner.entities.resize(idx + 1, None);
@@ -1301,9 +1303,11 @@ impl GraphIndex for CsrGraph {
             }
         }
 
-        // 2. Commit edges (lazy index resolution occurs here)
-        if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
-            for (from_id, edges) in tx_edges {
+        // 2. Commit edges (lazy index resolution occurs here; sort by from_id for determinism)
+        if let Some(mut tx_edges) = inner.staged_edges.remove(&tx) {
+            let mut sorted_edges: Vec<_> = tx_edges.drain().collect();
+            sorted_edges.sort_by_key(|(from_id, _)| *from_id);
+            for (from_id, edges) in sorted_edges {
                 let from_idx = inner.get_or_create_index(from_id);
                 let mut converted_edges = Vec::with_capacity(edges.len());
                 for edge in edges {

@@ -1113,4 +1113,288 @@ mod tests {
             }
         });
     }
+
+    #[tokio::test]
+    async fn test_router_profiles_getter() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let profile = SlmProfile::new(
+            "p1",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+        let router = RouterEngine::new(collection, vec![profile.clone()]);
+        let profiles = router.profiles();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0], profile);
+    }
+
+    #[tokio::test]
+    async fn test_router_try_new_invalid_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let invalid_profile = SlmProfile::new(
+            "", // empty name
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let res = RouterEngine::try_new(collection, vec![invalid_profile]);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn test_router_try_update_profiles_invalid_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let valid_profile = SlmProfile::new(
+            "valid",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+        let router = RouterEngine::new(collection, vec![valid_profile]);
+
+        let invalid_profile = SlmProfile::new(
+            "invalid",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            f32::NAN,
+        );
+
+        let res = router.try_update_profiles(vec![invalid_profile]);
+        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn test_route_non_finite_query_embedding_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let profile = SlmProfile::new(
+            "slm",
+            "http://localhost:9999/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+        let router = RouterEngine::new(collection, vec![profile]);
+
+        let nan_res = router.route(&[f32::NAN, 0.0, 0.0, 0.0], "test").await;
+        assert!(
+            matches!(nan_res, Err(MemFuseError::InvalidInput(msg)) if msg.contains("non-finite"))
+        );
+
+        let inf_res = router.route(&[f32::INFINITY, 0.0, 0.0, 0.0], "test").await;
+        assert!(
+            matches!(inf_res, Err(MemFuseError::InvalidInput(msg)) if msg.contains("non-finite"))
+        );
+    }
+
+    #[test]
+    fn test_slm_profile_infinite_score() {
+        let inf_pos = SlmProfile::try_new(
+            "coding",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            f32::INFINITY,
+        );
+        assert!(
+            matches!(inf_pos, Err(MemFuseError::InvalidInput(msg)) if msg.contains("cannot be NaN or Infinite"))
+        );
+
+        let inf_neg = SlmProfile::try_new(
+            "coding",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            f32::NEG_INFINITY,
+        );
+        assert!(
+            matches!(inf_neg, Err(MemFuseError::InvalidInput(msg)) if msg.contains("cannot be NaN or Infinite"))
+        );
+    }
+
+    #[test]
+    fn test_select_profile_from_chunks_empty_chunks_err() {
+        use crate::router::select_profile_from_chunks;
+
+        let profile = SlmProfile::new(
+            "slm",
+            "http://localhost/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+        let res = select_profile_from_chunks(&[profile], &[]);
+        assert!(
+            matches!(res, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
+        );
+    }
+
+    #[test]
+    fn test_select_profile_from_chunks_aggregated_below_min_but_max_above_min(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+
+        let profile = SlmProfile::new(
+            "slm-max-eval",
+            "http://localhost/mcp",
+            vec![10],
+            TokenBudget::new(1000, 100),
+            0.5, // Min relevance threshold
+        );
+
+        // Chunk 1: positive score 0.5 -> boosted by 1.2 = 0.6
+        // Chunk 2: negative score -0.4 -> boosted by 1.2 = -0.48
+        // aggregated_score = 0.6 + (-0.48) = 0.12 (< 0.5)
+        // max_score = max(0.6, -0.48, 0.0) = 0.6 (>= 0.5)
+        let chunks = vec![
+            (
+                ContextChunk {
+                    doc_id: DocId::new(1),
+                    content: "chunk 1".to_string(),
+                    relevance: 0.5,
+                    token_count: 5,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                },
+                Some(10),
+            ),
+            (
+                ContextChunk {
+                    doc_id: DocId::new(2),
+                    content: "chunk 2".to_string(),
+                    relevance: -0.4,
+                    token_count: 5,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                },
+                Some(10),
+            ),
+        ];
+
+        let selected_idx = select_profile_from_chunks(&[profile], &chunks)?;
+        assert_eq!(selected_idx, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn prop_compute_max_score_nan_inf_safety() {
+        use crate::router::compute_max_score;
+        use memfuse_core::{ContextChunk, DocId};
+        use proptest::prelude::*;
+
+        proptest!(|(
+            scores in proptest::collection::vec(
+                prop_oneof![
+                    Just(f32::NAN),
+                    Just(f32::INFINITY),
+                    Just(f32::NEG_INFINITY),
+                    -10.0f32..10.0f32
+                ],
+                0..20
+            ),
+            community_id in 0u64..100,
+        )| {
+            let profile = SlmProfile::new("p", "http://ep", vec![community_id], TokenBudget::new(100, 10), 0.1);
+            let chunks: Vec<(ContextChunk, Option<u64>)> = scores.into_iter().enumerate().map(|(idx, s)| {
+                (
+                    ContextChunk {
+                        doc_id: DocId::new(idx as u64 + 1),
+                        content: "content".to_string(),
+                        relevance: s,
+                        token_count: 5,
+                        metadata: None,
+                        contextual_prefix: None,
+                        links: Vec::new(),
+                    },
+                    Some(community_id),
+                )
+            }).collect();
+
+            let max_score = compute_max_score(&profile, &chunks);
+            prop_assert!(!max_score.is_nan());
+            prop_assert!(!max_score.is_infinite());
+        });
+    }
+
+    #[test]
+    fn prop_select_profile_from_chunks_nan_inf_safety() {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+        use proptest::prelude::*;
+
+        proptest!(|(
+            scores in proptest::collection::vec(
+                prop_oneof![
+                    Just(f32::NAN),
+                    Just(f32::INFINITY),
+                    Just(f32::NEG_INFINITY),
+                    0.0f32..1.0f32
+                ],
+                1..10
+            ),
+        )| {
+            let p0 = SlmProfile::new("p0", "http://ep0", vec![1], TokenBudget::new(1000, 100), 0.1);
+            let p1 = SlmProfile::new("p1", "http://ep1", vec![1], TokenBudget::new(1000, 100), 0.1);
+            let profiles = vec![p0, p1];
+
+            let chunks: Vec<(ContextChunk, Option<u64>)> = scores.into_iter().enumerate().map(|(idx, s)| {
+                (
+                    ContextChunk {
+                        doc_id: DocId::new(idx as u64 + 1),
+                        content: "content".to_string(),
+                        relevance: s,
+                        token_count: 5,
+                        metadata: None,
+                        contextual_prefix: None,
+                        links: Vec::new(),
+                    },
+                    Some(1),
+                )
+            }).collect();
+
+            let res = select_profile_from_chunks(&profiles, &chunks);
+            match res {
+                Ok(idx) => prop_assert!(idx < profiles.len()),
+                Err(MemFuseError::NotFound(_)) => (),
+                Err(other) => prop_assert!(false, "Unexpected error variant: {:?}", other),
+            }
+        });
+    }
 }
