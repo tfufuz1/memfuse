@@ -61,6 +61,13 @@ pub(crate) fn compute_ppr(
     }
 
     // 3. Precompute active outgoing edges & total weight per node
+    //
+    // ARCHITECTURE DECISION (MAJOR-05): Option B (Guaranteed Compact State)
+    // Option B was chosen over Option A because Option A would require modifying `csr.rs` to make
+    // `pending_edges` and `EdgePayload` `pub(crate)`, which is strictly prohibited (Sperrzone P08).
+    // Option B ensures `compute_ppr()` operates on `GraphInner` after `compact()` has consolidated
+    // all `pending_edges` into the CSR arrays (`offsets`, `targets`, `weights`), structurally
+    // eliminating the window for uncompacted pending edges without modifying `csr.rs`.
     #[derive(Clone)]
     struct OutgoingEdge {
         target: usize,
@@ -93,7 +100,10 @@ pub(crate) fn compute_ppr(
             let target = inner.targets[edge_idx];
             let weight = inner.weights[edge_idx];
 
-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+            if !inner.tombstoned_edges.contains(&(i, target))
+                && inner.entities.get(target).is_some_and(|e| e.is_some())
+                && weight > 0.0
+            {
                 sum += weight;
                 edges.push(OutgoingEdge { target, weight });
             }
@@ -104,6 +114,8 @@ pub(crate) fn compute_ppr(
     }
 
     // Validate config parameters defensively
+    let _ = config.validate();
+
     let damping = if config.damping_factor.is_nan()
         || config.damping_factor <= 0.0
         || config.damping_factor >= 1.0
@@ -887,6 +899,103 @@ mod tests {
         assert!(
             elapsed.as_millis() < 500,
             "Max iterations ceiling must terminate execution promptly without hanging"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ppr_includes_uncompacted_pending_edges() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        // Nodes 1, 2, 3
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+        let id3 = EntityId::new(3);
+
+        graph.add_entity(tx, Entity::new(id1, "N1", "Node")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id2, "N2", "Node")).await.unwrap();
+        graph.add_entity(tx, Entity::new(id3, "N3", "Node")).await.unwrap();
+
+        // Initially only 1 -> 2 edge
+        graph.add_edge(tx, Edge::new(id1, id2, "link")).await.unwrap();
+        graph.commit(tx).await.unwrap();
+
+        // Force compaction so 1 -> 2 is in CSR arrays
+        graph.compact();
+
+        // Add a NEW edge 1 -> 3 in tx2 and commit without compacting!
+        // This edge resides in pending_edges (uncompacted delta buffer).
+        let tx2 = TxId::new(2);
+        graph.add_edge(tx2, Edge::new(id1, id3, "link")).await.unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        // Calling personalized_page_rank compacts pending_edges under lock before PPR computation,
+        // ensuring the uncompacted pending edge 1 -> 3 is consolidated into CSR arrays and evaluated.
+        let config = PprConfig::default();
+        let results = graph.personalized_page_rank(&[id1], &config).await.unwrap();
+
+        let rank_map: std::collections::HashMap<EntityId, f32> = results.into_iter().collect();
+
+        assert!(
+            rank_map.contains_key(&id3),
+            "Uncompacted pending edge 1 -> 3 must propagate rank mass to Node 3"
+        );
+        assert!(
+            rank_map[&id3] > 0.0,
+            "PPR score for Node 3 must be strictly positive due to pending edge, got {}",
+            rank_map[&id3]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ppr_max_iterations_warning_log_above_1000() {
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture_layer = LogCaptureLayer(logs.clone());
+        let subscriber = tracing_subscriber::registry().with(capture_layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=3 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
+                .await
+                .unwrap();
+        }
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let config = PprConfig {
+            damping_factor: 0.85,
+            max_iterations: 5000,
+            convergence_epsilon: 1e-6,
+            warn_on_non_convergence: true,
+        };
+
+        let results = graph
+            .personalized_page_rank(&[EntityId::new(1)], &config)
+            .await
+            .unwrap();
+
+        assert!(!results.is_empty());
+
+        let captured = logs.lock().unwrap();
+        let warning_found = captured.iter().any(|msg| {
+            msg.contains("PprConfig max_iterations exceeds hard cap of 1000")
+                && msg.contains("max_iterations=5000")
+                && msg.contains("capped_iterations=1000")
+        });
+
+        assert!(
+            warning_found,
+            "Expected warning log when max_iterations > 1000, got logs: {:?}",
+            *captured
         );
     }
 }

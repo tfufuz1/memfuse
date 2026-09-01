@@ -25,6 +25,8 @@ async-trait = { workspace = true }
 blake3 = { workspace = true }
 # Zero-copy IPC serialization support.
 flatbuffers = { workspace = true }
+# Structured logging framework for diagnostics and warnings.
+tracing = { workspace = true }
 
 [dev-dependencies]
 # Async runtime for executing async unit tests.
