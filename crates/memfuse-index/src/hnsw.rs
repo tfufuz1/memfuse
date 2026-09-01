@@ -1847,8 +1847,7 @@ impl VectorIndex for HnswIndex {
         let mut results = Vec::with_capacity(k);
 
         for c in candidates.iter() {
-            // AI-TAG[BUG-FIX][CRITICAL] Tombstone filter must be evaluated unconditionally before custom filter (ID: AGT-INDEX-a1b2c3d4) (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f)
-            // RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone check executed unconditionally before custom filter (TS: 2026-09-01T11:02:04Z)
+            // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f)
             if deleted.contains(c.index as u64) {
                 continue;
             }
