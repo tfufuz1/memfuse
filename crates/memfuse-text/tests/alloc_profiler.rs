@@ -5,11 +5,11 @@
 use memfuse_core::{DocId, StorageEngine, TextIndex, TxId};
 use memfuse_text::inverted::{InvertedIndex, Language};
 use memfuse_text::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
+use unicode_segmentation::UnicodeSegmentation;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use unicode_segmentation::UnicodeSegmentation;
 
 struct CountingAllocator;
 
@@ -218,34 +218,14 @@ async fn run_profile_10k_documents() {
     println!("GERMAN TOKENIZER:");
     println!("  - Documents processed   : {}", NUM_DOCS);
     println!("  - Total words           : {}", total_words_de);
-    println!(
-        "  - Avg words/doc         : {:.1}",
-        total_words_de as f64 / NUM_DOCS as f64
-    );
+    println!("  - Avg words/doc         : {:.1}", total_words_de as f64 / NUM_DOCS as f64);
     println!("  - Total tokens generated: {}", total_tokens_de);
     println!("  - Total Allocations     : {}", allocs_de_tok);
-    println!(
-        "  - Total Bytes Allocated : {} ({:.2} MB)",
-        bytes_de_tok,
-        bytes_de_tok as f64 / 1_048_576.0
-    );
-    println!(
-        "  - Allocations / Word    : {:.4}",
-        allocs_de_tok as f64 / total_words_de as f64
-    );
-    println!(
-        "  - Allocations / Token   : {:.4}",
-        allocs_de_tok as f64 / total_tokens_de as f64
-    );
-    println!(
-        "  - Time Elapsed          : {:.3} s",
-        dur_de_tok.as_secs_f64()
-    );
-    println!(
-        "  - Tokenizer Throughput  : {:.1} docs/s, {:.1} words/s",
-        NUM_DOCS as f64 / dur_de_tok.as_secs_f64(),
-        total_words_de as f64 / dur_de_tok.as_secs_f64()
-    );
+    println!("  - Total Bytes Allocated : {} ({:.2} MB)", bytes_de_tok, bytes_de_tok as f64 / 1_048_576.0);
+    println!("  - Allocations / Word    : {:.4}", allocs_de_tok as f64 / total_words_de as f64);
+    println!("  - Allocations / Token   : {:.4}", allocs_de_tok as f64 / total_tokens_de as f64);
+    println!("  - Time Elapsed          : {:.3} s", dur_de_tok.as_secs_f64());
+    println!("  - Tokenizer Throughput  : {:.1} docs/s, {:.1} words/s", NUM_DOCS as f64 / dur_de_tok.as_secs_f64(), total_words_de as f64 / dur_de_tok.as_secs_f64());
 
     // 1b. English / Default Tokenizer
     let english_tok = DefaultTokenizer;
@@ -268,52 +248,29 @@ async fn run_profile_10k_documents() {
     println!("\nENGLISH DEFAULT TOKENIZER:");
     println!("  - Documents processed   : {}", NUM_DOCS);
     println!("  - Total words           : {}", total_words_en);
-    println!(
-        "  - Avg words/doc         : {:.1}",
-        total_words_en as f64 / NUM_DOCS as f64
-    );
+    println!("  - Avg words/doc         : {:.1}", total_words_en as f64 / NUM_DOCS as f64);
     println!("  - Total tokens generated: {}", total_tokens_en);
     println!("  - Total Allocations     : {}", allocs_en_tok);
-    println!(
-        "  - Total Bytes Allocated : {} ({:.2} MB)",
-        bytes_en_tok,
-        bytes_en_tok as f64 / 1_048_576.0
-    );
-    println!(
-        "  - Allocations / Word    : {:.4}",
-        allocs_en_tok as f64 / total_words_en as f64
-    );
-    println!(
-        "  - Allocations / Token   : {:.4}",
-        allocs_en_tok as f64 / total_tokens_en as f64
-    );
-    println!(
-        "  - Time Elapsed          : {:.3} s",
-        dur_en_tok.as_secs_f64()
-    );
-    println!(
-        "  - Tokenizer Throughput  : {:.1} docs/s, {:.1} words/s",
-        NUM_DOCS as f64 / dur_en_tok.as_secs_f64(),
-        total_words_en as f64 / dur_en_tok.as_secs_f64()
-    );
+    println!("  - Total Bytes Allocated : {} ({:.2} MB)", bytes_en_tok, bytes_en_tok as f64 / 1_048_576.0);
+    println!("  - Allocations / Word    : {:.4}", allocs_en_tok as f64 / total_words_en as f64);
+    println!("  - Allocations / Token   : {:.4}", allocs_en_tok as f64 / total_tokens_en as f64);
+    println!("  - Time Elapsed          : {:.3} s", dur_en_tok.as_secs_f64());
+    println!("  - Tokenizer Throughput  : {:.1} docs/s, {:.1} words/s", NUM_DOCS as f64 / dur_en_tok.as_secs_f64(), total_words_en as f64 / dur_en_tok.as_secs_f64());
+
 
     // --- PHASE 2: Full Inverted Index Ingestion Workload (Index + Storage) ---
     println!("\n--- [2] FULL INVERTED INDEX WORKLOAD (10,000 Documents) ---");
 
     // 2a. German Index Pipeline
     let storage_de = Arc::new(FastRamStorage::new());
-    let index_de =
-        InvertedIndex::new_with_language(storage_de.clone(), "de_bench", Language::German);
+    let index_de = InvertedIndex::new_with_language(storage_de.clone(), "de_bench", Language::German);
 
     reset_stats();
     let start_de_idx = Instant::now();
     for (i, doc) in german_docs.iter().enumerate() {
         let tx = TxId::new((i + 1) as u64);
         let doc_id = DocId::new((i + 1) as u64);
-        index_de
-            .insert(tx, doc_id, doc)
-            .await
-            .expect("insert succeeds");
+        index_de.insert(tx, doc_id, doc).await.expect("insert succeeds");
         index_de.commit(tx).await.expect("commit succeeds");
     }
     let dur_de_idx = start_de_idx.elapsed();
@@ -323,28 +280,11 @@ async fn run_profile_10k_documents() {
     println!("  - Documents indexed     : {}", NUM_DOCS);
     println!("  - Total words indexed   : {}", total_words_de);
     println!("  - Total Allocations     : {}", allocs_de_idx);
-    println!(
-        "  - Total Bytes Allocated : {} ({:.2} MB)",
-        bytes_de_idx,
-        bytes_de_idx as f64 / 1_048_576.0
-    );
-    println!(
-        "  - Allocations / Word    : {:.4}",
-        allocs_de_idx as f64 / total_words_de as f64
-    );
-    println!(
-        "  - Allocations / Doc     : {:.1}",
-        allocs_de_idx as f64 / NUM_DOCS as f64
-    );
-    println!(
-        "  - Time Elapsed          : {:.3} s",
-        dur_de_idx.as_secs_f64()
-    );
-    println!(
-        "  - Index Throughput      : {:.1} docs/s, {:.1} words/s",
-        NUM_DOCS as f64 / dur_de_idx.as_secs_f64(),
-        total_words_de as f64 / dur_de_idx.as_secs_f64()
-    );
+    println!("  - Total Bytes Allocated : {} ({:.2} MB)", bytes_de_idx, bytes_de_idx as f64 / 1_048_576.0);
+    println!("  - Allocations / Word    : {:.4}", allocs_de_idx as f64 / total_words_de as f64);
+    println!("  - Allocations / Doc     : {:.1}", allocs_de_idx as f64 / NUM_DOCS as f64);
+    println!("  - Time Elapsed          : {:.3} s", dur_de_idx.as_secs_f64());
+    println!("  - Index Throughput      : {:.1} docs/s, {:.1} words/s", NUM_DOCS as f64 / dur_de_idx.as_secs_f64(), total_words_de as f64 / dur_de_idx.as_secs_f64());
 
     // 2b. English Index Pipeline
     let storage_en = Arc::new(FastRamStorage::new());
@@ -355,10 +295,7 @@ async fn run_profile_10k_documents() {
     for (i, doc) in english_docs.iter().enumerate() {
         let tx = TxId::new((i + 1) as u64);
         let doc_id = DocId::new((i + 1) as u64);
-        index_en
-            .insert(tx, doc_id, doc)
-            .await
-            .expect("insert succeeds");
+        index_en.insert(tx, doc_id, doc).await.expect("insert succeeds");
         index_en.commit(tx).await.expect("commit succeeds");
     }
     let dur_en_idx = start_en_idx.elapsed();
@@ -368,28 +305,11 @@ async fn run_profile_10k_documents() {
     println!("  - Documents indexed     : {}", NUM_DOCS);
     println!("  - Total words indexed   : {}", total_words_en);
     println!("  - Total Allocations     : {}", allocs_en_idx);
-    println!(
-        "  - Total Bytes Allocated : {} ({:.2} MB)",
-        bytes_en_idx,
-        bytes_en_idx as f64 / 1_048_576.0
-    );
-    println!(
-        "  - Allocations / Word    : {:.4}",
-        allocs_en_idx as f64 / total_words_en as f64
-    );
-    println!(
-        "  - Allocations / Doc     : {:.1}",
-        allocs_en_idx as f64 / NUM_DOCS as f64
-    );
-    println!(
-        "  - Time Elapsed          : {:.3} s",
-        dur_en_idx.as_secs_f64()
-    );
-    println!(
-        "  - Index Throughput      : {:.1} docs/s, {:.1} words/s",
-        NUM_DOCS as f64 / dur_en_idx.as_secs_f64(),
-        total_words_en as f64 / dur_en_idx.as_secs_f64()
-    );
+    println!("  - Total Bytes Allocated : {} ({:.2} MB)", bytes_en_idx, bytes_en_idx as f64 / 1_048_576.0);
+    println!("  - Allocations / Word    : {:.4}", allocs_en_idx as f64 / total_words_en as f64);
+    println!("  - Allocations / Doc     : {:.1}", allocs_en_idx as f64 / NUM_DOCS as f64);
+    println!("  - Time Elapsed          : {:.3} s", dur_en_idx.as_secs_f64());
+    println!("  - Index Throughput      : {:.1} docs/s, {:.1} words/s", NUM_DOCS as f64 / dur_en_idx.as_secs_f64(), total_words_en as f64 / dur_en_idx.as_secs_f64());
 
     // --- PHASE 3: Search Query Path Evaluation (BM25) ---
     println!("\n--- [3] BM25 SEARCH QUERY EVALUATION (1,000 Queries) ---");
@@ -412,24 +332,10 @@ async fn run_profile_10k_documents() {
 
     println!("BM25 SEARCH (German Index, 1000 Queries):");
     println!("  - Total Allocations     : {}", allocs_search);
-    println!(
-        "  - Total Bytes Allocated : {} ({:.2} MB)",
-        bytes_search,
-        bytes_search as f64 / 1_048_576.0
-    );
-    println!(
-        "  - Allocations / Query   : {:.1}",
-        allocs_search as f64 / 1000.0
-    );
-    println!(
-        "  - Time Elapsed          : {:.3} ms total ({:.3} ms/query)",
-        dur_search.as_secs_f64() * 1000.0,
-        dur_search.as_secs_f64()
-    );
-    println!(
-        "  - Query Throughput      : {:.1} QPS",
-        1000.0 / dur_search.as_secs_f64()
-    );
+    println!("  - Total Bytes Allocated : {} ({:.2} MB)", bytes_search, bytes_search as f64 / 1_048_576.0);
+    println!("  - Allocations / Query   : {:.1}", allocs_search as f64 / 1000.0);
+    println!("  - Time Elapsed          : {:.3} ms total ({:.3} ms/query)", dur_search.as_secs_f64() * 1000.0, dur_search.as_secs_f64());
+    println!("  - Query Throughput      : {:.1} QPS", 1000.0 / dur_search.as_secs_f64());
 
     println!("\n================================================================================");
 }

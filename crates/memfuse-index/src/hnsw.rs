@@ -3057,32 +3057,19 @@ mod tests {
     #[test]
     fn test_hnsw_config_validation_invalid_params() {
         // dimension == 0
-        let c_dim = HnswConfig {
-            dimension: 0,
-            ..Default::default()
-        };
+        let c_dim = HnswConfig { dimension: 0, ..Default::default() };
         assert!(c_dim.validate().is_err());
 
         // m == 0
-        let c_m = HnswConfig {
-            m: 0,
-            ..Default::default()
-        };
+        let c_m = HnswConfig { m: 0, ..Default::default() };
         assert!(c_m.validate().is_err());
 
         // ef_construction < m
-        let c_ef_c = HnswConfig {
-            m: 16,
-            ef_construction: 8,
-            ..Default::default()
-        };
+        let c_ef_c = HnswConfig { m: 16, ef_construction: 8, ..Default::default() };
         assert!(c_ef_c.validate().is_err());
 
         // ef_search == 0
-        let c_ef_s = HnswConfig {
-            ef_search: 0,
-            ..Default::default()
-        };
+        let c_ef_s = HnswConfig { ef_search: 0, ..Default::default() };
         assert!(c_ef_s.validate().is_err());
     }
 
@@ -3090,10 +3077,7 @@ mod tests {
     async fn test_hnsw_index_search_k_zero_returns_empty() {
         let index = HnswIndex::try_new(test_config(4)).unwrap();
         let tx = TxId::new(1);
-        index
-            .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
-            .await
-            .unwrap();
+        index.insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0]).await.unwrap();
         index.commit(tx).await.unwrap();
 
         let results = index.search(&[1.0, 0.0, 0.0, 0.0], 0).await.unwrap();

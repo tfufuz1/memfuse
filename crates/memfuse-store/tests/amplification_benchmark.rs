@@ -86,13 +86,7 @@ fn test_bloom_filter_fpr_100k() -> (usize, usize, usize, f64, f64) {
     }
 
     let empirical_fpr = false_positives as f64 / num_keys as f64;
-    (
-        num_keys,
-        true_positives,
-        false_positives,
-        target_fpr,
-        empirical_fpr,
-    )
+    (num_keys, true_positives, false_positives, target_fpr, empirical_fpr)
 }
 
 #[tokio::test]
@@ -105,21 +99,10 @@ async fn run_amplification_benchmark() {
     println!("\n[1] BLOOM FILTER FALSE POSITIVE RATE (FPR) MEASUREMENT");
     let (n_keys, tp, fp, target_fpr, empirical_fpr) = test_bloom_filter_fpr_100k();
     println!("- Target expected elements: {}", n_keys);
-    println!(
-        "- Configured target FPR: {:.4} ({:.2}%)",
-        target_fpr,
-        target_fpr * 100.0
-    );
-    println!(
-        "- True Positives count: {} / {} (100% accuracy required)",
-        tp, n_keys
-    );
+    println!("- Configured target FPR: {:.4} ({:.2}%)", target_fpr, target_fpr * 100.0);
+    println!("- True Positives count: {} / {} (100% accuracy required)", tp, n_keys);
     println!("- False Positives count: {} / {}", fp, n_keys);
-    println!(
-        "- Empirical FPR: {:.6} ({:.4}%)",
-        empirical_fpr,
-        empirical_fpr * 100.0
-    );
+    println!("- Empirical FPR: {:.6} ({:.4}%)", empirical_fpr, empirical_fpr * 100.0);
     assert_eq!(tp, n_keys, "Bloom filter true positive rate must be 100%");
 
     // STEP 3: Real Workload Simulator & Write Amplification
@@ -218,10 +201,7 @@ async fn run_amplification_benchmark() {
     let total_physical_bytes = tracker.total_bytes();
 
     // Compute logical bytes stored at end (remaining active key-value entries)
-    let all_entries = storage
-        .scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded)
-        .await
-        .expect("scan end");
+    let all_entries = storage.scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded).await.expect("scan end");
     let mut logical_stored_bytes: u64 = 0;
     for (k, v) in &all_entries {
         logical_stored_bytes += (k.len() + v.len()) as u64;
@@ -230,33 +210,13 @@ async fn run_amplification_benchmark() {
     let write_amp_factor = total_physical_bytes as f64 / logical_stored_bytes as f64;
 
     println!("\nWrite Amplification Results:");
-    println!(
-        "- Total compaction cycles executed:        {}",
-        total_compaction_cycles
-    );
-    println!(
-        "- Total physical bytes written to disk (a): {} bytes ({:.2} MB)",
-        total_physical_bytes,
-        total_physical_bytes as f64 / 1_048_576.0
-    );
-    println!(
-        "- Final logical bytes stored (b):          {} bytes ({:.2} MB)",
-        logical_stored_bytes,
-        logical_stored_bytes as f64 / 1_048_576.0
-    );
-    println!(
-        "- Surviving logical Key-Value pairs:        {}",
-        all_entries.len()
-    );
-    println!(
-        "- Write-Amplification Factor (a / b):        {:.4}x",
-        write_amp_factor
-    );
+    println!("- Total compaction cycles executed:        {}", total_compaction_cycles);
+    println!("- Total physical bytes written to disk (a): {} bytes ({:.2} MB)", total_physical_bytes, total_physical_bytes as f64 / 1_048_576.0);
+    println!("- Final logical bytes stored (b):          {} bytes ({:.2} MB)", logical_stored_bytes, logical_stored_bytes as f64 / 1_048_576.0);
+    println!("- Surviving logical Key-Value pairs:        {}", all_entries.len());
+    println!("- Write-Amplification Factor (a / b):        {:.4}x", write_amp_factor);
 
-    assert!(
-        total_compaction_cycles >= 3,
-        "Workload must trigger at least 3 compaction cycles"
-    );
+    assert!(total_compaction_cycles >= 3, "Workload must trigger at least 3 compaction cycles");
 
     // STEP 4: Read Amplification Measurement
     println!("\n[3] READ AMPLIFICATION MEASUREMENT FOR POINT LOOKUPS");
@@ -284,8 +244,7 @@ async fn run_amplification_benchmark() {
     let mut total_successful_lookups = 0usize;
 
     for key in &existing_queries {
-        let (eval, bloom_pass, range_pass, block_reads, found) =
-            storage.point_lookup_metrics(key).await;
+        let (eval, bloom_pass, range_pass, block_reads, found) = storage.point_lookup_metrics(key).await;
         total_sstables_evaluated += eval;
         total_bloom_passes += bloom_pass;
         total_range_passes += range_pass;
@@ -304,8 +263,7 @@ async fn run_amplification_benchmark() {
     let mut non_exist_block_reads = 0usize;
 
     for key in &non_existing_queries {
-        let (eval, bloom_pass, range_pass, block_reads, found) =
-            storage.point_lookup_metrics(key).await;
+        let (eval, bloom_pass, range_pass, block_reads, found) = storage.point_lookup_metrics(key).await;
         non_exist_sstables_evaluated += eval;
         non_exist_bloom_passes += bloom_pass;
         non_exist_range_passes += range_pass;
@@ -317,70 +275,31 @@ async fn run_amplification_benchmark() {
     let non_exist_ra_blocks = non_exist_block_reads as f64 / 500.0;
 
     let total_queries = 1000;
-    let avg_blocks_per_lookup =
-        (total_block_reads + non_exist_block_reads) as f64 / total_queries as f64;
-    let avg_sstables_per_lookup =
-        (total_sstables_evaluated + non_exist_sstables_evaluated) as f64 / total_queries as f64;
-    let avg_bloom_passes_per_lookup =
-        (total_bloom_passes + non_exist_bloom_passes) as f64 / total_queries as f64;
+    let avg_blocks_per_lookup = (total_block_reads + non_exist_block_reads) as f64 / total_queries as f64;
+    let avg_sstables_per_lookup = (total_sstables_evaluated + non_exist_sstables_evaluated) as f64 / total_queries as f64;
+    let avg_bloom_passes_per_lookup = (total_bloom_passes + non_exist_bloom_passes) as f64 / total_queries as f64;
 
     println!("\nRead Amplification Results:");
     println!("- Existing Key Lookups (500 queries):");
-    println!(
-        "  * Avg SSTables evaluated per query: {:.2}",
-        existing_ra_sstables
-    );
-    println!(
-        "  * Avg Data Blocks read per query:   {:.2}",
-        existing_ra_blocks
-    );
-    println!(
-        "  * Successful lookups:               {}/500",
-        total_successful_lookups
-    );
+    println!("  * Avg SSTables evaluated per query: {:.2}", existing_ra_sstables);
+    println!("  * Avg Data Blocks read per query:   {:.2}", existing_ra_blocks);
+    println!("  * Successful lookups:               {}/500", total_successful_lookups);
     println!("- Non-Existing Key Lookups (500 queries):");
-    println!(
-        "  * Avg SSTables evaluated per query: {:.2}",
-        non_exist_ra_sstables
-    );
-    println!(
-        "  * Avg Whole-SSTable Bloom passes:   {:.4}",
-        non_exist_bloom_passes as f64 / 500.0
-    );
-    println!(
-        "  * Avg Data Blocks read per query:   {:.4}",
-        non_exist_ra_blocks
-    );
+    println!("  * Avg SSTables evaluated per query: {:.2}", non_exist_ra_sstables);
+    println!("  * Avg Whole-SSTable Bloom passes:   {:.4}", non_exist_bloom_passes as f64 / 500.0);
+    println!("  * Avg Data Blocks read per query:   {:.4}", non_exist_ra_blocks);
     println!("- Combined 1,000 Point Lookups Overall:");
-    println!(
-        "  * Average SSTable file checks per query: {:.2}",
-        avg_sstables_per_lookup
-    );
-    println!(
-        "  * Average Whole-SSTable Bloom passes:    {:.4}",
-        avg_bloom_passes_per_lookup
-    );
-    println!(
-        "  * Average Data Blocks read per query:    {:.4}",
-        avg_blocks_per_lookup
-    );
+    println!("  * Average SSTable file checks per query: {:.2}", avg_sstables_per_lookup);
+    println!("  * Average Whole-SSTable Bloom passes:    {:.4}", avg_bloom_passes_per_lookup);
+    println!("  * Average Data Blocks read per query:    {:.4}", avg_blocks_per_lookup);
 
     println!("\n============================================================");
     println!("SUMMARY METRICS FOR AUDIT REPORT");
     println!("============================================================");
     println!("Bloom Filter Status: PRESENT (Whole-SSTable Blake3 Double-Hashing BloomFilter + In-Block 64-bit Bitmask)");
-    println!(
-        "Empirical Bloom FPR: {:.4}% (Target 1.00%)",
-        empirical_fpr * 100.0
-    );
-    println!(
-        "Total Compaction Cycles Executed: {}",
-        total_compaction_cycles
-    );
+    println!("Empirical Bloom FPR: {:.4}% (Target 1.00%)", empirical_fpr * 100.0);
+    println!("Total Compaction Cycles Executed: {}", total_compaction_cycles);
     println!("Write-Amplification Factor: {:.4}x", write_amp_factor);
-    println!(
-        "Read-Amplification (Avg Blocks Read / Query): {:.4}",
-        avg_blocks_per_lookup
-    );
+    println!("Read-Amplification (Avg Blocks Read / Query): {:.4}", avg_blocks_per_lookup);
     println!("============================================================");
 }

@@ -127,8 +127,7 @@ async fn test_attack_a_swap_blocks_unencrypted_detected() {
 async fn test_attack_a_swap_blocks_encrypted_detected() {
     let dir = tempdir().expect("tempdir");
     let wal_path = dir.path().join("encrypted_swap.wal");
-    let km =
-        Arc::new(KeyManager::try_new("pass_swap", b"salt123456789012345678901234567890").unwrap());
+    let km = Arc::new(KeyManager::try_new("pass_swap", b"salt123456789012345678901234567890").unwrap());
 
     {
         let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
@@ -165,10 +164,7 @@ async fn test_attack_a_swap_blocks_encrypted_detected() {
         open_res.is_err(),
         "Encrypted Attack a (swap blocks) MUST be detected during open/recovery"
     );
-    assert!(matches!(
-        open_res.unwrap_err(),
-        MemFuseError::WalCorruption { .. }
-    ));
+    assert!(matches!(open_res.unwrap_err(), MemFuseError::WalCorruption { .. }));
 }
 
 // =========================================================================
@@ -297,14 +293,11 @@ async fn test_attack_d_cross_file_replay_encrypted_detected() {
     let wal_path_a = dir1.path().join("wal_a.wal");
     let wal_path_b = dir2.path().join("wal_b.wal");
 
-    let km =
-        Arc::new(KeyManager::try_new("cross_pass", b"salt123456789012345678901234567890").unwrap());
+    let km = Arc::new(KeyManager::try_new("cross_pass", b"salt123456789012345678901234567890").unwrap());
 
     // Create WAL A
     {
-        let wal_a = Wal::open_with_key_manager(&wal_path_a, Some(km.clone()))
-            .await
-            .unwrap();
+        let wal_a = Wal::open_with_key_manager(&wal_path_a, Some(km.clone())).await.unwrap();
         for i in 1..=5 {
             let op = WalOp::Put {
                 tx_id: TxId::new(i),
@@ -318,9 +311,7 @@ async fn test_attack_d_cross_file_replay_encrypted_detected() {
 
     // Create WAL B
     {
-        let wal_b = Wal::open_with_key_manager(&wal_path_b, Some(km.clone()))
-            .await
-            .unwrap();
+        let wal_b = Wal::open_with_key_manager(&wal_path_b, Some(km.clone())).await.unwrap();
         for i in 1..=5 {
             let op = WalOp::Put {
                 tx_id: TxId::new(i),
