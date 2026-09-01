@@ -829,12 +829,12 @@ mod tests {
         let b = [20, 30];
         // Euclidean: sqrt((10-20)^2 + (20-30)^2) = sqrt(200) ≈ 14.142 -> rounded 14
         assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 14); // unwrap
-        // DotProduct: dot = 10*20 + 20*30 = 800 -> inverted: u32::MAX - 800
+                                                                               // DotProduct: dot = 10*20 + 20*30 = 800 -> inverted: u32::MAX - 800
         assert_eq!(
             DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(),
             u32::MAX - 800
         ); // unwrap
-        // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
+           // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
         let orth_a: [u8; 2] = [255, 0];
         let orth_b: [u8; 2] = [0, 255];
         assert_eq!(
@@ -1401,7 +1401,10 @@ mod tests {
         let subnormal_emb = Embedding::new(vec![1e-38, 1e-38, 1e-38]);
         let norm_sub = subnormal_emb.normalize();
         for &val in norm_sub.as_slice() {
-            assert!(val.is_finite(), "Normalized value must be finite, got {val}");
+            assert!(
+                val.is_finite(),
+                "Normalized value must be finite, got {val}"
+            );
             assert!(!val.is_nan(), "Normalized value must not be NaN");
             assert!(!val.is_infinite(), "Normalized value must not be Inf");
         }

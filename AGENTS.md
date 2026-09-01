@@ -20,6 +20,8 @@ All errors propagate via `MemFuseError` + `?` — zero silent failures.
 | Debt scan | `just debt-audit` | Scans unwrap/expect/std::fs |
 | Cross-platform CI | GitHub Actions (`test-cross-platform`) | Informativer Check auf Windows/macOS für Kern-Crates; blockiert PRs nicht, bei Rot manuell prüfen vor Release-Tag |
 
+> **Hinweis:** Alle `just`-Rezepte funktionieren sowohl mit als auch ohne installiertes `nix` — bei fehlendem `nix` wird automatisch auf direkte `cargo`-Aufrufe zurückgefallen.
+
 ## 3. Workspace Inventory (15 Crates)
 
 MemFuse besteht aus 15 Workspace-Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`) in einer 5-Schichten-Architektur (Layer 0–4).
