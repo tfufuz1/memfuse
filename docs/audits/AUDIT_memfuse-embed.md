@@ -147,9 +147,9 @@ Gemessen via `cargo bench -p memfuse-embed` auf dem Referenz-Sandbox-System (x86
 
 ### Gefundene & behobene Mängel während des Audits:
 
-1. **[BEHOBEN - HIGH] Unit-Test Kompilierfehler bei `--features onnx`:**
+1. **[BEHOBEN - HIGH - 2026-09-01] Unit-Test Kompilierfehler bei `--features onnx`:**
    - **Problem:** In `crates/memfuse-embed/src/lib.rs` nutzte der Unit-Test `test_embed_batch_oversized_limit` den Aufruf `Tokenizer::default()`. Das `tokenizers`-Crate implementiert jedoch kein `Default`-Trait für `Tokenizer`, was zu einem Kompilierfehler bei `cargo test --features onnx` führte.
-   - **Fix:** Ersetzt durch valides Minimal-JSON über `Tokenizer::from_bytes(...)`.
+   - **Fix:** Ersetzt durch valides Minimal-JSON über `Tokenizer::from_bytes(...)`. Status: FIXED (2026-09-01).
 
 2. **[BEHOBEN - MINOR] Transparenz bezüglich `benches/embed_bench.rs`:**
    - **Problem:** `embed_bench.rs` hatte keinen Fallback, wenn `tests/data/model.onnx` fehlte, sondern brach stumm ab.
