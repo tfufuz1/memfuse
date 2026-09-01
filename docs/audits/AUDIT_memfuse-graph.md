@@ -212,7 +212,7 @@ Benchmarked via `tests/csr_benchmark.rs` on Ubuntu 24.04 LTS (4 CPU cores, 7.8 G
 
 | Bug ID | Severity | Component | Description | Resolution / Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **BUG-GRA-001** | **Medium** | `csr.rs` (`GraphInner::compact`) | Structural Invariant Gap: When entities were committed without pending edges, `compact()` returned early without updating `offsets` to match `reverse_map.len() + 1`. | **RESOLVED:** Updated `compact()` to extend `offsets` with `last_offset` whenever `offsets.len() != num_nodes + 1`. |
+| **BUG-GRA-001** | **Medium** | `csr.rs` (`GraphInner::compact`) | Structural Invariant Gap: When entities were committed without pending edges, `compact()` returned early without updating `offsets` to match `reverse_map.len() + 1`. | **RESOLVED:** Updated `compact()` and double-checked lock guards to ensure `offsets` is always extended with the last offset to match `reverse_map.len() + 1` even for entity-only commits (BUG-GRA-003 fix). |
 | **BUG-GRA-002** | **Low** | `csr.rs` (`get_communities_batch`) | Lock Scope Overlap: `inner.read()` guard was held in function scope across `storage.scan_prefix().await`. | **RESOLVED:** Wrapped read phase in explicit block `{ ... }` so guard is dropped before `.await`. |
 
 ---

@@ -28,7 +28,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Err(memfuse_core::MemFuseError::invalid_input(
-                "k must be greater than 0",
+                "Search k must be greater than 0",
             ));
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
@@ -64,7 +64,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<Vec<crate::SearchResult>> {
         if k == 0 {
             return Err(memfuse_core::MemFuseError::invalid_input(
-                "k must be greater than 0",
+                "Search k must be greater than 0",
             ));
         }
         if query.len() != self.dimension {
@@ -73,11 +73,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 self.dimension,
                 query.len()
             )));
-        }
-        if k == 0 {
-            return Err(memfuse_core::MemFuseError::invalid_input(
-                "Search k must be greater than 0",
-            ));
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
@@ -487,6 +482,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 Some(anchors)
             }
         } else if !text_results.is_empty() {
+            // Graph-Knoten MÜSSEN mit demselben String-Schlüssel wie das korrespondierende Textdokument erstellt werden (via `EntityId::from_key`), sonst wird das Graph-Signal für Multi-Step-Query-Expansion und Zettelkasten-Displacement unbemerkt leer.
             implicit_anchors = text_results
                 .iter()
                 .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
@@ -516,59 +512,23 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Vec::new()
         };
 
+        if !text_results.is_empty() && graph_results.is_empty() && anchor_entities.is_none() {
+            tracing::warn!(
+                text_count = text_results.len(),
+                "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
+            );
+        }
+
         if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
             return Ok(Vec::new());
         }
 
         let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
 
-        // Community filtering / boosting VOR RRF
         let target_community_id: Option<u64> = if let Some(same_comm_entity) = same_community_as {
             self.get_community(same_comm_entity).await.ok().flatten()
         } else {
             None
-        };
-
-        let (vector_results, text_results, graph_results) = if let Some(target_comm) =
-            target_community_id
-        {
-            let mut candidate_eids =
-                Vec::with_capacity(vector_results.len() + text_results.len() + graph_results.len());
-            for res in vector_results
-                .iter()
-                .chain(text_results.iter())
-                .chain(graph_results.iter())
-            {
-                if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                    candidate_eids.push(eid);
-                }
-            }
-
-            let community_map = self.get_communities_batch(&candidate_eids).await?;
-
-            let filter_or_boost = |list: Vec<crate::SearchResult>| {
-                let mut filtered = Vec::with_capacity(list.len());
-                for mut res in list {
-                    if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                        if let Some(&comm) = community_map.get(&eid) {
-                            if comm == target_comm {
-                                // Candidate is in the same community: boost score
-                                res.score *= 1.2;
-                                filtered.push(res);
-                            }
-                        }
-                    }
-                }
-                filtered
-            };
-
-            (
-                filter_or_boost(vector_results),
-                filter_or_boost(text_results),
-                filter_or_boost(graph_results),
-            )
-        } else {
-            (vector_results, text_results, graph_results)
         };
 
         let mut signal_sets = Vec::new();
@@ -582,10 +542,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        Ok(crate::fusion::weighted_reciprocal_rank_fusion(
+        let fused = crate::fusion::weighted_reciprocal_rank_fusion(
             signal_sets,
-            k,
-        ))
+            usize::MAX,
+        );
+
+        let mut boosted = self
+            .apply_community_boost_post_rrf(fused, target_community_id, Self::DEFAULT_COMMUNITY_BOOST)
+            .await?;
+        boosted.truncate(k);
+        Ok(boosted)
     }
 
     /// Performs hybrid search combining BM25, vector, and graph signals configured via `HybridQuery`.
@@ -644,6 +610,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     None
                 }
             } else if !text_results.is_empty() {
+                // Graph-Knoten MÜSSEN mit demselben String-Schlüssel wie das korrespondierende Textdokument erstellt werden (via `EntityId::from_key`), sonst wird das Graph-Signal für Multi-Step-Query-Expansion und Zettelkasten-Displacement unbemerkt leer.
                 implicit_anchors = text_results
                     .iter()
                     .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
@@ -673,13 +640,20 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Vec::new()
         };
 
+        if !text_results.is_empty() && graph_results.is_empty() && query.graph_start_node.is_none() {
+            tracing::warn!(
+                text_count = text_results.len(),
+                "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
+            );
+        }
+
         if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
             return Ok(Vec::new());
         }
 
         let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(Some(&query.fusion_weights));
 
-        // Target community for boosting/filtering
+        // Target community for boosting
         let target_community_id: Option<u64> =
             if let Some(same_comm_entity) = query.same_community_as {
                 self.get_community(same_comm_entity).await.ok().flatten()
@@ -687,26 +661,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 None
             };
 
-        let community_map = if target_community_id.is_some() {
-            let mut candidate_eids =
-                Vec::with_capacity(vector_results.len() + text_results.len() + graph_results.len());
-            for res in vector_results
-                .iter()
-                .chain(text_results.iter())
-                .chain(graph_results.iter())
-            {
-                if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                    candidate_eids.push(eid);
-                }
-            }
-            self.get_communities_batch(&candidate_eids).await?
-        } else {
-            std::collections::HashMap::new()
-        };
-
-        let filter_and_boost = |list: Vec<crate::SearchResult>| {
+        let filter_pre_rrf = |list: Vec<crate::SearchResult>| {
             let mut filtered = Vec::with_capacity(list.len());
-            for mut res in list {
+            for res in list {
                 if let Some(ref filter_expr) = query.filter {
                     let meta_ref = res.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
                     if !filter_expr.evaluate(meta_ref) {
@@ -721,24 +678,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     }
                 }
 
-                if let Some(target_comm) = target_community_id {
-                    if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
-                        if let Some(&comm) = community_map.get(&eid) {
-                            if comm == target_comm {
-                                res.score *= 1.2;
-                            }
-                        }
-                    }
-                }
-
                 filtered.push(res);
             }
             filtered
         };
 
-        let vector_results = filter_and_boost(vector_results);
-        let text_results = filter_and_boost(text_results);
-        let graph_results = filter_and_boost(graph_results);
+        let vector_results = filter_pre_rrf(vector_results);
+        let text_results = filter_pre_rrf(text_results);
+        let graph_results = filter_pre_rrf(graph_results);
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
@@ -751,7 +698,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        let mut fused_results = crate::fusion::weighted_reciprocal_rank_fusion(signal_sets, k);
+        let fused = crate::fusion::weighted_reciprocal_rank_fusion(
+            signal_sets,
+            usize::MAX,
+        );
+
+        let mut fused_results = self
+            .apply_community_boost_post_rrf(fused, target_community_id, Self::DEFAULT_COMMUNITY_BOOST)
+            .await?;
+        fused_results.truncate(k);
 
         if !query.include_superseded {
             // Post-RRF Supersedes Displacement (ADR-038)
@@ -778,6 +733,54 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         Ok(fused_results)
+    }
+
+    /// Standard community boost factor applied to RRF scores for matching community members.
+    pub const DEFAULT_COMMUNITY_BOOST: f32 = 1.2;
+
+    /// Multiplies the post-RRF scores of results belonging to `target_community_id` by `boost_factor`,
+    /// then re-sorts descending by score with deterministic secondary sorting by document ID.
+    pub(super) async fn apply_community_boost_post_rrf(
+        &self,
+        mut results: Vec<crate::SearchResult>,
+        target_community_id: Option<u64>,
+        boost_factor: f32,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let Some(target_comm) = target_community_id else {
+            return Ok(results);
+        };
+
+        if results.is_empty() {
+            return Ok(results);
+        }
+
+        let mut candidate_eids = Vec::with_capacity(results.len());
+        for res in &results {
+            if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                candidate_eids.push(eid);
+            }
+        }
+
+        let community_map = self.get_communities_batch(&candidate_eids).await?;
+
+        for res in &mut results {
+            if let Ok(eid) = memfuse_core::EntityId::from_key(&res.id) {
+                if let Some(&comm) = community_map.get(&eid) {
+                    if comm == target_comm {
+                        res.score *= boost_factor;
+                    }
+                }
+            }
+        }
+
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        Ok(results)
     }
 
     /// Traverses Zettelkasten memory links starting from a given document up to a maximum hop depth (ADR-038).

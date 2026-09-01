@@ -384,6 +384,7 @@ unsafe fn dot_product_neon(a: &[f32], b: &[f32]) -> f32 {
 // -----------------------------------------------------------------------------
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx")]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 #[allow(unsafe_code)]
@@ -745,8 +746,6 @@ pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 #[derive(Debug, Clone, Copy)]
 pub struct CosineSimilarityPartsU8 {
     pub dot: u32,
-    pub sum_a: u32,
-    pub sum_b: u32,
     pub norm_a_sq: u32,
     pub norm_b_sq: u32,
 }
@@ -779,8 +778,6 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
 
 pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
-    let mut sum_a = 0;
-    let mut sum_b = 0;
     let mut norm_a_sq = 0;
     let mut norm_b_sq = 0;
 
@@ -788,16 +785,12 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
         let xu = x as u32;
         let yu = y as u32;
         dot += xu * yu;
-        sum_a += xu;
-        sum_b += yu;
         norm_a_sq += xu * xu;
         norm_b_sq += yu * yu;
     }
 
     CosineSimilarityPartsU8 {
         dot,
-        sum_a,
-        sum_b,
         norm_a_sq,
         norm_b_sq,
     }
@@ -956,9 +949,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
     let n = a.len().min(b.len());
     let mut i = 0;
     // SAFETY: _mm512_setzero_si512 is always safe.
-    let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = (
-        _mm512_setzero_si512(),
-        _mm512_setzero_si512(),
+    let (mut dot_v, mut norm_a_v, mut norm_b_v) = (
         _mm512_setzero_si512(),
         _mm512_setzero_si512(),
         _mm512_setzero_si512(),
@@ -976,25 +967,19 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
             dot_v = _mm512_dpbusd_epi32(dot_v, va, vb);
             norm_a_v = _mm512_dpbusd_epi32(norm_a_v, va, va);
             norm_b_v = _mm512_dpbusd_epi32(norm_b_v, vb, vb);
-
-            let zero = _mm512_setzero_si512();
-            sum_a_v = _mm512_add_epi64(sum_a_v, _mm512_sad_epu8(va, zero));
-            sum_b_v = _mm512_add_epi64(sum_b_v, _mm512_sad_epu8(vb, zero));
         }
         i += 64;
     }
 
     // SAFETY: AVX-512 Horizontal Sums.
-    // BEGRÜNDUNG: hsum512_epi32/64_avx512 werden innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
+    // BEGRÜNDUNG: hsum512_epi32_avx512 wird innerhalb eines AVX-512 aktivierten Kontextes aufgerufen.
     // SAFETY: Horizontal sums are safe on AVX-512.
-    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
+    let (mut dot, mut norm_a_sq, mut norm_b_sq) = unsafe {
         // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         (
             hsum512_epi32_avx512(dot_v) as u32,
             hsum512_epi32_avx512(norm_a_v) as u32,
             hsum512_epi32_avx512(norm_b_v) as u32,
-            hsum512_epi64_avx512(sum_a_v) as u32,
-            hsum512_epi64_avx512(sum_b_v) as u32,
         )
     };
 
@@ -1002,8 +987,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
         let xu = a[i] as u32;
         let yu = b[i] as u32;
         dot += xu * yu;
-        sum_a += xu;
-        sum_b += yu;
         norm_a_sq += xu * xu;
         norm_b_sq += yu * yu;
         i += 1;
@@ -1011,27 +994,8 @@ pub unsafe fn cosine_similarity_parts_u8_avx512(a: &[u8], b: &[u8]) -> CosineSim
 
     CosineSimilarityPartsU8 {
         dot,
-        sum_a,
-        sum_b,
         norm_a_sq,
         norm_b_sq,
-    }
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx512f")]
-#[allow(unsafe_code)]
-// SAFETY: Horizontal Sum epi64 AVX-512.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
-unsafe fn hsum512_epi64_avx512(v: __m512i) -> i64 {
-    // SAFETY: Standard AVX-512 to AVX2 reduction is safe on supported hardware.
-    // BEGRÜNDUNG: Caller garantiert Support und korrekte bounds.
-    unsafe {
-        // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
-        let low = _mm512_castsi512_si256(v);
-        let high = _mm512_extracti64x4_epi64(v, 1);
-        let sum256 = _mm256_add_epi64(low, high);
-        hsum256_epi64_avx2(sum256)
     }
 }
 
@@ -1167,9 +1131,7 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
     // SAFETY: Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
     // SAFETY: _mm256_setzero_si256 is always safe.
-    let (mut dot_v, mut sum_a_v, mut sum_b_v, mut norm_a_v, mut norm_b_v) = (
-        _mm256_setzero_si256(),
-        _mm256_setzero_si256(),
+    let (mut dot_v, mut norm_a_v, mut norm_b_v) = (
         _mm256_setzero_si256(),
         _mm256_setzero_si256(),
         _mm256_setzero_si256(),
@@ -1197,13 +1159,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
 
             norm_b_v = _mm256_add_epi32(norm_b_v, _mm256_madd_epi16(vb_lo, vb_lo));
             norm_b_v = _mm256_add_epi32(norm_b_v, _mm256_madd_epi16(vb_hi, vb_hi));
-
-            // Sums can use SAD against zero to sum bytes fast
-            let zero = _mm256_setzero_si256();
-            let sa = _mm256_sad_epu8(va, zero);
-            let sb = _mm256_sad_epu8(vb, zero);
-            sum_a_v = _mm256_add_epi64(sum_a_v, sa);
-            sum_b_v = _mm256_add_epi64(sum_b_v, sb);
         }
         i += 32;
     }
@@ -1211,14 +1166,12 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
     // SAFETY: Horizontale Summen.
     // BEGRÜNDUNG: Hardware-Support durch Caller garantiert.
     // SAFETY: Horizontal sum functions are called within an AVX2 enabled function.
-    let (mut dot, mut norm_a_sq, mut norm_b_sq, mut sum_a, mut sum_b) = unsafe {
+    let (mut dot, mut norm_a_sq, mut norm_b_sq) = unsafe {
         // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         (
             hsum256_epi32_avx2(dot_v) as u32,
             hsum256_epi32_avx2(norm_a_v) as u32,
             hsum256_epi32_avx2(norm_b_v) as u32,
-            hsum256_epi64_avx2(sum_a_v) as u32,
-            hsum256_epi64_avx2(sum_b_v) as u32,
         )
     };
 
@@ -1226,8 +1179,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
         let xu = a[i] as u32;
         let yu = b[i] as u32;
         dot += xu * yu;
-        sum_a += xu;
-        sum_b += yu;
         norm_a_sq += xu * xu;
         norm_b_sq += yu * yu;
         i += 1;
@@ -1235,8 +1186,6 @@ pub unsafe fn cosine_similarity_parts_u8_avx2(a: &[u8], b: &[u8]) -> CosineSimil
 
     CosineSimilarityPartsU8 {
         dot,
-        sum_a,
-        sum_b,
         norm_a_sq,
         norm_b_sq,
     }
@@ -1255,20 +1204,6 @@ unsafe fn hsum256_epi32_avx2(v: __m256i) -> i32 {
     let v64 = _mm_add_epi32(v128, _mm_shuffle_epi32(v128, 0x4E));
     let v32 = _mm_add_epi32(v64, _mm_shuffle_epi32(v64, 0xB1));
     _mm_cvtsi128_si32(v32)
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-#[allow(unsafe_code)]
-// SAFETY: Horizontal Sum epi64.
-// BEGRÜNDUNG: Caller muss Hardware-Support garantieren.
-unsafe fn hsum256_epi64_avx2(v: __m256i) -> i64 {
-    // SAFETY: AVX2 Reduktion epi64.
-    // BEGRÜNDUNG: Standard AVX2 Befehle zur horizontalen Reduktion.
-    // SAFETY: Standard AVX2 horizontal reduction sequence is safe on supported hardware detected by caller.
-    let v128 = _mm_add_epi64(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
-    let v64 = _mm_add_epi64(v128, _mm_unpackhi_epi64(v128, v128));
-    _mm_cvtsi128_si64(v64)
 }
 
 #[cfg(test)]
@@ -1352,8 +1287,6 @@ mod tests {
                 // SAFETY: Hardware support detected.
                 let parts_simd = unsafe { cosine_similarity_parts_u8_avx2(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                 assert_eq!(parts_scalar.dot, parts_simd.dot);
-                assert_eq!(parts_scalar.sum_a, parts_simd.sum_a);
-                assert_eq!(parts_scalar.sum_b, parts_simd.sum_b);
                 assert_eq!(parts_scalar.norm_a_sq, parts_simd.norm_a_sq);
                 assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
             }

@@ -328,13 +328,19 @@ impl DistanceMetric {
 
     /// Computes the distance between two u8 vectors using this metric.
     ///
-    /// Returns a `u32` distance value. For metrics that naturally produce floats
-    /// (Cosine), the result is scaled by `1_000_000` for fixed-point ranking.
+    /// Returns a `u32` distance value where smaller values indicate higher similarity / smaller distance
+    /// for ALL metric variants.
     ///
-    /// # DotProduct semantics
-    /// Unlike the f32 path (`compute()`), the u32 result is **not negated** since
-    /// `u32` cannot represent negative values. The caller (e.g., HNSW quantized search)
-    /// is responsible for inverting the ranking order when using DotProduct.
+    /// # Metric Semantics & Precision
+    /// - **Cosine**: Scaled by `1_000_000` for fixed-point ranking (`[0, 2_000_000]`).
+    /// - **Euclidean**: Computes `sqrt(Σ diff²)` in `f64` precision before rounding to nearest integer (`round()`)
+    ///   and casting/saturating to `u32`. This matches `compute()`'s f32 square-root behavior.
+    /// - **DotProduct**: Inverts the sign convention using `u32::MAX - dot` (saturated at `u32::MAX`), matching
+    ///   `compute()`'s `-dot` convention so that smaller return values consistently mean higher similarity.
+    ///
+    /// # Cross-Crate Caller Dependency Notice
+    /// Callers in `memfuse-index` (such as `hnsw.rs` or `quantize.rs`) expecting raw squared Euclidean distance or
+    /// non-inverted raw dot products must account for this unified "smaller = closer" distance metric semantics.
     // DECISION-REF: AGT-CORE-001 — Overflow-Schutz in compute_u8() bereits implementiert.
     // KONTEXT: Alle drei Zweige akkumulieren in u64 (Euclidean: diff²-Summe, DotProduct: Produkt-Summe)
     //          bzw. f64 (Cosine) und sättigen per .min(u32::MAX as u64). Kein Overflow möglich.
@@ -370,15 +376,18 @@ impl DistanceMetric {
                     let diff = (x as i64) - (y as i64);
                     sum += (diff * diff) as u64;
                 }
-                Ok(sum.min(u32::MAX as u64) as u32)
+                let dist_f64 = (sum as f64).sqrt();
+                let dist_rounded = dist_f64.round();
+                Ok(dist_rounded.min(u32::MAX as f64) as u32)
             }
             Self::DotProduct => {
-                // Raw dot product (unsigned). Caller handles ranking inversion.
+                // Inverted dot product (u32::MAX - dot) so smaller distance = higher similarity.
                 let mut dot = 0u64;
                 for (&x, &y) in a.iter().zip(b.iter()) {
                     dot += (x as u64) * (y as u64);
                 }
-                Ok(dot.min(u32::MAX as u64) as u32)
+                let dot_clamped = dot.min(u32::MAX as u64) as u32;
+                Ok(u32::MAX - dot_clamped)
             }
         }
     }
@@ -425,9 +434,15 @@ impl Embedding {
     }
 
     /// Returns an L2-unit-normalized clone of this embedding.
+    ///
+    /// Guarded against zero and subnormal/near-zero vector norms (`norm < 1e-12`).
+    /// Vectors with `norm < 1e-12` are returned unchanged to avoid division by subnormals
+    /// resulting in `Inf` or `NaN`.
     pub fn normalize(&self) -> Self {
         let norm = self.l2_norm();
-        if norm == 0.0 {
+        // Threshold 1e-12 is chosen to safely catch subnormal or near-zero floats
+        // across high-dimensional embeddings while preventing Inf/NaN after division.
+        if norm < 1e-12 {
             return self.clone();
         }
         Self::new(self.data.iter().map(|x| x / norm).collect())
@@ -618,27 +633,32 @@ impl Edge {
 /// Breaking Change bei downstream match-Ausdrücken (KEIN wildcard-arm zwingend
 /// für Library-Consumer bis zur nächsten Major-Version).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum MemoryType {
     /// Episodisches Gedächtnis: Erlebnisse, Unterhaltungen, zeitlich verankerte Ereignisse.
     /// Retrieval: Zeitliche Nähe und Relevanz zur aktuellen Session.
     /// Decay: Hohe Recency-Decay-Rate (Informationen veralten schnell).
+    #[serde(alias = "Episodic")]
     Episodic,
 
     /// Semantisches Gedächtnis: Fakten, Konzepte, dauerhaftes Wissen.
     /// Retrieval: Inhaltliche Ähnlichkeit (Vektor + BM25).
     /// Decay: Keine automatische Decay (Fakten bleiben gültig bis Widerspruch).
     #[default]
+    #[serde(alias = "Semantic")]
     Semantic,
 
     /// Prozedurales Gedächtnis: Abläufe, Tool-Nutzungsmuster, Workflows.
     /// Retrieval: Task-Matching (zukünftig: Instruktionskodierung).
     /// Decay: Aktivierungsbasiert (wird durch Nutzung gestärkt).
+    #[serde(alias = "Procedural")]
     Procedural,
 
     /// Operatives Arbeitsgedächtnis: Kurzzeit-Kontext der aktuellen Session.
     /// Lebensdauer: Session-scoped, automatisch bei Session-Ende ablaufend.
     /// Decay: Sehr hohe Decay-Rate (Session-TTL, z. B. 30 Minuten Inaktivität).
+    #[serde(alias = "Working")]
     Working,
 }
 
@@ -807,11 +827,14 @@ mod tests {
     fn test_distance_metrics_u8() {
         let a = [10, 20];
         let b = [20, 30];
-        // Euclidean: (10-20)^2 + (20-30)^2 = 100 + 100 = 200
-        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 200); // unwrap
-                                                                                // DotProduct: 10*20 + 20*30 = 200 + 600 = 800
-        assert_eq!(DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), 800); // unwrap
-                                                                                 // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
+        // Euclidean: sqrt((10-20)^2 + (20-30)^2) = sqrt(200) ≈ 14.142 -> rounded 14
+        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 14); // unwrap
+        // DotProduct: dot = 10*20 + 20*30 = 800 -> inverted: u32::MAX - 800
+        assert_eq!(
+            DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(),
+            u32::MAX - 800
+        ); // unwrap
+        // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
         let orth_a: [u8; 2] = [255, 0];
         let orth_b: [u8; 2] = [0, 255];
         assert_eq!(
@@ -827,12 +850,12 @@ mod tests {
     ///
     /// Worst-case-Analyse:
     /// - Euclidean: diff=0 (identische Vektoren) → sum=0. Maximaler Fall: diff=255, sum = 255²×100_000
-    ///   = 6_502_500_000 < u64::MAX. Gesättigter Rückgabewert: 4_294_967_295 (u32::MAX).
-    /// - DotProduct: 255×255×100_000 = 6_502_500_000 < u64::MAX. Gesättigter Rückgabewert: u32::MAX.
+    ///   = 6_502_500_000, sqrt = 80_638.1.
+    /// - DotProduct: 255×255×100_000 = 6_502_500_000 > u32::MAX → dot saturiert bei u32::MAX -> u32::MAX - u32::MAX = 0.
     /// - Cosine: f64-Akkumulation, kein Ganzzahl-Overflow möglich.
     #[test]
     fn test_distance_metrics_u8_overflow() {
-        // Identische Vektoren (diff=0): Euclidean=0, DotProduct=saturiert, Cosine=0
+        // Identische Vektoren (diff=0): Euclidean=0, DotProduct=0 (höchste Ähnlichkeit), Cosine=0
         let max_vec: Vec<u8> = vec![255u8; 100_000];
         let same_vec: Vec<u8> = vec![255u8; 100_000];
 
@@ -845,14 +868,13 @@ mod tests {
             "Euclidean distance of identical vectors must be 0"
         );
 
-        // DotProduct: 255*255*100_000 = 6_502_500_000 > u32::MAX → muss auf u32::MAX sättigen
+        // DotProduct: dot = saturiert u32::MAX → u32::MAX - u32::MAX = 0
         let dot_same = DistanceMetric::DotProduct
             .compute_u8(&max_vec, &same_vec)
             .unwrap(); // unwrap
         assert_eq!(
-            dot_same,
-            u32::MAX,
-            "DotProduct must saturate to u32::MAX for 100_000-element all-255 vectors"
+            dot_same, 0,
+            "DotProduct inverted distance must be 0 for identical high-value vectors"
         );
 
         // Cosine: identische Vektoren → Distanz 0 (cos_dist = 1 - 1 = 0)
@@ -864,16 +886,14 @@ mod tests {
             "Cosine distance of identical vectors must be 0"
         );
 
-        // Worst-case Euclidean: maximale Differenz (255 vs. 0) → sum = 255²×100_000 = 6_502_500_000
-        // Muss auf u32::MAX sättigen
+        // Worst-case Euclidean: maximale Differenz (255 vs. 0) → sum = 255²×100_000 = 6_502_500_000, sqrt ≈ 80_638.1
         let zero_vec: Vec<u8> = vec![0u8; 100_000];
         let eucl_max = DistanceMetric::Euclidean
             .compute_u8(&max_vec, &zero_vec)
             .unwrap(); // unwrap
         assert_eq!(
-            eucl_max,
-            u32::MAX,
-            "Euclidean must saturate to u32::MAX for max-diff 100_000-element vectors"
+            eucl_max, 80638,
+            "Euclidean must produce rounded sqrt of sum of squared diffs"
         );
 
         // Cosine: senkrechte Vektoren (255..255 vs. 0..0) → Sonderfall: Nullvektor → Distanz 1.0
@@ -887,31 +907,68 @@ mod tests {
     }
 
     #[test]
-    fn test_cosine_u8_ranking_matches_f32() {
-        // FIND-COR-002: Verify that u8 cosine ranking matches f32 cosine ranking
+    fn test_u8_and_f32_distance_metrics_ranking_and_value_parity() {
+        let metrics = [
+            DistanceMetric::Cosine,
+            DistanceMetric::Euclidean,
+            DistanceMetric::DotProduct,
+        ];
+
         let query = [100u8, 200, 50, 150];
-        let close_vec = [110u8, 190, 60, 140]; // similar direction
-        let far_vec = [10u8, 20, 250, 5]; // different direction
+        let close_vec = [110u8, 190, 60, 140]; // very close vector
+        let far_vec = [10u8, 20, 250, 5]; // distant vector
 
-        let dist_close = DistanceMetric::Cosine
-            .compute_u8(&query, &close_vec)
-            .unwrap(); // unwrap
-        let dist_far = DistanceMetric::Cosine.compute_u8(&query, &far_vec).unwrap(); // unwrap
-                                                                                     // Close vector should have smaller cosine distance
-        assert!(
-            dist_close < dist_far,
-            "Ranking mismatch: close={} far={}",
-            dist_close,
-            dist_far
-        );
-
-        // Cross-check with f32 ranking
         let q_f32: Vec<f32> = query.iter().map(|&x| x as f32).collect();
         let c_f32: Vec<f32> = close_vec.iter().map(|&x| x as f32).collect();
         let f_f32: Vec<f32> = far_vec.iter().map(|&x| x as f32).collect();
-        let f32_close = DistanceMetric::Cosine.compute(&q_f32, &c_f32).unwrap(); // unwrap
-        let f32_far = DistanceMetric::Cosine.compute(&q_f32, &f_f32).unwrap(); // unwrap
-        assert!(f32_close < f32_far, "f32 ranking mismatch");
+
+        for metric in metrics {
+            let u8_close = metric.compute_u8(&query, &close_vec).unwrap();
+            let u8_far = metric.compute_u8(&query, &far_vec).unwrap();
+
+            let f32_close = metric.compute(&q_f32, &c_f32).unwrap();
+            let f32_far = metric.compute(&q_f32, &f_f32).unwrap();
+
+            // Ranking order parity: smaller distance MUST mean closer for BOTH f32 and u8
+            assert!(
+                u8_close < u8_far,
+                "u8 ranking mismatch for {metric:?}: close={u8_close}, far={u8_far}"
+            );
+            assert!(
+                f32_close < f32_far,
+                "f32 ranking mismatch for {metric:?}: close={f32_close}, far={f32_far}"
+            );
+
+            // Value scale sanity check
+            match metric {
+                DistanceMetric::Euclidean => {
+                    // f32 euclidean sqrt diff vs u8 rounded sqrt diff
+                    let diff = (u8_close as f32 - f32_close).abs();
+                    assert!(
+                        diff < 1.0,
+                        "Euclidean f32 ({f32_close}) vs u8 ({u8_close}) deviation too large: diff={diff}"
+                    );
+                }
+                DistanceMetric::Cosine => {
+                    // u8 cosine is scaled by 1_000_000
+                    let expected_scaled = (f32_close as f64 * 1_000_000.0).round() as u32;
+                    let diff = (u8_close as i64 - expected_scaled as i64).abs();
+                    assert!(
+                        diff <= 1,
+                        "Cosine fixed point scaling mismatch for {metric:?}: u8={u8_close}, scaled_f32={expected_scaled}"
+                    );
+                }
+                DistanceMetric::DotProduct => {
+                    // f32 dot product is -dot; u8 dot product is u32::MAX - dot
+                    let dot_f32 = -f32_close; // raw dot
+                    let dot_u8 = u32::MAX - u8_close; // raw dot
+                    assert_eq!(
+                        dot_f32 as u32, dot_u8,
+                        "DotProduct raw dot values should match between f32 and u8"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -1174,18 +1231,33 @@ mod tests {
     #[test]
     fn test_memory_type_defaults_and_serde() {
         assert_eq!(MemoryType::default(), MemoryType::Semantic);
-        assert_eq!(MemoryType::Episodic.as_metadata_key(), "episodic");
-        assert_eq!(MemoryType::Semantic.as_metadata_key(), "semantic");
-        assert_eq!(MemoryType::Procedural.as_metadata_key(), "procedural");
-        assert_eq!(MemoryType::Working.as_metadata_key(), "working");
-
         assert_eq!(MemoryType::Working.default_ttl_tx(), Some(50_000));
         assert_eq!(MemoryType::Episodic.default_ttl_tx(), None);
 
-        let ser = serde_json::to_string(&MemoryType::Episodic).unwrap();
-        assert_eq!(ser, r#""Episodic""#);
-        let deser: MemoryType = serde_json::from_str(&ser).unwrap();
-        assert_eq!(deser, MemoryType::Episodic);
+        let variants = [
+            (MemoryType::Episodic, "episodic", "Episodic"),
+            (MemoryType::Semantic, "semantic", "Semantic"),
+            (MemoryType::Procedural, "procedural", "Procedural"),
+            (MemoryType::Working, "working", "Working"),
+        ];
+
+        for (variant, expected_key, legacy_camel) in variants {
+            assert_eq!(variant.as_metadata_key(), expected_key);
+
+            // Verify Serde serialization produces exact lowercase metadata key
+            let ser = serde_json::to_string(&variant).unwrap();
+            let expected_json = format!("\"{expected_key}\"");
+            assert_eq!(ser, expected_json);
+
+            // Verify Serde deserialization from lowercase string
+            let deser: MemoryType = serde_json::from_str(&ser).unwrap();
+            assert_eq!(deser, variant);
+
+            // Verify Serde deserialization backward compatibility from legacy CamelCase string
+            let legacy_json = format!("\"{legacy_camel}\"");
+            let deser_legacy: MemoryType = serde_json::from_str(&legacy_json).unwrap();
+            assert_eq!(deser_legacy, variant);
+        }
     }
 
     proptest::proptest! {
@@ -1324,6 +1396,16 @@ mod tests {
         let single_emb = Embedding::new(vec![5.0]);
         let norm_single = single_emb.normalize();
         assert_eq!(norm_single.as_slice(), &[1.0]);
+
+        // Subnormal / near-zero norm protection
+        let subnormal_emb = Embedding::new(vec![1e-38, 1e-38, 1e-38]);
+        let norm_sub = subnormal_emb.normalize();
+        for &val in norm_sub.as_slice() {
+            assert!(val.is_finite(), "Normalized value must be finite, got {val}");
+            assert!(!val.is_nan(), "Normalized value must not be NaN");
+            assert!(!val.is_infinite(), "Normalized value must not be Inf");
+        }
+        assert_eq!(norm_sub.as_slice(), &[1e-38, 1e-38, 1e-38]);
     }
 
     #[test]
