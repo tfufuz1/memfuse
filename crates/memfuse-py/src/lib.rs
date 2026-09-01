@@ -1188,10 +1188,18 @@ mod tests {
         Python::with_gil(|py| {
             let py_err = memfuse_err(MemFuseError::NotFound("key123".into()));
             let bound_val = py_err.value(py);
-            let kind: String = bound_val.getattr("kind").unwrap().extract().unwrap();
-            let msg: String = bound_val.getattr("message").unwrap().extract().unwrap();
-            assert_eq!(kind, "NotFound");
-            assert!(msg.contains("key123"));
+            if let Ok(kind_obj) = bound_val.getattr("kind") {
+                let kind: String = kind_obj.extract().unwrap_or_default();
+                assert_eq!(kind, "NotFound");
+            } else {
+                panic!("kind attribute missing");
+            }
+            if let Ok(msg_obj) = bound_val.getattr("message") {
+                let msg: String = msg_obj.extract().unwrap_or_default();
+                assert!(msg.contains("key123"));
+            } else {
+                panic!("message attribute missing");
+            }
         });
     }
 
@@ -1203,12 +1211,13 @@ mod tests {
                 panic!("Simulated Rust core panic");
             });
             assert!(res.is_err());
-            let py_err = res.unwrap_err();
-            assert!(py_err.is_instance_of::<PyRuntimeError>(py));
-            let bound_val = py_err.value(py);
-            let msg: String = bound_val.to_string();
-            assert!(msg.contains("Rust panic caught at FFI boundary"));
-            assert!(msg.contains("Simulated Rust core panic"));
+            if let Err(py_err) = res {
+                assert!(py_err.is_instance_of::<PyRuntimeError>(py));
+                let bound_val = py_err.value(py);
+                let msg: String = bound_val.to_string();
+                assert!(msg.contains("Rust panic caught at FFI boundary"));
+                assert!(msg.contains("Simulated Rust core panic"));
+            }
         });
     }
 
@@ -1217,7 +1226,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let res: PyResult<i32> = run_blocking_ffi(py, || Ok(42));
-            assert_eq!(res.unwrap(), 42);
+            assert!(matches!(res, Ok(42)));
         });
     }
 
