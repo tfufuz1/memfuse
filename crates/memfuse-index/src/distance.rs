@@ -69,7 +69,7 @@ use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
-// AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration:
+// AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration (TS:2026-09-01T00:00:00Z) (SESSION:016eab33):
 //   std::simd (portable_simd) ist per 2026-09 noch nicht stable
 //   (tracking: https://github.com/rust-lang/rust/issues/86656).
 //   Aktueller Pfad: std::arch Intrinsics mit Runtime-Feature-Detection
