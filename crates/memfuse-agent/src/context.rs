@@ -13,7 +13,7 @@
 use memfuse_core::{MemFuseError, Result, TokenBudget};
 use memfuse_db::{Collection, MemFuse};
 use memfuse_store::LsmStorage;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 /// Maximum allowed length in bytes for task IDs and node IDs.
@@ -87,7 +87,7 @@ pub struct AgentContext {
     /// Accumulates results and state transfers between steps.
     pub memory: HashMap<String, serde_json::Value>,
     /// History of attached background telemetry events.
-    pub events: Vec<crate::event_source::BackgroundEvent>,
+    pub events: VecDeque<crate::event_source::BackgroundEvent>,
 }
 
 impl AgentContext {
@@ -124,7 +124,7 @@ impl AgentContext {
             budget,
             status: AgentStatus::Idle,
             memory: HashMap::new(),
-            events: Vec::new(),
+            events: VecDeque::new(),
         })
     }
 
@@ -149,20 +149,20 @@ impl AgentContext {
             self.memory.insert("latest_event".to_string(), val);
         }
         if self.events.len() >= MAX_TELEMETRY_EVENTS {
-            self.events.remove(0); // Evict oldest event to cap memory usage
+            self.events.pop_front(); // Evict oldest event to cap memory usage
         }
-        self.events.push(event);
+        self.events.push_back(event);
     }
 
     /// Integrates a background telemetry event with an explicit capacity check.
     pub fn try_attach_event(&mut self, event: crate::event_source::BackgroundEvent) -> Result<()> {
         if self.events.len() >= MAX_TELEMETRY_EVENTS {
-            return Err(MemFuseError::MemoryBudgetExceeded {
-                used_mb: ((self.events.len()
-                    * std::mem::size_of::<crate::event_source::BackgroundEvent>())
-                    / (1024 * 1024)) as u64,
-                limit_mb: MAX_TELEMETRY_EVENTS as u64,
-            });
+            let current_count = self.events.len();
+            let max_event_count = MAX_TELEMETRY_EVENTS;
+            return Err(MemFuseError::InvalidInput(format!(
+                "Telemetry event buffer limit reached: {} events (max {})",
+                current_count, max_event_count
+            )));
         }
         self.attach_event(event);
         Ok(())
@@ -212,20 +212,152 @@ mod tests {
     #[test]
     fn test_agent_context_telemetry_event_capacity_cap() {
         let dummy_payload = serde_json::json!({"test": 1});
-        let mut attached_vec = Vec::new();
+        let mut attached_deque = VecDeque::new();
         for i in 0..10_005 {
             let ev = crate::event_source::BackgroundEvent {
                 payload: dummy_payload.clone(),
                 source: "test_source".to_string(),
                 observed_at_seq: i as u64,
             };
-            if attached_vec.len() >= MAX_TELEMETRY_EVENTS {
-                attached_vec.remove(0);
+            if attached_deque.len() >= MAX_TELEMETRY_EVENTS {
+                attached_deque.pop_front();
             }
-            attached_vec.push(ev);
+            attached_deque.push_back(ev);
         }
 
-        assert_eq!(attached_vec.len(), 10_000);
-        assert_eq!(attached_vec.last().unwrap().observed_at_seq, 10_004);
+        assert_eq!(attached_deque.len(), 10_000);
+        assert_eq!(attached_deque.back().unwrap().observed_at_seq, 10_004);
+    }
+
+    #[tokio::test]
+    async fn test_agent_context_fifo_eviction() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config = memfuse_db::MemFuseConfig::default();
+        let db = Arc::new(
+            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
+                .await
+                .unwrap(),
+        );
+        let state_coll = db.collection("test_fifo").await.unwrap();
+        let mut ctx = AgentContext::try_new(
+            "test_fifo_task",
+            "start",
+            db,
+            state_coll,
+            TokenBudget::new(1000, 0),
+        )
+        .unwrap();
+
+        let extra_events = 50;
+        let total = MAX_TELEMETRY_EVENTS + extra_events;
+        for i in 0..total {
+            let ev = crate::event_source::BackgroundEvent {
+                payload: serde_json::json!({ "seq": i }),
+                source: "test_source".to_string(),
+                observed_at_seq: i as u64,
+            };
+            ctx.attach_event(ev);
+        }
+
+        assert_eq!(ctx.events.len(), MAX_TELEMETRY_EVENTS);
+        // The first remaining event in deque should have observed_at_seq = 50 (oldest 50 evicted)
+        assert_eq!(ctx.events.front().unwrap().observed_at_seq, extra_events as u64);
+        assert_eq!(ctx.events.back().unwrap().observed_at_seq, (total - 1) as u64);
+    }
+
+    #[tokio::test]
+    async fn test_try_attach_event_error_message_unit() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config = memfuse_db::MemFuseConfig::default();
+        let db = Arc::new(
+            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
+                .await
+                .unwrap(),
+        );
+        let state_coll = db.collection("test_try_attach").await.unwrap();
+        let mut ctx = AgentContext::try_new(
+            "test_try_attach_task",
+            "start",
+            db,
+            state_coll,
+            TokenBudget::new(1000, 0),
+        )
+        .unwrap();
+
+        for i in 0..MAX_TELEMETRY_EVENTS {
+            let ev = crate::event_source::BackgroundEvent {
+                payload: serde_json::json!({ "seq": i }),
+                source: "test_source".to_string(),
+                observed_at_seq: i as u64,
+            };
+            ctx.attach_event(ev);
+        }
+
+        let overflow_ev = crate::event_source::BackgroundEvent {
+            payload: serde_json::json!({ "overflow": true }),
+            source: "test_source".to_string(),
+            observed_at_seq: 99_999,
+        };
+
+        let res = ctx.try_attach_event(overflow_ev);
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Telemetry event buffer limit reached"),
+            "Expected 'Telemetry event buffer limit reached' in err_msg, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("events"),
+            "Expected unit 'events' in err_msg, got: {}",
+            err_msg
+        );
+        assert!(
+            !err_msg.contains("MB"),
+            "Err msg must not contain misleading 'MB' unit, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_telemetry_event_performance_benchmark() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config = memfuse_db::MemFuseConfig::default();
+        let db = Arc::new(
+            memfuse_db::MemFuse::open_with_config(temp_dir.path(), config)
+                .await
+                .unwrap(),
+        );
+        let state_coll = db.collection("test_bench").await.unwrap();
+        let mut ctx = AgentContext::try_new(
+            "test_bench_task",
+            "start",
+            db,
+            state_coll,
+            TokenBudget::new(1000, 0),
+        )
+        .unwrap();
+
+        let count = MAX_TELEMETRY_EVENTS + 1000;
+        let start_time = std::time::Instant::now();
+
+        for i in 0..count {
+            let ev = crate::event_source::BackgroundEvent {
+                payload: serde_json::json!({ "i": i }),
+                source: "bench_source".to_string(),
+                observed_at_seq: i as u64,
+            };
+            ctx.attach_event(ev);
+        }
+
+        let elapsed = start_time.elapsed();
+        assert_eq!(ctx.events.len(), MAX_TELEMETRY_EVENTS);
+        // O(1) VecDeque operations for 11,000 pushes/evictions typically complete in <10ms.
+        // We set a safe threshold of 100ms (old O(N²) took significantly longer due to shift operations).
+        assert!(
+            elapsed < std::time::Duration::from_millis(100),
+            "Expected operations to complete under 100ms, took {:?}",
+            elapsed
+        );
     }
 }
