@@ -1091,6 +1091,32 @@ mod tests {
         );
     }
 
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_xml_escape_contains_no_raw_special_chars(s in ".*") {
+            let escaped = xml_escape(&s);
+            prop_assert!(!escaped.contains('<'));
+            prop_assert!(!escaped.contains('>'));
+            prop_assert!(!escaped.contains('"'));
+            prop_assert!(!escaped.contains('\''));
+
+            // Every ampersand must be part of an escaped entity: &amp;, &lt;, &gt;, &quot;, &apos;
+            for (idx, char_b) in escaped.bytes().enumerate() {
+                if char_b == b'&' {
+                    let rest = &escaped[idx..];
+                    let is_entity = rest.starts_with("&amp;")
+                        || rest.starts_with("&lt;")
+                        || rest.starts_with("&gt;")
+                        || rest.starts_with("&quot;")
+                        || rest.starts_with("&apos;");
+                    prop_assert!(is_entity, "Ampersand at byte offset {} was not part of a valid XML entity: {}", idx, rest);
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     async fn test_chat_with_rag_streaming_split_chunks() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

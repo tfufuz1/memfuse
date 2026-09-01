@@ -244,6 +244,40 @@ mod tests {
         );
     }
 
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_truncate_chars_unicode_safety(s in ".*", max_chars in 0usize..2000) {
+            let truncated = truncate_chars(&s, max_chars);
+
+            // Invariant 1: Resulting char count is bounded by max_chars
+            prop_assert!(truncated.chars().count() <= max_chars);
+
+            // Invariant 2: Truncated result must be a valid prefix of original string
+            prop_assert!(s.starts_with(&truncated));
+
+            // Invariant 3: Slicing length is a valid UTF-8 char boundary on original string
+            prop_assert!(s.is_char_boundary(truncated.len()));
+        }
+
+        #[test]
+        fn prop_truncate_prefix_bounds_and_safety(
+            s in ".*",
+            max_tokens in 1usize..200,
+            max_chars in 1usize..1000
+        ) {
+            let res = truncate_prefix(&s, max_tokens, max_chars);
+
+            // Invariant 1: Character count of truncated prefix <= max_chars
+            prop_assert!(res.chars().count() <= max_chars);
+
+            // Invariant 2: Word count of truncated prefix <= max_tokens
+            let word_count = res.split_whitespace().count();
+            prop_assert!(word_count <= max_tokens);
+        }
+    }
+
     #[tokio::test]
     async fn test_generate_prefix_mock() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
