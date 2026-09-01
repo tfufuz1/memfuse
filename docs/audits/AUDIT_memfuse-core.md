@@ -246,8 +246,8 @@ warning: missing documentation for a method
 No critical vulnerabilities or security flaws were discovered.
 
 Minor code polish findings:
-- **BUG-CORE-001 (Minor Doc Warning):** Unresolved rustdoc links on `non_exhaustive` attribute references.
-- **BUG-CORE-002 (Noise Warning):** Unused import `tokio::time::sleep` in `tests/exhaustive_verification.rs`.
+- **BUG-CORE-001 (Minor Doc Warning):** FIXED (2026-09-01) — Unresolved rustdoc links on `non_exhaustive` attribute references in `src/error.rs` and `src/types/domain.rs` fixed, and `#![allow(missing_docs, clippy::all)]` added to auto-generated `ipc/memfuse_generated.rs`. `cargo doc -p memfuse-core --no-deps` now emits 0 warnings.
+- **BUG-CORE-002 (Noise Warning):** FIXED — Cleaned up unused test imports.
 
 ---
 
@@ -257,7 +257,7 @@ Minor code polish findings:
 - *None.* `memfuse-core` meets all safety and correctness requirements.
 
 ### Priority 2: High (Fix prior to downstream dependency integration)
-1. **Clean up `non_exhaustive` rustdoc links:** Escape doc link brackets in `src/error.rs` and `src/types/domain.rs` to ensure warning-free `cargo doc`.
+- *None.* All rustdoc intra-doc link warnings resolved.
 
 ### Priority 3: Medium (Performance & Developer Experience)
 1. **Promote FlatBuffers IPC over JSON-RPC for Large Payloads:** Document in architecture guidelines that IPC updates >64KB should utilize FlatBuffers binary encoding to bypass JSON string allocation bottlenecks (899 µs vs <10 µs binary zero-copy deserialization).
@@ -288,4 +288,14 @@ cargo bench -p memfuse-core --bench core_benchmarks
 cargo doc -p memfuse-core --no-deps
 ```
 
-**Audit Sign-off:** `memfuse-core` is verified bit-accurate, zero-panic, thread-safe, and fully ready as the dependency root for the MemFuse ecosystem.
+---
+
+## 14. Verification & Remediation Log (2026-09-01)
+
+- **Documentation Polish (BUG-CORE-001):**
+  - Resolved rustdoc link warnings in `crates/memfuse-core/src/error.rs` and `crates/memfuse-core/src/types/domain.rs` by escaping `#[non_exhaustive]` code blocks.
+  - Added `#![allow(missing_docs, clippy::all)]` to `crates/memfuse-core/src/ipc/memfuse_generated.rs` to suppress auto-generated FlatBuffers warnings.
+  - Verified `cargo doc -p memfuse-core --no-deps` generates cleanly with **0 warnings**.
+  - Verified gate-stack (`cargo check --all-features`, `cargo clippy -- -D warnings`, `cargo fmt --check`, `cargo test --all-features`, `cargo check --workspace`).
+
+**Audit Sign-off:** `memfuse-core` is verified bit-accurate, zero-panic, thread-safe, warning-free, and fully ready as the dependency root for the MemFuse ecosystem.
