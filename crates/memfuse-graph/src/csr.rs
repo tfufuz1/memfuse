@@ -1562,6 +1562,7 @@ mod tests {
             assert_eq!(inner.targets.len(), 1);
             assert_eq!(inner.offsets[0], 0);
             assert_eq!(inner.offsets[1], 1);
+            assert_eq!(inner.offsets[2], 1);
         }
     }
 

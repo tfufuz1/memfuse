@@ -573,10 +573,27 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
             tracing::error!("[INV-DB-3] Storage rollback failed: {}", e);
         }
 
-        graph_res?;
-        text_res?;
-        index_res?;
-        storage_res?;
+        let mut errors = Vec::new();
+        if let Err(e) = graph_res {
+            errors.push(format!("Graph: {}", e));
+        }
+        if let Err(e) = text_res {
+            errors.push(format!("Text: {}", e));
+        }
+        if let Err(e) = index_res {
+            errors.push(format!("Vector: {}", e));
+        }
+        if let Err(e) = storage_res {
+            errors.push(format!("Storage: {}", e));
+        }
+
+        if !errors.is_empty() {
+            return Err(MemFuseError::Transaction(format!(
+                "Rollback failed: {}",
+                errors.join(", ")
+            )));
+        }
+
         Ok(())
     }
 }
