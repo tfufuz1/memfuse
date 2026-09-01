@@ -203,6 +203,10 @@ async fn test_concurrent_stress_read_write() {
 }
 
 /// Test GC & Pinning Lifecycle: verifying `pin_checkpoint` and `unpin_checkpoint` invariants.
+// ANCHOR[TEST:CKPT-001] STATUS:IN-PROGRESS AGENT:Jules (TS: 2026-09-01T23:09:00Z) (SESSION: fdf7a62e)
+// AUFGABE : Concurrent Checkpoint Pinning & GC Exclusions Test Coverage.
+// GATE    : cargo test -p memfuse-checkpoint --test cache_concurrency_pinning
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CKPT-001) (TS: 2026-09-01T23:09:00Z) (SESSION: fdf7a62e)
 #[tokio::test]
 async fn test_pinning_and_gc_exclusion_lifecycle() {
     let storage = Arc::new(TrackingMockStorage::new());
