@@ -18,6 +18,7 @@ All errors propagate via `MemFuseError` + `?` — zero silent failures.
 | Flaky detection | `just triple-test` | Runs test suite 3× |
 | DAG enforcement | `just dag-check` | Layer dependency validation |
 | Debt scan | `just debt-audit` | Scans unwrap/expect/std::fs |
+| Cross-platform CI | GitHub Actions (`test-cross-platform`) | Informativer Check auf Windows/macOS für Kern-Crates; blockiert PRs nicht, bei Rot manuell prüfen vor Release-Tag |
 
 ## 3. Workspace Inventory (15 Crates)
 
