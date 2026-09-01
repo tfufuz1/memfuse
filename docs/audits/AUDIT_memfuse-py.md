@@ -184,9 +184,10 @@ The fixed Python FFI call latency cost is **~12–14 microseconds** per invocati
 
 ## 9. Priorisierte Bugliste & Empfehlungen
 
-### Priority LOW / Cleanup Item 1: Dead Code Cleanup
+### Priority LOW / Cleanup Item 1: Dead Code Cleanup (FIXED 2026-08-31)
 - **Issue**: `validate_batch_size()` in `crates/memfuse-py/src/lib.rs:165` produces a compiler warning (`function validate_batch_size is never used`).
 - **Remediation**: Call `validate_batch_size(docs.len())` inside `insert_many` / `upsert_many` or remove the dead code helper.
+- **Resolution**: Wired `validate_batch_size(docs.len())?` into both `insert_many` and `upsert_many` in `macro_rules! memfuse_batch_methods`, validating empty and oversized batches while eliminating the unused function compiler warning.
 
 ### Priority LOW / Maintenance Item 2: Deprecated Method Usage
 - **Issue**: `PyCollection` calls deprecated `inner.search()` and `inner.hybrid_search_with_weights()` instead of `inner.query()`.
