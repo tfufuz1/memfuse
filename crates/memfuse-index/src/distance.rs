@@ -69,14 +69,7 @@ use std::arch::x86_64::*;
 
 /// Computes distance between two vectors using the specified metric.
 #[inline]
-// AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration:
-//   std::simd (portable_simd) ist per 2026-09 noch nicht stable
-//   (tracking: https://github.com/rust-lang/rust/issues/86656).
-//   Aktueller Pfad: std::arch Intrinsics mit Runtime-Feature-Detection
-//   via is_x86_feature_detected! / is_aarch64_feature_detected!
-//   Re-Evaluation wenn Issue #86656 auf stable landet.
-//   STATUS: OPEN (bewusst — kein Code-Fix nötig, nur Tracking)
-//   (TS:2026-09-01T12:00:00Z) (SESSION:4754b279)
+// AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: std::simd (portable_simd) ist per 2026-09 noch nicht stable (tracking: https://github.com/rust-lang/rust/issues/86656). Aktueller Pfad: std::arch Intrinsics mit Runtime-Feature-Detection via is_x86_feature_detected! / is_aarch64_feature_detected! Re-Evaluation wenn Issue #86656 auf stable landet. STATUS: OPEN (TS:2026-09-01T12:00:00Z) (SESSION:4754b279)
 pub fn compute_distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> memfuse_core::Result<f32> {
     if a.len() != b.len() {
         return Err(MemFuseError::EmbeddingDimensionMismatch {
