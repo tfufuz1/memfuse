@@ -44,7 +44,9 @@ async fn test_agent_persistence_and_recovery() {
     let state_collection = db.collection("agent_state").await.unwrap();
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start Node", NodeType::Start, None).unwrap();
+    graph
+        .try_add_node("start", "Start Node", NodeType::Start, None)
+        .unwrap();
     graph
         .try_add_node(
             "task_1",
@@ -53,7 +55,9 @@ async fn test_agent_persistence_and_recovery() {
             Some("increment"),
         )
         .unwrap();
-    graph.try_add_node("end", "End Node", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("end", "End Node", NodeType::End, None)
+        .unwrap();
 
     graph.try_add_edge("start", "task_1", None, 1).unwrap();
     graph.try_add_edge("task_1", "end", None, 1).unwrap();

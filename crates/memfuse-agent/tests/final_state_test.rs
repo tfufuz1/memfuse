@@ -22,8 +22,12 @@ async fn test_atomic_final_state_checkpoint() -> memfuse_core::Result<()> {
     let engine = OrchestratorEngine::new(storage);
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start", NodeType::Start, None).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut ctx = AgentContext::try_new(

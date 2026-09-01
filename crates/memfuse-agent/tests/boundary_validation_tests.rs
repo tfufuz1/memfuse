@@ -133,9 +133,7 @@ fn test_background_event_and_vec_source_capacity_boundaries() {
     // Exceed capacity in VecEventSource
     let mut events = Vec::new();
     for i in 0..10_001 {
-        events.push(
-            BackgroundEvent::try_new(serde_json::json!({}), "valid_source", i).unwrap(),
-        );
+        events.push(BackgroundEvent::try_new(serde_json::json!({}), "valid_source", i).unwrap());
     }
     assert!(VecEventSource::try_new(events).is_err());
 }

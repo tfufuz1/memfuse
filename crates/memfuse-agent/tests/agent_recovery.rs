@@ -78,8 +78,12 @@ async fn test_agent_auto_checkpoint_before_step() {
     .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start", NodeType::Start, Some("success_tool")).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, Some("success_tool"))
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
@@ -112,9 +116,15 @@ async fn test_agent_replay_from_checkpoint() {
     .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start", NodeType::Start, Some("success_tool")).unwrap();
-    graph.try_add_node("step2", "Step 2", NodeType::Task, Some("success_tool")).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, Some("success_tool"))
+        .unwrap();
+    graph
+        .try_add_node("step2", "Step 2", NodeType::Task, Some("success_tool"))
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "step2", None, 1).unwrap();
     graph.try_add_edge("step2", "end", None, 1).unwrap();
 
@@ -151,8 +161,12 @@ async fn test_agent_error_handling() {
     .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start", NodeType::Start, Some("failing_tool")).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, Some("failing_tool"))
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
@@ -190,8 +204,12 @@ async fn test_agent_audit_log_immutable() {
     .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start", NodeType::Start, Some("success_tool")).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, Some("success_tool"))
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
@@ -226,8 +244,12 @@ async fn test_crash_during_execute_recovery() {
     .expect("ctx failed");
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start", NodeType::Start, Some("failing_tool")).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, Some("failing_tool"))
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let mut engine = OrchestratorEngine::new(db.inner_storage());
@@ -272,9 +294,15 @@ async fn test_loop_rollback_integrity() {
 
     // Graph: A -> B -> A (Loop)
     let mut graph = StateGraph::new();
-    graph.try_add_node("A", "Node A", NodeType::Start, Some("success_tool")).unwrap();
-    graph.try_add_node("B", "Node B", NodeType::Task, Some("success_tool")).unwrap();
-    graph.try_add_node("end", "End", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("A", "Node A", NodeType::Start, Some("success_tool"))
+        .unwrap();
+    graph
+        .try_add_node("B", "Node B", NodeType::Task, Some("success_tool"))
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
 
     graph.try_add_edge("A", "B", None, 1).unwrap();
     graph.try_add_edge("B", "A", None, 1).unwrap();

@@ -82,9 +82,12 @@ async fn setup(budget: TokenBudget) -> (OrchestratorEngine, Arc<MemFuse>, AgentC
 /// Build a linear graph: start → step_a → step_b → end
 fn linear_graph() -> StateGraph {
     let mut g = StateGraph::new();
-    g.try_add_node("start", "Begin", NodeType::Start, Some("tool_a")).unwrap();
-    g.try_add_node("step_a", "Step A", NodeType::Task, Some("tool_a")).unwrap();
-    g.try_add_node("step_b", "Step B", NodeType::Task, Some("tool_b")).unwrap();
+    g.try_add_node("start", "Begin", NodeType::Start, Some("tool_a"))
+        .unwrap();
+    g.try_add_node("step_a", "Step A", NodeType::Task, Some("tool_a"))
+        .unwrap();
+    g.try_add_node("step_b", "Step B", NodeType::Task, Some("tool_b"))
+        .unwrap();
     g.try_add_node("end", "End", NodeType::End, None).unwrap();
 
     g.try_add_edge("start", "step_a", None, 1).unwrap();
@@ -98,8 +101,12 @@ fn linear_graph() -> StateGraph {
 #[tokio::test]
 async fn test_agent_auto_checkpoint_before_step() {
     let (mut engine, _db, mut ctx, _tmp) = setup(TokenBudget::new(1000, 0)).await;
-    engine.try_register_tool(Box::new(TokenTool::new("tool_a", 5))).unwrap();
-    engine.try_register_tool(Box::new(TokenTool::new("tool_b", 5))).unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_a", 5)))
+        .unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_b", 5)))
+        .unwrap();
 
     let graph = linear_graph();
     engine.run(&mut ctx, &graph).await.expect("run");
@@ -133,8 +140,12 @@ async fn test_agent_auto_checkpoint_before_step() {
 #[tokio::test]
 async fn test_agent_replay_from_checkpoint() {
     let (mut engine, _db, mut ctx, _tmp) = setup(TokenBudget::new(1000, 0)).await;
-    engine.try_register_tool(Box::new(TokenTool::new("tool_a", 5))).unwrap();
-    engine.try_register_tool(Box::new(TokenTool::new("tool_b", 5))).unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_a", 5)))
+        .unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_b", 5)))
+        .unwrap();
 
     let graph = linear_graph();
 
@@ -155,8 +166,12 @@ async fn test_agent_replay_from_checkpoint() {
 #[tokio::test]
 async fn test_agent_audit_log_immutable() {
     let (mut engine, _db, mut ctx, _tmp) = setup(TokenBudget::new(1000, 0)).await;
-    engine.try_register_tool(Box::new(TokenTool::new("tool_a", 5))).unwrap();
-    engine.try_register_tool(Box::new(TokenTool::new("tool_b", 5))).unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_a", 5)))
+        .unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_b", 5)))
+        .unwrap();
 
     let graph = linear_graph();
     engine.run(&mut ctx, &graph).await.expect("run");
@@ -191,8 +206,12 @@ async fn test_agent_audit_log_immutable() {
 async fn test_token_budget_exhaustion() {
     // Budget of 10 max, 0 reserve → each tool consumes 6 → second step should fail
     let (mut engine, _db, mut ctx, _tmp) = setup(TokenBudget::new(10, 0)).await;
-    engine.try_register_tool(Box::new(TokenTool::new("tool_a", 6))).unwrap();
-    engine.try_register_tool(Box::new(TokenTool::new("tool_b", 6))).unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_a", 6)))
+        .unwrap();
+    engine
+        .try_register_tool(Box::new(TokenTool::new("tool_b", 6)))
+        .unwrap();
 
     let graph = linear_graph();
     let result = engine.run(&mut ctx, &graph).await;
