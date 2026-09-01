@@ -133,6 +133,7 @@ Messwerte ermittelt mit `benches/parser_bench.rs` auf x86_64 Sandbox-Hardware:
 | **BUG-TAURI-001** | `csr.rs` / `chat.rs` | **HIGH** | `*mut ()` `Send`-Trait-Bound-Fehler bei `async` Tauri Command `chat_with_rag` durch Aufrufen von `hybrid_search` unter gehaltenem Read-Guard. | **GEFIXED** |
 | **SEC-TAURI-001** | `commands/mod.rs` | **MEDIUM** | Path-Traversal Risiko bei relativen Dateipfaden in `ingest_file`/`ingest_folder`. | **GEFIXED** (`validate_path_within_base` implementiert) |
 | **SEC-TAURI-002** | `ingestion/pipeline.rs` | **MEDIUM** | Unbegrenzter Speicherverbrauch bei extrem großen Dateien (>100MB). | **GEFIXED** (`MAX_INGEST_FILE_SIZE_BYTES = 100MB` durchgesetzt) |
+| **DEP-TAURI-001** | `commands/chat.rs` / `search.rs` | **LOW** | Deprecation-Warnungen bei Aufruf von `hybrid_search` & `search`. | **GEFIXED (2026-09-01)** (`Collection::query()` Fluent-API) |
 
 ---
 
@@ -150,3 +151,20 @@ Für die Test-Suite wurden folgende synthetische Test-Dateien und Generatoren er
    - Markdown & Folder Ingestion Tests.
 4. **`benches/parser_bench.rs`**:
    - Isoliertes Benchmark-Harness für PDF, DOCX und EML Durchsatzmessung.
+
+---
+
+## 11. Audit-Nachtrag: Deprecation Migration & Fluent Query API (2026-09-01)
+
+- **Befund**: Veraltete `Collection::hybrid_search()` und `Collection::search()` API-Aufrufe führten in `commands/chat.rs`, `commands/search.rs` sowie Testdateien (`e2e_test.rs`, `ingestion_test.rs`) zu Deprecation-Clippy-Warnungen.
+- **Maßnahme**: Alle Such-Invocations wurden konsistent (gemäß APM-6 Sibling-Konsistenz) auf das empfohlene `Collection::query()` Fluent Builder-Muster umgestellt:
+  ```rust
+  collection
+      .query()
+      .text(&query)
+      .embedding(&query_vector)
+      .k(k)
+      .execute()
+      .await?
+  ```
+- **Verifikation**: `cargo clippy -p memfuse-tauri --all-targets --no-deps -- -D warnings` verläuft mit 0 Fehlern und 0 Warnungen.
