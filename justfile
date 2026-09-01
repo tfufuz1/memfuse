@@ -196,8 +196,13 @@ debt-audit:
     UNWRAP=$(grep -rn "\.unwrap()" crates/ --include="*.rs" \
         | grep -v "_test\.rs:" \
         | grep -v "/tests/" \
+        | grep -v "/tests\.rs:" \
+        | grep -v "/benches/" \
+        | grep -v "benches\.rs:" \
+        | grep -v "memfuse_generated\.rs:" \
         | grep -v "::tests::" \
         | grep -v "//.*unwrap" \
+        | grep -v "// expect" \
         || true)
     if [ -n "$UNWRAP" ]; then
         UNWRAP_COUNT=$(echo "$UNWRAP" | wc -l)

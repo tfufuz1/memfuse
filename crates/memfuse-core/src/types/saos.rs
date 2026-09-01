@@ -41,6 +41,17 @@ pub struct FusionWeights {
     metadata: f32,
 }
 
+impl Default for FusionWeights {
+    fn default() -> Self {
+        Self {
+            vector: 1.0,
+            text: 0.0,
+            graph: 0.0,
+            metadata: 0.0,
+        }
+    }
+}
+
 impl FusionWeights {
     /// Creates 3-signal fusion weights (vector, text, graph) summing to 1.0.
     pub fn new(vector: f32, text: f32, graph: f32) -> Result<Self> {
