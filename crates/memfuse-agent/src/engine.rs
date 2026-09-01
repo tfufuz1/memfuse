@@ -112,6 +112,13 @@ impl OrchestratorEngine {
                         CheckpointGuard::for_agent_step(ctx.db.inner_storage(), tx_id).await?;
                     self.checkpoint(ctx).await?;
 
+                    // PRE-CHECK vor Ausführung:
+                    if ctx.budget.available() == 0 && node.node_type != NodeType::Start {
+                        let err = "Token budget exhausted before step execution".to_string();
+                        self.audit_log_failure(ctx, &err).await?;
+                        return Err(MemFuseError::Internal(err));
+                    }
+
                     // 2. Resolve handler (Optional for Start nodes)
                     let result_res = if let Some(handler_name) = &node.handler {
                         if let Some(tool) = self.tools.get(handler_name) {
@@ -162,13 +169,8 @@ impl OrchestratorEngine {
                     // 4. Audit log (AC-3)
                     self.audit_log(ctx, &result).await?;
 
-                    // 5. Consume tokens and check budget
+                    // 5. Consume tokens
                     ctx.budget.consume(result.tokens_consumed);
-                    if ctx.budget.available() == 0 && node.node_type != NodeType::Start {
-                        let err_msg = "Token budget exhausted".to_string();
-                        self.audit_log_failure(ctx, &err_msg).await?;
-                        return Err(MemFuseError::Internal(err_msg));
-                    }
 
                     // 6. Resolve next edge
                     let next_node = match self.resolve_next_node(graph, &ctx.current_node, &result)
@@ -200,6 +202,16 @@ impl OrchestratorEngine {
     }
 
     /// Setzt den AgentContext auf einen früheren Checkpoint zurück (AC-2).
+    ///
+    /// # Adressierung von Checkpoints
+    /// Das `identifier`-Argument unterstützt folgende Adressierungsformate:
+    /// - `"step:<N>"`: Explizite Adressierung nach Schrittnummer (z. B. `"step:1"`).
+    /// - `"node:<name>"`: Explizite Adressierung nach Node-Name (z. B. `"node:1"` oder `"node:step_a"`).
+    ///
+    /// **Fallback (Abwärtskompatibilität):**
+    /// Falls kein Präfix (`step:` oder `node:`) angegeben ist:
+    /// - Wenn `identifier` als `u64` geparst werden kann, wird es als Schrittnummer interpretiert.
+    /// - Andernfalls wird es als Node-Name interpretiert.
     pub async fn replay_from(&self, ctx: &mut AgentContext, identifier: &str) -> Result<()> {
         validate_node_id(identifier)?;
 
@@ -211,6 +223,14 @@ impl OrchestratorEngine {
                 if !c.name.starts_with(&format!("task:{}:", ctx.task_id)) {
                     return false;
                 }
+                if let Some(step_str) = identifier.strip_prefix("step:") {
+                    if let Ok(step) = step_str.parse::<u64>() {
+                        return c.name.contains(&format!(":step:{}:", step));
+                    }
+                }
+                if let Some(node_name) = identifier.strip_prefix("node:") {
+                    return c.name.ends_with(&format!(":node:{}", node_name));
+                }
                 if let Ok(step) = identifier.parse::<u64>() {
                     c.name.contains(&format!(":step:{}:", step))
                 } else {
@@ -218,9 +238,24 @@ impl OrchestratorEngine {
                 }
             })
             .ok_or_else(|| {
+                let parsed_num = if let Some(s) = identifier.strip_prefix("step:") {
+                    s.parse::<u64>().ok()
+                } else {
+                    identifier.parse::<u64>().ok()
+                };
+
+                let extra_hint = if let Some(num) = parsed_num {
+                    format!(
+                        " Konnte keinen Checkpoint für Schritt {} finden. Falls ein Node mit dem Namen '{}' gemeint war, nutze das Format 'node:{}' zur expliziten Adressierung.",
+                        num, num, num
+                    )
+                } else {
+                    String::new()
+                };
+
                 MemFuseError::Internal(format!(
-                    "Checkpoint '{}' für Task '{}' nicht gefunden",
-                    identifier, ctx.task_id
+                    "Checkpoint '{}' für Task '{}' nicht gefunden.{}",
+                    identifier, ctx.task_id, extra_hint
                 ))
             })?;
 
@@ -244,6 +279,39 @@ impl OrchestratorEngine {
             ctx.memory = memory;
         }
 
+        if let Some(consumed) = checkpoint
+            .metadata
+            .get("budget_consumed")
+            .and_then(|v| v.as_u64())
+        {
+            let mut restored_budget =
+                memfuse_core::TokenBudget::new(ctx.budget.limit, ctx.budget.reserved)
+                    .with_strategy(ctx.budget.strategy.clone());
+            restored_budget.consume(consumed as usize);
+            ctx.budget = restored_budget;
+        } else if let Some(available) = checkpoint
+            .metadata
+            .get("budget_available")
+            .and_then(|v| v.as_u64())
+        {
+            let total_usable = ctx
+                .budget
+                .effective_limit()
+                .saturating_sub(ctx.budget.reserved);
+            let consumed = total_usable.saturating_sub(available as usize);
+            let mut restored_budget =
+                memfuse_core::TokenBudget::new(ctx.budget.limit, ctx.budget.reserved)
+                    .with_strategy(ctx.budget.strategy.clone());
+            restored_budget.consume(consumed);
+            ctx.budget = restored_budget;
+        } else {
+            tracing::warn!(
+                task_id = %ctx.task_id,
+                checkpoint_name = %checkpoint.name,
+                "Checkpoint metadata does not contain budget state; proceeding with default/current budget."
+            );
+        }
+
         self.checkpoint_store
             .restore(&checkpoint.into_workflow_state())
             .await
@@ -258,6 +326,7 @@ impl OrchestratorEngine {
             "current_node": ctx.current_node,
             "step_count":   ctx.step_count,
             "memory":       ctx.memory,
+            "budget_consumed": ctx.budget.consumed(),
             "budget_available": ctx.budget.available()
         });
 
