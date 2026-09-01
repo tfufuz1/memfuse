@@ -2912,6 +2912,7 @@ dependencies = [
  "memfuse-ollama",
  "parking_lot",
  "pdf-extract",
+ "proptest",
  "regex",
  "reqwest 0.12.28",
  "serde",
