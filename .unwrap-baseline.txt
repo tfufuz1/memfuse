@@ -3,7 +3,7 @@ crates/memfuse-agent/src/audit.rs:126:        audit_log.append(&entry2).await.un
 crates/memfuse-agent/src/audit.rs:128:        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:91:        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap()); // unwrap allowed
 crates/memfuse-agent/src/context.rs:141:            .expect("Invalid task_id or start_node in AgentContext::new")
-crates/memfuse-agent/src/context.rs:229:        assert_eq!(attached_vec.last().unwrap().observed_at_seq, 10_004);
+crates/memfuse-agent/src/context.rs:229:        assert_eq!(attached_deque.back().map(|e| e.observed_at_seq), Some(10_004));
 crates/memfuse-agent/src/engine.rs:80:            .expect("Invalid tool name in register_tool");
 crates/memfuse-agent/src/event_source.rs:215:            .expect("Event count exceeds MAX_EVENT_SOURCE_CAPACITY in VecEventSource::new")
 crates/memfuse-checkpoint/src/lib.rs:1060:            .expect("// expect #[cfg(test)]");
