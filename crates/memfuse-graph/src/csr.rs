@@ -85,7 +85,7 @@ const WALLCLOCK_TX_HEURISTIC_MIN: u64 = 1_400_000_000_000_000_000;
 #[inline]
 fn is_suspicious_tx_id(tx: TxId) -> bool {
     let v = tx.inner();
-    (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
+    v == 0 || (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
 /// Prüft ob eine Kante bezogen auf die Transaktionszeit (MVCC / Systemzeit) zum Zeitpunkt `as_of` sichtbar ist.
@@ -1011,17 +1011,17 @@ impl Default for CsrGraph {
 impl GraphIndex for CsrGraph {
     async fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()> {
         debug_assert!(
-            tx.is_valid_origin(),
-            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx != TxId::INVALID && tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
                 tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+                hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
+                "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
         }
@@ -1038,17 +1038,17 @@ impl GraphIndex for CsrGraph {
 
     async fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()> {
         debug_assert!(
-            tx.is_valid_origin(),
-            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx != TxId::INVALID && tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
                 tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+                hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
+                "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
         }
@@ -1417,17 +1417,17 @@ impl GraphIndex for CsrGraph {
 
     async fn commit(&self, tx: TxId) -> Result<()> {
         debug_assert!(
-            tx.is_valid_origin(),
-            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx != TxId::INVALID && tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete TxIds warnen.
+        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
                 tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
+                hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
+                "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
         }
@@ -1545,12 +1545,17 @@ impl GraphIndex for CsrGraph {
     }
 
     async fn remove_edge(&self, tx: TxId, from: EntityId, to: EntityId) -> Result<()> {
+        debug_assert!(
+            tx != TxId::INVALID && tx.is_valid_origin(),
+            "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
+            tx
+        );
         if is_suspicious_tx_id(tx) {
             tracing::warn!(
                 tx_id = tx.inner(),
-                hint = "Wall-Clock-ns-Bereich",
-                "AGT-GRAPH-001: Verdächtiger TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
-                 möglicherweise aus Wall-Clock-Nanosekunden abgeleitet."
+                hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
+                "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
+                 möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet."
             );
         }
         let mut inner = self.inner.write();
@@ -2154,6 +2159,67 @@ mod tests {
                 Entity::new(EntityId::new(100), "WallClockEntity", "Type"),
             )
             .await;
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "AGT-GRAPH-001")]
+    async fn test_sentinel_txid_zero_debug_assert_panics() {
+        let graph = CsrGraph::new();
+        let invalid_tx = TxId::INVALID;
+
+        assert!(super::is_suspicious_tx_id(invalid_tx));
+
+        let _ = graph
+            .add_entity(
+                invalid_tx,
+                Entity::new(EntityId::new(101), "SentinelEntity", "Type"),
+            )
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_graph_operation_sequence_txid_determinism() {
+        // Test executing identical operation sequences with canonical TxIds yields identical state
+        let run_sequence = || async {
+            let graph = CsrGraph::new();
+            let mut committed_txs = Vec::new();
+
+            for i in 1..=5u64 {
+                let tx = TxId::new(i);
+                let id1 = EntityId::new(i * 10);
+                let id2 = EntityId::new(i * 10 + 1);
+
+                graph
+                    .add_entity(tx, Entity::new(id1, format!("E{}", id1.inner()), "Type"))
+                    .await
+                    .unwrap();
+                graph
+                    .add_entity(tx, Entity::new(id2, format!("E{}", id2.inner()), "Type"))
+                    .await
+                    .unwrap();
+                graph
+                    .add_edge(tx, Edge::new(id1, id2, "connects"))
+                    .await
+                    .unwrap();
+
+                graph.commit(tx).await.unwrap();
+                committed_txs.push(graph.last_tx_id().await.unwrap());
+            }
+
+            let stats = graph.stats().await.unwrap();
+            (committed_txs, stats.num_entities, stats.num_edges)
+        };
+
+        let (txs1, ent1, edge1) = run_sequence().await;
+        let (txs2, ent2, edge2) = run_sequence().await;
+
+        assert_eq!(txs1, vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            txs1, txs2,
+            "TxId sequence must be deterministically identical across runs"
+        );
+        assert_eq!(ent1, ent2);
+        assert_eq!(edge1, edge2);
     }
 
     #[tokio::test]
@@ -3433,39 +3499,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hub_node_visited_cap_enforced() -> memfuse_core::Result<()> {
-        let graph = CsrGraph::new();
-        let tx = TxId::new(1);
+    async fn test_hub_node_1m_neighbors_bfs_capped() -> memfuse_core::Result<()> {
+        // Use a high rebuild_threshold to avoid repeated O(N) CSR compactions during setup
+        let graph = CsrGraph::with_config(CsrGraphConfig {
+            rebuild_threshold: 2_000_000,
+        });
         let start = EntityId::new(1);
-        graph
-            .add_entity(tx, Entity::new(start, "Start", "Type"))
-            .await?;
-
         let hub = EntityId::new(2);
-        graph
-            .add_entity(tx, Entity::new(hub, "Hub", "Type"))
-            .await?;
-        graph
-            .add_edge(tx, Edge::new(start, hub, "link").with_weight(1.0))
-            .await?;
 
-        // 12_000 leaf nodes connected to Hub (exceeding MAX_VISITED_NODES = 10_000)
-        for i in 0..12_000 {
-            let leaf = EntityId::new(3 + i as u64);
-            graph
-                .add_entity(tx, Entity::new(leaf, format!("L{i}"), "Leaf"))
-                .await?;
-            graph
-                .add_edge(tx, Edge::new(hub, leaf, "points_to").with_weight(0.9))
-                .await?;
+        // Build 1,000,000 outgoing edges directly in CSR layout
+        graph.insert_entity_direct(Entity::new(start, "StartNode", "Type"))?;
+        graph.insert_entity_direct(Entity::new(hub, "HubNode", "Supernode"))?;
+        graph.insert_edge_direct(start, hub, 1.0)?;
+
+        let num_neighbors = 1_000_000usize;
+        for i in 0..num_neighbors {
+            let leaf_id = EntityId::new(3 + i as u64);
+            graph.insert_entity_direct(Entity::new(leaf_id, "Leaf", "Type"))?;
+            graph.insert_edge_direct(hub, leaf_id, 0.9)?;
         }
-        graph.commit(tx).await?;
+        graph.compact();
 
+        let start_time = std::time::Instant::now();
         let results = graph.traverse(start, 2).await?;
+        let elapsed = start_time.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 1000,
+            "1M neighbor hub node BFS traversal must terminate in < 1 second, took {:?}",
+            elapsed
+        );
         assert!(
             results.len() <= MAX_VISITED_NODES,
-            "Traversals through hub nodes must be bounded by MAX_VISITED_NODES ({MAX_VISITED_NODES}), got {}",
+            "Traversal result count must be capped by MAX_VISITED_NODES ({MAX_VISITED_NODES}), got {}",
             results.len()
+        );
+        assert_eq!(
+            results.len(),
+            MAX_VISITED_NODES - 1, // Start node excluded from result list
+            "Visited cap includes hub and leaves, total returned results equals MAX_VISITED_NODES - 1"
         );
         Ok(())
     }

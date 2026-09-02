@@ -435,6 +435,141 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ppr_per_iteration_mass_conservation_dangling_and_isolated() {
+        // Graph with multiple dangling nodes and isolated components
+        // Core: 1 -> 2 -> 3 (3 is dangling)
+        // Secondary: 4 -> 5, 4 -> 6 (5 and 6 are dangling)
+        // Isolated: 7 (isolated, 0 in/out edges)
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+
+        for i in 1..=7 {
+            graph
+                .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
+                .await
+                .unwrap();
+        }
+
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "edge"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "edge"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(5), "edge"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(6), "edge"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let inner = graph.inner_read();
+        let seed = EntityId::new(1);
+
+        let mut ctx = PprContext::new();
+        let n = inner.reverse_map.len();
+        ctx.prepare(n);
+
+        // Step 1 & 2: Seed initialization
+        let seed_idx = inner.id_map[&seed];
+        ctx.valid_seeds.push(seed_idx);
+        let restart_prob = 1.0f32;
+        ctx.ranks[seed_idx] = 1.0;
+
+        // Step 3: Precompute out_weight_sums
+        for i in 0..n {
+            let start = if i < inner.offsets.len() - 1 {
+                inner.offsets[i]
+            } else {
+                0
+            };
+            let end = if i < inner.offsets.len() - 1 {
+                inner.offsets[i + 1]
+            } else {
+                0
+            };
+            let mut sum = 0.0f32;
+            for edge_idx in start..end {
+                let target = inner.targets[edge_idx];
+                let weight = inner.weights[edge_idx];
+                if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+                    sum += weight;
+                }
+            }
+            ctx.out_weight_sums[i] = sum;
+        }
+
+        let damping = 0.85f32;
+        let mut mass_log = Vec::new();
+
+        // Perform 20 explicit iterations and verify mass conservation AFTER EVERY ITERATION
+        for iter in 1..=20 {
+            ctx.next_ranks[..n].fill(0.0);
+
+            let mut dangling_sum = 0.0f32;
+            for i in 0..n {
+                if inner.entities.get(i).is_some_and(|e| e.is_some())
+                    && ctx.out_weight_sums[i] == 0.0
+                {
+                    dangling_sum += ctx.ranks[i];
+                }
+            }
+
+            let teleport_factor = (1.0 - damping) + damping * dangling_sum;
+            for &s_idx in &ctx.valid_seeds {
+                ctx.next_ranks[s_idx] += teleport_factor * restart_prob;
+            }
+
+            for i in 0..n {
+                let sum_w = ctx.out_weight_sums[i];
+                let r_i = ctx.ranks[i];
+                if sum_w > 0.0 && r_i > 0.0 {
+                    let share = damping * r_i / sum_w;
+                    let start = if i < inner.offsets.len() - 1 {
+                        inner.offsets[i]
+                    } else {
+                        0
+                    };
+                    let end = if i < inner.offsets.len() - 1 {
+                        inner.offsets[i + 1]
+                    } else {
+                        0
+                    };
+
+                    for edge_idx in start..end {
+                        let target = inner.targets[edge_idx];
+                        let weight = inner.weights[edge_idx];
+                        if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+                            ctx.next_ranks[target] += share * weight;
+                        }
+                    }
+                }
+            }
+
+            // Sum ranks using f64 precision accumulator for precise mass tracking
+            let sum_ranks: f64 = ctx.next_ranks[..n].iter().map(|&r| r as f64).sum();
+            mass_log.push((iter, sum_ranks));
+
+            assert!(
+                (sum_ranks - 1.0).abs() < 1e-6,
+                "Iteration {iter}: Rank mass sum must remain 1.0, got {sum_ranks:.9}"
+            );
+
+            ctx.ranks[..n].copy_from_slice(&ctx.next_ranks[..n]);
+        }
+
+        println!("PPR Per-Iteration Rank Mass Conservation Log (20 Iterations):");
+        for (iter, sum) in &mass_log {
+            println!("  Iteration {:2}: sum(ranks) = {:.9}", iter, sum);
+        }
+    }
+
+    #[tokio::test]
     async fn test_ppr_dangling_node_mass_conservation() {
         let graph = CsrGraph::new();
         let tx = TxId::new(1);
