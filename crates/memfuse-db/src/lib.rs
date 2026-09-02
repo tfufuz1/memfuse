@@ -683,9 +683,16 @@ impl MemFuse {
     }
 
     /// Performs semantic k-NN search over stored embeddings.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
-        self.default_col().await?.search(query, k).await
+        self.default_col()
+            .await?
+            .query()
+            .embedding(query)
+            .k(k)
+            .execute()
+            .await
     }
 
     /// Performs semantic search with an advanced metadata filter.
@@ -708,6 +715,7 @@ impl MemFuse {
     }
 
     /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_with_filter_expr(
         &self,
@@ -715,10 +723,12 @@ impl MemFuse {
         k: usize,
         filter: Option<FilterExpr>,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .search_with_filter_expr(query, k, filter)
-            .await
+        let col = self.default_col().await?;
+        let mut builder = col.query().embedding(query).k(k);
+        if let Some(f) = filter {
+            builder = builder.filter(f);
+        }
+        builder.execute().await
     }
 
     /// Inserts a text document via the default collection.
@@ -750,12 +760,20 @@ impl MemFuse {
     }
 
     /// Performs text search via the default collection.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_text(&self, text: &str, k: usize) -> Result<Vec<SearchResult>> {
-        self.default_col().await?.search_text(text, k).await
+        self.default_col()
+            .await?
+            .query()
+            .text(text)
+            .k(k)
+            .execute()
+            .await
     }
 
     /// Performs semantic k-NN search with an optional filter function over documents.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, filter))]
     pub async fn search_filtered(
         &self,
@@ -770,6 +788,7 @@ impl MemFuse {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities))]
     pub async fn hybrid_search(
         &self,
@@ -778,14 +797,17 @@ impl MemFuse {
         k: usize,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search(text, vector, k, anchor_entities)
-            .await
+        let col = self.default_col().await?;
+        let mut builder = col.query().text(text).vector(vector).k(k);
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
+        builder.execute().await
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
     #[cfg(feature = "reranking")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, reranker, anchor_entities))]
     pub async fn hybrid_search_reranked(
         &self,
@@ -795,13 +817,19 @@ impl MemFuse {
         reranker: Option<&memfuse_embed::CrossEncoderReranker>,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search_reranked(text, vector, k, reranker, anchor_entities)
-            .await
+        let col = self.default_col().await?;
+        let mut builder = col.query().text(text).vector(vector).k(k);
+        if let Some(r) = reranker {
+            builder = builder.reranker(r);
+        }
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
+        builder.execute().await
     }
 
     /// Performs hybrid search with custom signal fusion weights.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights))]
     pub async fn hybrid_search_with_weights(
         &self,
@@ -811,13 +839,19 @@ impl MemFuse {
         anchor_entities: Option<&[memfuse_core::EntityId]>,
         weights: Option<&memfuse_core::FusionWeights>,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search_with_weights(text, vector, k, anchor_entities, weights)
-            .await
+        let col = self.default_col().await?;
+        let mut builder = col.query().text(text).vector(vector).k(k);
+        if let Some(w) = weights {
+            builder = builder.fusion_weights(w.clone());
+        }
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
+        builder.execute().await
     }
 
     /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights, strategy))]
     pub async fn hybrid_search_with_strategy(
         &self,
@@ -828,13 +862,22 @@ impl MemFuse {
         weights: Option<&memfuse_core::FusionWeights>,
         strategy: Option<&memfuse_core::GraphTraversalStrategy>,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .hybrid_search_with_strategy(text, vector, k, anchor_entities, weights, strategy, None)
-            .await
+        let col = self.default_col().await?;
+        let mut builder = col.query().text(text).vector(vector).k(k);
+        if let Some(w) = weights {
+            builder = builder.fusion_weights(w.clone());
+        }
+        if let Some(s) = strategy {
+            builder = builder.strategy(s.clone());
+        }
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
+        builder.execute().await
     }
 
     /// Performs hybrid search using a `HybridQuery` configuration object.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query))]
     pub async fn hybrid_search_with_query(
         &self,
@@ -842,7 +885,9 @@ impl MemFuse {
     ) -> Result<Vec<SearchResult>> {
         self.default_col()
             .await?
-            .hybrid_search_with_query(query)
+            .query()
+            .query_config(query)
+            .execute()
             .await
     }
 
