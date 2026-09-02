@@ -102,11 +102,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 }
 
                 let filter_fn = move |id: DocId| matched_ids.contains(&id);
-                let scored_docs = self
-                    .index
-                    .search_filtered(query, k, Some(&filter_fn))
-                    .await?;
-                self.hydrate_from_scored_at(scored_docs, seq).await
+                self.search_filtered_at(query, k, Some(&filter_fn), seq).await
             } else {
                 // Post-filtering approach for larger collections:
                 // 1. Search more than k (oversample) to account for filter drops.
@@ -114,6 +110,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 let scored_docs = self.index.search_filtered(query, oversample, None).await?;
 
                 let mut results = Vec::new();
+                let mut skipped_tombstones = 0usize;
                 for sd in scored_docs {
                     let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
                     if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
@@ -125,6 +122,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                             (full.id, full.metadata)
                         } else {
                             tracing::warn!(doc_id = ?sd.doc_id, "Could not deserialize doc_key");
+                            skipped_tombstones += 1;
                             continue;
                         };
                         let meta_ref = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
@@ -140,7 +138,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                                 break;
                             }
                         }
+                    } else {
+                        skipped_tombstones += 1;
                     }
+                }
+                if skipped_tombstones > 0 {
+                    tracing::debug!(
+                        skipped_tombstones = skipped_tombstones,
+                        target_k = k,
+                        hydrated_count = results.len(),
+                        "Tombstones skipped during post-filter vector search"
+                    );
                 }
                 Ok(results)
             }
@@ -253,21 +261,63 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 "Search k must be greater than 0",
             ));
         }
-        let k = k.min(memfuse_core::MAX_SEARCH_K);
-        let scored_docs = self.index.search_filtered(query, k, filter).await?;
-        self.hydrate_from_scored_at(scored_docs, seq).await
+        let target_k = k.min(memfuse_core::MAX_SEARCH_K);
+        let mut fetch_k = target_k;
+
+        loop {
+            let scored_docs = self.index.search_filtered(query, fetch_k, filter).await?;
+            let scored_count = scored_docs.len();
+
+            let (results, skipped) = self.hydrate_from_scored_at(scored_docs, seq).await?;
+
+            if results.len() >= target_k || scored_count < fetch_k {
+                if skipped > 0 {
+                    tracing::debug!(
+                        skipped_tombstones = skipped,
+                        target_k = target_k,
+                        hydrated_count = results.len(),
+                        "Tombstones skipped during vector search hydration"
+                    );
+                }
+                let mut final_results = results;
+                final_results.truncate(target_k);
+                return Ok(final_results);
+            }
+
+            // Backfill: we need more candidates because tombstones reduced the valid result count below target_k.
+            let next_fetch_k = (fetch_k * 2)
+                .max(target_k + skipped * 2)
+                .min(memfuse_core::MAX_SEARCH_K);
+
+            if next_fetch_k <= fetch_k {
+                if skipped > 0 {
+                    tracing::debug!(
+                        skipped_tombstones = skipped,
+                        target_k = target_k,
+                        hydrated_count = results.len(),
+                        "Tombstones skipped during vector search hydration (max search k reached)"
+                    );
+                }
+                let mut final_results = results;
+                final_results.truncate(target_k);
+                return Ok(final_results);
+            }
+
+            fetch_k = next_fetch_k;
+        }
     }
 
     pub(super) async fn hydrate_from_scored_at(
         &self,
         scored_docs: Vec<memfuse_core::ScoredDocument>,
         seq: u64,
-    ) -> Result<Vec<crate::SearchResult>> {
+    ) -> Result<(Vec<crate::SearchResult>, usize)> {
         if scored_docs.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), 0));
         }
 
         let mut results = Vec::with_capacity(scored_docs.len());
+        let mut skipped_tombstones = 0usize;
         for sd in scored_docs {
             let doc_key = self.namespaced_key(&sd.doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
@@ -278,6 +328,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         (full.id, full.metadata)
                     } else {
                         tracing::warn!(doc_id = ?sd.doc_id, "Could not deserialize doc_key");
+                        skipped_tombstones += 1;
                         continue;
                     };
                 results.push(crate::SearchResult {
@@ -287,9 +338,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     matched_signals: vec![],
                     provenance: None,
                 });
+            } else {
+                skipped_tombstones += 1;
             }
         }
-        Ok(results)
+        Ok((results, skipped_tombstones))
     }
 
     pub(super) async fn hydrate_from_tuples_at(
@@ -302,6 +355,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         let mut results = Vec::with_capacity(scored_tuples.len());
+        let mut skipped_tombstones = 0usize;
         for (doc_id, score) in scored_tuples {
             let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
             if let Some(bytes) = self.storage.get_at_seq(&doc_key, seq).await? {
@@ -312,6 +366,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         (full.id, full.metadata)
                     } else {
                         tracing::warn!(doc_id = ?doc_id, "Could not deserialize doc_key");
+                        skipped_tombstones += 1;
                         continue;
                     };
                 results.push(crate::SearchResult {
@@ -321,7 +376,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     matched_signals: vec![],
                     provenance: None,
                 });
+            } else {
+                skipped_tombstones += 1;
             }
+        }
+        if skipped_tombstones > 0 {
+            tracing::debug!(
+                skipped_tombstones = skipped_tombstones,
+                hydrated_count = results.len(),
+                "Tombstones skipped during tuple search hydration"
+            );
         }
         Ok(results)
     }
