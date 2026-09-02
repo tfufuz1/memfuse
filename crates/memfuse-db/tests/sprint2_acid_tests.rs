@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 //! Sprint 2 — ACID Compliance & Data Integrity Tests
 //!
 //! Diese Datei enthält die in der Sprint-2-Spezifikation geforderten

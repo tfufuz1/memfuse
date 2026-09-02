@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use memfuse_db::{MemFuse, MemFuseConfig};
 use tempfile::TempDir;
 
