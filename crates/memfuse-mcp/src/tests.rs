@@ -416,10 +416,10 @@ async fn test_memfuse_search_executes_query_builder_successfully() {
             assert!(!arr.is_empty(), "expected search results");
             assert_eq!(arr[0]["content_provenance"], "retrieved_untrusted_data");
         } else {
-            assert!(false, "result must be array");
+            panic!("result must be array");
         }
     } else {
-        assert!(false, "search result expected");
+        panic!("search result expected");
     }
 }
 
@@ -438,10 +438,10 @@ async fn test_batch_request_handling() {
             assert_eq!(arr[0]["id"], 1);
             assert_eq!(arr[1]["id"], 2);
         } else {
-            assert!(false, "array expected");
+            panic!("array expected");
         }
     } else {
-        assert!(false, "batch response expected");
+        panic!("batch response expected");
     }
 
     // 2. Empty batch array -> Invalid Request (-32600)
@@ -449,7 +449,7 @@ async fn test_batch_request_handling() {
     if let Some(empty_resp) = server.handle_value(empty_batch).await {
         assert_eq!(empty_resp["error"]["code"], -32600);
     } else {
-        assert!(false, "empty batch response expected");
+        panic!("empty batch response expected");
     }
 
     // 3. Batch notifications only -> None (no response)
@@ -473,9 +473,9 @@ async fn test_batch_request_handling() {
             assert_eq!(mixed_arr[1]["id"], 11);
             assert_eq!(mixed_arr[1]["error"]["code"], -32601);
         } else {
-            assert!(false, "array expected");
+            panic!("array expected");
         }
     } else {
-        assert!(false, "mixed response expected");
+        panic!("mixed response expected");
     }
 }

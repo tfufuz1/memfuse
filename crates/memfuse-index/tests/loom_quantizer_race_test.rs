@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 //! Loom-basierter Nebenläufigkeitsbeweis für AGT-INDEX-b2c3d4e5.
 //! Ausführung: RUSTFLAGS="--cfg loom" cargo test -p memfuse-index -- loom
 //!

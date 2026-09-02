@@ -239,17 +239,18 @@ pub fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
     if norm_a == 0.0 || norm_b == 0.0 {
         1.0
     } else {
-        1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+        // Floating-point rounding errors on nearly parallel or identical vectors can cause dot / (norm_a.sqrt() * norm_b.sqrt())
+        // to slightly exceed 1.0 (e.g. 1.00000012), producing negative distances (e.g. -1.19e-7).
+        // Cosine distance is mathematically restricted to [0.0, 2.0] as cosine similarity ∈ [-1.0, 1.0].
+        let dist = 1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()));
+        dist.clamp(0.0, 2.0)
     }
 }
 
 /// Scalar implementation of Euclidean distance.
 pub fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y).powi(2))
-        .sum::<f32>()
-        .sqrt()
+    let sum: f32 = a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum();
+    sum.max(0.0).sqrt()
 }
 
 /// Scalar implementation of dot product.
@@ -306,7 +307,11 @@ unsafe fn cosine_distance_neon(a: &[f32], b: &[f32]) -> f32 {
     if norm_a == 0.0 || norm_b == 0.0 {
         1.0
     } else {
-        1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+        // Floating-point rounding errors on nearly parallel or identical vectors can cause dot / (norm_a.sqrt() * norm_b.sqrt())
+        // to slightly exceed 1.0, producing negative distances.
+        // Cosine distance is mathematically restricted to [0.0, 2.0] as cosine similarity ∈ [-1.0, 1.0].
+        let dist = 1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()));
+        dist.clamp(0.0, 2.0)
     }
 }
 
@@ -344,7 +349,7 @@ unsafe fn euclidean_distance_neon(a: &[f32], b: &[f32]) -> f32 {
         sum += diff * diff;
     }
 
-    sum.sqrt()
+    sum.max(0.0).sqrt()
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -474,7 +479,11 @@ unsafe fn cosine_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
     if norm_a == 0.0 || norm_b == 0.0 {
         1.0
     } else {
-        1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+        // Floating-point rounding errors on nearly parallel or identical vectors can cause dot / (norm_a.sqrt() * norm_b.sqrt())
+        // to slightly exceed 1.0, producing negative distances.
+        // Cosine distance is mathematically restricted to [0.0, 2.0] as cosine similarity ∈ [-1.0, 1.0].
+        let dist = 1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()));
+        dist.clamp(0.0, 2.0)
     }
 }
 
@@ -511,7 +520,7 @@ unsafe fn euclidean_distance_avx2(a: &[f32], b: &[f32]) -> f32 {
         i += 1;
     }
 
-    sum.sqrt()
+    sum.max(0.0).sqrt()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -617,7 +626,11 @@ unsafe fn cosine_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
     if norm_a == 0.0 || norm_b == 0.0 {
         1.0
     } else {
-        1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+        // Floating-point rounding errors on nearly parallel or identical vectors can cause dot / (norm_a.sqrt() * norm_b.sqrt())
+        // to slightly exceed 1.0, producing negative distances.
+        // Cosine distance is mathematically restricted to [0.0, 2.0] as cosine similarity ∈ [-1.0, 1.0].
+        let dist = 1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()));
+        dist.clamp(0.0, 2.0)
     }
 }
 
@@ -653,7 +666,7 @@ unsafe fn euclidean_distance_avx512(a: &[f32], b: &[f32]) -> f32 {
         i += 1;
     }
 
-    sum.sqrt()
+    sum.max(0.0).sqrt()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -823,6 +836,7 @@ pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &
 }
 
 /// Parts required to compute asymmetric cosine similarity.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CosineSimilarityPartsF32U8 {
     pub dot_f32_u8: f32,
@@ -1534,6 +1548,95 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
+    fn test_cosine_distance_clamping_parallel_vectors() {
+        // Construct high-dimensional vectors with precision-loss-inducing float values
+        let dims = 1536;
+        let a: Vec<f32> = (0..dims).map(|i| (i as f32 * 0.12345678) + 1.0).collect();
+        let b = a.clone();
+
+        // 1. Scalar path
+        let d_scalar = cosine_distance_scalar(&a, &b);
+        assert!(
+            d_scalar >= 0.0,
+            "Scalar cosine distance must be >= 0.0, got {d_scalar}"
+        );
+        assert!(
+            d_scalar <= 2.0,
+            "Scalar cosine distance must be <= 2.0, got {d_scalar}"
+        );
+
+        // 2. Dispatcher path
+        let d_dispatch = compute_distance(&a, &b, DistanceMetric::Cosine).unwrap(); // unwrap
+        assert!(
+            d_dispatch >= 0.0,
+            "Dispatched cosine distance must be >= 0.0, got {d_dispatch}"
+        );
+        assert!(
+            d_dispatch <= 2.0,
+            "Dispatched cosine distance must be <= 2.0, got {d_dispatch}"
+        );
+
+        // 3. AVX2 direct call if supported
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                // SAFETY: Hardware feature check performed above; a.len() == b.len().
+                let d_avx2 = unsafe { cosine_distance_avx2(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+                assert!(
+                    d_avx2 >= 0.0,
+                    "AVX2 cosine distance must be >= 0.0, got {d_avx2}"
+                );
+                assert!(
+                    d_avx2 <= 2.0,
+                    "AVX2 cosine distance must be <= 2.0, got {d_avx2}"
+                );
+            }
+            if is_x86_feature_detected!("avx512f") {
+                // SAFETY: Hardware feature check performed above; a.len() == b.len().
+                let d_avx512 = unsafe { cosine_distance_avx512(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+                assert!(
+                    d_avx512 >= 0.0,
+                    "AVX512 cosine distance must be >= 0.0, got {d_avx512}"
+                );
+                assert!(
+                    d_avx512 <= 2.0,
+                    "AVX512 cosine distance must be <= 2.0, got {d_avx512}"
+                );
+            }
+        }
+
+        // 4. NEON direct call if supported
+        #[cfg(target_arch = "aarch64")]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                // SAFETY: Hardware feature check performed above; a.len() == b.len().
+                let d_neon = unsafe { cosine_distance_neon(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+                assert!(
+                    d_neon >= 0.0,
+                    "NEON cosine distance must be >= 0.0, got {d_neon}"
+                );
+                assert!(
+                    d_neon <= 2.0,
+                    "NEON cosine distance must be <= 2.0, got {d_neon}"
+                );
+            }
+        }
+
+        // 5. Antiparallel vector check (opposite direction)
+        let neg_b: Vec<f32> = a.iter().map(|&x| -x).collect();
+        let d_anti = cosine_distance_scalar(&a, &neg_b);
+        assert!(
+            (0.0..=2.0).contains(&d_anti),
+            "Antiparallel cosine distance must be in [0.0, 2.0], got {d_anti}"
+        );
+        assert!(
+            (d_anti - 2.0).abs() < 1e-5,
+            "Antiparallel cosine distance must be ~2.0, got {d_anti}"
+        );
+    }
+
+    #[test]
     fn euclidean_distance_self_is_zero() {
         let v = vec![1.0f32, 0.5, -1.0, 2.0];
         let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
@@ -1586,6 +1689,40 @@ mod tests {
 
     proptest::proptest! {
         // Task D: Property test verifying AVX2/SIMD vs Scalar distance parity within 1e-4 tolerance.
+        #[test]
+        fn prop_cosine_distance_bounded_range(
+            v1 in proptest::collection::vec(-1000.0..1000.0f32, 1..256),
+            v2 in proptest::collection::vec(-1000.0..1000.0f32, 1..256)
+        ) {
+            let len = v1.len().min(v2.len());
+            let a = &v1[..len];
+            let b = &v2[..len];
+
+            let d_scalar = cosine_distance_scalar(a, b);
+            proptest::prop_assert!(
+                (0.0..=2.0).contains(&d_scalar),
+                "Scalar cosine distance out of bounds [0, 2]: {}", d_scalar
+            );
+
+            let d_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
+            proptest::prop_assert!(
+                (0.0..=2.0).contains(&d_simd),
+                "SIMD cosine distance out of bounds [0, 2]: {}", d_simd
+            );
+
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            {
+                if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                    // SAFETY: Hardware support checked via is_x86_feature_detected.
+                    let d_avx2 = unsafe { cosine_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+                    proptest::prop_assert!(
+                        (0.0..=2.0).contains(&d_avx2),
+                        "AVX2 cosine distance out of bounds [0, 2]: {}", d_avx2
+                    );
+                }
+            }
+        }
+
         #[test]
         fn prop_simd_vs_scalar_parity(
             v1 in proptest::collection::vec(-10.0..10.0f32, 1..256),

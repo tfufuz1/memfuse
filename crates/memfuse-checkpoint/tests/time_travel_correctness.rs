@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
@@ -551,7 +553,7 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
             ));
             let store_a = Arc::new(PersistentCheckpointStore::new(
                 storage_a.clone(),
-                &format!("ns_alpha_{iter}"),
+                format!("ns_alpha_{iter}"),
             ));
 
             let storage_b = Arc::new(NamespaceStorageEngine::new(
@@ -560,7 +562,7 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
             ));
             let store_b = Arc::new(PersistentCheckpointStore::new(
                 storage_b.clone(),
-                &format!("ns_beta_{iter}"),
+                format!("ns_beta_{iter}"),
             ));
 
             let tx_base_a = 100u64;
@@ -717,11 +719,12 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
         .unwrap();
     let _cp_beta = guard_beta.commit().unwrap();
 
-    // Drop Session Alpha's guard without calling commit (triggers background rollback)
+    // Drop Session Alpha's guard without calling commit (registers orphaned checkpoint)
     drop(guard_alpha);
 
-    // Give tokio runtime time to execute background rollback task
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Execute controlled recovery for Session Alpha
+    let recovered = store_alpha.recover_orphaned_checkpoints().await.unwrap();
+    assert_eq!(recovered, vec![tx_base_a]);
 
     // Verify Session Alpha's state was rolled back to alpha_init
     assert_eq!(

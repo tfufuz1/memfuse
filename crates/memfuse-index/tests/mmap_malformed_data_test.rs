@@ -33,7 +33,7 @@ fn test_try_from_bytes_empty_slice_returns_error() {
 #[test]
 fn test_try_from_bytes_truncated_header_returns_error() {
     // Nur 10 Bytes statt 64
-    let result = HnswHeader::try_from_bytes(&vec![0u8; 10]);
+    let result = HnswHeader::try_from_bytes(&[0u8; 10]);
     assert!(result.is_err(), "Abgeschnittener Header muss Err erzeugen");
 }
 

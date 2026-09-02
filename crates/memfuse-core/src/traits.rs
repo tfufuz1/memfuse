@@ -70,7 +70,7 @@ pub trait Snapshot: Send + Sync {
 }
 
 /// Statistics for a vector index.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct VectorIndexStats {
     /// Number of active (non-deleted) vectors.
     pub num_vectors: usize,
@@ -78,6 +78,12 @@ pub struct VectorIndexStats {
     pub memory_usage_bytes: usize,
     /// Number of HNSW layers.
     pub num_layers: usize,
+    /// Fraction of deleted vectors (0.0 to 1.0).
+    #[serde(default)]
+    pub deleted_ratio: f64,
+    /// Number of full index rebuilds completed.
+    #[serde(default)]
+    pub rebuild_count: u64,
 }
 
 /// Statistics for the storage engine.
@@ -559,6 +565,24 @@ pub trait GraphIndex: Send + Sync + 'static {
         ))
     }
 
+    /// Traverses the entity graph using BFS with independent system time and business time constraints.
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"graph_traverse_at_bitemporal"` if bitemporal graph traversal is not implemented.
+    async fn traverse_at_bitemporal(
+        &self,
+        _start_node: crate::types::EntityId,
+        _max_hops: usize,
+        _as_of_tx: crate::types::TxId,
+        _as_of_business: Option<i64>,
+    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "graph_traverse_at_bitemporal",
+            "Bi-temporal graph traversal (traverse_at_bitemporal) is not supported by default",
+        ))
+    }
+
     /// Calculates Personalized PageRank (PPR) starting from seed nodes.
     ///
     /// # Convergence Behavior
@@ -758,6 +782,8 @@ mod capability_coverage {
                     num_vectors: 0,
                     memory_usage_bytes: 0,
                     num_layers: 0,
+                    deleted_ratio: 0.0,
+                    rebuild_count: 0,
                 })
             }
         }
@@ -771,7 +797,7 @@ mod capability_coverage {
         index.trigger_rebuild_async();
     }
 
-    /// Verifies that calling traverse_at and traverse_at_time
+    /// Verifies that calling traverse_at, traverse_at_time, and traverse_at_bitemporal
     /// on a GraphIndex implementation does NOT return CapabilityUnsupported.
     #[tokio::test]
     async fn test_csr_graph_capability() {
@@ -794,6 +820,15 @@ mod capability_coverage {
                 _: EntityId,
                 _: usize,
                 _: TxId,
+            ) -> Result<Vec<(EntityId, f32)>> {
+                Ok(vec![])
+            }
+            async fn traverse_at_bitemporal(
+                &self,
+                _: EntityId,
+                _: usize,
+                _: TxId,
+                _: Option<i64>,
             ) -> Result<Vec<(EntityId, f32)>> {
                 Ok(vec![])
             }
@@ -845,6 +880,17 @@ mod capability_coverage {
                 Err(crate::MemFuseError::CapabilityUnsupported { .. })
             ),
             "traverse_at_time returned CapabilityUnsupported"
+        );
+
+        let res_traverse_at_bitemporal = graph
+            .traverse_at_bitemporal(EntityId::new(1), 2, TxId::new(1), Some(1000))
+            .await;
+        assert!(
+            !matches!(
+                res_traverse_at_bitemporal,
+                Err(crate::MemFuseError::CapabilityUnsupported { .. })
+            ),
+            "traverse_at_bitemporal returned CapabilityUnsupported"
         );
     }
 
@@ -978,6 +1024,8 @@ mod tests {
             num_vectors: 100,
             memory_usage_bytes: 1024,
             num_layers: 5,
+            deleted_ratio: 0.1,
+            rebuild_count: 1,
         };
         let ser = serde_json::to_string(&v_stats).unwrap(); // unwrap
         let deser: VectorIndexStats = serde_json::from_str(&ser).unwrap(); // unwrap
@@ -1215,6 +1263,8 @@ mod tests {
                     num_vectors: 0,
                     memory_usage_bytes: 0,
                     num_layers: 0,
+                    deleted_ratio: 0.0,
+                    rebuild_count: 0,
                 })
             }
         }

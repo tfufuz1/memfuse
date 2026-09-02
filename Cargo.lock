@@ -2675,6 +2675,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "criterion",
+ "futures-executor",
  "memfuse-core",
  "parking_lot",
  "proptest",
@@ -2822,6 +2823,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "zeroize",
 ]
 
@@ -2922,6 +2924,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tempfile",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -29,10 +29,14 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedEdgePayload {
     pub weight: f32,
+    #[serde(default, alias = "valid_from")]
+    pub tx_valid_from: Option<TxId>,
+    #[serde(default, alias = "valid_to")]
+    pub tx_valid_to: Option<TxId>,
     #[serde(default)]
-    pub valid_from: Option<TxId>,
+    pub business_valid_from: Option<i64>,
     #[serde(default)]
-    pub valid_to: Option<TxId>,
+    pub business_valid_to: Option<i64>,
 }
 
 /// Score decay factor per hop (0.7^hop).
@@ -84,14 +88,49 @@ fn is_suspicious_tx_id(tx: TxId) -> bool {
     (WALLCLOCK_TX_HEURISTIC_MIN..TxId::INTERNAL_BASE).contains(&v)
 }
 
-/// Prüft ob eine Kante zum Zeitpunkt `as_of` sichtbar ist (bi-temporale Filterung).
+/// Prüft ob eine Kante bezogen auf die Transaktionszeit (MVCC / Systemzeit) zum Zeitpunkt `as_of` sichtbar ist.
 #[inline]
 pub(crate) fn is_edge_visible(
-    valid_from: Option<TxId>,
-    valid_to: Option<TxId>,
+    tx_valid_from: Option<TxId>,
+    tx_valid_to: Option<TxId>,
     as_of: TxId,
 ) -> bool {
-    valid_from.is_none_or(|vf| vf <= as_of) && valid_to.is_none_or(|vt| as_of < vt)
+    tx_valid_from.is_none_or(|vf| vf <= as_of) && tx_valid_to.is_none_or(|vt| as_of < vt)
+}
+
+/// Prüft ob eine Kante bezogen auf die Businesszeit zum Zeitpunkt `business_as_of` gültig ist.
+#[inline]
+pub(crate) fn is_edge_visible_business(
+    business_valid_from: Option<i64>,
+    business_valid_to: Option<i64>,
+    business_as_of: i64,
+) -> bool {
+    business_valid_from.is_none_or(|vf| vf <= business_as_of)
+        && business_valid_to.is_none_or(|vt| business_as_of < vt)
+}
+
+/// Prüft bi-temporale Sichtbarkeit einer Kante (unabhängige Auswertung von System- und Businesszeit).
+///
+/// Business-Zeit wird nur ausgewertet, wenn `business_as_of` angegeben ist UND mindestens
+/// ein Business-Zeit-Feld (`business_valid_from` oder `business_valid_to`) auf der Kante gesetzt ist.
+#[inline]
+pub(crate) fn is_edge_visible_bitemporal(
+    tx_valid_from: Option<TxId>,
+    tx_valid_to: Option<TxId>,
+    as_of_tx: TxId,
+    business_valid_from: Option<i64>,
+    business_valid_to: Option<i64>,
+    as_of_business: Option<i64>,
+) -> bool {
+    if !is_edge_visible(tx_valid_from, tx_valid_to, as_of_tx) {
+        return false;
+    }
+    if let Some(b_as_of) = as_of_business {
+        if business_valid_from.is_some() || business_valid_to.is_some() {
+            return is_edge_visible_business(business_valid_from, business_valid_to, b_as_of);
+        }
+    }
+    true
 }
 
 /// Configuration parameters for [`CsrGraph`].
@@ -117,8 +156,10 @@ type InternalIndex = usize;
 struct EdgePayload {
     target: InternalIndex,
     weight: f32,
-    valid_from: Option<TxId>,
-    valid_to: Option<TxId>,
+    tx_valid_from: Option<TxId>,
+    tx_valid_to: Option<TxId>,
+    business_valid_from: Option<i64>,
+    business_valid_to: Option<i64>,
 }
 
 /// Staging representation of an edge before index allocation at commit time.
@@ -126,8 +167,10 @@ struct EdgePayload {
 struct StagedEdgePayload {
     target: EntityId,
     weight: f32,
-    valid_from: Option<TxId>,
-    valid_to: Option<TxId>,
+    tx_valid_from: Option<TxId>,
+    tx_valid_to: Option<TxId>,
+    business_valid_from: Option<i64>,
+    business_valid_to: Option<i64>,
 }
 
 /// Inner state of the CsrGraph to manage contiguous storage.
@@ -150,10 +193,14 @@ pub(crate) struct GraphInner {
     pub(crate) targets: Vec<InternalIndex>,
     /// CSR weights array: contiguous list of edge weights.
     pub(crate) weights: Vec<f32>,
-    /// CSR valid_from array: contiguous list of bi-temporal valid_from TxIds.
-    pub(crate) valid_froms: Vec<Option<TxId>>,
-    /// CSR valid_to array: contiguous list of bi-temporal valid_to TxIds.
-    pub(crate) valid_tos: Vec<Option<TxId>>,
+    /// CSR valid_from array: contiguous list of bi-temporal tx_valid_from TxIds.
+    pub(crate) tx_valid_froms: Vec<Option<TxId>>,
+    /// CSR valid_to array: contiguous list of bi-temporal tx_valid_to TxIds.
+    pub(crate) tx_valid_tos: Vec<Option<TxId>>,
+    /// CSR business_valid_from array: contiguous list of business_valid_from timestamps (ms).
+    pub(crate) business_valid_froms: Vec<Option<i64>>,
+    /// CSR business_valid_to array: contiguous list of business_valid_to timestamps (ms).
+    pub(crate) business_valid_tos: Vec<Option<i64>>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
@@ -182,8 +229,10 @@ impl GraphInner {
             offsets: vec![0],
             targets: Vec::new(),
             weights: Vec::new(),
-            valid_froms: Vec::new(),
-            valid_tos: Vec::new(),
+            tx_valid_froms: Vec::new(),
+            tx_valid_tos: Vec::new(),
+            business_valid_froms: Vec::new(),
+            business_valid_tos: Vec::new(),
             staged_entities: HashMap::new(),
             staged_edges: HashMap::new(),
             staged_removals: HashMap::new(),
@@ -225,9 +274,14 @@ impl GraphInner {
         let mut new_offsets = Vec::with_capacity(num_nodes + 1);
         let mut new_targets = Vec::with_capacity(self.targets.len() + self.pending_edge_count);
         let mut new_weights = Vec::with_capacity(self.weights.len() + self.pending_edge_count);
-        let mut new_valid_froms =
-            Vec::with_capacity(self.valid_froms.len() + self.pending_edge_count);
-        let mut new_valid_tos = Vec::with_capacity(self.valid_tos.len() + self.pending_edge_count);
+        let mut new_tx_valid_froms =
+            Vec::with_capacity(self.tx_valid_froms.len() + self.pending_edge_count);
+        let mut new_tx_valid_tos =
+            Vec::with_capacity(self.tx_valid_tos.len() + self.pending_edge_count);
+        let mut new_business_valid_froms =
+            Vec::with_capacity(self.business_valid_froms.len() + self.pending_edge_count);
+        let mut new_business_valid_tos =
+            Vec::with_capacity(self.business_valid_tos.len() + self.pending_edge_count);
 
         let mut current_offset = 0;
         new_offsets.push(current_offset);
@@ -253,8 +307,10 @@ impl GraphInner {
                     node_edges.push(EdgePayload {
                         target,
                         weight: self.weights[j],
-                        valid_from: self.valid_froms.get(j).copied().flatten(),
-                        valid_to: self.valid_tos.get(j).copied().flatten(),
+                        tx_valid_from: self.tx_valid_froms.get(j).copied().flatten(),
+                        tx_valid_to: self.tx_valid_tos.get(j).copied().flatten(),
+                        business_valid_from: self.business_valid_froms.get(j).copied().flatten(),
+                        business_valid_to: self.business_valid_tos.get(j).copied().flatten(),
                     });
                 }
             }
@@ -274,8 +330,10 @@ impl GraphInner {
             for edge in node_edges {
                 new_targets.push(edge.target);
                 new_weights.push(edge.weight);
-                new_valid_froms.push(edge.valid_from);
-                new_valid_tos.push(edge.valid_to);
+                new_tx_valid_froms.push(edge.tx_valid_from);
+                new_tx_valid_tos.push(edge.tx_valid_to);
+                new_business_valid_froms.push(edge.business_valid_from);
+                new_business_valid_tos.push(edge.business_valid_to);
                 current_offset += 1;
             }
 
@@ -290,8 +348,10 @@ impl GraphInner {
         self.offsets = new_offsets;
         self.targets = new_targets;
         self.weights = new_weights;
-        self.valid_froms = new_valid_froms;
-        self.valid_tos = new_valid_tos;
+        self.tx_valid_froms = new_tx_valid_froms;
+        self.tx_valid_tos = new_tx_valid_tos;
+        self.business_valid_froms = new_business_valid_froms;
+        self.business_valid_tos = new_business_valid_tos;
         self.pending_edges.clear();
         self.tombstoned_edges.clear();
         self.pending_edge_count = 0;
@@ -380,8 +440,31 @@ impl CsrGraph {
         from: EntityId,
         to: EntityId,
         weight: f32,
-        valid_from: Option<TxId>,
-        valid_to: Option<TxId>,
+        tx_valid_from: Option<TxId>,
+        tx_valid_to: Option<TxId>,
+    ) -> Result<()> {
+        self.insert_edge_direct_with_bitemporal_validity(
+            from,
+            to,
+            weight,
+            tx_valid_from,
+            tx_valid_to,
+            None,
+            None,
+        )
+    }
+
+    /// Directly inserts an edge with full bi-temporal validity into the CSR graph without staging.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_edge_direct_with_bitemporal_validity(
+        &self,
+        from: EntityId,
+        to: EntityId,
+        weight: f32,
+        tx_valid_from: Option<TxId>,
+        tx_valid_to: Option<TxId>,
+        business_valid_from: Option<i64>,
+        business_valid_to: Option<i64>,
     ) -> Result<()> {
         if !weight.is_finite() || weight < 0.0 {
             return Err(MemFuseError::InvalidInput(format!(
@@ -398,8 +481,10 @@ impl CsrGraph {
             .push(EdgePayload {
                 target: to_idx,
                 weight,
-                valid_from,
-                valid_to,
+                tx_valid_from,
+                tx_valid_to,
+                business_valid_from,
+                business_valid_to,
             });
         inner.pending_edge_count += 1;
         inner.is_dirty = true;
@@ -422,13 +507,16 @@ impl CsrGraph {
 
     /// Fügt eine Edge direkt in committed_staged / pending_edges ein (für load_from_storage).
     /// Umgeht das TX-Staging, da beim Laden alle Daten bereits committed sind.
+    #[allow(clippy::too_many_arguments)]
     fn load_edge_direct(
         &self,
         from: EntityId,
         to: EntityId,
         weight: f32,
-        valid_from: Option<TxId>,
-        valid_to: Option<TxId>,
+        tx_valid_from: Option<TxId>,
+        tx_valid_to: Option<TxId>,
+        business_valid_from: Option<i64>,
+        business_valid_to: Option<i64>,
     ) -> Result<()> {
         if !weight.is_finite() || weight < 0.0 {
             return Err(MemFuseError::InvalidInput(format!(
@@ -445,8 +533,10 @@ impl CsrGraph {
             .push(EdgePayload {
                 target: to_idx,
                 weight,
-                valid_from,
-                valid_to,
+                tx_valid_from,
+                tx_valid_to,
+                business_valid_from,
+                business_valid_to,
             });
         inner.pending_edge_count += 1;
         inner.is_dirty = true;
@@ -523,15 +613,40 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let (weight, valid_from, valid_to) =
-                match bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
-                    Ok(p) => (p.weight, p.valid_from, p.valid_to),
-                    Err(_) => {
-                        // Backward compatibility fallback for legacy serialized f32 weight values
+            let (weight, tx_valid_from, tx_valid_to, business_valid_from, business_valid_to) =
+                if let Ok(p) = bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+                    (
+                        p.weight,
+                        p.tx_valid_from,
+                        p.tx_valid_to,
+                        p.business_valid_from,
+                        p.business_valid_to,
+                    )
+                } else {
+                    // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
+                    #[derive(Deserialize)]
+                    struct LegacyPersistedEdgePayloadV1 {
+                        weight: f32,
+                        valid_from: Option<TxId>,
+                        valid_to: Option<TxId>,
+                    }
+
+                    if let Ok(legacy) =
+                        bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
+                    {
+                        (
+                            legacy.weight,
+                            legacy.valid_from,
+                            legacy.valid_to,
+                            None,
+                            None,
+                        )
+                    } else {
+                        // Backward compatibility fallback for legacy raw f32 weight values
                         let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
                             MemFuseError::Internal(format!("graph edge deserialize: {e}"))
                         })?;
-                        (w, None, None)
+                        (w, None, None, None, None)
                     }
                 };
 
@@ -546,7 +661,15 @@ impl CsrGraph {
             if let Some((from_str, to_str)) = key_str.split_once(':') {
                 let from_id = EntityId::from(from_str);
                 let to_id = EntityId::from(to_str);
-                graph.load_edge_direct(from_id, to_id, weight, valid_from, valid_to)?;
+                graph.load_edge_direct(
+                    from_id,
+                    to_id,
+                    weight,
+                    tx_valid_from,
+                    tx_valid_to,
+                    business_valid_from,
+                    business_valid_to,
+                )?;
                 edge_count += 1;
             } else {
                 tracing::warn!(key = key_str, "Ungültiger graph edge key, übersprungen");
@@ -936,7 +1059,7 @@ impl GraphIndex for CsrGraph {
             )));
         }
         let mut inner = self.inner.write();
-        let valid_from = edge.valid_from.or(Some(tx));
+        let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
         // Lazy index allocation: Store EntityIds directly in staged_edges.
         // Internal indices via get_or_create_index are allocated only during commit(),
@@ -950,8 +1073,10 @@ impl GraphIndex for CsrGraph {
             .push(StagedEdgePayload {
                 target: edge.to,
                 weight: edge.weight,
-                valid_from,
-                valid_to: edge.valid_to,
+                tx_valid_from,
+                tx_valid_to: edge.tx_valid_to,
+                business_valid_from: edge.business_valid_from,
+                business_valid_to: edge.business_valid_to,
             });
         Ok(())
     }
@@ -982,6 +1107,17 @@ impl GraphIndex for CsrGraph {
         max_hops: usize,
         as_of: TxId,
     ) -> Result<Vec<(EntityId, f32)>> {
+        self.traverse_at_bitemporal(start, max_hops, as_of, None)
+            .await
+    }
+
+    async fn traverse_at_bitemporal(
+        &self,
+        start: EntityId,
+        max_hops: usize,
+        as_of_tx: TxId,
+        as_of_business: Option<i64>,
+    ) -> Result<Vec<(EntityId, f32)>> {
         if max_hops > 100 {
             return Err(MemFuseError::InvalidInput(format!(
                 "max_hops {max_hops} exceeds upper safety limit of 100"
@@ -991,7 +1127,7 @@ impl GraphIndex for CsrGraph {
             tracing::warn!(
                 requested_max_hops = max_hops,
                 effective_max_hops = MAX_TRAVERSAL_HOPS,
-                "traverse_at_time requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
+                "traverse_at_bitemporal requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
             );
         }
         let inner = self.inner.read();
@@ -1026,7 +1162,7 @@ impl GraphIndex for CsrGraph {
                     tracing::warn!(
                         visited_count = visited.len(),
                         max_visited = MAX_VISITED_NODES,
-                        "traverse_at_time visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
+                        "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
                     );
                     break;
                 }
@@ -1041,9 +1177,21 @@ impl GraphIndex for CsrGraph {
                         if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
                             continue;
                         }
-                        let valid_from = inner.valid_froms.get(edge_idx).copied().flatten();
-                        let valid_to = inner.valid_tos.get(edge_idx).copied().flatten();
-                        if !is_edge_visible(valid_from, valid_to, as_of) {
+                        let tx_valid_from = inner.tx_valid_froms.get(edge_idx).copied().flatten();
+                        let tx_valid_to = inner.tx_valid_tos.get(edge_idx).copied().flatten();
+                        let business_valid_from =
+                            inner.business_valid_froms.get(edge_idx).copied().flatten();
+                        let business_valid_to =
+                            inner.business_valid_tos.get(edge_idx).copied().flatten();
+
+                        if !is_edge_visible_bitemporal(
+                            tx_valid_from,
+                            tx_valid_to,
+                            as_of_tx,
+                            business_valid_from,
+                            business_valid_to,
+                            as_of_business,
+                        ) {
                             continue;
                         }
                         let weight = inner.weights[edge_idx];
@@ -1062,7 +1210,7 @@ impl GraphIndex for CsrGraph {
                                 tracing::warn!(
                                     visited_and_queued = visited.len() + queue.len(),
                                     max_visited = MAX_VISITED_NODES,
-                                    "traverse_at_time visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                    "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
                                 );
                                 break;
                             }
@@ -1078,7 +1226,14 @@ impl GraphIndex for CsrGraph {
                         if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
                             continue;
                         }
-                        if !is_edge_visible(edge.valid_from, edge.valid_to, as_of) {
+                        if !is_edge_visible_bitemporal(
+                            edge.tx_valid_from,
+                            edge.tx_valid_to,
+                            as_of_tx,
+                            edge.business_valid_from,
+                            edge.business_valid_to,
+                            as_of_business,
+                        ) {
                             continue;
                         }
                         let next_score = current_score * SCORE_DECAY * edge.weight;
@@ -1096,7 +1251,7 @@ impl GraphIndex for CsrGraph {
                                 tracing::warn!(
                                     visited_and_queued = visited.len() + queue.len(),
                                     max_visited = MAX_VISITED_NODES,
-                                    "traverse_at_time visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                    "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
                                 );
                                 break;
                             }
@@ -1288,8 +1443,10 @@ impl GraphIndex for CsrGraph {
                             edge.target,
                             PersistedEdgePayload {
                                 weight: edge.weight,
-                                valid_from: edge.valid_from,
-                                valid_to: edge.valid_to,
+                                tx_valid_from: edge.tx_valid_from,
+                                tx_valid_to: edge.tx_valid_to,
+                                business_valid_from: edge.business_valid_from,
+                                business_valid_to: edge.business_valid_to,
                             },
                         ));
                     }
@@ -1345,8 +1502,10 @@ impl GraphIndex for CsrGraph {
                     converted_edges.push(EdgePayload {
                         target: to_idx,
                         weight: edge.weight,
-                        valid_from: edge.valid_from,
-                        valid_to: edge.valid_to,
+                        tx_valid_from: edge.tx_valid_from,
+                        tx_valid_to: edge.tx_valid_to,
+                        business_valid_from: edge.business_valid_from,
+                        business_valid_to: edge.business_valid_to,
                     });
                 }
                 let count = converted_edges.len();
@@ -1533,9 +1692,7 @@ mod tests {
         let id2 = EntityId::new(2);
 
         // NaN weight
-        let err_nan = graph
-            .insert_edge_direct(id1, id2, f32::NAN)
-            .unwrap_err();
+        let err_nan = graph.insert_edge_direct(id1, id2, f32::NAN).unwrap_err();
         assert!(matches!(err_nan, MemFuseError::InvalidInput(_)));
 
         // Infinity weight
@@ -1551,9 +1708,7 @@ mod tests {
         assert!(matches!(err_neginf, MemFuseError::InvalidInput(_)));
 
         // Negative weight
-        let err_neg = graph
-            .insert_edge_direct(id1, id2, -1.0)
-            .unwrap_err();
+        let err_neg = graph.insert_edge_direct(id1, id2, -1.0).unwrap_err();
         assert!(matches!(err_neg, MemFuseError::InvalidInput(_)));
 
         // add_edge with NaN
@@ -2729,8 +2884,8 @@ mod tests {
                             let old_end = if i < inner.offsets.len() - 1 { inner.offsets[i + 1] } else { 0 };
                             for j in old_start..old_end {
                                 let target_idx = inner.targets[j];
-                                let vf = inner.valid_froms.get(j).copied().flatten().unwrap_or(TxId::new(0)).inner();
-                                let vt = inner.valid_tos.get(j).copied().flatten().map(|t| t.inner());
+                                let vf = inner.tx_valid_froms.get(j).copied().flatten().unwrap_or(TxId::new(0)).inner();
+                                let vt = inner.tx_valid_tos.get(j).copied().flatten().map(|t| t.inner());
 
                                 if vf <= target_seq && vt.is_none_or(|t| target_seq < t) {
                                     if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(target_idx)) {
@@ -2743,8 +2898,8 @@ mod tests {
 
                             if let Some(pending) = inner.pending_edges.get(&i) {
                                 for edge in pending {
-                                    let vf = edge.valid_from.unwrap_or(TxId::new(0)).inner();
-                                    let vt = edge.valid_to.map(|t| t.inner());
+                                    let vf = edge.tx_valid_from.unwrap_or(TxId::new(0)).inner();
+                                    let vt = edge.tx_valid_to.map(|t| t.inner());
                                     if vf <= target_seq && vt.is_none_or(|t| target_seq < t) {
                                         if let (Some(&f), Some(&t)) = (inner.reverse_map.get(i), inner.reverse_map.get(edge.target)) {
                                             if !inner.tombstoned_edges.contains(&(i, edge.target)) {
@@ -2900,8 +3055,10 @@ mod tests {
         let entity = Entity::new(id1, "P1", "Person");
         let payload = PersistedEdgePayload {
             weight: 0.9,
-            valid_from: Some(TxId::new(1)),
-            valid_to: None,
+            tx_valid_from: Some(TxId::new(1)),
+            tx_valid_to: None,
+            business_valid_from: None,
+            business_valid_to: None,
         };
 
         // Persist entity & edge directly
@@ -2945,8 +3102,10 @@ mod tests {
         let invalid_key = b"__graph:edge:invalidkeywithoutcolon";
         let payload = PersistedEdgePayload {
             weight: 1.0,
-            valid_from: None,
-            valid_to: None,
+            tx_valid_from: None,
+            tx_valid_to: None,
+            business_valid_from: None,
+            business_valid_to: None,
         };
         let payload_val = bincode::serialize(&payload).unwrap(); // unwrap allowed
         storage.put(tx, invalid_key, &payload_val).await.unwrap(); // unwrap allowed
@@ -3059,16 +3218,23 @@ mod tests {
     fn serialization_roundtrip_CASE_persisted_edge_payload() {
         let payload = PersistedEdgePayload {
             weight: 0.825,
-            valid_from: Some(TxId::new(10)),
-            valid_to: Some(TxId::new(20)),
+            tx_valid_from: Some(TxId::new(10)),
+            tx_valid_to: Some(TxId::new(20)),
+            business_valid_from: Some(1000),
+            business_valid_to: Some(2000),
         };
 
         let serialized = bincode::serialize(&payload).unwrap(); // unwrap allowed
         let deserialized: PersistedEdgePayload = bincode::deserialize(&serialized).unwrap(); // unwrap allowed
 
         assert!((payload.weight - deserialized.weight).abs() < f32::EPSILON);
-        assert_eq!(payload.valid_from, deserialized.valid_from);
-        assert_eq!(payload.valid_to, deserialized.valid_to);
+        assert_eq!(payload.tx_valid_from, deserialized.tx_valid_from);
+        assert_eq!(payload.tx_valid_to, deserialized.tx_valid_to);
+        assert_eq!(
+            payload.business_valid_from,
+            deserialized.business_valid_from
+        );
+        assert_eq!(payload.business_valid_to, deserialized.business_valid_to);
     }
 
     proptest::proptest! {
@@ -3103,11 +3269,167 @@ mod tests {
             // Invariant 3: final offset must match targets length
             proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len()); // unwrap
 
-            // Invariant 4: parallel arrays (targets, weights, valid_froms, valid_tos) must have equal lengths
+            // Invariant 4: parallel arrays (targets, weights, tx_valid_froms, tx_valid_tos, business_valid_froms, business_valid_tos) must have equal lengths
             proptest::prop_assert_eq!(inner.targets.len(), inner.weights.len());
-            proptest::prop_assert_eq!(inner.targets.len(), inner.valid_froms.len());
-            proptest::prop_assert_eq!(inner.targets.len(), inner.valid_tos.len());
+            proptest::prop_assert_eq!(inner.targets.len(), inner.tx_valid_froms.len());
+            proptest::prop_assert_eq!(inner.targets.len(), inner.tx_valid_tos.len());
+            proptest::prop_assert_eq!(inner.targets.len(), inner.business_valid_froms.len());
+            proptest::prop_assert_eq!(inner.targets.len(), inner.business_valid_tos.len());
         }
+    }
+
+    #[tokio::test]
+    async fn test_bitemporal_independent_axis_evaluation() {
+        let graph = CsrGraph::new();
+        let tx1 = TxId::new(1);
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+
+        graph
+            .add_entity(tx1, Entity::new(id1, "ContractNode1", "Company"))
+            .await
+            .unwrap(); // unwrap
+        graph
+            .add_entity(tx1, Entity::new(id2, "ContractNode2", "Vendor"))
+            .await
+            .unwrap(); // unwrap
+
+        let bitemporal_edge = Edge::new(id1, id2, "contract_valid")
+            .with_tx_validity(Some(TxId::new(10)), Some(TxId::new(100)))
+            .with_business_validity(Some(1000), Some(2000));
+
+        graph.add_edge(tx1, bitemporal_edge).await.unwrap(); // unwrap
+        graph.commit(tx1).await.unwrap(); // unwrap
+
+        async fn verify_bitemporal_assertions(
+            g: &CsrGraph,
+            id1: EntityId,
+            id2: EntityId,
+            label: &str,
+        ) {
+            // Case 1: System valid (tx=50), Business invalid (500 < 1000) -> NOT visible
+            let res1 = g
+                .traverse_at_bitemporal(id1, 1, TxId::new(50), Some(500))
+                .await
+                .unwrap(); // unwrap
+            assert!(
+                res1.is_empty(),
+                "[{label}] Edge must NOT be visible before business validity start (500 < 1000)"
+            );
+
+            // Case 2: System valid (tx=50), Business valid (1000 <= 1500 < 2000) -> VISIBLE
+            let res2 = g
+                .traverse_at_bitemporal(id1, 1, TxId::new(50), Some(1500))
+                .await
+                .unwrap(); // unwrap
+            assert_eq!(
+                res2.len(),
+                1,
+                "[{label}] Edge MUST be visible when both system and business axes match"
+            );
+            assert_eq!(res2[0].0, id2);
+
+            // Case 3: System valid (tx=50), Business expired (2500 >= 2000) -> NOT visible
+            let res3 = g
+                .traverse_at_bitemporal(id1, 1, TxId::new(50), Some(2500))
+                .await
+                .unwrap(); // unwrap
+            assert!(
+                res3.is_empty(),
+                "[{label}] Edge must NOT be visible after business validity end (2500 >= 2000)"
+            );
+
+            // Case 4: Business valid (1500), System before valid (5 < 10) -> NOT visible
+            let res4 = g
+                .traverse_at_bitemporal(id1, 1, TxId::new(5), Some(1500))
+                .await
+                .unwrap(); // unwrap
+            assert!(
+                res4.is_empty(),
+                "[{label}] Edge must NOT be visible before system validity start (5 < 10)"
+            );
+
+            // Case 5: Business valid (1500), System expired (150 >= 100) -> NOT visible
+            let res5 = g
+                .traverse_at_bitemporal(id1, 1, TxId::new(150), Some(1500))
+                .await
+                .unwrap(); // unwrap
+            assert!(
+                res5.is_empty(),
+                "[{label}] Edge must NOT be visible after system validity end (150 >= 100)"
+            );
+
+            // Case 6: System valid (tx=50), Business filter omitted (None) -> VISIBLE
+            let res6 = g
+                .traverse_at_bitemporal(id1, 1, TxId::new(50), None)
+                .await
+                .unwrap(); // unwrap
+            assert_eq!(
+                res6.len(),
+                1,
+                "[{label}] Edge MUST be visible when business filter is None"
+            );
+        }
+
+        // 1. Verify uncompacted delta buffer path
+        verify_bitemporal_assertions(&graph, id1, id2, "delta_buffer").await;
+
+        // 2. Compact graph and verify CSR array path
+        graph.compact();
+        verify_bitemporal_assertions(&graph, id1, id2, "compacted_csr").await;
+    }
+
+    #[tokio::test]
+    async fn test_bitemporal_regression_pure_tx_time_unchanged() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+
+        graph
+            .add_entity(tx, Entity::new(id1, "N1", "T"))
+            .await
+            .unwrap(); // unwrap
+        graph
+            .add_entity(tx, Entity::new(id2, "N2", "T"))
+            .await
+            .unwrap(); // unwrap
+
+        // Pure transaction-time edge (no business time set)
+        let pure_tx_edge = Edge::new(id1, id2, "pure_tx_rel")
+            .with_tx_validity(Some(TxId::new(10)), Some(TxId::new(100)));
+
+        graph.add_edge(tx, pure_tx_edge).await.unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
+
+        // Before tx_valid_from (9 < 10) -> NOT visible regardless of business_as_of
+        assert!(graph
+            .traverse_at_bitemporal(id1, 1, TxId::new(9), Some(999999))
+            .await
+            .unwrap()
+            .is_empty());
+
+        // At tx_valid_from (10) -> VISIBLE regardless of business_as_of
+        let res_tx = graph
+            .traverse_at_bitemporal(id1, 1, TxId::new(10), Some(999999))
+            .await
+            .unwrap();
+        assert_eq!(res_tx.len(), 1);
+
+        // Standard traverse_at_time call
+        let res_time = graph.traverse_at_time(id1, 1, TxId::new(50)).await.unwrap();
+        assert_eq!(res_time.len(), 1);
+
+        // Compact and re-verify
+        graph.compact();
+        assert_eq!(
+            graph
+                .traverse_at_bitemporal(id1, 1, TxId::new(50), Some(12345))
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]

@@ -79,3 +79,51 @@ async fn test_temporal_graph_time_travel() {
         .unwrap();
     assert!(res2.is_empty(), "Kante muss bei as_of=tx2 abgelaufen sein");
 }
+
+#[tokio::test]
+async fn test_bitemporal_graph_time_travel_integration() {
+    let graph = CsrGraph::new();
+    let tx1 = TxId::new(1);
+    let id_company = EntityId::new(100);
+    let id_contractor = EntityId::new(200);
+
+    graph
+        .add_entity(tx1, Entity::new(id_company, "ACME Corp", "Company"))
+        .await
+        .unwrap();
+    graph
+        .add_entity(tx1, Entity::new(id_contractor, "Consultant", "Person"))
+        .await
+        .unwrap();
+
+    // Contract recorded in System at tx1 (valid tx1..infinity),
+    // but business contract validity is 2023-01-01 (1672531200000 ms) to 2025-12-31 (1767139200000 ms).
+    let contract_edge = Edge::new(id_company, id_contractor, "employs")
+        .with_tx_validity(Some(tx1), None)
+        .with_business_validity(Some(1672531200000), Some(1767139200000));
+
+    graph.add_edge(tx1, contract_edge).await.unwrap();
+    graph.commit(tx1).await.unwrap();
+
+    // 1. System time tx1, Business time in 2022 (before contract) -> NOT visible
+    let res_2022 = graph
+        .traverse_at_bitemporal(id_company, 1, tx1, Some(1640995200000))
+        .await
+        .unwrap();
+    assert!(res_2022.is_empty(), "Contract not yet effective in 2022");
+
+    // 2. System time tx1, Business time in 2024 (during contract) -> VISIBLE
+    let res_2024 = graph
+        .traverse_at_bitemporal(id_company, 1, tx1, Some(1704067200000))
+        .await
+        .unwrap();
+    assert_eq!(res_2024.len(), 1, "Contract active in 2024");
+    assert_eq!(res_2024[0].0, id_contractor);
+
+    // 3. System time tx1, Business time in 2026 (after contract) -> NOT visible
+    let res_2026 = graph
+        .traverse_at_bitemporal(id_company, 1, tx1, Some(1767225600000))
+        .await
+        .unwrap();
+    assert!(res_2026.is_empty(), "Contract expired in 2026");
+}

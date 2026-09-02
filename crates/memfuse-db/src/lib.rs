@@ -5,6 +5,7 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
+#![allow(deprecated)]
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! ## Concurrency & Lock Hierarchy
@@ -670,6 +671,18 @@ impl MemFuse {
         self.collection("default").await
     }
 
+    /// Stores a non-vector key-value entry directly in LSM storage without touching vector, text, or graph indices.
+    #[tracing::instrument(level = "trace", skip(self, value))]
+    pub async fn put_kv(&self, id: &str, value: &Value) -> Result<()> {
+        self.default_col().await?.put_kv(id, value).await
+    }
+
+    /// Retrieves a key-value entry directly from LSM storage.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn get_kv(&self, id: &str) -> Result<Option<Value>> {
+        self.default_col().await?.get_kv(id).await
+    }
+
     /// Inserts a document with an embedding and optional metadata.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn insert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {
@@ -1181,6 +1194,7 @@ impl SandboxBridge for MemFuse {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     // expect #[cfg(test)]
     // unwrap #[cfg(test)]

@@ -16,6 +16,7 @@ pub mod search;
 pub mod tx;
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests;
 
 use memfuse_core::{DocId, Result, StorageEngine, TextEmbeddingEngine, TxId, VectorIndex};
@@ -338,9 +339,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         Ok(())
     }
 
+    /// Returns a reference to the vector index of this collection.
+    pub fn vector_index(&self) -> &Arc<V> {
+        &self.index
+    }
+
     /// Internal helper to generate namespaced keys.
     /// key_type: 0 = user key, 1 = docid mapping, 2 = relationship, 3 = tx intent, 4 = system/community
-    pub(super) fn namespaced_key(&self, key: &[u8], key_type: u8) -> Vec<u8> {
+    pub fn namespaced_key(&self, key: &[u8], key_type: u8) -> Vec<u8> {
         if self.name == "default" {
             match key_type {
                 0 => key.to_vec(),

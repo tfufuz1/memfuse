@@ -376,6 +376,32 @@ fn test_docx_h_fuzz_malformed_inputs() {
     }
 }
 
+#[test]
+fn test_docx_i_zip_bomb_decompression_bomb_suspected() {
+    let mut buffer = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buffer));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("word/document.xml", options).unwrap();
+        // 500 KB of repeated bytes yields compression ratio > 300x
+        let bomb_payload = vec![b'A'; 500_000];
+        zip.write_all(&bomb_payload).unwrap();
+        zip.finish().unwrap();
+    }
+
+    let res = extract_docx_bytes(&buffer);
+    assert!(
+        res.is_err(),
+        "Extreme compression ratio DOCX must be rejected"
+    );
+    let err_msg = res.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("Decompression bomb suspected"),
+        "Error message should indicate decompression bomb, got: {err_msg}"
+    );
+}
+
 // ============================================================================
 // EMAIL (EML) PARSER ROBUSTNESS TESTS
 // ============================================================================
