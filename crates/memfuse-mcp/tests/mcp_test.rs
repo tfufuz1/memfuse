@@ -233,6 +233,7 @@ async fn test_missing_arguments() {
 }
 
 // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage
+// REVIEW-PASS[1/2] STATUS:IN-PROGRESS (TS:2026-09-02T08:19:33Z) (SESSION: e2c39779) PRÜFER-KONTEXT: FRESH — Error-Path Coverage verified in test_malformed_request_returns_error and unit tests.
 #[tokio::test]
 async fn test_malformed_request_returns_error() {
     // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen
