@@ -134,7 +134,7 @@ fn validate_id(id: &str) -> PyResult<()> {
 /// Validates that a collection name is non-empty and non-whitespace-only, and does not exceed maximum length.
 fn validate_collection_name(name: &str) -> PyResult<()> {
     if name.trim().is_empty() {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(MemFuseValueError::new_err(
             "Collection name cannot be empty or whitespace-only",
         ));
     }
@@ -150,7 +150,7 @@ fn validate_collection_name(name: &str) -> PyResult<()> {
 /// Validates that a database storage path is non-empty and non-whitespace-only.
 fn validate_db_path(path: &str) -> PyResult<()> {
     if path.trim().is_empty() {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(MemFuseValueError::new_err(
             "Database path cannot be empty or whitespace-only",
         ));
     }
@@ -160,7 +160,7 @@ fn validate_db_path(path: &str) -> PyResult<()> {
 /// Validates search query text.
 fn validate_query_text(text: &str) -> PyResult<()> {
     if text.trim().is_empty() {
-        return Err(pyo3::exceptions::PyValueError::new_err(
+        return Err(MemFuseValueError::new_err(
             "Search query text cannot be empty or whitespace-only",
         ));
     }
