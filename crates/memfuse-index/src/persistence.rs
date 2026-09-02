@@ -370,7 +370,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hnsw_header_roundtrip_and_errors() {
+    fn test_hnsw_header_roundtrip_and_errors() -> Result<()> {
         let header = HnswHeader {
             magic: HNSW_MAGIC,
             version: HNSW_VERSION,
@@ -389,7 +389,7 @@ mod tests {
 
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), HnswHeader::SIZE);
-        let parsed = HnswHeader::try_from_bytes(&bytes).expect("parse bytes"); // expect
+        let parsed = HnswHeader::try_from_bytes(&bytes)?;
         assert_eq!(header, parsed);
 
         // Error path 1: header bytes too small
@@ -402,10 +402,12 @@ mod tests {
         bad_magic_bytes[0..4].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
         let err_magic = HnswHeader::try_from_bytes(&bad_magic_bytes);
         assert!(matches!(err_magic, Err(MemFuseError::Storage(_))));
+
+        Ok(())
     }
 
     #[test]
-    fn test_node_record_roundtrip_and_errors() {
+    fn test_node_record_roundtrip_and_errors() -> Result<()> {
         let record = NodeRecord {
             doc_id: 12345,
             max_layer: 3,
@@ -415,7 +417,7 @@ mod tests {
 
         let bytes = record.to_bytes();
         assert_eq!(bytes.len(), NodeRecord::SIZE);
-        let parsed = NodeRecord::from_bytes(&bytes).expect("parse bytes"); // expect
+        let parsed = NodeRecord::from_bytes(&bytes)?;
         assert_eq!(record.doc_id, parsed.doc_id);
         assert_eq!(record.max_layer, parsed.max_layer);
         assert_eq!(record.vector_offset, parsed.vector_offset);
@@ -425,6 +427,8 @@ mod tests {
         let small_bytes = vec![0u8; 10];
         let err = NodeRecord::from_bytes(&small_bytes);
         assert!(matches!(err, Err(MemFuseError::Storage(_))));
+
+        Ok(())
     }
 
     #[tokio::test]
