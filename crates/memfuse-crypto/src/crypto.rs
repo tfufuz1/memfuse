@@ -512,7 +512,9 @@ mod tests {
             );
 
             // (b) Verify Ciphertext/Envelope format exposes the 12-byte nonce required for decryption
-            let decrypted = km.decrypt_auto_nonce(&ciphertext, &nonce).expect("decrypt roundtrip");
+            let decrypted = km
+                .decrypt_auto_nonce(&ciphertext, &nonce)
+                .expect("decrypt roundtrip");
             assert_eq!(decrypted, plaintext);
         }
 
