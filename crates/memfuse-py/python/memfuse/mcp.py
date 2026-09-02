@@ -14,7 +14,7 @@ def create_mcp_server(db_path: str, dimension: int = 1536, name: str = "MemFuse"
         db = memfuse.open(db_path, dimension=dimension)
         # Dummy vector for text insertion in Python stub/wrapper if embedding model isn't active
         import numpy as np
-        vector = np.zeros(dimension, dtype=np.float32)
+        vector = (np.ones(dimension, dtype=np.float32) / np.float32(np.sqrt(dimension))).astype(np.float32)
         col = db.collection(collection)
         meta = metadata or {}
         meta["text"] = text
@@ -26,7 +26,7 @@ def create_mcp_server(db_path: str, dimension: int = 1536, name: str = "MemFuse"
         """Search documents in MemFuse."""
         db = memfuse.open(db_path, dimension=dimension)
         import numpy as np
-        vector = np.zeros(dimension, dtype=np.float32)
+        vector = (np.ones(dimension, dtype=np.float32) / np.float32(np.sqrt(dimension))).astype(np.float32)
         col = db.collection(collection)
         results = col.search(vector, k=k)
         return [{"id": r.id, "score": r.score, "metadata": r.metadata} for r in results]
