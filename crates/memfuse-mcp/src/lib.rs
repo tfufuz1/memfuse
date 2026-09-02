@@ -211,41 +211,25 @@ impl McpServer {
                         continue;
                     }
 
-                    let response = match serde_json::from_str::<Value>(trimmed) {
-                        Ok(val) => {
-                            let req_id = val.get("id").cloned();
-                            match serde_json::from_value::<JsonRpcRequest>(val) {
-                                Ok(req) => {
-                                    if req.id.is_none() || req.id == Some(Value::Null) {
-                                        let method = req.method.clone();
-                                        let resp = self.handle(req).await;
-                                        if let Some(err) = resp.error {
-                                            tracing::warn!(
-                                                method = %method,
-                                                code = err.code,
-                                                error = %err.message,
-                                                "MCP notification handling returned error"
-                                            );
-                                        }
-                                        continue; // notification: no response required
-                                    }
-                                    self.handle(req).await
-                                }
-                                Err(e) => JsonRpcResponse::err(
-                                    req_id,
-                                    -32600,
-                                    format!("Invalid Request: {e}"),
-                                ),
-                            }
-                        }
-                        Err(e) => JsonRpcResponse::err(None, -32700, format!("Parse error: {e}")),
+                    let response_opt = match serde_json::from_str::<Value>(trimmed) {
+                        Ok(val) => self.handle_value(val).await,
+                        Err(e) => Some(
+                            serde_json::to_value(JsonRpcResponse::err(
+                                None,
+                                -32700,
+                                format!("Parse error: {e}"),
+                            ))
+                            .unwrap_or_default(),
+                        ),
                     };
 
-                    // MCP-Protokoll: eine JSON-Antwort pro Zeile, abgeschlossen mit '\n'.
-                    let mut out = serde_json::to_string(&response)?;
-                    out.push('\n');
-                    stdout.write_all(out.as_bytes()).await?;
-                    stdout.flush().await?;
+                    if let Some(resp) = response_opt {
+                        // MCP-Protokoll: eine JSON-Antwort pro Zeile, abgeschlossen mit '\n'.
+                        let mut out = serde_json::to_string(&resp)?;
+                        out.push('\n');
+                        stdout.write_all(out.as_bytes()).await?;
+                        stdout.flush().await?;
+                    }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
                     let response = JsonRpcResponse::err(None, -32700, format!("Parse error: {e}"));
@@ -258,6 +242,93 @@ impl McpServer {
             }
         }
         Ok(())
+    }
+
+    /// Verarbeitet einen Parsed JSON-RPC 2.0 Request (Einzelanfrage, Notification oder Batch Array).
+    /// Gibt `Some(Value)` zurück, falls eine Antwort nach stdout gesendet werden muss,
+    /// oder `None`, falls der Client eine Notification war (keine Antwort erforderlich).
+    pub async fn handle_value(&self, val: Value) -> Option<Value> {
+        if let Some(arr) = val.as_array() {
+            if arr.is_empty() {
+                return Some(
+                    serde_json::to_value(JsonRpcResponse::err(
+                        None,
+                        -32600,
+                        "Invalid Request: empty batch array",
+                    ))
+                    .unwrap_or_default(),
+                );
+            }
+
+            let mut responses = Vec::new();
+            for item in arr {
+                let req_id = item.get("id").cloned();
+                match serde_json::from_value::<JsonRpcRequest>(item.clone()) {
+                    Ok(req) => {
+                        if req.id.is_none() || req.id == Some(Value::Null) {
+                            let method = req.method.clone();
+                            let resp = self.handle(req).await;
+                            if let Some(err) = resp.error {
+                                tracing::warn!(
+                                    method = %method,
+                                    code = err.code,
+                                    error = %err.message,
+                                    "MCP notification handling returned error"
+                                );
+                            }
+                        } else {
+                            let resp = self.handle(req).await;
+                            if let Ok(v) = serde_json::to_value(resp) {
+                                responses.push(v);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let resp =
+                            JsonRpcResponse::err(req_id, -32600, format!("Invalid Request: {e}"));
+                        if let Ok(v) = serde_json::to_value(resp) {
+                            responses.push(v);
+                        }
+                    }
+                }
+            }
+
+            if responses.is_empty() {
+                None
+            } else {
+                Some(Value::Array(responses))
+            }
+        } else if val.is_object() {
+            let req_id = val.get("id").cloned();
+            match serde_json::from_value::<JsonRpcRequest>(val) {
+                Ok(req) => {
+                    if req.id.is_none() || req.id == Some(Value::Null) {
+                        let method = req.method.clone();
+                        let resp = self.handle(req).await;
+                        if let Some(err) = resp.error {
+                            tracing::warn!(
+                                method = %method,
+                                code = err.code,
+                                error = %err.message,
+                                "MCP notification handling returned error"
+                            );
+                        }
+                        None
+                    } else {
+                        let resp = self.handle(req).await;
+                        serde_json::to_value(resp).ok()
+                    }
+                }
+                Err(e) => {
+                    let resp =
+                        JsonRpcResponse::err(req_id, -32600, format!("Invalid Request: {e}"));
+                    serde_json::to_value(resp).ok()
+                }
+            }
+        } else {
+            let resp = JsonRpcResponse::err(None, -32600, "Invalid Request");
+            serde_json::to_value(resp).ok()
+        }
     }
 
     pub async fn handle(&self, req: JsonRpcRequest) -> JsonRpcResponse {

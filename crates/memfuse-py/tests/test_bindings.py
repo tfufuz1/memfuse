@@ -49,6 +49,7 @@ def test_crud_operations(db_path):
     assert col.get("k1") is None
     assert len(col.search(v2, k=1)) == 0
 
+# ANCHOR[TEST:PY-002] STATUS:IN-PROGRESS (REVIEW-PASS 1/2) (TS:2026-09-02T08:30:27Z) (SESSION:8e159fc9) — Hybrid-Search Python Integration Test
 def test_hybrid_search(db_path):
     db = memfuse.open(db_path, dimension=4)
     col = db.collection("docs")
@@ -237,6 +238,7 @@ def test_import():
         pytest.skip("maturin develop noch nicht ausgeführt")
 
 
+# ANCHOR[TEST:PY-001] STATUS:IN-PROGRESS (REVIEW-PASS 1/2) (TS:2026-09-02T08:30:27Z) (SESSION:8e159fc9) — Smoke-Test für open(), collection() und close()
 def test_open_and_close(tmp_path):
     """open() → collection() → close() ohne Panic oder Exception."""
     try:
