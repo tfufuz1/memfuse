@@ -1,4 +1,6 @@
-use memfuse_checkpoint::{CheckpointManifest, CheckpointMeta, PersistentCheckpointStore};
+use memfuse_checkpoint::{
+    clear_all_orphaned_checkpoints, CheckpointManifest, CheckpointMeta, PersistentCheckpointStore,
+};
 use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use proptest::prelude::*;
@@ -116,6 +118,7 @@ proptest! {
 
     #[test]
     fn prop_guard_random_lifecycle_sequences(steps in proptest::collection::vec(arb_guard_step(), 1..15)) {
+        clear_all_orphaned_checkpoints();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let storage = Arc::new(TrackingMockStorage::new());
@@ -139,13 +142,12 @@ proptest! {
                     }
                     GuardAction::DropWithoutAction => {
                         drop(guard);
-                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        let recovered = store.recover_orphaned_checkpoints().await;
+                        prop_assert!(recovered.is_ok());
                         expected_rollbacks.push(tx);
                     }
                 }
             }
-
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
             let actual_rollbacks = storage.rolled_back_txs.lock().clone();
             prop_assert_eq!(actual_rollbacks, expected_rollbacks);

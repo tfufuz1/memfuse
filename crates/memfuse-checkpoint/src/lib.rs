@@ -34,39 +34,81 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SKIPPED_ROLLBACKS: AtomicU64 = AtomicU64::new(0);
-static PENDING_ROLLBACKS: Mutex<Vec<tokio::task::JoinHandle<()>>> = Mutex::new(Vec::new());
+static ORPHANED_CHECKPOINTS: Mutex<Vec<StateCheckpoint>> = Mutex::new(Vec::new());
 
-fn register_pending_rollback(handle: tokio::task::JoinHandle<()>) {
-    let mut lock = PENDING_ROLLBACKS.lock();
-    lock.retain(|h| !h.is_finished());
-    lock.push(handle);
+fn orphan_file_path() -> std::path::PathBuf {
+    std::env::var("MEMFUSE_ORPHAN_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("memfuse_orphaned_checkpoints.json"))
 }
 
-/// Wartet auf den Abschluss aller im Hintergrund gespawnten Auto-Rollback-Tasks.
-///
-/// Sollte beispielsweise beim geordneten Anwendungs-Shutdown aufgerufen werden,
-/// um sicherzustellen, dass alle Hintergrund-Rollbacks vor dem Beenden abgeschlossen sind.
-pub async fn await_pending_rollbacks() {
-    let handles = {
-        let mut lock = PENDING_ROLLBACKS.lock();
-        std::mem::take(&mut *lock)
-    };
-    for handle in handles {
-        let _ = handle.await;
+fn persist_orphaned_checkpoints_sync(list: &[StateCheckpoint]) -> std::io::Result<()> {
+    let path = orphan_file_path();
+    let data = serde_json::to_vec_pretty(list)?;
+    std::fs::write(path, data)
+}
+
+fn load_orphaned_checkpoints_file_sync() -> Vec<StateCheckpoint> {
+    let path = orphan_file_path();
+    if let Ok(data) = std::fs::read(path) {
+        if let Ok(list) = serde_json::from_slice::<Vec<StateCheckpoint>>(&data) {
+            return list;
+        }
     }
+    Vec::new()
 }
 
-/// Liefert die Anzahl der aktuell noch ausstehenden Auto-Rollback-Tasks im Hintergrund.
+/// Registers an uncommitted checkpoint as orphaned and persists it to disk.
+pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    if !lock.iter().any(|existing| existing.tx_id == cp.tx_id) {
+        lock.push(cp);
+    }
+    let _ = persist_orphaned_checkpoints_sync(&lock);
+}
+
+/// Retrieves all active registered orphaned checkpoints.
+pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    if lock.is_empty() {
+        let loaded = load_orphaned_checkpoints_file_sync();
+        if !loaded.is_empty() {
+            *lock = loaded;
+        }
+    }
+    lock.clone()
+}
+
+/// Removes a specific orphaned checkpoint after recovery.
+pub fn clear_orphaned_checkpoint(tx_id: TxId) {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    lock.retain(|cp| cp.tx_id != tx_id);
+    let _ = persist_orphaned_checkpoints_sync(&lock);
+}
+
+/// Clears all registered orphaned checkpoints.
+pub fn clear_all_orphaned_checkpoints() {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    lock.clear();
+    let _ = persist_orphaned_checkpoints_sync(&lock);
+}
+
+/// Retained for backward compatibility. No background tasks are spawned during drop.
+pub async fn await_pending_rollbacks() {}
+
+/// Retained for backward compatibility. Always returns 0 as background task spawning is removed.
 pub fn pending_rollback_count() -> usize {
-    let mut lock = PENDING_ROLLBACKS.lock();
-    lock.retain(|h| !h.is_finished());
-    lock.len()
+    0
 }
 
-/// Liefert die Gesamtzahl der Auto-Rollbacks, die beim Drop eines [`CheckpointGuard`]
-/// mangels einer laufenden Tokio-Runtime übersprungen wurden.
+/// Liefert die Gesamtzahl der uncommitted CheckpointGuards, die ohne expliziten Commit/Rollback gedroppt wurden.
 pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
     SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
+}
+
+/// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
+pub fn orphaned_checkpoint_count() -> usize {
+    get_orphaned_checkpoints().len()
 }
 
 // RESOLVED: AGT-CKPT-001 — UTF-8 char counting used for 256 char limit (TS: 2026-09-01T23:07:05Z) (SESSION: 358e3b0a)
@@ -170,17 +212,14 @@ pub struct StateCheckpoint {
     pub timestamp_ms: u64,
 }
 
-/// RAII Guard, der bei Verlassen des Gültigkeitsbereichs automatisch einen Rollback
-/// auslöst, falls nicht vorher explizit [`commit`](Self::commit) oder [`rollback`](Self::rollback) aufgerufen wurde.
+/// RAII Guard, der explizit über [`commit`](Self::commit) oder [`rollback`](Self::rollback) finalisiert werden MUSS.
 ///
 /// # RAII-Kontrakt und Betriebshinweise
-/// Bevorzuge **immer** explizites `commit()` oder `rollback().await` gegenüber dem impliziten Drop.
-/// Der Drop-Pfad ist ein **Best-Effort-Sicherheitsnetz**, KEINE garantierte Transaktionsgrenze —
-/// insbesondere bei Prozess-Shutdown oder außerhalb einer laufenden Tokio-Runtime kann der Rollback ausbleiben.
-///
-/// Ausstehende Auto-Rollback-Tasks im Hintergrund können vor dem Prozess-Shutdown über
-/// [`await_pending_rollbacks`] synchronisiert werden. Übersprungene Rollbacks außerhalb einer Tokio-Runtime
-/// werden über [`checkpoint_guard_skipped_rollback_count`] erfasst.
+/// Ein `CheckpointGuard` muss explizit über `commit()` oder `rollback().await` finalisiert werden.
+/// Wird der Guard ohne expliziten Commit/Rollback gedroppt (z. B. bei Panik oder Programmierfehler),
+/// wird KEIN asynchroner Hintergrund-Rollback gespawnt, um Kollisionen mit späteren Transaktionen zu verhindern.
+/// Stattdessen wird der Checkpoint als "orphaned" registriert/persistiert und beim nächsten kontrollierten Recovery-Zyklus verarbeitet.
+#[must_use = "CheckpointGuard must be explicitly finalized via .commit() or .rollback().await"]
 pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<S>,
@@ -217,8 +256,20 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
 
     /// Führt ein manuelles, asynchrones Rollback des Checkpoints aus.
     /// Nach Aufruf von `rollback()` ist der Guard konsumiert, sodass beim Drop kein erneutes Rollback ausgelöst wird.
+    ///
+    /// # Serialisierungsbarriere
+    /// Wenn neuere committete Transaktionen mit `last_tx > target_tx` existieren, schlägt das Rollback mit
+    /// einem Fehler fehl, um Datenverlust neuerer Transaktionen zu verhindern.
     pub async fn rollback(mut self) -> Result<()> {
         if let Some(cp) = self.checkpoint.take() {
+            let last_tx = self.storage.last_tx_id().await?;
+            if last_tx > cp.tx_id {
+                return Err(MemFuseError::Transaction(format!(
+                    "Serialization barrier violation: Cannot rollback to TxId {} because newer committed transaction TxId {} exists in storage",
+                    cp.tx_id.inner(),
+                    last_tx.inner()
+                )));
+            }
             self.storage.rollback_to_tx(cp.tx_id).await
         } else {
             Err(MemFuseError::Internal("Checkpoint already consumed".into()))
@@ -254,29 +305,29 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
                 ))
             })?;
 
-        rt.block_on(self.storage.rollback_to_tx(cp.tx_id))
+        rt.block_on(async {
+            let last_tx = self.storage.last_tx_id().await?;
+            if last_tx > cp.tx_id {
+                return Err(MemFuseError::Transaction(format!(
+                    "Serialization barrier violation: Cannot rollback to TxId {} because newer committed transaction TxId {} exists in storage",
+                    cp.tx_id.inner(),
+                    last_tx.inner()
+                )));
+            }
+            self.storage.rollback_to_tx(cp.tx_id).await
+        })
     }
 }
 
 impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
     fn drop(&mut self) {
         if let Some(cp) = self.checkpoint.take() {
-            tracing::warn!(tx_id = ?cp.tx_id, "CheckpointGuard ohne commit gedroppt.");
-            let storage_clone = Arc::clone(&self.storage);
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                let task_handle = handle.spawn(async move {
-                    if let Err(e) = storage_clone.rollback_to_tx(cp.tx_id).await {
-                        tracing::error!("CheckpointGuard auto-rollback fehlgeschlagen: {e}");
-                    }
-                });
-                register_pending_rollback(task_handle);
-            } else {
-                SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
-                tracing::error!(
-                    tx_id = ?cp.tx_id,
-                    "CheckpointGuard außerhalb tokio-Runtime gedroppt. Rollback übersprungen."
-                );
-            }
+            SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
+            tracing::error!(
+                tx_id = ?cp.tx_id,
+                "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
+            );
+            register_orphaned_checkpoint(cp);
         }
     }
 }
@@ -569,6 +620,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     /// Restores the system to a specific checkpoint by name.
     /// This will rollback the underlying storage to the transaction ID of the checkpoint.
+    ///
+    /// # Serialisierungsbarriere
+    /// Wenn neuere committete Transaktionen (`last_tx > meta.tx_id`) existieren, schlägt die Wiederherstellung
+    /// mit einem Fehler fehl.
     pub async fn restore_checkpoint(&self, name: &str) -> Result<CheckpointMeta> {
         validate_identifier("Checkpoint name", name)?;
         let _guard = self.write_lock.lock().await;
@@ -578,6 +633,16 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             .await?
             .ok_or(MemFuseError::CheckpointNotFound)?;
 
+        let last_tx = self.storage.last_tx_id().await?;
+        if last_tx > meta.tx_id {
+            return Err(MemFuseError::Transaction(format!(
+                "Serialization barrier violation: Cannot restore checkpoint '{}' at TxId {} because newer committed transaction TxId {} exists in storage",
+                name,
+                meta.tx_id.inner(),
+                last_tx.inner()
+            )));
+        }
+
         // 1. Rollback storage state
         self.storage.rollback_to_tx(meta.tx_id).await?;
 
@@ -585,6 +650,36 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         self.list_checkpoints().await?;
 
         Ok(meta)
+    }
+
+    /// Recovers all registered/persisted orphaned checkpoints during controlled startup or recovery.
+    /// Checks the serialization barrier (`last_tx <= cp.tx_id`) before executing rollback.
+    pub async fn recover_orphaned_checkpoints(&self) -> Result<Vec<TxId>> {
+        let _guard = self.write_lock.lock().await;
+        let orphans = get_orphaned_checkpoints();
+        let mut recovered = Vec::new();
+
+        let last_tx = self.storage.last_tx_id().await?;
+
+        for cp in orphans {
+            if last_tx <= cp.tx_id {
+                if let Err(e) = self.storage.rollback_to_tx(cp.tx_id).await {
+                    tracing::error!(tx_id = ?cp.tx_id, "Failed to recover orphaned checkpoint: {e}");
+                } else {
+                    recovered.push(cp.tx_id);
+                    clear_orphaned_checkpoint(cp.tx_id);
+                }
+            } else {
+                tracing::warn!(
+                    tx_id = ?cp.tx_id,
+                    last_tx = ?last_tx,
+                    "Orphaned checkpoint skipped during recovery due to serialization barrier (newer transaction committed)"
+                );
+                clear_orphaned_checkpoint(cp.tx_id);
+            }
+        }
+
+        Ok(recovered)
     }
 }
 
@@ -845,6 +940,7 @@ mod tests {
 
     #[tokio::test]
     async fn checkpoint_guard_rollback_on_drop() {
+        clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
@@ -853,7 +949,9 @@ mod tests {
                                                                      // guard drops here without commit
         }
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+        assert_eq!(recovered, vec![TxId::new(42)]);
+
         let rolled_back = storage.rolled_back_tx.lock().clone();
         assert_eq!(rolled_back, vec![TxId::new(42)]);
     }
@@ -1026,6 +1124,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_rollback_tracking_and_await() {
+        clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
@@ -1034,8 +1133,8 @@ mod tests {
                                                                       // Drop without commit inside tokio runtime
         }
 
-        // Await pending auto-rollback tasks explicitly
-        await_pending_rollbacks().await;
+        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+        assert_eq!(recovered, vec![TxId::new(808)]);
 
         let rolled_back = storage.rolled_back_tx.lock().clone();
         assert_eq!(rolled_back, vec![TxId::new(808)]);
