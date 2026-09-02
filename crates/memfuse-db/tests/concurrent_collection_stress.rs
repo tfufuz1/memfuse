@@ -33,7 +33,7 @@ async fn test_concurrent_collection_ops() {
         handles.push(tokio::spawn(async move {
             for i in 0..ops_per_task {
                 let id = format!("task-{}-doc-{}", t, i);
-                let vec = vec![(t + 1) as f32, (i + 1) as f32, 0.0, 0.0];
+                let vec = vec![t as f32, i as f32, 0.0, 0.0];
 
                 // Insert
                 col.insert(&id, &vec, Some(json!({"t": t, "i": i})))
@@ -41,6 +41,7 @@ async fn test_concurrent_collection_ops() {
                     .expect("insert");
 
                 // Search
+                #[allow(deprecated)]
                 let results = col.search(&vec, 1).await.expect("search");
                 assert!(
                     !results.is_empty(),

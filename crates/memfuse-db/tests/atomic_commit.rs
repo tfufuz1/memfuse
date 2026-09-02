@@ -33,6 +33,7 @@ async fn test_collection_atomic_rollback_on_error() {
     assert_eq!(stats.num_vectors, 1, "Only doc1 should be in the index");
 
     // Test search for phantom hits
+    #[allow(deprecated)]
     let results = col.search(&[0.1, 0.2, 0.3, 0.4], 10).await.unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "doc1");
@@ -83,6 +84,7 @@ async fn test_4_index_atomic_rollback_on_vector_failure() {
     );
 
     // 4. Verify BM25 Text Index isolation (no phantom text hits)
+    #[allow(deprecated)]
     let hybrid_res = col
         .hybrid_search("Failed", &[0.1, 0.2, 0.3, 0.4], 10, None)
         .await

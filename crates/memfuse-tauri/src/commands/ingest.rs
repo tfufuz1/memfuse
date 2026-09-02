@@ -1,7 +1,6 @@
 use crate::commands::collections::validate_collection_name;
 use crate::commands::validate_path_within_base;
 use crate::ingestion::pipeline::{IngestReport, IngestionPipeline};
-use crate::ingestion::progress::IngestProgressThrottler;
 use crate::ollama::OllamaBridge;
 use crate::state::AppState;
 use memfuse_core::MemFuseErrorDto;
@@ -107,9 +106,6 @@ pub async fn ingest_folder(
         ));
     }
 
-    let progress_config = *state.ingest_progress_config.read();
-    let mut throttler = IngestProgressThrottler::new(&app, progress_config);
-
     let mut reports = Vec::new();
     let supported = ["pdf", "docx", "md", "markdown", "txt", "eml"];
 
@@ -133,12 +129,11 @@ pub async fn ingest_folder(
                     errors: vec![e.to_string()],
                 },
             };
-            throttler.add_report(&report);
+            use tauri::Emitter;
+            let _ = app.emit("ingest-progress", &report);
             reports.push(report);
         }
     }
-
-    throttler.finish();
 
     Ok(reports)
 }

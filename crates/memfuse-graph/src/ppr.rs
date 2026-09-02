@@ -11,70 +11,30 @@ use crate::csr::GraphInner;
 use memfuse_core::{EntityId, PprConfig};
 use std::collections::HashSet;
 
-/// Reusable scratch buffers for Personalized PageRank (PPR) power iteration.
-///
-/// Pre-allocating `PprContext` eliminates all intermediate heap allocations during repeated
-/// PPR queries over the CSR graph structure.
-#[derive(Debug, Clone, Default)]
-pub struct PprContext {
-    valid_seeds: Vec<usize>,
-    out_weight_sums: Vec<f32>,
-    ranks: Vec<f32>,
-    next_ranks: Vec<f32>,
-}
-
-impl PprContext {
-    /// Creates an empty PPR context buffer.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Resets and prepares internal vectors for a graph with `n` nodes.
-    fn prepare(&mut self, n: usize) {
-        self.valid_seeds.clear();
-
-        if self.out_weight_sums.len() < n {
-            self.out_weight_sums.resize(n, 0.0);
-            self.ranks.resize(n, 0.0);
-            self.next_ranks.resize(n, 0.0);
-        }
-        self.out_weight_sums[..n].fill(0.0);
-        self.ranks[..n].fill(0.0);
-        self.next_ranks[..n].fill(0.0);
-    }
-}
-
 /// Calculates Personalized PageRank (PPR) over a compacted `GraphInner` state.
-pub(crate) fn compute_ppr(
-    inner: &GraphInner,
-    seed_nodes: &[EntityId],
-    config: &PprConfig,
-) -> Vec<(EntityId, f32)> {
-    let mut ctx = PprContext::new();
-    compute_ppr_with_context(inner, seed_nodes, config, &mut ctx)
-}
-
-/// Calculates Personalized PageRank (PPR) over a compacted `GraphInner` state using a reusable [`PprContext`].
 ///
 /// # Invarianten
 /// - `inner` MUSS vor dem Aufruf kompaktiert sein (`inner.compact()`).
 /// - Determinismus: Bitidentische Sortierung bei identischem Graph & Inputs.
 /// - Zero-Hang: Bounded execution by `config.max_iterations`.
-/// - Zero O(N) Allocations when reusing `ctx`.
-pub(crate) fn compute_ppr_with_context(
+///
+/// # Non-Convergence Behavior
+/// Power iteration terminates early if the L1 norm diff drops below `config.convergence_epsilon`.
+/// If `config.max_iterations` is reached without convergence, the intermediate best-effort rank
+/// vector is returned (without returning an error) and a `tracing::warn!` message is logged with
+/// `max_iterations`, `last_diff`, and `convergence_epsilon`.
+pub(crate) fn compute_ppr(
     inner: &GraphInner,
     seed_nodes: &[EntityId],
     config: &PprConfig,
-    ctx: &mut PprContext,
 ) -> Vec<(EntityId, f32)> {
     let n = inner.reverse_map.len();
     if n == 0 || seed_nodes.is_empty() {
         return Vec::new();
     }
 
-    ctx.prepare(n);
-
     // 1. Identify valid seed internal indices (must exist and have committed entity)
+    let mut valid_seeds = Vec::new();
     let mut seen_seeds = HashSet::new();
 
     for &seed in seed_nodes {
@@ -83,46 +43,64 @@ pub(crate) fn compute_ppr_with_context(
                 && inner.entities.get(idx).is_some_and(|e| e.is_some())
                 && seen_seeds.insert(idx)
             {
-                ctx.valid_seeds.push(idx);
+                valid_seeds.push(idx);
             }
         }
     }
 
-    if ctx.valid_seeds.is_empty() {
+    if valid_seeds.is_empty() {
         return Vec::new();
     }
 
-    // 2. Build restart / teleport probabilities
-    let seed_count = ctx.valid_seeds.len() as f32;
+    // 2. Build restart / teleport vector p (uniform over valid seed nodes)
+    let seed_count = valid_seeds.len() as f32;
     let restart_prob = 1.0 / seed_count;
-    for &seed_idx in &ctx.valid_seeds {
-        ctx.ranks[seed_idx] = restart_prob;
+    let mut p = vec![0.0f32; n];
+    for &seed_idx in &valid_seeds {
+        p[seed_idx] = restart_prob;
     }
 
-    // 3. Precompute total outgoing weight sum per node directly from CSR offsets
-    let offsets = &inner.offsets;
-    let targets = &inner.targets;
-    let weights = &inner.weights;
+    // 3. Precompute active outgoing edges & total weight per node
+    #[derive(Clone)]
+    struct OutgoingEdge {
+        target: usize,
+        weight: f32,
+    }
+
+    let mut out_edges: Vec<Vec<OutgoingEdge>> = vec![Vec::new(); n];
+    let mut out_weight_sums = vec![0.0f32; n];
 
     for i in 0..n {
         if !inner.entities.get(i).is_some_and(|e| e.is_some()) {
             continue;
         }
 
-        let start = if i < offsets.len() - 1 { offsets[i] } else { 0 };
-        let end = if i < offsets.len() - 1 { offsets[i + 1] } else { 0 };
+        let start = if i < inner.offsets.len() - 1 {
+            inner.offsets[i]
+        } else {
+            0
+        };
+        let end = if i < inner.offsets.len() - 1 {
+            inner.offsets[i + 1]
+        } else {
+            0
+        };
 
         let mut sum = 0.0f32;
+        let mut edges = Vec::with_capacity(end.saturating_sub(start));
+
         for edge_idx in start..end {
-            let target = targets[edge_idx];
-            let weight = weights[edge_idx];
+            let target = inner.targets[edge_idx];
+            let weight = inner.weights[edge_idx];
 
             if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
                 sum += weight;
+                edges.push(OutgoingEdge { target, weight });
             }
         }
 
-        ctx.out_weight_sums[i] = sum;
+        out_weight_sums[i] = sum;
+        out_edges[i] = edges;
     }
 
     // Validate config parameters defensively
@@ -142,55 +120,47 @@ pub(crate) fn compute_ppr_with_context(
         config.convergence_epsilon
     };
 
-    // 4. Power Iteration operating directly on CSR slices
+    // 4. Power Iteration
+    let mut ranks = p.clone();
     let mut last_diff = 0.0f32;
     let mut converged = false;
 
     for _iter in 0..max_iters {
-        ctx.next_ranks[..n].fill(0.0);
+        let mut next_ranks = vec![0.0f32; n];
 
         // Rank mass accumulated at dead-end (dangling) nodes
         let mut dangling_sum = 0.0f32;
         for i in 0..n {
-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && ctx.out_weight_sums[i] == 0.0 {
-                dangling_sum += ctx.ranks[i];
+            if inner.entities.get(i).is_some_and(|e| e.is_some()) && out_weight_sums[i] == 0.0 {
+                dangling_sum += ranks[i];
             }
         }
 
         // Teleport / restart contribution (including redistributed dangling rank mass)
         let teleport_factor = (1.0 - damping) + damping * dangling_sum;
-        for &seed_idx in &ctx.valid_seeds {
-            ctx.next_ranks[seed_idx] += teleport_factor * restart_prob;
+        for &seed_idx in &valid_seeds {
+            next_ranks[seed_idx] += teleport_factor * restart_prob;
         }
 
-        // Rank distribution across outgoing edges directly from CSR
+        // Rank distribution across outgoing edges
         for i in 0..n {
-            let sum_w = ctx.out_weight_sums[i];
-            let r_i = ctx.ranks[i];
-            if sum_w > 0.0 && r_i > 0.0 {
-                let share = damping * r_i / sum_w;
-                let start = if i < offsets.len() - 1 { offsets[i] } else { 0 };
-                let end = if i < offsets.len() - 1 { offsets[i + 1] } else { 0 };
-
-                for edge_idx in start..end {
-                    let target = targets[edge_idx];
-                    let weight = weights[edge_idx];
-
-                    if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
-                        ctx.next_ranks[target] += share * weight;
-                    }
+            let sum_w = out_weight_sums[i];
+            if sum_w > 0.0 && ranks[i] > 0.0 {
+                let share = damping * ranks[i] / sum_w;
+                for edge in &out_edges[i] {
+                    next_ranks[edge.target] += share * edge.weight;
                 }
             }
         }
 
         // Convergence check via L1 norm diff
-        let diff: f32 = ctx.ranks[..n]
+        let diff: f32 = ranks
             .iter()
-            .zip(ctx.next_ranks[..n].iter())
+            .zip(next_ranks.iter())
             .map(|(a, b)| (a - b).abs())
             .sum();
 
-        ctx.ranks[..n].copy_from_slice(&ctx.next_ranks[..n]);
+        ranks = next_ranks;
         last_diff = diff;
 
         if diff < epsilon {
@@ -210,7 +180,7 @@ pub(crate) fn compute_ppr_with_context(
 
     // 5. Build and sort result vector
     let mut results = Vec::new();
-    for (idx, &rank) in ctx.ranks[..n].iter().enumerate() {
+    for (idx, &rank) in ranks.iter().enumerate() {
         if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {
             if let Some(&id) = inner.reverse_map.get(idx) {
                 results.push((id, rank));
@@ -233,63 +203,6 @@ mod tests {
     use super::*;
     use crate::csr::CsrGraph;
     use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};
-
-    #[tokio::test]
-    async fn test_ppr_context_reuse_when_graph_grows() {
-        let graph = CsrGraph::new();
-        let tx = TxId::new(1);
-
-        graph
-            .add_entity(tx, Entity::new(EntityId::new(1), "N1", "Node"))
-            .await
-            .unwrap(); // unwrap allowed
-        graph
-            .add_entity(tx, Entity::new(EntityId::new(2), "N2", "Node"))
-            .await
-            .unwrap(); // unwrap allowed
-        graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
-            .await
-            .unwrap(); // unwrap allowed
-        graph.commit(tx).await.unwrap(); // unwrap allowed
-
-        let mut ctx = PprContext::new();
-        let config = PprConfig::default();
-
-        // Call 1 on small graph (n=2)
-        let res1 = graph.personalized_page_rank_with_context(&[EntityId::new(1)], &config, &mut ctx);
-        assert_eq!(res1.len(), 2);
-
-        // Add 3 more nodes to expand graph to n=5
-        let tx2 = TxId::new(2);
-        for i in 3..=5 {
-            graph
-                .add_entity(tx2, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
-                .await
-                .unwrap(); // unwrap allowed
-            graph
-                .add_edge(tx2, Edge::new(EntityId::new(i - 1), EntityId::new(i), "link"))
-                .await
-                .unwrap(); // unwrap allowed
-        }
-        graph.commit(tx2).await.unwrap(); // unwrap allowed
-
-        // Call 2 reusing same ctx on grown graph (n=5)
-        let res2 = graph.personalized_page_rank_with_context(&[EntityId::new(1)], &config, &mut ctx);
-        assert_eq!(res2.len(), 5);
-
-        // Verify result matches fresh execution without context pollution
-        let fresh_res = graph
-            .personalized_page_rank(&[EntityId::new(1)], &config)
-            .await
-            .unwrap(); // unwrap allowed
-
-        assert_eq!(res2.len(), fresh_res.len());
-        for (a, b) in res2.iter().zip(fresh_res.iter()) {
-            assert_eq!(a.0, b.0);
-            assert_eq!(a.1.to_bits(), b.1.to_bits());
-        }
-    }
 
     #[tokio::test]
     async fn test_ppr_analytical_5_node_ring() {

@@ -50,6 +50,7 @@ async fn test_full_stack_document_lifecycle() {
 
     // 2. Hybrid Search (Vector + Text)
     // Querying for "Rust" should rank doc1 first due to text match and vector match (if vector is close)
+    #[allow(deprecated)]
     let results = col
         .hybrid_search("Rust", &[1.0, 0.1, 0.0], 2, None)
         .await
@@ -94,6 +95,7 @@ async fn test_full_stack_document_lifecycle() {
     );
 
     // 5. Search after update
+    #[allow(deprecated)]
     let results_after = col
         .hybrid_search("incredibly", &[0.9, 0.1, 0.0], 1, None)
         .await

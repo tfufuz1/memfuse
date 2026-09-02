@@ -670,18 +670,6 @@ impl MemFuse {
         self.collection("default").await
     }
 
-    /// Stores a non-vector key-value entry directly in LSM storage without touching vector, text, or graph indices.
-    #[tracing::instrument(level = "trace", skip(self, value))]
-    pub async fn put_kv(&self, id: &str, value: &Value) -> Result<()> {
-        self.default_col().await?.put_kv(id, value).await
-    }
-
-    /// Retrieves a key-value entry directly from LSM storage.
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn get_kv(&self, id: &str) -> Result<Option<Value>> {
-        self.default_col().await?.get_kv(id).await
-    }
-
     /// Inserts a document with an embedding and optional metadata.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn insert(&self, id: &str, embedding: &[f32], metadata: Option<Value>) -> Result<()> {

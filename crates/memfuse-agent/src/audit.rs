@@ -39,7 +39,7 @@ impl<S: StorageEngine> AuditLog<S> {
         Self { collection }
     }
 
-    /// Appends an immutable audit entry directly via LSM storage without HNSW vector index participation (AC-3).
+    /// Appends an immutable audit entry. No delete/update path exists by design (AC-3).
     pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
         validate_task_id(&entry.task_id)?;
         validate_node_id(&entry.node_id)?;
@@ -48,7 +48,10 @@ impl<S: StorageEngine> AuditLog<S> {
         let payload = serde_json::to_value(entry)
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
 
-        self.collection.put_kv(&audit_id, &payload).await
+        let dummy_vec = vec![0.0; self.collection.dimension()];
+        self.collection
+            .insert(&audit_id, &dummy_vec, Some(payload))
+            .await
     }
 
     /// Replays all audit entries for a given task via scan_prefix.
@@ -74,56 +77,6 @@ impl<S: StorageEngine> AuditLog<S> {
         entries.sort_by_key(|e| e.step_count);
         Ok(entries)
     }
-}
-
-/// Migrates legacy zero-vector audit entries from the HNSW vector index and doc_key mappings
-/// into the direct LSM KV store format (`put_kv`).
-///
-/// Returns the number of migrated audit entries.
-pub async fn migrate_legacy_audit_entries<S: StorageEngine, V: memfuse_core::VectorIndex>(
-    collection: &Collection<S, V>,
-) -> Result<usize> {
-    let raw = collection.scan_prefix("audit:").await?;
-    let mut count = 0;
-
-    for (key, val) in raw {
-        if !key.starts_with("audit:") {
-            continue;
-        }
-
-        // Check if value was stored in legacy StoredDocument format (contains "embedding" field)
-        if let Some(obj) = val.as_object() {
-            if obj.contains_key("embedding") {
-                // Extract audit entry payload from metadata
-                let entry_val = obj.get("metadata").cloned().unwrap_or(val.clone());
-
-                let doc_id = memfuse_core::DocId::from_key(&key)?;
-                let tx = collection.allocate_tx()?;
-
-                // Remove from HNSW vector index
-                let _ = collection.vector_index().delete(tx, doc_id).await;
-                let _ = collection.vector_index().commit(tx).await;
-
-                // Delete legacy doc_key (key_type=1) mapping
-                let doc_key = collection.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                collection.storage().delete(tx, &doc_key).await?;
-
-                // Save pure KV entry
-                collection.put_kv(&key, &entry_val).await?;
-
-                collection.storage().commit(tx).await?;
-                count += 1;
-            }
-        }
-    }
-
-    if count > 0 {
-        tracing::info!(
-            "Migrated {} legacy zero-vector audit entries from HNSW index",
-            count
-        );
-    }
-    Ok(count)
 }
 
 #[cfg(test)]

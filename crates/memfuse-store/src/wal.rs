@@ -1505,15 +1505,7 @@ impl Wal {
         let mut last_hmac = [0u8; 32];
 
         for (_, entry, offset) in entries {
-            let entry_tx = entry.tx_id().inner();
-            // System metadata transactions (tx >= INTERNAL_BASE) are preserved during user state rollbacks
-            if target_tx_id.inner() < TxId::INTERNAL_BASE && entry_tx >= TxId::INTERNAL_BASE {
-                last_offset = offset;
-                last_hmac = entry.checksum;
-                continue;
-            }
-
-            if entry_tx > target_tx_id.inner() {
+            if entry.tx_id().inner() > target_tx_id.inner() {
                 // If this entry strictly exceeds target_tx_id,
                 // the rollback point is the end of the PREVIOUS entry.
                 return Ok((last_offset, last_hmac));

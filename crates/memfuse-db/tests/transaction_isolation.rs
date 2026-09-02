@@ -33,7 +33,7 @@ async fn test_transaction_atomicity_under_load() -> Result<()> {
                 let tx = col.begin_transaction().unwrap(); // unwrap allowed
                 for j in 0..batch_size {
                     let id = format!("doc_{}_{}_{}", w, i, j);
-                    let vec = vec![(i + 1) as f32; 128];
+                    let vec = vec![i as f32; 128];
                     col.insert_op(
                         &tx,
                         &id,

@@ -14,6 +14,7 @@ struct CorpusDoc {
 
 fn create_embedding(seed: usize, dimension: usize) -> Vec<f32> {
     let mut vec = vec![0.0f32; dimension];
+    #[allow(clippy::needless_range_loop)]
     for i in 0..dimension {
         let val = ((i + seed * 13) % 100) as f32 / 100.0;
         vec[i] = val;
@@ -308,10 +309,12 @@ async fn test_compound_split_recall_impact_evaluation() {
         let q_vec = create_embedding(q.query_vector_seed, dim);
 
         // A. BM25 Text Only
+        #[allow(deprecated)]
         let res_actual_text = col_actual
             .hybrid_search_with_weights(q.subterm, &[], 10, None, Some(&weights_bm25_only))
             .await
             .unwrap();
+        #[allow(deprecated)]
         let res_split_text = col_ref
             .hybrid_search_with_weights(q.subterm, &[], 10, None, Some(&weights_bm25_only))
             .await
@@ -327,6 +330,7 @@ async fn test_compound_split_recall_impact_evaluation() {
             .map(|p| p + 1);
 
         // B. Vector Only
+        #[allow(deprecated)]
         let res_actual_vec = col_actual
             .hybrid_search_with_weights("", &q_vec, 10, None, Some(&weights_vec_only))
             .await
@@ -337,10 +341,12 @@ async fn test_compound_split_recall_impact_evaluation() {
             .map(|p| p + 1);
 
         // C. Hybrid (BM25 + Vector)
+        #[allow(deprecated)]
         let res_actual_hyb = col_actual
             .hybrid_search_with_weights(q.subterm, &q_vec, 10, None, Some(&weights_hybrid_equal))
             .await
             .unwrap();
+        #[allow(deprecated)]
         let res_split_hyb = col_ref
             .hybrid_search_with_weights(q.subterm, &q_vec, 10, None, Some(&weights_hybrid_equal))
             .await

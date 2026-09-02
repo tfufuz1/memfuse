@@ -255,6 +255,7 @@ async fn test_collection_search_snapshot_isolation() {
     assert!(doc2_now.is_some(), "doc2 visible after commit");
 
     // 6. Vector search gibt beide zurück
+    #[allow(deprecated)]
     let results = col
         .search(&[1.0, 0.0, 0.0], 10)
         .await
@@ -338,6 +339,7 @@ async fn test_2pc_recovery_after_crash() {
         assert!(d2.is_some(), "d2 must be recovered");
 
         // HNSW-Index muss wieder korrekt sein (Vector-Search funktioniert)
+        #[allow(deprecated)]
         let results = col
             .search(&[1.0, 0.0, 0.0], 5)
             .await

@@ -518,29 +518,26 @@ mod tests {
         let (col, _dir) = create_test_collection("test_hybrid").await;
         col.insert(
             "doc-1",
-            &[1.0, 0.0, 0.0, 0.0],
+            &[0.0; 4],
             Some(json!({"text": "rust programming language"})),
         )
         .await
         .unwrap(); // unwrap
         col.insert(
             "doc-2",
-            &[0.0, 1.0, 0.0, 0.0],
+            &[0.0; 4],
             Some(json!({"text": "python data science"})),
         )
         .await
         .unwrap(); // unwrap
 
         #[allow(deprecated)]
-        let legacy = col
-            .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 5, None)
-            .await
-            .unwrap(); // unwrap
+        let legacy = col.hybrid_search("rust", &[0.0; 4], 5, None).await.unwrap(); // unwrap
 
         let builder_res = col
             .query()
             .text("rust")
-            .embedding([1.0, 0.0, 0.0, 0.0])
+            .embedding([0.0; 4])
             .k(5)
             .execute()
             .await

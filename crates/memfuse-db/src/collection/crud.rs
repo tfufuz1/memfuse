@@ -30,25 +30,6 @@ pub(super) fn validate_doc_id(id: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn validate_embedding(embedding: &[f32]) -> Result<()> {
-    if embedding.is_empty() {
-        return Err(memfuse_core::MemFuseError::invalid_input(
-            "Embedding vector cannot be empty",
-        ));
-    }
-    if embedding.iter().all(|&x| x == 0.0) {
-        return Err(memfuse_core::MemFuseError::invalid_input(
-            "Zero vector embeddings are not allowed in regular Collection insertion. Use put_kv for non-vector entries.",
-        ));
-    }
-    if embedding.iter().any(|&x| !x.is_finite()) {
-        return Err(memfuse_core::MemFuseError::invalid_input(
-            "Embedding vector contains NaN or Infinite values",
-        ));
-    }
-    Ok(())
-}
-
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Inserts a text document, automatically generating its embedding.
     #[tracing::instrument(level = "trace", skip(self, text, metadata))]
@@ -198,30 +179,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.insert_inner_unlocked(id, embedding, metadata).await
     }
 
-    /// Stores a non-vector key-value entry directly in LSM storage without touching vector, text, or graph indices.
-    #[tracing::instrument(level = "trace", skip(self, value))]
-    pub async fn put_kv(&self, id: &str, value: &serde_json::Value) -> Result<()> {
-        validate_doc_id(id)?;
-        let tx = self.allocate_tx()?;
-        let user_key = self.namespaced_key(id.as_bytes(), 0);
-        let data = serde_json::to_vec(value)?;
-        self.storage.put(tx, &user_key, &data).await?;
-        self.storage.commit(tx).await?;
-        Ok(())
-    }
-
-    /// Retrieves a key-value entry directly from LSM storage.
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn get_kv(&self, id: &str) -> Result<Option<serde_json::Value>> {
-        validate_doc_id(id)?;
-        let key = self.namespaced_key(id.as_bytes(), 0);
-        if let Some(data) = self.storage.get(&key).await? {
-            let val: serde_json::Value = serde_json::from_slice(&data)?;
-            return Ok(Some(val));
-        }
-        Ok(None)
-    }
-
     /// Internal single document insert method without lock acquisition.
     ///
     /// Assumes `self.insert_lock` is held by caller to ensure TOCTOU safety.
@@ -248,7 +205,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 embedding.len()
             )));
         }
-        validate_embedding(embedding)?;
 
         let db_tx = self.begin_transaction()?;
 
@@ -298,7 +254,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         validate_doc_id(id)?;
-        validate_embedding(embedding)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
@@ -322,19 +277,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // Document serialization is unencrypted before being sent to storage.
         // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let user_key = self.namespaced_key(id.as_bytes(), 0);
-        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-
-        let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
-        let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
-
         let data = serde_json::to_vec(&stored)?;
         self.storage.put(tx, &user_key, &data).await?;
 
+        // doc_key (key_type=1): NUR Metadaten (für Hydration nach Vektorsuche)
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let meta_data = serde_json::to_vec(&meta_only)?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
-        // Record for compensating transaction with pre-write values
-        db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
+        // Record for compensating transaction
+        db_tx.record_keys(user_key, doc_key, doc_id);
 
         self.index.insert(tx, doc_id, embedding).await?;
 
@@ -401,15 +353,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     self.dimension,
                     embedding.len()
                 )));
-            }
-            if let Err(e) = validate_embedding(embedding) {
-                if let Err(rollback_err) = db_tx.rollback().await {
-                    tracing::error!(
-                        "[INV-DB-3] Failed to rollback insert_many on invalid embedding: {}",
-                        rollback_err
-                    );
-                }
-                return Err(e);
             }
 
             if let Err(e) = self
@@ -502,15 +445,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     embedding.len()
                 )));
             }
-            if let Err(e) = validate_embedding(embedding) {
-                if let Err(rollback_err) = db_tx.rollback().await {
-                    tracing::error!(
-                        "[INV-DB-3] Failed to rollback upsert_many on invalid embedding: {}",
-                        rollback_err
-                    );
-                }
-                return Err(e);
-            }
             let result = self
                 .update_op(&db_tx, id, embedding, metadata.clone())
                 .await;
@@ -546,17 +480,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         validate_doc_id(id)?;
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
-            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data) {
-                return Ok(Some(crate::Document {
-                    id: stored.id,
-                    metadata: stored.metadata,
-                }));
-            } else if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&data) {
-                return Ok(Some(crate::Document {
-                    id: id.to_string(),
-                    metadata: Some(val),
-                }));
-            }
+            let stored: StoredDocument = serde_json::from_slice(&data)?;
+            return Ok(Some(crate::Document {
+                id: stored.id,
+                metadata: stored.metadata,
+            }));
         }
         Ok(None)
     }
@@ -599,17 +527,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         validate_doc_id(id)?;
-        validate_embedding(embedding)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
         self.check_doc_id_collision(doc_id, id).await?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
-        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-
-        let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
-        let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
 
         // Stage removal from old text index
         db_tx.stage_text_delete(doc_id);
@@ -628,12 +551,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
         let meta_only = StoredDocumentMeta::from(&stored);
         let data = serde_json::to_vec(&stored)?;
+
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let meta_data = serde_json::to_vec(&meta_only)?;
 
         self.storage.put(tx, &user_key, &data).await?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
-        db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
+        db_tx.record_keys(user_key, doc_key, doc_id);
 
         // Stage re-insertion into text index if new text present
         if let Some(new_text) = extract_text(&metadata) {
@@ -710,9 +635,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
-        let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
-        let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
-
         let tx = db_tx.tx_id;
 
         db_tx.stage_text_delete(doc_id);
@@ -724,9 +646,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.storage.delete(tx, &user_key).await?;
         self.storage.delete(tx, &doc_key).await?;
 
-        db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
+        db_tx.record_keys(user_key, doc_key, doc_id);
 
-        self.index.delete(tx, doc_id).await?;
+        if let Err(e) = self.index.delete(tx, doc_id).await {
+            tracing::warn!(
+                doc_id = ?doc_id,
+                "HNSW soft-delete fehlgeschlagen: {e}. Doc wird nach HNSW-Rebuild nicht mehr in Vektorsuchen erscheinen."
+            );
+        }
 
         Ok(())
     }

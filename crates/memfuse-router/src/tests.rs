@@ -834,7 +834,7 @@ mod tests {
         // 3. RPC Error response
         let profile_rpc_err = SlmProfile::new(
             "slm-rpc-err",
-            "cat > /dev/null; echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}'",
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -846,14 +846,13 @@ mod tests {
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
-            matches!(res_rpc_err, Err(MemFuseError::Internal(ref msg)) if msg.contains("MCP RPC Fehler [-32601]: Method not found")),
-            "res_rpc_err was: {:?}", res_rpc_err
+            matches!(res_rpc_err, Err(MemFuseError::Internal(msg)) if msg.contains("MCP RPC Fehler [-32601]: Method not found"))
         );
 
         // 4. Custom JSON object result (no "answer" key)
         let profile_obj = SlmProfile::new(
             "slm-obj",
-            "cat > /dev/null; echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"custom_data\":42}}'",
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"custom_data\":42}}'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -869,7 +868,7 @@ mod tests {
         // 5. Neither result nor error present
         let profile_empty = SlmProfile::new(
             "slm-empty",
-            "cat > /dev/null; echo '{\"jsonrpc\":\"2.0\",\"id\":1}'",
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1}'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -1142,7 +1141,7 @@ mod tests {
             0.5,
         );
 
-        let err_empty = select_profile_from_chunks(&[profile.clone()], &[]);
+        let err_empty = select_profile_from_chunks(std::slice::from_ref(&profile), &[]);
         assert!(
             matches!(err_empty, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
         );
@@ -1160,7 +1159,8 @@ mod tests {
             Some(999),
         );
 
-        let err_unmatched = select_profile_from_chunks(&[profile.clone()], &[chunk_unmatched]);
+        let err_unmatched =
+            select_profile_from_chunks(std::slice::from_ref(&profile), &[chunk_unmatched]);
         assert!(
             matches!(err_unmatched, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
         );
@@ -1178,7 +1178,8 @@ mod tests {
             Some(100),
         );
 
-        let err_low = select_profile_from_chunks(&[profile.clone()], &[chunk_low_score]);
+        let err_low =
+            select_profile_from_chunks(std::slice::from_ref(&profile), &[chunk_low_score]);
         assert!(
             matches!(err_low, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
         );
@@ -1188,7 +1189,7 @@ mod tests {
     async fn test_dispatch_invalid_json_response() {
         let profile = SlmProfile::new(
             "bad-json-slm",
-            "cat > /dev/null; echo '{invalid json'",
+            "echo '{invalid json'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,

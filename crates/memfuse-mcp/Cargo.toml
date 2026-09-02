@@ -22,7 +22,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-unicode-normalization = "0.1"
 # NO Axum — MCP transport is stdio only (ADR-010). Adding HTTP here is an architecture violation.
 # MCP stdio transport helpers (already transitively present via tokio)
 tokio-util = { version = "0.7", features = ["codec"] }

@@ -3,10 +3,6 @@ pub mod email;
 pub mod entities;
 pub mod pdf;
 pub mod pipeline;
-pub mod progress;
 
 pub use entities::SimpleEntityExtractor;
 pub use pipeline::{IngestReport, IngestionPipeline};
-pub use progress::{
-    IngestProgressBatch, IngestProgressConfig, IngestProgressThrottler, ProgressEmitter,
-};

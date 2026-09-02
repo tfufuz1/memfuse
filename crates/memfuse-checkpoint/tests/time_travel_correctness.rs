@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity, clippy::needless_borrows_for_generic_args)]
+
 use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
@@ -717,12 +719,11 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
         .unwrap();
     let _cp_beta = guard_beta.commit().unwrap();
 
-    // Drop Session Alpha's guard without calling commit (registers orphaned checkpoint)
+    // Drop Session Alpha's guard without calling commit (triggers background rollback)
     drop(guard_alpha);
 
-    // Execute controlled recovery for Session Alpha
-    let recovered = store_alpha.recover_orphaned_checkpoints().await.unwrap();
-    assert_eq!(recovered, vec![tx_base_a]);
+    // Give tokio runtime time to execute background rollback task
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // Verify Session Alpha's state was rolled back to alpha_init
     assert_eq!(

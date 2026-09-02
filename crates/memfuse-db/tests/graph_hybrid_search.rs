@@ -61,6 +61,7 @@ async fn test_hybrid_search_includes_graph_signal() {
     graph.commit(tx).await.expect("commit graph tx");
 
     // 3. Perform hybrid_search with anchor_doc as anchor_entities
+    #[allow(deprecated)]
     let results = col
         .hybrid_search(
             "nonmatchingquerytext",
@@ -117,6 +118,7 @@ async fn test_relate_updates_graph_index_and_affects_hybrid_search() {
     // 3. Perform hybrid_search with doc_a as anchor entity
     let anchor_eid =
         memfuse_core::EntityId::from_key("doc_a").expect("test: non-empty key must succeed");
+    #[allow(deprecated)]
     let results = col
         .hybrid_search(
             "nonmatchingtext",
@@ -189,6 +191,7 @@ async fn test_hybrid_search_with_ppr_strategy() {
         warn_on_non_convergence: true,
     });
 
+    #[allow(deprecated)]
     let results = col
         .hybrid_search_with_strategy(
             "nonmatchingtext",

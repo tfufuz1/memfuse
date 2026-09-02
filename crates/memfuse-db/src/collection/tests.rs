@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 // FILE-CONTEXT
 // ZWECK: Unit-Tests für Collection-CRUD, Indizierung, Repair und Grenzwerte.
 // INVARIANTEN: Keine Tautologien; Anti-Mirroring gewahrt; Unabhängig berechnete Erwartungswerte.
@@ -1998,7 +2000,7 @@ async fn test_concurrent_insert_many_collision_safety() {
             let docs: Vec<(String, Vec<f32>, Option<serde_json::Value>)> = (0..20)
                 .map(|i| {
                     let key = format!("batch_doc_{i}");
-                    let val = (task_idx * 100 + i + 1) as f32;
+                    let val = (task_idx * 100 + i) as f32;
                     (
                         key,
                         vec![val, 0.0, 0.0, 0.0],

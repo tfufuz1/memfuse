@@ -1,13 +1,7 @@
-pub mod prompt_injection;
 pub mod protocol;
 pub mod sandbox;
 #[cfg(test)]
 mod tests;
-
-pub use prompt_injection::{
-    PromptInjectionConfig, PromptInjectionGuard, QuarantinePolicy, SecurityAuditLogger,
-    SecurityAuditRecord, DEFAULT_REDACTION_PLACEHOLDER,
-};
 
 // FILE-CONTEXT
 // STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
@@ -99,6 +93,34 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
     }
 }
 
+/// Scans document text for common prompt injection signatures (system prompt override, instruction markers).
+fn detect_suspicious_prompt_injection(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let patterns = [
+        "[inst]",
+        "[/inst]",
+        "<|im_start|>",
+        "<|im_end|>",
+        "<|system|>",
+        "<|user|>",
+        "<|assistant|>",
+        "<<sys>>",
+        "<</sys>>",
+        "ignore previous instructions",
+        "override previous instructions",
+        "system prompt:",
+        "you are a helpful ai",
+        "you are now in developer mode",
+    ];
+
+    for pattern in &patterns {
+        if lower.contains(pattern) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Checks whether database write access is explicitly enabled via environment variable `MEMFUSE_MCP_ALLOW_WRITE`.
 pub fn is_write_allowed_by_env() -> bool {
     std::env::var("MEMFUSE_MCP_ALLOW_WRITE")
@@ -131,7 +153,6 @@ pub struct McpServer {
     pub db: Arc<MemFuse>,
     pub embedder: Arc<dyn TextEmbeddingEngine>,
     pub sandbox: Arc<McpSandbox>,
-    pub injection_guard: Arc<PromptInjectionGuard>,
 }
 
 impl McpServer {
@@ -167,13 +188,7 @@ impl McpServer {
             db,
             embedder,
             sandbox,
-            injection_guard: Arc::new(PromptInjectionGuard::from_env()),
         }
-    }
-
-    pub fn with_injection_guard(mut self, injection_guard: Arc<PromptInjectionGuard>) -> Self {
-        self.injection_guard = injection_guard;
-        self
     }
 
     /// Startet den MCP stdio-Loop.
@@ -537,7 +552,19 @@ impl McpServer {
                             "content_provenance".to_string(),
                             json!("retrieved_untrusted_data"),
                         );
-                        self.injection_guard.process_result(&res.id, col_name, obj);
+                        let text_to_check = res
+                            .metadata
+                            .as_ref()
+                            .and_then(|m| m.get("text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("");
+                        if detect_suspicious_prompt_injection(text_to_check) {
+                            obj.insert("suspicious_injection_detected".to_string(), json!(true));
+                            obj.insert(
+                                "injection_warning".to_string(),
+                                json!("Text contains patterns mimicking system prompts or instruction overrides."),
+                            );
+                        }
                     }
                     enriched_results.push(val);
                 }
@@ -789,7 +816,22 @@ impl McpServer {
                                 "content_provenance".to_string(),
                                 json!("retrieved_untrusted_data"),
                             );
-                            self.injection_guard.process_result(&doc.id, col_name, obj);
+                            let text_to_check = doc
+                                .metadata
+                                .as_ref()
+                                .and_then(|m| m.get("text"))
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("");
+                            if detect_suspicious_prompt_injection(text_to_check) {
+                                obj.insert(
+                                    "suspicious_injection_detected".to_string(),
+                                    json!(true),
+                                );
+                                obj.insert(
+                                    "injection_warning".to_string(),
+                                    json!("Text contains patterns mimicking system prompts or instruction overrides."),
+                                );
+                            }
                         }
                         Ok(val)
                     }

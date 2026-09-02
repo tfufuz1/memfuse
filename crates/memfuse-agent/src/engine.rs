@@ -392,8 +392,11 @@ impl OrchestratorEngine {
             "status": ctx.status
         });
 
-        // Use direct KV storage pattern for workflow history without vector index participation
-        ctx.state_collection.put_kv(&state_doc_id, &metadata).await
+        // Use a metadata-only storage pattern for workflow history (zero-vector)
+        let zero_vec = vec![0.0; ctx.state_collection.dimension()];
+        ctx.state_collection
+            .insert(&state_doc_id, &zero_vec, Some(metadata))
+            .await
     }
 
     async fn audit_log(&self, ctx: &AgentContext, result: &StepResult) -> Result<()> {
@@ -436,7 +439,10 @@ impl OrchestratorEngine {
             "tokens_total": ctx.budget.consumed()
         });
 
-        ctx.state_collection.put_kv(&final_id, &metadata).await
+        let zero_vec = vec![0.0; ctx.state_collection.dimension()];
+        ctx.state_collection
+            .insert(&final_id, &zero_vec, Some(metadata))
+            .await
     }
 
     fn resolve_next_node(

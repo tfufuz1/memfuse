@@ -284,14 +284,6 @@ impl DistanceMetric {
             return Err(MemFuseError::invalid_input("Vector dimensions must match"));
         }
 
-        for val in a.iter().chain(b.iter()) {
-            if !val.is_finite() {
-                return Err(MemFuseError::InvalidInput(
-                    "Input vector contains non-finite values (NaN or Inf)".into(),
-                ));
-            }
-        }
-
         let dist = match self {
             Self::Cosine => {
                 let mut dot = 0.0;
@@ -305,11 +297,7 @@ impl DistanceMetric {
                 if norm_a == 0.0 || norm_b == 0.0 {
                     1.0
                 } else {
-                    // Floating-point rounding errors on nearly parallel or identical vectors can cause dot / (norm_a.sqrt() * norm_b.sqrt())
-                    // to slightly exceed 1.0, producing negative distances.
-                    // Cosine distance is mathematically restricted to [0.0, 2.0] as cosine similarity ∈ [-1.0, 1.0].
-                    let dist = 1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()));
-                    dist.clamp(0.0, 2.0)
+                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
                 }
             }
             Self::Euclidean => {
@@ -318,7 +306,7 @@ impl DistanceMetric {
                     let diff = x - y;
                     sum += diff * diff;
                 }
-                sum.max(0.0).sqrt()
+                sum.sqrt()
             }
             Self::DotProduct => {
                 let mut dot = 0.0;
@@ -556,7 +544,7 @@ impl Entity {
     }
 }
 
-/// Graph directed edge representation with explicit bitemporal axis separation.
+/// Graph directed edge representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
     /// Source entity identifier.
@@ -567,18 +555,12 @@ pub struct Edge {
     pub label: String,
     /// Numeric relationship weight (default 1.0).
     pub weight: f32,
-    /// Start of transaction validity (system time / MVCC); None = valid from beginning of transaction history.
-    #[serde(default, alias = "valid_from")]
-    pub tx_valid_from: Option<TxId>,
-    /// End of transaction validity (system time / MVCC); None = currently valid transaction state.
-    #[serde(default, alias = "valid_to")]
-    pub tx_valid_to: Option<TxId>,
-    /// Start of business validity (business time in Unix ms); None = valid from beginning of business time.
+    /// Start of business validity; None = valid from the beginning of time.
     #[serde(default)]
-    pub business_valid_from: Option<i64>,
-    /// End of business validity (business time in Unix ms); None = currently valid business state.
+    pub valid_from: Option<TxId>,
+    /// End of business validity; None = currently valid.
     #[serde(default)]
-    pub business_valid_to: Option<i64>,
+    pub valid_to: Option<TxId>,
 }
 
 impl Edge {
@@ -589,10 +571,8 @@ impl Edge {
             to,
             label: label.into(),
             weight: 1.0,
-            tx_valid_from: None,
-            tx_valid_to: None,
-            business_valid_from: None,
-            business_valid_to: None,
+            valid_from: None,
+            valid_to: None,
         }
     }
 
@@ -622,10 +602,8 @@ impl Edge {
             to,
             label: label_str,
             weight,
-            tx_valid_from: None,
-            tx_valid_to: None,
-            business_valid_from: None,
-            business_valid_to: None,
+            valid_from: None,
+            valid_to: None,
         })
     }
 
@@ -635,23 +613,11 @@ impl Edge {
         self
     }
 
-    /// Sets transaction validity window (system time / MVCC) on the edge.
-    pub fn with_tx_validity(mut self, from: Option<TxId>, to: Option<TxId>) -> Self {
-        self.tx_valid_from = from;
-        self.tx_valid_to = to;
+    /// Sets business validity window on the edge.
+    pub fn with_validity(mut self, from: Option<TxId>, to: Option<TxId>) -> Self {
+        self.valid_from = from;
+        self.valid_to = to;
         self
-    }
-
-    /// Sets business validity window (business time in Unix ms) on the edge.
-    pub fn with_business_validity(mut self, from: Option<i64>, to: Option<i64>) -> Self {
-        self.business_valid_from = from;
-        self.business_valid_to = to;
-        self
-    }
-
-    /// Sets transaction validity window on the edge (alias for `with_tx_validity` for backward compatibility).
-    pub fn with_validity(self, from: Option<TxId>, to: Option<TxId>) -> Self {
-        self.with_tx_validity(from, to)
     }
 }
 
@@ -1235,31 +1201,18 @@ mod tests {
 
         let edge = Edge::new(EntityId::new(1), EntityId::new(2), "rel")
             .with_weight(0.5)
-            .with_tx_validity(Some(TxId::new(10)), Some(TxId::new(20)))
-            .with_business_validity(Some(1672531200000), Some(1767139200000));
+            .with_validity(Some(TxId::new(10)), Some(TxId::new(20)));
         assert_eq!(edge.from.inner(), 1);
         assert_eq!(edge.to.inner(), 2);
         assert_eq!(edge.weight, 0.5);
-        assert_eq!(edge.tx_valid_from, Some(TxId::new(10)));
-        assert_eq!(edge.tx_valid_to, Some(TxId::new(20)));
-        assert_eq!(edge.business_valid_from, Some(1672531200000));
-        assert_eq!(edge.business_valid_to, Some(1767139200000));
+        assert_eq!(edge.valid_from, Some(TxId::new(10)));
+        assert_eq!(edge.valid_to, Some(TxId::new(20)));
 
-        // Test serde backward compatibility with legacy valid_from/valid_to keys
-        let json_legacy = r#"{"from":1,"to":2,"label":"rel","weight":0.5,"valid_from":10,"valid_to":20}"#;
-        let deser_edge: Edge = serde_json::from_str(json_legacy).unwrap(); // unwrap
-        assert_eq!(deser_edge.tx_valid_from, Some(TxId::new(10)));
-        assert_eq!(deser_edge.tx_valid_to, Some(TxId::new(20)));
-        assert_eq!(deser_edge.business_valid_from, None);
-        assert_eq!(deser_edge.business_valid_to, None);
-
-        // Test serde backward compatibility with completely missing validity fields
+        // Test serde backward compatibility with missing valid_from/valid_to
         let json_old = r#"{"from":1,"to":2,"label":"rel","weight":0.5}"#;
-        let deser_edge_old: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
-        assert_eq!(deser_edge_old.tx_valid_from, None);
-        assert_eq!(deser_edge_old.tx_valid_to, None);
-        assert_eq!(deser_edge_old.business_valid_from, None);
-        assert_eq!(deser_edge_old.business_valid_to, None);
+        let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
+        assert_eq!(deser_edge.valid_from, None);
+        assert_eq!(deser_edge.valid_to, None);
     }
 
     #[test]

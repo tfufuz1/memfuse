@@ -24,7 +24,6 @@ CLAUDE.local.md
 *.log
 clippy*.log
 *_output.txt
-memfuse_orphaned_checkpoints.json
 
 # Kompilierte Ad-hoc-Binaries ohne Cargo-Build-System
 /fix_unsafe
