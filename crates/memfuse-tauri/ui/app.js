@@ -137,21 +137,39 @@ document.getElementById('import-folder-btn').addEventListener('click', async () 
 });
 
 listen('ingest-progress', (event) => {
-    const report = event.payload;
-    if (!report) return;
+    const payload = event.payload;
+    if (!payload) return;
     const logEl = document.getElementById('import-log');
     if (!logEl) return;
 
-    const errCount = (report.errors || []).length;
     const line = document.createElement('div');
-    const fileName = report.file_path ? report.file_path.split(/[/\\]/).pop() : 'Datei';
 
-    if (errCount > 0) {
-        line.textContent = `⚠️ ${fileName}: ${report.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
-        line.title = report.errors.join('\n');
+    if (payload.total_files_processed !== undefined) {
+        // Gebatchter IngestProgressBatch
+        const total = payload.total_files_processed;
+        const chunks = payload.batch_chunks_created || 0;
+        const errors = payload.batch_errors || [];
+        const fileName = payload.last_file_path ? payload.last_file_path.split(/[/\\]/).pop() : 'Fortschritt';
+
+        if (errors.length > 0) {
+            line.textContent = `⚠️ Fortschritt (${total} Dateien): +${chunks} Abschnitte, ${errors.length} Fehler in diesem Batch`;
+            line.title = errors.join('\n');
+        } else {
+            line.textContent = `✅ Fortschritt (${total} Dateien): ${fileName} (+${chunks} Abschnitte)`;
+        }
     } else {
-        line.textContent = `✅ ${fileName}: ${report.chunks_created || 0} Abschnitte`;
+        // Einzelner IngestReport (Fallback)
+        const errCount = (payload.errors || []).length;
+        const fileName = payload.file_path ? payload.file_path.split(/[/\\]/).pop() : 'Datei';
+
+        if (errCount > 0) {
+            line.textContent = `⚠️ ${fileName}: ${payload.chunks_created || 0} Abschnitte, ${errCount} Fehler`;
+            line.title = (payload.errors || []).join('\n');
+        } else {
+            line.textContent = `✅ ${fileName}: ${payload.chunks_created || 0} Abschnitte`;
+        }
     }
+
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
 });
