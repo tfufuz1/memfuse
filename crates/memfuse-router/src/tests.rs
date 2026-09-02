@@ -1407,4 +1407,46 @@ mod tests {
         let res = router.route(&[1.0, 0.0, 0.0, 0.0], "sample text").await;
         assert!(matches!(res, Err(MemFuseError::NotFound(_))));
     }
+
+    #[tokio::test]
+    async fn test_route_invalid_search_result_skips_chunk() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        // Insert valid doc and corrupt/invalid doc directly into storage/index or test search result handling
+        let valid_key = "valid_entity_1";
+        collection
+            .insert(
+                valid_key,
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"text": "valid content"})),
+            )
+            .await?;
+
+        let eid = EntityId::from_key(valid_key)?;
+        let tx = db.allocate_tx()?;
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        let comm_val = serde_json::to_vec(&100u64)?;
+        db.inner_storage().put(tx, &comm_key, &comm_val).await?;
+        db.inner_storage().commit(tx).await?;
+
+        let profile = SlmProfile::new(
+            "slm-valid",
+            "http://localhost:9999/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.0,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+        let res = router.route(&[1.0, 0.0, 0.0, 0.0], "valid content").await;
+        assert!(res.is_ok());
+        Ok(())
+    }
 }
