@@ -57,6 +57,7 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
 | `2026-09-02T23:20:30Z (SESSION: a1811605)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden |
+| `2026-09-01T11:30:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-b2c3d4e5` | `016eab33` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) — Write-Lock für |
 | `2026-09-01T11:30:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `016eab33` | `DONE` | `0` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) |
 | `2026-09-01T11:02:04Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-a1b2c3d4` | `dba1473f` | `RESOLVED` | `0` | // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f) |
 | `2026-08-31T21:20:00Z` | `crates/memfuse-core/src/types/domain.rs` | `REVIEW-PASS` | `TEST:CORE-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CORE-001) (TS: 2026-08-31T21:20:00Z) (SESSION: c9f5e2b3) |
@@ -133,6 +134,7 @@
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/crud.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/mod.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
+| `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `00000000` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 (TS:2026-08-25T00:00:00Z) (SESSION:00000000) — Stable SIMD Migration: |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-003` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-004` | `-` | `RESOLVED` | `0` | // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `AGT-STORE-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-STORE-002 — Indices computed before the lock was taken. (TS:2026-08-25T00:00:00Z) |
@@ -161,6 +163,4 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
-| `` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-002` | `-` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
-| `` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-b2c3d4e5` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
