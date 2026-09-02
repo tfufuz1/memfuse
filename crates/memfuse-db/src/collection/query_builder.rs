@@ -402,18 +402,18 @@ mod tests {
     use tempfile::TempDir;
 
     async fn create_test_collection(name: &str) -> (Collection<LsmStorage, HnswIndex>, TempDir) {
-        let dir = TempDir::new().unwrap();
+        let dir = TempDir::new().unwrap(); // unwrap
         let lsm_config = LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let hnsw_config = HnswConfig {
             dimension: 4,
             distance_metric: DistanceMetric::Cosine,
             ..Default::default()
         };
-        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+        let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
         let col = Collection::new(
@@ -433,20 +433,20 @@ mod tests {
         let (col, _dir) = create_test_collection("test_vec").await;
         col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"tag": "a"})))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         col.insert("doc-2", &[0.0, 1.0, 0.0, 0.0], Some(json!({"tag": "b"})))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         #[allow(deprecated)]
-        let legacy = col.search(&[1.0, 0.0, 0.0, 0.0], 2).await.unwrap();
+        let legacy = col.search(&[1.0, 0.0, 0.0, 0.0], 2).await.unwrap(); // unwrap
         let builder_res = col
             .query()
             .embedding(&[1.0, 0.0, 0.0, 0.0])
             .k(2)
             .execute()
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(builder_res.len(), legacy.len());
         assert_eq!(builder_res[0].id, legacy[0].id);
@@ -458,10 +458,10 @@ mod tests {
         let (col, _dir) = create_test_collection("test_filter").await;
         col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"cat": "news"})))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         col.insert("doc-2", &[0.9, 0.1, 0.0, 0.0], Some(json!({"cat": "blog"})))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let filter = FilterExpr::Eq {
             field: "cat".to_string(),
@@ -472,7 +472,7 @@ mod tests {
         let legacy = col
             .search_with_filter_expr(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter.clone()))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let builder_res = col
             .query()
@@ -481,7 +481,7 @@ mod tests {
             .k(10)
             .execute()
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(builder_res.len(), 1);
         assert_eq!(builder_res.len(), legacy.len());
@@ -498,17 +498,17 @@ mod tests {
             Some(json!({"text": "rust programming language"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
         col.insert(
             "doc-2",
             &[0.0; 4],
             Some(json!({"text": "python data science"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
         #[allow(deprecated)]
-        let legacy = col.hybrid_search("rust", &[0.0; 4], 5, None).await.unwrap();
+        let legacy = col.hybrid_search("rust", &[0.0; 4], 5, None).await.unwrap(); // unwrap
 
         let builder_res = col
             .query()
@@ -517,7 +517,7 @@ mod tests {
             .k(5)
             .execute()
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(builder_res.len(), legacy.len());
         if !builder_res.is_empty() {
@@ -534,9 +534,9 @@ mod tests {
             Some(json!({"text": "alpha"})),
         )
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
-        let weights = SignalWeights::new(0.6, 0.4, 0.0).unwrap();
+        let weights = SignalWeights::new(0.6, 0.4, 0.0).unwrap(); // unwrap
         let builder_res = col
             .query()
             .text("alpha")
@@ -546,7 +546,7 @@ mod tests {
             .k(5)
             .execute()
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert!(!builder_res.is_empty());
         assert_eq!(builder_res[0].id, "doc-1");
@@ -557,23 +557,23 @@ mod tests {
         let (col, _dir) = create_test_collection("test_query_cfg").await;
         col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"v": 10})))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let hybrid_query = HybridQuery::builder()
             .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
             .with_k(1)
             .build()
-            .unwrap();
+            .unwrap(); // unwrap
 
         #[allow(deprecated)]
-        let legacy = col.hybrid_search_with_query(&hybrid_query).await.unwrap();
+        let legacy = col.hybrid_search_with_query(&hybrid_query).await.unwrap(); // unwrap
 
         let builder_res = col
             .query()
             .query_config(&hybrid_query)
             .execute()
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(builder_res.len(), legacy.len());
         assert_eq!(builder_res[0].id, legacy[0].id);

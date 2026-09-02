@@ -999,7 +999,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_diskann_read_only_mutations_return_error() {
-        let index = DiskAnnIndex::try_new(DiskAnnConfig::default()).expect("valid config");
+        let index = DiskAnnIndex::try_new(DiskAnnConfig::default()).expect("valid config"); // expect
         let tx = TxId::new(1);
         let doc_id = DocId::from(100);
         let vec = vec![1.0f32; 128];

@@ -254,7 +254,7 @@ mod tests {
     /// Deckt R-01 ab: Schreibzugriff ist im Default gesperrt (Read-Only Safety Policy).
     #[test]
     fn test_sandbox_default_policy() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap(); // unwrap
 
         assert!(sandbox
             .validate_tool_call("memfuse_search", &Value::Null)
@@ -286,7 +286,7 @@ mod tests {
             allow_code_execution: true,
             max_execution_ms: 5_000,
         };
-        let sandbox = McpSandbox::new(policy).unwrap();
+        let sandbox = McpSandbox::new(policy).unwrap(); // unwrap
 
         assert!(sandbox
             .validate_tool_call("memfuse_search", &Value::Null)
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_volatile_result_encryption_roundtrip() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap(); // unwrap
         let data = b"Top secret volatile tool result data";
 
         sandbox.store_volatile("res1", data).expect("store"); // expect
@@ -317,10 +317,10 @@ mod tests {
     fn volatile_tool_result_roundtrip() {
         let key =
             memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
-                .unwrap();
+                .unwrap(); // unwrap
         let plaintext = b"tool output data";
-        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
-        let decrypted = result.decrypt(&key).unwrap();
+        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap(); // unwrap
+        let decrypted = result.decrypt(&key).unwrap(); // unwrap
         assert_eq!(decrypted.as_slice(), plaintext);
     }
 
@@ -328,9 +328,9 @@ mod tests {
     fn test_volatile_result_error_path_zeroizes_intermediate_data() {
         let key =
             memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
-                .unwrap();
+                .unwrap(); // unwrap
         let plaintext = b"sensitive payload that will drop early";
-        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap();
+        let result = VolatileToolResult::encrypt(plaintext, &key).unwrap(); // unwrap
 
         let simulate_aborted_processing = || -> Result<()> {
             let decrypted = result.decrypt(&key)?;
@@ -352,7 +352,7 @@ mod tests {
             allow_code_execution: true,
             max_execution_ms: 50,
         };
-        let sandbox = McpSandbox::new(policy).unwrap();
+        let sandbox = McpSandbox::new(policy).unwrap(); // unwrap
 
         let slow_fut = async {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_validate_tool_call_method_length_checks() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap(); // unwrap
 
         // Empty method name
         let res_empty = sandbox.validate_tool_call("", &Value::Null);
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_volatile_storage_boundary_guards() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap(); // unwrap
 
         // Empty key
         let res_empty_key = sandbox.store_volatile("", b"data");
@@ -410,11 +410,11 @@ mod tests {
 
     #[test]
     fn test_volatile_storage_capacity_limit() {
-        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap();
+        let sandbox = McpSandbox::new(SandboxPolicy::default()).unwrap(); // unwrap
 
         for i in 0..MAX_VOLATILE_RESULTS {
             let key = format!("item_{i}");
-            sandbox.store_volatile(&key, b"value").unwrap();
+            sandbox.store_volatile(&key, b"value").unwrap(); // unwrap
         }
 
         // Inserting item #1001 should fail

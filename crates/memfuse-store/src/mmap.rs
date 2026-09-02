@@ -32,8 +32,8 @@ mod tests {
 
     #[test]
     fn test_mmap_reader_acquire_map_and_read_offset() {
-        let reader = MmapReader::acquire_map(42).expect("acquire map should succeed");
-        let data = reader.read_offset(0, 100).expect("read_offset should succeed");
+        let reader = MmapReader::acquire_map(42).expect("acquire map should succeed"); // expect
+        let data = reader.read_offset(0, 100).expect("read_offset should succeed"); // expect
         assert_eq!(data, &[]);
     }
 }

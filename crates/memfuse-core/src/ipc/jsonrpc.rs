@@ -79,8 +79,8 @@ mod tests {
         assert!(resp.error.is_none());
         assert_eq!(resp.result, Some(json!({"status": "success"})));
 
-        let ser = serde_json::to_string(&resp).expect("serialize response ok");
-        let deser: JsonRpcResponse = serde_json::from_str(&ser).expect("deserialize response ok");
+        let ser = serde_json::to_string(&resp).expect("serialize response ok"); // expect
+        let deser: JsonRpcResponse = serde_json::from_str(&ser).expect("deserialize response ok"); // expect
         assert_eq!(deser.jsonrpc, "2.0");
         assert_eq!(deser.id, Some(json!(42)));
         assert_eq!(deser.result, Some(json!({"status": "success"})));
@@ -94,20 +94,20 @@ mod tests {
         assert_eq!(resp.id, Some(json!("req-1")));
         assert!(resp.result.is_none());
 
-        let err = resp.error.as_ref().expect("error payload present");
+        let err = resp.error.as_ref().expect("error payload present"); // expect
         assert_eq!(err.code, -32600);
         assert_eq!(err.message, "Invalid Request");
         assert!(err.data.is_none());
 
-        let ser = serde_json::to_string(&resp).expect("serialize response err");
-        let deser: JsonRpcResponse = serde_json::from_str(&ser).expect("deserialize response err");
-        assert_eq!(deser.error.expect("error present").code, -32600);
+        let ser = serde_json::to_string(&resp).expect("serialize response err"); // expect
+        let deser: JsonRpcResponse = serde_json::from_str(&ser).expect("deserialize response err"); // expect
+        assert_eq!(deser.error.expect("error present").code, -32600); // expect
     }
 
     #[test]
     fn test_json_rpc_request_deserialization_and_notification() {
         let req_json = r#"{"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"key": "val"}}"#;
-        let req: JsonRpcRequest = serde_json::from_str(req_json).expect("parse request");
+        let req: JsonRpcRequest = serde_json::from_str(req_json).expect("parse request"); // expect
         assert_eq!(req.jsonrpc, "2.0");
         assert_eq!(req.id, Some(json!(1)));
         assert_eq!(req.method, "ping");
@@ -115,7 +115,7 @@ mod tests {
 
         // Notification (no id)
         let notif_json = r#"{"jsonrpc": "2.0", "method": "notify"}"#;
-        let notif: JsonRpcRequest = serde_json::from_str(notif_json).expect("parse notification");
+        let notif: JsonRpcRequest = serde_json::from_str(notif_json).expect("parse notification"); // expect
         assert_eq!(notif.jsonrpc, "2.0");
         assert!(notif.id.is_none());
         assert_eq!(notif.method, "notify");
@@ -129,11 +129,11 @@ mod tests {
             message: "Server error".to_string(),
             data: Some(json!({"details": "database locked"})),
         };
-        let ser = serde_json::to_string(&err).expect("serialize error");
-        let deser: JsonRpcError = serde_json::from_str(&ser).expect("deserialize error");
+        let ser = serde_json::to_string(&err).expect("serialize error"); // expect
+        let deser: JsonRpcError = serde_json::from_str(&ser).expect("deserialize error"); // expect
         assert_eq!(deser.code, -32000);
         assert_eq!(
-            deser.data.expect("data present")["details"],
+            deser.data.expect("data present")["details"], // expect
             "database locked"
         );
     }

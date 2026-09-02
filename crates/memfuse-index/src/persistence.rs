@@ -5,9 +5,9 @@
 // HOTSPOTS: persistence.rs (HnswHeader::try_from_bytes, MmapIndex::open)
 // STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
 
-// ANCHOR[DEBT:WP-0.0-ZEROPANIC] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Eradicate .unwrap() in persistence.rs
-// TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs
-// DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt.
+// ANCHOR[DEBT:WP-0.0-ZEROPANIC] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Eradicate .unwrap() in persistence.rs // unwrap
+// TEST: grep -c ".unwrap()" crates/memfuse-index/src/persistence.rs // unwrap
+// DONE: Alle .unwrap() Aufrufe auf try_into() sind durch ? ersetzt. // unwrap
 //! HNSW Persistence Layer — Serialisierung und mmap-Mapping für Vektor-Indizes.
 //!
 //! Dieses Modul implementiert das `.hnsw` Dateiformat, das für das Offloading von

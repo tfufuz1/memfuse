@@ -590,7 +590,7 @@ mod tests {
             .with_include_superseded(true)
             .with_k(25)
             .build()
-            .expect("build hybrid query");
+            .expect("build hybrid query"); // expect
 
         assert_eq!(query.text_query.as_deref(), Some("knowledge graph"));
         assert_eq!(query.vector_query.as_deref(), Some(&[0.5, 0.5][..]));

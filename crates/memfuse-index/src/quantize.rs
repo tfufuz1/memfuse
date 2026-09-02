@@ -344,8 +344,8 @@ mod tests {
         let v2 = vec![10.0, 11.0, 12.0];
         let original = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 3);
 
-        let serialized = bincode::serialize(&original).expect("serialize");
-        let deserialized: ScalarQuantizer = bincode::deserialize(&serialized).expect("deserialize");
+        let serialized = bincode::serialize(&original).expect("serialize"); // expect
+        let deserialized: ScalarQuantizer = bincode::deserialize(&serialized).expect("deserialize"); // expect
 
         assert_eq!(original.mins, deserialized.mins);
         assert_eq!(original.maxes, deserialized.maxes);
@@ -700,36 +700,36 @@ mod tests {
         // Test asymmetric distances
         let cos_dist = q
             .asymmetric_dist(&query, &target_quant, DistanceMetric::Cosine)
-            .unwrap();
+            .unwrap(); // unwrap
         assert!(cos_dist >= 0.0);
 
         let euc_dist = q
             .asymmetric_dist(&query, &target_quant, DistanceMetric::Euclidean)
-            .unwrap();
-        // Distance query [5, 10, 50] to target [0, 0, 0] is sqrt(25 + 100 + 2500) = sqrt(2625) ~ 51.2347
+            .unwrap(); // unwrap
+                       // Distance query [5, 10, 50] to target [0, 0, 0] is sqrt(25 + 100 + 2500) = sqrt(2625) ~ 51.2347
         assert!((euc_dist - 51.2347).abs() < 1.0);
 
         let dot_dist = q
             .asymmetric_dist(&query, &target_quant, DistanceMetric::DotProduct)
-            .unwrap();
-        // Dot product distance returns negative dot product: -(0 + 0 + 0) = 0.0
+            .unwrap(); // unwrap
+                       // Dot product distance returns negative dot product: -(0 + 0 + 0) = 0.0
         assert_eq!(dot_dist, 0.0);
 
         // Test symmetric distances
         let query_quant = q.quantize(&query);
         let sym_cos = q
             .symmetric_dist(&query_quant, &target_quant, DistanceMetric::Cosine)
-            .unwrap();
+            .unwrap(); // unwrap
         assert!(sym_cos >= 0.0);
 
         let sym_euc = q
             .symmetric_dist(&query_quant, &target_quant, DistanceMetric::Euclidean)
-            .unwrap();
+            .unwrap(); // unwrap
         assert!((sym_euc - 51.2347).abs() < 2.0);
 
         let sym_dot = q
             .symmetric_dist(&query_quant, &target_quant, DistanceMetric::DotProduct)
-            .unwrap();
+            .unwrap(); // unwrap
         assert!(sym_dot <= 0.0);
     }
 }

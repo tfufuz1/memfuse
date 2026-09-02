@@ -2319,7 +2319,7 @@ mod tests {
             .quantize(true)
             .quantizer_recalibration_sample_size(500)
             .build()
-            .expect("valid builder config");
+            .expect("valid builder config"); // expect
 
         assert_eq!(config.dimension, 128);
         assert_eq!(config.max_elements, 1000);
@@ -2352,13 +2352,13 @@ mod tests {
             dimension: 4,
             ..Default::default()
         };
-        let index = HnswIndex::try_new(config).expect("valid config");
+        let index = HnswIndex::try_new(config).expect("valid config"); // expect
         let tx = TxId::new(1);
         let doc_id = DocId::from(1);
         let vec = vec![1.0, 2.0, 3.0, 4.0];
 
-        index.insert(tx, doc_id, &vec).await.expect("insert");
-        index.commit(tx).await.expect("commit");
+        index.insert(tx, doc_id, &vec).await.expect("insert"); // expect
+        index.commit(tx).await.expect("commit"); // expect
 
         // Compact sequence log below min_active_seqno
         index.compact_seq_log(10);
@@ -2466,7 +2466,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_filtered_tombstone_precedes_custom_filter_match() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
 
         // 1. Insert vector and commit
         let tx1 = TxId::new(1);
@@ -2474,11 +2474,11 @@ mod tests {
         index
             .insert(tx1, doc_id, &[1.0, 0.0, 0.0, 0.0])
             .await
-            .unwrap();
-        index.commit(tx1).await.unwrap();
+            .unwrap(); // unwrap
+        index.commit(tx1).await.unwrap(); // unwrap
 
         // 2. Rollback to Tx 0 (marks node as deleted/tombstoned in rollback_to_tx)
-        index.rollback_to_tx(TxId::new(0)).await.unwrap();
+        index.rollback_to_tx(TxId::new(0)).await.unwrap(); // unwrap
 
         // 3. Perform search_filtered with a filter that explicitly returns true for DocId 42
         //    (simulates storage/index inconsistency where custom filter matches deleted doc_id)
@@ -2487,7 +2487,7 @@ mod tests {
         let results = index
             .search_filtered(&[1.0, 0.0, 0.0, 0.0], 10, Some(filter_ref))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // 4. Verify search_filtered results do NOT contain the rolled back document
         assert!(
@@ -2928,7 +2928,7 @@ mod tests {
             dimension: 4,
             ..test_config(4)
         };
-        let index = HnswIndex::try_new(config).unwrap();
+        let index = HnswIndex::try_new(config).unwrap(); // unwrap
         assert_eq!(index.rebuild_status(), RebuildStatus::Idle);
         assert!(
             index
@@ -2942,17 +2942,17 @@ mod tests {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
-        index.commit(tx).await.unwrap();
+        index.commit(tx).await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
         for i in 0u64..6 {
-            index.delete(tx2, DocId::new(i)).await.unwrap();
+            index.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
         }
 
         // Commit triggers trigger_rebuild_async
-        index.commit(tx2).await.unwrap();
+        index.commit(tx2).await.unwrap(); // unwrap
         assert!(
             index
                 .wait_for_rebuild_with_timeout(std::time::Duration::from_secs(5))
@@ -2963,31 +2963,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_search_at_snapshot_isolation() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
 
         // seq 1: Insert doc 1 & 2
         let tx1 = TxId::new(1);
         index
             .insert(tx1, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         index
             .insert(tx1, DocId::new(2), &[0.0, 1.0, 0.0, 0.0])
             .await
-            .unwrap();
-        index.commit(tx1).await.unwrap();
+            .unwrap(); // unwrap
+        index.commit(tx1).await.unwrap(); // unwrap
 
         // seq 2: Delete doc 1, insert doc 3
         let tx2 = TxId::new(2);
-        index.delete(tx2, DocId::new(1)).await.unwrap();
+        index.delete(tx2, DocId::new(1)).await.unwrap(); // unwrap
         index
             .insert(tx2, DocId::new(3), &[0.5, 0.5, 0.0, 0.0])
             .await
-            .unwrap();
-        index.commit(tx2).await.unwrap();
+            .unwrap(); // unwrap
+        index.commit(tx2).await.unwrap(); // unwrap
 
         // search_at seq 1: should see doc 1 & doc 2, but NOT doc 3 (inserted at seq 2).
-        let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap();
+        let res_seq1 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 1).await.unwrap(); // unwrap
         let docs_seq1: Vec<_> = res_seq1.iter().map(|d| d.doc_id.inner()).collect();
         assert!(
             docs_seq1.contains(&1),
@@ -2997,7 +2997,7 @@ mod tests {
         assert!(!docs_seq1.contains(&3), "seq 1 must not contain doc 3");
 
         // search_at seq 2: should see doc 2 & 3, but NOT doc 1 (deleted)
-        let res_seq2 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 2).await.unwrap();
+        let res_seq2 = index.search_at(&[1.0, 0.0, 0.0, 0.0], 5, 2).await.unwrap(); // unwrap
         let docs_seq2: Vec<_> = res_seq2.iter().map(|d| d.doc_id.inner()).collect();
         assert!(!docs_seq2.contains(&1), "seq 2 must not contain doc 1");
         assert!(docs_seq2.contains(&2), "seq 2 must contain doc 2");
@@ -3011,26 +3011,26 @@ mod tests {
             dimension: 4,
             ..test_config(4)
         };
-        let index = HnswIndex::try_new(config).unwrap();
+        let index = HnswIndex::try_new(config).unwrap(); // unwrap
         let tx = TxId::new(1);
         for i in 0u64..10 {
             index
                 .insert(tx, DocId::new(i), &[i as f32, 0.0, 0.0, 0.0])
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
-        index.commit(tx).await.unwrap();
+        index.commit(tx).await.unwrap(); // unwrap
 
         assert!(index.trigger_rebuild_async().is_none());
 
         let tx2 = TxId::new(2);
         for i in 0u64..6 {
-            index.delete(tx2, DocId::new(i)).await.unwrap();
+            index.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
         }
-        index.commit(tx2).await.unwrap();
+        index.commit(tx2).await.unwrap(); // unwrap
 
         if let Some(handle) = index.trigger_rebuild_async() {
-            let res = handle.await.unwrap();
+            let res = handle.await.unwrap(); // unwrap
             assert!(res.is_ok());
         }
     }
@@ -3063,14 +3063,14 @@ mod tests {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .unwrap();
+                .unwrap(); // unwrap
 
             rt.block_on(async {
                 let config = HnswConfig {
                     dimension: 4,
                     ..test_config(4)
                 };
-                let index = HnswIndex::try_new(config).unwrap();
+                let index = HnswIndex::try_new(config).unwrap(); // unwrap
 
                 let mut current_tx = 1u64;
                 let mut tx_checkpoints = Vec::new();
@@ -3103,19 +3103,19 @@ mod tests {
                             .collect()
                     };
 
-                    let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap();
+                    let res = index.search_at(&[1.0, 0.0, 0.0, 0.0], 100, target_seq).await.unwrap(); // unwrap
                     let found_docs: std::collections::HashSet<_> = res.into_iter().map(|d| d.doc_id).collect();
 
                     prop_assert_eq!(found_docs, active_docs, "Search_at result at seq {} must equal reference model", target_seq);
                 }
                 Ok(())
-            }).unwrap();
+            }).unwrap(); // unwrap
         });
     }
 
     #[tokio::test]
     async fn test_hnsw_search_max_k_guard() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let query = vec![1.0, 0.0, 0.0, 0.0];
         let res = index.search(&query, memfuse_core::MAX_SEARCH_K + 1).await;
         assert!(res.is_err());
@@ -3159,50 +3159,50 @@ mod tests {
 
     #[tokio::test]
     async fn test_hnsw_index_search_k_zero_returns_empty() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx = TxId::new(1);
         index
             .insert(tx, DocId::new(1), &[1.0, 0.0, 0.0, 0.0])
             .await
-            .unwrap();
-        index.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        index.commit(tx).await.unwrap(); // unwrap
 
-        let results = index.search(&[1.0, 0.0, 0.0, 0.0], 0).await.unwrap();
+        let results = index.search(&[1.0, 0.0, 0.0, 0.0], 0).await.unwrap(); // unwrap
         assert!(results.is_empty());
     }
 
     #[tokio::test]
     async fn test_hnsw_index_delete_non_existent_doc() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
         let tx = TxId::new(1);
         // Deleting non-existent doc should succeed without altering index state
-        index.delete(tx, DocId::new(999)).await.unwrap();
-        index.commit(tx).await.unwrap();
-        assert!(index.all_doc_ids().await.unwrap().is_empty());
+        index.delete(tx, DocId::new(999)).await.unwrap(); // unwrap
+        index.commit(tx).await.unwrap(); // unwrap
+        assert!(index.all_doc_ids().await.unwrap().is_empty()); // unwrap
     }
 
     #[tokio::test]
     async fn test_search_filtered_respects_deleted_nodes_after_rollback() {
-        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let index = HnswIndex::try_new(test_config(4)).unwrap(); // unwrap
 
         // 1. Insert docs 1..=5 in Tx 1
         let tx1 = TxId::new(1);
         for i in 1..=5u64 {
             let v = [i as f32, 0.0, 0.0, 0.0];
-            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap
         }
-        index.commit(tx1).await.unwrap();
+        index.commit(tx1).await.unwrap(); // unwrap
 
         // 2. Insert docs 6..=10 in Tx 2
         let tx2 = TxId::new(2);
         for i in 6..=10u64 {
             let v = [i as f32, 0.0, 0.0, 0.0];
-            index.insert(tx2, DocId::new(i), &v).await.unwrap();
+            index.insert(tx2, DocId::new(i), &v).await.unwrap(); // unwrap
         }
-        index.commit(tx2).await.unwrap();
+        index.commit(tx2).await.unwrap(); // unwrap
 
         // 3. Rollback to Tx 1 (soft-deletes docs 6..=10)
-        index.rollback_to_tx(tx1).await.unwrap();
+        index.rollback_to_tx(tx1).await.unwrap(); // unwrap
 
         // 4. Perform search_filtered with a filter that accepts all DocIds
         let allow_all = |_: DocId| true;
@@ -3210,7 +3210,7 @@ mod tests {
         let results = index
             .search_filtered(&[5.0, 0.0, 0.0, 0.0], 10, Some(filter_ref))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // 5. Verify rolled-back docs 6..=10 are NOT present in search results
         let result_doc_ids: std::collections::HashSet<_> =
@@ -3240,15 +3240,15 @@ mod tests {
             quantize: true,
             ..test_config(4)
         };
-        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap());
+        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap()); // unwrap
 
         // 1. Train quantizer with initial vectors
         let tx1 = TxId::new(1);
         for i in 1..=60u64 {
             let v = [1.0, 2.0, 3.0, 4.0];
-            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap
         }
-        index.commit(tx1).await.unwrap();
+        index.commit(tx1).await.unwrap(); // unwrap
 
         // Verify quantizer is initialized with initial bounds
         assert!(index.quantizer().read().is_some());
@@ -3271,17 +3271,17 @@ mod tests {
         index
             .insert(tx2, DocId::new(100), &out_of_bounds_vector)
             .await
-            .unwrap();
-        index.commit(tx2).await.unwrap();
+            .unwrap(); // unwrap
+        index.commit(tx2).await.unwrap(); // unwrap
 
         // Await search tasks
         for task in tasks {
-            task.await.unwrap();
+            task.await.unwrap(); // unwrap
         }
 
         // 4. Verify check_drift for out_of_bounds_vector returns 0.0 (bounds were deterministically expanded)
         let q_guard = index.quantizer().read();
-        let q = q_guard.as_ref().expect("Quantizer must be present");
+        let q = q_guard.as_ref().expect("Quantizer must be present"); // expect
         let drift = q.check_drift(&out_of_bounds_vector);
         assert_eq!(
             drift, 0.0,
@@ -3296,18 +3296,18 @@ mod tests {
             quantize: true,
             ..test_config(4)
         };
-        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap());
+        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap()); // unwrap
 
         // 1. Train quantizer with initial vectors
         let tx1 = TxId::new(1);
         for i in 1..=60u64 {
             let v = [1.0, 2.0, 3.0, 4.0];
-            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap
         }
-        index.commit(tx1).await.unwrap();
+        index.commit(tx1).await.unwrap(); // unwrap
 
-        let initial_mins = index.quantizer().read().as_ref().unwrap().mins.clone();
-        let initial_maxes = index.quantizer().read().as_ref().unwrap().maxes.clone();
+        let initial_mins = index.quantizer().read().as_ref().unwrap().mins.clone(); // unwrap
+        let initial_maxes = index.quantizer().read().as_ref().unwrap().maxes.clone(); // unwrap
 
         // 2. Parallele search() und insert() Aufrufe via tokio::join!
         let out_of_bounds_vector = [1000.0, -1000.0, 500.0, -500.0];
@@ -3326,17 +3326,17 @@ mod tests {
             idx_insert
                 .insert(tx2, DocId::new(100), &out_of_bounds_vector)
                 .await
-                .unwrap();
-            idx_insert.commit(tx2).await.unwrap();
+                .unwrap(); // unwrap
+            idx_insert.commit(tx2).await.unwrap(); // unwrap
         });
 
         let (res_search, res_insert) = tokio::join!(search_handle, insert_handle);
-        res_search.unwrap();
-        res_insert.unwrap();
+        res_search.unwrap(); // unwrap
+        res_insert.unwrap(); // unwrap
 
         // 3. Verifiziere min/max Grenzen des Quantizers direkt
         let q_guard = index.quantizer().read();
-        let q = q_guard.as_ref().expect("Quantizer must be present");
+        let q = q_guard.as_ref().expect("Quantizer must be present"); // expect
         assert!(
             q.maxes[0] >= 1000.0,
             "maxes[0] was {}, expected >= 1000.0",

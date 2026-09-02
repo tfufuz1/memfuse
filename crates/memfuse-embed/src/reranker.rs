@@ -87,7 +87,7 @@ struct OnnxReranker {
     config: RerankConfig,
     tokenizer: std::sync::Arc<Tokenizer>,
     // parking_lot::Mutex ist panic-safe (kein PoisonError), da es keinen
-    // Poison-Mechanismus hat. Kein .unwrap()/.map_err() nötig.
+    // Poison-Mechanismus hat. Kein .unwrap()/.map_err() nötig. // unwrap
     session: std::sync::Arc<parking_lot::Mutex<ort::session::Session>>,
 }
 
@@ -454,7 +454,7 @@ mod tests {
     async fn test_rerank_oversized_candidate_batch_rejected() {
         let config = RerankConfig::default();
         let reranker = CrossEncoderReranker::new(config)
-            .expect("Failed to construct default Passthrough/ONNX CrossEncoderReranker");
+            .expect("Failed to construct default Passthrough/ONNX CrossEncoderReranker"); // expect
         let candidates: Vec<String> = vec!["doc".to_string(); MAX_CANDIDATES + 1];
         let res = reranker.rerank("query", &candidates).await;
         assert!(res.is_err());

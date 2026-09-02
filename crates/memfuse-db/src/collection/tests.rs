@@ -13,21 +13,21 @@ async fn test_insert_with_ttl_and_reap_expired_documents() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let col = super::Collection::new(
         "default".to_string(),
@@ -44,29 +44,29 @@ async fn test_insert_with_ttl_and_reap_expired_documents() {
     // Insert document with TTL = 5 committed ops
     col.insert_with_ttl("temp_doc", &vec, None, 5)
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
     // 1. Immediately after insert, document should be retrievable
-    let doc = col.get("temp_doc").await.unwrap();
+    let doc = col.get("temp_doc").await.unwrap(); // unwrap
     assert!(doc.is_some(), "Document must exist before TTL expiration");
 
     // 2. Perform 5 dummy commits (inserts)
     for i in 0..5 {
-        col.insert(&format!("dummy_{i}"), &vec, None).await.unwrap();
+        col.insert(&format!("dummy_{i}"), &vec, None).await.unwrap(); // unwrap
     }
 
     // 3. Trigger expiry reaper
-    let reaped = col.reap_expired_documents(100).await.unwrap();
+    let reaped = col.reap_expired_documents(100).await.unwrap(); // unwrap
     assert_eq!(reaped, 1, "Expired document should be reaped");
 
     // 4. Verify document is gone from storage and search
-    let doc_after = col.get("temp_doc").await.unwrap();
+    let doc_after = col.get("temp_doc").await.unwrap(); // unwrap
     assert!(
         doc_after.is_none(),
         "Document must be deleted after TTL expiry"
     );
 
-    let search_res = col.search(&vec, 10).await.unwrap();
+    let search_res = col.search(&vec, 10).await.unwrap(); // unwrap
     assert!(
         search_res.iter().all(|r| r.id != "temp_doc"),
         "Expired document must not appear in search results"
@@ -83,21 +83,21 @@ async fn test_relate_success_visible_in_storage_and_graph() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let graph = Arc::new(CsrGraph::new());
     let col = super::Collection::new(
@@ -110,17 +110,17 @@ async fn test_relate_success_visible_in_storage_and_graph() {
         memfuse_text::Language::English,
     );
 
-    col.relate("doc1", "doc2", "references").await.unwrap();
+    col.relate("doc1", "doc2", "references").await.unwrap(); // unwrap
 
     // 1. Storage check
-    let rels = col.scan_prefix("__rel:").await.unwrap();
+    let rels = col.scan_prefix("__rel:").await.unwrap(); // unwrap
     assert_eq!(rels.len(), 1);
     assert!(rels[0].0.contains("doc1:references:doc2"));
 
     // 2. Graph check
-    let id1 = EntityId::from_key("doc1").unwrap();
-    let id2 = EntityId::from_key("doc2").unwrap();
-    let neighbors = graph.neighbors(id1).await.unwrap();
+    let id1 = EntityId::from_key("doc1").unwrap(); // unwrap
+    let id2 = EntityId::from_key("doc2").unwrap(); // unwrap
+    let neighbors = graph.neighbors(id1).await.unwrap(); // unwrap
     assert!(neighbors.contains(&id2));
 }
 
@@ -200,7 +200,7 @@ async fn test_relate_rollback_semantics_on_storage_commit_failure() {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let graph = Arc::new(CsrGraph::new());
     let col = super::Collection::new(
@@ -302,18 +302,18 @@ async fn test_relate_rollback_semantics_on_graph_commit_failure() {
         }
     }
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let lsm_config = LsmConfig {
         path: dir.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
 
     let fail_storage = Arc::new(FailOnPutStorage {
@@ -344,7 +344,7 @@ async fn test_relate_rollback_semantics_on_graph_commit_failure() {
 
     // Verification: storage MUST NOT contain the relation key after failed relate()
     let rel_prefix = col.namespaced_key(b"", 2);
-    let remaining_rels = storage.scan_prefix(&rel_prefix).await.unwrap();
+    let remaining_rels = storage.scan_prefix(&rel_prefix).await.unwrap(); // unwrap
     assert!(
         remaining_rels.is_empty(),
         "Storage layer MUST NOT contain relation keys after relate() failure! Found: {:?}",
@@ -429,17 +429,17 @@ async fn test_input_guards_boundary_validation() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let lsm_config = memfuse_store::LsmConfig {
         path: dir.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
     let hnsw_config = memfuse_index::HnswConfig {
         dimension: 4,
         ..Default::default()
     };
-    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
     let graph = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -1151,21 +1151,21 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let col = super::Collection::new(
         "default".to_string(),
@@ -1178,7 +1178,7 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     );
 
     let vec = vec![1.0, 0.0, 0.0, 0.0];
-    col.insert("doc_test", &vec, None).await.unwrap();
+    col.insert("doc_test", &vec, None).await.unwrap(); // unwrap
 
     let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
 
@@ -1192,7 +1192,7 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     ));
 
     // Verify document's score was NOT overwritten or corrupted
-    let doc = col.get("doc_test").await.unwrap().unwrap();
+    let doc = col.get("doc_test").await.unwrap().unwrap(); // unwrap
     assert!(doc.metadata.is_some());
 }
 
@@ -1238,18 +1238,18 @@ async fn test_begin_transaction_returns_active_db_transaction() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let lsm_config = memfuse_store::LsmConfig {
         path: dir.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let graph = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
@@ -1279,21 +1279,21 @@ async fn test_reaper_deletes_decayed_working_memory() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let next_tx = Arc::new(AtomicU64::new(1));
     let col = super::Collection::new(
@@ -1322,7 +1322,7 @@ async fn test_reaper_deletes_decayed_working_memory() {
         })),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
     // Advance TxId far enough so effective_score < 0.05
     // At created_tx=10, half_life=5:
@@ -1333,9 +1333,9 @@ async fn test_reaper_deletes_decayed_working_memory() {
     // Tx 30: 0.5 * 0.0625 = 0.03125 (< 0.05)
     next_tx.store(35, Ordering::SeqCst);
 
-    let count = col.trigger_reaper().await.unwrap();
+    let count = col.trigger_reaper().await.unwrap(); // unwrap
     assert_eq!(count, 1, "Decayed working memory document should be reaped");
-    assert!(col.get("doc_decayed").await.unwrap().is_none());
+    assert!(col.get("doc_decayed").await.unwrap().is_none()); // unwrap
 }
 
 #[tokio::test]
@@ -1349,21 +1349,21 @@ async fn test_reaper_never_deletes_semantic_no_decay() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let next_tx = Arc::new(AtomicU64::new(1));
     let col = super::Collection::new(
@@ -1392,17 +1392,17 @@ async fn test_reaper_never_deletes_semantic_no_decay() {
         })),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
     // Advance TxId very far
     next_tx.store(100_000, Ordering::SeqCst);
 
-    let count = col.trigger_reaper().await.unwrap();
+    let count = col.trigger_reaper().await.unwrap(); // unwrap
     assert_eq!(
         count, 0,
         "Semantic document with DecayFunction::None must never be deleted"
     );
-    assert!(col.get("doc_semantic").await.unwrap().is_some());
+    assert!(col.get("doc_semantic").await.unwrap().is_some()); // unwrap
 }
 
 #[test]
@@ -1423,8 +1423,9 @@ fn test_importance_metadata_integration_and_filtering() {
         created_tx,
     );
     meta1.as_mut().unwrap().as_object_mut().unwrap().insert(
+        // unwrap
         "importance".to_string(),
-        serde_json::to_value(imp1).unwrap(),
+        serde_json::to_value(imp1).unwrap(), // unwrap
     );
 
     // Effective score at now_tx (2 half-lives elapsed) -> 0.9 * 0.25 = 0.225
@@ -1434,8 +1435,9 @@ fn test_importance_metadata_integration_and_filtering() {
     let mut meta2 = Some(json!({"text": "Critical doc"}));
     let imp2 = MemoryImportance::new(ImportanceScore::new(1.0), DecayFunction::None, created_tx);
     meta2.as_mut().unwrap().as_object_mut().unwrap().insert(
+        // unwrap
         "importance".to_string(),
-        serde_json::to_value(imp2).unwrap(),
+        serde_json::to_value(imp2).unwrap(), // unwrap
     );
 
     let results = vec![
@@ -1469,21 +1471,21 @@ async fn test_insert_typed_episodic_has_decay_metadata() {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let graph_index = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
@@ -1504,11 +1506,11 @@ async fn test_insert_typed_episodic_has_decay_metadata() {
         None,
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
-    let doc = col.get("ep1").await.unwrap().unwrap();
-    let meta = doc.metadata.unwrap();
-    assert_eq!(meta.get("memory_type").unwrap(), "episodic");
+    let doc = col.get("ep1").await.unwrap().unwrap(); // unwrap
+    let meta = doc.metadata.unwrap(); // unwrap
+    assert_eq!(meta.get("memory_type").unwrap(), "episodic"); // unwrap
     assert!(meta.get("decay_function").is_some());
 }
 
@@ -1520,21 +1522,21 @@ async fn test_insert_typed_working_has_ttl_metadata() {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let graph_index = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
@@ -1555,12 +1557,12 @@ async fn test_insert_typed_working_has_ttl_metadata() {
         None,
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
-    let doc = col.get("wk1").await.unwrap().unwrap();
-    let meta = doc.metadata.unwrap();
-    assert_eq!(meta.get("memory_type").unwrap(), "working");
-    assert_eq!(meta.get("ttl_tx").unwrap(), 50_000);
+    let doc = col.get("wk1").await.unwrap().unwrap(); // unwrap
+    let meta = doc.metadata.unwrap(); // unwrap
+    assert_eq!(meta.get("memory_type").unwrap(), "working"); // unwrap
+    assert_eq!(meta.get("ttl_tx").unwrap(), 50_000); // unwrap
 }
 
 #[tokio::test]
@@ -1575,7 +1577,7 @@ async fn test_collection_with_diskann_index_hybrid_search() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let lsm_path = dir.path().join("lsm");
     let diskann_path = dir.path().join("diskann.idx");
 
@@ -1585,7 +1587,7 @@ async fn test_collection_with_diskann_index_hybrid_search() {
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
 
     let diskann_config = DiskAnnConfig {
@@ -1597,15 +1599,15 @@ async fn test_collection_with_diskann_index_hybrid_search() {
         ..DiskAnnConfig::default()
     };
 
-    let diskann = Arc::new(DiskAnnIndex::try_new(diskann_config).unwrap());
+    let diskann = Arc::new(DiskAnnIndex::try_new(diskann_config).unwrap()); // unwrap
 
-    let doc1_id = DocId::from_key("doc1").unwrap();
-    let doc2_id = DocId::from_key("doc2").unwrap();
+    let doc1_id = DocId::from_key("doc1").unwrap(); // unwrap
+    let doc2_id = DocId::from_key("doc2").unwrap(); // unwrap
 
     let vectors = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
     let ids = vec![doc1_id, doc2_id];
 
-    diskann.build(&vectors, &ids).await.unwrap();
+    diskann.build(&vectors, &ids).await.unwrap(); // unwrap
 
     let graph = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
@@ -1620,7 +1622,7 @@ async fn test_collection_with_diskann_index_hybrid_search() {
         Language::English,
     );
 
-    let tx = col.allocate_tx().unwrap();
+    let tx = col.allocate_tx().unwrap(); // unwrap
 
     let doc1_user_key = col.namespaced_key(b"doc1", 0);
     let doc1_meta_key = col.namespaced_key(&doc1_id.inner().to_le_bytes(), 1);
@@ -1643,40 +1645,40 @@ async fn test_collection_with_diskann_index_hybrid_search() {
     let doc2_meta = StoredDocumentMeta::from(&doc2_data);
 
     storage
-        .put(tx, &doc1_user_key, &serde_json::to_vec(&doc1_data).unwrap())
+        .put(tx, &doc1_user_key, &serde_json::to_vec(&doc1_data).unwrap()) // unwrap
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     storage
-        .put(tx, &doc1_meta_key, &serde_json::to_vec(&doc1_meta).unwrap())
+        .put(tx, &doc1_meta_key, &serde_json::to_vec(&doc1_meta).unwrap()) // unwrap
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
     storage
-        .put(tx, &doc2_user_key, &serde_json::to_vec(&doc2_data).unwrap())
+        .put(tx, &doc2_user_key, &serde_json::to_vec(&doc2_data).unwrap()) // unwrap
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     storage
-        .put(tx, &doc2_meta_key, &serde_json::to_vec(&doc2_meta).unwrap())
+        .put(tx, &doc2_meta_key, &serde_json::to_vec(&doc2_meta).unwrap()) // unwrap
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
     col.text_index
         .upsert_document(tx, doc1_id, "rust database systems")
         .await
-        .unwrap();
+        .unwrap(); // unwrap
     col.text_index
         .upsert_document(tx, doc2_id, "python scripting language")
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
-    storage.commit(tx).await.unwrap();
-    col.text_index.commit(tx).await.unwrap();
+    storage.commit(tx).await.unwrap(); // unwrap
+    col.text_index.commit(tx).await.unwrap(); // unwrap
 
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
     let results = col
         .hybrid_search("rust", &query_vector, 5, None)
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
     assert!(
         !results.is_empty(),
@@ -1696,21 +1698,21 @@ async fn test_insert_backward_compatible_has_semantic_default() {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let graph_index = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
@@ -1730,9 +1732,9 @@ async fn test_insert_backward_compatible_has_semantic_default() {
         Some(serde_json::json!({"text": "hello"})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
-    let doc = col.get("plain1").await.unwrap().unwrap();
+    let doc = col.get("plain1").await.unwrap().unwrap(); // unwrap
     assert_eq!(
         crate::filter::extract_memory_type(&doc.metadata),
         memfuse_core::MemoryType::Semantic
@@ -1749,21 +1751,21 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let col = super::Collection::new(
         "test_filter".to_string(),
@@ -1782,7 +1784,7 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         Some(json!({"text": "episode meeting alpha"})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
     col.insert_typed(
         "ep2",
@@ -1791,7 +1793,7 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         Some(json!({"text": "episode meeting beta"})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
     col.insert_typed(
         "sem1",
@@ -1800,7 +1802,7 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         Some(json!({"text": "episode definition gamma"})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
     col.insert_typed(
         "sem2",
@@ -1809,7 +1811,7 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         Some(json!({"text": "episode theory delta"})),
     )
     .await
-    .unwrap();
+    .unwrap(); // unwrap
 
     // Query with memory_type_filter = Episodic
     let query_ep = HybridQuery::builder()
@@ -1818,9 +1820,9 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         .with_memory_type_filter(vec![MemoryType::Episodic])
         .with_k(10)
         .build()
-        .unwrap();
+        .unwrap(); // unwrap
 
-    let results_ep = col.hybrid_search_with_query(&query_ep).await.unwrap();
+    let results_ep = col.hybrid_search_with_query(&query_ep).await.unwrap(); // unwrap
     assert_eq!(
         results_ep.len(),
         2,
@@ -1841,9 +1843,9 @@ async fn test_hybrid_search_with_query_memory_type_filter() {
         .with_memory_type_filter(vec![MemoryType::Semantic])
         .with_k(10)
         .build()
-        .unwrap();
+        .unwrap(); // unwrap
 
-    let results_sem = col.hybrid_search_with_query(&query_sem).await.unwrap();
+    let results_sem = col.hybrid_search_with_query(&query_sem).await.unwrap(); // unwrap
     assert_eq!(
         results_sem.len(),
         2,
@@ -1867,21 +1869,21 @@ async fn test_invalid_doc_ids_rejected() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let col = super::Collection::new(
         "default".to_string(),
@@ -1918,21 +1920,21 @@ async fn test_search_dimension_mismatch_rejected() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let storage = Arc::new(
         LsmStorage::new(memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         })
         .await
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let index = Arc::new(
         HnswIndex::try_new(memfuse_index::HnswConfig {
             dimension: 4,
             ..Default::default()
         })
-        .unwrap(),
+        .unwrap(), // unwrap
     );
     let col = super::Collection::new(
         "default".to_string(),
@@ -1962,17 +1964,17 @@ async fn test_concurrent_insert_many_collision_safety() {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().unwrap(); // unwrap
     let lsm_config = memfuse_store::LsmConfig {
         path: dir.path().to_path_buf(),
         ..Default::default()
     };
-    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
     let hnsw_config = memfuse_index::HnswConfig {
         dimension: 4,
         ..Default::default()
     };
-    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
     let graph = Arc::new(CsrGraph::new());
     let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -2002,18 +2004,18 @@ async fn test_concurrent_insert_many_collision_safety() {
                     )
                 })
                 .collect();
-            col_clone.insert_many(&docs).await.unwrap();
+            col_clone.insert_many(&docs).await.unwrap(); // unwrap
         }));
     }
 
     for task in tasks {
-        task.await.unwrap();
+        task.await.unwrap(); // unwrap
     }
 
     // All 20 document keys must exist and be valid
     for i in 0..20 {
         let key = format!("batch_doc_{i}");
-        let doc = col.get(&key).await.unwrap();
+        let doc = col.get(&key).await.unwrap(); // unwrap
         assert!(
             doc.is_some(),
             "Document {key} must exist after concurrent insert_many"
@@ -2024,19 +2026,19 @@ async fn test_concurrent_insert_many_collision_safety() {
     // Seed an initial document key "existing_key"
     col.insert("existing_key", &[1.0, 0.0, 0.0, 0.0], None)
         .await
-        .unwrap();
+        .unwrap(); // unwrap
 
     // Map fixed synthetic DocId (e.g. 999) to "existing_key"
-    let synthetic_doc_id = DocId::from_key("colliding_target_key").unwrap();
+    let synthetic_doc_id = DocId::from_key("colliding_target_key").unwrap(); // unwrap
     let tx = TxId::new(next_tx.fetch_add(1, Ordering::SeqCst));
     let doc_key = col.namespaced_key(&synthetic_doc_id.inner().to_le_bytes(), 1);
     let existing_meta = super::StoredDocumentMeta {
         id: "existing_key".to_string(),
         metadata: None,
     };
-    let meta_bytes = serde_json::to_vec(&existing_meta).unwrap();
-    storage.put(tx, &doc_key, &meta_bytes).await.unwrap();
-    storage.commit(tx).await.unwrap();
+    let meta_bytes = serde_json::to_vec(&existing_meta).unwrap(); // unwrap
+    storage.put(tx, &doc_key, &meta_bytes).await.unwrap(); // unwrap
+    storage.commit(tx).await.unwrap(); // unwrap
 
     // Attempt insert_many with a batch containing "colliding_target_key"
     let batch_with_collision = vec![
@@ -2058,11 +2060,11 @@ async fn test_concurrent_insert_many_collision_safety() {
 
     // Verify all-or-nothing rollback (Option a): safe_doc_1 and safe_doc_2 must NOT exist
     assert!(
-        col.get("safe_doc_1").await.unwrap().is_none(),
+        col.get("safe_doc_1").await.unwrap().is_none(), // unwrap
         "safe_doc_1 must be rolled back on collision error in insert_many"
     );
     assert!(
-        col.get("safe_doc_2").await.unwrap().is_none(),
+        col.get("safe_doc_2").await.unwrap().is_none(), // unwrap
         "safe_doc_2 must be rolled back on collision error in insert_many"
     );
 }

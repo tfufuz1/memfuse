@@ -254,35 +254,35 @@ mod tests {
             graph
                 .add_entity(tx, Entity::new(EntityId::new(i), format!("E{i}"), "Node"))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
         // Add some edges
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "knows"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "knows"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(1), "knows"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx, Edge::new(EntityId::new(4), EntityId::new(5), "knows"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = CommunityDetectionConfig {
             max_iterations: 50,
             seed: 12345,
         };
 
-        let run1 = detect_communities(&graph, &config).await.unwrap();
-        let run2 = detect_communities(&graph, &config).await.unwrap();
+        let run1 = detect_communities(&graph, &config).await.unwrap(); // unwrap
+        let run2 = detect_communities(&graph, &config).await.unwrap(); // unwrap
 
         assert_eq!(run1, run2, "Twice execution with identical graph and seed must yield identical CommunityAssignments");
     }
@@ -300,20 +300,20 @@ mod tests {
                     Entity::new(EntityId::new(id), format!("C1_{id}"), "Node"),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx, Edge::new(EntityId::new(2), EntityId::new(3), "link"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx, Edge::new(EntityId::new(3), EntityId::new(1), "link"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // Cluster 2: Nodes 100, 101, 102 tightly connected (no path to Cluster 1)
         for id in [100, 101, 102] {
@@ -323,7 +323,7 @@ mod tests {
                     Entity::new(EntityId::new(id), format!("C2_{id}"), "Node"),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
         graph
             .add_edge(
@@ -331,26 +331,26 @@ mod tests {
                 Edge::new(EntityId::new(100), EntityId::new(101), "link"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(101), EntityId::new(102), "link"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(102), EntityId::new(100), "link"),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = CommunityDetectionConfig::default();
-        let assignments = detect_communities(&graph, &config).await.unwrap();
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap
 
         let map: HashMap<u64, u64> = assignments
             .into_iter()
@@ -405,19 +405,19 @@ mod tests {
             max_iterations in 1u32..50,
             seed in proptest::num::u64::ANY,
         ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap(); // unwrap
             let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
                 let graph = CsrGraph::new();
                 let tx = TxId::new(1);
                 for i in 0..node_count {
-                    graph.add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node")).await.unwrap();
+                    graph.add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node")).await.unwrap(); // unwrap
                 }
                 for (src, dst) in edge_specs {
                     let src_id = EntityId::new((src % node_count) as u64 + 1);
                     let dst_id = EntityId::new((dst % node_count) as u64 + 1);
                     let _ = graph.add_edge(tx, Edge::new(src_id, dst_id, "link")).await;
                 }
-                graph.commit(tx).await.unwrap();
+                graph.commit(tx).await.unwrap(); // unwrap
 
                 let config = CommunityDetectionConfig { max_iterations, seed };
                 let result = detect_communities(&graph, &config).await;
@@ -437,7 +437,7 @@ mod tests {
             edge_specs in proptest::collection::vec((0..30usize, 0..30usize), 0..60),
             seed in proptest::num::u64::ANY,
         ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap(); // unwrap
             let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
                 let graph = CsrGraph::new();
                 let tx = TxId::new(1);
@@ -446,17 +446,17 @@ mod tests {
                     .collect();
 
                 for &id in &expected_ids {
-                    graph.add_entity(tx, Entity::new(id, format!("Node{}", id.inner()), "Node")).await.unwrap();
+                    graph.add_entity(tx, Entity::new(id, format!("Node{}", id.inner()), "Node")).await.unwrap(); // unwrap
                 }
                 for (src, dst) in edge_specs {
                     let src_id = EntityId::new((src % node_count) as u64 + 1);
                     let dst_id = EntityId::new((dst % node_count) as u64 + 1);
                     let _ = graph.add_edge(tx, Edge::new(src_id, dst_id, "link")).await;
                 }
-                graph.commit(tx).await.unwrap();
+                graph.commit(tx).await.unwrap(); // unwrap
 
                 let config = CommunityDetectionConfig { max_iterations: 20, seed };
-                let assignments = detect_communities(&graph, &config).await.unwrap();
+                let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap
 
                 proptest::prop_assert_eq!(assignments.len(), node_count);
                 let assigned_ids: std::collections::HashSet<_> = assignments
@@ -489,7 +489,7 @@ mod tests {
                     Entity::new(EntityId::new(i), format!("Node{i}"), "Node"),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
         // Bipartite graph 1..5 to 6..10
@@ -498,10 +498,10 @@ mod tests {
                 graph
                     .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(j), "link"))
                     .await
-                    .unwrap();
+                    .unwrap(); // unwrap
             }
         }
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await.unwrap(); // unwrap
 
         // With max_iterations: 1, full convergence cannot occur if nodes change labels during iteration 1
         let config = CommunityDetectionConfig {
@@ -509,7 +509,7 @@ mod tests {
             seed: 42,
         };
 
-        let assignments = detect_communities(&graph, &config).await.unwrap();
+        let assignments = detect_communities(&graph, &config).await.unwrap(); // unwrap
 
         assert_eq!(
             assignments.len(),

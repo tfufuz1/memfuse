@@ -2441,13 +2441,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_integrity_key_atomic_permissions_and_race_condition() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().expect("tempdir"); // expect
         let wal_path = temp.path().join("test.wal");
 
         // Test 1: Created key file has 0o600 permissions on Unix
         let key1 = Wal::load_or_create_integrity_key(&wal_path)
             .await
-            .expect("create key");
+            .expect("create key"); // expect
 
         let key_path = temp.path().join(".wal_integrity_key");
         assert!(key_path.exists(), "Key file must exist");
@@ -2455,7 +2455,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let metadata = std::fs::metadata(&key_path).expect("metadata");
+            let metadata = std::fs::metadata(&key_path).expect("metadata"); // expect
             let mode = metadata.permissions().mode() & 0o777;
             assert_eq!(
                 mode, 0o600,
@@ -2476,7 +2476,7 @@ mod tests {
 
         let mut keys = Vec::new();
         for h in handles {
-            let res = h.await.expect("join handle").expect("load key");
+            let res = h.await.expect("join handle").expect("load key"); // expect
             keys.push(res);
         }
 
@@ -2506,13 +2506,13 @@ mod tests {
         };
         use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = tempfile::tempdir().expect("tempdir"); // expect
         let wal_path = temp.path().join("test_acl.wal");
 
-        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime"); // expect
         let key = rt
             .block_on(Wal::load_or_create_integrity_key(&wal_path))
-            .expect("load_or_create_integrity_key");
+            .expect("load_or_create_integrity_key"); // expect
         assert_eq!(key.len(), 32);
 
         let key_path = temp.path().join(".wal_integrity_key");
@@ -2670,28 +2670,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_uuid_sidecar_crash_fault_injection() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("fault_uuid.wal");
         let uuid_path = dir.path().join("fault_uuid.wal.uuid");
 
         let km = Arc::new(
             KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
-                .expect("km"),
+                .expect("km"), // expect
         );
 
         // 1. Simulate a leftover interrupted temp file from a crashed write
         let tmp_path = dir.path().join("fault_uuid.wal.uuid.tmp.99999.12345");
         tokio::fs::write(&tmp_path, b"incomplete_uuid")
             .await
-            .expect("write leftover tmp file");
+            .expect("write leftover tmp file"); // expect
 
         // 2. Opening WAL should cleanly recover, create valid 16-byte UUID sidecar, and ignore leftover tmp file
         let wal = Wal::open_with_key_manager(&wal_path, Some(km.clone()))
             .await
-            .expect("open wal should succeed despite leftover tmp file");
+            .expect("open wal should succeed despite leftover tmp file"); // expect
 
         assert!(uuid_path.exists(), "UUID sidecar must exist");
-        let uuid_bytes = tokio::fs::read(&uuid_path).await.expect("read uuid");
+        let uuid_bytes = tokio::fs::read(&uuid_path).await.expect("read uuid"); // expect
         assert_eq!(uuid_bytes.len(), 16);
 
         drop(wal);
@@ -2699,16 +2699,16 @@ mod tests {
         // 3. Re-opening should read the same valid UUID sidecar
         let uuid_bytes_after = Wal::load_or_create_wal_uuid(&wal_path)
             .await
-            .expect("load uuid");
+            .expect("load uuid"); // expect
         assert_eq!(uuid_bytes.as_slice(), uuid_bytes_after);
     }
 
     #[tokio::test]
     async fn test_prepare_batch_hmac_chain_concurrency() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("concurrency_batch.wal");
 
-        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal"));
+        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal")); // expect
 
         let wal1 = wal.clone();
         let wal2 = wal.clone();
@@ -2722,7 +2722,7 @@ mod tests {
                 },
                 1,
             )];
-            wal1.prepare_batch(ops).await.expect("batch 1")
+            wal1.prepare_batch(ops).await.expect("batch 1") // expect
         });
 
         let handle2 = tokio::spawn(async move {
@@ -2734,12 +2734,12 @@ mod tests {
                 },
                 2,
             )];
-            wal2.prepare_batch(ops).await.expect("batch 2")
+            wal2.prepare_batch(ops).await.expect("batch 2") // expect
         });
 
         let (res1, res2) = tokio::join!(handle1, handle2);
-        let batch1 = res1.expect("join 1");
-        let batch2 = res2.expect("join 2");
+        let batch1 = res1.expect("join 1"); // expect
+        let batch2 = res2.expect("join 2"); // expect
 
         let prev1 = batch1[0].prev_hmac;
         let prev2 = batch2[0].prev_hmac;
@@ -2761,18 +2761,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_open_with_key_manager_is_new_race_condition() {
-        let dir = tempdir().expect("tempdir");
+        let dir = tempdir().expect("tempdir"); // expect
         let wal_path = dir.path().join("race_open.wal");
 
         let km = Arc::new(
             KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
-                .expect("km"),
+                .expect("km"), // expect
         );
 
         // Pre-create the UUID sidecar so both calls race purely on the WAL file open
         Wal::load_or_create_wal_uuid(&wal_path)
             .await
-            .expect("create uuid sidecar");
+            .expect("create uuid sidecar"); // expect
 
         let path1 = wal_path.clone();
         let path2 = wal_path.clone();
@@ -2783,8 +2783,8 @@ mod tests {
         let h2 = tokio::spawn(async move { Wal::open_with_key_manager(path2, Some(km2)).await });
 
         let (res1, res2) = tokio::join!(h1, h2);
-        let wal1 = res1.expect("join 1").expect("open 1");
-        let wal2 = res2.expect("join 2").expect("open 2");
+        let wal1 = res1.expect("join 1").expect("open 1"); // expect
+        let wal2 = res2.expect("join 2").expect("open 2"); // expect
 
         // Both WAL instances are opened successfully
         assert_eq!(wal1.path(), wal2.path());
