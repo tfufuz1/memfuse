@@ -15,7 +15,7 @@
 //! - **Python Bridge (Layer 3)**: Exposes the core functionality of MemFuse to Python.
 //! - **Async Orchestration**: Manages a shared Tokio runtime for executing async Rust code
 //!   from synchronous Python calls.
-//! - **Zero-Copy**: Aims for minimal copying of vector data between Python and Rust.
+//! - **Minimal Copying**: Zero-copy borrowing of input vector data from NumPy arrays into Rust; FlatBuffer responses returned as PyBytes.
 
 #![forbid(unsafe_code)]
 
@@ -543,7 +543,9 @@ macro_rules! memfuse_crud_methods {
                 results_to_py(py, results)
             }
 
-            /// Performs semantic search and returns results as FlatBuffer (zero-copy).
+            /// Performs semantic search and returns results as FlatBuffer-encoded bytes (PyBytes).
+            ///
+            /// Returns FlatBuffer binary IPC payload copied into Python PyBytes.
             #[pyo3(signature = (vector, k))]
             pub fn search_fb<'py>(
                 &self,
@@ -551,6 +553,11 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 k: usize,
             ) -> PyResult<Bound<'py, PyBytes>> {
+                // Note on Zero-Copy: True zero-copy return via Python Buffer Protocol is not safely
+                // feasible here without `unsafe` code (`__getbuffer__`) and lifetime management risks,
+                // because `FlatBufferBuilder` produces a temporary stack/heap buffer during search execution.
+                // Returning `PyBytes::new(py, data)` copies the buffer into Python-managed memory safely,
+                // preserving `#![forbid(unsafe_code)]` compliance and zero use-after-free risk.
                 if k == 0 || k > 1000 {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
                         "Search k must be between 1 and 1000. Got: {}",
@@ -644,7 +651,9 @@ macro_rules! memfuse_crud_methods {
                 results_to_py(py, results)
             }
 
-            /// Performs hybrid search and returns results as FlatBuffer (zero-copy).
+            /// Performs hybrid search and returns results as FlatBuffer-encoded bytes (PyBytes).
+            ///
+            /// Returns FlatBuffer binary IPC payload copied into Python PyBytes.
             #[allow(clippy::too_many_arguments)]
             #[pyo3(signature = (text, vector, k, vector_weight=None, text_weight=None, graph_weight=None))]
             pub fn hybrid_search_fb<'py>(
@@ -657,6 +666,11 @@ macro_rules! memfuse_crud_methods {
                 text_weight: Option<f32>,
                 graph_weight: Option<f32>,
             ) -> PyResult<Bound<'py, PyBytes>> {
+                // Note on Zero-Copy: True zero-copy return via Python Buffer Protocol is not safely
+                // feasible here without `unsafe` code (`__getbuffer__`) and lifetime management risks,
+                // because `FlatBufferBuilder` produces a temporary stack/heap buffer during search execution.
+                // Returning `PyBytes::new(py, data)` copies the buffer into Python-managed memory safely,
+                // preserving `#![forbid(unsafe_code)]` compliance and zero use-after-free risk.
                 validate_query_text(text)?;
                 if k == 0 || k > 1000 {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
