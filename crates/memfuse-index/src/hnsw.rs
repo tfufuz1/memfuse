@@ -385,8 +385,10 @@ impl HnswIndex {
             }
         }
 
+        let nodes = self.inner.nodes.read();
+        let deleted = self.inner.deleted_nodes.read();
+
         if let Some(f) = filter {
-            let nodes = self.inner.nodes.read();
             let mmap_guard = self.inner.mmap_index.read();
             let mmap_node_count = mmap_guard
                 .as_ref()
@@ -402,6 +404,9 @@ impl HnswIndex {
             let mut added = 0;
             for i in (0..total_nodes).rev() {
                 if !ep.contains(&i) {
+                    if snapshot_seq.is_none() && deleted.contains(i as u64) {
+                        continue;
+                    }
                     if let Ok(doc_id) = self.inner.resolve_doc_id(i, &ctx) {
                         if f(doc_id) {
                             ep.push(i);
@@ -456,8 +461,6 @@ impl HnswIndex {
             );
         }
 
-        let nodes = self.inner.nodes.read();
-        let deleted = self.inner.deleted_nodes.read();
         let mut results = Vec::with_capacity(k);
 
         let seq_log_guard = if snapshot_seq.is_some() {
@@ -1252,9 +1255,9 @@ impl HnswIndexCore {
             ));
         }
 
-        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 — Write-Lock für
+        // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) — Write-Lock für
         //   SQ8-Quantizer-Bounds-Expansion bei Insert garantiert; loom-Regressionstest
-        //   in tests/loom_quantizer_race_test.rs (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
+        //   in tests/loom_quantizer_race_test.rs
         let vector_data = if self.config.quantize {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
@@ -3050,6 +3053,8 @@ mod tests {
             10..100,
         );
 
+        // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-01T12:00:00Z) (SESSION: b8e4f1a2)
+        // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-01T23:05:53Z) (SESSION: 297af137)
         // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
         // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
         // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().

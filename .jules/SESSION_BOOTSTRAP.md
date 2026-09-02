@@ -4,15 +4,23 @@
 
 ## Phase 0 — Session-Identität etablieren (30 Sekunden)
 
+**Primärquelle:** Das Environment-Setup-Skript liefert SESSION_HASH und TS bereits
+unter `[10/10] Session Identity`. Nutze diese Werte direkt.
+
+Falls kein Setup-Skript gelaufen ist (z.B. manueller Start):
+
 ```bash
-# 1. SESSION-Hash generieren (verwende diesen für ALLE Tags dieser Session)
+# SESSION-Hash generieren (verwende diesen für ALLE Tags dieser Session)
 SESSION_HASH=$(date -u +%Y%m%d%H%M%S | sha256sum | head -c 8)
 echo "SESSION: $SESSION_HASH"
 
-# 2. Aktuellen Timestamp ermitteln
+# Aktuellen Timestamp ermitteln
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "TS: $TS"
 ```
+
+**Konsistenzregel:** Ein Session-Hash MUSS für die gesamte Sitzung konsistent bleiben.
+Niemals mid-session neu generieren — außer nach explizitem Neustart des Environments.
 
 ## Phase 1 — Offene Kritische Issues prüfen (60 Sekunden)
 

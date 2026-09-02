@@ -1,6 +1,12 @@
 #[allow(dead_code)]
 fn chrono_or_today() -> String {
-    "2026-08-27".to_string()
+    let now = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    if let Ok(git_date) = get_git_file_last_modified("WORKING_STATE.md") {
+        if git_date > now {
+            return git_date;
+        }
+    }
+    now
 }
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
@@ -846,7 +852,7 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
         .args([
             "log",
             "-1",
-            "--format=%aI",
+            "--format=%at",
             "--",
             full_path.to_str().unwrap(),
         ])
@@ -860,6 +866,12 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if stdout.is_empty() {
         return Err(format!("No git history found for {}", file_path));
+    }
+
+    if let Ok(ts) = stdout.parse::<i64>() {
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+            return Ok(dt.format("%Y-%m-%d").to_string());
+        }
     }
 
     if stdout.len() >= 10 {
