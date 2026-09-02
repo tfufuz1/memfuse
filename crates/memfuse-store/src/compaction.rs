@@ -123,10 +123,13 @@ impl CompactionEngine {
 
         tracing::info!("Compaction triggered: merging {} SSTables", indices.len());
 
-        // 2. Collect input SSTables (under read-lock, just clone Arcs)
+        // 2. Collect input SSTables (under read-lock, just clone Arcs, sorted chronologically)
         let input_ssts: Vec<Arc<SstableReader>> = {
             let ssts = sstables.read().await;
-            indices.iter().map(|&i| Arc::clone(&ssts[i])).collect()
+            let mut input: Vec<Arc<SstableReader>> =
+                indices.iter().map(|&i| Arc::clone(&ssts[i])).collect();
+            input.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
+            input
         };
 
         // 3. Perform the merge (no lock held — this is the expensive part)
@@ -270,7 +273,9 @@ impl CompactionEngine {
 
         for tier in tiers {
             if tier.len() >= self.config.min_sstables_per_tier {
-                return Some(tier);
+                let mut sorted_tier = tier;
+                sorted_tier.sort_by_key(|&i| ssts[i].metadata().max_seq & !TOMBSTONE_BIT);
+                return Some(sorted_tier);
             }
         }
 
@@ -283,7 +288,9 @@ impl CompactionEngine {
                 .collect();
             by_size.sort_by_key(|&(_, size)| size);
             let count = self.config.min_sstables_per_tier;
-            return Some(by_size[..count].iter().map(|&(i, _)| i).collect());
+            let mut indices: Vec<usize> = by_size[..count].iter().map(|&(i, _)| i).collect();
+            indices.sort_by_key(|&i| ssts[i].metadata().max_seq & !TOMBSTONE_BIT);
+            return Some(indices);
         }
 
         None
@@ -311,7 +318,9 @@ impl CompactionEngine {
 
         impl PartialEq for HeapItem {
             fn eq(&self, other: &Self) -> bool {
-                self.key == other.key && self.seq == other.seq
+                self.key == other.key
+                    && (self.seq & !TOMBSTONE_BIT) == (other.seq & !TOMBSTONE_BIT)
+                    && self.source_idx == other.source_idx
             }
         }
 
@@ -489,6 +498,196 @@ mod tests {
         Arc::new(SstableReader::open(&path, bc).await.expect("open sst")) // expect
     }
 
+    #[test]
+    fn prop_compaction_tombstone_masking_latest_operation_wins() {
+        use proptest::prelude::*;
+
+        #[derive(Debug, Clone)]
+        enum Op {
+            Put(u8),
+            Delete,
+        }
+
+        let op_seq_strategy = proptest::collection::vec(
+            prop_oneof![any::<u8>().prop_map(Op::Put), Just(Op::Delete),],
+            1..30,
+        );
+
+        proptest!(ProptestConfig::with_cases(30), |(ops in op_seq_strategy)| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                let tmp = TempDir::new().unwrap();
+                let registry = Arc::new(SnapshotRegistry::new());
+                let bc = create_block_cache(1);
+                let engine = CompactionEngine::new(
+                    CompactionConfig::default(),
+                    registry,
+                    Arc::clone(&bc),
+                    None,
+                    Arc::new(memfuse_core::ResourceTracker::new(
+                        memfuse_core::ResourceBudget {
+                            memory_limit: 1024 * 1024,
+                        },
+                    )),
+                );
+
+                let mut input_ssts = Vec::new();
+                for (idx, op) in ops.iter().enumerate() {
+                    let seq = idx as u64 + 1;
+                    let sst_name = format!("sst_{idx}.sst");
+                    let sst = match op {
+                        Op::Put(v) => {
+                            create_test_sstable(
+                                tmp.path(),
+                                &sst_name,
+                                &[(b"target_key", &[*v], seq)],
+                                Arc::clone(&bc),
+                            )
+                            .await
+                        }
+                        Op::Delete => {
+                            create_test_sstable(
+                                tmp.path(),
+                                &sst_name,
+                                &[(b"target_key", &[], seq | TOMBSTONE_BIT)],
+                                Arc::clone(&bc),
+                            )
+                            .await
+                        }
+                    };
+                    input_ssts.push(sst);
+                }
+
+                let output_path = tmp.path().join("merged.sst");
+                engine
+                    .merge_sstables(&input_ssts, &output_path, u64::MAX, true)
+                    .await
+                    .unwrap();
+
+                let reader = SstableReader::open(&output_path, Arc::clone(&bc))
+                    .await
+                    .unwrap();
+
+                let last_op = ops.last().unwrap();
+                let res = reader.get(b"target_key").await.unwrap();
+
+                match last_op {
+                    Op::Put(expected_v) => {
+                        prop_assert!(
+                            res.is_some(),
+                            "Latest operation was PUT but key was not found after compaction"
+                        );
+                        let (val, seq, _) = res.unwrap();
+                        prop_assert_eq!(
+                            val.as_ref(),
+                            &[*expected_v],
+                            "Merged value must match latest PUT value"
+                        );
+                        prop_assert_eq!(
+                            seq & TOMBSTONE_BIT,
+                            0,
+                            "TOMBSTONE_BIT must NOT be set for latest PUT"
+                        );
+                    }
+                    Op::Delete => {
+                        prop_assert!(
+                            res.is_none(),
+                            "Latest operation was DELETE, key must be GC'd after full compaction"
+                        );
+                    }
+                }
+
+                Ok(())
+            }).unwrap();
+        });
+    }
+
+    #[tokio::test]
+    async fn test_compaction_candidate_selection_follows_chronological_order() {
+        let tmp = TempDir::new().expect("temp dir"); // expect
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
+        let config = CompactionConfig {
+            min_sstables_per_tier: 2,
+            ..CompactionConfig::default()
+        };
+        let engine = CompactionEngine::new(
+            config,
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
+
+        // Create older SSTable with many entries (large file size) but small max_seq (seq=10)
+        let mut large_entries = Vec::new();
+        large_entries.push((b"key-1".as_ref(), b"old_val".as_ref(), 10u64));
+        for _ in 0..100 {
+            large_entries.push((b"pad", b"large_padding_data_to_increase_file_size", 10u64));
+        }
+        let sst_old_large = create_test_sstable(
+            tmp.path(),
+            "sst_old_large.sst",
+            &large_entries,
+            Arc::clone(&bc),
+        )
+        .await;
+
+        // Create newer SSTable with few entries (small file size) but larger max_seq (seq=20)
+        let sst_new_small = create_test_sstable(
+            tmp.path(),
+            "sst_new_small.sst",
+            &[(b"key-1", b"new_val", 20)],
+            Arc::clone(&bc),
+        )
+        .await;
+
+        assert!(
+            sst_old_large.metadata().file_size > sst_new_small.metadata().file_size,
+            "Old SSTable must be larger in file size than new SSTable"
+        );
+
+        let sstables = vec![Arc::clone(&sst_old_large), Arc::clone(&sst_new_small)];
+
+        // Select candidates
+        let candidates = engine
+            .select_compaction_candidates(&sstables)
+            .expect("candidates selected");
+
+        // Collect inputs in selected candidate order
+        let candidate_ssts: Vec<_> = candidates
+            .iter()
+            .map(|&i| Arc::clone(&sstables[i]))
+            .collect();
+
+        // Perform merge
+        let output = tmp.path().join("merged_chronological.sst");
+        engine
+            .merge_sstables(&candidate_ssts, &output, u64::MAX, true)
+            .await
+            .expect("merge");
+
+        let reader = SstableReader::open(&output, Arc::clone(&bc))
+            .await
+            .expect("open merged");
+
+        let (val, seq, _) = reader.get(b"key-1").await.expect("get").expect("exists");
+        assert_eq!(
+            val.as_ref(),
+            b"new_val",
+            "Merge must preserve newer version regardless of file size"
+        );
+        assert_eq!(seq, 20);
+    }
+
     #[tokio::test]
     async fn test_merge_deduplication() {
         let tmp = TempDir::new().expect("temp dir"); // expect
@@ -539,6 +738,65 @@ mod tests {
         assert_eq!(entries[0].0.as_ref(), b"key-a");
         assert_eq!(entries[0].1.as_ref(), b"val-3");
         assert_eq!(entries[0].2, 3);
+    }
+
+    #[tokio::test]
+    async fn test_tombstone_gc_stream_advancement_preserves_subsequent_keys() {
+        let tmp = TempDir::new().expect("temp dir"); // expect
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
+        let engine = CompactionEngine::new(
+            CompactionConfig::default(),
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
+
+        let tombstone_seq = 5 | TOMBSTONE_BIT;
+        // Key A is tombstone, followed in same SSTable stream by B, C, D
+        let sst1 = create_test_sstable(
+            tmp.path(),
+            "sst1.sst",
+            &[
+                (b"key-a", b"", tombstone_seq),
+                (b"key-b", b"val-b", 10),
+                (b"key-c", b"val-c", 11),
+                (b"key-d", b"val-d", 12),
+            ],
+            Arc::clone(&bc),
+        )
+        .await;
+
+        let output = tmp.path().join("compacted_stream.sst");
+
+        // min_snapshot_seq=100 -> key-a tombstone is GC'd during full compaction
+        engine
+            .merge_sstables(&[sst1], &output, 100, true)
+            .await
+            .expect("merge"); // expect
+
+        let reader = SstableReader::open(&output, Arc::clone(&bc))
+            .await
+            .expect("open"); // expect
+        let entries = reader.iter().await.expect("iter"); // expect
+
+        // key-a GC'd, key-b, key-c, key-d MUST be present and unchanged
+        assert_eq!(
+            entries.len(),
+            3,
+            "B, C, D must be preserved after tombstone GC"
+        );
+        assert_eq!(entries[0].0.as_ref(), b"key-b");
+        assert_eq!(entries[0].1.as_ref(), b"val-b");
+        assert_eq!(entries[1].0.as_ref(), b"key-c");
+        assert_eq!(entries[1].1.as_ref(), b"val-c");
+        assert_eq!(entries[2].0.as_ref(), b"key-d");
+        assert_eq!(entries[2].1.as_ref(), b"val-d");
     }
 
     #[tokio::test]
