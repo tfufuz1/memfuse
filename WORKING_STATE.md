@@ -13,7 +13,7 @@ Ergebnis: **2 offene Tags**
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
 | `crates/memfuse-checkpoint/src/lib.rs` | 72 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-29T17:21:26Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
-| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-09-01T00:00:00Z` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration (TS:2026-09-01T00:00:00Z) (SESSION:016eab33): |
+| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 — Stable SIMD Migration: |
 
 
 ## Aktive Agenten
@@ -33,7 +33,7 @@ Ergebnis: **2 offene Tags**
 | `memfuse-graph` | 1 | 6167 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 10534 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 13136 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | 1 | 4967 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-text` | 1 | 4969 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 16342 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 3792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1189 | 🧊 Optional |  |
@@ -41,7 +41,7 @@ Ergebnis: **2 offene Tags**
 | `memfuse-py` | 3 | 1285 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 1575 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2512 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 3462 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 3481 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

@@ -19,8 +19,11 @@ static SHARED_SPLITTER: OnceLock<Arc<crate::morphology::GermanCompoundSplitter>>
 
 fn get_protected_regex() -> &'static Regex {
     PROTECTED_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)(?:https?://[^\s]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
-            .expect("Invalid regex pattern")
+        match Regex::new(r"(?i)(?:https?://[^\s]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
+        {
+            Ok(re) => re,
+            Err(e) => panic!("Static regex compilation failed: {e}"),
+        }
     })
 }
 
