@@ -652,7 +652,12 @@ impl DiskAnnIndex {
             );
 
             for i in 0..header.node_count as u32 {
-                let offset = start_offset + (i as usize * node_size_bytes);
+                let index_offset = (i as usize).checked_mul(node_size_bytes).ok_or_else(|| {
+                    MemFuseError::Index("Node offset multiplication overflow".into())
+                })?;
+                let offset = start_offset
+                    .checked_add(index_offset)
+                    .ok_or_else(|| MemFuseError::Index("Node offset addition overflow".into()))?;
                 assert_eq!(
                     offset % sector_size,
                     0,
@@ -704,14 +709,23 @@ impl DiskAnnIndex {
         );
 
         let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
-        let node_offset = start_offset + (index as usize * node_size);
+        let index_offset = (index as usize)
+            .checked_mul(node_size)
+            .ok_or_else(|| MemFuseError::Index("Node offset multiplication overflow".into()))?;
+        let node_offset = start_offset
+            .checked_add(index_offset)
+            .ok_or_else(|| MemFuseError::Index("Node offset addition overflow".into()))?;
         assert_eq!(
             node_offset % sector_size,
             0,
             "Node read offset must be sector-aligned"
         );
 
-        if node_offset + node_size > mmap.len() {
+        let end_offset = node_offset
+            .checked_add(node_size)
+            .ok_or_else(|| MemFuseError::Index("Node end offset addition overflow".into()))?;
+
+        if end_offset > mmap.len() {
             return Err(MemFuseError::Index("Node offset out of bounds".into()));
         }
 
@@ -1311,5 +1325,35 @@ mod tests {
             "Unexpected error message: {}",
             err_msg
         );
+    }
+
+    #[tokio::test]
+    async fn test_diskann_build_search_roundtrip() -> Result<()> {
+        let dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let config = DiskAnnConfig {
+            index_path: dir.path().join("smoke.diskann"),
+            dimension: 4,
+            max_degree: 8,
+            beam_width: 8,
+            distance_metric: DistanceMetric::Euclidean,
+            quantize: true,
+            ..DiskAnnConfig::default()
+        };
+        let index = DiskAnnIndex::try_new(config)?;
+        let vectors: Vec<Vec<f32>> = (0..10).map(|i| vec![i as f32, 0.0, 0.0, 0.0]).collect();
+        let ids: Vec<DocId> = (0..10).map(DocId::from).collect();
+        index.build(&vectors, &ids).await?;
+        let query = vec![9.0f32, 0.0, 0.0, 0.0];
+        let results = index.search(&query, 1).await?;
+        assert!(
+            !results.is_empty(),
+            "Smoke-Test: Suchergebnis darf nicht leer sein"
+        );
+        assert_eq!(
+            results[0].doc_id,
+            DocId::from(9u64),
+            "Nächster Nachbar zu [9,0,0,0] muss id=9 sein"
+        );
+        Ok(())
     }
 }
