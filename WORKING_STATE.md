@@ -8,41 +8,32 @@
 
 Stand letzter Prüfung: 2026-09-02
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **2 offene Tags**
+Ergebnis: **1 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-checkpoint/src/lib.rs` | 72 | `AGT-CKPT-001` | `INPUT-VALIDATION` | `MED` | `2026-08-29T17:21:26Z` | /// AI-TAG[INPUT-VALIDATION][MED] AGT-CKPT-001 (TS:2026-08-29T17:21:26Z) (SESSION:e6e9abca) |
 | `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-09-01T23:05:53Z` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 (TS:2026-09-01T23:05:53Z) (SESSION:297af137) — Stable SIMD Migration: |
-
-
-## Aktive Agenten
-
-| Agent | TS / Datum | ANCHOR / Beschreibung |
-|---|---|---|
-| `AGENT:1` | `2026-09-01T11:30:00Z` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) |
-| `AGENT:?` | `2026-08-31T21:12:53Z` | // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 8409 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | 1 | 3676 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2312 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 6167 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 10530 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-core` | 0 | 8421 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | 1 | 3696 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-crypto` | 1 | 2315 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-graph` | 1 | 6168 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | 1 | 10558 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 13132 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | 1 | 4967 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 16342 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-text` | 1 | 4977 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-db` | 2 | 16410 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 3793 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1189 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 2647 | 🟢 Clean |  |
-| `memfuse-py` | 3 | 1285 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 1575 | 🟢 Clean |  |
+| `memfuse-ollama` | 3 | 2662 | 🟢 Clean |  |
+| `memfuse-py` | 3 | 1307 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-router` | 3 | 1869 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 2512 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 3462 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 3495 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

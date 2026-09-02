@@ -635,10 +635,12 @@ mod tests {
         interfix_type: &'static str,
     }
 
-    // ANCHOR[TEST:TXT-001] STATUS:DONE (TS:2026-09-02T08:30:00Z) (SESSION:98e60e97)
+    // ANCHOR[TEST:TXT-001] STATUS:DONE (TS:2026-09-02T08:30:00Z) (SESSION:cf1f75c6)
     // Recall-Evaluation vollständig: 55/55 passed (100%). Audit-Report
     // AUDIT_memfuse-text.md Session de8fd9f5 bestätigt PASS.
     // DoS-Timing: GermanCompoundSplitter terminiert < 100ms für Langkomposita.
+    // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-01T23:15:00Z) (SESSION: de8fd9f5)
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-02T08:30:00Z) (SESSION: 98e60e97)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Recall evaluation suite for German compounds verified (55 KMU compounds test suite passes with >90% recall).
     #[test]
