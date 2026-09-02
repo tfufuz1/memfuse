@@ -2834,6 +2834,8 @@ dependencies = [
  "async-trait",
  "futures-util",
  "memfuse-core",
+ "proptest",
+ "quick-xml",
  "rand 0.8.8",
  "regex",
  "reqwest 0.12.28",
