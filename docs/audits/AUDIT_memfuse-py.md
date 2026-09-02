@@ -72,3 +72,14 @@ The current audit verified:
 2. **`crates/memfuse-py/tests/test_errors.py`**:
    - Added `test_long_id_validation` verifying oversized document ID handling.
    - Added `test_long_collection_name_validation` verifying oversized collection name handling.
+
+---
+
+## Changes Implemented in Session `8e159fc9` (TS: 2026-09-02T08:30:27Z)
+
+1. **`crates/memfuse-py/src/lib.rs`**:
+   - Standardized `validate_collection_name`, `validate_db_path`, and `validate_query_text` to return `MemFuseValueError` instead of standard `PyValueError`.
+2. **`crates/memfuse-py/tests/test_errors.py`**:
+   - Added `test_empty_collection_name_and_query_validation` testing `MemFuseValueError` raising behavior on empty collection names and empty hybrid search queries.
+3. **`crates/memfuse-py/tests/test_bindings.py` & `crates/memfuse-py/AGENTS.md`**:
+   - Annotated `test_open_and_close` and `test_hybrid_search` with `ANCHOR[TEST:PY-001]` and `ANCHOR[TEST:PY-002]` tags updating review status to `IN-PROGRESS (REVIEW-PASS 1/2)`.
