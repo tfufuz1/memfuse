@@ -185,6 +185,65 @@ impl CheckpointManifest {
     }
 }
 
+/// RAII-Guard für gepinnte Checkpoint-Sequenznummern (gemäß ADR-015).
+/// Garantiert, dass eine gepinnte Sequenznummer bei einem Fehler oder Panic während des Schreibens
+/// automatisch entpinnt wird, um dauerhafte GC-Blockaden zu verhindern.
+#[must_use = "PinGuard must be defused upon successful checkpoint storage"]
+pub struct PinGuard<S: memfuse_core::StorageEngine> {
+    storage: Arc<S>,
+    seq_no: Option<u64>,
+}
+
+impl<S: memfuse_core::StorageEngine> PinGuard<S> {
+    pub async fn pin(storage: Arc<S>, seq_no: u64) -> Result<Self> {
+        storage.pin_checkpoint(seq_no).await?;
+        Ok(Self {
+            storage,
+            seq_no: Some(seq_no),
+        })
+    }
+
+    /// Entschärft den Guard nach erfolgreicher Persistierung, sodass die Sequenznummer gepinnt bleibt.
+    pub fn defuse(mut self) {
+        self.seq_no.take();
+    }
+
+    /// Entpinnt die Sequenznummer explizit und asynchron bei einem abgefangenen Fehler.
+    pub async fn unpin(mut self) -> Result<()> {
+        if let Some(seq_no) = self.seq_no.take() {
+            self.storage.unpin_checkpoint(seq_no).await?;
+        }
+        Ok(())
+    }
+}
+
+impl<S: memfuse_core::StorageEngine> Drop for PinGuard<S> {
+    fn drop(&mut self) {
+        if let Some(seq_no) = self.seq_no.take() {
+            let storage = Arc::clone(&self.storage);
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    if let Err(e) = storage.unpin_checkpoint(seq_no).await {
+                        tracing::warn!(
+                            seq = seq_no,
+                            "Failed to unpin checkpoint in PinGuard drop: {e}"
+                        );
+                    }
+                });
+            } else {
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        let _ = rt.block_on(storage.unpin_checkpoint(seq_no));
+                    }
+                });
+            }
+        }
+    }
+}
+
 /// Metadata for a persistent checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointMeta {
@@ -579,14 +638,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let old_checkpoint = self.get_checkpoint_internal(name).await?;
 
         // 1. Pin new checkpoint's seq_no (MUST happen BEFORE storage.save())
-        self.storage.pin_checkpoint(seq_no).await?;
+        let pin_guard = PinGuard::pin(Arc::clone(&self.storage), seq_no).await?;
 
-        // 2. storage.save() the new checkpoint
-        let save_result = self.save_checkpoint_internal(meta.clone()).await;
-
-        // 3. If save() fails: unpin the new seq_no, return error
-        if let Err(e) = save_result {
-            if let Err(unpin_err) = self.storage.unpin_checkpoint(seq_no).await {
+        // 2. storage.save() the new checkpoint (RAII PinGuard will unpin on drop/panic or explicit unpin on error)
+        if let Err(e) = self.save_checkpoint_internal(meta.clone()).await {
+            if let Err(unpin_err) = pin_guard.unpin().await {
                 tracing::warn!(
                     seq = seq_no,
                     "Failed to unpin new checkpoint after save failure: {unpin_err}"
@@ -594,6 +650,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             }
             return Err(e);
         }
+
+        // 3. Save succeeded: defuse pin_guard so seq_no remains pinned
+        pin_guard.defuse();
 
         // 4. If save() succeeds: unpin the old checkpoint's seq_no
         if let Some(old) = old_checkpoint {
@@ -1051,6 +1110,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_pin_guard_unpins_checkpoint_on_storage_write_failure() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_pinguard");
+
+        let seq_no = 999;
+        let cp_key = b"test_pinguard:checkpoint:fail_write_cp";
+        *storage.fail_on_put.lock() = Some(cp_key.to_vec());
+
+        let res = store
+            .create_checkpoint("fail_write_cp", "col1", seq_no, TxId::new(10), serde_json::json!({}))
+            .await;
+
+        assert!(res.is_err(), "Checkpoint creation must fail when storage put fails");
+
+        // Yield execution briefly to allow drop task on Handle::spawn to complete if async
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify PinGuard drop unpinned seq_no 999
+        assert!(
+            !storage.pinned.lock().contains(&seq_no),
+            "Sequence number 999 must be unpinned after storage write failure via PinGuard RAII drop"
+        );
+    }
+
+    #[tokio::test]
     async fn test_pin_before_unpin_invariant_on_failure() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
@@ -1085,6 +1169,57 @@ mod tests {
             !storage.pinned.lock().contains(&2),
             "New checkpoint should be unpinned after failure"
         );
+    }
+
+    #[test]
+    fn test_panic_unwind_triggers_orphan_registration_and_recovery() {
+        clear_all_orphaned_checkpoints();
+        let storage = Arc::new(MockStorage::new());
+
+        let (store, panic_result) = std::thread::spawn({
+            let storage = Arc::clone(&storage);
+            move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to build Tokio runtime for panic test");
+
+                let store = Arc::new(PersistentCheckpointStore::new(storage, "test_panic"));
+                let store_clone = Arc::clone(&store);
+
+                let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    rt.block_on(async move {
+                        let _guard = store_clone.create_guard(TxId::new(7070)).unwrap();
+                        // Intentionally trigger panic inside guard scope
+                        panic!("Simulated intentional panic between guard creation and commit");
+                    });
+                }));
+
+                (store, panic_res)
+            }
+        })
+        .join()
+        .expect("Thread failed to join");
+
+        assert!(panic_result.is_err(), "catch_unwind must capture the panic");
+
+        // Verify orphaned checkpoint is registered after panic unwind
+        assert_eq!(orphaned_checkpoint_count(), 1);
+
+        // Perform recovery in a fresh runtime
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build Tokio runtime for recovery test");
+
+        rt.block_on(async move {
+            let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+            assert_eq!(recovered, vec![TxId::new(7070)]);
+
+            // Verify transaction was rolled back in storage
+            let rolled_back = storage.rolled_back_tx.lock().clone();
+            assert_eq!(rolled_back, vec![TxId::new(7070)]);
+        });
     }
 
     #[tokio::test]
@@ -1312,15 +1447,23 @@ mod tests {
         let store = PersistentCheckpointStore::new(storage, "test");
 
         let guard = store.create_guard(TxId::new(1010)).unwrap(); // unwrap
-        let res = guard.rollback_blocking();
+
+        // Timeout safety net to guarantee no hanging/deadlock
+        let res = tokio::time::timeout(std::time::Duration::from_secs(2), async move {
+            guard.rollback_blocking()
+        })
+        .await
+        .expect("rollback_blocking in async context timed out - possible deadlock!");
+
         assert!(
             res.is_err(),
-            "rollback_blocking called from async context must return error to prevent deadlock"
+            "rollback_blocking called from async context must return error immediately to prevent deadlock"
         );
         if let Err(MemFuseError::Internal(msg)) = res {
             assert!(msg.contains("active async Tokio runtime context"));
+            assert!(msg.contains("rollback().await"));
         } else {
-            panic!("Expected MemFuseError::Internal error message");
+            panic!("Expected MemFuseError::Internal error message instructing to use rollback().await");
         }
     }
 
