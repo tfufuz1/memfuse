@@ -152,6 +152,20 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 }
                 Ok(results)
             }
+
+            let filter_fn = move |id: DocId| matched_ids.contains(&id);
+            let scored_docs = self
+                .index
+                .search_filtered(query, k, Some(&filter_fn))
+                .await?;
+
+            tracing::debug!(
+                search_iterations_needed = 1,
+                matched_count = scored_docs.len(),
+                "Predicate pushdown vector search completed"
+            );
+
+            self.hydrate_from_scored_at(scored_docs, seq).await
         }
         .await;
 
@@ -189,6 +203,68 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             embedder.embed(query_text).await?
         };
         self.search(&embedding, k).await
+    }
+
+    /// Estimates the selectivity (fraction of documents matching `filter`) over the collection metadata.
+    ///
+    /// For collections under 1,000 documents, this performs an exact metadata evaluation.
+    /// For larger collections, it samples up to 200 document metadata entries to derive an estimate `s in (0.0, 1.0]`.
+    pub(super) async fn estimate_filter_selectivity(
+        &self,
+        filter: &FilterExpr,
+        seq: u64,
+        total_docs: usize,
+    ) -> Result<f64> {
+        if total_docs == 0 {
+            return Ok(1.0);
+        }
+        if total_docs < 1000 {
+            let matched = self.get_matching_doc_ids_at(filter, seq).await?;
+            return Ok(matched.len() as f64 / total_docs as f64);
+        }
+
+        const SAMPLE_SIZE: usize = 200;
+        let prefix = if self.name == "default" {
+            b"__docid:".to_vec()
+        } else {
+            let mut p = self.prefix.clone();
+            p.push(1); // docid mapping type
+            p
+        };
+
+        let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
+        if entries.is_empty() {
+            return Ok(1.0);
+        }
+
+        let mut total_sampled = 0;
+        let mut matched_sampled = 0;
+
+        for (_, v) in entries.iter().take(SAMPLE_SIZE) {
+            total_sampled += 1;
+            let doc_metadata = if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(v) {
+                meta.metadata
+            } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(v) {
+                full.metadata
+            } else {
+                None
+            };
+            let metadata = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+            if filter.evaluate(metadata) {
+                matched_sampled += 1;
+            }
+        }
+
+        if total_sampled == 0 {
+            return Ok(1.0);
+        }
+
+        let selectivity = matched_sampled as f64 / total_sampled as f64;
+        if selectivity == 0.0 {
+            Ok((1.0 / total_docs as f64).max(0.0005))
+        } else {
+            Ok(selectivity)
+        }
     }
 
     pub(super) async fn get_matching_doc_ids_at(
@@ -655,9 +731,46 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             k.saturating_mul(3).min(memfuse_core::MAX_SEARCH_K).max(k)
         };
 
-        // 1. Vector Signal
+        let total_docs = self.len().await;
+
+        let filter_pre_rrf = |list: Vec<crate::SearchResult>| {
+            let mut filtered = Vec::with_capacity(list.len());
+            for res in list {
+                if let Some(ref filter_expr) = query.filter {
+                    let meta_ref = res.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                    if !filter_expr.evaluate(meta_ref) {
+                        continue;
+                    }
+                }
+
+                if let Some(ref type_filter) = query.memory_type_filter {
+                    let memory_type = crate::filter::extract_memory_type(&res.metadata);
+                    if !type_filter.contains(&memory_type) {
+                        continue;
+                    }
+                }
+
+                filtered.push(res);
+            }
+            filtered
+        };
+
+        let is_filtered = query.filter.is_some() || query.memory_type_filter.is_some();
+
+        // 1. Vector Signal (Predicate Pushdown into HNSW)
         let vector_results = if is_vector_zero {
             Vec::new()
+        } else if let Some(ref filter_expr) = query.filter {
+            let matched_ids = self.get_matching_doc_ids_at(filter_expr, seq).await?;
+            if matched_ids.is_empty() {
+                Vec::new()
+            } else {
+                let filter_fn = move |id: DocId| matched_ids.contains(&id);
+                let raw_vec_results = self
+                    .search_filtered_at(vector, candidate_k, Some(&filter_fn), seq)
+                    .await?;
+                filter_pre_rrf(raw_vec_results)
+            }
         } else {
             self.search_filtered_at(vector, candidate_k, None, seq)
                 .await?
@@ -666,16 +779,59 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // 2. Text Signal
         let text_results = if is_text_empty {
             Vec::new()
+        } else if is_filtered {
+            let selectivity = if let Some(ref filter_expr) = query.filter {
+                self.estimate_filter_selectivity(filter_expr, seq, total_docs)
+                    .await?
+            } else {
+                0.1
+            };
+            let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
+            let calculated_initial =
+                ((candidate_k as f64) / selectivity.max(0.0001)).ceil() as usize;
+            let min_oversample = candidate_k.min(max_cap);
+            let mut oversample = calculated_initial.clamp(min_oversample, max_cap);
+
+            let mut iterations = 0;
+            loop {
+                iterations += 1;
+                let bm25_results = self.text_index.search_at(text, oversample, seq).await?;
+                let bm25_len = bm25_results.len();
+                let hydrated = self
+                    .hydrate_from_tuples_at(
+                        bm25_results
+                            .into_iter()
+                            .map(|sd| (sd.doc_id, sd.score))
+                            .collect(),
+                        seq,
+                    )
+                    .await?;
+                let filtered = filter_pre_rrf(hydrated);
+
+                if filtered.len() >= candidate_k || oversample >= max_cap || bm25_len < oversample {
+                    tracing::debug!(
+                        search_iterations_needed = iterations,
+                        signal = "text",
+                        selectivity = selectivity,
+                        matched_count = filtered.len(),
+                        "Adaptive oversampling hybrid text signal completed"
+                    );
+                    break filtered;
+                }
+                oversample = (oversample * 2).min(max_cap);
+            }
         } else {
             let bm25_results = self.text_index.search_at(text, candidate_k, seq).await?;
-            self.hydrate_from_tuples_at(
-                bm25_results
-                    .into_iter()
-                    .map(|sd| (sd.doc_id, sd.score))
-                    .collect(),
-                seq,
-            )
-            .await?
+            let hydrated = self
+                .hydrate_from_tuples_at(
+                    bm25_results
+                        .into_iter()
+                        .map(|sd| (sd.doc_id, sd.score))
+                        .collect(),
+                    seq,
+                )
+                .await?;
+            filter_pre_rrf(hydrated)
         };
 
         // 3. Graph Signal
@@ -714,7 +870,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 .into_iter()
                 .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
                 .collect();
-            self.hydrate_from_tuples_at(doc_tuples, seq).await?
+            let hydrated = self.hydrate_from_tuples_at(doc_tuples, seq).await?;
+            filter_pre_rrf(hydrated)
         } else {
             Vec::new()
         };
@@ -740,32 +897,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             } else {
                 None
             };
-
-        let filter_pre_rrf = |list: Vec<crate::SearchResult>| {
-            let mut filtered = Vec::with_capacity(list.len());
-            for res in list {
-                if let Some(ref filter_expr) = query.filter {
-                    let meta_ref = res.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
-                    if !filter_expr.evaluate(meta_ref) {
-                        continue;
-                    }
-                }
-
-                if let Some(ref type_filter) = query.memory_type_filter {
-                    let memory_type = crate::filter::extract_memory_type(&res.metadata);
-                    if !type_filter.contains(&memory_type) {
-                        continue;
-                    }
-                }
-
-                filtered.push(res);
-            }
-            filtered
-        };
-
-        let vector_results = filter_pre_rrf(vector_results);
-        let text_results = filter_pre_rrf(text_results);
-        let graph_results = filter_pre_rrf(graph_results);
 
         let mut signal_sets = Vec::new();
         if !vector_results.is_empty() {
