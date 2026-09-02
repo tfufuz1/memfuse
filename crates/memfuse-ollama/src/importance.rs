@@ -19,7 +19,7 @@ fn get_score_regex() -> Result<&'static Regex> {
     if let Some(re) = SCORE_REGEX.get() {
         return Ok(re);
     }
-    let re = Regex::new(r"(?:0(?:\.\d+)?|1(?:\.0+)?)")
+    let re = Regex::new(r"(?:0(?:\.\d+)?|1(?:\.0+)?|\.\d+)")
         .map_err(|e| MemFuseError::Internal(format!("Regex compilation failed: {e}")))?;
     let _ = SCORE_REGEX.set(re);
     SCORE_REGEX
@@ -64,23 +64,30 @@ pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result
         .generate_text(&client.config().model, &prompt)
         .await?;
 
-    let re = get_score_regex()?;
-    let matched = re
-        .find(raw_response.trim())
-        .ok_or_else(|| {
-            MemFuseError::Internal(format!(
-                "Failed to parse ImportanceScore float from LLM response: '{raw_response}'"
-            ))
-        })?
-        .as_str();
+    let score = parse_importance_score_response(&raw_response);
+    Ok(score)
+}
 
-    let score_val: f32 = matched.parse().map_err(|e| {
-        MemFuseError::Internal(format!(
-            "Failed to parse matched score float '{matched}': {e}"
-        ))
-    })?;
+/// Parses an ImportanceScore from raw LLM output, falling back cleanly to default (0.5) if unparseable.
+pub fn parse_importance_score_response(raw_response: &str) -> ImportanceScore {
+    let Ok(re) = get_score_regex() else {
+        tracing::warn!("SCORE_REGEX compilation failed, returning default ImportanceScore(0.5)");
+        return ImportanceScore::default();
+    };
 
-    Ok(ImportanceScore::new(score_val))
+    let trimmed = raw_response.trim();
+    if let Some(m) = re.find(trimmed) {
+        let matched = m.as_str();
+        if let Ok(parsed) = matched.parse::<f32>() {
+            return ImportanceScore::new(parsed);
+        }
+    }
+
+    tracing::warn!(
+        raw_response = %raw_response,
+        "Failed to parse ImportanceScore float from LLM response, returning default ImportanceScore(0.5)"
+    );
+    ImportanceScore::default()
 }
 
 #[cfg(test)]
@@ -157,9 +164,8 @@ mod tests {
 
         let client = OllamaClient::new(server_url);
         let res = score_importance(&client, "Some chunk text").await;
-        assert!(matches!(res, Err(MemFuseError::Internal(_))));
-        let err_msg = res.unwrap_err().to_string();
-        assert!(err_msg.contains("Failed to parse ImportanceScore float"));
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().value(), 0.5);
     }
 
     #[test]
@@ -174,18 +180,48 @@ mod tests {
 
     #[test]
     fn test_score_importance_regex_parsing_edge_cases() {
-        let re = get_score_regex().unwrap();
+        let s1 = parse_importance_score_response("Based on analysis: 0.75");
+        assert_eq!(s1.value(), 0.75);
 
-        let m1 = re.find("Based on analysis: 0.75").unwrap().as_str();
-        assert_eq!(m1.parse::<f32>().unwrap(), 0.75);
+        let s2 = parse_importance_score_response("Score: 1.0");
+        assert_eq!(s2.value(), 1.0);
 
-        let m2 = re.find("Score: 1.0").unwrap().as_str();
-        assert_eq!(m2.parse::<f32>().unwrap(), 1.0);
+        let s3 = parse_importance_score_response("Rating is 0");
+        assert_eq!(s3.value(), 0.0);
 
-        let m3 = re.find("Rating is 0.0").unwrap().as_str();
-        assert_eq!(m3.parse::<f32>().unwrap(), 0.0);
+        let s4 = parse_importance_score_response("Importance = .42 (Moderate)");
+        assert_eq!(s4.value(), 0.42);
 
-        let m4 = re.find("Importance = 0.42 (Moderate)").unwrap().as_str();
-        assert_eq!(m4.parse::<f32>().unwrap(), 0.42);
+        let s5 = parse_importance_score_response("Relevanz: 0.8/1.0");
+        assert_eq!(s5.value(), 0.8);
+
+        let s6 = parse_importance_score_response("Unparseable garbage response text");
+        assert_eq!(s6.value(), 0.5);
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+        #[test]
+        fn prop_score_importance_parse_formats(
+            prefix in "[a-zA-Z0-9 :\\-_/]{0,30}",
+            score_str in "(0|1|0\\.[0-9]{1,4}|1\\.0{1,4}|\\.[0-9]{1,4})",
+            suffix in "[a-zA-Z0-9 :\\-_/]{0,30}",
+        ) {
+            let llm_output = format!("{}{}{}", prefix, score_str, suffix);
+            let parsed = parse_importance_score_response(&llm_output);
+            assert!(!parsed.value().is_nan());
+            assert!((0.0..=1.0).contains(&parsed.value()));
+        }
+
+        #[test]
+        fn prop_score_importance_arbitrary_garbage_never_panics(
+            garbage in ".*",
+        ) {
+            let parsed = parse_importance_score_response(&garbage);
+            assert!(!parsed.value().is_nan());
+            assert!((0.0..=1.0).contains(&parsed.value()));
+        }
     }
 }

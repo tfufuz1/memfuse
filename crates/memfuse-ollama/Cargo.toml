@@ -15,3 +15,7 @@ tracing = { workspace = true }
 futures-util = "0.3"
 rand = { workspace = true }
 regex = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.4"
+quick-xml = "0.41"
