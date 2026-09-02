@@ -132,6 +132,50 @@ mod tests {
         assert_eq!(replayed[1].step_count, 2);
         assert_eq!(replayed[1].node_id, "node-process");
     }
+
+    #[tokio::test]
+    async fn test_audit_log_invalid_task_id_rejection() {
+        let storage = Arc::new(InMemoryStorageEngine::new());
+        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+        let collection = Arc::new(Collection::new(
+            "test_audit_invalid".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            1536,
+            memfuse_text::Language::English,
+        ));
+
+        let audit_log = AuditLog::new(collection);
+
+        let invalid_entry = AuditEntry {
+            task_id: "".to_string(),
+            step_count: 1,
+            node_id: "node-start".to_string(),
+            tokens_consumed: 10,
+            payload: serde_json::Value::Null,
+            error: None,
+        };
+
+        assert!(matches!(
+            audit_log.append(&invalid_entry).await,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+
+        assert!(matches!(
+            audit_log.replay_task("").await,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+
+        assert!(matches!(
+            audit_log.replay_task("task\0null").await,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
 }
 
 /// Minimal in-memory implementation of [`StorageEngine`] backed by a thread-safe map.

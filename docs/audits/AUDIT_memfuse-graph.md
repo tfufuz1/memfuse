@@ -1,7 +1,7 @@
 # Audit Report: `memfuse-graph` (CSR Graph Engine, PPR, BFS & Session-DAG)
 
-**Date:** 2026-09-01T23:20:54Z
-**Session:** 95e34eff
+**Date:** 2026-09-02T08:16:08Z
+**Session:** 31767094
 **Auditor:** Senior Rust Graph-Algorithmen-Ingenieur (Jules)
 **Layer:** Layer 1 (CSR-Wissensgraph + Session-DAG)
 

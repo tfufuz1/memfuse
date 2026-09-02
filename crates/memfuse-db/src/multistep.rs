@@ -101,7 +101,11 @@ impl<S: StorageEngine> MultiStepEngine<S> {
         // Runde 1: Standard-Suche
         let round1 = self
             .collection
-            .hybrid_search(original_query, vector, k * 2, None)
+            .query()
+            .text(original_query)
+            .vector(vector)
+            .k(k * 2)
+            .execute()
             .await?;
         all_result_sets.push(round1.clone());
         rounds_executed += 1;
@@ -155,7 +159,7 @@ impl<S: StorageEngine> MultiStepEngine<S> {
                 // 3. The original vector contributes via Round-1 results in RRF fusion
                 // ANCHOR[MULTISTEP:SUBQUERY-EMBEDDING] STATUS:DONE (TS:2026-06-01T00:00:00Z) — See TRACKING-ISSUE #143 for
                 // future improvement: inject TextEmbeddingEngine for sub-query vectors.
-                match self.collection.hybrid_search(sub_q, &[], k, None).await {
+                match self.collection.query().text(sub_q).k(k).execute().await {
                     Ok(sub_results) => {
                         all_result_sets.push(sub_results.clone());
                         current_results = sub_results;

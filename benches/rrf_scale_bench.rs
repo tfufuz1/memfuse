@@ -83,6 +83,7 @@ fn generate_signal_results(
                 "payload": "Sample metadata string payload to simulate JSON object overhead in real applications."
             })),
             matched_signals: vec![],
+            provenance: None,
         });
     }
     results

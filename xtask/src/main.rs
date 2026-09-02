@@ -1,12 +1,19 @@
 #[allow(dead_code)]
 fn chrono_or_today() -> String {
-    let now = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    if let Ok(git_date) = get_git_file_last_modified("WORKING_STATE.md") {
-        if git_date > now {
-            return git_date;
+    if let Ok(output) = std::process::Command::new("date").args(["-u", "+%Y-%m-%d"]).output() {
+        if output.status.success() {
+            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !s.is_empty() {
+                if let Ok(git_date) = get_git_file_last_modified("WORKING_STATE.md") {
+                    if git_date > s {
+                        return git_date;
+                    }
+                }
+                return s;
+            }
         }
     }
-    now
+    get_git_file_last_modified("WORKING_STATE.md").unwrap_or_else(|_| "2026-09-02".to_string())
 }
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
@@ -852,7 +859,8 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
         .args([
             "log",
             "-1",
-            "--format=%at",
+            "--date=short",
+            "--format=%cd",
             "--",
             full_path.to_str().unwrap(),
         ])
@@ -868,17 +876,7 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
         return Err(format!("No git history found for {}", file_path));
     }
 
-    if let Ok(ts) = stdout.parse::<i64>() {
-        if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
-            return Ok(dt.format("%Y-%m-%d").to_string());
-        }
-    }
-
-    if stdout.len() >= 10 {
-        Ok(stdout[..10].to_string())
-    } else {
-        Ok(stdout)
-    }
+    Ok(stdout)
 }
 
 pub fn run_check_jules_context_freshness() -> bool {
@@ -1098,6 +1096,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-jules-context-freshness" => {
+            let success = run_check_jules_context_freshness();
+            if !success {
+                process::exit(1);
+            }
+        }
         "check-review-coverage" => {
             let tags = scan_tags("crates");
             let success = run_check_review_coverage(&tags);
@@ -1129,6 +1133,12 @@ fn main() {
             let tags = scan_tags("crates");
             let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
             run_context_tags(&tags, extra_args);
+        }
+        "check-jules-context-freshness" => {
+            let success = run_check_jules_context_freshness();
+            if !success {
+                process::exit(1);
+            }
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
