@@ -172,3 +172,42 @@ assert!((result - 1.41421356_f32).abs() < 1e-4);
 <!-- Status-Indikatoren werden AUSSCHLIESSLICH durch cargo xtask sync-docs
      aus CI-Ergebnissen gesetzt. Niemals manuell auf 🟢 setzen. -->
 ```
+
+## FEHLER-KLASSE 11: Lock-Guard über .await halten
+
+**Symptom**: Agent hält einen `RwLockReadGuard` oder `MutexGuard` über einen asynchronen Aufruf hinweg.
+
+```rust
+// ❌ FALSCH — Guard blockiert den Tokio Executor:
+let db = state.db.read();
+db.search(...).await?;
+
+// ✅ KORREKT — Guard droppen vor dem await:
+let collection = { state.db.read().collection("test")?.clone() };
+collection.search(...).await?;
+```
+
+## FEHLER-KLASSE 12: Feature-Gate-Vergessen (onnx)
+
+**Symptom**: Agent verwendet Code aus `memfuse-embed` ohne Feature-Flag.
+
+```rust
+// ❌ FALSCH:
+use memfuse_embed::TextEmbedder; // Bricht Builds ohne onnx-Feature!
+
+// ✅ KORREKT:
+#[cfg(feature = "onnx")]
+use memfuse_embed::TextEmbedder;
+```
+
+## FEHLER-KLASSE 13: Modul-Pfad-Halluzination
+
+**Symptom**: Agent rät Modulpfade, anstatt in der Dateistruktur nachzusehen.
+
+```rust
+// ❌ FALSCH — Halluzinierter Pfad:
+use memfuse_db::collection::Collection;
+
+// ✅ KORREKT — Tatsächlicher Pfad (vorher grep nutzen):
+use memfuse_db::Collection;
+```

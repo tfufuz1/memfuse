@@ -4,7 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-09-02T23:20:30Z (SESSION: a1811605)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
+| `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
@@ -56,7 +56,7 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-09-02T23:20:30Z (SESSION: a1811605)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden |
+| `2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden |
 | `2026-09-02T08:38:03Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `963f93c2` | `PASS` | `2` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS:2026-09-02T08:38:03Z) (SESSION:963f93c2) |
 | `2026-09-02T08:30:00Z` | `crates/memfuse-text/src/morphology.rs` | `REVIEW-PASS` | `TEST:TXT-001` | `98e60e97` | `PASS` | `2` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-02T08:30:00Z) (SESSION: 98e60e97) |
 | `2026-09-02T08:19:33Z` | `crates/memfuse-mcp/tests/mcp_test.rs` | `REVIEW-PASS` | `-` | `e2c39779` | `IN-PROGRESS` | `-` | // REVIEW-PASS[1/2] STATUS:IN-PROGRESS (TS:2026-09-02T08:19:33Z) (SESSION: e2c39779) PRÜFER-KONTEXT: FRESH — Error-Path Coverage verified in test_malformed_request_returns_error and unit tests. |
@@ -125,6 +125,7 @@
 | `2026-08-30T15:00:19Z` | `crates/memfuse-agent/src/graph.rs` | `AI-TAG` | `-` | `283abf0f` | `RESOLVED` | `-` | // AI-TAG[HARDENING][CRITICAL] RESOLVED: Validates non-empty from/to endpoints for workflow edges. (TS:2026-08-30T15:00:19Z) (SESSION: 283abf0f) |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
+| `2026-08-29T18:00:00Z` | `crates/memfuse-mcp/src/prompt_injection.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Prompt-Injection-Erkennung & Quarantäne-System für MCP-Server |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-08-29T17:16:44Z (SESSION: f50ed9ef)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
@@ -176,5 +177,6 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
+| `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |

@@ -19,21 +19,21 @@ Ergebnis: **1 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 8547 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | 1 | 3698 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-core` | 0 | 8624 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | 1 | 4352 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2318 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 6168 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 10831 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 13138 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-graph` | 1 | 6820 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-index` | 1 | 10970 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | 1 | 13147 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 4977 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 17327 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 3837 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-db` | 2 | 18263 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 4116 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1191 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 2679 | 🟢 Clean |  |
-| `memfuse-py` | 3 | 1307 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 2430 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2797 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 3495 | 🟢 Clean |  |
+| `memfuse-py` | 3 | 1392 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-router` | 3 | 2434 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 3433 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 4197 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

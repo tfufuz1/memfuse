@@ -39,6 +39,30 @@ Layer 4:  memfuse-{mcp,tauri} ← agent + db + ollama + crypto/graph
 
 ---
 
+## 📖 Crate-AGENTS.md Laderegel
+
+**MANDATORY FIRST STEP:** Bevor Code in einer Crate bearbeitet wird, MUSS Jules die jeweilige `AGENTS.md` der Crate laden. Sie enthält Modul-Karten, API-Signaturen, Anti-Patterns und Lock-Hierarchien.
+
+| Crate | Pfad für view_file / read |
+|---|---|
+| `memfuse-core` | `crates/memfuse-core/AGENTS.md` |
+| `memfuse-store` | `crates/memfuse-store/AGENTS.md` |
+| `memfuse-index` | `crates/memfuse-index/AGENTS.md` |
+| `memfuse-text` | `crates/memfuse-text/AGENTS.md` |
+| `memfuse-crypto` | `crates/memfuse-crypto/AGENTS.md` |
+| `memfuse-graph` | `crates/memfuse-graph/AGENTS.md` |
+| `memfuse-checkpoint` | `crates/memfuse-checkpoint/AGENTS.md` |
+| `memfuse-db` | `crates/memfuse-db/AGENTS.md` |
+| `memfuse-agent` | `crates/memfuse-agent/AGENTS.md` |
+| `memfuse-ollama` | `crates/memfuse-ollama/AGENTS.md` |
+| `memfuse-embed` | `crates/memfuse-embed/AGENTS.md` |
+| `memfuse-py` | `crates/memfuse-py/AGENTS.md` |
+| `memfuse-router` | `crates/memfuse-router/AGENTS.md` |
+| `memfuse-mcp` | `crates/memfuse-mcp/AGENTS.md` |
+| `memfuse-tauri` | `crates/memfuse-tauri/AGENTS.md` |
+
+---
+
 ## 🚫 Kritische ADRs — VOR Code-Schreiben kennen
 
 | ADR | Entscheidung | Konsequenz |

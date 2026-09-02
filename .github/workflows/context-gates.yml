@@ -112,3 +112,26 @@ jobs:
         run: |
           cargo run -p xtask -- check-jules-context-freshness
           echo "✅ Jules Context Frischeprüfung erfolgreich"
+
+      - name: "Gate 11: AGENTS.md Template Validierung"
+        run: |
+          # Prüft, ob alle AGENTS.md die erforderlichen 8 Sektionen enthalten
+          for file in crates/*/AGENTS.md; do
+            if [ -f "$file" ]; then
+              for section in \
+                "## 1. Zweck & Architekturrolle" \
+                "## 2. Modul-Karte" \
+                "## 3. Kritische Invarianten" \
+                "## 4. Public API Quick-Reference" \
+                "## 5. Anti-Patterns & LLM-Fallstricke" \
+                "## 6. Concurrency & Lock-Hierarchie" \
+                "## 7. Cross-Crate-Schnittstellen & DAG-Grenzen" \
+                "## 8. Relevante ADRs & Rules"; do
+                if ! grep -q "$section" "$file"; then
+                  echo "❌ Sektion fehlt in $file: $section"
+                  exit 1
+                fi
+              done
+            fi
+          done
+          echo "✅ Alle AGENTS.md Dateien entsprechen dem 8-Sektionen-Template"
