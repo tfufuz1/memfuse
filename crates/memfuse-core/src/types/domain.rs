@@ -1544,7 +1544,8 @@ mod tests {
 
         let max_offset = u64::MAX - TxId::INTERNAL_BASE;
         assert_eq!(max_offset, 1_000_000);
-        let tx_max = TxId::try_from_internal_offset(max_offset).expect("Max valid offset should succeed"); // expect
+        let tx_max =
+            TxId::try_from_internal_offset(max_offset).expect("Max valid offset should succeed"); // expect
         assert_eq!(tx_max.inner(), u64::MAX);
         assert!(tx_max.is_valid_origin());
 

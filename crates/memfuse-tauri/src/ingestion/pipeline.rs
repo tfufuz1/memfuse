@@ -402,7 +402,9 @@ mod tests {
         let file = std::fs::File::create(&file_path).unwrap();
         file.set_len(MAX_INGEST_FILE_SIZE_BYTES + 1).unwrap();
 
-        let embedder = Arc::new(MockEmbedder { fail_on_even: false });
+        let embedder = Arc::new(MockEmbedder {
+            fail_on_even: false,
+        });
         let pipeline = IngestionPipeline::new(embedder);
 
         let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
@@ -412,7 +414,9 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, MemFuseError::InvalidInput(_)));
-        assert!(err.to_string().contains("exceeds maximum allowed size of 100 MB"));
+        assert!(err
+            .to_string()
+            .contains("exceeds maximum allowed size of 100 MB"));
     }
 
     #[tokio::test]
@@ -424,7 +428,9 @@ mod tests {
         let content = "Hello World".as_bytes();
         std::fs::write(&file_path, content).unwrap();
 
-        let embedder = Arc::new(MockEmbedder { fail_on_even: false });
+        let embedder = Arc::new(MockEmbedder {
+            fail_on_even: false,
+        });
         let pipeline = IngestionPipeline::new(embedder);
 
         let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();

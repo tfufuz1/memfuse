@@ -122,7 +122,8 @@ mod tests {
     use std::sync::Arc;
 
     #[tokio::test]
-    async fn test_chat_lock_guard_concurrency_no_deadlock() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_chat_lock_guard_concurrency_no_deadlock() -> Result<(), Box<dyn std::error::Error>>
+    {
         let temp_dir = tempfile::tempdir()?;
         let config = memfuse_db::MemFuseConfig {
             dimension: 4,
