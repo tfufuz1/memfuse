@@ -8,8 +8,6 @@ mod tests {
     use memfuse_db::{MemFuse, MemFuseConfig};
     use serde_json::json;
     use std::sync::Arc;
-    use tokio::net::TcpListener;
-    use tokio::sync::oneshot;
 
     #[tokio::test]
     async fn test_route_deterministic_community_assignment() {
@@ -155,52 +153,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_dispatch_to_slm_mock_server_receives_trimmed_context_only() {
-        // Setup a mock HTTP JSON-RPC 2.0 server
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr = listener.local_addr().unwrap(); // unwrap
+        let temp_dir = tempfile::tempdir().unwrap();
+        let captured_req_path = temp_dir.path().join("request.json");
+        let script_path = temp_dir.path().join("mock_slm.sh");
+        std::fs::write(
+            &script_path,
+            format!(
+                "#!/bin/sh\nread line\necho \"$line\" > {}\necho '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"answer\":\"SLM successfully processed context\"}}}}'\n",
+                captured_req_path.display()
+            ),
+        )
+        .unwrap();
 
-        let (tx, rx) = oneshot::channel::<serde_json::Value>();
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                let mut buffer = [0u8; 4096];
-                let n = socket.read(&mut buffer).await.unwrap(); // unwrap
-                let request_str = String::from_utf8_lossy(&buffer[..n]);
-
-                // Extract body after \r\n\r\n
-                if let Some(body_idx) = request_str.find("\r\n\r\n") {
-                    let body = &request_str[body_idx + 4..];
-                    if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(body) {
-                        let _ = tx.send(json_body);
-                    }
-                }
-
-                let response_body = json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "result": {
-                        "answer": "SLM successfully processed context"
-                    }
-                })
-                .to_string();
-
-                let http_response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    response_body.len(),
-                    response_body
-                );
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
-        let profile = SlmProfile::new(
-            "mock-slm",
-            format!("http://{}", addr),
-            vec![1],
-            TokenBudget::new(50, 0),
-            0.1,
-        );
+        let endpoint = format!("sh {}", script_path.display());
+        let profile = SlmProfile::new("mock-slm", endpoint, vec![1], TokenBudget::new(50, 0), 0.1);
 
         let chunk = memfuse_core::ContextChunk {
             doc_id: memfuse_core::DocId::new(1),
@@ -226,7 +192,10 @@ mod tests {
         let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
         assert_eq!(answer, "SLM successfully processed context");
 
-        let received_json = rx.await.expect("received request body"); // expect
+        let captured_str =
+            std::fs::read_to_string(&captured_req_path).expect("read captured request");
+        let received_json: serde_json::Value =
+            serde_json::from_str(&captured_str).expect("parse captured request");
         assert_eq!(received_json["method"], "slm_process_context");
         let params = &received_json["params"];
         assert_eq!(params["profile_name"], "mock-slm");
@@ -817,10 +786,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_dispatch_error_paths() {
-        // 1. Connection refused / bad host
+        // 1. Process spawn error / bad command
         let bad_profile = SlmProfile::new(
             "bad-slm",
-            "http://127.0.0.1:1/mcp", // Closed port
+            "/nonexistent/binary/path/12345",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -837,7 +806,7 @@ mod tests {
         let decision = RoutingDecision {
             profile: bad_profile,
             context: memfuse_core::ContextWindow {
-                chunks: vec![chunk],
+                chunks: vec![chunk.clone()],
                 total_tokens: 5,
                 truncated: false,
             },
@@ -847,63 +816,22 @@ mod tests {
             matches!(res_err, Err(MemFuseError::Internal(msg)) if msg.contains("Fehler bei MCP-Dispatch"))
         );
 
-        // 2. HTTP 500 error from server
-        let listener_500 = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_500 = listener_500.local_addr().unwrap(); // unwrap
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener_500.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let http_response =
-                    "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
-        let profile_500 = SlmProfile::new(
-            "slm-500",
-            format!("http://{}", addr_500),
-            vec![1],
-            TokenBudget::new(50, 0),
-            0.1,
-        );
-        let decision_500 = RoutingDecision {
-            profile: profile_500,
+        // 2. Closed stdout without JSON-RPC response
+        let profile_closed =
+            SlmProfile::new("slm-closed", "true", vec![1], TokenBudget::new(50, 0), 0.1);
+        let decision_closed = RoutingDecision {
+            profile: profile_closed,
             context: decision.context.clone(),
         };
-        let res_500 = dispatch_to_slm(&decision_500).await;
+        let res_closed = dispatch_to_slm(&decision_closed).await;
         assert!(
-            matches!(res_500, Err(MemFuseError::Internal(msg)) if msg.contains("HTTP Status 500"))
+            matches!(res_closed, Err(MemFuseError::Internal(msg)) if msg.contains("Fehler bei MCP-Dispatch"))
         );
 
         // 3. RPC Error response
-        let listener_rpc_err = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_rpc_err = listener_rpc_err.local_addr().unwrap(); // unwrap
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener_rpc_err.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let resp_body = json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "error": {
-                        "code": -32601,
-                        "message": "Method not found"
-                    }
-                })
-                .to_string();
-                let http_response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    resp_body.len(),
-                    resp_body
-                );
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
         let profile_rpc_err = SlmProfile::new(
             "slm-rpc-err",
-            format!("http://{}", addr_rpc_err),
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -914,36 +842,13 @@ mod tests {
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
-            matches!(res_rpc_err, Err(MemFuseError::Internal(msg)) if msg.contains("MCP RPC Fehler [-32601]"))
+            matches!(res_rpc_err, Err(MemFuseError::Internal(msg)) if msg.contains("MCP RPC Fehler [-32601]: Method not found"))
         );
 
         // 4. Custom JSON object result (no "answer" key)
-        let listener_obj = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_obj = listener_obj.local_addr().unwrap(); // unwrap
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener_obj.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let resp_body = json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "result": {
-                        "custom_data": 42
-                    }
-                })
-                .to_string();
-                let http_response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    resp_body.len(),
-                    resp_body
-                );
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
         let profile_obj = SlmProfile::new(
             "slm-obj",
-            format!("http://{}", addr_obj),
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"custom_data\":42}}'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -956,29 +861,9 @@ mod tests {
         assert_eq!(res_obj, "{\"custom_data\":42}");
 
         // 5. Neither result nor error present
-        let listener_empty = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr_empty = listener_empty.local_addr().unwrap(); // unwrap
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener_empty.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let resp_body = json!({
-                    "jsonrpc": "2.0",
-                    "id": 1
-                })
-                .to_string();
-                let http_response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    resp_body.len(),
-                    resp_body
-                );
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
         let profile_empty = SlmProfile::new(
             "slm-empty",
-            format!("http://{}", addr_empty),
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1}'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,
@@ -1294,21 +1179,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_dispatch_invalid_json_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr = listener.local_addr().unwrap(); // unwrap
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::AsyncWriteExt;
-                let http_response =
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 12\r\n\r\n{invalid json";
-                socket.write_all(http_response.as_bytes()).await.ok();
-            }
-        });
-
         let profile = SlmProfile::new(
             "bad-json-slm",
-            format!("http://{}", addr),
+            "echo '{invalid json'",
             vec![1],
             TokenBudget::new(50, 0),
             0.1,

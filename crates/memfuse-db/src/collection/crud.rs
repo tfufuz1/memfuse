@@ -634,7 +634,44 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         to: DocId,
         relation: memfuse_core::types::domain::LinkRelation,
     ) -> Result<()> {
+        if from == to {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Cannot link a document to itself".into(),
+            ));
+        }
+
         let _guard = self.insert_lock.lock().await;
+
+        if relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+            // Prevent cycles: if `to` transitively supersedes `from`, adding `from supersedes to`
+            // creates a cycle that displaces all documents in the cycle post-RRF (BL-1).
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(to);
+            visited.insert(to);
+
+            let mut steps = 0;
+            while let Some(curr) = queue.pop_front() {
+                steps += 1;
+                if steps > 1000 {
+                    break;
+                }
+                if curr == from {
+                    return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+                        "Cyclic Supersedes relation detected: document {:?} transitively supersedes {:?}",
+                        to, from
+                    )));
+                }
+                let links = self.get_links(curr).await?;
+                for link in links {
+                    if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+                        if visited.insert(link.target) {
+                            queue.push_back(link.target);
+                        }
+                    }
+                }
+            }
+        }
 
         let tx = self.allocate_tx()?;
         let doc_key = self.namespaced_key(&from.inner().to_le_bytes(), 1);

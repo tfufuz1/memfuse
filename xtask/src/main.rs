@@ -1,6 +1,9 @@
 #[allow(dead_code)]
 fn chrono_or_today() -> String {
-    if let Ok(output) = std::process::Command::new("date").args(["-u", "+%Y-%m-%d"]).output() {
+    if let Ok(output) = std::process::Command::new("date")
+        .args(["-u", "+%Y-%m-%d"])
+        .output()
+    {
         if output.status.success() {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {

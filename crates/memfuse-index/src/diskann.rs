@@ -645,11 +645,11 @@ impl DiskAnnIndex {
             let sector_size = header.sector_size as usize;
             let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
             let read_size = node_size_bytes;
-            assert_eq!(
-                read_size % sector_size,
-                0,
-                "Read size must be a multiple of sector_size"
-            );
+            if read_size % sector_size != 0 {
+                return Err(MemFuseError::Index(
+                    "Read size must be a multiple of sector_size".into(),
+                ));
+            }
 
             for i in 0..header.node_count as u32 {
                 let index_offset = (i as usize).checked_mul(node_size_bytes).ok_or_else(|| {
@@ -658,18 +658,22 @@ impl DiskAnnIndex {
                 let offset = start_offset
                     .checked_add(index_offset)
                     .ok_or_else(|| MemFuseError::Index("Node offset addition overflow".into()))?;
-                assert_eq!(
-                    offset % sector_size,
-                    0,
-                    "Read offset must be sector-aligned"
-                );
+                if offset % sector_size != 0 {
+                    return Err(MemFuseError::Index(
+                        "Read offset must be sector-aligned".into(),
+                    ));
+                }
                 let inner_mmap = inner.mmap.read();
                 let mmap_ref = inner_mmap
                     .as_ref()
                     .ok_or(MemFuseError::Index("Mmap failed".into()))?;
-                let doc_id_bytes = mmap_ref.get(offset..offset + 8).ok_or_else(|| {
-                    MemFuseError::Storage("DiskANN file truncated before doc_id".into())
-                })?;
+                let doc_id_offset = offset + vector_size + neighbors_size;
+                let doc_id_bytes =
+                    mmap_ref
+                        .get(doc_id_offset..doc_id_offset + 8)
+                        .ok_or_else(|| {
+                            MemFuseError::Storage("DiskANN file truncated before doc_id".into())
+                        })?;
                 let doc_id = u64::from_le_bytes(
                     doc_id_bytes
                         .try_into()
@@ -702,11 +706,11 @@ impl DiskAnnIndex {
         let sector_size = header.sector_size as usize;
         let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
         let read_size = node_size;
-        assert_eq!(
-            read_size % sector_size,
-            0,
-            "Read size must be a multiple of sector_size"
-        );
+        if read_size % sector_size != 0 {
+            return Err(MemFuseError::Index(
+                "Read size must be a multiple of sector_size".into(),
+            ));
+        }
 
         let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
         let index_offset = (index as usize)
@@ -715,11 +719,11 @@ impl DiskAnnIndex {
         let node_offset = start_offset
             .checked_add(index_offset)
             .ok_or_else(|| MemFuseError::Index("Node offset addition overflow".into()))?;
-        assert_eq!(
-            node_offset % sector_size,
-            0,
-            "Node read offset must be sector-aligned"
-        );
+        if node_offset % sector_size != 0 {
+            return Err(MemFuseError::Index(
+                "Node read offset must be sector-aligned".into(),
+            ));
+        }
 
         let end_offset = node_offset
             .checked_add(node_size)
@@ -1353,6 +1357,40 @@ mod tests {
             results[0].doc_id,
             DocId::from(9u64),
             "Nächster Nachbar zu [9,0,0,0] muss id=9 sein"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_diskann_loaded_doc_ids_match_original() -> Result<()> {
+        let dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let config = DiskAnnConfig {
+            index_path: dir.path().join("doc_ids.diskann"),
+            dimension: 4,
+            max_degree: 4,
+            sector_size: 4096,
+            distance_metric: DistanceMetric::Euclidean,
+            quantize: false,
+            ..DiskAnnConfig::default()
+        };
+        let index = DiskAnnIndex::try_new(config.clone())?;
+        let vectors: Vec<Vec<f32>> = (0..5).map(|i| vec![i as f32, 1.0, 2.0, 3.0]).collect();
+        let expected_ids: Vec<DocId> = vec![
+            DocId::from(1001u64),
+            DocId::from(1002u64),
+            DocId::from(1003u64),
+            DocId::from(1004u64),
+            DocId::from(1005u64),
+        ];
+        index.build(&vectors, &expected_ids).await?;
+
+        // Verify loaded doc_ids in fresh index instance match original IDs
+        let reloaded = DiskAnnIndex::try_new(config)?;
+        reloaded.load().await?;
+        let loaded_ids = reloaded.inner.doc_ids.read().clone();
+        assert_eq!(
+            loaded_ids, expected_ids,
+            "Loaded doc_ids must exactly match original doc_ids (regression for D-2.1 offset bug)"
         );
         Ok(())
     }

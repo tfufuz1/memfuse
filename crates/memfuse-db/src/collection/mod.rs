@@ -107,13 +107,42 @@ pub fn ensure_importance_metadata(
         }
     };
 
+    // Determine default decay function based on explicit decay_function or memory_type
+    let decay = if let Some(decay_val) = meta_obj.get("decay_function") {
+        serde_json::from_value::<memfuse_core::DecayFunction>(decay_val.clone())
+            .unwrap_or(memfuse_core::DecayFunction::None)
+    } else if let Some(mem_type_val) = meta_obj.get("memory_type") {
+        if let Ok(mem_type) =
+            serde_json::from_value::<memfuse_core::MemoryType>(mem_type_val.clone())
+        {
+            mem_type.default_decay()
+        } else {
+            memfuse_core::DecayFunction::None
+        }
+    } else {
+        memfuse_core::DecayFunction::None
+    };
+
+    // Also populate default TTL if memory_type defines one and not already set
+    if !meta_obj.contains_key("ttl_tx") {
+        if let Some(mem_type_val) = meta_obj.get("memory_type") {
+            if let Ok(mem_type) =
+                serde_json::from_value::<memfuse_core::MemoryType>(mem_type_val.clone())
+            {
+                if let Some(ttl) = mem_type.default_ttl_tx() {
+                    meta_obj.insert("ttl_tx".to_string(), serde_json::json!(ttl));
+                }
+            }
+        }
+    }
+
     if let Some(imp_val) = meta_obj.get("importance").cloned() {
         if serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone()).is_ok() {
             return;
         } else if let Some(raw_f64) = imp_val.as_f64() {
             let imp = memfuse_core::MemoryImportance::new(
                 memfuse_core::ImportanceScore::new(raw_f64 as f32),
-                memfuse_core::DecayFunction::None,
+                decay,
                 tx,
             );
             if let Ok(val) = serde_json::to_value(imp) {
@@ -124,8 +153,7 @@ pub fn ensure_importance_metadata(
     }
 
     let base_score = compute_default_importance(text_opt);
-    let imp =
-        memfuse_core::MemoryImportance::new(base_score, memfuse_core::DecayFunction::None, tx);
+    let imp = memfuse_core::MemoryImportance::new(base_score, decay, tx);
     if let Ok(val) = serde_json::to_value(imp) {
         meta_obj.insert("importance".to_string(), val);
     }

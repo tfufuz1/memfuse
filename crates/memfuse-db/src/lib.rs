@@ -1865,7 +1865,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_open_dimension_mismatch_fails() -> Result<()> {
-        let dir = tempfile::tempdir().map_err(|e| memfuse_core::MemFuseError::InvalidInput(e.to_string()))?;
+        let dir = tempfile::tempdir()
+            .map_err(|e| memfuse_core::MemFuseError::InvalidInput(e.to_string()))?;
         let config_768 = MemFuseConfig {
             dimension: 768,
             ..Default::default()

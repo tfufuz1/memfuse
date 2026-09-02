@@ -149,11 +149,26 @@ impl RouterEngine {
             }
         }
 
-        // 3. Select profile with highest aggregated relevance score
-        let profile_scores = compute_profile_scores(&profiles, &chunks);
+        // 3. Select profile with highest aggregated relevance score using calibrated thresholds
+        let effective_profiles: Vec<SlmProfile> = {
+            let cal = self.calibration.read();
+            profiles
+                .iter()
+                .map(|p| {
+                    let mut ep = p.clone();
+                    if let Some(state) = cal.get(&p.name) {
+                        ep.min_relevance_score = state.calibrated_min_score;
+                    }
+                    ep
+                })
+                .collect()
+        };
+
+        let profile_scores = compute_profile_scores(&effective_profiles, &chunks);
 
         let (selected_profile_idx, selected_profile) = match select_profile_from_chunks(
-            &profiles, &chunks,
+            &effective_profiles,
+            &chunks,
         ) {
             Ok(idx) => (idx, profiles[idx].clone()),
             Err(MemFuseError::NotFound(ref msg)) if msg.contains("min_relevance_score") => {

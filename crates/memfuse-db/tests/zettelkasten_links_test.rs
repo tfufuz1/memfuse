@@ -156,3 +156,51 @@ async fn test_txid_boundary_hardening() {
     assert!(TxId::new(TxId::MAX_COLLECTION_SEQUENCE).is_valid_origin());
     assert!(!TxId::new(TxId::MAX_COLLECTION_SEQUENCE + 1).is_valid_origin());
 }
+
+#[tokio::test]
+async fn test_supersedes_cycle_prevention() {
+    let dir = tempdir().unwrap();
+    let db = MemFuse::open(dir.path()).await.unwrap();
+    let col = db.collection("default").await.unwrap();
+    let dummy_emb = vec![0.1f32; 768];
+
+    db.insert(
+        "doc-a",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc A"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-b",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc B"})),
+    )
+    .await
+    .unwrap();
+
+    let id_a = DocId::from_key("doc-a").unwrap();
+    let id_b = DocId::from_key("doc-b").unwrap();
+
+    // 1. Self-link must be rejected
+    let self_link_res = col
+        .link_memories(id_a, id_a, LinkRelation::Supersedes)
+        .await;
+    assert!(self_link_res.is_err(), "Self-link must be rejected");
+
+    // 2. Link A -> B (A supersedes B) succeeds
+    col.link_memories(id_a, id_b, LinkRelation::Supersedes)
+        .await
+        .unwrap();
+
+    // 3. Link B -> A (B supersedes A) must be rejected to prevent cycle
+    let cycle_res = col
+        .link_memories(id_b, id_a, LinkRelation::Supersedes)
+        .await;
+    assert!(cycle_res.is_err(), "Cyclic supersedes must be rejected");
+    let err_str = cycle_res.unwrap_err().to_string();
+    assert!(
+        err_str.contains("Cyclic Supersedes relation detected"),
+        "Unexpected error: {err_str}"
+    );
+}

@@ -177,7 +177,7 @@ impl ContextCompactor {
         let model = &ollama.config().model;
         let summary_text = ollama.generate_text(model, &prompt).await?;
 
-        let estimated_tokens = summary_text.len(); // Simple token estimation based on length
+        let estimated_tokens = crate::context::ContextManager::estimate_tokens(&summary_text);
 
         // Combine metadata if present
         let mut combined_metadata = serde_json::Map::new();
@@ -187,8 +187,15 @@ impl ContextCompactor {
             serde_json::Value::Number(chunks.len().into()),
         );
 
-        // Generate a new DocId deterministically or using base doc_id of first chunk
-        let synthesized_doc_id = chunks[0].doc_id;
+        // Generate a distinct deterministic DocId from the combination of source doc_ids
+        let synthesized_doc_id = {
+            let key = chunks
+                .iter()
+                .map(|c| c.doc_id.inner().to_string())
+                .collect::<Vec<_>>()
+                .join(":");
+            DocId::from_key(&format!("memfuse:consolidated:{key}")).unwrap_or(chunks[0].doc_id)
+        };
 
         let max_relevance = chunks.iter().fold(0.0f32, |max, c| max.max(c.relevance));
 
