@@ -20,5 +20,13 @@ pub struct StepResult {
 #[async_trait::async_trait]
 pub trait AgentTool: Send + Sync {
     fn name(&self) -> &str;
+
+    /// Returns the estimated token cost of executing this tool with the given input.
+    ///
+    /// Used for strict pre-execution budget validation to prevent side-effects when budget is exhausted.
+    fn estimated_cost(&self, _input: &serde_json::Value) -> usize {
+        0
+    }
+
     async fn execute(&self, ctx: &AgentContext, input: serde_json::Value) -> Result<StepResult>;
 }

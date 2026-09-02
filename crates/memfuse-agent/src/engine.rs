@@ -103,22 +103,38 @@ impl OrchestratorEngine {
                         CheckpointGuard::for_agent_step(ctx.db.inner_storage(), tx_id).await?;
                     self.checkpoint(ctx).await?;
 
-                    // PRE-CHECK vor Ausführung:
-                    if ctx.budget.available() == 0 && node.node_type != NodeType::Start {
-                        let err = "Token budget exhausted before step execution".to_string();
-                        self.audit_log_failure(ctx, &err).await?;
-                        return Err(MemFuseError::Internal(err));
+                    // Prepare step input
+                    let input = ctx
+                        .memory
+                        .get("last_output")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+
+                    // PRE-CHECK & ATOMIC RESERVATION vor Ausführung: Reserve budget strictly before tool execution
+                    let estimated_cost = if node.node_type != NodeType::Start {
+                        if let Some(handler_name) = &node.handler {
+                            if let Some(tool) = self.tools.get(handler_name) {
+                                tool.estimated_cost(&input)
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    };
+
+                    if node.node_type != NodeType::Start {
+                        if let Err(err) = ctx.budget.try_reserve(estimated_cost) {
+                            self.audit_log_failure(ctx, &err.to_string()).await?;
+                            return Err(err);
+                        }
                     }
 
                     // 2. Resolve handler (Optional for Start nodes)
                     let result_res = if let Some(handler_name) = &node.handler {
                         if let Some(tool) = self.tools.get(handler_name) {
-                            let input = ctx
-                                .memory
-                                .get("last_output")
-                                .cloned()
-                                .unwrap_or(serde_json::Value::Null);
-
                             tool.execute(ctx, input).await
                         } else {
                             Err(MemFuseError::Internal(format!(
@@ -143,12 +159,19 @@ impl OrchestratorEngine {
 
                     let result = match result_res {
                         Ok(res) => {
+                            // Reconcile reserved budget with actual tokens consumed
+                            if res.tokens_consumed > estimated_cost {
+                                ctx.budget.consume(res.tokens_consumed - estimated_cost);
+                            } else if estimated_cost > res.tokens_consumed {
+                                ctx.budget.refund(estimated_cost - res.tokens_consumed);
+                            }
                             ctx.memory
                                 .insert("last_output".to_string(), res.output.clone());
                             res
                         }
                         Err(err) => {
-                            // Log failure in audit trail before returning error
+                            // Refund pre-reserved tokens on execution failure
+                            ctx.budget.refund(estimated_cost);
                             self.audit_log_failure(ctx, &err.to_string()).await?;
                             return Err(err);
                         }
@@ -159,9 +182,6 @@ impl OrchestratorEngine {
 
                     // 4. Audit log (AC-3)
                     self.audit_log(ctx, &result).await?;
-
-                    // 5. Consume tokens
-                    ctx.budget.consume(result.tokens_consumed);
 
                     // 6. Resolve next edge
                     let next_node = match self.resolve_next_node(graph, &ctx.current_node, &result)

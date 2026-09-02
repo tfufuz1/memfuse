@@ -5,7 +5,7 @@
 
 use memfuse_agent::step::{AgentTool, StepResult};
 use memfuse_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
-use memfuse_core::{MemFuseError, Result, TokenBudget};
+use memfuse_core::{Result, TokenBudget};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -84,63 +84,191 @@ async fn test_sequential_workflow_budget_check() -> Result<()> {
     // First step consumes 60/60 tokens -> 0 left.
     // Second step pre-check detects budget exhaustion before tool execution.
     let res = engine.run(&mut ctx, &graph).await;
-    assert!(res.is_err());
-    if let Err(MemFuseError::Internal(msg)) = res {
-        assert!(msg.contains("Token budget exhausted"));
-    } else {
-        panic!("Expected Token budget exhausted error");
+    assert!(
+        res.is_err(),
+        "Expected engine.run to fail on budget exhaustion, got Ok"
+    );
+    match &res {
+        Err(err) => {
+            println!("Got error from engine.run: {:?}", err);
+            assert!(
+                err.to_string().contains("Token budget exhausted"),
+                "Expected 'Token budget exhausted' in error, got: {:?}",
+                err
+            );
+        }
+        Ok(_) => unreachable!(),
     }
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_concurrent_budget_consumption_rmw_race() -> Result<()> {
-    // Shared TokenBudget with 100 max tokens limit
-    let budget = Arc::new(Mutex::new(TokenBudget::new(100, 0)));
-
-    let mut handles = Vec::new();
-
-    // Spawn 2 parallel worker tasks each trying to check budget and consume 80 tokens concurrently
-    for _i in 0..2 {
-        let budget_ref = budget.clone();
-        handles.push(tokio::spawn(async move {
-            let available = {
-                let guard = budget_ref.lock().await;
-                guard.available()
-            };
-            if available >= 50 {
-                // Simulate async execution gap between read and write
-                tokio::task::yield_now().await;
-                let mut guard = budget_ref.lock().await;
-                guard.consume(80);
-                Ok::<usize, String>(80)
-            } else {
-                Err::<usize, String>("Insufficient budget".to_string())
-            }
-        }));
+async fn test_estimated_cost_pre_execution_check() -> Result<()> {
+    struct ExpensiveTool {
+        executed: Arc<std::sync::atomic::AtomicBool>,
     }
 
-    let mut success_count = 0;
-    for h in handles {
-        if let Ok(Ok(_tokens)) = h.await {
-            success_count += 1;
+    #[async_trait::async_trait]
+    impl AgentTool for ExpensiveTool {
+        fn name(&self) -> &str {
+            "expensive_tool"
+        }
+
+        fn estimated_cost(&self, _input: &serde_json::Value) -> usize {
+            100
+        }
+
+        async fn execute(
+            &self,
+            _ctx: &AgentContext,
+            _input: serde_json::Value,
+        ) -> Result<StepResult> {
+            self.executed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(StepResult {
+                node_id: "expensive_tool".to_string(),
+                output: serde_json::json!({"status": "done"}),
+                tokens_consumed: 100,
+                next_edge: None,
+            })
         }
     }
 
-    let final_guard = budget.lock().await;
-    let total_consumed = final_guard.consumed();
+    let (mut engine, _db, mut ctx, _tmp) = setup_env(50).await?; // Budget 50 < Estimated Cost 100
+    let executed_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    // Both parallel tasks read available (100) before either updated consumed, so both succeed and consume 160 tokens total
-    assert_eq!(
-        success_count, 2,
-        "Both tasks succeeded due to RMW race condition"
-    );
-    assert_eq!(total_consumed, 160);
+    let mut graph = StateGraph::new();
+    graph.try_add_node("start", "Start Node", NodeType::Start, None)?;
+    graph.try_add_node("step_1", "Step 1", NodeType::Task, Some("expensive_tool"))?;
+    graph.try_add_node("end", "End Node", NodeType::End, None)?;
+
+    graph.try_add_edge("start", "step_1", None, 1)?;
+    graph.try_add_edge("step_1", "end", None, 1)?;
+
+    engine.try_register_tool(Box::new(ExpensiveTool {
+        executed: executed_flag.clone(),
+    }))?;
+
+    let res = engine.run(&mut ctx, &graph).await;
+    assert!(res.is_err());
+    // Verify tool execute was NEVER invoked due to strict pre-check
     assert!(
-        total_consumed > 100,
-        "RMW Race confirmed: total consumed exceeds budget"
+        !executed_flag.load(std::sync::atomic::Ordering::SeqCst),
+        "Tool side effect was executed despite insufficient budget!"
     );
+
+    Ok(())
+}
+
+struct SideEffectTool {
+    cost: usize,
+    side_effects: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait::async_trait]
+impl AgentTool for SideEffectTool {
+    fn name(&self) -> &str {
+        "side_effect_tool"
+    }
+
+    fn estimated_cost(&self, _input: &serde_json::Value) -> usize {
+        self.cost
+    }
+
+    async fn execute(&self, _ctx: &AgentContext, _input: serde_json::Value) -> Result<StepResult> {
+        // Execute side effect
+        tokio::task::yield_now().await;
+        self.side_effects
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(StepResult {
+            node_id: "side_effect_tool".to_string(),
+            output: serde_json::json!({"status": "done"}),
+            tokens_consumed: self.cost,
+            next_edge: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn test_atomic_budget_reservation_concurrency_stress() -> Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let tool_cost = 30;
+    let max_budget = 100;
+
+    // Run 100 stress iterations to verify atomic budget reservation before tool.execute under high race conditions
+    for _iteration in 0..100 {
+        let budget = Arc::new(Mutex::new(TokenBudget::new(max_budget, 0)));
+        let side_effect_counter = Arc::new(AtomicUsize::new(0));
+
+        let num_workers = 50;
+        let mut handles = Vec::with_capacity(num_workers);
+
+        for _ in 0..num_workers {
+            let budget_ref = budget.clone();
+            let tool = SideEffectTool {
+                cost: tool_cost,
+                side_effects: side_effect_counter.clone(),
+            };
+
+            handles.push(tokio::spawn(async move {
+                // ATOMIC CHECK-AND-RESERVE via TokenBudget::try_reserve before tool execution
+                let reserved = {
+                    let mut guard = budget_ref.lock().await;
+                    let est = tool.estimated_cost(&serde_json::Value::Null);
+                    guard.try_reserve(est).is_ok()
+                };
+
+                if reserved {
+                    let dummy_tmp = tempfile::tempdir().unwrap();
+                    let config = MemFuseConfig::default();
+                    let db = Arc::new(
+                        MemFuse::open_with_config(dummy_tmp.path(), config)
+                            .await
+                            .unwrap(),
+                    );
+                    let state_col = db.collection("dummy_col").await.unwrap();
+                    let ctx = AgentContext::try_new(
+                        "task-1",
+                        "start",
+                        db,
+                        state_col,
+                        TokenBudget::new(max_budget, 0),
+                    )
+                    .unwrap();
+
+                    tool.execute(&ctx, serde_json::Value::Null)
+                        .await
+                        .unwrap();
+                    Ok::<(), ()>(())
+                } else {
+                    Err::<(), ()>(())
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+
+        let executed_side_effects = side_effect_counter.load(Ordering::SeqCst);
+        let final_guard = budget.lock().await;
+        let total_consumed = final_guard.consumed();
+
+        // With max_budget=100 and tool_cost=30, at most 3 side-effects can ever execute (3 * 30 = 90 <= 100)
+        assert!(
+            executed_side_effects <= 3,
+            "Side effects ({}) exceeded maximum allowable (3) under race condition!",
+            executed_side_effects
+        );
+        assert!(
+            total_consumed <= max_budget,
+            "Total consumed tokens ({}) exceeded max budget ({})!",
+            total_consumed,
+            max_budget
+        );
+    }
 
     Ok(())
 }
