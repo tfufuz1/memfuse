@@ -253,3 +253,4 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto`:
   - `grep -rn "unsafe" crates/memfuse-crypto/src/` -> 0 `unsafe`-Blöcke im Produktionscode (`#![forbid(unsafe_code)]` aktiv).
 - **Workspace-Verifikation:**
   - `cargo check --workspace --exclude memfuse-tauri` -> Workspace kompiliert ohne Fehler.
+  - `xtask check-review-coverage` -> PASSED.

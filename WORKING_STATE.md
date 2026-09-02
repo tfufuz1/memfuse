@@ -21,7 +21,7 @@ Ergebnis: **1 offene Tags**
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 8421 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 3698 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2318 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-crypto` | 1 | 2315 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 6168 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 10558 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 13132 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
