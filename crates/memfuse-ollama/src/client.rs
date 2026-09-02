@@ -882,8 +882,7 @@ impl OllamaClient {
                     let trimmed = &line_buffer[start..end];
 
                     if !trimmed.is_empty() {
-                        let is_done = match serde_json::from_slice::<ChatStreamChunk>(trimmed)
-                        {
+                        let is_done = match serde_json::from_slice::<ChatStreamChunk>(trimmed) {
                             Ok(chunk) => {
                                 if let Some(msg) = chunk.message {
                                     on_token(msg.content.clone());
@@ -1182,17 +1181,32 @@ mod tests {
         assert_eq!(
             tag_contents.get("system").map(|s| s.as_str()).unwrap_or(""),
             sys,
-            "system content mismatch for sys={:?}, rag={:?}, query={:?}", sys, rag, query
-        );
-        assert_eq!(
-            tag_contents.get("context").map(|s| s.as_str()).unwrap_or(""),
+            "system content mismatch for sys={:?}, rag={:?}, query={:?}",
+            sys,
             rag,
-            "context content mismatch for sys={:?}, rag={:?}, query={:?}", sys, rag, query
+            query
         );
         assert_eq!(
-            tag_contents.get("user_query").map(|s| s.as_str()).unwrap_or(""),
+            tag_contents
+                .get("context")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
+            rag,
+            "context content mismatch for sys={:?}, rag={:?}, query={:?}",
+            sys,
+            rag,
+            query
+        );
+        assert_eq!(
+            tag_contents
+                .get("user_query")
+                .map(|s| s.as_str())
+                .unwrap_or(""),
             query,
-            "user_query content mismatch for sys={:?}, rag={:?}, query={:?}", sys, rag, query
+            "user_query content mismatch for sys={:?}, rag={:?}, query={:?}",
+            sys,
+            rag,
+            query
         );
     }
 
@@ -1790,7 +1804,8 @@ mod tests {
                         } else {
                             "HTTP/1.1 503 Service Unavailable"
                         };
-                        let response = format!("{}\r\nContent-Length: 11\r\n\r\nServer Error", status_line);
+                        let response =
+                            format!("{}\r\nContent-Length: 11\r\n\r\nServer Error", status_line);
                         socket.write_all(response.as_bytes()).await.ok();
                     } else {
                         let body = serde_json::json!({ "embedding": [0.9, 0.8] }).to_string();
@@ -1811,7 +1826,12 @@ mod tests {
             let elapsed = start.elapsed();
 
             assert_eq!(res, vec![0.9, 0.8]);
-            assert_eq!(attempts.load(Ordering::SeqCst), 2, "HTTP {} should retry and succeed on second attempt", status);
+            assert_eq!(
+                attempts.load(Ordering::SeqCst),
+                2,
+                "HTTP {} should retry and succeed on second attempt",
+                status
+            );
             assert!(
                 elapsed >= Duration::from_millis(100),
                 "Backoff delay expected on HTTP {} retry (elapsed {:?})",
