@@ -645,7 +645,7 @@ impl DiskAnnIndex {
             let sector_size = header.sector_size as usize;
             let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
             let read_size = node_size_bytes;
-            if read_size % sector_size != 0 {
+            if !read_size.is_multiple_of(sector_size) {
                 return Err(MemFuseError::Index(
                     "Read size must be a multiple of sector_size".into(),
                 ));
@@ -706,7 +706,7 @@ impl DiskAnnIndex {
         let sector_size = header.sector_size as usize;
         let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
         let read_size = node_size;
-        if read_size % sector_size != 0 {
+        if !read_size.is_multiple_of(sector_size) {
             return Err(MemFuseError::Index(
                 "Read size must be a multiple of sector_size".into(),
             ));
