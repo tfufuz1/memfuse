@@ -1,3 +1,31 @@
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /app/crates/memfuse-py
+configfile: pyproject.toml
+plugins: anyio-4.14.2
+collected 36 items
+
+crates/memfuse-py/tests/test_bindings.py .............                  [ 36%]
+crates/memfuse-py/tests/test_errors.py .........                        [ 61%]
+crates/memfuse-py/tests/test_gil_concurrency.py ...                     [ 69%]
+crates/memfuse-py/tests/test_mcp_real.py ...                            [ 77%]
+crates/memfuse-py/tests/test_mcp_stub.py ..                             [ 83%]
+crates/memfuse-py/tests/test_recovery.py ..                             [ 88%]
+crates/memfuse-py/tests/test_subinterpreter.py ....                     [100%]
+
+```
+
+Ergebnis: **Alle 36 Tests erfolgreich (PASSED)**.
+
+---
+
+## 5. Audit-Status
+
+- **Zero-Panic-Boundary:** 🟢 In Ordnung
+- **GIL Release:** 🟢 In Ordnung
+- **Sub-Interpreter Guard:** 🟢 In Ordnung
+- **Unsafe-Code:** 🟢 0 Unsafe Blocks (`#![forbid(unsafe_code)]`)
+- **DAG-Invariante:** 🟢 Formell genehmigte Ausnahme (ADR-044 / ARCH:DAG-003)
+- **Gesamtergebnis:** 🟢 **PASSED** (Stand: 2026-09-02)
 # Audit-Report: `memfuse-py` (Layer 3 — Python PyO3 Bindings)
 
 **Datum/Zeit:** 2026-09-01T23:15:00Z

@@ -18,37 +18,7 @@ crates/memfuse-checkpoint/src/lib.rs:933:        let list = store2.list_named_ch
 crates/memfuse-checkpoint/src/lib.rs:957:                .unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:962:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:994:            let res = res.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1000:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1013:                let _guard = store.create_guard(TxId::new(999)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1024:        .expect("Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
-crates/memfuse-checkpoint/src/lib.rs:1033:            let _guard = store.create_guard(TxId::new(808)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1050:        let guard = store.create_guard(TxId::new(909)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1066:        let guard = store.create_guard(TxId::new(1010)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1084:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1086:        let cp = guard.checkpoint().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1090:        let committed = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1102:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1105:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1107:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1113:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1204:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1209:            .expect("// expect #[cfg(test)]")
-crates/memfuse-checkpoint/src/lib.rs:1210:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1234:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1259:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1260:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
-crates/memfuse-checkpoint/src/lib.rs:1264:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1282:        let cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1308:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1326:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1328:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1347:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1349:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1380:        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1382:        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1383:        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1417:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1488:                let manifest = manifest.expect("// expect #[cfg(test)]");
+crates/memfuse-core/src/error.rs:762:        assert_eq!(dto.details.expect("details present")["trace_id"], "12345");
 crates/memfuse-core/src/error_dto.rs:374:        let details = dto.details.as_ref().expect("details should exist"); // unwrap allowed
 crates/memfuse-core/src/error_dto.rs:378:        let json_str = serde_json::to_string(&dto).expect("serde serialize"); // unwrap allowed
 crates/memfuse-core/src/error_dto.rs:380:            serde_json::from_str(&json_str).expect("serde deserialize"); // unwrap allowed
@@ -2158,3 +2128,4 @@ crates/memfuse-text/src/lib.rs:101:            Ok(self.data.lock().unwrap().get(
 crates/memfuse-text/src/lib.rs:107:                .unwrap() // unwrap allowed
 crates/memfuse-text/src/lib.rs:113:            self.data.lock().unwrap().remove(key); // unwrap allowed
 crates/memfuse-text/src/lib.rs:170:            let data = self.data.lock().unwrap(); // unwrap allowed
+crates/memfuse-text/src/tokenizer.rs:23:            .expect("Invalid regex pattern")

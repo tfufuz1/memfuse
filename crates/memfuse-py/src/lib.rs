@@ -3,7 +3,7 @@
 // INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls.
 // NICHT-OFFENSICHTLICH: Uses OnceLock multi-thread Tokio runtime shared across Python worker threads.
 // HOTSPOTS: [160-205] memfuse_err mapping, [270-650] CRUD & search methods FFI boundary validation.
-// STAND: TS:2026-08-30T18:52:02Z (SESSION: 846802ab)
+// STAND: TS:2026-09-02T23:20:30Z (SESSION: a1811605)
 
 //! # MemFuse Python Bindings
 //!
@@ -20,7 +20,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-09-02T23:20:30Z (SESSION: a1811605)
 // ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
 // INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
 // HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
@@ -1201,10 +1201,18 @@ mod tests {
         Python::with_gil(|py| {
             let py_err = memfuse_err(MemFuseError::NotFound("key123".into()));
             let bound_val = py_err.value(py);
-            let kind: String = bound_val.getattr("kind").unwrap().extract().unwrap();
-            let msg: String = bound_val.getattr("message").unwrap().extract().unwrap();
-            assert_eq!(kind, "NotFound");
-            assert!(msg.contains("key123"));
+            if let Ok(kind_obj) = bound_val.getattr("kind") {
+                let kind: String = kind_obj.extract().unwrap_or_default();
+                assert_eq!(kind, "NotFound");
+            } else {
+                panic!("kind attribute missing");
+            }
+            if let Ok(msg_obj) = bound_val.getattr("message") {
+                let msg: String = msg_obj.extract().unwrap_or_default();
+                assert!(msg.contains("key123"));
+            } else {
+                panic!("message attribute missing");
+            }
         });
     }
 
@@ -1216,12 +1224,13 @@ mod tests {
                 panic!("Simulated Rust core panic");
             });
             assert!(res.is_err());
-            let py_err = res.unwrap_err();
-            assert!(py_err.is_instance_of::<PyRuntimeError>(py));
-            let bound_val = py_err.value(py);
-            let msg: String = bound_val.to_string();
-            assert!(msg.contains("Rust panic caught at FFI boundary"));
-            assert!(msg.contains("Simulated Rust core panic"));
+            if let Err(py_err) = res {
+                assert!(py_err.is_instance_of::<PyRuntimeError>(py));
+                let bound_val = py_err.value(py);
+                let msg: String = bound_val.to_string();
+                assert!(msg.contains("Rust panic caught at FFI boundary"));
+                assert!(msg.contains("Simulated Rust core panic"));
+            }
         });
     }
 
@@ -1230,7 +1239,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let res: PyResult<i32> = run_blocking_ffi(py, || Ok(42));
-            assert_eq!(res.unwrap(), 42);
+            assert!(matches!(res, Ok(42)));
         });
     }
 
