@@ -1111,6 +1111,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-jules-context-freshness" => {
+            let success = run_check_jules_context_freshness();
+            if !success {
+                process::exit(1);
+            }
+        }
         "run-community-detection" => {
             println!("=== xtask run-community-detection ===");
             println!(
@@ -1126,7 +1132,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], check-review-coverage, check-consistency, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], check-review-coverage, check-consistency, check-jules-context-freshness, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
