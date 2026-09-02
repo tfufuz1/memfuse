@@ -1137,6 +1137,7 @@ impl StorageEngine for LsmStorage {
         }
 
         sstables.push(Arc::new(reader));
+        sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
 
         drop(sstables);
         drop(state);
@@ -1520,6 +1521,33 @@ mod tests {
 
         let val = storage.get(b"key").await.expect("get"); // expect
         assert_eq!(val, Some(b"val2".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_sstable_ordering_after_consecutive_flushes() {
+        let (storage, _tmp) = test_storage().await;
+
+        for i in 1..=10u64 {
+            let tx = TxId::new(i);
+            let val = format!("val-{}", i);
+            storage
+                .put(tx, b"seq_key", val.as_bytes())
+                .await
+                .expect("put"); // expect
+            storage.commit(tx).await.expect("commit"); // expect
+            storage.force_flush().await.expect("flush"); // expect
+
+            let current_val = storage.get(b"seq_key").await.expect("get"); // expect
+            assert_eq!(
+                current_val,
+                Some(val.into_bytes()),
+                "After flush {}, get must return latest value",
+                i
+            );
+        }
+
+        let final_val = storage.get(b"seq_key").await.expect("final get"); // expect
+        assert_eq!(final_val, Some(b"val-10".to_vec()));
     }
 
     #[tokio::test]

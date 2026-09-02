@@ -2058,6 +2058,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mfsx_bloom_filter_crc_recovery_no_false_rejections() {
+        let tmp = TempDir::new().expect("temp dir"); // expect
+        let sst_path = tmp.path().join("mfsx_crc_recovery.sst");
+        let bc = create_block_cache(1);
+
+        // Generate 120 unique keys
+        let keys: Vec<Vec<u8>> = (0..120)
+            .map(|i| format!("key_recovery_{:04}_{}", i, rand::random::<u32>()).into_bytes())
+            .collect();
+
+        // 1. Build MFSX SSTable with CRC
+        {
+            let mut builder = SstableBuilder::create(&sst_path)
+                .await
+                .expect("create builder"); // expect
+            for (seq, key) in keys.iter().enumerate() {
+                let val = format!("val_{}", seq).into_bytes();
+                builder
+                    .add(key, &val, seq as u64 + 1, 1)
+                    .await
+                    .expect("add key"); // expect
+            }
+            builder.finish().await.expect("finish builder"); // expect
+        }
+
+        // 2. Reopen reader (simulating process restart)
+        let reader = SstableReader::open(&sst_path, bc)
+            .await
+            .expect("reopen reader"); // expect
+
+        assert!(
+            reader.bloom_filter.is_some(),
+            "MFSX SSTable must have bloom filter"
+        );
+        assert!(reader.has_crc, "MFSX SSTable must have CRC enabled");
+
+        // 3. Verify for ALL 120 keys that Bloom filter does not falsely reject any key
+        for (seq, key) in keys.iter().enumerate() {
+            let res = reader
+                .get(key)
+                .await
+                .expect("get key")
+                .expect("key must exist"); // expect
+            let expected_val = format!("val_{}", seq).into_bytes();
+            assert_eq!(
+                res.0.as_ref(),
+                expected_val.as_slice(),
+                "Key {:?} must be found without false rejection",
+                String::from_utf8_lossy(key)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn test_bloom_filter_integration() {
         let tmp = TempDir::new().expect("temp dir"); // expect
         let sst_path = tmp.path().join("bloom_test.sst");
