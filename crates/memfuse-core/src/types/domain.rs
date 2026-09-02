@@ -284,6 +284,14 @@ impl DistanceMetric {
             return Err(MemFuseError::invalid_input("Vector dimensions must match"));
         }
 
+        for val in a.iter().chain(b.iter()) {
+            if !val.is_finite() {
+                return Err(MemFuseError::InvalidInput(
+                    "Input vector contains non-finite values (NaN or Inf)".into(),
+                ));
+            }
+        }
+
         let dist = match self {
             Self::Cosine => {
                 let mut dot = 0.0;
@@ -297,7 +305,11 @@ impl DistanceMetric {
                 if norm_a == 0.0 || norm_b == 0.0 {
                     1.0
                 } else {
-                    1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()))
+                    // Floating-point rounding errors on nearly parallel or identical vectors can cause dot / (norm_a.sqrt() * norm_b.sqrt())
+                    // to slightly exceed 1.0, producing negative distances.
+                    // Cosine distance is mathematically restricted to [0.0, 2.0] as cosine similarity ∈ [-1.0, 1.0].
+                    let dist = 1.0 - (dot / (norm_a.sqrt() * norm_b.sqrt()));
+                    dist.clamp(0.0, 2.0)
                 }
             }
             Self::Euclidean => {
@@ -306,7 +318,7 @@ impl DistanceMetric {
                     let diff = x - y;
                     sum += diff * diff;
                 }
-                sum.sqrt()
+                sum.max(0.0).sqrt()
             }
             Self::DotProduct => {
                 let mut dot = 0.0;

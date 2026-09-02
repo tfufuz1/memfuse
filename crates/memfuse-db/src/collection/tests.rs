@@ -1998,7 +1998,7 @@ async fn test_concurrent_insert_many_collision_safety() {
             let docs: Vec<(String, Vec<f32>, Option<serde_json::Value>)> = (0..20)
                 .map(|i| {
                     let key = format!("batch_doc_{i}");
-                    let val = (task_idx * 100 + i) as f32;
+                    let val = (task_idx * 100 + i + 1) as f32;
                     (
                         key,
                         vec![val, 0.0, 0.0, 0.0],
@@ -2288,7 +2288,8 @@ async fn test_graph_mapping_invariant_missing_entity_graceful_degradation(
 }
 
 #[tokio::test]
-async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfuse_core::Result<()> {
+async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfuse_core::Result<()>
+{
     use memfuse_core::DocId;
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -2324,17 +2325,38 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
     );
 
     // Insert 4 docs: doc1, doc2, doc3, doc4
-    col.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "alpha"}))).await?;
-    col.insert("doc2", &[0.9, 0.1, 0.0, 0.0], Some(serde_json::json!({"text": "beta"}))).await?;
-    col.insert("doc3", &[0.8, 0.2, 0.0, 0.0], Some(serde_json::json!({"text": "gamma"}))).await?;
-    col.insert("doc4", &[0.7, 0.3, 0.0, 0.0], Some(serde_json::json!({"text": "delta"}))).await?;
+    col.insert(
+        "doc1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "alpha"})),
+    )
+    .await?;
+    col.insert(
+        "doc2",
+        &[0.9, 0.1, 0.0, 0.0],
+        Some(serde_json::json!({"text": "beta"})),
+    )
+    .await?;
+    col.insert(
+        "doc3",
+        &[0.8, 0.2, 0.0, 0.0],
+        Some(serde_json::json!({"text": "gamma"})),
+    )
+    .await?;
+    col.insert(
+        "doc4",
+        &[0.7, 0.3, 0.0, 0.0],
+        Some(serde_json::json!({"text": "delta"})),
+    )
+    .await?;
 
     // doc2 supersedes doc1
     col.link_memories(
         DocId::from_key("doc2")?,
         DocId::from_key("doc1")?,
         memfuse_core::types::domain::LinkRelation::Supersedes,
-    ).await?;
+    )
+    .await?;
 
     // When searching with k = 2 and include_superseded = false,
     // doc1 is displaced by doc2.
@@ -2347,10 +2369,23 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
         .unwrap();
     let results = col.hybrid_search_with_query(&query).await?;
 
-    assert_eq!(results.len(), 2, "Must return full requested k=2 even after supersedes displacement");
-    assert!(!results.iter().any(|r| r.id == "doc1"), "doc1 must be displaced");
-    assert!(results.iter().any(|r| r.id == "doc2"), "doc2 must be retained");
-    assert!(results.iter().any(|r| r.id == "doc3"), "doc3 must move up into top-2");
+    assert_eq!(
+        results.len(),
+        2,
+        "Must return full requested k=2 even after supersedes displacement"
+    );
+    assert!(
+        !results.iter().any(|r| r.id == "doc1"),
+        "doc1 must be displaced"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "doc2"),
+        "doc2 must be retained"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "doc3"),
+        "doc3 must move up into top-2"
+    );
 
     Ok(())
 }
@@ -2451,22 +2486,48 @@ async fn test_concurrent_mutation_aborts_consolidation() -> memfuse_core::Result
         memfuse_text::Language::English,
     );
 
-    col.insert("source_1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "Fact 1"}))).await?;
-    col.insert("source_2", &[0.0, 1.0, 0.0, 0.0], Some(serde_json::json!({"text": "Fact 2"}))).await?;
+    col.insert(
+        "source_1",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "Fact 1"})),
+    )
+    .await?;
+    col.insert(
+        "source_2",
+        &[0.0, 1.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "Fact 2"})),
+    )
+    .await?;
 
     let d1 = DocId::from_key("source_1")?;
     let d2 = DocId::from_key("source_2")?;
     let target_id = DocId::from_key("summary_12")?;
 
     // 1. Start consolidation session (snapshots source_docs and records intent)
-    let session = crate::context_compaction::ConsolidationSession::start(&col, &[d1, d2], target_id).await?;
+    let session =
+        crate::context_compaction::ConsolidationSession::start(&col, &[d1, d2], target_id).await?;
 
     // 2. Simulate concurrent mutation on source_2 while LLM synthesis is running
-    col.update("source_2", &[0.0, 1.0, 0.0, 0.0], Some(serde_json::json!({"text": "Fact 2 updated by agent"}))).await?;
+    col.update(
+        "source_2",
+        &[0.0, 1.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "Fact 2 updated by agent"})),
+    )
+    .await?;
 
     // 3. Attempting to commit consolidation must fail with StaleRead error!
-    let commit_res = session.commit("summary_12", &[0.5, 0.5, 0.0, 0.0], "Summary of 1 and 2", None).await;
-    assert!(commit_res.is_err(), "Consolidation commit must fail under concurrent mutation");
+    let commit_res = session
+        .commit(
+            "summary_12",
+            &[0.5, 0.5, 0.0, 0.0],
+            "Summary of 1 and 2",
+            None,
+        )
+        .await;
+    assert!(
+        commit_res.is_err(),
+        "Consolidation commit must fail under concurrent mutation"
+    );
     match commit_res.unwrap_err() {
         memfuse_core::MemFuseError::StaleRead(msg) => {
             assert!(msg.contains("OCC conflict"));
@@ -2477,8 +2538,14 @@ async fn test_concurrent_mutation_aborts_consolidation() -> memfuse_core::Result
     // 4. Verify that original source documents are still intact!
     let doc1 = col.get("source_1").await?;
     let doc2 = col.get("source_2").await?;
-    assert!(doc1.is_some(), "source_1 must not be deleted on aborted consolidation");
-    assert!(doc2.is_some(), "source_2 must not be deleted on aborted consolidation");
+    assert!(
+        doc1.is_some(),
+        "source_1 must not be deleted on aborted consolidation"
+    );
+    assert!(
+        doc2.is_some(),
+        "source_2 must not be deleted on aborted consolidation"
+    );
 
     Ok(())
 }

@@ -429,7 +429,12 @@ impl CsrGraph {
         self.insert_edge_direct_with_validity(from, to, weight, None, None)
     }
 
-    /// Directly inserts an edge with transaction validity into the CSR graph without staging.
+    /// Directly inserts an edge with validity into the CSR graph without staging.
+    ///
+    /// # Weight Validation & Policy
+    /// Edge weights represent relationship strengths or score-decay factors in graph traversal and PPR.
+    /// Negative, infinite, or NaN weights can cause pruning failure in BFS traversal or invalid PageRank calculations.
+    /// Therefore, edge weights MUST be finite and non-negative (`0.0 <= weight`).
     pub fn insert_edge_direct_with_validity(
         &self,
         from: EntityId,
@@ -461,6 +466,11 @@ impl CsrGraph {
         business_valid_from: Option<i64>,
         business_valid_to: Option<i64>,
     ) -> Result<()> {
+        if !weight.is_finite() || weight < 0.0 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Invalid edge weight {weight}: weight must be finite and non-negative"
+            )));
+        }
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
@@ -508,6 +518,11 @@ impl CsrGraph {
         business_valid_from: Option<i64>,
         business_valid_to: Option<i64>,
     ) -> Result<()> {
+        if !weight.is_finite() || weight < 0.0 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Invalid edge weight {weight}: weight must be finite and non-negative"
+            )));
+        }
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
@@ -940,6 +955,18 @@ impl CsrGraph {
         result
     }
 
+    /// Calculates Personalized PageRank (PPR) using a reusable [`crate::PprContext`] buffer to avoid allocations.
+    pub fn personalized_page_rank_with_context(
+        &self,
+        seed_nodes: &[EntityId],
+        config: &memfuse_core::PprConfig,
+        ctx: &mut crate::PprContext,
+    ) -> Vec<(EntityId, f32)> {
+        self.compact();
+        let inner = self.inner.read();
+        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, ctx)
+    }
+
     /// Returns the number of committed entities in the graph.
     pub fn entity_count(&self) -> usize {
         self.inner.read().entities.iter().flatten().count()
@@ -1018,6 +1045,12 @@ impl GraphIndex for CsrGraph {
                  möglicherweise aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
+        }
+        if !edge.weight.is_finite() || edge.weight < 0.0 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Invalid edge weight {}: weight must be finite and non-negative",
+                edge.weight
+            )));
         }
         let mut inner = self.inner.write();
         let tx_valid_from = edge.tx_valid_from.or(Some(tx));
@@ -1642,6 +1675,43 @@ mod tests {
         graph.commit(tx).await.expect("commit"); // expect
         graph.compact();
         graph
+    }
+
+    #[tokio::test]
+    async fn test_invalid_edge_weights_rejected() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let id1 = EntityId::new(1);
+        let id2 = EntityId::new(2);
+
+        // NaN weight
+        let err_nan = graph
+            .insert_edge_direct(id1, id2, f32::NAN)
+            .unwrap_err();
+        assert!(matches!(err_nan, MemFuseError::InvalidInput(_)));
+
+        // Infinity weight
+        let err_inf = graph
+            .insert_edge_direct(id1, id2, f32::INFINITY)
+            .unwrap_err();
+        assert!(matches!(err_inf, MemFuseError::InvalidInput(_)));
+
+        // Neg Infinity weight
+        let err_neginf = graph
+            .insert_edge_direct(id1, id2, f32::NEG_INFINITY)
+            .unwrap_err();
+        assert!(matches!(err_neginf, MemFuseError::InvalidInput(_)));
+
+        // Negative weight
+        let err_neg = graph
+            .insert_edge_direct(id1, id2, -1.0)
+            .unwrap_err();
+        assert!(matches!(err_neg, MemFuseError::InvalidInput(_)));
+
+        // add_edge with NaN
+        let edge_nan = Edge::new(id1, id2, "rel").with_weight(f32::NAN);
+        let err_add = graph.add_edge(tx, edge_nan).await.unwrap_err();
+        assert!(matches!(err_add, MemFuseError::InvalidInput(_)));
     }
 
     #[tokio::test]

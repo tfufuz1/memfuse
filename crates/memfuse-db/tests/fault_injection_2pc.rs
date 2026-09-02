@@ -715,3 +715,90 @@ async fn test_insert_many_atomic_all_or_nothing_at_50_percent_failure() {
         "CRITICAL: Phantom vector search hits found after insert_many failure!"
     );
 }
+
+/// Verification of UPDATE Rollback: pre-existing document MUST be restored on update failure, NOT erased (no phantom-erasure).
+#[tokio::test]
+async fn test_update_rollback_restores_original_document_state() {
+    let tmp = tempdir().unwrap();
+    let (col, _, faulty_hnsw, _) = create_faulty_collection(tmp.path().to_path_buf(), 4).await;
+
+    // 1. Initial Insert of Document "doc_update_test"
+    col.insert(
+        "doc_update_test",
+        &[0.1, 0.2, 0.3, 0.4],
+        Some(json!({ "text": "Original Content V1", "version": 1 })),
+    )
+    .await
+    .expect("Initial insert must succeed");
+
+    let doc_v1 = col
+        .get("doc_update_test")
+        .await
+        .unwrap()
+        .expect("Document must exist in V1");
+    assert_eq!(
+        doc_v1.metadata.as_ref().unwrap()["text"],
+        "Original Content V1"
+    );
+
+    // 2. Inject failure at HNSW commit step for the subsequent update
+    faulty_hnsw.fail_commit.store(true, Ordering::SeqCst);
+
+    // 3. Attempt UPDATE on Document "doc_update_test"
+    let update_res = col
+        .update(
+            "doc_update_test",
+            &[0.5, 0.6, 0.7, 0.8],
+            Some(json!({ "text": "Updated Content V2", "version": 2 })),
+        )
+        .await;
+
+    assert!(
+        update_res.is_err(),
+        "Update must fail due to injected HNSW commit fault"
+    );
+
+    // 4. Verify that get("doc_update_test") returns Original Content V1 (NOT None / phantom erasure)
+    let restored_doc = col
+        .get("doc_update_test")
+        .await
+        .unwrap()
+        .expect("Document MUST still exist after failed update rollback (no phantom erasure)");
+
+    assert_eq!(
+        restored_doc.metadata.as_ref().unwrap()["text"],
+        "Original Content V1",
+        "Document content must be rolled back to Original Content V1"
+    );
+}
+
+/// Regression test for INSERT Rollback: failure during INSERT of a new document must still write a tombstone and return None.
+#[tokio::test]
+async fn test_insert_rollback_writes_tombstone_returns_none() {
+    let tmp = tempdir().unwrap();
+    let (col, _, faulty_hnsw, _) = create_faulty_collection(tmp.path().to_path_buf(), 4).await;
+
+    // Inject failure at HNSW commit step
+    faulty_hnsw.fail_commit.store(true, Ordering::SeqCst);
+
+    // Attempt INSERT of new document
+    let insert_res = col
+        .insert(
+            "doc_new_insert",
+            &[0.1, 0.2, 0.3, 0.4],
+            Some(json!({ "text": "New Doc" })),
+        )
+        .await;
+
+    assert!(
+        insert_res.is_err(),
+        "Insert must fail due to injected fault"
+    );
+
+    // Verify document does NOT exist in storage (tombstone written properly)
+    let doc = col.get("doc_new_insert").await.unwrap();
+    assert!(
+        doc.is_none(),
+        "Failed insert must result in None (tombstone written)"
+    );
+}
