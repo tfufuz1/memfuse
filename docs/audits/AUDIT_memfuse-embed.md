@@ -205,3 +205,12 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
 ### 10.3 VM Environment Limitations
 - The sandbox environment lacks pre-compiled `libonnxruntime` native C-FFI binaries or physical `model.onnx` / `bge-reranker-base.onnx` model files.
 - Full ONNX end-to-end vector inference with `--features onnx` is constrained by `ort-sys` C-FFI linker requirements (`download-binaries`/`pkg-config`). Model-independent code paths (tokenization logic, batch bounds, candidate validation, non-starvation threading, passthrough fallbacks, and score sorting) are 100% verified and green.
+
+## 11. Re-Verifikation & Tiefen-Audit (2026-09-02) (SESSION: f260cbf2)
+
+### 11.1 Verification & Feature-Gate Check
+- **Feature-Gate Isolation:** `cargo check -p memfuse-embed` (default) and `cargo check -p memfuse-embed --all-features` verified.
+- **Unsafe-Code Invariante:** Declares `#![deny(unsafe_code)]` with zero production `unsafe` blocks in `crates/memfuse-embed/src/`.
+- **Unit & Integration Suite:** 10/10 tests passed (`cargo test -p memfuse-embed`).
+- **Clippy & Formatting:** `cargo clippy -p memfuse-embed -- -D warnings` and `cargo fmt --check -p memfuse-embed` both clean with 0 findings.
+- **DAG Architectural Integrity:** `memfuse-embed` strictly obeys Layer 3 DAG boundaries with no upward imports.
