@@ -1,4 +1,4 @@
-// ANCHOR[TEST:CKPT-001] STATUS:DONE (TS: 2026-09-02T08:17:07Z) (SESSION: 89db349b)
+// ANCHOR[TEST:CKPT-001] STATUS:DONE (TS:2026-09-02T08:17:07Z) (SESSION:89db349b)
 // AUFGABE : Verify Concurrent Checkpoint Pinning & GC Exclusions
 // GATE    : cargo test -p memfuse-checkpoint --test cache_concurrency_pinning
 // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CKPT-001) (TS: 2026-09-01T23:07:05Z) (SESSION: 358e3b0a) PRÜFER-KONTEXT: FRESH - Test covers concurrent pinning, GC safety, and cache behavior.
