@@ -34,39 +34,81 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SKIPPED_ROLLBACKS: AtomicU64 = AtomicU64::new(0);
-static PENDING_ROLLBACKS: Mutex<Vec<tokio::task::JoinHandle<()>>> = Mutex::new(Vec::new());
+static ORPHANED_CHECKPOINTS: Mutex<Vec<StateCheckpoint>> = Mutex::new(Vec::new());
 
-fn register_pending_rollback(handle: tokio::task::JoinHandle<()>) {
-    let mut lock = PENDING_ROLLBACKS.lock();
-    lock.retain(|h| !h.is_finished());
-    lock.push(handle);
+fn orphan_file_path() -> std::path::PathBuf {
+    std::env::var("MEMFUSE_ORPHAN_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("memfuse_orphaned_checkpoints.json"))
 }
 
-/// Wartet auf den Abschluss aller im Hintergrund gespawnten Auto-Rollback-Tasks.
-///
-/// Sollte beispielsweise beim geordneten Anwendungs-Shutdown aufgerufen werden,
-/// um sicherzustellen, dass alle Hintergrund-Rollbacks vor dem Beenden abgeschlossen sind.
-pub async fn await_pending_rollbacks() {
-    let handles = {
-        let mut lock = PENDING_ROLLBACKS.lock();
-        std::mem::take(&mut *lock)
-    };
-    for handle in handles {
-        let _ = handle.await;
+fn persist_orphaned_checkpoints_sync(list: &[StateCheckpoint]) -> std::io::Result<()> {
+    let path = orphan_file_path();
+    let data = serde_json::to_vec_pretty(list)?;
+    std::fs::write(path, data)
+}
+
+fn load_orphaned_checkpoints_file_sync() -> Vec<StateCheckpoint> {
+    let path = orphan_file_path();
+    if let Ok(data) = std::fs::read(path) {
+        if let Ok(list) = serde_json::from_slice::<Vec<StateCheckpoint>>(&data) {
+            return list;
+        }
     }
+    Vec::new()
 }
 
-/// Liefert die Anzahl der aktuell noch ausstehenden Auto-Rollback-Tasks im Hintergrund.
+/// Registers an uncommitted checkpoint as orphaned and persists it to disk.
+pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    if !lock.iter().any(|existing| existing.tx_id == cp.tx_id) {
+        lock.push(cp);
+    }
+    let _ = persist_orphaned_checkpoints_sync(&lock);
+}
+
+/// Retrieves all active registered orphaned checkpoints.
+pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    if lock.is_empty() {
+        let loaded = load_orphaned_checkpoints_file_sync();
+        if !loaded.is_empty() {
+            *lock = loaded;
+        }
+    }
+    lock.clone()
+}
+
+/// Removes a specific orphaned checkpoint after recovery.
+pub fn clear_orphaned_checkpoint(tx_id: TxId) {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    lock.retain(|cp| cp.tx_id != tx_id);
+    let _ = persist_orphaned_checkpoints_sync(&lock);
+}
+
+/// Clears all registered orphaned checkpoints.
+pub fn clear_all_orphaned_checkpoints() {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    lock.clear();
+    let _ = persist_orphaned_checkpoints_sync(&lock);
+}
+
+/// Retained for backward compatibility. No background tasks are spawned during drop.
+pub async fn await_pending_rollbacks() {}
+
+/// Retained for backward compatibility. Always returns 0 as background task spawning is removed.
 pub fn pending_rollback_count() -> usize {
-    let mut lock = PENDING_ROLLBACKS.lock();
-    lock.retain(|h| !h.is_finished());
-    lock.len()
+    0
 }
 
-/// Liefert die Gesamtzahl der Auto-Rollbacks, die beim Drop eines [`CheckpointGuard`]
-/// mangels einer laufenden Tokio-Runtime übersprungen wurden.
+/// Liefert die Gesamtzahl der uncommitted CheckpointGuards, die ohne expliziten Commit/Rollback gedroppt wurden.
 pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
     SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
+}
+
+/// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
+pub fn orphaned_checkpoint_count() -> usize {
+    get_orphaned_checkpoints().len()
 }
 
 // RESOLVED: AGT-CKPT-001 — UTF-8 char counting used for 256 char limit (TS: 2026-09-01T23:07:05Z) (SESSION: 358e3b0a)
@@ -170,17 +212,14 @@ pub struct StateCheckpoint {
     pub timestamp_ms: u64,
 }
 
-/// RAII Guard, der bei Verlassen des Gültigkeitsbereichs automatisch einen Rollback
-/// auslöst, falls nicht vorher explizit [`commit`](Self::commit) oder [`rollback`](Self::rollback) aufgerufen wurde.
+/// RAII Guard, der explizit über [`commit`](Self::commit) oder [`rollback`](Self::rollback) finalisiert werden MUSS.
 ///
 /// # RAII-Kontrakt und Betriebshinweise
-/// Bevorzuge **immer** explizites `commit()` oder `rollback().await` gegenüber dem impliziten Drop.
-/// Der Drop-Pfad ist ein **Best-Effort-Sicherheitsnetz**, KEINE garantierte Transaktionsgrenze —
-/// insbesondere bei Prozess-Shutdown oder außerhalb einer laufenden Tokio-Runtime kann der Rollback ausbleiben.
-///
-/// Ausstehende Auto-Rollback-Tasks im Hintergrund können vor dem Prozess-Shutdown über
-/// [`await_pending_rollbacks`] synchronisiert werden. Übersprungene Rollbacks außerhalb einer Tokio-Runtime
-/// werden über [`checkpoint_guard_skipped_rollback_count`] erfasst.
+/// Ein `CheckpointGuard` muss explizit über `commit()` oder `rollback().await` finalisiert werden.
+/// Wird der Guard ohne expliziten Commit/Rollback gedroppt (z. B. bei Panik oder Programmierfehler),
+/// wird KEIN asynchroner Hintergrund-Rollback gespawnt, um Kollisionen mit späteren Transaktionen zu verhindern.
+/// Stattdessen wird der Checkpoint als "orphaned" registriert/persistiert und beim nächsten kontrollierten Recovery-Zyklus verarbeitet.
+#[must_use = "CheckpointGuard must be explicitly finalized via .commit() or .rollback().await"]
 pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<S>,
@@ -217,8 +256,20 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
 
     /// Führt ein manuelles, asynchrones Rollback des Checkpoints aus.
     /// Nach Aufruf von `rollback()` ist der Guard konsumiert, sodass beim Drop kein erneutes Rollback ausgelöst wird.
+    ///
+    /// # Serialisierungsbarriere
+    /// Wenn neuere committete Transaktionen mit `last_tx > target_tx` existieren, schlägt das Rollback mit
+    /// einem Fehler fehl, um Datenverlust neuerer Transaktionen zu verhindern.
     pub async fn rollback(mut self) -> Result<()> {
         if let Some(cp) = self.checkpoint.take() {
+            let last_tx = self.storage.last_tx_id().await?;
+            if last_tx > cp.tx_id {
+                return Err(MemFuseError::Transaction(format!(
+                    "Serialization barrier violation: Cannot rollback to TxId {} because newer committed transaction TxId {} exists in storage",
+                    cp.tx_id.inner(),
+                    last_tx.inner()
+                )));
+            }
             self.storage.rollback_to_tx(cp.tx_id).await
         } else {
             Err(MemFuseError::Internal("Checkpoint already consumed".into()))
@@ -254,29 +305,29 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
                 ))
             })?;
 
-        rt.block_on(self.storage.rollback_to_tx(cp.tx_id))
+        rt.block_on(async {
+            let last_tx = self.storage.last_tx_id().await?;
+            if last_tx > cp.tx_id {
+                return Err(MemFuseError::Transaction(format!(
+                    "Serialization barrier violation: Cannot rollback to TxId {} because newer committed transaction TxId {} exists in storage",
+                    cp.tx_id.inner(),
+                    last_tx.inner()
+                )));
+            }
+            self.storage.rollback_to_tx(cp.tx_id).await
+        })
     }
 }
 
 impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
     fn drop(&mut self) {
         if let Some(cp) = self.checkpoint.take() {
-            tracing::warn!(tx_id = ?cp.tx_id, "CheckpointGuard ohne commit gedroppt.");
-            let storage_clone = Arc::clone(&self.storage);
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                let task_handle = handle.spawn(async move {
-                    if let Err(e) = storage_clone.rollback_to_tx(cp.tx_id).await {
-                        tracing::error!("CheckpointGuard auto-rollback fehlgeschlagen: {e}");
-                    }
-                });
-                register_pending_rollback(task_handle);
-            } else {
-                SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
-                tracing::error!(
-                    tx_id = ?cp.tx_id,
-                    "CheckpointGuard außerhalb tokio-Runtime gedroppt. Rollback übersprungen."
-                );
-            }
+            SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
+            tracing::error!(
+                tx_id = ?cp.tx_id,
+                "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
+            );
+            register_orphaned_checkpoint(cp);
         }
     }
 }
@@ -287,6 +338,32 @@ pub trait CheckpointRegistry: memfuse_core::traits::Checkpoint + Send + Sync {
     async fn save_checkpoint(&self, meta: CheckpointMeta) -> Result<()>;
     async fn load_checkpoint(&self, seq_no: u64) -> Result<Option<CheckpointMeta>>;
     async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>>;
+}
+
+/// Counter metadata persisted to guarantee TxId monotonicity across restarts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TxCounterMeta {
+    pub high_water_mark: u64,
+}
+
+const TX_BATCH_SIZE: u64 = 100;
+
+async fn persist_hwm_internal<S: memfuse_core::StorageEngine>(
+    storage: &Arc<S>,
+    namespace: &str,
+    hwm: u64,
+) -> Result<()> {
+    let meta = TxCounterMeta {
+        high_water_mark: hwm,
+    };
+    let bytes = serde_json::to_vec(&meta)
+        .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+    let key = format!("{namespace}:checkpoint:__sys_tx_counter__");
+    let tx = TxId::new(TxId::INTERNAL_BASE + hwm);
+    storage.put(tx, key.as_bytes(), &bytes).await?;
+    storage.commit(tx).await?;
+    storage.flush().await?;
+    Ok(())
 }
 
 /// Registry für gespeicherte Checkpoints mit Thread-sicherem Zustand.
@@ -307,30 +384,145 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     write_lock: tokio::sync::Mutex<()>,
     /// Atomarer Zähler für interne TxIds (vermeidet Kollisionen)
     tx_counter: AtomicU64,
+    /// Reservierter High-Water-Mark Wert in persistentem Storage
+    allocated_hwm: AtomicU64,
+    /// Lock für HWM-Reservierung und Persistierung
+    hwm_lock: tokio::sync::Mutex<()>,
 }
 
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
-    pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Self {
-        Self {
+    /// Öffnet einen PersistentCheckpointStore asynchron mit Rekonstruktion und Monotonie-Garantie.
+    pub async fn open(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
+        let namespace = namespace.into();
+
+        // 1. Scan store for highest existing TxId under namespace
+        let prefix = format!("{namespace}:checkpoint:");
+        let entries = storage.scan_prefix(prefix.as_bytes()).await?;
+        let mut scanned_max_raw: Option<u64> = None;
+
+        for (_key, value_bytes) in entries {
+            let meta_tx = if let Ok(manifest) =
+                serde_json::from_slice::<CheckpointManifest>(&value_bytes)
+            {
+                Some(manifest.meta.tx_id)
+            } else if let Ok(meta) = serde_json::from_slice::<CheckpointMeta>(&value_bytes) {
+                Some(meta.tx_id)
+            } else {
+                None
+            };
+
+            if let Some(tx) = meta_tx {
+                if tx.inner() >= TxId::INTERNAL_BASE {
+                    let raw = tx.inner() - TxId::INTERNAL_BASE;
+                    scanned_max_raw = Some(scanned_max_raw.map_or(raw, |m| m.max(raw)));
+                }
+            }
+        }
+
+        if let Ok(last_tx) = storage.last_tx_id().await {
+            if last_tx.inner() >= TxId::INTERNAL_BASE {
+                let raw = last_tx.inner() - TxId::INTERNAL_BASE;
+                scanned_max_raw = Some(scanned_max_raw.map_or(raw, |m| m.max(raw)));
+            }
+        }
+
+        // 2. Read persisted counter metadata
+        let counter_key = format!("{namespace}:checkpoint:__sys_tx_counter__");
+        let persisted_val: Option<u64> = match storage.get(counter_key.as_bytes()).await {
+            Ok(Some(bytes)) => serde_json::from_slice::<TxCounterMeta>(&bytes)
+                .map(|m| m.high_water_mark)
+                .ok(),
+            _ => None,
+        };
+
+        // 3. Consistency check: if persisted value exists and is LESS THAN scanned max raw -> Hard Error (Requirement 4)
+        if let (Some(persisted), Some(scanned)) = (persisted_val, scanned_max_raw) {
+            if persisted < scanned {
+                return Err(MemFuseError::Internal(format!(
+                    "TxId collision / regression detected in namespace '{namespace}': \
+                     persisted tx_counter HWM ({persisted}) is strictly less than highest tx_id found in store ({scanned})"
+                )));
+            }
+        }
+
+        // 4. Determine initial start_raw
+        let start_raw = match (persisted_val, scanned_max_raw) {
+            (Some(p), _) => p + 1,
+            (None, Some(s)) => s + 1,
+            (None, None) => 0,
+        };
+
+        let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
+
+        Ok(Self {
             storage,
             checkpoints: RwLock::new(HashMap::new()),
             name_index: RwLock::new(HashMap::new()),
-            namespace: namespace.into(),
+            namespace,
             write_lock: tokio::sync::Mutex::new(()),
-            tx_counter: AtomicU64::new(0),
+            tx_counter: AtomicU64::new(start_raw),
+            allocated_hwm: AtomicU64::new(initial_hwm),
+            hwm_lock: tokio::sync::Mutex::new(()),
+        })
+    }
+
+    pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Self {
+        let ns = namespace.into();
+        let storage_clone = storage.clone();
+        let ns_clone = ns.clone();
+
+        let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+                tokio::task::block_in_place(|| handle.block_on(Self::open(storage_clone, ns_clone)))
+            } else {
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+                    rt.block_on(Self::open(storage_clone, ns_clone))
+                })
+                .join()
+                .map_err(|_| MemFuseError::Internal("Thread panic during PersistentCheckpointStore initialization".into()))
+                .and_then(|r| r)
+            }
+        } else {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| MemFuseError::Internal(e.to_string()))
+                .expect("Failed to create Tokio runtime");
+            rt.block_on(Self::open(storage_clone, ns_clone))
+        };
+
+        match res {
+            Ok(store) => store,
+            Err(e) => panic!("Failed to initialize PersistentCheckpointStore for namespace '{ns}': {e}"),
         }
     }
 
     // INVARIANT: Checkpoint TxIds use INTERNAL_BASE+n range to avoid
     // collision with Collection-sequenced TxIds [1, ~10^12].
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
-    fn allocate_tx(&self) -> Result<TxId> {
+    pub async fn allocate_tx(&self) -> Result<TxId> {
         let raw = self.tx_counter.fetch_add(1, Ordering::SeqCst);
         if raw >= 1_000_000 {
             return Err(MemFuseError::Internal(
                 "Checkpoint TxId counter overflow".to_string(),
             ));
         }
+
+        let current_hwm = self.allocated_hwm.load(Ordering::SeqCst);
+        if raw >= current_hwm {
+            let _guard = self.hwm_lock.lock().await;
+            let active_hwm = self.allocated_hwm.load(Ordering::SeqCst);
+            if raw >= active_hwm {
+                let new_hwm = raw + TX_BATCH_SIZE - 1;
+                persist_hwm_internal(&self.storage, &self.namespace, new_hwm).await?;
+                self.allocated_hwm.store(new_hwm, Ordering::SeqCst);
+            }
+        }
+
         Ok(TxId::new(TxId::INTERNAL_BASE + raw))
     }
 
@@ -339,8 +531,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         note = "Use `allocate_tx()` instead — both methods are functionally identical, `allocate_tx()` is the canonical public API."
     )]
     #[allow(dead_code)]
-    fn next_tx(&self) -> Result<TxId> {
-        self.allocate_tx()
+    async fn next_tx(&self) -> Result<TxId> {
+        self.allocate_tx().await
     }
 
     /// Creates an ephemeral transactional checkpoint RAII guard.
@@ -434,7 +626,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let key = format!("{}:checkpoint:{}", self.namespace, name);
 
             // FIX CHK-002: Generiere eine eindeutige TxId statt INTERNAL_BASE
-            let unique_tx = self.allocate_tx()?;
+            let unique_tx = self.allocate_tx().await?;
 
             if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
                 if let Err(rb_err) = self.storage.rollback(unique_tx).await {
@@ -471,7 +663,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let value = serde_json::to_vec(&manifest)
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
-        let tx = self.allocate_tx()?;
+        let tx = self.allocate_tx().await?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
             if let Err(rb_err) = self.storage.rollback(tx).await {
                 tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal put");
@@ -534,7 +726,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let entries: Vec<(Vec<u8>, Vec<u8>)> = self.storage.scan_prefix(prefix.as_bytes()).await?;
 
         let mut result = Vec::with_capacity(entries.len());
-        for (_key_bytes, value_bytes) in entries {
+        for (key_bytes, value_bytes) in entries {
+            if key_bytes.ends_with(b":__sys_tx_counter__") {
+                continue;
+            }
             let meta =
                 if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
                     manifest.verify()?;
@@ -569,6 +764,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     /// Restores the system to a specific checkpoint by name.
     /// This will rollback the underlying storage to the transaction ID of the checkpoint.
+    ///
+    /// # Serialisierungsbarriere
+    /// Wenn neuere committete Transaktionen (`last_tx > meta.tx_id`) existieren, schlägt die Wiederherstellung
+    /// mit einem Fehler fehl.
     pub async fn restore_checkpoint(&self, name: &str) -> Result<CheckpointMeta> {
         validate_identifier("Checkpoint name", name)?;
         let _guard = self.write_lock.lock().await;
@@ -578,6 +777,16 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             .await?
             .ok_or(MemFuseError::CheckpointNotFound)?;
 
+        let last_tx = self.storage.last_tx_id().await?;
+        if last_tx > meta.tx_id {
+            return Err(MemFuseError::Transaction(format!(
+                "Serialization barrier violation: Cannot restore checkpoint '{}' at TxId {} because newer committed transaction TxId {} exists in storage",
+                name,
+                meta.tx_id.inner(),
+                last_tx.inner()
+            )));
+        }
+
         // 1. Rollback storage state
         self.storage.rollback_to_tx(meta.tx_id).await?;
 
@@ -585,6 +794,36 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         self.list_checkpoints().await?;
 
         Ok(meta)
+    }
+
+    /// Recovers all registered/persisted orphaned checkpoints during controlled startup or recovery.
+    /// Checks the serialization barrier (`last_tx <= cp.tx_id`) before executing rollback.
+    pub async fn recover_orphaned_checkpoints(&self) -> Result<Vec<TxId>> {
+        let _guard = self.write_lock.lock().await;
+        let orphans = get_orphaned_checkpoints();
+        let mut recovered = Vec::new();
+
+        let last_tx = self.storage.last_tx_id().await?;
+
+        for cp in orphans {
+            if last_tx <= cp.tx_id {
+                if let Err(e) = self.storage.rollback_to_tx(cp.tx_id).await {
+                    tracing::error!(tx_id = ?cp.tx_id, "Failed to recover orphaned checkpoint: {e}");
+                } else {
+                    recovered.push(cp.tx_id);
+                    clear_orphaned_checkpoint(cp.tx_id);
+                }
+            } else {
+                tracing::warn!(
+                    tx_id = ?cp.tx_id,
+                    last_tx = ?last_tx,
+                    "Orphaned checkpoint skipped during recovery due to serialization barrier (newer transaction committed)"
+                );
+                clear_orphaned_checkpoint(cp.tx_id);
+            }
+        }
+
+        Ok(recovered)
     }
 }
 
@@ -845,6 +1084,7 @@ mod tests {
 
     #[tokio::test]
     async fn checkpoint_guard_rollback_on_drop() {
+        clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
@@ -853,7 +1093,9 @@ mod tests {
                                                                      // guard drops here without commit
         }
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+        assert_eq!(recovered, vec![TxId::new(42)]);
+
         let rolled_back = storage.rolled_back_tx.lock().clone();
         assert_eq!(rolled_back, vec![TxId::new(42)]);
     }
@@ -1026,6 +1268,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_rollback_tracking_and_await() {
+        clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
@@ -1034,8 +1277,8 @@ mod tests {
                                                                       // Drop without commit inside tokio runtime
         }
 
-        // Await pending auto-rollback tasks explicitly
-        await_pending_rollbacks().await;
+        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+        assert_eq!(recovered, vec![TxId::new(808)]);
 
         let rolled_back = storage.rolled_back_tx.lock().clone();
         assert_eq!(rolled_back, vec![TxId::new(808)]);
@@ -1113,14 +1356,14 @@ mod tests {
         assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
     }
 
-    #[test]
-    fn test_next_tx_overflow_returns_err() {
+    #[tokio::test]
+    async fn test_next_tx_overflow_returns_err() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
         store.tx_counter.store(1_000_000, Ordering::SeqCst);
 
-        let res = store.allocate_tx();
+        let res = store.allocate_tx().await;
         assert!(res.is_err());
         if let Err(MemFuseError::Internal(msg)) = res {
             assert!(msg.contains("overflow"));
@@ -1385,15 +1628,15 @@ mod tests {
     }
 
     #[allow(non_snake_case)]
-    #[test]
-    fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
+    #[tokio::test]
+    async fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
-        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
+        let tx1 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
         #[allow(deprecated)]
-        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
-        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+        let tx2 = store.next_tx().await.expect("// expect #[cfg(test)]");
+        let tx3 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
 
         assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
         assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));

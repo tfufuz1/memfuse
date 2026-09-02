@@ -559,6 +559,24 @@ pub trait GraphIndex: Send + Sync + 'static {
         ))
     }
 
+    /// Traverses the entity graph using BFS with independent system time and business time constraints.
+    ///
+    /// # Errors
+    /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
+    /// with capability `"graph_traverse_at_bitemporal"` if bitemporal graph traversal is not implemented.
+    async fn traverse_at_bitemporal(
+        &self,
+        _start_node: crate::types::EntityId,
+        _max_hops: usize,
+        _as_of_tx: crate::types::TxId,
+        _as_of_business: Option<i64>,
+    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
+        Err(crate::error::MemFuseError::capability_unsupported(
+            "graph_traverse_at_bitemporal",
+            "Bi-temporal graph traversal (traverse_at_bitemporal) is not supported by default",
+        ))
+    }
+
     /// Calculates Personalized PageRank (PPR) starting from seed nodes.
     ///
     /// # Convergence Behavior
@@ -771,7 +789,7 @@ mod capability_coverage {
         index.trigger_rebuild_async();
     }
 
-    /// Verifies that calling traverse_at and traverse_at_time
+    /// Verifies that calling traverse_at, traverse_at_time, and traverse_at_bitemporal
     /// on a GraphIndex implementation does NOT return CapabilityUnsupported.
     #[tokio::test]
     async fn test_csr_graph_capability() {
@@ -794,6 +812,15 @@ mod capability_coverage {
                 _: EntityId,
                 _: usize,
                 _: TxId,
+            ) -> Result<Vec<(EntityId, f32)>> {
+                Ok(vec![])
+            }
+            async fn traverse_at_bitemporal(
+                &self,
+                _: EntityId,
+                _: usize,
+                _: TxId,
+                _: Option<i64>,
             ) -> Result<Vec<(EntityId, f32)>> {
                 Ok(vec![])
             }
@@ -845,6 +872,17 @@ mod capability_coverage {
                 Err(crate::MemFuseError::CapabilityUnsupported { .. })
             ),
             "traverse_at_time returned CapabilityUnsupported"
+        );
+
+        let res_traverse_at_bitemporal = graph
+            .traverse_at_bitemporal(EntityId::new(1), 2, TxId::new(1), Some(1000))
+            .await;
+        assert!(
+            !matches!(
+                res_traverse_at_bitemporal,
+                Err(crate::MemFuseError::CapabilityUnsupported { .. })
+            ),
+            "traverse_at_bitemporal returned CapabilityUnsupported"
         );
     }
 
