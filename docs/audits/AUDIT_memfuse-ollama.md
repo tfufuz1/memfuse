@@ -134,6 +134,10 @@ No unresolved critical or blocking bugs were identified during this audit. Minor
 - **XML Quote Escaping (`xml_escape`)**: Verified and tested escaping for double quotes (`"`) to `&quot;` and single quotes (`'`) to `&apos;` in `xml_escape()`. Added unit test `test_xml_escape`.
 - **Streaming NDJSON Line Buffer Hardening (`chat_with_rag_streaming`)**: Hardened stream chunk parsing by introducing an internal `line_buffer: Vec<u8>` for byte stream chunks. This prevents `MemFuseError::Serialization` failures when JSON lines are split across TCP chunk boundaries. Added unit test `test_chat_with_rag_streaming_split_chunks`.
 
+## 13. Audit Update: 2026-09-02
+
+- **Importance Scoring Regex Edge Case Hardening (`score_importance`)**: Verified regex matching and float parsing across multiple LLM response formats. Added unit test `test_score_importance_regex_parsing_edge_cases` in `crates/memfuse-ollama/src/importance.rs`.
+
 ---
 
 ## 11. Appendix: Mock Server Configuration & Test Logs
