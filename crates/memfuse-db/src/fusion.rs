@@ -11,7 +11,7 @@
 //   NIEMALS eine dritte `execute_rrf()`-Funktion anlegen — sie würde diese duplizieren.
 // SIEHE AUCH: DECISIONS.md ADR-003, crates/memfuse-db/AGENTS.md §4-Signal Fusion
 
-use crate::SearchResult;
+use crate::{ProvenanceRecord, SearchResult};
 use std::collections::{BinaryHeap, HashMap};
 
 struct HeapEntry {
@@ -199,16 +199,27 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
     // higher k prevents top-ranked outliers in one signal from completely dominating,
     // while ensuring items appearing in multiple search signals accumulate significant boost.
     let k = 60;
-    // Map: id -> (score, metadata, matched_signals)
-    let mut fused: HashMap<String, (f32, Option<serde_json::Value>, Vec<String>)> = HashMap::new();
+    // Map: id -> (score, metadata, matched_signals, provenance)
+    let mut fused: HashMap<
+        String,
+        (
+            f32,
+            Option<serde_json::Value>,
+            Vec<String>,
+            ProvenanceRecord,
+        ),
+    > = HashMap::new();
 
     for (signal_name, result_set, weight) in result_sets {
         if weight <= 0.0 {
             continue;
         }
+        let signal_kind = SignalKind::from_name(&signal_name);
         for (rank, doc) in result_set.into_iter().enumerate() {
             let score = weight / (k as f32 + rank as f32 + 1.0);
-            let entry = fused.entry(doc.id).or_insert((0.0, None, Vec::new()));
+            let entry = fused
+                .entry(doc.id)
+                .or_insert_with(|| (0.0, None, Vec::new(), ProvenanceRecord::default()));
             entry.0 += score;
             merge_metadata(&mut entry.1, doc.metadata);
             if !signal_name.is_empty()
@@ -216,6 +227,65 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
                 && !entry.2.contains(&signal_name)
             {
                 entry.2.push(signal_name.clone());
+            }
+
+            if !signal_name.is_empty() && signal_name != "unnamed" {
+                entry
+                    .3
+                    .signal_ranks
+                    .insert(signal_name.clone(), (rank + 1) as u32);
+            }
+
+            match signal_kind {
+                Some(SignalKind::Vector) => {
+                    if entry.3.vector_distance.is_none() {
+                        entry.3.vector_distance = Some(doc.score);
+                    }
+                    if entry.3.index_type.is_none() {
+                        entry.3.index_type = Some("hnsw".to_string());
+                    }
+                }
+                Some(SignalKind::Text) => {
+                    if entry.3.bm25_score.is_none() {
+                        entry.3.bm25_score = Some(doc.score);
+                    }
+                    if entry.3.index_type.is_none() {
+                        entry.3.index_type = Some("bm25".to_string());
+                    }
+                }
+                Some(SignalKind::Graph) => {
+                    if entry.3.graph_score.is_none() {
+                        entry.3.graph_score = Some(doc.score);
+                    }
+                    if entry.3.index_type.is_none() {
+                        entry.3.index_type = Some("graph".to_string());
+                    }
+                }
+                None => {}
+            }
+
+            if let Some(doc_prov) = doc.provenance {
+                if entry.3.vector_distance.is_none() {
+                    entry.3.vector_distance = doc_prov.vector_distance;
+                }
+                if entry.3.bm25_score.is_none() {
+                    entry.3.bm25_score = doc_prov.bm25_score;
+                }
+                if entry.3.graph_score.is_none() {
+                    entry.3.graph_score = doc_prov.graph_score;
+                }
+                if entry.3.rerank_score.is_none() {
+                    entry.3.rerank_score = doc_prov.rerank_score;
+                }
+                if entry.3.source_collection.is_none() {
+                    entry.3.source_collection = doc_prov.source_collection;
+                }
+                if entry.3.index_type.is_none() {
+                    entry.3.index_type = doc_prov.index_type;
+                }
+                for (sig, r) in doc_prov.signal_ranks {
+                    entry.3.signal_ranks.entry(sig).or_insert(r);
+                }
             }
         }
     }
@@ -226,13 +296,27 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
     let target_cap = fused.len().min(max_results);
     let mut heap = BinaryHeap::with_capacity(target_cap.saturating_add(1));
 
-    for (id, (score, metadata, matched_signals)) in fused {
+    for (id, (score, metadata, matched_signals, prov)) in fused {
+        let provenance = if prov.vector_distance.is_some()
+            || prov.bm25_score.is_some()
+            || prov.graph_score.is_some()
+            || prov.rerank_score.is_some()
+            || !prov.signal_ranks.is_empty()
+            || prov.source_collection.is_some()
+            || prov.index_type.is_some()
+        {
+            Some(prov)
+        } else {
+            None
+        };
+
         let entry = HeapEntry {
             result: SearchResult {
                 id,
                 score,
                 metadata,
                 matched_signals,
+                provenance,
             },
         };
 
@@ -271,6 +355,7 @@ mod tests {
             score: 0.99,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         }];
         let set2 = vec![
             SearchResult {
@@ -278,12 +363,14 @@ mod tests {
                 score: 0.95,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
             SearchResult {
                 id: "doc_single".to_string(),
                 score: 0.99,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
         ];
 
@@ -302,18 +389,21 @@ mod tests {
                 score: 0.9,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
             SearchResult {
                 id: "doc_b".to_string(),
                 score: 0.8,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
             SearchResult {
                 id: "doc_c".to_string(),
                 score: 0.7,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
         ];
 
@@ -323,12 +413,14 @@ mod tests {
                 score: 2.1,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
             SearchResult {
                 id: "doc_d".to_string(),
                 score: 1.5,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
         ];
 
@@ -352,6 +444,7 @@ mod tests {
                 score: i as f32 / 100.0,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             })
             .collect();
         let result = reciprocal_rank_fusion(vec![large_set], 5);
@@ -365,12 +458,14 @@ mod tests {
             score: 0.9,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         }];
         let set2 = vec![SearchResult {
             id: "doc-2".to_string(),
             score: 0.8,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         }];
 
         let result = weighted_reciprocal_rank_fusion(
@@ -407,6 +502,7 @@ mod tests {
                 score: 0.99,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             })
             .collect();
 
@@ -416,6 +512,7 @@ mod tests {
                 score: 0.88,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             })
             .collect();
 
@@ -436,12 +533,14 @@ mod tests {
                 score: 0.9,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
             SearchResult {
                 id: "X".to_string(),
                 score: 0.9,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
         ];
         let keywords = vec![
@@ -450,12 +549,14 @@ mod tests {
                 score: 0.9,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
             SearchResult {
                 id: "Y".to_string(),
                 score: 0.9,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             },
         ];
 
@@ -481,6 +582,7 @@ mod tests {
                 score: 0.9,
                 metadata: Some(serde_json::json!({"vec_key": "val1", "shared_key": "from_vector"})),
                 matched_signals: vec![],
+                provenance: None,
             }],
             1.0,
         );
@@ -493,6 +595,7 @@ mod tests {
                     serde_json::json!({"graph_key": "val2", "shared_key": "from_graph"}),
                 ),
                 matched_signals: vec![],
+                provenance: None,
             }],
             1.0,
         );
@@ -530,6 +633,7 @@ mod tests {
                     "vec_only": "vec_val"
                 })),
                 matched_signals: vec![],
+                provenance: None,
             }],
             1.0,
         );
@@ -543,6 +647,7 @@ mod tests {
                     "text_only": "text_val"
                 })),
                 matched_signals: vec![],
+                provenance: None,
             }],
             1.0,
         );
@@ -556,6 +661,7 @@ mod tests {
                     "graph_only": "graph_val"
                 })),
                 matched_signals: vec![],
+                provenance: None,
             }],
             1.0,
         );
@@ -667,6 +773,7 @@ mod tests {
                 score: 0.0,
                 metadata: None,
                 matched_signals: vec![],
+                provenance: None,
             })
             .collect();
         // In RRF, rank 0 (doc_00) gets score 1/(60+1) = 0.01639..., rank 49 gets score 1/(60+50) = 0.00909...
@@ -687,6 +794,7 @@ mod tests {
             score: 0.9,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         }];
         let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, 1.0)], 0);
         assert!(fused.is_empty());
@@ -699,6 +807,7 @@ mod tests {
             score: 0.9,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         }];
         let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, -0.5)], 10);
         assert!(fused.is_empty());
@@ -719,6 +828,7 @@ mod tests {
                             score: 0.0,
                             metadata: None,
                             matched_signals: vec![],
+                            provenance: None,
                         }),
                         0..20
                     ),

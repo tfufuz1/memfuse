@@ -108,6 +108,45 @@ pub use memfuse_checkpoint;
 use memfuse_core::FilterExpr;
 pub use memfuse_text::Language;
 
+/// Herkunftsnachweis für ein einzelnes Suchergebnis.
+///
+/// Gibt Auskunft darüber, durch welche Signale und Indexe ein Dokument
+/// in die Suchergebnisse gelangt ist, sowie über die Rohdistanzen
+/// vor der Fusion.
+///
+/// # Phase-2-Roadmap
+/// Implementiert: "ProvenanceRecord (abfragbarer Herkunftsnachweis pro Suchergebnis)"
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProvenanceRecord {
+    /// Vektor-Distanz vor Normalisierung (None falls Vektor-Signal nicht gefeuert)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector_distance: Option<f32>,
+
+    /// BM25-Score vor Fusion (None falls Text-Signal nicht gefeuert)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bm25_score: Option<f32>,
+
+    /// Graph-Traversal-Score (None falls Graph-Signal nicht gefeuert)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_score: Option<f32>,
+
+    /// Reranking-Score nach Cross-Encoder (None falls Reranking nicht aktiv)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rerank_score: Option<f32>,
+
+    /// RRF-Rang pro Signal vor Fusion: (signal_name → rang)
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub signal_ranks: std::collections::HashMap<String, u32>,
+
+    /// Collection-Name aus der das Ergebnis stammt
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_collection: Option<String>,
+
+    /// Index-Typ der das Ergebnis geliefert hat ("hnsw", "bm25", "graph", "diskann")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_type: Option<String>,
+}
+
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -120,6 +159,10 @@ pub struct SearchResult {
     /// List of signals (e.g. "vector", "text", "graph") that matched this document.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub matched_signals: Vec<String>,
+    /// Optionaler Herkunftsnachweis — wird gesetzt wenn die Suche mit
+    /// `include_provenance: true` aufgerufen wurde.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ProvenanceRecord>,
 }
 
 /// User-facing document structure.
@@ -1793,6 +1836,64 @@ mod tests {
             Ok(_) => panic!("expected error"),
         };
         assert!(err_msg.contains("Dimension mismatch"));
+    }
+
+    #[test]
+    fn test_provenance_record_serialization_roundtrip() {
+        let p = ProvenanceRecord {
+            vector_distance: Some(0.42),
+            bm25_score: Some(1.23),
+            graph_score: None,
+            rerank_score: None,
+            signal_ranks: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("vector".to_string(), 1u32);
+                m.insert("bm25".to_string(), 3u32);
+                m
+            },
+            source_collection: Some("test_col".to_string()),
+            index_type: Some("hnsw".to_string()),
+        };
+        let json = serde_json::to_string(&p).expect("serialize");
+        let back: ProvenanceRecord = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.vector_distance, Some(0.42));
+        assert_eq!(back.bm25_score, Some(1.23));
+        assert_eq!(back.graph_score, None);
+        assert_eq!(back.source_collection.as_deref(), Some("test_col"));
+    }
+
+    #[test]
+    fn test_search_result_with_provenance_serialization() {
+        let sr = SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec!["vector".to_string()],
+            provenance: Some(ProvenanceRecord {
+                source_collection: Some("my_col".to_string()),
+                ..Default::default()
+            }),
+        };
+        let json = serde_json::to_string(&sr).expect("serialize");
+        assert!(json.contains("provenance"));
+        assert!(json.contains("my_col"));
+    }
+
+    #[test]
+    fn test_search_result_without_provenance_serialization_omits_field() {
+        let sr = SearchResult {
+            id: "doc2".to_string(),
+            score: 0.5,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+        let json = serde_json::to_string(&sr).expect("serialize");
+        // provenance: None → Feld soll komplett fehlen (skip_serializing_if)
+        assert!(
+            !json.contains("provenance"),
+            "provenance=None soll im JSON weggelassen werden: {json}"
+        );
     }
 }
 
