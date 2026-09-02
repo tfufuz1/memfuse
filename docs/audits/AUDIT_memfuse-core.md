@@ -73,3 +73,9 @@ cargo check --workspace --exclude memfuse-tauri
 - **Clippy Refinement:** Resolved `useless_attribute` lint error in `crates/memfuse-core/src/ipc/mod.rs` on `pub use memfuse_generated::mem_fuse::ipc::*;`.
 - **Full Verification:** Verified gate stack across `memfuse-core` and total workspace.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) is verified bit-accurate, zero-panic, thread-safe, and fully ready as the foundation of MemFuse.
+
+## 6. Summary Log (2026-09-02)
+
+- **Layer 0 DAG Isolation Re-verified:** Confirmed 0 workspace dependencies for `memfuse-core` and verified that higher layer components depend on `memfuse-core` exclusively downstream.
+- **TxId Range Boundary Verification (ADR-028):** Re-confirmed strict boundary checks in `TxId::is_valid_origin()` and tested collection TxId range exhaustion simulation (`MAX_COLLECTION_SEQUENCE` vs `INTERNAL_BASE`).
+- **Quality Gate Stack Pass:** 134/134 unit tests, 2/2 integration tests, 5/5 robustness tests in `memfuse-core` passed cleanly. 0 Clippy warnings (`-D warnings`), 0 `cargo fmt` diffs, and workspace compilation verified (`cargo check --workspace --exclude memfuse-tauri --exclude xtask`).
