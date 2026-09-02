@@ -652,9 +652,9 @@ impl DiskAnnIndex {
             );
 
             for i in 0..header.node_count as u32 {
-                let index_offset = (i as usize)
-                    .checked_mul(node_size_bytes)
-                    .ok_or_else(|| MemFuseError::Index("Node offset multiplication overflow".into()))?;
+                let index_offset = (i as usize).checked_mul(node_size_bytes).ok_or_else(|| {
+                    MemFuseError::Index("Node offset multiplication overflow".into())
+                })?;
                 let offset = start_offset
                     .checked_add(index_offset)
                     .ok_or_else(|| MemFuseError::Index("Node offset addition overflow".into()))?;
@@ -1328,8 +1328,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_diskann_build_search_roundtrip() {
-        let dir = tempfile::tempdir().expect("tempdir");
+    async fn test_diskann_build_search_roundtrip() -> Result<()> {
+        let dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
         let config = DiskAnnConfig {
             index_path: dir.path().join("smoke.diskann"),
             dimension: 4,
@@ -1339,15 +1339,21 @@ mod tests {
             quantize: true,
             ..DiskAnnConfig::default()
         };
-        let index = DiskAnnIndex::try_new(config).expect("init");
-        let vectors: Vec<Vec<f32>> = (0..10)
-            .map(|i| vec![i as f32, 0.0, 0.0, 0.0])
-            .collect();
+        let index = DiskAnnIndex::try_new(config)?;
+        let vectors: Vec<Vec<f32>> = (0..10).map(|i| vec![i as f32, 0.0, 0.0, 0.0]).collect();
         let ids: Vec<DocId> = (0..10).map(DocId::from).collect();
-        index.build(&vectors, &ids).await.expect("build");
+        index.build(&vectors, &ids).await?;
         let query = vec![9.0f32, 0.0, 0.0, 0.0];
-        let results = index.search(&query, 1).await.expect("search");
-        assert!(!results.is_empty(), "Smoke-Test: Suchergebnis darf nicht leer sein");
-        assert_eq!(results[0].doc_id, DocId::from(9u64), "Nächster Nachbar zu [9,0,0,0] muss id=9 sein");
+        let results = index.search(&query, 1).await?;
+        assert!(
+            !results.is_empty(),
+            "Smoke-Test: Suchergebnis darf nicht leer sein"
+        );
+        assert_eq!(
+            results[0].doc_id,
+            DocId::from(9u64),
+            "Nächster Nachbar zu [9,0,0,0] muss id=9 sein"
+        );
+        Ok(())
     }
 }
