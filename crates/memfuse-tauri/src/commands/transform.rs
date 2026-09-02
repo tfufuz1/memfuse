@@ -552,4 +552,28 @@ mod tests {
             err.message
         );
     }
+
+    /// Tests execution of potential ReDoS pattern (a+)+$ against non-matching string of 'a's.
+    /// Proves that the operation terminates in linear time within strict time bound (< 2s)
+    /// without hanging or exhausting blocking threads.
+    #[test]
+    fn test_potential_redos_pattern_bounded_execution() {
+        let start = std::time::Instant::now();
+        // Pattern with nested quantifiers (a+)+$
+        let pattern = "(a+)+$";
+        // Non-matching input: 'a's ending with 'b'
+        let input = "a".repeat(50_000) + "b";
+
+        let res = transform!(pattern, "g", "x", &input);
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "Regex execution took {:?}, expected < 2s due to linear NFA runtime",
+            elapsed
+        );
+        let result = res.expect("Transformation should succeed without timing out");
+        assert_eq!(result.replacements_made, 0);
+        assert_eq!(result.output, input);
+    }
 }

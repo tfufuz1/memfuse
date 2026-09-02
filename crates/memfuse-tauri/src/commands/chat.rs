@@ -115,3 +115,48 @@ pub async fn list_ollama_models() -> Result<Vec<String>, MemFuseErrorDto> {
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_chat_lock_guard_concurrency_no_deadlock() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = tempfile::tempdir()?;
+        let config = memfuse_db::MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?;
+        let state = AppState::new();
+        *state.db.write() = Some(Arc::new(db));
+        *state.db_path.write() = Some(temp_dir.path().to_path_buf());
+
+        let state_arc = Arc::new(state);
+
+        // Spawn multiple concurrent tasks attempting DB read access via lock pattern in chat_with_rag
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let state_clone = Arc::clone(&state_arc);
+            let handle = tokio::spawn(async move {
+                let db_opt = {
+                    let db_guard = state_clone.db.read();
+                    db_guard.as_ref().cloned()
+                };
+                assert!(db_opt.is_some());
+                let db = db_opt.unwrap();
+                // Perform async collection call across await point while lock guard is guaranteed dropped
+                let col = db.collection("test_col").await;
+                assert!(col.is_ok());
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await?;
+        }
+
+        Ok(())
+    }
+}

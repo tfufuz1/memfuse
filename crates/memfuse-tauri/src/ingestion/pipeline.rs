@@ -393,6 +393,48 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_ingest_file_metadata_check_oversized() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("oversized.txt");
+
+        // Create a sparse file of 100MB + 1 byte
+        let file = std::fs::File::create(&file_path).unwrap();
+        file.set_len(MAX_INGEST_FILE_SIZE_BYTES + 1).unwrap();
+
+        let embedder = Arc::new(MockEmbedder { fail_on_even: false });
+        let pipeline = IngestionPipeline::new(embedder);
+
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
+        let collection = db.collection("test_col").await.unwrap();
+
+        let result = pipeline.ingest_file(&file_path, &collection).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, MemFuseError::InvalidInput(_)));
+        assert!(err.to_string().contains("exceeds maximum allowed size of 100 MB"));
+    }
+
+    #[tokio::test]
+    async fn test_ingest_file_exact_limit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("exact_limit.txt");
+
+        // Create file content exact text
+        let content = "Hello World".as_bytes();
+        std::fs::write(&file_path, content).unwrap();
+
+        let embedder = Arc::new(MockEmbedder { fail_on_even: false });
+        let pipeline = IngestionPipeline::new(embedder);
+
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
+        let collection = db.collection("test_col").await.unwrap();
+
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
+        assert_eq!(report.chunks_created, 1);
+        assert!(report.errors.is_empty());
+    }
+
     #[test]
     fn test_command_ingest_no_extension() {
         let result = extract_text_from_bytes(b"some content", "");

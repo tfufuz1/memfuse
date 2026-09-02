@@ -362,4 +362,11 @@ mod tests {
             other => panic!("Expected TotalSizeExceeded, got {other:?}"),
         }
     }
+
+    #[test]
+    fn test_extract_docx_malformed_returns_error_no_panic() {
+        let malformed_docx = b"not a zip or docx file at all";
+        let res = extract_docx_bytes(malformed_docx);
+        assert!(res.is_err());
+    }
 }
