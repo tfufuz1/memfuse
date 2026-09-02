@@ -241,6 +241,27 @@ impl TxId {
         Self(Self::INTERNAL_BASE)
     }
 
+    /// Safely constructs an internal system TxId from an offset relative to `TxId::INTERNAL_BASE`.
+    ///
+    /// # Domain Range Separation (ADR-028)
+    /// Valid system transaction range is `[INTERNAL_BASE, u64::MAX]`.
+    /// Offsets must not cause integer overflow beyond `u64::MAX`, nor can wraparound occur
+    /// into the regular collection sequence range `[1, MAX_COLLECTION_SEQUENCE]`.
+    ///
+    /// # Errors
+    /// Returns `MemFuseError::Transaction` if `INTERNAL_BASE + offset` overflows `u64::MAX`.
+    pub fn try_from_internal_offset(offset: u64) -> Result<Self> {
+        Self::INTERNAL_BASE
+            .checked_add(offset)
+            .map(Self)
+            .ok_or_else(|| {
+                MemFuseError::Transaction(format!(
+                    "Internal TxId allocation offset {offset} overflows u64::MAX (INTERNAL_BASE={})",
+                    Self::INTERNAL_BASE
+                ))
+            })
+    }
+
     /// Checks if the transaction ID originates from a valid range per AGT-GRAPH-001.
     ///
     /// Returns `true` if `self.0 <= MAX_COLLECTION_SEQUENCE` (Collection sequence range)
@@ -1508,5 +1529,68 @@ mod tests {
         // Wall-clock derived TxId in gap should fail is_valid_origin()
         let wall_clock_gap_tx = TxId::new(1_700_000_000_000_000_000);
         assert!(!wall_clock_gap_tx.is_valid_origin());
+    }
+
+    #[test]
+    fn test_tx_id_system_range_wraparound_safety() {
+        // Valid offsets within [0, 1_000_000]
+        let tx0 = TxId::try_from_internal_offset(0).expect("Offset 0 should succeed"); // expect
+        assert_eq!(tx0.inner(), TxId::INTERNAL_BASE);
+        assert!(tx0.is_valid_origin());
+
+        let tx_mid = TxId::try_from_internal_offset(500_000).expect("Offset 500k should succeed"); // expect
+        assert_eq!(tx_mid.inner(), TxId::INTERNAL_BASE + 500_000);
+        assert!(tx_mid.is_valid_origin());
+
+        let max_offset = u64::MAX - TxId::INTERNAL_BASE;
+        assert_eq!(max_offset, 1_000_000);
+        let tx_max = TxId::try_from_internal_offset(max_offset).expect("Max valid offset should succeed"); // expect
+        assert_eq!(tx_max.inner(), u64::MAX);
+        assert!(tx_max.is_valid_origin());
+
+        // Overflow attempt (offset > 1_000_000)
+        let err_overflow = TxId::try_from_internal_offset(max_offset + 1);
+        assert!(
+            matches!(err_overflow, Err(MemFuseError::Transaction(ref msg)) if msg.contains("overflows u64::MAX")),
+            "Expected controlled error on offset overflow, got: {:?}",
+            err_overflow
+        );
+
+        let err_huge = TxId::try_from_internal_offset(u64::MAX);
+        assert!(
+            matches!(err_huge, Err(MemFuseError::Transaction(ref msg)) if msg.contains("overflows u64::MAX")),
+            "Expected controlled error on u64::MAX offset, got: {:?}",
+            err_huge
+        );
+
+        // Prove system allocations NEVER land in collection sequence range [1, MAX_COLLECTION_SEQUENCE]
+        // regardless of offset choice
+        for offset in [0, 1, 100, 500_000, 1_000_000] {
+            let tx = TxId::try_from_internal_offset(offset).unwrap(); // unwrap
+            assert!(
+                tx.inner() > TxId::MAX_COLLECTION_SEQUENCE,
+                "Internal allocation must be strictly above MAX_COLLECTION_SEQUENCE"
+            );
+            assert!(
+                tx.inner() >= TxId::INTERNAL_BASE,
+                "Internal allocation must be >= INTERNAL_BASE"
+            );
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_tx_id_range_isolation(offset in 0u64..=1_000_000u64) {
+            let tx = TxId::try_from_internal_offset(offset).unwrap(); // unwrap
+            prop_assert!(tx.is_valid_origin());
+            prop_assert!(tx.inner() >= TxId::INTERNAL_BASE);
+            prop_assert!(tx.inner() > TxId::MAX_COLLECTION_SEQUENCE);
+        }
+
+        #[test]
+        fn prop_tx_id_overflow_isolation(offset in 1_000_001u64..=u64::MAX) {
+            let res = TxId::try_from_internal_offset(offset);
+            prop_assert!(res.is_err());
+        }
     }
 }
