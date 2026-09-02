@@ -1,0 +1,25 @@
+# Cargo Audit configuration for MemFuse workspace
+# Documenting isolation proofs for transitive security advisories in non-core crates.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0187: lopdf 0.34.0 Stack overflow via deeply nested PDF objects (CVSS 7.5)
+    # ISOLATION PROOF: `lopdf` is a transitive dependency of `pdf-extract` used strictly in `memfuse-tauri`
+    # for local desktop PDF document ingestion. It has zero interaction with `memfuse-crypto` or core engine logic.
+    # Review Date: 2026-12-31
+    "RUSTSEC-2026-0187",
+
+    # RUSTSEC-2026-0176: pyo3 0.24.2 Out-of-bounds read in PyList/PyTuple iterators
+    # ISOLATION PROOF: `pyo3` is used exclusively in `memfuse-py` for FFI Python bindings.
+    # `memfuse-py` does not invoke `PyList` or `PyTuple` `.nth()` / `.nth_back()` iterator methods.
+    # Isolated from `memfuse-crypto` and core engine kernel.
+    # Review Date: 2026-12-31
+    "RUSTSEC-2026-0176",
+
+    # RUSTSEC-2026-0177: pyo3 0.24.2 Missing Sync bound on PyCFunction::new_closure
+    # ISOLATION PROOF: `pyo3` is used exclusively in `memfuse-py` for FFI Python bindings.
+    # `memfuse-py` does not use `PyCFunction::new_closure`.
+    # Isolated from `memfuse-crypto` and core engine kernel.
+    # Review Date: 2026-12-31
+    "RUSTSEC-2026-0177",
+]

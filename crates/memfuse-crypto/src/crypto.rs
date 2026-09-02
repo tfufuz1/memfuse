@@ -486,6 +486,39 @@ mod tests {
     // REVIEW-PASS[5/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-02T08:16:22Z) (SESSION: 881ec05e)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified zero-panic, zero-unsafe, and 85/85 tests green in memfuse-crypto audit session.
+    #[test]
+    fn test_befund_1_nonce_uniqueness_and_envelope_format() {
+        let km = KeyManager::try_new("nonce-uniqueness-secret", b"salt-123456").expect("km");
+        let plaintext = b"identical-plaintext-payload";
+
+        // (a) Verify 100,000 consecutive encrypt_auto_nonce calls with identical plaintext produce unique nonces
+        let mut seen_nonces = std::collections::HashSet::with_capacity(100_000);
+        let mut first_nonce = None;
+
+        for i in 0..100_000 {
+            let (ciphertext, nonce) = km.encrypt_auto_nonce(plaintext).expect("encrypt");
+            if i == 0 {
+                first_nonce = Some(nonce);
+            } else if i == 1 {
+                assert_ne!(
+                    first_nonce.unwrap(),
+                    nonce,
+                    "Two consecutive calls with identical plaintext MUST produce different nonces"
+                );
+            }
+            assert!(
+                seen_nonces.insert(nonce),
+                "CRITICAL: Nonce collision detected at iteration {i}"
+            );
+
+            // (b) Verify Ciphertext/Envelope format exposes the 12-byte nonce required for decryption
+            let decrypted = km.decrypt_auto_nonce(&ciphertext, &nonce).expect("decrypt roundtrip");
+            assert_eq!(decrypted, plaintext);
+        }
+
+        assert_eq!(seen_nonces.len(), 100_000);
+    }
+
     #[tokio::test]
     async fn test_parallel_nonce_uniqueness() {
         use std::collections::HashSet;
