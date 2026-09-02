@@ -15,11 +15,16 @@ use std::sync::OnceLock;
 
 static SCORE_REGEX: OnceLock<Regex> = OnceLock::new();
 
-fn get_score_regex() -> &'static Regex {
-    // SAFETY: The regex string is a compile-time constant valid regular expression pattern.
-    SCORE_REGEX.get_or_init(|| {
-        Regex::new(r"(?:0(?:\.\d+)?|1(?:\.0+)?)").expect("Invalid score regex pattern")
-    })
+fn get_score_regex() -> Result<&'static Regex> {
+    if let Some(re) = SCORE_REGEX.get() {
+        return Ok(re);
+    }
+    let re = Regex::new(r"(?:0(?:\.\d+)?|1(?:\.0+)?)")
+        .map_err(|e| MemFuseError::Internal(format!("Regex compilation failed: {e}")))?;
+    let _ = SCORE_REGEX.set(re);
+    SCORE_REGEX
+        .get()
+        .ok_or_else(|| MemFuseError::Internal("SCORE_REGEX set failed".into()))
 }
 
 /// Evaluates the importance of a text chunk using a local Ollama LLM model.
@@ -59,7 +64,7 @@ pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result
         .generate_text(&client.config().model, &prompt)
         .await?;
 
-    let re = get_score_regex();
+    let re = get_score_regex()?;
     let matched = re
         .find(raw_response.trim())
         .ok_or_else(|| {
@@ -155,5 +160,15 @@ mod tests {
         assert!(matches!(res, Err(MemFuseError::Internal(_))));
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("Failed to parse ImportanceScore float"));
+    }
+
+    #[test]
+    fn test_score_importance_regex_get() {
+        let re_res = get_score_regex();
+        assert!(re_res.is_ok());
+        let re = re_res.unwrap();
+        assert!(re.is_match("0.85"));
+        assert!(re.is_match("1.0"));
+        assert!(!re.is_match("abc"));
     }
 }
