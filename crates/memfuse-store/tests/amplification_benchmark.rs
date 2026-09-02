@@ -279,16 +279,14 @@ async fn run_amplification_benchmark() {
 
     let mut total_sstables_evaluated = 0usize;
     let mut total_bloom_passes = 0usize;
-    let mut total_range_passes = 0usize;
     let mut total_block_reads = 0usize;
     let mut total_successful_lookups = 0usize;
 
     for key in &existing_queries {
-        let (eval, bloom_pass, range_pass, block_reads, found) =
+        let (eval, bloom_pass, _range_pass, block_reads, found) =
             storage.point_lookup_metrics(key).await;
         total_sstables_evaluated += eval;
         total_bloom_passes += bloom_pass;
-        total_range_passes += range_pass;
         total_block_reads += block_reads;
         if found {
             total_successful_lookups += 1;
@@ -300,15 +298,13 @@ async fn run_amplification_benchmark() {
 
     let mut non_exist_sstables_evaluated = 0usize;
     let mut non_exist_bloom_passes = 0usize;
-    let mut non_exist_range_passes = 0usize;
     let mut non_exist_block_reads = 0usize;
 
     for key in &non_existing_queries {
-        let (eval, bloom_pass, range_pass, block_reads, found) =
+        let (eval, bloom_pass, _range_pass, block_reads, found) =
             storage.point_lookup_metrics(key).await;
         non_exist_sstables_evaluated += eval;
         non_exist_bloom_passes += bloom_pass;
-        non_exist_range_passes += range_pass;
         non_exist_block_reads += block_reads;
         assert!(!found, "Non-existing key must not be found");
     }
