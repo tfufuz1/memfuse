@@ -1,9 +1,9 @@
 // FILE-CONTEXT:
 // ZWECK: PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python.
-// INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls.
-// NICHT-OFFENSICHTLICH: Uses OnceLock multi-thread Tokio runtime shared across Python worker threads.
+// INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls; Tokio Runtime bound per interpreter module state.
+// NICHT-OFFENSICHTLICH: Per-interpreter Tokio runtime instance attached to Python module state (`PyRuntimeState`) to enforce sub-interpreter isolation (PEP 684).
 // HOTSPOTS: [160-205] memfuse_err mapping, [270-650] CRUD & search methods FFI boundary validation.
-// STAND: TS:2026-09-02T23:20:30Z (SESSION: a1811605)
+// STAND: TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)
 
 //! # MemFuse Python Bindings
 //!
@@ -20,7 +20,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-09-02T23:20:30Z (SESSION: a1811605)
+// STAND:       2026-09-03T10:00:00Z (SESSION: 14a123bc)
 // ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
 // INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
 // HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
@@ -33,7 +33,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
-use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
 // ─── Custom Exceptions ──────────────────────────────────────────────────────
@@ -45,16 +44,27 @@ pyo3::create_exception!(_memfuse, MemFuseValueError, MemFuseError);
 pyo3::create_exception!(_memfuse, MemFuseCryptoError, MemFuseError);
 pyo3::create_exception!(_memfuse, MemFuseInternalError, MemFuseError);
 
-// ─── Shared Tokio Runtime ───────────────────────────────────────────────────
+// ─── Per-Interpreter Tokio Runtime State ───────────────────────────────────
 
-/// Returns a reference to the shared Tokio runtime.
+/// Holds the per-interpreter/per-module Tokio runtime state and worker thread configuration.
+#[pyclass(name = "RuntimeState")]
+#[derive(Clone)]
+pub struct PyRuntimeState {
+    pub runtime: Arc<Runtime>,
+    pub worker_threads: usize,
+}
+
+/// Retrieves or initializes the per-interpreter Tokio runtime attached to the `_memfuse` module state.
 ///
-/// In compliance with the Zero-Panic policy, this function handles potential
-/// runtime creation errors by returning a `PyResult`.
-fn get_runtime() -> PyResult<&'static Runtime> {
-    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    if let Some(rt) = RUNTIME.get() {
-        return Ok(rt);
+/// Reads `MEMFUSE_WORKER_THREADS` on initialization for the current interpreter/module context.
+fn get_runtime(py: Python<'_>) -> PyResult<Arc<Runtime>> {
+    let module = py
+        .import("memfuse._memfuse")
+        .or_else(|_| py.import("_memfuse"))?;
+    if let Ok(state_attr) = module.getattr("_runtime_state") {
+        if let Ok(state) = state_attr.extract::<PyRef<'_, PyRuntimeState>>() {
+            return Ok(state.runtime.clone());
+        }
     }
 
     let worker_threads = std::env::var("MEMFUSE_WORKER_THREADS")
@@ -80,13 +90,16 @@ fn get_runtime() -> PyResult<&'static Runtime> {
             ))
         })?;
 
-    if let Err(_rt_existing) = RUNTIME.set(rt) {
-        // Another thread already initialized it, just return the existing one.
-    }
+    let runtime = Arc::new(rt);
+    let state = PyRuntimeState {
+        runtime: runtime.clone(),
+        worker_threads,
+    };
 
-    RUNTIME.get().ok_or_else(|| {
-        pyo3::exceptions::PyRuntimeError::new_err("Failed to retrieve initialized tokio runtime")
-    })
+    let py_state = Py::new(py, state)?;
+    let _ = module.setattr("_runtime_state", py_state);
+
+    Ok(runtime)
 }
 
 // ─── Shared Helper Functions ────────────────────────────────────────────────
@@ -448,7 +461,7 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<()> {
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -462,7 +475,7 @@ macro_rules! memfuse_crud_methods {
             /// Retrieves a document by its user-provided string ID.
             pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
                 validate_id(id)?;
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let id_owned = id.to_string();
                 let doc = run_blocking_ffi(py, || rt.block_on(self.inner.get(&id_owned)).map_err(memfuse_err))?;
                 match doc {
@@ -480,7 +493,7 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<()> {
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -500,7 +513,7 @@ macro_rules! memfuse_crud_methods {
                 vector: PyReadonlyArray1<'py, f32>,
                 metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<()> {
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -514,7 +527,7 @@ macro_rules! memfuse_crud_methods {
             /// Deletes a document by its ID.
             pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
                 validate_id(id)?;
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let id_owned = id.to_string();
                 run_blocking_ffi(py, || rt.block_on(self.inner.delete(&id_owned)).map_err(memfuse_err))
             }
@@ -533,7 +546,7 @@ macro_rules! memfuse_crud_methods {
                         k
                     )));
                 }
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -564,7 +577,7 @@ macro_rules! memfuse_crud_methods {
                         k
                     )));
                 }
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -637,7 +650,7 @@ macro_rules! memfuse_crud_methods {
                         "Must specify either all three weights (vector_weight, text_weight, graph_weight) or none"
                     )),
                 };
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -688,7 +701,7 @@ macro_rules! memfuse_crud_methods {
                         "Must specify either all three weights (vector_weight, text_weight, graph_weight) or none"
                     )),
                 };
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
@@ -757,7 +770,7 @@ macro_rules! memfuse_crud_methods {
                         label.len()
                     )));
                 }
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let from_owned = from.to_string();
                 let to_owned = to.to_string();
                 let label_owned = label.to_string();
@@ -774,7 +787,7 @@ macro_rules! memfuse_crud_methods {
                 py: Python<'_>,
                 prefix: &str,
             ) -> PyResult<Vec<(String, PyObject)>> {
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let prefix_owned = prefix.to_string();
                 let results = run_blocking_ffi(py, || {
                     rt.block_on(self.inner.scan_prefix(&prefix_owned))
@@ -798,7 +811,7 @@ macro_rules! memfuse_crud_methods {
                 start: Option<&str>,
                 end: Option<&str>,
             ) -> PyResult<Vec<(String, PyObject)>> {
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let start_bytes: Option<Vec<u8>> = start.map(|s| s.as_bytes().to_vec());
                 let end_bytes: Option<Vec<u8>> = end.map(|s| s.as_bytes().to_vec());
 
@@ -847,7 +860,7 @@ macro_rules! memfuse_batch_methods {
                 )>,
             ) -> PyResult<()> {
                 validate_batch_size(docs.len())?;
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
                 for (id, vector, metadata) in &docs {
@@ -877,7 +890,7 @@ macro_rules! memfuse_batch_methods {
                 )>,
             ) -> PyResult<()> {
                 validate_batch_size(docs.len())?;
-                let rt = get_runtime()?;
+                let rt = &self.runtime;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
                 for (id, vector, metadata) in &docs {
@@ -902,10 +915,18 @@ macro_rules! memfuse_batch_methods {
 #[pyclass(name = "Db")]
 pub struct PyMemFuse {
     inner: Arc<MemFuse>,
+    runtime: Arc<Runtime>,
+    worker_threads: usize,
 }
 
 #[pymethods]
 impl PyMemFuse {
+    /// Returns the number of worker threads configured in this database's Tokio runtime.
+    #[getter]
+    pub fn worker_threads(&self) -> usize {
+        self.worker_threads
+    }
+
     // ── Context Manager Protocol ──
 
     /// Enters the context manager. Returns `self`.
@@ -922,7 +943,7 @@ impl PyMemFuse {
         _exc_val: Option<&Bound<'_, PyAny>>,
         _exc_tb: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<bool> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || rt.block_on(self.inner.flush()).map_err(memfuse_err))?;
         Ok(false) // Do not suppress exceptions
     }
@@ -933,18 +954,21 @@ impl PyMemFuse {
     /// Creates the collection if it does not already exist.
     pub fn collection(&self, name: &str, py: Python<'_>) -> PyResult<PyCollection> {
         validate_collection_name(name)?;
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         let name_owned = name.to_string();
         let col = run_blocking_ffi(py, || {
             rt.block_on(self.inner.collection(&name_owned))
                 .map_err(memfuse_err)
         })?;
-        Ok(PyCollection { inner: col })
+        Ok(PyCollection {
+            inner: col,
+            runtime: self.runtime.clone(),
+        })
     }
 
     /// Lists all existing collection names.
     pub fn list_collections(&self, py: Python<'_>) -> PyResult<Vec<String>> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || {
             rt.block_on(self.inner.list_collections())
                 .map_err(memfuse_err)
@@ -954,7 +978,7 @@ impl PyMemFuse {
     /// Drops a collection, removing all its data from storage.
     pub fn drop_collection(&self, name: &str, py: Python<'_>) -> PyResult<()> {
         validate_collection_name(name)?;
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         let name_owned = name.to_string();
         run_blocking_ffi(py, || {
             rt.block_on(self.inner.drop_collection(&name_owned))
@@ -964,13 +988,13 @@ impl PyMemFuse {
 
     /// Flushes all pending writes to disk.
     pub fn flush(&self, py: Python<'_>) -> PyResult<()> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || rt.block_on(self.inner.flush()).map_err(memfuse_err))
     }
 
     /// Returns combined statistics for the vector index and storage engine.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyDbStats> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         let stats = run_blocking_ffi(py, || rt.block_on(self.inner.stats()).map_err(memfuse_err))?;
 
         Ok(PyDbStats {
@@ -989,13 +1013,13 @@ impl PyMemFuse {
 
     /// Returns the number of documents.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || rt.block_on(self.inner.len()).map_err(memfuse_err))
     }
 
     /// Returns true if the collection/database is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || {
             rt.block_on(self.inner.is_empty()).map_err(memfuse_err)
         })
@@ -1011,13 +1035,14 @@ memfuse_batch_methods!(PyMemFuse);
 #[pyclass(name = "Collection")]
 pub struct PyCollection {
     inner: Arc<MemFuseCollection>,
+    runtime: Arc<Runtime>,
 }
 
 #[pymethods]
 impl PyCollection {
     /// Returns statistics for the collection's vector index.
     pub fn stats(&self, py: Python<'_>) -> PyResult<PyVectorIndexStats> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         let stats = run_blocking_ffi(py, || rt.block_on(self.inner.stats()).map_err(memfuse_err))?;
 
         Ok(PyVectorIndexStats {
@@ -1029,13 +1054,13 @@ impl PyCollection {
 
     /// Returns the number of documents.
     pub fn len(&self, py: Python<'_>) -> PyResult<usize> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || Ok(rt.block_on(self.inner.len())))
     }
 
     /// Returns true if the collection is empty.
     pub fn is_empty(&self, py: Python<'_>) -> PyResult<bool> {
-        let rt = get_runtime()?;
+        let rt = &self.runtime;
         run_blocking_ffi(py, || Ok(rt.block_on(self.inner.is_empty())))
     }
 }
@@ -1070,7 +1095,8 @@ fn open(
             dimension
         )));
     }
-    let rt = get_runtime()?;
+    let rt = get_runtime(py)?;
+    let worker_threads = rt.metrics().num_workers();
     let mut config = MemFuseConfig {
         dimension,
         encryption_passphrase,
@@ -1108,6 +1134,8 @@ fn open(
 
     Ok(PyMemFuse {
         inner: Arc::new(db),
+        runtime: rt,
+        worker_threads,
     })
 }
 
@@ -1116,6 +1144,17 @@ mod tests {
     use super::*;
     use memfuse_core::MemFuseError;
     use pyo3::exceptions::*;
+
+    #[test]
+    fn test_py_runtime_state_initialization() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let rt_res = get_runtime(py);
+            assert!(rt_res.is_ok(), "get_runtime failed: {:?}", rt_res.err());
+            let rt = rt_res.unwrap();
+            assert!(rt.metrics().num_workers() >= 1);
+        });
+    }
 
     #[test]
     fn test_validate_id_guards() {
@@ -1297,6 +1336,38 @@ mod tests {
 #[pymodule]
 fn _memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     m.add("__version__", "0.2.0")?;
+
+    // Initialize per-interpreter Tokio runtime state
+    let worker_threads = std::env::var("MEMFUSE_WORKER_THREADS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            (std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                / 2)
+            .max(2)
+        });
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .thread_name("memfuse-py-worker")
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to create tokio runtime for memfuse-py: {}",
+                e
+            ))
+        })?;
+
+    let runtime = Arc::new(rt);
+    let state = PyRuntimeState {
+        runtime,
+        worker_threads,
+    };
+    m.add("_runtime_state", Py::new(_py, state)?)?;
+
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;
