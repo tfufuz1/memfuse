@@ -26,7 +26,6 @@ pub mod jsonrpc;
 pub mod memfuse_generated;
 
 pub use jsonrpc::*;
-#[allow(unsafe_code)]
 pub use memfuse_generated::mem_fuse::ipc::*;
 
 #[cfg(test)]
