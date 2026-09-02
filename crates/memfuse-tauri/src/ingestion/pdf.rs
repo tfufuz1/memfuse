@@ -2,6 +2,11 @@ use memfuse_core::{MemFuseError, Result};
 use std::path::Path;
 
 /// Extrahiert reinen Text aus PDF-Bytes (panikgeschützt).
+///
+/// **Sicherheitsgarantie**: `pdf-extract` führt ausschließlich die Extraktion
+/// von Text-Streams im PDF-Format durch. Es verarbeitet/interpretiert keinerlei
+/// PDF-Aktionen, `OpenAction`-JavaScript-Trigger, Formularskripte oder
+/// sonstige ausführbare Chunks.
 pub fn extract_pdf_bytes(bytes: &[u8]) -> Result<String> {
     if bytes.is_empty() {
         return Ok(String::new());
@@ -25,4 +30,22 @@ pub async fn extract_pdf_text(path: &Path) -> Result<String> {
     .await
     .map_err(|e| MemFuseError::Internal(format!("PDF extraction task panicked: {e:?}")))?
     .map_err(|_| MemFuseError::Internal("PDF extraction panicked on malformed file".into()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_pdf_malformed_returns_error_no_panic() {
+        let malformed_pdf = b"%PDF-1.4 truncated malformed header content";
+        let res = extract_pdf_bytes(malformed_pdf);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(
+            err.to_string().contains("PDF extraction failed")
+                || err.to_string().contains("panicked"),
+            "Unexpected error message: {err}"
+        );
+    }
 }
