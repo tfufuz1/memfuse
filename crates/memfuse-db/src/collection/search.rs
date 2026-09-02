@@ -703,8 +703,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 filter_pre_rrf(raw_vec_results)
             }
         } else {
-            self.search_filtered_at(vector, candidate_k, None, seq)
-                .await?
+            // RESOLVED: AGT-DB-006 — Apply filter_pre_rrf to raw_vec_results when query.filter is None (TS:2026-09-02T23:21:02Z)
+            let raw_vec_results = self
+                .search_filtered_at(vector, candidate_k, None, seq)
+                .await?;
+            filter_pre_rrf(raw_vec_results)
         };
 
         // 2. Text Signal

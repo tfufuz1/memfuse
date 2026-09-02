@@ -257,3 +257,16 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
    - `cargo clippy -p memfuse-db -- -D warnings` verifiziert: 0 Warnings/Findings.
    - `cargo test -p memfuse-db` verifiziert: Alle Unit-, Integrations- und Doc-Tests erfolgreich.
    - Workspace-Layer-DAG Konformität verifiziert: Layer 2 DAG-Hierarchie eingehalten.
+
+---
+
+## 9. Pre-RRF Filter Fix for MemoryType Filtering (2026-09-02)
+
+**Datum:** 02. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: 281da87d)
+**Aktion:** Fix in `crates/memfuse-db/src/collection/search.rs` (AGT-DB-006)
+
+### Befund & Maßnahme:
+- **Befund:** Im ungesiebten Vektorsuchpfad (`query.filter = None`) in `hybrid_search_with_query_at` wurde `filter_pre_rrf` nicht auf die Roh-Ergebnisse angewendet. Wenn eine Abfrage `memory_type_filter` ohne ein zusätzliches Metadaten-`FilterExpr` nutzte, wurden Nicht-Treffer für den geforderten `MemoryType` fälschlicherweise nicht vor dem RRF-Schritt gefiltert.
+- **Fix:** Aufruf von `filter_pre_rrf(raw_vec_results)` im `else`-Zweig ergänzt.
+- **Verifikation:** `test_hybrid_search_with_query_memory_type_filter` sowie die gesamte Testsuite in `memfuse-db` sind grün.
