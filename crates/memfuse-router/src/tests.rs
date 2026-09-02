@@ -1081,6 +1081,39 @@ mod tests {
         });
     }
 
+    #[test]
+    fn prop_routing_decision_profile_in_input() {
+        use crate::router::select_profile_from_chunks;
+        use memfuse_core::{ContextChunk, DocId};
+        use proptest::prelude::*;
+
+        proptest!(|(
+            score_a in 0.01f32..1.0f32,
+            _score_b in 0.01f32..1.0f32,
+        )| {
+            let p0 = SlmProfile::new("p0", "http://ep0", vec![1], TokenBudget::new(1000, 100), 0.0);
+            let p1 = SlmProfile::new("p1", "http://ep1", vec![1], TokenBudget::new(1000, 100), 0.0);
+            let profiles = vec![p0, p1];
+
+            let chunks = vec![(
+                ContextChunk {
+                    doc_id: DocId::new(1),
+                    content: "test content".to_string(),
+                    relevance: score_a,
+                    token_count: 5,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                },
+                Some(1),
+            )];
+
+            if let Ok(idx) = select_profile_from_chunks(&profiles, &chunks) {
+                prop_assert!(idx < profiles.len());
+            }
+        });
+    }
+
     #[tokio::test]
     async fn test_router_engine_profiles_accessor() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
@@ -1157,38 +1190,5 @@ mod tests {
         let idx = select_profile_from_chunks(&[profile], &chunks)?;
         assert_eq!(idx, 0);
         Ok(())
-    }
-
-    #[test]
-    fn prop_routing_decision_profile_in_input() {
-        use crate::router::select_profile_from_chunks;
-        use memfuse_core::{ContextChunk, DocId};
-        use proptest::prelude::*;
-
-        proptest!(|(
-            score_a in 0.01f32..1.0f32,
-            _score_b in 0.01f32..1.0f32,
-        )| {
-            let p0 = SlmProfile::new("p0", "http://ep0", vec![1], TokenBudget::new(1000, 100), 0.0);
-            let p1 = SlmProfile::new("p1", "http://ep1", vec![1], TokenBudget::new(1000, 100), 0.0);
-            let profiles = vec![p0, p1];
-
-            let chunks = vec![(
-                ContextChunk {
-                    doc_id: DocId::new(1),
-                    content: "test content".to_string(),
-                    relevance: score_a,
-                    token_count: 5,
-                    metadata: None,
-                    contextual_prefix: None,
-                    links: Vec::new(),
-                },
-                Some(1),
-            )];
-
-            if let Ok(idx) = select_profile_from_chunks(&profiles, &chunks) {
-                prop_assert!(idx < profiles.len());
-            }
-        });
     }
 }
