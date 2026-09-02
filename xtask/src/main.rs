@@ -1098,6 +1098,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-jules-context-freshness" => {
+            let success = run_check_jules_context_freshness();
+            if !success {
+                process::exit(1);
+            }
+        }
         "check-review-coverage" => {
             let tags = scan_tags("crates");
             let success = run_check_review_coverage(&tags);

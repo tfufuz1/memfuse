@@ -1838,6 +1838,7 @@ mod tests {
             Ok(_) => panic!("expected error"),
         };
         assert!(err_msg.contains("Dimension mismatch"));
+        Ok(())
     }
 }
 
