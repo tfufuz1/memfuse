@@ -1806,25 +1806,25 @@ mod tests {
             "open_with_config should fail when repair fails"
         );
 
-        let err_msg = res.err().unwrap().to_string(); // unwrap allowed
-        assert!(
-            err_msg.contains("repair_on_open")
-                && err_msg.contains("Datenbankintegrität nicht garantiert"),
-            "Expected repair error message, got: {}",
-            err_msg
-        );
+        if let Err(e) = res {
+            let err_msg = e.to_string();
+            assert!(
+                err_msg.contains("repair_on_open")
+                    && err_msg.contains("Datenbankintegrität nicht garantiert"),
+                "Expected repair error message, got: {}",
+                err_msg
+            );
+        }
     }
 
     #[tokio::test]
-    async fn test_open_dimension_mismatch_fails() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+    async fn test_open_dimension_mismatch_fails() -> Result<()> {
+        let dir = tempfile::tempdir().map_err(|e| memfuse_core::MemFuseError::InvalidInput(e.to_string()))?;
         let config_768 = MemFuseConfig {
             dimension: 768,
             ..Default::default()
         };
-        let _db = MemFuse::open_with_config(dir.path(), config_768)
-            .await
-            .unwrap(); // unwrap allowed
+        let _db = MemFuse::open_with_config(dir.path(), config_768).await?;
 
         // Zweites Öffnen mit falscher Dimension muss früh fehlschlagen
         let config_1536 = MemFuseConfig {
