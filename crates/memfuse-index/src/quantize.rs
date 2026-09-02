@@ -138,11 +138,13 @@ impl ScalarQuantizer {
     }
 
     /// Returns a reference to per-dimension minimum values.
+    #[allow(dead_code)]
     pub fn mins(&self) -> &[f32] {
         &self.mins
     }
 
     /// Returns a reference to per-dimension maximum values.
+    #[allow(dead_code)]
     pub fn maxes(&self) -> &[f32] {
         &self.maxes
     }

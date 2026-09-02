@@ -1193,6 +1193,7 @@ impl SandboxBridge for MemFuse {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     // expect #[cfg(test)]
     // unwrap #[cfg(test)]

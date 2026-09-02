@@ -836,6 +836,7 @@ pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &
 }
 
 /// Parts required to compute asymmetric cosine similarity.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct CosineSimilarityPartsF32U8 {
     pub dot_f32_u8: f32,
@@ -1626,7 +1627,7 @@ mod tests {
         let neg_b: Vec<f32> = a.iter().map(|&x| -x).collect();
         let d_anti = cosine_distance_scalar(&a, &neg_b);
         assert!(
-            d_anti >= 0.0 && d_anti <= 2.0,
+            (0.0..=2.0).contains(&d_anti),
             "Antiparallel cosine distance must be in [0.0, 2.0], got {d_anti}"
         );
         assert!(
@@ -1699,13 +1700,13 @@ mod tests {
 
             let d_scalar = cosine_distance_scalar(a, b);
             proptest::prop_assert!(
-                d_scalar >= 0.0 && d_scalar <= 2.0,
+                (0.0..=2.0).contains(&d_scalar),
                 "Scalar cosine distance out of bounds [0, 2]: {}", d_scalar
             );
 
             let d_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
             proptest::prop_assert!(
-                d_simd >= 0.0 && d_simd <= 2.0,
+                (0.0..=2.0).contains(&d_simd),
                 "SIMD cosine distance out of bounds [0, 2]: {}", d_simd
             );
 
@@ -1715,7 +1716,7 @@ mod tests {
                     // SAFETY: Hardware support checked via is_x86_feature_detected.
                     let d_avx2 = unsafe { cosine_distance_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
                     proptest::prop_assert!(
-                        d_avx2 >= 0.0 && d_avx2 <= 2.0,
+                        (0.0..=2.0).contains(&d_avx2),
                         "AVX2 cosine distance out of bounds [0, 2]: {}", d_avx2
                     );
                 }

@@ -16,6 +16,7 @@ pub mod search;
 pub mod tx;
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests;
 
 use memfuse_core::{DocId, Result, StorageEngine, TextEmbeddingEngine, TxId, VectorIndex};

@@ -53,12 +53,15 @@ pub enum CommitIntent {
     },
 }
 
+/// Staged key operation representing (key, optional_value).
+type StagedKeyOp = (Vec<u8>, Option<Vec<u8>>);
+
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store, HNSW-Index, Text-Index, and Graph-Index.
 pub struct DbTransaction<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
     pub tx_id: TxId,
     collection: Collection<S, V>,
-    staged_forward_keys: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
-    staged_reverse_keys: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
+    staged_forward_keys: Mutex<Vec<StagedKeyOp>>,
+    staged_reverse_keys: Mutex<Vec<StagedKeyOp>>,
     staged_doc_ids: Mutex<Vec<DocId>>,
     staged_text_ops: Mutex<Vec<(DocId, String)>>,
     staged_text_deletes: Mutex<Vec<DocId>>,

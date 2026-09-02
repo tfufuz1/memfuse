@@ -33,14 +33,15 @@ impl FileWriteTracker {
             for entry in entries.flatten() {
                 let path = entry.path();
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if (name.ends_with(".sst") || name.ends_with(".log")) && !name.ends_with(".tmp") {
-                    if !tracked.contains(&path) {
-                        if let Ok(meta) = std::fs::metadata(&path) {
-                            let len = meta.len();
-                            if len > 0 {
-                                self.total_bytes_written.fetch_add(len, Ordering::SeqCst);
-                                tracked.insert(path);
-                            }
+                if (name.ends_with(".sst") || name.ends_with(".log"))
+                    && !name.ends_with(".tmp")
+                    && !tracked.contains(&path)
+                {
+                    if let Ok(meta) = std::fs::metadata(&path) {
+                        let len = meta.len();
+                        if len > 0 {
+                            self.total_bytes_written.fetch_add(len, Ordering::SeqCst);
+                            tracked.insert(path);
                         }
                     }
                 }

@@ -28,10 +28,8 @@ fn run_subcommand_target() {
     if let Ok(child_mode) = env::var("MEMFUSE_TOCTOU_CHILD") {
         if child_mode == "truncation" {
             child_truncation_runner();
-            return;
         } else if child_mode == "deletion" {
             child_deletion_runner();
-            return;
         }
     }
 }
