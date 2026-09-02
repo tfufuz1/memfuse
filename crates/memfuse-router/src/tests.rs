@@ -1202,13 +1202,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_engine_try_new_and_try_update_profiles_validation_error() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap(); // unwrap
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
+        let collection = db.collection("default").await.unwrap(); // unwrap
 
         let invalid_profile = SlmProfile::new(
             "",
@@ -1294,8 +1294,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_dispatch_invalid_json_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener.accept().await {
@@ -1377,13 +1377,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_with_missing_community_or_corrupt_result() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap(); // unwrap
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
+        let collection = db.collection("default").await.unwrap(); // unwrap
 
         let key = "entity_no_community";
         collection
@@ -1393,7 +1393,7 @@ mod tests {
                 Some(json!({"text": "sample text"})),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let profile = SlmProfile::new(
             "slm-no-comm",

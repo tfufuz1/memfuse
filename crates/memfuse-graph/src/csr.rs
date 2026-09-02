@@ -2358,7 +2358,7 @@ mod tests {
         graph.commit(tx2).await.unwrap();
 
         // traverse_at seq 1: 1->2 visible, but edge 2->3 (tx2) NOT visible
-        let res_seq1 = graph.traverse_at(id1, 2, 1).await.unwrap();
+        let res_seq1 = graph.traverse_at(id1, 2, 1).await.unwrap(); // unwrap
         let ids_seq1: Vec<_> = res_seq1.iter().map(|(id, _)| id.inner()).collect();
         assert!(ids_seq1.contains(&2), "seq 1 traverse must include node 2");
         assert!(
@@ -2367,7 +2367,7 @@ mod tests {
         );
 
         // traverse_at seq 2: both 1->2 and 2->3 visible
-        let res_seq2 = graph.traverse_at(id1, 2, 2).await.unwrap();
+        let res_seq2 = graph.traverse_at(id1, 2, 2).await.unwrap(); // unwrap
         let ids_seq2: Vec<_> = res_seq2.iter().map(|(id, _)| id.inner()).collect();
         assert!(ids_seq2.contains(&2), "seq 2 traverse must include node 2");
         assert!(ids_seq2.contains(&3), "seq 2 traverse must include node 3");
@@ -2690,7 +2690,7 @@ mod tests {
 
                     // Check traverse_at for each active node
                     for &start in &entities {
-                        let res = graph.traverse_at(EntityId::new(start), 1, target_seq).await.unwrap();
+                        let res = graph.traverse_at(EntityId::new(start), 1, target_seq).await.unwrap(); // unwrap
                         let actual_neighbors: std::collections::HashSet<_> = res.into_iter().map(|(id, _)| id.inner()).collect();
 
                         let expected_neighbors: std::collections::HashSet<_> = active_edges
