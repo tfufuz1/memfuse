@@ -173,33 +173,19 @@ mod tests {
     }
 
     #[test]
-    fn test_score_importance_regex_parsing_edge_cases() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let re = get_score_regex()?;
+    fn test_score_importance_regex_parsing_edge_cases() {
+        let re = get_score_regex().unwrap();
 
-        if let Some(m1) = re.find("Based on analysis: 0.75") {
-            assert_eq!(m1.as_str(), "0.75");
-        } else {
-            return Err("m1 missing".into());
-        }
+        let m1 = re.find("Based on analysis: 0.75").unwrap().as_str();
+        assert_eq!(m1.parse::<f32>().unwrap(), 0.75);
 
-        if let Some(m2) = re.find("Score: 1.0") {
-            assert_eq!(m2.as_str(), "1.0");
-        } else {
-            return Err("m2 missing".into());
-        }
+        let m2 = re.find("Score: 1.0").unwrap().as_str();
+        assert_eq!(m2.parse::<f32>().unwrap(), 1.0);
 
-        if let Some(m3) = re.find("Rating is 0.0") {
-            assert_eq!(m3.as_str(), "0.0");
-        } else {
-            return Err("m3 missing".into());
-        }
+        let m3 = re.find("Rating is 0.0").unwrap().as_str();
+        assert_eq!(m3.parse::<f32>().unwrap(), 0.0);
 
-        if let Some(m4) = re.find("Importance = 0.42 (Moderate)") {
-            assert_eq!(m4.as_str(), "0.42");
-        } else {
-            return Err("m4 missing".into());
-        }
-
-        Ok(())
+        let m4 = re.find("Importance = 0.42 (Moderate)").unwrap().as_str();
+        assert_eq!(m4.parse::<f32>().unwrap(), 0.42);
     }
 }
