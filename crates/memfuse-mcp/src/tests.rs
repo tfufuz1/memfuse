@@ -432,19 +432,25 @@ async fn test_batch_request_handling() {
         { "jsonrpc": "2.0", "id": 1, "method": "ping", "params": {} },
         { "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} }
     ]);
-    let resp = server
-        .handle_value(batch_val)
-        .await
-        .expect("batch response");
-    let arr = resp.as_array().expect("array expected");
-    assert_eq!(arr.len(), 2);
-    assert_eq!(arr[0]["id"], 1);
-    assert_eq!(arr[1]["id"], 2);
+    if let Some(resp) = server.handle_value(batch_val).await {
+        if let Some(arr) = resp.as_array() {
+            assert_eq!(arr.len(), 2);
+            assert_eq!(arr[0]["id"], 1);
+            assert_eq!(arr[1]["id"], 2);
+        } else {
+            assert!(false, "array expected");
+        }
+    } else {
+        assert!(false, "batch response expected");
+    }
 
     // 2. Empty batch array -> Invalid Request (-32600)
     let empty_batch = json!([]);
-    let empty_resp = server.handle_value(empty_batch).await.expect("response");
-    assert_eq!(empty_resp["error"]["code"], -32600);
+    if let Some(empty_resp) = server.handle_value(empty_batch).await {
+        assert_eq!(empty_resp["error"]["code"], -32600);
+    } else {
+        assert!(false, "empty batch response expected");
+    }
 
     // 3. Batch notifications only -> None (no response)
     let notif_batch = json!([
@@ -460,13 +466,16 @@ async fn test_batch_request_handling() {
         { "jsonrpc": "2.0", "method": "initialized", "params": {} },
         { "jsonrpc": "2.0", "id": 11, "method": "nonexistent_method", "params": {} }
     ]);
-    let mixed_resp = server
-        .handle_value(mixed_batch)
-        .await
-        .expect("mixed response");
-    let mixed_arr = mixed_resp.as_array().expect("array expected");
-    assert_eq!(mixed_arr.len(), 2);
-    assert_eq!(mixed_arr[0]["id"], 10);
-    assert_eq!(mixed_arr[1]["id"], 11);
-    assert_eq!(mixed_arr[1]["error"]["code"], -32601);
+    if let Some(mixed_resp) = server.handle_value(mixed_batch).await {
+        if let Some(mixed_arr) = mixed_resp.as_array() {
+            assert_eq!(mixed_arr.len(), 2);
+            assert_eq!(mixed_arr[0]["id"], 10);
+            assert_eq!(mixed_arr[1]["id"], 11);
+            assert_eq!(mixed_arr[1]["error"]["code"], -32601);
+        } else {
+            assert!(false, "array expected");
+        }
+    } else {
+        assert!(false, "mixed response expected");
+    }
 }
