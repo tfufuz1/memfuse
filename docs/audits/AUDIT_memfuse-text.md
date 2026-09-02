@@ -8,9 +8,31 @@
 
 ---
 
-## 0. Re-Audit Snapshot & Session Summary (`2026-09-01T23:01:12Z`)
+## 0. Re-Audit Snapshot & Session Summary (`2026-09-02T08:18:07Z`)
 
-Im Rahmen der Qualitätssicherungs- und Verifikationsroutine wurde das Crate `memfuse-text` vollständig verifiziert:
+Im Rahmen der Qualitätssicherungs- und Verifikationsroutine (Session `b952fab8`) wurde das Crate `memfuse-text` erneut verifiziert und multi-session-auditiert:
+
+1. **Gate-Stack Verification:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **74 passed, 0 failed** (alle Unit- & Integrationstests grün)
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
+
+2. **Unsafe-Code & Slicing Invarianten:**
+   - `#![forbid(unsafe_code)]` in `lib.rs` ist strikt aktiv. Exactly **0** `unsafe`-Blöcke.
+   - APM-7 (String-Slicing Safety): Alle String-Slices in `morphology.rs` und `tokenizer.rs` sind durch `is_char_boundary()`-Prüfungen oder ASCII-Suffix/Prefix-Längengarantien abgesichert. Fuzzing via `prop_high_density_multibyte_never_panics` verlief ohne Fehlschläge.
+
+3. **KMU Compound Splitter Recall Evaluation & Review Pass:**
+   - `test_kmu_55_compounds_suite` evaluiert 55 KMU-Fachbegriffe mit Fugenlauten (`-s-`, `-n-`, `-en-`, `-e-`, `-er-`, `-es-`, Zero-Interfix, multi-part).
+   - Trefferquote: **100% (55 / 55 passed)**, weit über dem Akzeptanzkriterium von $\ge 90\%$.
+   - `ANCHOR[TEST:TXT-001]` wurde mit `REVIEW-PASS[2/2]` aus Session `b952fab8` auf `STATUS:DONE` gesetzt.
+
+---
+
+## 0b. Historischer Re-Audit Snapshot (`2026-09-01T23:01:12Z`)
+
+Im Rahmen der vorherigen Qualitätssicherungs- und Verifikationsroutine wurde das Crate `memfuse-text` vollständig verifiziert:
 
 1. **Gate-Stack Verification:**
    - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
