@@ -98,12 +98,9 @@ impl RouterEngine {
         for res in &search_results {
             let chunk_res = res.clone();
             if let Ok(mut chunk) = ContextChunk::try_from(chunk_res) {
-                // Determine community ID if entity_id can be parsed
-                let comm_id = if let Ok(eid) = EntityId::from_key(&res.id) {
-                    self.collection.get_community(eid).await.ok().flatten()
-                } else {
-                    None
-                };
+                // Determine community ID directly from chunk.doc_id (derived from res.id in TryFrom)
+                let eid = EntityId::from_doc_id(chunk.doc_id);
+                let comm_id = self.collection.get_community(eid).await.ok().flatten();
 
                 // Ensure content uses ContextChunk::combined_text_owned() for context preparation
                 chunk.content = chunk.combined_text_owned();
