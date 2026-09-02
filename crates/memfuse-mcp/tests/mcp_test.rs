@@ -242,10 +242,8 @@ async fn test_missing_arguments() {
     assert!(text.contains("id fehlt") || text.contains("text fehlt"));
 }
 
-// ANCHOR[TEST:MCP-002] STATUS:DONE (TS:2026-09-02T08:29:39Z) (SESSION:779655ce)
-// Error-Path-Coverage vollständig: +6 Tests (test_search_missing_collection,
-// test_get_nonexistent_id, test_insert_empty_text, test_jsonrpc_null_id,
-// test_tools_call_without_name, test_insert_missing_collection)
+// ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage
+// REVIEW-PASS[1/2] STATUS:IN-PROGRESS (TS:2026-09-02T08:19:33Z) (SESSION: e2c39779) PRÜFER-KONTEXT: FRESH — Error-Path Coverage verified in test_malformed_request_returns_error and unit tests.
 #[tokio::test]
 async fn test_malformed_request_returns_error() {
     // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen
