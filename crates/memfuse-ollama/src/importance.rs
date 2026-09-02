@@ -166,9 +166,26 @@ mod tests {
     fn test_score_importance_regex_get() {
         let re_res = get_score_regex();
         assert!(re_res.is_ok());
-        let re = re_res.unwrap();
+        let re = re_res.unwrap(); // unwrap
         assert!(re.is_match("0.85"));
         assert!(re.is_match("1.0"));
         assert!(!re.is_match("abc"));
+    }
+
+    #[test]
+    fn test_score_importance_regex_parsing_edge_cases() {
+        let re = get_score_regex().unwrap();
+
+        let m1 = re.find("Based on analysis: 0.75").unwrap().as_str();
+        assert_eq!(m1.parse::<f32>().unwrap(), 0.75);
+
+        let m2 = re.find("Score: 1.0").unwrap().as_str();
+        assert_eq!(m2.parse::<f32>().unwrap(), 1.0);
+
+        let m3 = re.find("Rating is 0.0").unwrap().as_str();
+        assert_eq!(m3.parse::<f32>().unwrap(), 0.0);
+
+        let m4 = re.find("Importance = 0.42 (Moderate)").unwrap().as_str();
+        assert_eq!(m4.parse::<f32>().unwrap(), 0.42);
     }
 }

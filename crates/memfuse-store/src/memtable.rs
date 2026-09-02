@@ -537,7 +537,7 @@ mod tests {
             })
             .collect();
         for h in handles {
-            h.join().expect("thread panicked"); // #[cfg(test)]
+            h.join().expect("thread panicked"); // #[cfg(test)] // expect
         }
         assert_eq!(mt.iter_latest().len(), 1000);
     }
@@ -565,7 +565,7 @@ mod tests {
 
         mt.rollback(999); // should do nothing
         assert!(!mt.is_empty());
-        assert_eq!(mt.get(b"k").expect("should exist").0.as_ref(), b"v");
+        assert_eq!(mt.get(b"k").expect("should exist").0.as_ref(), b"v"); // expect
         assert_eq!(mt.tx_range(), (10, 10));
 
         // Rollback existing tx

@@ -1202,13 +1202,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_engine_try_new_and_try_update_profiles_validation_error() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap(); // unwrap
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
+        let collection = db.collection("default").await.unwrap(); // unwrap
 
         let invalid_profile = SlmProfile::new(
             "",
@@ -1294,8 +1294,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_dispatch_invalid_json_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener.accept().await {
@@ -1377,13 +1377,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_with_missing_community_or_corrupt_result() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap(); // unwrap
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
+        let collection = db.collection("default").await.unwrap(); // unwrap
 
         let key = "entity_no_community";
         collection
@@ -1393,7 +1393,7 @@ mod tests {
                 Some(json!({"text": "sample text"})),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let profile = SlmProfile::new(
             "slm-no-comm",
@@ -1406,5 +1406,47 @@ mod tests {
         let router = RouterEngine::new(collection, vec![profile]);
         let res = router.route(&[1.0, 0.0, 0.0, 0.0], "sample text").await;
         assert!(matches!(res, Err(MemFuseError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_route_invalid_search_result_skips_chunk() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        // Insert valid doc and corrupt/invalid doc directly into storage/index or test search result handling
+        let valid_key = "valid_entity_1";
+        collection
+            .insert(
+                valid_key,
+                &[1.0, 0.0, 0.0, 0.0],
+                Some(json!({"text": "valid content"})),
+            )
+            .await?;
+
+        let eid = EntityId::from_key(valid_key)?;
+        let tx = db.allocate_tx()?;
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        let comm_val = serde_json::to_vec(&100u64)?;
+        db.inner_storage().put(tx, &comm_key, &comm_val).await?;
+        db.inner_storage().commit(tx).await?;
+
+        let profile = SlmProfile::new(
+            "slm-valid",
+            "http://localhost:9999/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.0,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+        let res = router.route(&[1.0, 0.0, 0.0, 0.0], "valid content").await;
+        assert!(res.is_ok());
+        Ok(())
     }
 }

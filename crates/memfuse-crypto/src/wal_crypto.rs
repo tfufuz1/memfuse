@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_encrypted_wal_new_empty_id() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let res = EncryptedWal::new(km, b"");
         assert!(matches!(
             res,
@@ -502,8 +502,8 @@ mod tests {
 
     #[test]
     fn test_encrypt_chunk_oversized() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let payload = vec![0u8; MAX_CHUNK_SIZE + 1];
         let res = wal.encrypt_chunk(&payload);
         assert!(matches!(
@@ -514,8 +514,8 @@ mod tests {
 
     #[test]
     fn test_decrypt_chunk_too_short() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let res = wal.decrypt_chunk(&[0u8; 11]);
         assert!(matches!(
             res,
@@ -525,8 +525,8 @@ mod tests {
 
     #[test]
     fn test_decrypt_chunk_oversized() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let data = vec![0u8; MAX_ENCRYPTED_CHUNK_SIZE + 1];
         let res = wal.decrypt_chunk(&data);
         assert!(matches!(
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_encrypted_wal_oversized_file_id() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let oversized_id = vec![0x33u8; 10_001];
         let res = EncryptedWal::new(km, &oversized_id);
         assert!(matches!(
@@ -557,20 +557,20 @@ mod tests {
 
     #[test]
     fn test_encrypted_wal_empty_payload_roundtrip() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-        let wal = EncryptedWal::new(km, b"empty_payload.log").expect("wal");
-        let encrypted = wal.encrypt_chunk(b"").expect("encrypt empty");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
+        let wal = EncryptedWal::new(km, b"empty_payload.log").expect("wal"); // expect
+        let encrypted = wal.encrypt_chunk(b"").expect("encrypt empty"); // expect
         assert_eq!(encrypted.len(), 12 + 16); // 12-byte nonce + 16-byte AES-GCM-SIV tag
 
-        let decrypted = wal.decrypt_chunk(&encrypted).expect("decrypt empty");
+        let decrypted = wal.decrypt_chunk(&encrypted).expect("decrypt empty"); // expect
         assert_eq!(decrypted, b"");
     }
 
     #[test]
     fn test_encrypted_wal_modified_nonce_fails() {
-        let km = KeyManager::try_new("test-pass", b"salt1").expect("km");
-        let wal = EncryptedWal::new(km, b"wal.log").expect("wal");
-        let mut encrypted = wal.encrypt_chunk(b"payload").expect("encrypt");
+        let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
+        let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
+        let mut encrypted = wal.encrypt_chunk(b"payload").expect("encrypt"); // expect
         encrypted[0] ^= 0xFF; // Corrupt first byte of nonce
 
         let res = wal.decrypt_chunk(&encrypted);
@@ -583,7 +583,7 @@ mod tests {
         let mut verifier = IntegrityVerifier::new(key);
 
         // Compute V2 checksum independently
-        let mut hmac = WalHmac::new(key).expect("hmac");
+        let mut hmac = WalHmac::new(key).expect("hmac"); // expect
         hmac.update(&[0u8; 32]); // prev_hmac
         hmac.update(&1u64.to_le_bytes()); // seq_no
         hmac.update(&[0u8]); // op_type = Put
@@ -640,12 +640,12 @@ mod tests {
         let key = b"integrity-key-32-bytes-check---";
         let payload = b"critical-wal-data-payload";
 
-        let mut wal_hmac = WalHmac::new(key).expect("WalHmac new");
+        let mut wal_hmac = WalHmac::new(key).expect("WalHmac new"); // expect
         wal_hmac.update(payload);
         let actual_checksum = wal_hmac.finalize();
 
         // Independent external reference calculation using hmac::Hmac<Sha256>
-        let mut ref_hmac = Hmac::<Sha256>::new_from_slice(key).expect("hmac ref init");
+        let mut ref_hmac = Hmac::<Sha256>::new_from_slice(key).expect("hmac ref init"); // expect
         ref_hmac.update(b"memfuse-wal-v1"); // Domain separation string
         ref_hmac.update(payload);
         let expected_checksum: [u8; 32] = ref_hmac.finalize().into_bytes().into();

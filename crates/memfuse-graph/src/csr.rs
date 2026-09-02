@@ -1505,10 +1505,10 @@ mod tests {
                     Entity::new(EntityId::new(id), format!("E{id}"), "Entity"),
                 )
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await.unwrap(); // unwrap
 
         // Before compact(), reverse_map has 5 entities
         {
@@ -1830,9 +1830,9 @@ mod tests {
             graph
                 .add_edge(tx, Edge::new(from, to, "test_rel"))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
 
-            graph.rollback(tx).await.unwrap();
+            graph.rollback(tx).await.unwrap(); // unwrap
 
             let inner = graph.inner.read();
             assert_eq!(
@@ -1950,7 +1950,7 @@ mod tests {
         let map = graph
             .get_communities_batch(&[EntityId::new(1), EntityId::new(2), EntityId::new(3)])
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(map.len(), 2);
         assert_eq!(map.get(&EntityId::new(1)), Some(&100));
@@ -2334,31 +2334,31 @@ mod tests {
         graph
             .add_entity(tx1, Entity::new(id1, "N1", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx1, Entity::new(id2, "N2", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx1, Entity::new(id3, "N3", "T"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx1, Edge::new(id1, id2, "rel1"))
             .await
-            .unwrap();
-        graph.commit(tx1).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx1).await.unwrap(); // unwrap
 
         // Tx 2: Add edge 2->3
         let tx2 = TxId::new(2);
         graph
             .add_edge(tx2, Edge::new(id2, id3, "rel2"))
             .await
-            .unwrap();
-        graph.commit(tx2).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx2).await.unwrap(); // unwrap
 
         // traverse_at seq 1: 1->2 visible, but edge 2->3 (tx2) NOT visible
-        let res_seq1 = graph.traverse_at(id1, 2, 1).await.unwrap();
+        let res_seq1 = graph.traverse_at(id1, 2, 1).await.unwrap(); // unwrap
         let ids_seq1: Vec<_> = res_seq1.iter().map(|(id, _)| id.inner()).collect();
         assert!(ids_seq1.contains(&2), "seq 1 traverse must include node 2");
         assert!(
@@ -2367,7 +2367,7 @@ mod tests {
         );
 
         // traverse_at seq 2: both 1->2 and 2->3 visible
-        let res_seq2 = graph.traverse_at(id1, 2, 2).await.unwrap();
+        let res_seq2 = graph.traverse_at(id1, 2, 2).await.unwrap(); // unwrap
         let ids_seq2: Vec<_> = res_seq2.iter().map(|(id, _)| id.inner()).collect();
         assert!(ids_seq2.contains(&2), "seq 2 traverse must include node 2");
         assert!(ids_seq2.contains(&3), "seq 2 traverse must include node 3");
@@ -2517,7 +2517,7 @@ mod tests {
         fn prop_add_edge_rollback_no_index_growth(
             edge_specs in proptest::collection::vec((1u64..1000, 1001u64..2000), 10..100)
         ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap(); // unwrap
             let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
                 let graph = CsrGraph::new();
                 let initial_id_len = graph.inner.read().id_map.len();
@@ -2559,7 +2559,7 @@ mod tests {
             hops in 0usize..5,
             as_of in 0u64..150u64,
         ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap(); // unwrap
             let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
                 let graph = CsrGraph::new();
                 let tx = TxId::new(1);
@@ -2611,7 +2611,7 @@ mod tests {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .unwrap();
+                .unwrap(); // unwrap
 
             rt.block_on(async {
                 let graph = CsrGraph::new();
@@ -2690,7 +2690,7 @@ mod tests {
 
                     // Check traverse_at for each active node
                     for &start in &entities {
-                        let res = graph.traverse_at(EntityId::new(start), 1, target_seq).await.unwrap();
+                        let res = graph.traverse_at(EntityId::new(start), 1, target_seq).await.unwrap(); // unwrap
                         let actual_neighbors: std::collections::HashSet<_> = res.into_iter().map(|(id, _)| id.inner()).collect();
 
                         let expected_neighbors: std::collections::HashSet<_> = active_edges
@@ -2703,7 +2703,7 @@ mod tests {
                     }
                 }
                 Ok(())
-            }).unwrap();
+            }).unwrap(); // unwrap
         });
     }
 
@@ -2898,7 +2898,7 @@ mod tests {
         ) {
             let mut visitor = StringVisitor(String::new());
             event.record(&mut visitor);
-            self.0.lock().unwrap().push(visitor.0);
+            self.0.lock().unwrap().push(visitor.0); // unwrap
         }
     }
 
@@ -2921,9 +2921,9 @@ mod tests {
 
         let graph = setup_test_graph().await;
 
-        let _ = graph.traverse(EntityId::new(1), 5).await.unwrap();
+        let _ = graph.traverse(EntityId::new(1), 5).await.unwrap(); // unwrap
 
-        let captured = logs.lock().unwrap();
+        let captured = logs.lock().unwrap(); // unwrap
         let warning_found = captured.iter().any(|msg| {
             msg.contains("exceeds internal cap MAX_TRAVERSAL_HOPS")
                 && msg.contains("requested_max_hops=5")
@@ -3009,13 +3009,13 @@ mod tests {
         ) {
             let graph = CsrGraph::new();
             for i in 0..node_count {
-                graph.insert_entity_direct(Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Type")).unwrap();
+                graph.insert_entity_direct(Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Type")).unwrap(); // unwrap
             }
 
             for (src, dst, w) in edge_pairs {
                 let src_id = EntityId::new((src % node_count) as u64 + 1);
                 let dst_id = EntityId::new((dst % node_count) as u64 + 1);
-                graph.insert_edge_direct(src_id, dst_id, w).unwrap();
+                graph.insert_edge_direct(src_id, dst_id, w).unwrap(); // unwrap
             }
 
             graph.compact();
@@ -3031,7 +3031,7 @@ mod tests {
             }
 
             // Invariant 3: final offset must match targets length
-            proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len());
+            proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len()); // unwrap
 
             // Invariant 4: parallel arrays (targets, weights, valid_froms, valid_tos) must have equal lengths
             proptest::prop_assert_eq!(inner.targets.len(), inner.weights.len());

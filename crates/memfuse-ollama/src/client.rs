@@ -1093,8 +1093,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_with_rag_streaming_split_chunks() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
 
         tokio::spawn(async move {
@@ -1127,7 +1127,7 @@ mod tests {
                 tokens.push(tok);
             })
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(result, "SplitToken");
         assert_eq!(tokens, vec!["SplitToken"]);
@@ -1739,7 +1739,7 @@ mod tests {
             .embed("nomic-embed-text", "hello")
             .await;
         assert!(res_ok.is_ok());
-        assert_eq!(res_ok.unwrap(), vec![0.42]);
+        assert_eq!(res_ok.unwrap(), vec![0.42]); // unwrap
     }
 
     #[tokio::test]

@@ -140,21 +140,21 @@ mod tests {
         use std::sync::atomic::AtomicU64;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
                 path: dir.path().to_path_buf(),
                 ..Default::default()
             })
             .await
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let col = Arc::new(crate::Collection::new(
             "default".to_string(),
@@ -169,11 +169,11 @@ mod tests {
         let vec = vec![1.0, 0.0, 0.0, 0.0];
         col.insert_with_ttl("doc_task_ttl", &vec, None, 2)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // Perform 2 dummy commits
-        col.insert("d1", &vec, None).await.unwrap();
-        col.insert("d2", &vec, None).await.unwrap();
+        col.insert("d1", &vec, None).await.unwrap(); // unwrap
+        col.insert("d2", &vec, None).await.unwrap(); // unwrap
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let handle =
@@ -183,6 +183,7 @@ mod tests {
         for _ in 0..50 {
             sleep(Duration::from_millis(10)).await;
             if col.get("doc_task_ttl").await.unwrap().is_none() {
+                // unwrap
                 cleaned = true;
                 break;
             }
@@ -299,21 +300,21 @@ mod tests {
         use std::sync::atomic::AtomicU64;
         use tempfile::tempdir;
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
                 path: dir.path().to_path_buf(),
                 ..Default::default()
             })
             .await
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let col = Arc::new(crate::Collection::new(
             "default".to_string(),

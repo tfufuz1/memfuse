@@ -2319,7 +2319,7 @@ mod tests {
         bf.insert(b"test-key-2");
         let bytes = bf.to_bytes();
 
-        let restored = BloomFilter::from_bytes(&bytes).expect("deserialization should succeed");
+        let restored = BloomFilter::from_bytes(&bytes).expect("deserialization should succeed"); // expect
         assert!(restored.may_contain(b"test-key-1"));
         assert!(restored.may_contain(b"test-key-2"));
         assert!(!restored.may_contain(b"non-existent-key"));

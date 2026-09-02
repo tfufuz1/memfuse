@@ -292,33 +292,33 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(id_a, "Node A", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx, Entity::new(id_b, "Node B (Sink)", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx, Entity::new(id_c, "Node C", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // A -> B
         graph
             .add_edge(tx, Edge::new(id_a, id_b, "link"))
             .await
-            .unwrap();
-        // C -> A
+            .unwrap(); // unwrap
+                       // C -> A
         graph
             .add_edge(tx, Edge::new(id_c, id_a, "link"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = PprConfig::default();
         let results = graph
             .personalized_page_rank(&[id_a], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let total_mass: f32 = results.iter().map(|(_, score)| score).sum();
         assert!(
@@ -438,14 +438,14 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(seed, "SoleNode", "Node"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = PprConfig::default();
         let results = graph
             .personalized_page_rank(&[seed], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, seed);
@@ -461,21 +461,21 @@ mod tests {
             graph
                 .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
         // Only 1 -> 2 edge. 3 and 4 are completely isolated.
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = PprConfig::default();
         let results = graph
             .personalized_page_rank(&[EntityId::new(1)], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert!(!results.is_empty());
         for (_, rank) in &results {
@@ -498,28 +498,28 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "N1", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "N2", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // 1 -> 1 (self-loop) and 1 -> 2
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(1), "self"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "link"))
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = PprConfig::default();
         let results = graph
             .personalized_page_rank(&[EntityId::new(1)], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(results.len(), 2);
         for (_, rank) in &results {
@@ -537,11 +537,11 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "N1", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx, Entity::new(EntityId::new(2), "N2", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // Add 3 duplicate edges 1 -> 2 with weights 1.0, 2.0, 3.0
         graph
@@ -550,32 +550,32 @@ mod tests {
                 Edge::new(EntityId::new(1), EntityId::new(2), "edge1").with_weight(1.0),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(1), EntityId::new(2), "edge2").with_weight(2.0),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(1), EntityId::new(2), "edge3").with_weight(3.0),
             )
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = PprConfig::default();
         let res1 = graph
             .personalized_page_rank(&[EntityId::new(1)], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         let res2 = graph
             .personalized_page_rank(&[EntityId::new(1)], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(res1.len(), res2.len());
         for (a, b) in res1.iter().zip(res2.iter()) {
@@ -593,15 +593,15 @@ mod tests {
         graph
             .add_entity(tx, Entity::new(EntityId::new(1), "Center", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx, Entity::new(EntityId::new(20), "B", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_entity(tx, Entity::new(EntityId::new(10), "A", "Node"))
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         // 1 -> 10 and 1 -> 20 with identical weight 1.0
         graph
@@ -610,32 +610,32 @@ mod tests {
                 Edge::new(EntityId::new(1), EntityId::new(10), "link").with_weight(1.0),
             )
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         graph
             .add_edge(
                 tx,
                 Edge::new(EntityId::new(1), EntityId::new(20), "link").with_weight(1.0),
             )
             .await
-            .unwrap();
-        graph.commit(tx).await.unwrap();
+            .unwrap(); // unwrap
+        graph.commit(tx).await.unwrap(); // unwrap
 
         let config = PprConfig::default();
         let results = graph
             .personalized_page_rank(&[EntityId::new(1)], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         let rank_10 = results
             .iter()
             .find(|(id, _)| *id == EntityId::new(10))
             .map(|(_, r)| *r)
-            .unwrap();
+            .unwrap(); // unwrap
         let rank_20 = results
             .iter()
             .find(|(id, _)| *id == EntityId::new(20))
             .map(|(_, r)| *r)
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert_eq!(
             rank_10, rank_20,
@@ -646,11 +646,11 @@ mod tests {
         let idx_10 = results
             .iter()
             .position(|(id, _)| *id == EntityId::new(10))
-            .unwrap();
+            .unwrap(); // unwrap
         let idx_20 = results
             .iter()
             .position(|(id, _)| *id == EntityId::new(20))
-            .unwrap();
+            .unwrap(); // unwrap
         assert!(
             idx_10 < idx_20,
             "Tie-breaking must place EntityId(10) before EntityId(20)"
@@ -666,7 +666,7 @@ mod tests {
             damping in 0.1f32..0.99f32,
             max_iters in 1..=50u32,
         ) {
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap(); // unwrap
             let res: Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
                 let graph = CsrGraph::new();
                 let tx = TxId::new(1);
@@ -675,7 +675,7 @@ mod tests {
                     graph
                         .add_entity(tx, Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Node"))
                         .await
-                        .unwrap();
+                        .unwrap(); // unwrap
                 }
 
                 for (src, dst, w) in edge_specs {
@@ -684,9 +684,9 @@ mod tests {
                     graph
                         .add_edge(tx, Edge::new(src_id, dst_id, "link").with_weight(w))
                         .await
-                        .unwrap();
+                        .unwrap(); // unwrap
                 }
-                graph.commit(tx).await.unwrap();
+                graph.commit(tx).await.unwrap(); // unwrap
 
                 let actual_seed = EntityId::new((seed_idx % node_count) as u64 + 1);
                 let config = PprConfig {
@@ -699,7 +699,7 @@ mod tests {
                 let results = graph
                     .personalized_page_rank(&[actual_seed], &config)
                     .await
-                    .unwrap();
+                    .unwrap(); // unwrap
 
                 let total_mass: f32 = results.iter().map(|(_, r)| r).sum();
                 proptest::prop_assert!(
@@ -747,7 +747,7 @@ mod tests {
             graph
                 .add_entity(tx, Entity::new(EntityId::new(i), format!("N{i}"), "Node"))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
 
         for i in 1..=5 {
@@ -755,9 +755,9 @@ mod tests {
             graph
                 .add_edge(tx, Edge::new(EntityId::new(i), EntityId::new(next), "next"))
                 .await
-                .unwrap();
+                .unwrap(); // unwrap
         }
-        graph.commit(tx).await.unwrap();
+        graph.commit(tx).await.unwrap(); // unwrap
 
         // Config with max_iterations: 1 and warn_on_non_convergence: false
         let config = PprConfig {
@@ -771,7 +771,7 @@ mod tests {
         let results = graph
             .personalized_page_rank(&[seed], &config)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
 
         assert!(
             !results.is_empty(),

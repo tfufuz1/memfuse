@@ -309,7 +309,7 @@ mod tests {
             },
         ];
 
-        let window = manager.prepare_context(chunks).expect("prepare_context");
+        let window = manager.prepare_context(chunks).expect("prepare_context"); // expect
         assert!(window.truncated);
         assert!(window.total_tokens <= 100);
     }
@@ -434,6 +434,7 @@ mod token_tests {
             score: 0.9,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         };
         let res = ContextChunk::try_from(sr);
         assert!(matches!(
@@ -445,14 +446,15 @@ mod token_tests {
     #[test]
     fn test_context_chunk_try_from_search_result_valid_id() {
         let valid_key = "doc_123_sample";
-        let expected_doc_id = DocId::from_key(valid_key).unwrap();
+        let expected_doc_id = DocId::from_key(valid_key).unwrap(); // unwrap
         let sr = crate::SearchResult {
             id: valid_key.to_string(),
             score: 0.85,
             metadata: Some(serde_json::json!({"text": "sample text content"})),
             matched_signals: vec!["vector".into()],
+            provenance: None,
         };
-        let chunk = ContextChunk::try_from(sr).expect("valid context chunk");
+        let chunk = ContextChunk::try_from(sr).expect("valid context chunk"); // expect
         assert_eq!(chunk.doc_id, expected_doc_id);
         assert_eq!(chunk.content, "sample text content");
         assert_eq!(chunk.relevance, 0.85);
@@ -505,7 +507,7 @@ mod token_tests {
     #[test]
     fn test_context_manager_prepare_context_empty_chunks() {
         let mgr = ContextManager::with_defaults();
-        let window = mgr.prepare_context(vec![]).expect("empty context window");
+        let window = mgr.prepare_context(vec![]).expect("empty context window"); // expect
         assert!(window.chunks.is_empty());
         assert_eq!(window.total_tokens, 0);
         assert!(!window.truncated);

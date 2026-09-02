@@ -398,7 +398,7 @@ mod tests {
         assert_eq!(path[2].prompt, "Step 2");
 
         // Set active head explicitly to branch_step
-        dag.set_active_head(branch_step).unwrap();
+        dag.set_active_head(branch_step).unwrap(); // unwrap
         assert_eq!(dag.active_head(), 3);
 
         // Path to head after set_active_head: Root -> Step 1 -> Alternative Step 2
