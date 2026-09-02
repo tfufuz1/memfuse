@@ -127,11 +127,16 @@ const MAX_LABEL_LENGTH: usize = 256;
 /// Maximum batch size for batch insertion/upsertion (10,000 items).
 const MAX_BATCH_SIZE: usize = 10_000;
 
-/// Validates that a string ID is non-empty and does not exceed maximum length.
+/// Validates that a string ID is non-empty, contains no null bytes, and does not exceed maximum length.
 fn validate_id(id: &str) -> PyResult<()> {
     if id.trim().is_empty() {
         return Err(MemFuseValueError::new_err(
             "Document ID cannot be empty or whitespace-only",
+        ));
+    }
+    if id.contains('\0') {
+        return Err(MemFuseValueError::new_err(
+            "Document ID cannot contain null bytes",
         ));
     }
     if id.len() > MAX_ID_LENGTH {
@@ -144,11 +149,16 @@ fn validate_id(id: &str) -> PyResult<()> {
     Ok(())
 }
 
-/// Validates that a collection name is non-empty and non-whitespace-only, and does not exceed maximum length.
+/// Validates that a collection name is non-empty, contains no null bytes, and does not exceed maximum length.
 fn validate_collection_name(name: &str) -> PyResult<()> {
     if name.trim().is_empty() {
         return Err(MemFuseValueError::new_err(
             "Collection name cannot be empty or whitespace-only",
+        ));
+    }
+    if name.contains('\0') {
+        return Err(MemFuseValueError::new_err(
+            "Collection name cannot contain null bytes",
         ));
     }
     if name.len() > 64 {
@@ -160,11 +170,16 @@ fn validate_collection_name(name: &str) -> PyResult<()> {
     Ok(())
 }
 
-/// Validates that a database storage path is non-empty and non-whitespace-only.
+/// Validates that a database storage path is non-empty and contains no null bytes.
 fn validate_db_path(path: &str) -> PyResult<()> {
     if path.trim().is_empty() {
         return Err(MemFuseValueError::new_err(
             "Database path cannot be empty or whitespace-only",
+        ));
+    }
+    if path.contains('\0') {
+        return Err(MemFuseValueError::new_err(
+            "Database path cannot contain null bytes",
         ));
     }
     Ok(())
@@ -175,6 +190,11 @@ fn validate_query_text(text: &str) -> PyResult<()> {
     if text.trim().is_empty() {
         return Err(MemFuseValueError::new_err(
             "Search query text cannot be empty or whitespace-only",
+        ));
+    }
+    if text.contains('\0') {
+        return Err(MemFuseValueError::new_err(
+            "Search query text cannot contain null bytes",
         ));
     }
     if text.len() > MAX_ID_LENGTH {
@@ -214,10 +234,61 @@ fn validate_vector(vector: &[f32]) -> PyResult<()> {
     Ok(())
 }
 
-/// Validates both document ID and vector slice.
-fn validate_id_and_vector(id: &str, vector: &[f32]) -> PyResult<()> {
-    validate_id(id)?;
-    validate_vector(vector)?;
+
+/// Validates a document ID provided as a string or numeric value.
+fn validate_id_obj(id_obj: &pyo3::Bound<'_, pyo3::types::PyAny>) -> PyResult<String> {
+    if let Ok(id_str) = id_obj.extract::<String>() {
+        validate_id(&id_str)?;
+        Ok(id_str)
+    } else if let Ok(id_int) = id_obj.extract::<i128>() {
+        if id_int < 0 {
+            return Err(MemFuseValueError::new_err(
+                "Document ID cannot be a negative integer",
+            ));
+        }
+        if id_int > (u64::MAX as i128) {
+            return Err(MemFuseValueError::new_err(
+                "Document ID integer value exceeds maximum allowed bound (u64::MAX)",
+            ));
+        }
+        Ok(id_int.to_string())
+    } else if id_obj.is_instance_of::<pyo3::types::PyInt>() {
+        Err(MemFuseValueError::new_err(
+            "Document ID integer value exceeds maximum allowed bound",
+        ))
+    } else {
+        Err(MemFuseValueError::new_err(
+            "Document ID must be a string or non-negative integer",
+        ))
+    }
+}
+
+/// Explicitly checks whether the module is being imported inside a CPython sub-interpreter.
+///
+/// If running inside a sub-interpreter (interpreter ID != 0), returns `PyImportError` explaining
+/// that sub-interpreters are not supported due to per-process Tokio runtime isolation.
+fn check_subinterpreter_guard(py: Python<'_>) -> PyResult<()> {
+    let current_id: Option<i64> = if let Ok(interp_mod) = py.import("_xxsubinterpreters") {
+        interp_mod
+            .call_method0("get_current")
+            .ok()
+            .and_then(|id| id.extract().ok())
+    } else if let Ok(interp_mod) = py.import("_interpreters") {
+        interp_mod
+            .call_method0("get_current")
+            .ok()
+            .and_then(|id| id.extract().ok())
+    } else {
+        None
+    };
+
+    if let Some(id) = current_id {
+        if id != 0 {
+            return Err(pyo3::exceptions::PyImportError::new_err(
+                "memfuse does not support loading in sub-interpreters due to per-process Tokio runtime isolation",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -457,27 +528,30 @@ macro_rules! memfuse_crud_methods {
             pub fn insert<'py>(
                 &self,
                 py: Python<'py>,
-                id: &str,
+                id: &pyo3::Bound<'py, pyo3::types::PyAny>,
                 vector: PyReadonlyArray1<'py, f32>,
                 metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<()> {
+                let id_str = validate_id_obj(id)?;
                 let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
-                validate_id_and_vector(id, v)?;
+                validate_vector(v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
-                let id_owned = id.to_string();
                 let v_owned = v.to_vec();
-                run_blocking_ffi(py, || rt.block_on(self.inner.insert(&id_owned, &v_owned, m)).map_err(memfuse_err))
+                run_blocking_ffi(py, || rt.block_on(self.inner.insert(&id_str, &v_owned, m)).map_err(memfuse_err))
             }
 
-            /// Retrieves a document by its user-provided string ID.
-            pub fn get(&self, py: Python<'_>, id: &str) -> PyResult<Option<PyDocument>> {
-                validate_id(id)?;
+            /// Retrieves a document by its user-provided string or numeric ID.
+            pub fn get<'py>(
+                &self,
+                py: Python<'py>,
+                id: &pyo3::Bound<'py, pyo3::types::PyAny>,
+            ) -> PyResult<Option<PyDocument>> {
+                let id_str = validate_id_obj(id)?;
                 let rt = &self.runtime;
-                let id_owned = id.to_string();
-                let doc = run_blocking_ffi(py, || rt.block_on(self.inner.get(&id_owned)).map_err(memfuse_err))?;
+                let doc = run_blocking_ffi(py, || rt.block_on(self.inner.get(&id_str)).map_err(memfuse_err))?;
                 match doc {
                     Some(d) => Ok(Some(doc_to_py(py, d)?)),
                     None => Ok(None),
@@ -489,19 +563,19 @@ macro_rules! memfuse_crud_methods {
             pub fn update<'py>(
                 &self,
                 py: Python<'py>,
-                id: &str,
+                id: &pyo3::Bound<'py, pyo3::types::PyAny>,
                 vector: PyReadonlyArray1<'py, f32>,
                 metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<()> {
+                let id_str = validate_id_obj(id)?;
                 let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
-                validate_id_and_vector(id, v)?;
+                validate_vector(v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
-                let id_owned = id.to_string();
                 let v_owned = v.to_vec();
-                run_blocking_ffi(py, || rt.block_on(self.inner.update(&id_owned, &v_owned, m)).map_err(memfuse_err))
+                run_blocking_ffi(py, || rt.block_on(self.inner.update(&id_str, &v_owned, m)).map_err(memfuse_err))
             }
 
             /// Upserts a document (inserts if missing, updates if exists).
@@ -509,27 +583,30 @@ macro_rules! memfuse_crud_methods {
             pub fn upsert<'py>(
                 &self,
                 py: Python<'py>,
-                id: &str,
+                id: &pyo3::Bound<'py, pyo3::types::PyAny>,
                 vector: PyReadonlyArray1<'py, f32>,
                 metadata: Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
             ) -> PyResult<()> {
+                let id_str = validate_id_obj(id)?;
                 let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
-                validate_id_and_vector(id, v)?;
+                validate_vector(v)?;
                 let m = opt_dict_to_json(metadata.as_ref())?;
-                let id_owned = id.to_string();
                 let v_owned = v.to_vec();
-                run_blocking_ffi(py, || rt.block_on(self.inner.upsert(&id_owned, &v_owned, m)).map_err(memfuse_err))
+                run_blocking_ffi(py, || rt.block_on(self.inner.upsert(&id_str, &v_owned, m)).map_err(memfuse_err))
             }
 
             /// Deletes a document by its ID.
-            pub fn delete(&self, py: Python<'_>, id: &str) -> PyResult<()> {
-                validate_id(id)?;
+            pub fn delete<'py>(
+                &self,
+                py: Python<'py>,
+                id: &pyo3::Bound<'py, pyo3::types::PyAny>,
+            ) -> PyResult<()> {
+                let id_str = validate_id_obj(id)?;
                 let rt = &self.runtime;
-                let id_owned = id.to_string();
-                run_blocking_ffi(py, || rt.block_on(self.inner.delete(&id_owned)).map_err(memfuse_err))
+                run_blocking_ffi(py, || rt.block_on(self.inner.delete(&id_str)).map_err(memfuse_err))
             }
 
             /// Performs semantic k-NN search over the embeddings.
@@ -749,18 +826,23 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Creates a bidirectional relationship between two documents.
-            pub fn relate(
+            pub fn relate<'py>(
                 &self,
-                py: Python<'_>,
-                from: &str,
-                to: &str,
+                py: Python<'py>,
+                from: &pyo3::Bound<'py, pyo3::types::PyAny>,
+                to: &pyo3::Bound<'py, pyo3::types::PyAny>,
                 label: &str,
             ) -> PyResult<()> {
-                validate_id(from)?;
-                validate_id(to)?;
+                let from_str = validate_id_obj(from)?;
+                let to_str = validate_id_obj(to)?;
                 if label.trim().is_empty() {
                     return Err(MemFuseValueError::new_err(
                         "Relationship label cannot be empty or whitespace-only",
+                    ));
+                }
+                if label.contains('\0') {
+                    return Err(MemFuseValueError::new_err(
+                        "Relationship label cannot contain null bytes",
                     ));
                 }
                 if label.len() > MAX_LABEL_LENGTH {
@@ -771,11 +853,9 @@ macro_rules! memfuse_crud_methods {
                     )));
                 }
                 let rt = &self.runtime;
-                let from_owned = from.to_string();
-                let to_owned = to.to_string();
                 let label_owned = label.to_string();
                 run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.relate(&from_owned, &to_owned, &label_owned))
+                    rt.block_on(self.inner.relate(&from_str, &to_str, &label_owned))
                         .map_err(memfuse_err)
                 })
             }
@@ -854,7 +934,7 @@ macro_rules! memfuse_batch_methods {
                 &self,
                 py: Python<'py>,
                 docs: Vec<(
-                    String,
+                    pyo3::Bound<'py, pyo3::types::PyAny>,
                     PyReadonlyArray1<'py, f32>,
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
@@ -863,13 +943,14 @@ macro_rules! memfuse_batch_methods {
                 let rt = &self.runtime;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
-                for (id, vector, metadata) in &docs {
+                for (id_obj, vector, metadata) in &docs {
+                    let id_str = validate_id_obj(id_obj)?;
                     let v = vector.as_slice().map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                     })?;
-                    validate_id_and_vector(id, v)?;
+                    validate_vector(v)?;
                     let m = opt_dict_to_json(metadata.as_ref())?;
-                    batch.push((id.clone(), v.to_vec(), m));
+                    batch.push((id_str, v.to_vec(), m));
                 }
                 run_blocking_ffi(py, || {
                     rt.block_on(self.inner.insert_many(&batch))
@@ -884,7 +965,7 @@ macro_rules! memfuse_batch_methods {
                 &self,
                 py: Python<'py>,
                 docs: Vec<(
-                    String,
+                    pyo3::Bound<'py, pyo3::types::PyAny>,
                     PyReadonlyArray1<'py, f32>,
                     Option<pyo3::Bound<'py, pyo3::types::PyDict>>,
                 )>,
@@ -893,13 +974,14 @@ macro_rules! memfuse_batch_methods {
                 let rt = &self.runtime;
                 let mut batch: Vec<(String, Vec<f32>, Option<serde_json::Value>)> =
                     Vec::with_capacity(docs.len());
-                for (id, vector, metadata) in &docs {
+                for (id_obj, vector, metadata) in &docs {
+                    let id_str = validate_id_obj(id_obj)?;
                     let v = vector.as_slice().map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
                     })?;
-                    validate_id_and_vector(id, v)?;
+                    validate_vector(v)?;
                     let m = opt_dict_to_json(metadata.as_ref())?;
-                    batch.push((id.clone(), v.to_vec(), m));
+                    batch.push((id_str, v.to_vec(), m));
                 }
                 run_blocking_ffi(py, || {
                     rt.block_on(self.inner.upsert_many(&batch))
@@ -1162,6 +1244,7 @@ mod tests {
         assert!(validate_id("").is_err());
         assert!(validate_id("   ").is_err());
         assert!(validate_id("\t\n").is_err());
+        assert!(validate_id("doc\x00123").is_err());
         assert!(validate_id("doc123").is_ok());
     }
 
@@ -1170,6 +1253,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         assert!(validate_collection_name("").is_err());
         assert!(validate_collection_name("   ").is_err());
+        assert!(validate_collection_name("col\0name").is_err());
         assert!(validate_collection_name("my_collection").is_ok());
     }
 
@@ -1178,6 +1262,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         assert!(validate_db_path("").is_err());
         assert!(validate_db_path("   ").is_err());
+        assert!(validate_db_path("./data/\0db").is_err());
         assert!(validate_db_path("./data/db").is_ok());
     }
 
@@ -1186,6 +1271,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         assert!(validate_query_text("").is_err());
         assert!(validate_query_text("   ").is_err());
+        assert!(validate_query_text("query\0text").is_err());
         assert!(validate_query_text("search query").is_ok());
     }
 
@@ -1333,8 +1419,16 @@ mod tests {
     }
 }
 
+/// Internal helper function for testing FFI panic isolation.
+#[pyfunction]
+fn _trigger_panic_for_test(py: Python<'_>, message: Option<String>) -> PyResult<()> {
+    let msg = message.unwrap_or_else(|| "Test panic for FFI isolation".to_string());
+    run_blocking_ffi(py, || panic!("{}", msg))
+}
+
 #[pymodule]
 fn _memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
+    check_subinterpreter_guard(_py)?;
     m.add("__version__", "0.2.0")?;
 
     // Initialize per-interpreter Tokio runtime state
@@ -1369,6 +1463,7 @@ fn _memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<(
     m.add("_runtime_state", Py::new(_py, state)?)?;
 
     m.add_function(wrap_pyfunction!(open, m)?)?;
+    m.add_function(wrap_pyfunction!(_trigger_panic_for_test, m)?)?;
     m.add_class::<PyMemFuse>()?;
     m.add_class::<PyCollection>()?;
     m.add_class::<PySearchResult>()?;

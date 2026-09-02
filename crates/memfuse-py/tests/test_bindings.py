@@ -109,7 +109,7 @@ def test_db_top_level_parity(db_path):
 def test_relationships_and_scanning(db_path):
     db = memfuse.open(db_path, dimension=4)
     col = db.collection("rel")
-    v = np.zeros(4, dtype=np.float32)
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
 
     col.insert("a", v)
     col.insert("b", v)

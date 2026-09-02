@@ -49,7 +49,7 @@ def test_crash_recovery_with_deletes(db_path):
     db1 = memfuse.open(db_path, dimension=4)
     col1 = db1.collection("del_col")
     
-    v = np.zeros(4, dtype=np.float32)
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
     col1.insert("doc_a", v)
     col1.insert("doc_b", v)
     col1.delete("doc_a")
