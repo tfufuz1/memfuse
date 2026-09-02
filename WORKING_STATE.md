@@ -29,10 +29,10 @@ Ergebnis: **1 offene Tags**
 | `memfuse-db` | 2 | 16410 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 3793 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1189 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 2679 | 🟢 Clean |  |
+| `memfuse-ollama` | 3 | 2662 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1307 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 1869 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2512 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2641 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3495 | 🟢 Clean |  |
 
 
