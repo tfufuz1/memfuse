@@ -72,7 +72,7 @@ Grammatik:
 ```
 
 - `PRÜFER-KONTEXT: FRESH` ist Pflicht (Sitzung hatte keine vorherige Historiensicht auf diesen Diff).
-- Jede `STATUS:DONE`-Markierung eines `ANCHOR` erfordert 2 (Standard) bzw. 3 (`ASK`/security/unsafe: `distance.rs`, `diskann.rs`, `persistence.rs`, `anti_tamper.rs`) `REVIEW-PASS` Einträge von unterschiedlichen `SESSION:`-Hashes (durchgesetzt in `xtask::run_check_review_coverage()`, siehe dortige Datei-/Typ-Erkennung).
+- Jede `STATUS:DONE`-Markierung eines `ANCHOR` erfordert 2 (Standard) bzw. 3 (`ASK`/security/unsafe) `REVIEW-PASS` Einträge von unterschiedlichen `SESSION:`-Hashes.
 
 ## FILE-CONTEXT Header
 
