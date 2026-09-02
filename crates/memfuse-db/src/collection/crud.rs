@@ -648,12 +648,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         db_tx.record_keys(user_key, doc_key, doc_id);
 
-        if let Err(e) = self.index.delete(tx, doc_id).await {
-            tracing::warn!(
-                doc_id = ?doc_id,
-                "HNSW soft-delete fehlgeschlagen: {e}. Doc wird nach HNSW-Rebuild nicht mehr in Vektorsuchen erscheinen."
-            );
-        }
+        self.index.delete(tx, doc_id).await?;
 
         Ok(())
     }
