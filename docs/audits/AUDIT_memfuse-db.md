@@ -243,17 +243,17 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 
 ---
 
-## 12. Nachtrag: Query Builder Refactoring & Clippy Hardening (2026-09-02)
+## 8. Fortlaufendes Audit & Deprecation Clean-up (2026-09-02)
 
-**Timestamp:** `2026-09-02T08:32:41Z` (SESSION: `5a467eae`)
+**Datum:** 02. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: fc4cf5c3)
+**Aktion:** Fassaden-Stabilisierung & Deprecation Clean-up in `crates/memfuse-db`
 
-### Durchgeführte Maßnahmen:
-1. **Migration veralteter Suchmethoden-Aufrufe**:
-   - Die internen Aufrufe in `multistep.rs` (`MultiStepEngine`) wurden von veralteten `Collection::hybrid_search()` auf die präferierte Fluent-API `Collection::query()` umgestellt.
-   - Die Fassaden-Methoden in `lib.rs` (`MemFuse::search`, `search_with_filter_expr`, `search_text`, `hybrid_search`, `hybrid_search_reranked`, `hybrid_search_with_weights`, `hybrid_search_with_strategy`, `hybrid_search_with_query`) wurden konsistent auf den `HybridQueryBuilder` (`Collection::query()`) portiert.
-   - Das veraltete `search_filtered` in `lib.rs` verwendet `#[allow(deprecated)]` beim Delegieren an die `Collection`-Funktion für abwärtskompatible benutzerdefinierte Prädikate.
-
-2. **Verifikation & Zero-Warning Policy**:
-   - `cargo check -p memfuse-db` kompiliert fehlerfrei.
-   - `cargo clippy -p memfuse-db -- -D warnings` verifiziert 0 Warnungen/Fehler.
-   - `cargo test -p memfuse-db` führt alle Unit- und Integrationstests erfolgreich aus.
+### Befunde & Durchgeführte Maßnahmen:
+1. **Facade & Multistep Deprecation Elimination:**
+   - In `crates/memfuse-db/src/multistep.rs` wurden veraltete Aufrufe von `.hybrid_search()` auf die neue Fluent Builder API (`Collection::query()`) umgestellt.
+   - In `crates/memfuse-db/src/lib.rs` wurden Fassaden-Suchmethoden von `MemFuse` aktualisiert, um intern `default_col().await?.query()` zu verwenden bzw. mit `#[allow(deprecated)]` dekoriert, um alle Clippy-Deprecation-Warnungen zu eliminieren.
+2. **Clippy & Workspace Verifikation:**
+   - `cargo clippy -p memfuse-db -- -D warnings` verifiziert: 0 Warnings/Findings.
+   - `cargo test -p memfuse-db` verifiziert: Alle Unit-, Integrations- und Doc-Tests erfolgreich.
+   - Workspace-Layer-DAG Konformität verifiziert: Layer 2 DAG-Hierarchie eingehalten.

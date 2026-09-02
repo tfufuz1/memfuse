@@ -434,6 +434,7 @@ mod token_tests {
             score: 0.9,
             metadata: None,
             matched_signals: vec![],
+            provenance: None,
         };
         let res = ContextChunk::try_from(sr);
         assert!(matches!(
@@ -451,6 +452,7 @@ mod token_tests {
             score: 0.85,
             metadata: Some(serde_json::json!({"text": "sample text content"})),
             matched_signals: vec!["vector".into()],
+            provenance: None,
         };
         let chunk = ContextChunk::try_from(sr).expect("valid context chunk"); // expect
         assert_eq!(chunk.doc_id, expected_doc_id);

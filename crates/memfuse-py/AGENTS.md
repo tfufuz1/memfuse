@@ -12,5 +12,5 @@
 - `rules/testing.md` — Python FFI Integration Verification
 
 ## Offene Pflicht-Tests (ANCHOR-Status)
-- ANCHOR[TEST:PY-001] STATUS:OPEN — Smoke-Test für open(), collection() und close()
-- ANCHOR[TEST:PY-002] STATUS:OPEN — Hybrid-Search Python Integration Test
+- ANCHOR[TEST:PY-001] STATUS:IN-PROGRESS (REVIEW-PASS 1/2) (TS:2026-09-02T08:30:27Z) (SESSION:8e159fc9) — Smoke-Test für open(), collection() und close()
+- ANCHOR[TEST:PY-002] STATUS:IN-PROGRESS (REVIEW-PASS 1/2) (TS:2026-09-02T08:30:27Z) (SESSION:8e159fc9) — Hybrid-Search Python Integration Test

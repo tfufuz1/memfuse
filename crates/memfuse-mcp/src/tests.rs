@@ -422,3 +422,60 @@ async fn test_memfuse_search_executes_query_builder_successfully() {
         assert!(false, "search result expected");
     }
 }
+
+#[tokio::test]
+async fn test_batch_request_handling() {
+    let (server, _tmp) = create_mock_server().await;
+
+    // 1. Batch with multiple valid requests
+    let batch_val = json!([
+        { "jsonrpc": "2.0", "id": 1, "method": "ping", "params": {} },
+        { "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {} }
+    ]);
+    if let Some(resp) = server.handle_value(batch_val).await {
+        if let Some(arr) = resp.as_array() {
+            assert_eq!(arr.len(), 2);
+            assert_eq!(arr[0]["id"], 1);
+            assert_eq!(arr[1]["id"], 2);
+        } else {
+            assert!(false, "array expected");
+        }
+    } else {
+        assert!(false, "batch response expected");
+    }
+
+    // 2. Empty batch array -> Invalid Request (-32600)
+    let empty_batch = json!([]);
+    if let Some(empty_resp) = server.handle_value(empty_batch).await {
+        assert_eq!(empty_resp["error"]["code"], -32600);
+    } else {
+        assert!(false, "empty batch response expected");
+    }
+
+    // 3. Batch notifications only -> None (no response)
+    let notif_batch = json!([
+        { "jsonrpc": "2.0", "method": "initialized", "params": {} },
+        { "jsonrpc": "2.0", "method": "initialized", "params": {} }
+    ]);
+    let notif_resp = server.handle_value(notif_batch).await;
+    assert!(notif_resp.is_none());
+
+    // 4. Mixed batch (requests + notifications) -> returns array containing only non-notification responses
+    let mixed_batch = json!([
+        { "jsonrpc": "2.0", "id": 10, "method": "ping", "params": {} },
+        { "jsonrpc": "2.0", "method": "initialized", "params": {} },
+        { "jsonrpc": "2.0", "id": 11, "method": "nonexistent_method", "params": {} }
+    ]);
+    if let Some(mixed_resp) = server.handle_value(mixed_batch).await {
+        if let Some(mixed_arr) = mixed_resp.as_array() {
+            assert_eq!(mixed_arr.len(), 2);
+            assert_eq!(mixed_arr[0]["id"], 10);
+            assert_eq!(mixed_arr[1]["id"], 11);
+            assert_eq!(mixed_arr[1]["error"]["code"], -32601);
+        } else {
+            assert!(false, "array expected");
+        }
+    } else {
+        assert!(false, "mixed response expected");
+    }
+}

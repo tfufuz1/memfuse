@@ -242,8 +242,8 @@ async fn test_hnsw_and_diskann_persistence_roundtrip() {
 
     // Direct Mmap Index Header Verification
     let mmap_hnsw = MmapIndex::open(&hnsw_path).unwrap();
-    assert_eq!(mmap_hnsw.header.node_count as usize, n);
-    assert_eq!(mmap_hnsw.header.dimension as usize, dim);
+    assert_eq!(mmap_hnsw.header.node_count() as usize, n);
+    assert_eq!(mmap_hnsw.header.dimension() as usize, dim);
 
     // 2. DiskANN Persistence Roundtrip
     let diskann_config = DiskAnnConfig {

@@ -1446,12 +1446,14 @@ fn test_importance_metadata_integration_and_filtering() {
             score: 0.95,
             metadata: meta1,
             matched_signals: vec!["vector".to_string()],
+            provenance: None,
         },
         crate::SearchResult {
             id: "doc2".to_string(),
             score: 0.85,
             metadata: meta2,
             matched_signals: vec!["vector".to_string()],
+            provenance: None,
         },
     ];
 

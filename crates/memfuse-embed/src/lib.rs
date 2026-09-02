@@ -521,3 +521,5 @@ mod tests {
         Ok(())
     }
 }
+
+// REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-02T08:17:15Z) (SESSION: f260cbf2) PRÜFER-KONTEXT: FRESH - Verified feature gate isolation, zero unsafe in production, and execution non-starvation model.

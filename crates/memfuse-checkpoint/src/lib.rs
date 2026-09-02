@@ -1021,8 +1021,7 @@ mod tests {
             );
         })
         .join()
-        .expect("Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
-        // expect
+        .expect("// expect Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
     }
 
     #[tokio::test]

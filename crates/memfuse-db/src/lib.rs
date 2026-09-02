@@ -108,6 +108,45 @@ pub use memfuse_checkpoint;
 use memfuse_core::FilterExpr;
 pub use memfuse_text::Language;
 
+/// Herkunftsnachweis für ein einzelnes Suchergebnis.
+///
+/// Gibt Auskunft darüber, durch welche Signale und Indexe ein Dokument
+/// in die Suchergebnisse gelangt ist, sowie über die Rohdistanzen
+/// vor der Fusion.
+///
+/// # Phase-2-Roadmap
+/// Implementiert: "ProvenanceRecord (abfragbarer Herkunftsnachweis pro Suchergebnis)"
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProvenanceRecord {
+    /// Vektor-Distanz vor Normalisierung (None falls Vektor-Signal nicht gefeuert)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector_distance: Option<f32>,
+
+    /// BM25-Score vor Fusion (None falls Text-Signal nicht gefeuert)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bm25_score: Option<f32>,
+
+    /// Graph-Traversal-Score (None falls Graph-Signal nicht gefeuert)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_score: Option<f32>,
+
+    /// Reranking-Score nach Cross-Encoder (None falls Reranking nicht aktiv)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rerank_score: Option<f32>,
+
+    /// RRF-Rang pro Signal vor Fusion: (signal_name → rang)
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub signal_ranks: std::collections::HashMap<String, u32>,
+
+    /// Collection-Name aus der das Ergebnis stammt
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_collection: Option<String>,
+
+    /// Index-Typ der das Ergebnis geliefert hat ("hnsw", "bm25", "graph", "diskann")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_type: Option<String>,
+}
+
 /// User-facing search result containing the ID, score, and optional metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -120,6 +159,10 @@ pub struct SearchResult {
     /// List of signals (e.g. "vector", "text", "graph") that matched this document.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub matched_signals: Vec<String>,
+    /// Optionaler Herkunftsnachweis — wird gesetzt wenn die Suche mit
+    /// `include_provenance: true` aufgerufen wurde.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ProvenanceRecord>,
 }
 
 /// User-facing document structure.
@@ -683,10 +726,16 @@ impl MemFuse {
     }
 
     /// Performs semantic k-NN search over stored embeddings.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
-        let col = self.default_col().await?;
-        col.query().vector(query).k(k).execute().await
+        self.default_col()
+            .await?
+            .query()
+            .embedding(query)
+            .k(k)
+            .execute()
+            .await
     }
 
     /// Performs semantic search with an advanced metadata filter.
@@ -711,6 +760,7 @@ impl MemFuse {
     }
 
     /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_with_filter_expr(
         &self,
@@ -719,7 +769,7 @@ impl MemFuse {
         filter: Option<FilterExpr>,
     ) -> Result<Vec<SearchResult>> {
         let col = self.default_col().await?;
-        let mut builder = col.query().vector(query).k(k);
+        let mut builder = col.query().embedding(query).k(k);
         if let Some(f) = filter {
             builder = builder.filter(f);
         }
@@ -755,13 +805,20 @@ impl MemFuse {
     }
 
     /// Performs text search via the default collection.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_text(&self, text: &str, k: usize) -> Result<Vec<SearchResult>> {
-        let col = self.default_col().await?;
-        col.query().text(text).k(k).execute().await
+        self.default_col()
+            .await?
+            .query()
+            .text(text)
+            .k(k)
+            .execute()
+            .await
     }
 
     /// Performs semantic k-NN search with an optional filter function over documents.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, filter))]
     pub async fn search_filtered(
         &self,
@@ -777,6 +834,7 @@ impl MemFuse {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities))]
     pub async fn hybrid_search(
         &self,
@@ -788,13 +846,14 @@ impl MemFuse {
         let col = self.default_col().await?;
         let mut builder = col.query().text(text).vector(vector).k(k);
         if let Some(anchors) = anchor_entities {
-            builder = builder.anchor_entities(anchors.iter().cloned());
+            builder = builder.anchors(anchors.iter().copied());
         }
         builder.execute().await
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
     #[cfg(feature = "reranking")]
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, reranker, anchor_entities))]
     pub async fn hybrid_search_reranked(
         &self,
@@ -806,16 +865,17 @@ impl MemFuse {
     ) -> Result<Vec<SearchResult>> {
         let col = self.default_col().await?;
         let mut builder = col.query().text(text).vector(vector).k(k);
-        if let Some(anchors) = anchor_entities {
-            builder = builder.anchor_entities(anchors.iter().cloned());
-        }
         if let Some(r) = reranker {
             builder = builder.reranker(r);
+        }
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
         }
         builder.execute().await
     }
 
     /// Performs hybrid search with custom signal fusion weights.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights))]
     pub async fn hybrid_search_with_weights(
         &self,
@@ -827,16 +887,17 @@ impl MemFuse {
     ) -> Result<Vec<SearchResult>> {
         let col = self.default_col().await?;
         let mut builder = col.query().text(text).vector(vector).k(k);
-        if let Some(anchors) = anchor_entities {
-            builder = builder.anchor_entities(anchors.iter().cloned());
-        }
         if let Some(w) = weights {
             builder = builder.fusion_weights(w.clone());
+        }
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
         }
         builder.execute().await
     }
 
     /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights, strategy))]
     pub async fn hybrid_search_with_strategy(
         &self,
@@ -849,26 +910,31 @@ impl MemFuse {
     ) -> Result<Vec<SearchResult>> {
         let col = self.default_col().await?;
         let mut builder = col.query().text(text).vector(vector).k(k);
-        if let Some(anchors) = anchor_entities {
-            builder = builder.anchor_entities(anchors.iter().cloned());
-        }
         if let Some(w) = weights {
             builder = builder.fusion_weights(w.clone());
         }
         if let Some(s) = strategy {
             builder = builder.strategy(s.clone());
         }
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
         builder.execute().await
     }
 
     /// Performs hybrid search using a `HybridQuery` configuration object.
+    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query))]
     pub async fn hybrid_search_with_query(
         &self,
         query: &memfuse_core::HybridQuery,
     ) -> Result<Vec<SearchResult>> {
-        let col = self.default_col().await?;
-        col.query().query_config(query).execute().await
+        self.default_col()
+            .await?
+            .query()
+            .query_config(query)
+            .execute()
+            .await
     }
 
     /// Deletes a document by its string ID.
@@ -1786,25 +1852,25 @@ mod tests {
             "open_with_config should fail when repair fails"
         );
 
-        let err_msg = res.err().unwrap().to_string(); // unwrap allowed
-        assert!(
-            err_msg.contains("repair_on_open")
-                && err_msg.contains("Datenbankintegrität nicht garantiert"),
-            "Expected repair error message, got: {}",
-            err_msg
-        );
+        if let Err(e) = res {
+            let err_msg = e.to_string();
+            assert!(
+                err_msg.contains("repair_on_open")
+                    && err_msg.contains("Datenbankintegrität nicht garantiert"),
+                "Expected repair error message, got: {}",
+                err_msg
+            );
+        }
     }
 
     #[tokio::test]
-    async fn test_open_dimension_mismatch_fails() {
-        let dir = tempfile::tempdir().unwrap(); // unwrap allowed
+    async fn test_open_dimension_mismatch_fails() -> Result<()> {
+        let dir = tempfile::tempdir().map_err(|e| memfuse_core::MemFuseError::InvalidInput(e.to_string()))?;
         let config_768 = MemFuseConfig {
             dimension: 768,
             ..Default::default()
         };
-        let _db = MemFuse::open_with_config(dir.path(), config_768)
-            .await
-            .unwrap(); // unwrap allowed
+        let _db = MemFuse::open_with_config(dir.path(), config_768).await?;
 
         // Zweites Öffnen mit falscher Dimension muss früh fehlschlagen
         let config_1536 = MemFuseConfig {
@@ -1818,6 +1884,65 @@ mod tests {
             Ok(_) => panic!("expected error"),
         };
         assert!(err_msg.contains("Dimension mismatch"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_provenance_record_serialization_roundtrip() {
+        let p = ProvenanceRecord {
+            vector_distance: Some(0.42),
+            bm25_score: Some(1.23),
+            graph_score: None,
+            rerank_score: None,
+            signal_ranks: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("vector".to_string(), 1u32);
+                m.insert("bm25".to_string(), 3u32);
+                m
+            },
+            source_collection: Some("test_col".to_string()),
+            index_type: Some("hnsw".to_string()),
+        };
+        let json = serde_json::to_string(&p).expect("serialize");
+        let back: ProvenanceRecord = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.vector_distance, Some(0.42));
+        assert_eq!(back.bm25_score, Some(1.23));
+        assert_eq!(back.graph_score, None);
+        assert_eq!(back.source_collection.as_deref(), Some("test_col"));
+    }
+
+    #[test]
+    fn test_search_result_with_provenance_serialization() {
+        let sr = SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec!["vector".to_string()],
+            provenance: Some(ProvenanceRecord {
+                source_collection: Some("my_col".to_string()),
+                ..Default::default()
+            }),
+        };
+        let json = serde_json::to_string(&sr).expect("serialize");
+        assert!(json.contains("provenance"));
+        assert!(json.contains("my_col"));
+    }
+
+    #[test]
+    fn test_search_result_without_provenance_serialization_omits_field() {
+        let sr = SearchResult {
+            id: "doc2".to_string(),
+            score: 0.5,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+        let json = serde_json::to_string(&sr).expect("serialize");
+        // provenance: None → Feld soll komplett fehlen (skip_serializing_if)
+        assert!(
+            !json.contains("provenance"),
+            "provenance=None soll im JSON weggelassen werden: {json}"
+        );
     }
 }
 
