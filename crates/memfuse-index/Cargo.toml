@@ -20,7 +20,7 @@ memmap2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [features]
-default = []
+default = ["experimental-diskann"]
 graph = ["dep:memfuse-graph"]
 experimental-diskann = []
 
