@@ -225,7 +225,7 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> Result<f32, MemFuseError> {
 }
 
 /// Scalar implementation of cosine distance.
-pub(crate) fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
+pub fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
     let mut dot = 0.0;
     let mut norm_a = 0.0;
     let mut norm_b = 0.0;
@@ -244,7 +244,7 @@ pub(crate) fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Scalar implementation of Euclidean distance.
-pub(crate) fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
+pub fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .map(|(x, y)| (x - y).powi(2))
@@ -253,7 +253,7 @@ pub(crate) fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Scalar implementation of dot product.
-pub(crate) fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
+pub fn dot_product_scalar(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
@@ -816,12 +816,7 @@ pub(crate) fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization with per-dimension scaling.
-pub(crate) fn euclidean_distance_sq_f32_u8(
-    a: &[f32],
-    b: &[u8],
-    alphas: &[f32],
-    mins: &[f32],
-) -> f32 {
+pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .zip(alphas.iter())

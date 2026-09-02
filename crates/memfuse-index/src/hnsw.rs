@@ -385,8 +385,10 @@ impl HnswIndex {
             }
         }
 
+        let nodes = self.inner.nodes.read();
+        let deleted = self.inner.deleted_nodes.read();
+
         if let Some(f) = filter {
-            let nodes = self.inner.nodes.read();
             let mmap_guard = self.inner.mmap_index.read();
             let mmap_node_count = mmap_guard
                 .as_ref()
@@ -402,6 +404,9 @@ impl HnswIndex {
             let mut added = 0;
             for i in (0..total_nodes).rev() {
                 if !ep.contains(&i) {
+                    if snapshot_seq.is_none() && deleted.contains(i as u64) {
+                        continue;
+                    }
                     if let Ok(doc_id) = self.inner.resolve_doc_id(i, &ctx) {
                         if f(doc_id) {
                             ep.push(i);
@@ -456,8 +461,6 @@ impl HnswIndex {
             );
         }
 
-        let nodes = self.inner.nodes.read();
-        let deleted = self.inner.deleted_nodes.read();
         let mut results = Vec::with_capacity(k);
 
         let seq_log_guard = if snapshot_seq.is_some() {

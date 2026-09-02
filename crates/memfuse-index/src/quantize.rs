@@ -137,6 +137,16 @@ impl ScalarQuantizer {
         })
     }
 
+    /// Returns a reference to per-dimension minimum values.
+    pub fn mins(&self) -> &[f32] {
+        &self.mins
+    }
+
+    /// Returns a reference to per-dimension maximum values.
+    pub fn maxes(&self) -> &[f32] {
+        &self.maxes
+    }
+
     /// Calculates quantization drift as the fraction of dimensions falling outside \[mins\[i\], maxes\[i\]\].
     pub fn check_drift(&self, vector: &[f32]) -> f32 {
         if self.dimension == 0 || vector.is_empty() {

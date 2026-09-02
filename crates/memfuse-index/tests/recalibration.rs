@@ -36,7 +36,7 @@ async fn test_quantizer_recalibration() {
         let guard = index.quantizer().read();
         guard.as_ref().unwrap().clone()
     };
-    for &m in &q_before.maxes {
+    for &m in q_before.maxes() {
         assert!(m <= 1.05);
     }
 
@@ -57,7 +57,7 @@ async fn test_quantizer_recalibration() {
         guard.as_ref().unwrap().clone()
     };
     // The new quantizer maxes should adapt to include 150.0
-    assert!(q_after.maxes[0] > 100.0);
+    assert!(q_after.maxes()[0] > 100.0);
 
     // After rebuild: the out-of-distribution vector is correctly quantized (no clamping)
     let new_ood_vector = vec![100.0, 100.0, 100.0, 100.0];
