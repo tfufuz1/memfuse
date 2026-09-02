@@ -20,10 +20,9 @@ Alle Tag-Typen (`AI-TAG`, `ANCHOR`, `REVIEW-PASS`) sowie der `FILE-CONTEXT`-Head
 
 Ein Tag ohne `TS:`- oder `SESSION:`-Feld gilt als Grammatikverstoß (wird von CI Gate 7 durchgesetzt).
 
-## AI-TAG (aus llm_protocol.md §3 — dort ist die primäre Definition)
+## AI-TAG
 
-Siehe `rules/llm_protocol.md §3` für vollständige Spezifikation.
-Pflichtformat:
+Kanonisches Pflichtformat:
 ```rust
 // AI-TAG[KATEGORIE][SEVERITY] Kurzbeschreibung (ID: AGT-STORE-a3f29c1d) (TS: 2026-08-29T09:14:07Z) (SESSION: a3f29c1d)
 // BEFUND: Detaillierte Analyse des Ist-Zustands im Code.
