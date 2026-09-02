@@ -30,6 +30,25 @@ pub(super) fn validate_doc_id(id: &str) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn validate_embedding(embedding: &[f32]) -> Result<()> {
+    if embedding.is_empty() {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Embedding vector cannot be empty",
+        ));
+    }
+    if embedding.iter().all(|&x| x == 0.0) {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Zero vector embeddings are not allowed in regular Collection insertion. Use put_kv for non-vector entries.",
+        ));
+    }
+    if embedding.iter().any(|&x| !x.is_finite()) {
+        return Err(memfuse_core::MemFuseError::invalid_input(
+            "Embedding vector contains NaN or Infinite values",
+        ));
+    }
+    Ok(())
+}
+
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Inserts a text document, automatically generating its embedding.
     #[tracing::instrument(level = "trace", skip(self, text, metadata))]
@@ -179,6 +198,30 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.insert_inner_unlocked(id, embedding, metadata).await
     }
 
+    /// Stores a non-vector key-value entry directly in LSM storage without touching vector, text, or graph indices.
+    #[tracing::instrument(level = "trace", skip(self, value))]
+    pub async fn put_kv(&self, id: &str, value: &serde_json::Value) -> Result<()> {
+        validate_doc_id(id)?;
+        let tx = self.allocate_tx()?;
+        let user_key = self.namespaced_key(id.as_bytes(), 0);
+        let data = serde_json::to_vec(value)?;
+        self.storage.put(tx, &user_key, &data).await?;
+        self.storage.commit(tx).await?;
+        Ok(())
+    }
+
+    /// Retrieves a key-value entry directly from LSM storage.
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn get_kv(&self, id: &str) -> Result<Option<serde_json::Value>> {
+        validate_doc_id(id)?;
+        let key = self.namespaced_key(id.as_bytes(), 0);
+        if let Some(data) = self.storage.get(&key).await? {
+            let val: serde_json::Value = serde_json::from_slice(&data)?;
+            return Ok(Some(val));
+        }
+        Ok(None)
+    }
+
     /// Internal single document insert method without lock acquisition.
     ///
     /// Assumes `self.insert_lock` is held by caller to ensure TOCTOU safety.
@@ -205,6 +248,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 embedding.len()
             )));
         }
+        validate_embedding(embedding)?;
 
         let db_tx = self.begin_transaction()?;
 
@@ -254,6 +298,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         validate_doc_id(id)?;
+        validate_embedding(embedding)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
@@ -357,6 +402,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     embedding.len()
                 )));
             }
+            if let Err(e) = validate_embedding(embedding) {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!(
+                        "[INV-DB-3] Failed to rollback insert_many on invalid embedding: {}",
+                        rollback_err
+                    );
+                }
+                return Err(e);
+            }
 
             if let Err(e) = self
                 .insert_op(&db_tx, id, embedding, metadata.clone())
@@ -448,6 +502,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     embedding.len()
                 )));
             }
+            if let Err(e) = validate_embedding(embedding) {
+                if let Err(rollback_err) = db_tx.rollback().await {
+                    tracing::error!(
+                        "[INV-DB-3] Failed to rollback upsert_many on invalid embedding: {}",
+                        rollback_err
+                    );
+                }
+                return Err(e);
+            }
             let result = self
                 .update_op(&db_tx, id, embedding, metadata.clone())
                 .await;
@@ -483,11 +546,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         validate_doc_id(id)?;
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
-            let stored: StoredDocument = serde_json::from_slice(&data)?;
-            return Ok(Some(crate::Document {
-                id: stored.id,
-                metadata: stored.metadata,
-            }));
+            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data) {
+                return Ok(Some(crate::Document {
+                    id: stored.id,
+                    metadata: stored.metadata,
+                }));
+            } else if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&data) {
+                return Ok(Some(crate::Document {
+                    id: id.to_string(),
+                    metadata: Some(val),
+                }));
+            }
         }
         Ok(None)
     }
@@ -530,6 +599,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         validate_doc_id(id)?;
+        validate_embedding(embedding)?;
         let tx = db_tx.tx_id;
         let doc_id = DocId::from_key(id)?;
 
