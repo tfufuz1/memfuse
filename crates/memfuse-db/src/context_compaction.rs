@@ -277,7 +277,10 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
             base_tx,
         };
         let intent_bytes = serde_json::to_vec(&intent)?;
-        collection.storage().put(base_tx, &intent_key, &intent_bytes).await?;
+        collection
+            .storage()
+            .put(base_tx, &intent_key, &intent_bytes)
+            .await?;
         collection.storage().commit(base_tx).await?;
 
         Ok(Self {
@@ -316,7 +319,10 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
     /// Cancels / aborts the consolidation session, removing the intent key.
     pub async fn abort(self) -> Result<()> {
         let abort_tx = self.collection.allocate_tx()?;
-        self.collection.storage().delete(abort_tx, &self.intent_key).await?;
+        self.collection
+            .storage()
+            .delete(abort_tx, &self.intent_key)
+            .await?;
         self.collection.storage().commit(abort_tx).await?;
         Ok(())
     }
@@ -343,7 +349,11 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
             obj.insert("consolidated".to_string(), serde_json::json!(true));
             obj.insert(
                 "source_doc_ids".to_string(),
-                serde_json::json!(self.source_docs.iter().map(|(d, _)| d.inner()).collect::<Vec<_>>()),
+                serde_json::json!(self
+                    .source_docs
+                    .iter()
+                    .map(|(d, _)| d.inner())
+                    .collect::<Vec<_>>()),
             );
             obj.insert("summary".to_string(), serde_json::json!(summary_content));
         }
@@ -354,9 +364,13 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 4. Delete source docs
         for &(src_id, _) in &self.source_docs {
-            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            let doc_key = self
+                .collection
+                .namespaced_key(&src_id.inner().to_le_bytes(), 1);
             if let Some(val) = self.collection.storage().get(&doc_key).await? {
-                if let Ok(meta) = serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
+                if let Ok(meta) =
+                    serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val)
+                {
                     let _ = self.collection.delete_op(&mut db_tx, &meta.id).await;
                 }
             }
@@ -364,7 +378,10 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 5. Delete intent key
         let commit_tx = db_tx.tx_id;
-        self.collection.storage().delete(commit_tx, &self.intent_key).await?;
+        self.collection
+            .storage()
+            .delete(commit_tx, &self.intent_key)
+            .await?;
 
         // 6. Commit transaction
         db_tx.commit().await?;

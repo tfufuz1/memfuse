@@ -111,61 +111,61 @@ crates/memfuse-core/src/types/budget.rs:316:                    t.consume_memory
 crates/memfuse-core/src/types/budget.rs:322:            h.join().unwrap(); // unwrap
 crates/memfuse-core/src/types/budget.rs:345:            .expect("Should still allow consumption after underflow"); // expect
 crates/memfuse-core/src/types/budget.rs:359:        tracker.consume_memory(500).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1031:            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(), // unwrap
-crates/memfuse-core/src/types/domain.rs:1037:                .unwrap(), // unwrap
-crates/memfuse-core/src/types/domain.rs:1043:                .unwrap(), // unwrap
-crates/memfuse-core/src/types/domain.rs:1051:        assert!((DistanceMetric::Cosine.compute(&a1, &b1).unwrap() - 0.0).abs() < 1e-6); // unwrap
-crates/memfuse-core/src/types/domain.rs:1053:        assert_eq!(DistanceMetric::Euclidean.compute(&a1, &b1).unwrap(), 1.0); // unwrap
-crates/memfuse-core/src/types/domain.rs:1055:        assert_eq!(DistanceMetric::DotProduct.compute(&a1, &b1).unwrap(), -12.0);
-crates/memfuse-core/src/types/domain.rs:1062:        let id = DocId::from_key("valid-key-123").unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1176:            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 2 should succeed"); // expect
-crates/memfuse-core/src/types/domain.rs:1182:            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 1 should succeed"); // expect
-crates/memfuse-core/src/types/domain.rs:1187:        let tx3 = allocate_simulated(&simulated_next_tx).expect("Allocation at MAX should succeed"); // expect
-crates/memfuse-core/src/types/domain.rs:1225:        let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1234:        let valid_ent = Entity::try_new(EntityId::new(1), "Alice", "Person").unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1240:        let valid_edge = Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", 0.8).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1261:            let ser = serde_json::to_string(&variant).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1266:            let deser: MemoryType = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1271:            let deser_legacy: MemoryType = serde_json::from_str(&legacy_json).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1279:            let ser = serde_json::to_string(&doc).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1280:            let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1285:            let id1 = DocId::from_key(&s).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1286:            let id2 = DocId::from_key(&s).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1300:            let ser = serde_json::to_string(&tx).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1301:            let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1307:            let ser = serde_json::to_string(&ent).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1308:            let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:1330:            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed"); // expect
-crates/memfuse-core/src/types/domain.rs:1437:            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key"); // expect
-crates/memfuse-core/src/types/domain.rs:1438:            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key"); // expect
-crates/memfuse-core/src/types/domain.rs:1442:            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
-crates/memfuse-core/src/types/domain.rs:1443:            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
-crates/memfuse-core/src/types/domain.rs:773:        let id1 = DocId::from_key(key).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:774:        let id2 = DocId::from_key(key).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:790:        let ser = serde_json::to_string(&doc).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:791:        let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:796:        let ser = serde_json::to_string(&tx).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:797:        let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:802:        let ser = serde_json::to_string(&ent).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:803:        let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:828:        assert_eq!(DistanceMetric::Cosine.compute(&a, &b).unwrap(), 1.0); // unwrap
-crates/memfuse-core/src/types/domain.rs:831:            DistanceMetric::Euclidean.compute(&a, &b).unwrap(), // unwrap
-crates/memfuse-core/src/types/domain.rs:835:        assert_eq!(DistanceMetric::DotProduct.compute(&a, &b).unwrap(), 0.0); // unwrap
-crates/memfuse-core/src/types/domain.rs:843:        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 14); // unwrap
-crates/memfuse-core/src/types/domain.rs:846:            DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), // unwrap
-crates/memfuse-core/src/types/domain.rs:853:            DistanceMetric::Cosine.compute_u8(&orth_a, &orth_b).unwrap(), // unwrap
-crates/memfuse-core/src/types/domain.rs:857:        assert_eq!(DistanceMetric::Cosine.compute_u8(&a, &a).unwrap(), 0); // unwrap
-crates/memfuse-core/src/types/domain.rs:877:            .unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:886:            .unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:895:            .unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:905:            .unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:914:            .unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:938:            let u8_close = metric.compute_u8(&query, &close_vec).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:939:            let u8_far = metric.compute_u8(&query, &far_vec).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:941:            let f32_close = metric.compute(&q_f32, &c_f32).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:942:            let f32_far = metric.compute(&q_f32, &f_f32).unwrap(); // unwrap
-crates/memfuse-core/src/types/domain.rs:995:            let doc_id = DocId::from_key(key).expect("multibyte unicode key should derive doc_id"); // expect #[cfg(test)]
-crates/memfuse-core/src/types/domain.rs:998:                EntityId::from_key(key).expect("multibyte unicode key should derive entity_id"); // expect #[cfg(test)]
+crates/memfuse-core/src/types/domain.rs:1019:            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:1025:                .unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:1031:                .unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:1039:        assert!((DistanceMetric::Cosine.compute(&a1, &b1).unwrap() - 0.0).abs() < 1e-6); // unwrap
+crates/memfuse-core/src/types/domain.rs:1041:        assert_eq!(DistanceMetric::Euclidean.compute(&a1, &b1).unwrap(), 1.0); // unwrap
+crates/memfuse-core/src/types/domain.rs:1043:        assert_eq!(DistanceMetric::DotProduct.compute(&a1, &b1).unwrap(), -12.0);
+crates/memfuse-core/src/types/domain.rs:1050:        let id = DocId::from_key("valid-key-123").unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1164:            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 2 should succeed"); // expect
+crates/memfuse-core/src/types/domain.rs:1170:            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 1 should succeed"); // expect
+crates/memfuse-core/src/types/domain.rs:1175:        let tx3 = allocate_simulated(&simulated_next_tx).expect("Allocation at MAX should succeed"); // expect
+crates/memfuse-core/src/types/domain.rs:1213:        let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1222:        let valid_ent = Entity::try_new(EntityId::new(1), "Alice", "Person").unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1228:        let valid_edge = Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", 0.8).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1249:            let ser = serde_json::to_string(&variant).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1254:            let deser: MemoryType = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1259:            let deser_legacy: MemoryType = serde_json::from_str(&legacy_json).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1267:            let ser = serde_json::to_string(&doc).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1268:            let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1273:            let id1 = DocId::from_key(&s).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1274:            let id2 = DocId::from_key(&s).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1288:            let ser = serde_json::to_string(&tx).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1289:            let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1295:            let ser = serde_json::to_string(&ent).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1296:            let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1318:            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed"); // expect
+crates/memfuse-core/src/types/domain.rs:1425:            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:1426:            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:1430:            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:1431:            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:761:        let id1 = DocId::from_key(key).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:762:        let id2 = DocId::from_key(key).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:778:        let ser = serde_json::to_string(&doc).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:779:        let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:784:        let ser = serde_json::to_string(&tx).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:785:        let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:790:        let ser = serde_json::to_string(&ent).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:791:        let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:816:        assert_eq!(DistanceMetric::Cosine.compute(&a, &b).unwrap(), 1.0); // unwrap
+crates/memfuse-core/src/types/domain.rs:819:            DistanceMetric::Euclidean.compute(&a, &b).unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:823:        assert_eq!(DistanceMetric::DotProduct.compute(&a, &b).unwrap(), 0.0); // unwrap
+crates/memfuse-core/src/types/domain.rs:831:        assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 14); // unwrap
+crates/memfuse-core/src/types/domain.rs:834:            DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:841:            DistanceMetric::Cosine.compute_u8(&orth_a, &orth_b).unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:845:        assert_eq!(DistanceMetric::Cosine.compute_u8(&a, &a).unwrap(), 0); // unwrap
+crates/memfuse-core/src/types/domain.rs:865:            .unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:874:            .unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:883:            .unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:893:            .unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:902:            .unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:926:            let u8_close = metric.compute_u8(&query, &close_vec).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:927:            let u8_far = metric.compute_u8(&query, &far_vec).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:929:            let f32_close = metric.compute(&q_f32, &c_f32).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:930:            let f32_far = metric.compute(&q_f32, &f_f32).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:983:            let doc_id = DocId::from_key(key).expect("multibyte unicode key should derive doc_id"); // expect #[cfg(test)]
+crates/memfuse-core/src/types/domain.rs:986:                EntityId::from_key(key).expect("multibyte unicode key should derive entity_id"); // expect #[cfg(test)]
 crates/memfuse-core/src/types/filter.rs:207:        let ser = serde_json::to_string(&filter).unwrap(); // unwrap #[cfg(test)]
 crates/memfuse-core/src/types/filter.rs:208:        let deser: FilterExpr = serde_json::from_str(&ser).unwrap(); // unwrap #[cfg(test)]
 crates/memfuse-core/src/types/saos.rs:355:        let w = FusionWeights::new(0.5, 0.5, 0.0).expect("valid"); // expect
@@ -1100,16 +1100,14 @@ crates/memfuse-index/src/diskann.rs:1309:        let index = DiskAnnIndex::try_n
 crates/memfuse-index/src/diskann.rs:1312:        index.build(&vectors, &ids).await.expect("build"); // expect
 crates/memfuse-index/src/diskann.rs:1323:        let reloaded_index = DiskAnnIndex::try_new(load_config).expect("valid config"); // expect
 crates/memfuse-index/src/diskann.rs:1326:        let err_msg = load_res.err().unwrap().to_string(); // unwrap allowed (AGENT:03)
-crates/memfuse-index/src/distance.rs:1256:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1262:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1267:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
-crates/memfuse-index/src/distance.rs:1504:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1548:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1566:        let d_dispatch = compute_distance(&a, &b, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1608:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1673:            let d_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1726:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
-crates/memfuse-index/src/distance.rs:1733:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1240:        let d = compute_distance(&a, &b, DistanceMetric::DotProduct).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1246:        let euc_simd = compute_distance(&a, &b, DistanceMetric::Euclidean).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1251:        let cos_simd = compute_distance(&a, &b, DistanceMetric::Cosine).expect("test"); // expect
+crates/memfuse-index/src/distance.rs:1488:                let simd = compute_distance(&a, &b, metric).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1532:        let d = compute_distance(&v, &v, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1539:        let d = compute_distance(&v, &v, DistanceMetric::Euclidean).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1623:            let cos_simd = compute_distance(a, b, DistanceMetric::Cosine).unwrap(); // unwrap
+crates/memfuse-index/src/distance.rs:1630:            let euc_simd = compute_distance(a, b, DistanceMetric::Euclidean).unwrap(); // unwrap
 crates/memfuse-index/src/hnsw.rs:2311:        let err_msg = format!("{}", result.err().unwrap()); // unwrap
 crates/memfuse-index/src/hnsw.rs:2331:            .expect("valid builder config"); // expect
 crates/memfuse-index/src/hnsw.rs:2364:        let index = HnswIndex::try_new(config).expect("valid config"); // expect
