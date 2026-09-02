@@ -173,7 +173,13 @@ async fn test_crash_recovery_reconstructs_highest_txid_when_meta_missing_or_corr
     // Allocate next internal TxId from store and create a checkpoint with it
     let next_allocated = store.allocate_tx().await.unwrap();
     store
-        .create_checkpoint("post_recovery_cp", "col_recovery", 2, next_allocated, serde_json::json!({}))
+        .create_checkpoint(
+            "post_recovery_cp",
+            "col_recovery",
+            2,
+            next_allocated,
+            serde_json::json!({}),
+        )
         .await
         .unwrap();
 
@@ -185,7 +191,10 @@ async fn test_crash_recovery_reconstructs_highest_txid_when_meta_missing_or_corr
     );
 
     // Also test corrupt counter metadata
-    storage.data.lock().insert(meta_key.to_vec(), b"corrupted json bytes {{{".to_vec());
+    storage
+        .data
+        .lock()
+        .insert(meta_key.to_vec(), b"corrupted json bytes {{{".to_vec());
 
     let store_corrupt = PersistentCheckpointStore::open(storage.clone(), "ns_rec")
         .await
@@ -222,17 +231,26 @@ async fn test_txid_regression_collision_check_returns_hard_error() {
     };
     let manifest = CheckpointManifest::new(meta, vec!["storage".to_string()]).unwrap();
     let value = serde_json::to_vec(&manifest).unwrap();
-    storage.data.lock().insert(b"ns_check:checkpoint:existing_cp".to_vec(), value);
+    storage
+        .data
+        .lock()
+        .insert(b"ns_check:checkpoint:existing_cp".to_vec(), value);
 
     // Insert corrupted/regressed counter metadata with high_water_mark = 10 (< 50)
     let regressed_meta = serde_json::json!({ "high_water_mark": 10u64 });
     let meta_bytes = serde_json::to_vec(&regressed_meta).unwrap();
-    storage.data.lock().insert(b"ns_check:checkpoint:__sys_tx_counter__".to_vec(), meta_bytes);
+    storage.data.lock().insert(
+        b"ns_check:checkpoint:__sys_tx_counter__".to_vec(),
+        meta_bytes,
+    );
 
     // Attempting to open store must fail with hard error
     let res = PersistentCheckpointStore::open(storage, "ns_check").await;
 
-    assert!(res.is_err(), "Store open must fail when persisted HWM < scanned highest TxId");
+    assert!(
+        res.is_err(),
+        "Store open must fail when persisted HWM < scanned highest TxId"
+    );
     if let Err(MemFuseError::Internal(msg)) = res {
         assert!(
             msg.contains("TxId collision / regression detected"),

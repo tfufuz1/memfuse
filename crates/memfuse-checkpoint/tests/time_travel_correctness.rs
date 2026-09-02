@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
@@ -551,7 +553,7 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
             ));
             let store_a = Arc::new(PersistentCheckpointStore::new(
                 storage_a.clone(),
-                &format!("ns_alpha_{iter}"),
+                format!("ns_alpha_{iter}"),
             ));
 
             let storage_b = Arc::new(NamespaceStorageEngine::new(
@@ -560,7 +562,7 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
             ));
             let store_b = Arc::new(PersistentCheckpointStore::new(
                 storage_b.clone(),
-                &format!("ns_beta_{iter}"),
+                format!("ns_beta_{iter}"),
             ));
 
             let tx_base_a = 100u64;

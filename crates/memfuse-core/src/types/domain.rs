@@ -1141,10 +1141,12 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
 
         // 1. Invariant assertions: strict gap between collection sequence and internal system range
-        assert!(
-            TxId::INTERNAL_BASE > TxId::MAX_COLLECTION_SEQUENCE,
-            "INTERNAL_BASE must strictly exceed MAX_COLLECTION_SEQUENCE"
-        );
+        const {
+            assert!(
+                TxId::INTERNAL_BASE > TxId::MAX_COLLECTION_SEQUENCE,
+                "INTERNAL_BASE must strictly exceed MAX_COLLECTION_SEQUENCE"
+            );
+        }
         let gap_size = TxId::INTERNAL_BASE - TxId::MAX_COLLECTION_SEQUENCE;
         assert!(
             gap_size > 1_000_000_000_000_000,
@@ -1246,7 +1248,8 @@ mod tests {
         assert_eq!(edge.business_valid_to, Some(1767139200000));
 
         // Test serde backward compatibility with legacy valid_from/valid_to keys
-        let json_legacy = r#"{"from":1,"to":2,"label":"rel","weight":0.5,"valid_from":10,"valid_to":20}"#;
+        let json_legacy =
+            r#"{"from":1,"to":2,"label":"rel","weight":0.5,"valid_from":10,"valid_to":20}"#;
         let deser_edge: Edge = serde_json::from_str(json_legacy).unwrap(); // unwrap
         assert_eq!(deser_edge.tx_valid_from, Some(TxId::new(10)));
         assert_eq!(deser_edge.tx_valid_to, Some(TxId::new(20)));

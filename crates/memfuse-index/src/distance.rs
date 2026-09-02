@@ -249,10 +249,7 @@ pub fn cosine_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
 
 /// Scalar implementation of Euclidean distance.
 pub fn euclidean_distance_scalar(a: &[f32], b: &[f32]) -> f32 {
-    let sum: f32 = a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y).powi(2))
-        .sum();
+    let sum: f32 = a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum();
     sum.max(0.0).sqrt()
 }
 
@@ -1559,13 +1556,25 @@ mod tests {
 
         // 1. Scalar path
         let d_scalar = cosine_distance_scalar(&a, &b);
-        assert!(d_scalar >= 0.0, "Scalar cosine distance must be >= 0.0, got {d_scalar}");
-        assert!(d_scalar <= 2.0, "Scalar cosine distance must be <= 2.0, got {d_scalar}");
+        assert!(
+            d_scalar >= 0.0,
+            "Scalar cosine distance must be >= 0.0, got {d_scalar}"
+        );
+        assert!(
+            d_scalar <= 2.0,
+            "Scalar cosine distance must be <= 2.0, got {d_scalar}"
+        );
 
         // 2. Dispatcher path
         let d_dispatch = compute_distance(&a, &b, DistanceMetric::Cosine).unwrap(); // unwrap
-        assert!(d_dispatch >= 0.0, "Dispatched cosine distance must be >= 0.0, got {d_dispatch}");
-        assert!(d_dispatch <= 2.0, "Dispatched cosine distance must be <= 2.0, got {d_dispatch}");
+        assert!(
+            d_dispatch >= 0.0,
+            "Dispatched cosine distance must be >= 0.0, got {d_dispatch}"
+        );
+        assert!(
+            d_dispatch <= 2.0,
+            "Dispatched cosine distance must be <= 2.0, got {d_dispatch}"
+        );
 
         // 3. AVX2 direct call if supported
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1573,14 +1582,26 @@ mod tests {
             if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
                 // SAFETY: Hardware feature check performed above; a.len() == b.len().
                 let d_avx2 = unsafe { cosine_distance_avx2(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
-                assert!(d_avx2 >= 0.0, "AVX2 cosine distance must be >= 0.0, got {d_avx2}");
-                assert!(d_avx2 <= 2.0, "AVX2 cosine distance must be <= 2.0, got {d_avx2}");
+                assert!(
+                    d_avx2 >= 0.0,
+                    "AVX2 cosine distance must be >= 0.0, got {d_avx2}"
+                );
+                assert!(
+                    d_avx2 <= 2.0,
+                    "AVX2 cosine distance must be <= 2.0, got {d_avx2}"
+                );
             }
             if is_x86_feature_detected!("avx512f") {
                 // SAFETY: Hardware feature check performed above; a.len() == b.len().
                 let d_avx512 = unsafe { cosine_distance_avx512(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
-                assert!(d_avx512 >= 0.0, "AVX512 cosine distance must be >= 0.0, got {d_avx512}");
-                assert!(d_avx512 <= 2.0, "AVX512 cosine distance must be <= 2.0, got {d_avx512}");
+                assert!(
+                    d_avx512 >= 0.0,
+                    "AVX512 cosine distance must be >= 0.0, got {d_avx512}"
+                );
+                assert!(
+                    d_avx512 <= 2.0,
+                    "AVX512 cosine distance must be <= 2.0, got {d_avx512}"
+                );
             }
         }
 
@@ -1590,16 +1611,28 @@ mod tests {
             if std::arch::is_aarch64_feature_detected!("neon") {
                 // SAFETY: Hardware feature check performed above; a.len() == b.len().
                 let d_neon = unsafe { cosine_distance_neon(&a, &b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
-                assert!(d_neon >= 0.0, "NEON cosine distance must be >= 0.0, got {d_neon}");
-                assert!(d_neon <= 2.0, "NEON cosine distance must be <= 2.0, got {d_neon}");
+                assert!(
+                    d_neon >= 0.0,
+                    "NEON cosine distance must be >= 0.0, got {d_neon}"
+                );
+                assert!(
+                    d_neon <= 2.0,
+                    "NEON cosine distance must be <= 2.0, got {d_neon}"
+                );
             }
         }
 
         // 5. Antiparallel vector check (opposite direction)
         let neg_b: Vec<f32> = a.iter().map(|&x| -x).collect();
         let d_anti = cosine_distance_scalar(&a, &neg_b);
-        assert!(d_anti >= 0.0 && d_anti <= 2.0, "Antiparallel cosine distance must be in [0.0, 2.0], got {d_anti}");
-        assert!((d_anti - 2.0).abs() < 1e-5, "Antiparallel cosine distance must be ~2.0, got {d_anti}");
+        assert!(
+            d_anti >= 0.0 && d_anti <= 2.0,
+            "Antiparallel cosine distance must be in [0.0, 2.0], got {d_anti}"
+        );
+        assert!(
+            (d_anti - 2.0).abs() < 1e-5,
+            "Antiparallel cosine distance must be ~2.0, got {d_anti}"
+        );
     }
 
     #[test]

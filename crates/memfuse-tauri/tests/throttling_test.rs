@@ -108,13 +108,8 @@ fn test_small_folder_ingestion_timely_feedback() {
         "Small folder ingestion must emit progress feedback"
     );
 
-    let final_event = events
-        .last()
-        .expect("Final event must be present");
-    assert!(
-        final_event.is_final,
-        "Final event must indicate completion"
-    );
+    let final_event = events.last().expect("Final event must be present");
+    assert!(final_event.is_final, "Final event must indicate completion");
     assert_eq!(
         final_event.total_files_processed, FILE_COUNT,
         "Final event must accurately reflect all 5 files"

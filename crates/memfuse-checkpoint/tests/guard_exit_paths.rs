@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use memfuse_checkpoint::{
     clear_all_orphaned_checkpoints, orphaned_checkpoint_count, CheckpointGuard,
     PersistentCheckpointStore,
@@ -320,7 +322,10 @@ async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx(
     // Explicit call to guard_alpha.rollback() would also fail with serialization barrier error
     let guard_alpha2 = store.create_guard(TxId::new(100)).unwrap();
     let res = guard_alpha2.rollback().await;
-    assert!(res.is_err(), "Explicit rollback must fail serialization barrier check when newer tx exists");
+    assert!(
+        res.is_err(),
+        "Explicit rollback must fail serialization barrier check when newer tx exists"
+    );
     if let Err(MemFuseError::Transaction(msg)) = res {
         assert!(msg.contains("Serialization barrier violation"));
     } else {

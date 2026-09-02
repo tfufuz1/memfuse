@@ -634,7 +634,13 @@ impl CsrGraph {
                     if let Ok(legacy) =
                         bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
                     {
-                        (legacy.weight, legacy.valid_from, legacy.valid_to, None, None)
+                        (
+                            legacy.weight,
+                            legacy.valid_from,
+                            legacy.valid_to,
+                            None,
+                            None,
+                        )
                     } else {
                         // Backward compatibility fallback for legacy raw f32 weight values
                         let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
@@ -1101,7 +1107,8 @@ impl GraphIndex for CsrGraph {
         max_hops: usize,
         as_of: TxId,
     ) -> Result<Vec<(EntityId, f32)>> {
-        self.traverse_at_bitemporal(start, max_hops, as_of, None).await
+        self.traverse_at_bitemporal(start, max_hops, as_of, None)
+            .await
     }
 
     async fn traverse_at_bitemporal(
@@ -1685,9 +1692,7 @@ mod tests {
         let id2 = EntityId::new(2);
 
         // NaN weight
-        let err_nan = graph
-            .insert_edge_direct(id1, id2, f32::NAN)
-            .unwrap_err();
+        let err_nan = graph.insert_edge_direct(id1, id2, f32::NAN).unwrap_err();
         assert!(matches!(err_nan, MemFuseError::InvalidInput(_)));
 
         // Infinity weight
@@ -1703,9 +1708,7 @@ mod tests {
         assert!(matches!(err_neginf, MemFuseError::InvalidInput(_)));
 
         // Negative weight
-        let err_neg = graph
-            .insert_edge_direct(id1, id2, -1.0)
-            .unwrap_err();
+        let err_neg = graph.insert_edge_direct(id1, id2, -1.0).unwrap_err();
         assert!(matches!(err_neg, MemFuseError::InvalidInput(_)));
 
         // add_edge with NaN
@@ -3227,7 +3230,10 @@ mod tests {
         assert!((payload.weight - deserialized.weight).abs() < f32::EPSILON);
         assert_eq!(payload.tx_valid_from, deserialized.tx_valid_from);
         assert_eq!(payload.tx_valid_to, deserialized.tx_valid_to);
-        assert_eq!(payload.business_valid_from, deserialized.business_valid_from);
+        assert_eq!(
+            payload.business_valid_from,
+            deserialized.business_valid_from
+        );
         assert_eq!(payload.business_valid_to, deserialized.business_valid_to);
     }
 
@@ -3295,7 +3301,12 @@ mod tests {
         graph.add_edge(tx1, bitemporal_edge).await.unwrap(); // unwrap
         graph.commit(tx1).await.unwrap(); // unwrap
 
-        async fn verify_bitemporal_assertions(g: &CsrGraph, id1: EntityId, id2: EntityId, label: &str) {
+        async fn verify_bitemporal_assertions(
+            g: &CsrGraph,
+            id1: EntityId,
+            id2: EntityId,
+            label: &str,
+        ) {
             // Case 1: System valid (tx=50), Business invalid (500 < 1000) -> NOT visible
             let res1 = g
                 .traverse_at_bitemporal(id1, 1, TxId::new(50), Some(500))
@@ -3406,10 +3417,7 @@ mod tests {
         assert_eq!(res_tx.len(), 1);
 
         // Standard traverse_at_time call
-        let res_time = graph
-            .traverse_at_time(id1, 1, TxId::new(50))
-            .await
-            .unwrap();
+        let res_time = graph.traverse_at_time(id1, 1, TxId::new(50)).await.unwrap();
         assert_eq!(res_time.len(), 1);
 
         // Compact and re-verify

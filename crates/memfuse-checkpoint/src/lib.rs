@@ -356,8 +356,8 @@ async fn persist_hwm_internal<S: memfuse_core::StorageEngine>(
     let meta = TxCounterMeta {
         high_water_mark: hwm,
     };
-    let bytes = serde_json::to_vec(&meta)
-        .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+    let bytes =
+        serde_json::to_vec(&meta).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
     let key = format!("{namespace}:checkpoint:__sys_tx_counter__");
     let tx = TxId::new(TxId::INTERNAL_BASE + hwm);
     storage.put(tx, key.as_bytes(), &bytes).await?;
@@ -401,15 +401,14 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let mut scanned_max_raw: Option<u64> = None;
 
         for (_key, value_bytes) in entries {
-            let meta_tx = if let Ok(manifest) =
-                serde_json::from_slice::<CheckpointManifest>(&value_bytes)
-            {
-                Some(manifest.meta.tx_id)
-            } else if let Ok(meta) = serde_json::from_slice::<CheckpointMeta>(&value_bytes) {
-                Some(meta.tx_id)
-            } else {
-                None
-            };
+            let meta_tx =
+                if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
+                    Some(manifest.meta.tx_id)
+                } else if let Ok(meta) = serde_json::from_slice::<CheckpointMeta>(&value_bytes) {
+                    Some(meta.tx_id)
+                } else {
+                    None
+                };
 
             if let Some(tx) = meta_tx {
                 if tx.inner() >= TxId::INTERNAL_BASE {
@@ -483,7 +482,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                     rt.block_on(Self::open(storage_clone, ns_clone))
                 })
                 .join()
-                .map_err(|_| MemFuseError::Internal("Thread panic during PersistentCheckpointStore initialization".into()))
+                .map_err(|_| {
+                    MemFuseError::Internal(
+                        "Thread panic during PersistentCheckpointStore initialization".into(),
+                    )
+                })
                 .and_then(|r| r)
             }
         } else {
@@ -497,7 +500,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         match res {
             Ok(store) => store,
-            Err(e) => panic!("Failed to initialize PersistentCheckpointStore for namespace '{ns}': {e}"),
+            Err(e) => {
+                panic!("Failed to initialize PersistentCheckpointStore for namespace '{ns}': {e}")
+            }
         }
     }
 

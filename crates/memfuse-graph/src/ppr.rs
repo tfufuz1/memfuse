@@ -110,7 +110,11 @@ pub(crate) fn compute_ppr_with_context(
         }
 
         let start = if i < offsets.len() - 1 { offsets[i] } else { 0 };
-        let end = if i < offsets.len() - 1 { offsets[i + 1] } else { 0 };
+        let end = if i < offsets.len() - 1 {
+            offsets[i + 1]
+        } else {
+            0
+        };
 
         let mut sum = 0.0f32;
         for edge_idx in start..end {
@@ -170,7 +174,11 @@ pub(crate) fn compute_ppr_with_context(
             if sum_w > 0.0 && r_i > 0.0 {
                 let share = damping * r_i / sum_w;
                 let start = if i < offsets.len() - 1 { offsets[i] } else { 0 };
-                let end = if i < offsets.len() - 1 { offsets[i + 1] } else { 0 };
+                let end = if i < offsets.len() - 1 {
+                    offsets[i + 1]
+                } else {
+                    0
+                };
 
                 for edge_idx in start..end {
                     let target = targets[edge_idx];
@@ -257,7 +265,8 @@ mod tests {
         let config = PprConfig::default();
 
         // Call 1 on small graph (n=2)
-        let res1 = graph.personalized_page_rank_with_context(&[EntityId::new(1)], &config, &mut ctx);
+        let res1 =
+            graph.personalized_page_rank_with_context(&[EntityId::new(1)], &config, &mut ctx);
         assert_eq!(res1.len(), 2);
 
         // Add 3 more nodes to expand graph to n=5
@@ -268,14 +277,18 @@ mod tests {
                 .await
                 .unwrap(); // unwrap allowed
             graph
-                .add_edge(tx2, Edge::new(EntityId::new(i - 1), EntityId::new(i), "link"))
+                .add_edge(
+                    tx2,
+                    Edge::new(EntityId::new(i - 1), EntityId::new(i), "link"),
+                )
                 .await
                 .unwrap(); // unwrap allowed
         }
         graph.commit(tx2).await.unwrap(); // unwrap allowed
 
         // Call 2 reusing same ctx on grown graph (n=5)
-        let res2 = graph.personalized_page_rank_with_context(&[EntityId::new(1)], &config, &mut ctx);
+        let res2 =
+            graph.personalized_page_rank_with_context(&[EntityId::new(1)], &config, &mut ctx);
         assert_eq!(res2.len(), 5);
 
         // Verify result matches fresh execution without context pollution

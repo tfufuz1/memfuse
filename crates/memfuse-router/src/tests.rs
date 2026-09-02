@@ -847,7 +847,8 @@ mod tests {
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
             matches!(res_rpc_err, Err(MemFuseError::Internal(ref msg)) if msg.contains("MCP RPC Fehler [-32601]: Method not found")),
-            "res_rpc_err was: {:?}", res_rpc_err
+            "res_rpc_err was: {:?}",
+            res_rpc_err
         );
 
         // 4. Custom JSON object result (no "answer" key)

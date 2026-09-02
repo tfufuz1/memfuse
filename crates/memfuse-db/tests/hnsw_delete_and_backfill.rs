@@ -3,8 +3,7 @@
 
 use async_trait::async_trait;
 use memfuse_core::{
-    DocId, MemFuseError, Result, ScoredDocument, TxId, VectorIndex,
-    VectorIndexStats,
+    DocId, MemFuseError, Result, ScoredDocument, TxId, VectorIndex, VectorIndexStats,
 };
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_graph::CsrGraph;
@@ -147,7 +146,10 @@ async fn test_hnsw_delete_failure_propagates_error() {
     // Disable fault injection and verify delete succeeds
     faulty_hnsw.fail_delete.store(false, Ordering::SeqCst);
     let delete_retry = col.delete("doc_fault_1").await;
-    assert!(delete_retry.is_ok(), "Delete operation should succeed after resolving fault");
+    assert!(
+        delete_retry.is_ok(),
+        "Delete operation should succeed after resolving fault"
+    );
 }
 
 /// Test 2: Search with k=10 when tombstones exist in the candidate window.
@@ -176,7 +178,11 @@ async fn test_vector_search_backfill_with_tombstones() {
 
     // Verify initial search for k=10 yields 10 results
     let initial_results = col.search(&[0.1, 0.2, 0.3, 0.4], 10).await.unwrap();
-    assert_eq!(initial_results.len(), 10, "Expected 10 initial search results");
+    assert_eq!(
+        initial_results.len(),
+        10,
+        "Expected 10 initial search results"
+    );
 
     // Soft-delete 5 of the top-ranked candidates (doc_00 through doc_04)
     for i in 0..5 {
