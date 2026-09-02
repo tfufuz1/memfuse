@@ -5,6 +5,7 @@
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
 | `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
+| `TS:2026-09-02T23:19:10Z (SESSION: 088b4a44)` | `crates/memfuse-agent/src/step.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Step result structures and AgentTool trait definitions for orchestration. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
@@ -56,7 +57,6 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-<<<<<<< Updated upstream
 | `2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden |
 | `2026-09-02T08:38:03Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `963f93c2` | `PASS` | `2` | // REVIEW-PASS[1/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS:2026-09-02T08:38:03Z) (SESSION:963f93c2) |
 | `2026-09-02T08:30:00Z` | `crates/memfuse-text/src/morphology.rs` | `REVIEW-PASS` | `TEST:TXT-001` | `98e60e97` | `PASS` | `2` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-02T08:30:00Z) (SESSION: 98e60e97) |
@@ -77,10 +77,6 @@
 | `2026-09-01T11:30:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-b2c3d4e5` | `016eab33` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][MAJOR] RESOLVED: AGT-INDEX-b2c3d4e5 (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) — Write-Lock für |
 | `2026-09-01T11:30:00Z` | `crates/memfuse-index/src/hnsw.rs` | `ANCHOR` | `TEST:AGT-INDEX-006` | `016eab33` | `DONE` | `2` | // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33) |
 | `2026-09-01T11:02:04Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-a1b2c3d4` | `dba1473f` | `RESOLVED` | `0` | // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS:2026-09-01T11:02:04Z) (SESSION: dba1473f) |
-=======
-| `2026-09-01T11:02:04Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-b2c3d4e5` | `dba1473f` | `OPEN` | `0` | // AI-TAG[CONCURRENCY][MAJOR] Guaranteed write lock for SQ8 quantizer bounds expansion during insert (ID: AGT-INDEX-b2c3d4e5) (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f) |
-| `2026-09-01T11:02:04Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-a1b2c3d4` | `dba1473f` | `RESOLVED` | `0` | // AI-TAG[BUG-FIX][CRITICAL] RESOLVED: AGT-INDEX-a1b2c3d4 — Tombstone filter must be evaluated unconditionally before custom filter (TS: 2026-09-01T11:02:04Z) (SESSION: dba1473f) |
->>>>>>> Stashed changes
 | `2026-08-31T21:20:00Z` | `crates/memfuse-core/src/types/domain.rs` | `REVIEW-PASS` | `TEST:CORE-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CORE-001) (TS: 2026-08-31T21:20:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-31T21:15:00Z` | `crates/memfuse-core/src/types/domain.rs` | `REVIEW-PASS` | `TEST:CORE-001` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CORE-001) (TS: 2026-08-31T21:15:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-31T21:13:44Z` | `crates/memfuse-core/src/types/domain.rs` | `ANCHOR` | `TEST:CORE-001` | `e459bd5f` | `DONE` | `2` | // ANCHOR[TEST:CORE-001] STATUS:DONE (TS:2026-08-31T21:13:44Z) (SESSION: e459bd5f) |

@@ -1,3 +1,10 @@
+// FILE-CONTEXT Header (Format v3)
+// ZWECK: Step result structures and AgentTool trait definitions for orchestration.
+// INVARIANTEN: StepResult contains node_id, output payload, and consumed tokens; AgentTool enforces async execution and cost estimation.
+// NICHT-OFFENSICHTLICH: estimated_cost defaults to 0 for zero-cost tools and enables pre-execution budget validation.
+// HOTSPOTS: AgentTool::execute (ll. 25-35).
+// STAND: TS:2026-09-02T23:19:10Z (SESSION: 088b4a44)
+
 //! Step result and tool trait definitions for agent workflows.
 //!
 //! Each agent step produces a [`StepResult`] and tools implement the
