@@ -22,6 +22,16 @@ def test_search_k_bounds(db):
     with pytest.raises((memfuse.MemFuseValueError, ValueError)):
         db.search(v, k=1001)
 
+def test_empty_collection_name_and_query_validation(db):
+    v = np.zeros(4, dtype=np.float32)
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.collection("")
+    assert "Collection name cannot be empty" in str(excinfo.value)
+
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.hybrid_search("", v, k=1)
+    assert "Search query text cannot be empty" in str(excinfo.value)
+
 def test_get_nonexistent_returns_none(db):
     assert db.get("nonexistent") is None
 

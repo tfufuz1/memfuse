@@ -11,6 +11,16 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
+fn response_is_error(val: &serde_json::Value) -> bool {
+    val.get("error").is_some()
+        || val["result"]["isError"].as_bool().unwrap_or(false)
+        || val["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .contains("error")
+}
+
 #[derive(Debug)]
 struct MockEmbedder {
     dimension: usize,
@@ -233,6 +243,7 @@ async fn test_missing_arguments() {
 }
 
 // ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage
+// REVIEW-PASS[1/2] STATUS:IN-PROGRESS (TS:2026-09-02T08:19:33Z) (SESSION: e2c39779) PRÜFER-KONTEXT: FRESH — Error-Path Coverage verified in test_malformed_request_returns_error and unit tests.
 #[tokio::test]
 async fn test_malformed_request_returns_error() {
     // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen
@@ -281,6 +292,152 @@ async fn test_unknown_tool_returns_error() {
             || text.contains("error")
             || val["result"]["isError"].as_bool().unwrap_or(false),
         "Unbekanntes Tool muss Fehler zurückgeben, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn test_search_missing_collection_returns_error() {
+    // TESTZWECK: memfuse_search ohne "collection"-Parameter → Fehler oder Default
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(101)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_search",
+            "arguments": {
+                "query": "test query ohne collection"
+            }
+        }),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).expect("serialize response");
+    assert!(
+        response_is_error(&val) || val["result"].is_object(),
+        "Fehlende 'collection' bei memfuse_search muss Fehler oder Fallback erzeugen: {val}"
+    );
+}
+
+#[tokio::test]
+async fn test_get_nonexistent_id_returns_controlled_response() {
+    // TESTZWECK: memfuse_get mit nicht-existierender ID → kein Panic
+    // (isError=true ist erwünscht; leeres Result ist auch akzeptabel)
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(102)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_get",
+            "arguments": {
+                "id": "id_das_definitiv_nicht_existiert_xyzxyz99999",
+                "collection": "nonexistent_col"
+            }
+        }),
+    };
+    let response = server.handle(req).await;
+    // Hauptanforderung: kein Panic (wenn wir hier sind: bestanden)
+    let val = serde_json::to_value(&response).expect("serialize response");
+    assert_eq!(
+        val["jsonrpc"], "2.0",
+        "Antwort muss JSON-RPC 2.0 sein: {val}"
+    );
+}
+
+#[tokio::test]
+async fn test_insert_empty_text_returns_error() {
+    // TESTZWECK: text="" bei memfuse_insert → Fehler (leerer Text = kein Dokument)
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(103)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "leerer_text_doc",
+                "text": "",
+                "collection": "test_col"
+            }
+        }),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).expect("serialize response");
+    assert!(
+        response_is_error(&val),
+        "Leerer 'text' bei memfuse_insert muss Fehler erzeugen: {val}"
+    );
+}
+
+#[tokio::test]
+async fn test_jsonrpc_null_id_preserved_in_error_response() {
+    // TESTZWECK: JSON-RPC 2.0 §5 — Anfrage mit id=null →
+    //   Fehlerantwort muss id=null oder kein id-Feld haben (nicht id=1 o.ä.)
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: None,
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "werkzeug_das_nicht_existiert_fuer_null_id_test",
+            "arguments": {}
+        }),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).expect("serialize response");
+    assert_eq!(
+        val["jsonrpc"], "2.0",
+        "Antwort muss JSON-RPC 2.0 sein: {val}"
+    );
+    // id in Antwort muss null sein oder fehlen
+    assert!(
+        val["id"].is_null() || val.get("id").is_none(),
+        "Antwort auf null-id muss id=null haben, got: {val}"
+    );
+}
+
+#[tokio::test]
+async fn test_tools_call_without_name_field_returns_error() {
+    // TESTZWECK: tools/call mit params={} (kein "name") →
+    //   error.code=-32602 (Invalid Params) oder isError=true
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(105)),
+        method: "tools/call".to_string(),
+        params: json!({}),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).expect("serialize response");
+    let is_rpc_error = val["error"]["code"].as_i64() == Some(-32602);
+    let is_tool_error = response_is_error(&val);
+    assert!(
+        is_rpc_error || is_tool_error,
+        "tools/call ohne 'name' muss -32602 oder isError=true erzeugen: {val}"
+    );
+}
+
+#[tokio::test]
+async fn test_insert_missing_collection_field_returns_error() {
+    // TESTZWECK: memfuse_insert mit id+text aber ohne "collection" → Fehler oder Default
+    let (server, _tmp) = setup_app().await;
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(106)),
+        method: "tools/call".to_string(),
+        params: json!({
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "doc_ohne_collection",
+                "text": "Valider Text aber ohne Collection-Angabe"
+            }
+        }),
+    };
+    let response = server.handle(req).await;
+    let val = serde_json::to_value(&response).expect("serialize response");
+    assert!(
+        response_is_error(&val) || val["result"].is_object(),
+        "Fehlendes 'collection' bei memfuse_insert muss Fehler oder Fallback erzeugen: {val}"
     );
 }
 

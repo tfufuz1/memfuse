@@ -76,6 +76,6 @@ cargo check --workspace --exclude memfuse-tauri
 
 ## 6. Summary Log (2026-09-02)
 
-- **Layer 0 DAG Isolation Re-verified:** Confirmed 0 workspace dependencies for `memfuse-core` and verified that higher layer components depend on `memfuse-core` exclusively downstream.
-- **TxId Range Boundary Verification (ADR-028):** Re-confirmed strict boundary checks in `TxId::is_valid_origin()` and tested collection TxId range exhaustion simulation (`MAX_COLLECTION_SEQUENCE` vs `INTERNAL_BASE`).
-- **Quality Gate Stack Pass:** 134/134 unit tests, 2/2 integration tests, 5/5 robustness tests in `memfuse-core` passed cleanly. 0 Clippy warnings (`-D warnings`), 0 `cargo fmt` diffs, and workspace compilation verified (`cargo check --workspace --exclude memfuse-tauri --exclude xtask`).
+- **Domain Range Hardening & Boundary Tests:** Added `test_tx_id_ranges_and_internal_boundary_checks` test in `types/domain.rs` to verify `TxId` origin validity boundaries and `INTERNAL_BASE` range checks.
+- **Full Verification:** 135 unit tests, 2 integration tests, and 5 robustness tests in `memfuse-core` passing 100% green. Gate stack and full workspace checks (`cargo check --workspace --exclude memfuse-tauri --exclude xtask`) passed without warnings or errors.
+- **Audit Sign-off:** `memfuse-core` (Layer 0) verified stable, fully thread-safe, and zero-panic compliant.

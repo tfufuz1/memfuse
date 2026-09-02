@@ -19,7 +19,7 @@ Ergebnis: **1 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 8424 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 8421 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 3698 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2315 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 6168 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
@@ -32,7 +32,7 @@ Ergebnis: **1 offene Tags**
 | `memfuse-ollama` | 3 | 2662 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1307 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 1869 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 2512 | 🟢 Clean |  |
+| `memfuse-mcp` | 4 | 2641 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 3495 | 🟢 Clean |  |
 
 
