@@ -65,13 +65,18 @@ impl DiskAnnHeader {
         if bytes.len() < Self::SIZE {
             return Err(MemFuseError::Index("Header too small".into()));
         }
-        if &bytes[0..4] != DISKANN_MAGIC {
+        let magic_bytes = bytes
+            .get(0..4)
+            .ok_or_else(|| MemFuseError::Storage("DiskANN header magic out of bounds".into()))?;
+        if magic_bytes != DISKANN_MAGIC {
             return Err(MemFuseError::Storage(
                 "Invalid DiskANN file: bad magic".into(),
             ));
         }
         let version = u16::from_le_bytes(
-            bytes[4..6]
+            bytes
+                .get(4..6)
+                .ok_or_else(|| MemFuseError::Index("Invalid version offset".into()))?
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Invalid version".into()))?,
         );
@@ -85,39 +90,57 @@ impl DiskAnnHeader {
             magic: *DISKANN_MAGIC,
             version,
             node_count: u64::from_le_bytes(
-                bytes[6..14]
+                bytes
+                    .get(6..14)
+                    .ok_or_else(|| MemFuseError::Index("Invalid node_count offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid node_count".into()))?,
             ),
             dimension: u32::from_le_bytes(
-                bytes[14..18]
+                bytes
+                    .get(14..18)
+                    .ok_or_else(|| MemFuseError::Index("Invalid dimension offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid dimension".into()))?,
             ),
             max_degree: u32::from_le_bytes(
-                bytes[18..22]
+                bytes
+                    .get(18..22)
+                    .ok_or_else(|| MemFuseError::Index("Invalid max_degree offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid max_degree".into()))?,
             ),
             sector_size: u32::from_le_bytes(
-                bytes[22..26]
+                bytes
+                    .get(22..26)
+                    .ok_or_else(|| MemFuseError::Index("Invalid sector_size offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid sector_size".into()))?,
             ),
             entry_point: u32::from_le_bytes(
-                bytes[26..30]
+                bytes
+                    .get(26..30)
+                    .ok_or_else(|| MemFuseError::Index("Invalid entry_point offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid entry_point".into()))?,
             ),
-            metric: bytes[30],
-            quantized: bytes[31],
+            metric: *bytes
+                .get(30)
+                .ok_or_else(|| MemFuseError::Index("Invalid metric offset".into()))?,
+            quantized: *bytes
+                .get(31)
+                .ok_or_else(|| MemFuseError::Index("Invalid quantized offset".into()))?,
             q_min: f32::from_le_bytes(
-                bytes[32..36]
+                bytes
+                    .get(32..36)
+                    .ok_or_else(|| MemFuseError::Index("Invalid q_min offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid q_min".into()))?,
             ),
             q_max: f32::from_le_bytes(
-                bytes[36..40]
+                bytes
+                    .get(36..40)
+                    .ok_or_else(|| MemFuseError::Index("Invalid q_max offset".into()))?
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid q_max".into()))?,
             ),
@@ -667,10 +690,16 @@ impl DiskAnnIndex {
                 let mmap_ref = inner_mmap
                     .as_ref()
                     .ok_or(MemFuseError::Index("Mmap failed".into()))?;
-                let doc_id_offset = offset + vector_size + neighbors_size;
+                let doc_id_offset = offset
+                    .checked_add(vector_size)
+                    .and_then(|o| o.checked_add(neighbors_size))
+                    .ok_or_else(|| MemFuseError::Index("DocId offset overflow".into()))?;
+                let doc_id_end = doc_id_offset
+                    .checked_add(8)
+                    .ok_or_else(|| MemFuseError::Index("DocId end offset overflow".into()))?;
                 let doc_id_bytes =
                     mmap_ref
-                        .get(doc_id_offset..doc_id_offset + 8)
+                        .get(doc_id_offset..doc_id_end)
                         .ok_or_else(|| {
                             MemFuseError::Storage("DiskANN file truncated before doc_id".into())
                         })?;
@@ -733,32 +762,53 @@ impl DiskAnnIndex {
             return Err(MemFuseError::Index("Node offset out of bounds".into()));
         }
 
-        let node_data = &mmap[node_offset..node_offset + node_size];
-        let mut cursor = 0;
+        let node_data = mmap
+            .get(node_offset..end_offset)
+            .ok_or_else(|| MemFuseError::Index("Node data out of bounds".into()))?;
+        let mut cursor: usize = 0;
 
         let vector = if header.quantized != 0 {
-            let v = node_data[cursor..cursor + header.dimension as usize].to_vec();
-            cursor += header.dimension as usize;
-            VectorData::U8(v)
+            let dim = header.dimension as usize;
+            let next_cursor = cursor
+                .checked_add(dim)
+                .ok_or_else(|| MemFuseError::Index("Cursor overflow in quantized vector".into()))?;
+            let slice = node_data
+                .get(cursor..next_cursor)
+                .ok_or_else(|| MemFuseError::Index("Truncated quantized vector data".into()))?;
+            cursor = next_cursor;
+            VectorData::U8(slice.to_vec())
         } else {
-            let mut v = Vec::with_capacity(header.dimension as usize);
-            for _ in 0..header.dimension {
+            let dim = header.dimension as usize;
+            let mut v = Vec::with_capacity(dim);
+            for _ in 0..dim {
+                let next_cursor = cursor
+                    .checked_add(4)
+                    .ok_or_else(|| MemFuseError::Index("Cursor overflow in f32 vector".into()))?;
+                let slice = node_data
+                    .get(cursor..next_cursor)
+                    .ok_or_else(|| MemFuseError::Index("Truncated f32 vector data".into()))?;
                 v.push(f32::from_le_bytes(
-                    node_data[cursor..cursor + 4]
+                    slice
                         .try_into()
                         .map_err(|_| MemFuseError::Index("Invalid vector data".into()))?,
                 ));
-                cursor += 4;
+                cursor = next_cursor;
             }
             VectorData::F32(v)
         };
 
+        let next_cursor = cursor
+            .checked_add(4)
+            .ok_or_else(|| MemFuseError::Index("Cursor overflow in neighbor count".into()))?;
+        let count_bytes = node_data
+            .get(cursor..next_cursor)
+            .ok_or_else(|| MemFuseError::Index("Truncated neighbor count".into()))?;
         let neighbor_count = u32::from_le_bytes(
-            node_data[cursor..cursor + 4]
+            count_bytes
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Invalid neighbor count".into()))?,
         ) as usize;
-        cursor += 4;
+        cursor = next_cursor;
 
         if neighbor_count > header.max_degree as usize {
             return Err(MemFuseError::Index(format!(
@@ -769,17 +819,36 @@ impl DiskAnnIndex {
 
         let mut neighbors = Vec::with_capacity(neighbor_count);
         for _ in 0..neighbor_count {
+            let nxt = cursor
+                .checked_add(4)
+                .ok_or_else(|| MemFuseError::Index("Cursor overflow in neighbor ID".into()))?;
+            let slice = node_data
+                .get(cursor..nxt)
+                .ok_or_else(|| MemFuseError::Index("Truncated neighbor ID".into()))?;
             neighbors.push(u32::from_le_bytes(
-                node_data[cursor..cursor + 4]
+                slice
                     .try_into()
                     .map_err(|_| MemFuseError::Index("Invalid neighbor ID".into()))?,
             ));
-            cursor += 4;
+            cursor = nxt;
         }
-        cursor += (header.max_degree as usize - neighbor_count) * 4;
 
+        let skip_bytes = (header.max_degree as usize)
+            .checked_sub(neighbor_count)
+            .and_then(|diff| diff.checked_mul(4))
+            .ok_or_else(|| MemFuseError::Index("Padding overflow".into()))?;
+        cursor = cursor
+            .checked_add(skip_bytes)
+            .ok_or_else(|| MemFuseError::Index("Cursor overflow in padding".into()))?;
+
+        let doc_id_end = cursor
+            .checked_add(8)
+            .ok_or_else(|| MemFuseError::Index("Cursor overflow in DocId".into()))?;
+        let doc_id_bytes = node_data
+            .get(cursor..doc_id_end)
+            .ok_or_else(|| MemFuseError::Index("Truncated DocId".into()))?;
         let doc_id = DocId::from(u64::from_le_bytes(
-            node_data[cursor..cursor + 8]
+            doc_id_bytes
                 .try_into()
                 .map_err(|_| MemFuseError::Index("Invalid DocId".into()))?,
         ));
@@ -1361,6 +1430,96 @@ mod tests {
             "Nächster Nachbar zu [9,0,0,0] muss id=9 sein"
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_diskann_exact_file_sizes_no_panic() {
+        // BEFUND 3: Dateigrößen 0, 1, 10, 39, 40 Bytes
+        for size in [0, 1, 10, 39, 40] {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let index_path = temp_dir.path().join(format!("diskann_{}.idx", size));
+            let dummy_data = vec![0x55u8; size];
+            tokio::fs::write(&index_path, &dummy_data).await.unwrap();
+
+            let config = DiskAnnConfig {
+                index_path,
+                dimension: 8,
+                max_degree: 4,
+                sector_size: 4096,
+                ..DiskAnnConfig::default()
+            };
+            let index = DiskAnnIndex::try_new(config).unwrap();
+
+            let spawn_res = tokio::spawn(async move {
+                index.load().await
+            }).await;
+            assert!(
+                spawn_res.is_ok(),
+                "DiskAnnIndex::load panicked on file size {}!",
+                size
+            );
+
+            let load_res = spawn_res.unwrap();
+            if size < DiskAnnHeader::SIZE {
+                assert!(
+                    load_res.is_err(),
+                    "Expected Result::Err for DiskANN file size {} < {}",
+                    size,
+                    DiskAnnHeader::SIZE
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_diskann_corrupt_offset_out_of_bounds_no_panic() {
+        // BEFUND 3: Valid Header (size >= 40) but corrupt node_count / offset causing offset + 8 out of bounds
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("corrupt_offset.idx");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            sector_size: 4096,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config.clone()).unwrap();
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(1)];
+        index.build(&vectors, &ids).await.unwrap();
+
+        // Mutate node_count in header to 10,000 without expanding file size -> offset out of bounds
+        let mut data = tokio::fs::read(&index_path).await.unwrap();
+        let corrupt_count: u64 = 10_000;
+        data[6..14].copy_from_slice(&corrupt_count.to_le_bytes());
+        tokio::fs::write(&index_path, &data).await.unwrap();
+
+        let reloaded = DiskAnnIndex::try_new(config).unwrap();
+
+        let reloaded_clone = reloaded.clone();
+        let spawn_res = tokio::spawn(async move {
+            reloaded_clone.load().await
+        }).await;
+        assert!(
+            spawn_res.is_ok(),
+            "DiskAnnIndex::load panicked on corrupt node_count/offset!"
+        );
+
+        let load_res = spawn_res.unwrap();
+        assert!(
+            load_res.is_err(),
+            "Expected Result::Err on corrupt offset beyond file size!"
+        );
+
+        // Also test load_node directly on reloaded index with truncated/corrupt file
+        let catch_node = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            reloaded.load_node(9999)
+        }));
+        assert!(catch_node.is_ok(), "load_node panicked on out of bounds node index!");
+        assert!(catch_node.unwrap().is_err());
     }
 
     #[tokio::test]
