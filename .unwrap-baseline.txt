@@ -1,3 +1,4 @@
+crates/memfuse-agent/src/audit.rs:91:        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap()); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:125:        audit_log.append(&entry1).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:126:        audit_log.append(&entry2).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:128:        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
@@ -69,14 +70,37 @@ crates/memfuse-core/src/ipc/memfuse_generated.rs:255:                        .un
 crates/memfuse-core/src/ipc/memfuse_generated.rs:449:                        .unwrap() // unwrap
 crates/memfuse-core/src/ipc/memfuse_generated.rs:460:                        .unwrap() // unwrap
 crates/memfuse-core/src/ipc/memfuse_generated.rs:90:                unsafe { self._tab.get::<i8>(Embedding::VT_METRIC, Some(0)).unwrap() }
+crates/memfuse-core/src/ipc/memfuse_generated.rs:255:                        .unwrap() // unwrap
+crates/memfuse-core/src/ipc/memfuse_generated.rs:449:                        .unwrap() // unwrap
+crates/memfuse-core/src/ipc/memfuse_generated.rs:460:                        .unwrap() // unwrap
+crates/memfuse-core/src/ipc/jsonrpc.rs:82:        let ser = serde_json::to_string(&resp).expect("serialize response ok"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:83:        let deser: JsonRpcResponse = serde_json::from_str(&ser).expect("deserialize response ok"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:97:        let err = resp.error.as_ref().expect("error payload present"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:102:        let ser = serde_json::to_string(&resp).expect("serialize response err"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:103:        let deser: JsonRpcResponse = serde_json::from_str(&ser).expect("deserialize response err"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:104:        assert_eq!(deser.error.expect("error present").code, -32600); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:110:        let req: JsonRpcRequest = serde_json::from_str(req_json).expect("parse request"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:118:        let notif: JsonRpcRequest = serde_json::from_str(notif_json).expect("parse notification"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:132:        let ser = serde_json::to_string(&err).expect("serialize error"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:133:        let deser: JsonRpcError = serde_json::from_str(&ser).expect("deserialize error"); // expect
+crates/memfuse-core/src/ipc/jsonrpc.rs:136:            deser.data.expect("data present")["details"], // expect
+crates/memfuse-core/src/tx_buffer.rs:513:            h.join().expect("task panicked"); // #[cfg(test)] // expect
+crates/memfuse-core/src/tx_buffer.rs:564:            let tx = h.await.expect("task failed"); // expect
+crates/memfuse-core/src/tx_buffer.rs:666:                let ops = buffer.get_ops(tx).unwrap(); // unwrap
+crates/memfuse-core/src/tx_buffer.rs:796:                    let ops = buffer.get_ops(tx).unwrap(); // unwrap
+crates/memfuse-core/src/snapshot.rs:269:            let min_expected = *seqs.iter().min().unwrap(); // expect
+crates/memfuse-core/src/snapshot.rs:320:                let seq_val = guards[guard_idx].as_ref().unwrap().seq_no(); // expect
+crates/memfuse-core/src/error.rs:766:        assert_eq!(dto.details.expect("details present")["trace_id"], "12345"); // expect
 crates/memfuse-core/src/seq_log.rs:120:        let doc1 = DocId::from_key("doc1").expect("valid doc id"); // expect #[cfg(test)]
 crates/memfuse-core/src/seq_log.rs:121:        let doc2 = DocId::from_key("doc2").expect("valid doc id"); // expect #[cfg(test)]
 crates/memfuse-core/src/seq_log.rs:154:        let doc1 = DocId::from_key("doc1").expect("valid doc id"); // expect #[cfg(test)]
 crates/memfuse-core/src/seq_log.rs:174:        let doc1 = DocId::from_key("doc1").expect("valid doc id"); // expect #[cfg(test)]
 crates/memfuse-core/src/seq_log.rs:175:        let doc2 = DocId::from_key("doc2").expect("valid doc id"); // expect #[cfg(test)]
 crates/memfuse-core/src/seq_log.rs:201:        let doc1 = DocId::from_key("doc1").expect("valid doc id"); // expect #[cfg(test)]
-crates/memfuse-core/src/snapshot.rs:269:            let min_expected = *seqs.iter().min().unwrap(); // expect
-crates/memfuse-core/src/snapshot.rs:320:                let seq_val = guards[guard_idx].as_ref().unwrap().seq_no(); // expect
+crates/memfuse-core/src/traits.rs:982:        let ser = serde_json::to_string(&v_stats).unwrap(); // unwrap
+crates/memfuse-core/src/traits.rs:983:        let deser: VectorIndexStats = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/traits.rs:991:        let ser = serde_json::to_string(&s_stats).unwrap(); // unwrap
+crates/memfuse-core/src/traits.rs:992:        let deser: StorageStats = serde_json::from_str(&ser).unwrap(); // unwrap
 crates/memfuse-core/src/traits.rs:1000:        let ser = serde_json::to_string(&t_stats).unwrap(); // unwrap
 crates/memfuse-core/src/traits.rs:1001:        let deser: TextIndexStats = serde_json::from_str(&ser).unwrap(); // unwrap
 crates/memfuse-core/src/traits.rs:1019:                self.0.lock().unwrap().push((key.to_vec(), value.to_vec())); // unwrap
@@ -166,8 +190,44 @@ crates/memfuse-core/src/types/domain.rs:929:            let f32_close = metric.c
 crates/memfuse-core/src/types/domain.rs:930:            let f32_far = metric.compute(&q_f32, &f_f32).unwrap(); // unwrap
 crates/memfuse-core/src/types/domain.rs:983:            let doc_id = DocId::from_key(key).expect("multibyte unicode key should derive doc_id"); // expect #[cfg(test)]
 crates/memfuse-core/src/types/domain.rs:986:                EntityId::from_key(key).expect("multibyte unicode key should derive entity_id"); // expect #[cfg(test)]
-crates/memfuse-core/src/types/filter.rs:207:        let ser = serde_json::to_string(&filter).unwrap(); // unwrap #[cfg(test)]
-crates/memfuse-core/src/types/filter.rs:208:        let deser: FilterExpr = serde_json::from_str(&ser).unwrap(); // unwrap #[cfg(test)]
+crates/memfuse-core/src/types/domain.rs:1019:            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:1025:                .unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:1031:                .unwrap(), // unwrap
+crates/memfuse-core/src/types/domain.rs:1039:        assert!((DistanceMetric::Cosine.compute(&a1, &b1).unwrap() - 0.0).abs() < 1e-6); // unwrap
+crates/memfuse-core/src/types/domain.rs:1041:        assert_eq!(DistanceMetric::Euclidean.compute(&a1, &b1).unwrap(), 1.0); // unwrap
+crates/memfuse-core/src/types/domain.rs:1043:        assert_eq!(DistanceMetric::DotProduct.compute(&a1, &b1).unwrap(), -12.0);
+crates/memfuse-core/src/types/domain.rs:1050:        let id = DocId::from_key("valid-key-123").unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1164:            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 2 should succeed"); // expect
+crates/memfuse-core/src/types/domain.rs:1170:            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 1 should succeed"); // expect
+crates/memfuse-core/src/types/domain.rs:1175:        let tx3 = allocate_simulated(&simulated_next_tx).expect("Allocation at MAX should succeed"); // expect
+crates/memfuse-core/src/types/domain.rs:1213:        let deser_edge: Edge = serde_json::from_str(json_old).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1222:        let valid_ent = Entity::try_new(EntityId::new(1), "Alice", "Person").unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1228:        let valid_edge = Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", 0.8).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1249:            let ser = serde_json::to_string(&variant).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1254:            let deser: MemoryType = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1259:            let deser_legacy: MemoryType = serde_json::from_str(&legacy_json).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1267:            let ser = serde_json::to_string(&doc).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1268:            let deser: DocId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1273:            let id1 = DocId::from_key(&s).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1274:            let id2 = DocId::from_key(&s).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1288:            let ser = serde_json::to_string(&tx).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1289:            let deser: TxId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1295:            let ser = serde_json::to_string(&ent).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1296:            let deser: EntityId = serde_json::from_str(&ser).unwrap(); // unwrap
+crates/memfuse-core/src/types/domain.rs:1318:            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed"); // expect
+crates/memfuse-core/src/types/domain.rs:1425:            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:1426:            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:1430:            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
+crates/memfuse-core/src/types/domain.rs:1431:            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
+crates/memfuse-core/src/types/budget.rs:264:        tracker.consume_memory(500).expect("should consume"); // expect
+crates/memfuse-core/src/types/budget.rs:277:        tracker.consume_memory(900).expect("should consume"); // expect
+crates/memfuse-core/src/types/budget.rs:281:        match result.err().unwrap() {
+crates/memfuse-core/src/types/budget.rs:297:        tracker.consume_memory(949).expect("ok"); // expect
+crates/memfuse-core/src/types/budget.rs:300:        tracker.consume_memory(1).expect("ok"); // expect
+crates/memfuse-core/src/types/budget.rs:316:                    t.consume_memory(10).expect("consume"); // expect
+crates/memfuse-core/src/types/budget.rs:322:            h.join().unwrap(); // unwrap
+crates/memfuse-core/src/types/budget.rs:345:            .expect("Should still allow consumption after underflow"); // expect
+crates/memfuse-core/src/types/budget.rs:359:        tracker.consume_memory(500).unwrap(); // unwrap
 crates/memfuse-core/src/types/saos.rs:355:        let w = FusionWeights::new(0.5, 0.5, 0.0).expect("valid"); // expect
 crates/memfuse-core/src/types/saos.rs:378:            .expect("build ok"); // expect
 crates/memfuse-core/src/types/saos.rs:380:        assert_eq!(query.text_query.unwrap(), "test query"); // unwrap
@@ -682,6 +742,7 @@ crates/memfuse-db/src/transaction.rs:669:        let tx_id = col.allocate_tx().u
 crates/memfuse-embed/src/lib.rs:376:        let err = res.err().unwrap(); // unwrap
 crates/memfuse-embed/src/lib.rs:383:        let err = res.err().unwrap(); // unwrap
 crates/memfuse-embed/src/lib.rs:484:        let err_msg = err_res.err().unwrap().to_string(); // unwrap
+crates/memfuse-embed/src/reranker.rs:90:    // Poison-Mechanismus hat. Kein .unwrap()/.map_err() nötig. // unwrap
 crates/memfuse-embed/src/reranker.rs:427:            let results = reranker.rerank("query", &candidates).await.unwrap(); // unwrap
 crates/memfuse-embed/src/reranker.rs:436:            let results = reranker.rerank("query", &[]).await.unwrap(); // unwrap
 crates/memfuse-embed/src/reranker.rs:446:            let results = reranker.rerank("query", &candidates).await.unwrap(); // unwrap
@@ -1310,6 +1371,34 @@ crates/memfuse-mcp/src/tests.rs:59:    let tools = response.result.unwrap()["too
 crates/memfuse-mcp/src/tests.rs:61:        .unwrap() // unwrap
 crates/memfuse-mcp/src/tests.rs:76:    assert_eq!(err_resp.error.unwrap().code, -32700); // unwrap
 crates/memfuse-mcp/src/tests.rs:90:    assert_eq!(err_resp.error.unwrap().code, -32600); // unwrap
+crates/memfuse-mcp/src/tests.rs:127:    let err = response.error.expect("error object expected"); // expect
+crates/memfuse-mcp/src/tests.rs:148:        .expect("error expected for missing required param"); // expect
+crates/memfuse-mcp/src/tests.rs:160:    let err_obj = resp.error.expect("error expected"); // expect
+crates/memfuse-mcp/src/tests.rs:208:        .expect("read lib.rs"); // expect
+crates/memfuse-mcp/src/tests.rs:211:        .expect("read bin"); // expect
+crates/memfuse-mcp/src/tests.rs:233:    let err = resp.error.expect("error expected for empty query"); // expect
+crates/memfuse-mcp/src/tests.rs:241:    let err_huge = resp_huge.error.expect("error expected for oversized query"); // expect
+crates/memfuse-mcp/src/tests.rs:259:    let err = resp.error.expect("error expected for empty vector"); // expect
+crates/memfuse-mcp/src/tests.rs:272:    let err_inf = resp_inf.error.expect("error expected for Inf in vector"); // expect
+crates/memfuse-mcp/src/tests.rs:290:    let err = resp.error.expect("error expected for long ID"); // expect
+crates/memfuse-mcp/src/tests.rs:336:        let res_val = serde_json::to_value(&resp).unwrap(); // unwrap
+crates/memfuse-mcp/src/tests.rs:338:        let text = res_val["result"]["content"][0]["text"].as_str().unwrap(); // unwrap
+crates/memfuse-mcp/src/tests.rs:361:    let res_val = serde_json::to_value(&resp).unwrap(); // unwrap
+crates/memfuse-mcp/src/tests.rs:363:    let text = res_val["result"]["content"][0]["text"].as_str().unwrap(); // unwrap
+crates/memfuse-mcp/src/tests.rs:381:    let res_ro = serde_json::to_value(&resp_ro).unwrap(); // unwrap
+crates/memfuse-mcp/src/tests.rs:385:    let res_rw = serde_json::to_value(&resp_rw).unwrap(); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:249:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:250:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:283:            .unwrap(); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:289:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:290:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:319:        assert_eq!(prefixes[0].as_ref().unwrap(), "Präfix"); // unwrap
+crates/memfuse-ollama/src/context_prefixer.rs:320:        assert_eq!(prefixes[1].as_ref().unwrap(), "Präfix"); // unwrap
+crates/memfuse-ollama/src/client.rs:937:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:938:        let addr = listener.local_addr().unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:966:            .unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:979:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+crates/memfuse-ollama/src/client.rs:980:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/client.rs:1010:        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
 crates/memfuse-ollama/src/client.rs:1011:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/client.rs:1040:        let res = client.embed("nomic-embed-text", "hello").await.unwrap(); // unwrap
@@ -1573,6 +1662,209 @@ crates/memfuse-store/src/compaction.rs:895:        let stats = storage.stats().a
 crates/memfuse-store/src/compaction.rs:909:                .expect("get final") // expect
 crates/memfuse-store/src/compaction.rs:917:            let val = storage.get(key.as_bytes()).await.expect("get deleted"); // expect
 crates/memfuse-store/src/compaction.rs:935:        let tmp = TempDir::new().expect("temp dir"); // expect
+crates/memfuse-store/src/compaction.rs:1000:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:1004:            .expect("open"); // expect
+crates/memfuse-store/src/compaction.rs:1007:        let res = reader.get(b"key-1").await.expect("get"); // expect
+crates/memfuse-store/src/compaction.rs:1012:        let (_, seq, _) = res.unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:1035:            .expect("merge"); // expect
+crates/memfuse-store/src/compaction.rs:1039:            .expect("open"); // expect
+crates/memfuse-store/src/compaction.rs:1040:        let res_full = reader_full.get(b"key-1").await.expect("get"); // expect
+crates/memfuse-store/src/compaction.rs:1070:        let tmp = tempfile::TempDir::new().unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:1103:            let tmp = tempfile::TempDir::new().unwrap(); // unwrap
+crates/memfuse-store/src/compaction.rs:1119:            let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
+crates/memfuse-store/src/compaction.rs:1129:                    .expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:1130:                storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:1132:            storage.force_flush().await.expect("flush 1"); // expect
+crates/memfuse-store/src/compaction.rs:1141:                    .expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:1142:                storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:1144:            storage.force_flush().await.expect("flush 2"); // expect
+crates/memfuse-store/src/compaction.rs:1154:                    .expect("put"); // expect
+crates/memfuse-store/src/compaction.rs:1155:                storage.commit(tx).await.expect("commit"); // expect
+crates/memfuse-store/src/compaction.rs:1167:                .expect("flush task joined") // expect
+crates/memfuse-store/src/compaction.rs:1168:                .expect("flush succeeded"); // expect
+crates/memfuse-store/src/compaction.rs:1170:                .expect("compact task joined") // expect
+crates/memfuse-store/src/compaction.rs:1171:                .expect("compact succeeded"); // expect
+crates/memfuse-store/src/compaction.rs:1180:                    .expect("get") // expect
+crates/memfuse-store/src/compaction.rs:1181:                    .expect("key must exist"); // expect
+crates/memfuse-store/src/memtable.rs:295:        let (val, seq) = mt.get(b"key1").expect("key1 should exist"); // expect
+crates/memfuse-store/src/memtable.rs:299:        let (val, seq) = mt.get(b"key2").expect("key2 should exist"); // expect
+crates/memfuse-store/src/memtable.rs:317:        let (val, seq, tx) = mt.get_at_seq(b"key1", 20, u64::MAX).unwrap(); // unwrap
+crates/memfuse-store/src/memtable.rs:323:        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, u64::MAX).unwrap(); // unwrap
+crates/memfuse-store/src/memtable.rs:329:        let (val, seq, tx) = mt.get_at_seq(b"key1", 25, 1).unwrap(); // unwrap
+crates/memfuse-store/src/memtable.rs:335:        let (val, seq, tx) = mt.get_at_seq(b"key1", 100, u64::MAX).unwrap(); // unwrap
+crates/memfuse-store/src/memtable.rs:366:        let (val, seq, tx) = mt.get_at_seq(&key, 15, u64::MAX).expect("Should find v1"); // expect
+crates/memfuse-store/src/memtable.rs:374:            .expect("Should find tombstone"); // expect
+crates/memfuse-store/src/memtable.rs:540:            h.join().expect("thread panicked"); // #[cfg(test)] // expect
+crates/memfuse-store/src/memtable.rs:568:        assert_eq!(mt.get(b"k").expect("should exist").0.as_ref(), b"v"); // expect
+crates/memfuse-store/src/wal.rs:1537:        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new"); // expect
+crates/memfuse-store/src/wal.rs:1538:        let bytes = entry.to_bytes().expect("serialization failed"); // expect
+crates/memfuse-store/src/wal.rs:1542:        let total_payload_size = u32::from_le_bytes(bytes[0..4].try_into().expect("valid slice")); // expect
+crates/memfuse-store/src/wal.rs:1548:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1552:            let wal = Wal::open(&wal_path).await.expect("open WAL"); // expect
+crates/memfuse-store/src/wal.rs:1558:            let entry1 = wal.create_entry(op1, 10).await.expect("valid"); // expect
+crates/memfuse-store/src/wal.rs:1559:            wal.append(&entry1).await.expect("append 1"); // expect
+crates/memfuse-store/src/wal.rs:1565:            let entry2 = wal.create_entry(op2, 11).await.expect("valid"); // expect
+crates/memfuse-store/src/wal.rs:1566:            wal.append(&entry2).await.expect("append 2"); // expect
+crates/memfuse-store/src/wal.rs:1569:        let wal2 = Wal::open(&wal_path).await.expect("reopen WAL"); // expect
+crates/memfuse-store/src/wal.rs:1570:        let entries = wal2.replay().await.expect("replay"); // expect
+crates/memfuse-store/src/wal.rs:1578:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1582:            let wal = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1588:            let entry1 = wal.create_entry(op1, 1).await.expect("entry1"); // expect
+crates/memfuse-store/src/wal.rs:1589:            wal.append(&entry1).await.expect("append1"); // expect
+crates/memfuse-store/src/wal.rs:1596:            let entry2 = wal.create_entry(op2, 2).await.expect("entry2"); // expect
+crates/memfuse-store/src/wal.rs:1597:            wal.append(&entry2).await.expect("append2"); // expect
+crates/memfuse-store/src/wal.rs:1601:            let mut data = fs::read(&wal_path).await.expect("read"); // expect
+crates/memfuse-store/src/wal.rs:1606:                fs::write(&wal_path, data).await.expect("write"); // expect
+crates/memfuse-store/src/wal.rs:1619:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1623:            let wal = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1630:                let entry = wal.create_entry(op, i).await.expect("entry"); // expect
+crates/memfuse-store/src/wal.rs:1631:                wal.append(&entry).await.expect("append"); // expect
+crates/memfuse-store/src/wal.rs:1636:        let mut data = fs::read(&wal_path).await.expect("read"); // expect
+crates/memfuse-store/src/wal.rs:1639:        fs::write(&wal_path, data).await.expect("write"); // expect
+crates/memfuse-store/src/wal.rs:1641:        let wal2 = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1642:        let entries = wal2.replay().await.expect("replay"); // expect
+crates/memfuse-store/src/wal.rs:1649:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1653:            let wal = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1660:                let entry = wal.create_entry(op, i).await.expect("entry"); // expect
+crates/memfuse-store/src/wal.rs:1661:                wal.append(&entry).await.expect("append"); // expect
+crates/memfuse-store/src/wal.rs:1666:            let mut data = fs::read(&wal_path).await.expect("read"); // expect
+crates/memfuse-store/src/wal.rs:1671:                fs::write(&wal_path, data).await.expect("write"); // expect
+crates/memfuse-store/src/wal.rs:1687:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1691:            let wal = Wal::open(&path).await.expect("open WAL"); // expect
+crates/memfuse-store/src/wal.rs:1698:                let entry = wal.create_entry(op, i).await.expect("create entry"); // expect
+crates/memfuse-store/src/wal.rs:1699:                wal.append(&entry).await.expect("append entry"); // expect
+crates/memfuse-store/src/wal.rs:1704:        let mut data = fs::read(&path).await.expect("read wal"); // expect
+crates/memfuse-store/src/wal.rs:1707:        fs::write(&path, data).await.expect("write truncated wal"); // expect
+crates/memfuse-store/src/wal.rs:1709:        let wal2 = Wal::open(&path).await.expect("reopen WAL"); // expect
+crates/memfuse-store/src/wal.rs:1710:        let entries = wal2.replay().await.expect("replay WAL"); // expect
+crates/memfuse-store/src/wal.rs:1721:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1725:            let wal = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1732:                let entry = wal.create_entry(op, i).await.expect("entry"); // expect
+crates/memfuse-store/src/wal.rs:1733:                wal.append(&entry).await.expect("append"); // expect
+crates/memfuse-store/src/wal.rs:1742:                .expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1747:                .expect("write"); // expect
+crates/memfuse-store/src/wal.rs:1750:        let wal2 = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1751:        let entries = wal2.replay().await.expect("replay"); // expect
+crates/memfuse-store/src/wal.rs:1765:        let entry = WalEntry::try_new(op, 1, dummy_key, [0u8; 32]).expect("try_new"); // expect
+crates/memfuse-store/src/wal.rs:1767:        let mut bytes = entry.to_bytes().expect("serialization failed"); // expect
+crates/memfuse-store/src/wal.rs:1783:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1788:            let wal = Wal::open(&wal_path).await.expect("open"); // expect
+crates/memfuse-store/src/wal.rs:1794:            let entry = wal.create_entry(op, 1).await.expect("entry"); // expect
+crates/memfuse-store/src/wal.rs:1795:            wal.append(&entry).await.expect("append"); // expect
+crates/memfuse-store/src/wal.rs:1797:            fs::read(&wal_path).await.expect("read") // expect
+crates/memfuse-store/src/wal.rs:1808:                fs::write(&wal_path, &corrupted_data).await.expect("write"); // expect
+crates/memfuse-store/src/wal.rs:1817:                            replay_result.is_err() || replay_result.unwrap().is_empty(), // unwrap
+crates/memfuse-store/src/wal.rs:1851:        let entry = WalEntry::try_new(op, 12345, integrity_key, [0u8; 32]).expect("try_new"); // expect
+crates/memfuse-store/src/wal.rs:1853:        let original_bytes = entry.to_bytes().expect("serialization failed"); // expect
+crates/memfuse-store/src/wal.rs:1890:        let dir1 = tempdir().expect("tempdir1"); // expect
+crates/memfuse-store/src/wal.rs:1891:        let dir2 = tempdir().expect("tempdir2"); // expect
+crates/memfuse-store/src/wal.rs:1895:        let wal1 = Wal::open(&wal_path1).await.expect("open wal1"); // expect
+crates/memfuse-store/src/wal.rs:1896:        let wal2 = Wal::open(&wal_path2).await.expect("open wal2"); // expect
+crates/memfuse-store/src/wal.rs:1898:        let key1 = wal1.get_integrity_key().expect("key1"); // expect
+crates/memfuse-store/src/wal.rs:1899:        let key2 = wal2.get_integrity_key().expect("key2"); // expect
+crates/memfuse-store/src/wal.rs:1909:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1919:            let wal = Wal::open(&wal_path).await.expect("open wal"); // expect
+crates/memfuse-store/src/wal.rs:1923:                .expect("create entry"); // expect
+crates/memfuse-store/src/wal.rs:1924:            wal.append(&entry).await.expect("append valid entry"); // expect
+crates/memfuse-store/src/wal.rs:1938:                .expect("open") // expect
+crates/memfuse-store/src/wal.rs:1941:                .expect("replay")[0] // expect
+crates/memfuse-store/src/wal.rs:1947:                    .expect("create forged entry"); // expect
+crates/memfuse-store/src/wal.rs:1960:            .expect("create trailing entry"); // expect
+crates/memfuse-store/src/wal.rs:1966:                .expect("open file for append"); // expect
+crates/memfuse-store/src/wal.rs:1967:            file.write_all(&forged_entry.to_bytes().expect("to_bytes")) // expect
+crates/memfuse-store/src/wal.rs:1969:                .expect("write forged entry"); // expect
+crates/memfuse-store/src/wal.rs:1970:            file.write_all(&trailing_entry.to_bytes().expect("to_bytes")) // expect
+crates/memfuse-store/src/wal.rs:1972:                .expect("write trailing entry"); // expect
+crates/memfuse-store/src/wal.rs:1977:            wal_reopen.is_err() || wal_reopen.unwrap().replay().await.is_err(), // unwrap
+crates/memfuse-store/src/wal.rs:1984:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:1995:                WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
+crates/memfuse-store/src/wal.rs:1997:            tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes")) // expect
+crates/memfuse-store/src/wal.rs:1999:                .expect("write legacy WAL"); // expect
+crates/memfuse-store/src/wal.rs:2003:        let wal = Wal::open(&wal_path).await.expect("open legacy wal"); // expect
+crates/memfuse-store/src/wal.rs:2004:        let entries = wal.replay().await.expect("replay legacy wal"); // expect
+crates/memfuse-store/src/wal.rs:2023:        let entry = WalEntry::try_new(op, 100, dummy_key, [0u8; 32]).expect("try_new"); // expect
+crates/memfuse-store/src/wal.rs:2025:        let bytes = entry.to_bytes().expect("serialization failed"); // expect
+crates/memfuse-store/src/wal.rs:2026:        let decoded = WalEntry::from_bytes(&bytes[4..]).expect("Roundtrip must work"); // expect
+crates/memfuse-store/src/wal.rs:2039:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2044:            let wal = Wal::open(&wal_path).await.expect("open wal"); // expect
+crates/memfuse-store/src/wal.rs:2050:            let entry = wal.create_entry(op, 1).await.expect("create entry"); // expect
+crates/memfuse-store/src/wal.rs:2057:                .expect("open for append"); // expect
+crates/memfuse-store/src/wal.rs:2058:            let bytes = entry.to_bytes().expect("to_bytes"); // expect
+crates/memfuse-store/src/wal.rs:2059:            file.write_all(&bytes).await.expect("write_all"); // expect
+crates/memfuse-store/src/wal.rs:2060:            file.flush().await.expect("flush"); // expect
+crates/memfuse-store/src/wal.rs:2069:        let wal = wal_reopen.unwrap(); // unwrap
+crates/memfuse-store/src/wal.rs:2088:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2091:        let wal = Wal::open(&wal_path).await.expect("open wal"); // expect
+crates/memfuse-store/src/wal.rs:2119:        let entries = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
+crates/memfuse-store/src/wal.rs:2125:            batch_bytes.extend_from_slice(&e.to_bytes().expect("to_bytes")); // expect
+crates/memfuse-store/src/wal.rs:2140:                .expect("open for append"); // expect
+crates/memfuse-store/src/wal.rs:2141:            file.write_all(truncated_bytes).await.expect("write_all"); // expect
+crates/memfuse-store/src/wal.rs:2142:            file.flush().await.expect("flush"); // expect
+crates/memfuse-store/src/wal.rs:2146:        let wal2 = Wal::open(&wal_path).await.expect("reopen"); // expect
+crates/memfuse-store/src/wal.rs:2150:            .expect("replay must succeed without panic"); // expect
+crates/memfuse-store/src/wal.rs:2159:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2164:                .expect("km"), // expect
+crates/memfuse-store/src/wal.rs:2168:            .expect("open wal"); // expect
+crates/memfuse-store/src/wal.rs:2197:        let batch = wal.prepare_batch(ops).await.expect("prepare batch"); // expect
+crates/memfuse-store/src/wal.rs:2200:        wal.append_batch(&batch).await.expect("append batch"); // expect
+crates/memfuse-store/src/wal.rs:2202:        let file_bytes = fs::read(&wal_path).await.expect("read wal file"); // expect
+crates/memfuse-store/src/wal.rs:2210:        let chunk_len = u32::from_le_bytes(file_bytes[4..8].try_into().unwrap()) as usize; // unwrap
+crates/memfuse-store/src/wal.rs:2220:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2225:                .expect("km"), // expect
+crates/memfuse-store/src/wal.rs:2229:            .expect("open wal"); // expect
+crates/memfuse-store/src/wal.rs:2257:        let batch = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
+crates/memfuse-store/src/wal.rs:2258:        wal.append_batch(&batch).await.expect("append_batch"); // expect
+crates/memfuse-store/src/wal.rs:2262:            .expect("reopen wal"); // expect
+crates/memfuse-store/src/wal.rs:2263:        let replayed = wal_reopen.replay().await.expect("replay"); // expect
+crates/memfuse-store/src/wal.rs:2288:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2293:                .expect("km"), // expect
+crates/memfuse-store/src/wal.rs:2297:        let uuid_bytes = Wal::load_or_create_wal_uuid(&wal_path).await.expect("uuid"); // expect
+crates/memfuse-store/src/wal.rs:2298:        let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key"); // expect
+crates/memfuse-store/src/wal.rs:2301:        let integrity_key = sub_km.integrity_key().expect("integrity key"); // expect
+crates/memfuse-store/src/wal.rs:2308:        let entry1 = WalEntry::try_new(op1, 100, &integrity_key, [0u8; 32]).expect("entry1"); // expect
+crates/memfuse-store/src/wal.rs:2309:        let bytes1 = entry1.to_bytes().expect("bytes1"); // expect
+crates/memfuse-store/src/wal.rs:2312:        let (encrypted1, nonce1) = sub_km.encrypt_auto_nonce(payload1).expect("enc1"); // expect
+crates/memfuse-store/src/wal.rs:2325:        let entry2 = WalEntry::try_new(op2, 101, &integrity_key, entry1.checksum).expect("entry2"); // expect
+crates/memfuse-store/src/wal.rs:2326:        let bytes2 = entry2.to_bytes().expect("bytes2"); // expect
+crates/memfuse-store/src/wal.rs:2329:        let (encrypted2, nonce2) = sub_km.encrypt_auto_nonce(payload2).expect("enc2"); // expect
+crates/memfuse-store/src/wal.rs:2338:            .expect("write v1 wal"); // expect
+crates/memfuse-store/src/wal.rs:2343:            .expect("open v1 wal"); // expect
+crates/memfuse-store/src/wal.rs:2344:        let replayed = wal.replay().await.expect("replay v1 wal"); // expect
+crates/memfuse-store/src/wal.rs:2358:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2363:                .expect("km"), // expect
+crates/memfuse-store/src/wal.rs:2369:                .expect("open wal"); // expect
+crates/memfuse-store/src/wal.rs:2390:            let batch1 = wal.prepare_batch(ops1).await.expect("prepare 1"); // expect
+crates/memfuse-store/src/wal.rs:2391:            wal.append_batch(&batch1).await.expect("append 1"); // expect
+crates/memfuse-store/src/wal.rs:2412:            let batch2 = wal.prepare_batch(ops2).await.expect("prepare 2"); // expect
+crates/memfuse-store/src/wal.rs:2413:            wal.append_batch(&batch2).await.expect("append 2"); // expect
+crates/memfuse-store/src/wal.rs:2417:        let mut data = fs::read(&wal_path).await.expect("read wal"); // expect
+crates/memfuse-store/src/wal.rs:2422:            .expect("write truncated wal"); // expect
+crates/memfuse-store/src/wal.rs:2427:            .expect("reopen wal"); // expect
+crates/memfuse-store/src/wal.rs:2431:            .expect("replay must succeed by recovering Batch 1"); // expect
+crates/memfuse-store/src/wal.rs:2444:        let temp = tempfile::tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2450:            .expect("create key"); // expect
+crates/memfuse-store/src/wal.rs:2458:            let metadata = std::fs::metadata(&key_path).expect("metadata"); // expect
+crates/memfuse-store/src/wal.rs:2479:            let res = h.await.expect("join handle").expect("load key"); // expect
+crates/memfuse-store/src/wal.rs:2509:        let temp = tempfile::tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2512:        let rt = tokio::runtime::Runtime::new().expect("tokio runtime"); // expect
+crates/memfuse-store/src/wal.rs:2515:            .expect("load_or_create_integrity_key"); // expect
+crates/memfuse-store/src/wal.rs:2673:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2679:                .expect("km"), // expect
+crates/memfuse-store/src/wal.rs:2686:            .expect("write leftover tmp file"); // expect
+crates/memfuse-store/src/wal.rs:2691:            .expect("open wal should succeed despite leftover tmp file"); // expect
+crates/memfuse-store/src/wal.rs:2694:        let uuid_bytes = tokio::fs::read(&uuid_path).await.expect("read uuid"); // expect
+crates/memfuse-store/src/wal.rs:2702:            .expect("load uuid"); // expect
+crates/memfuse-store/src/wal.rs:2708:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2711:        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal")); // expect
+crates/memfuse-store/src/wal.rs:2725:            wal1.prepare_batch(ops).await.expect("batch 1") // expect
+crates/memfuse-store/src/wal.rs:2737:            wal2.prepare_batch(ops).await.expect("batch 2") // expect
+crates/memfuse-store/src/wal.rs:2741:        let batch1 = res1.expect("join 1"); // expect
+crates/memfuse-store/src/wal.rs:2742:        let batch2 = res2.expect("join 2"); // expect
+crates/memfuse-store/src/wal.rs:2764:        let dir = tempdir().expect("tempdir"); // expect
+crates/memfuse-store/src/wal.rs:2769:                .expect("km"), // expect
+crates/memfuse-store/src/wal.rs:2775:            .expect("create uuid sidecar"); // expect
+crates/memfuse-store/src/wal.rs:2786:        let wal1 = res1.expect("join 1").expect("open 1"); // expect
+crates/memfuse-store/src/wal.rs:2787:        let wal2 = res2.expect("join 2").expect("open 2"); // expect
 crates/memfuse-store/src/lsm.rs:1357:        let tmp = TempDir::new().expect("temp dir"); // expect
 crates/memfuse-store/src/lsm.rs:1366:        let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 crates/memfuse-store/src/lsm.rs:1375:        storage.put(tx, b"hello", b"world").await.expect("put"); // expect
