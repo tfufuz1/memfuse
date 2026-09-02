@@ -19,11 +19,11 @@ crates/memfuse-checkpoint/src/lib.rs:957:                .unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:962:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:994:            let res = res.unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:1000:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1013:                let _guard = store.create_guard(TxId::new(999)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1024:        .expect("Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
-crates/memfuse-checkpoint/src/lib.rs:1033:            let _guard = store.create_guard(TxId::new(808)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1050:        let guard = store.create_guard(TxId::new(909)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1066:        let guard = store.create_guard(TxId::new(1010)).unwrap();
+crates/memfuse-checkpoint/src/lib.rs:1013:                let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1024:        .expect("// expect Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
+crates/memfuse-checkpoint/src/lib.rs:1033:            let _guard = store.create_guard(TxId::new(808)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1050:        let guard = store.create_guard(TxId::new(909)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1066:        let guard = store.create_guard(TxId::new(1010)).unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:1084:            .unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:1086:        let cp = guard.checkpoint().unwrap(); // unwrap
 crates/memfuse-checkpoint/src/lib.rs:1090:        let committed = guard.commit().unwrap(); // unwrap
