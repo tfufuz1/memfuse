@@ -34,6 +34,42 @@ pub struct AuditLog<S: StorageEngine = LsmStorage> {
     collection: Arc<Collection<S>>,
 }
 
+/// Validates payload and optional error string of an audit entry for non-emptiness and absence of null bytes.
+pub fn validate_audit_payload_and_error(
+    payload: &serde_json::Value,
+    error: Option<&str>,
+) -> Result<()> {
+    if let Some(err) = error {
+        if err.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Audit error message cannot be empty when provided".to_string(),
+            ));
+        }
+        if err.contains('\0') {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Audit error message cannot contain null bytes".to_string(),
+            ));
+        }
+    }
+
+    if let Some(s) = payload.as_str() {
+        if s.trim().is_empty() {
+            return Err(memfuse_core::MemFuseError::InvalidInput(
+                "Audit string payload cannot be empty".to_string(),
+            ));
+        }
+    }
+
+    let json_str = payload.to_string();
+    if json_str.contains('\0') || json_str.contains("\\u0000") {
+        return Err(memfuse_core::MemFuseError::InvalidInput(
+            "Audit payload cannot contain null bytes".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 impl<S: StorageEngine> AuditLog<S> {
     pub fn new(collection: Arc<Collection<S>>) -> Self {
         Self { collection }
@@ -43,6 +79,7 @@ impl<S: StorageEngine> AuditLog<S> {
     pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
         validate_task_id(&entry.task_id)?;
         validate_node_id(&entry.node_id)?;
+        validate_audit_payload_and_error(&entry.payload, entry.error.as_deref())?;
 
         let audit_id = format!("audit:{}:step:{}", entry.task_id, entry.step_count);
         let payload = serde_json::to_value(entry)
@@ -181,14 +218,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_audit_log_invalid_task_id_rejection() {
+    async fn test_audit_log_null_byte_and_empty_input_boundary_guards() {
         let storage = Arc::new(InMemoryStorageEngine::new());
         let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
         let graph_index = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
 
         let collection = Arc::new(Collection::new(
-            "test_audit_invalid".to_string(),
+            "test_audit_guards".to_string(),
             storage,
             index,
             graph_index,
@@ -199,29 +236,108 @@ mod tests {
 
         let audit_log = AuditLog::new(collection);
 
-        let invalid_entry = AuditEntry {
-            task_id: "".to_string(),
-            step_count: 1,
-            node_id: "node-start".to_string(),
-            tokens_consumed: 10,
-            payload: serde_json::Value::Null,
-            error: None,
-        };
+        // 1. Empty and null-byte task_ids
+        let task_ids_to_test = vec!["", "\0", "\0\0", "\0task", "task\0id", "task\0"];
 
-        assert!(matches!(
-            audit_log.append(&invalid_entry).await,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        for task_id in &task_ids_to_test {
+            let entry = AuditEntry {
+                task_id: task_id.to_string(),
+                step_count: 1,
+                node_id: "valid_node".to_string(),
+                tokens_consumed: 10,
+                payload: serde_json::json!({"ok": true}),
+                error: None,
+            };
+            assert!(
+                matches!(
+                    audit_log.append(&entry).await,
+                    Err(memfuse_core::MemFuseError::InvalidInput(_))
+                ),
+                "Expected InvalidInput for task_id: {:?}",
+                task_id
+            );
+            assert!(
+                matches!(
+                    audit_log.replay_task(task_id).await,
+                    Err(memfuse_core::MemFuseError::InvalidInput(_))
+                ),
+                "Expected InvalidInput for replay_task with task_id: {:?}",
+                task_id
+            );
+        }
 
-        assert!(matches!(
-            audit_log.replay_task("").await,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        // 2. Empty and null-byte node_ids
+        let node_ids_to_test = vec!["", "\0", "\0node", "node\0id", "node\0"];
 
-        assert!(matches!(
-            audit_log.replay_task("task\0null").await,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        for node_id in &node_ids_to_test {
+            let entry = AuditEntry {
+                task_id: "valid_task".to_string(),
+                step_count: 1,
+                node_id: node_id.to_string(),
+                tokens_consumed: 10,
+                payload: serde_json::json!({"ok": true}),
+                error: None,
+            };
+            assert!(
+                matches!(
+                    audit_log.append(&entry).await,
+                    Err(memfuse_core::MemFuseError::InvalidInput(_))
+                ),
+                "Expected InvalidInput for node_id: {:?}",
+                node_id
+            );
+        }
+
+        // 3. Empty string and null-byte payloads
+        let invalid_payloads = vec![
+            serde_json::Value::String("".to_string()),
+            serde_json::Value::String("\0".to_string()),
+            serde_json::Value::String("\0payload".to_string()),
+            serde_json::Value::String("pay\0load".to_string()),
+            serde_json::Value::String("payload\0".to_string()),
+            serde_json::json!({"nested": "val\0null"}),
+        ];
+
+        for payload in invalid_payloads {
+            let entry = AuditEntry {
+                task_id: "valid_task".to_string(),
+                step_count: 1,
+                node_id: "valid_node".to_string(),
+                tokens_consumed: 10,
+                payload,
+                error: None,
+            };
+            assert!(
+                matches!(
+                    audit_log.append(&entry).await,
+                    Err(memfuse_core::MemFuseError::InvalidInput(_))
+                ),
+                "Expected InvalidInput for payload: {:?}",
+                entry.payload
+            );
+        }
+
+        // 4. Empty and null-byte error messages
+        let invalid_errors = vec!["", "\0", "\0err", "err\0or", "error\0"];
+
+        for err_msg in invalid_errors {
+            let entry = AuditEntry {
+                task_id: "valid_task".to_string(),
+                step_count: 1,
+                node_id: "valid_node".to_string(),
+                tokens_consumed: 0,
+                payload: serde_json::Value::Null,
+                error: Some(err_msg.to_string()),
+            };
+            assert!(
+                matches!(
+                    audit_log.append(&entry).await,
+                    Err(memfuse_core::MemFuseError::InvalidInput(_))
+                ),
+                "Expected InvalidInput for error: {:?}",
+                err_msg
+            );
+        }
     }
 }
 

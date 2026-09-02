@@ -119,6 +119,26 @@ impl TokenBudget {
         self.consumed = self.consumed.saturating_add(tokens);
     }
 
+    /// Tries to reserve `tokens` from the available budget before step execution.
+    ///
+    /// Returns `Err(MemFuseError::Internal(...))` if available budget is 0 or less than `tokens`.
+    pub fn try_reserve(&mut self, tokens: usize) -> Result<()> {
+        let avail = self.available();
+        if avail == 0 || avail < tokens {
+            return Err(MemFuseError::Internal(format!(
+                "Token budget exhausted before step execution (available: {}, required: {})",
+                avail, tokens
+            )));
+        }
+        self.consume(tokens);
+        Ok(())
+    }
+
+    /// Refunds `tokens` back to the available budget if execution fails or consumes less than estimated.
+    pub fn refund(&mut self, tokens: usize) {
+        self.consumed = self.consumed.saturating_sub(tokens);
+    }
+
     /// Returns total tokens consumed so far.
     pub fn consumed(&self) -> usize {
         self.consumed
