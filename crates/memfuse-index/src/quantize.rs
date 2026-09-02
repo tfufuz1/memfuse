@@ -19,11 +19,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Per-dimension scaling improves recall by adapting to different value ranges.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScalarQuantizer {
-    pub(crate) mins: Vec<f32>,
-    pub(crate) maxes: Vec<f32>,
-    pub(crate) scales: Vec<f32>,
-    pub(crate) inv_scales: Vec<f32>,
-    pub(crate) dimension: usize,
+    pub mins: Vec<f32>,
+    pub maxes: Vec<f32>,
+    pub scales: Vec<f32>,
+    pub inv_scales: Vec<f32>,
+    pub dimension: usize,
     #[serde(skip, default)]
     pub(crate) total_queries: AtomicU64,
     #[serde(skip, default)]

@@ -50,25 +50,29 @@ mod path_validation_tests {
     use super::*;
 
     #[test]
-    fn test_validate_path_within_base_valid() {
-        let temp_dir = tempfile::tempdir().unwrap();
+    fn test_validate_path_within_base_valid() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let temp_dir = tempfile::tempdir()?;
         let base = temp_dir.path();
         let file_path = base.join("subfolder").join("file.txt");
-        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, "data").unwrap();
+        let parent = file_path.parent().ok_or("No parent directory")?;
+        std::fs::create_dir_all(parent)?;
+        std::fs::write(&file_path, "data")?;
 
         let validated = validate_path_within_base(&file_path, base);
         assert!(validated.is_ok());
+        Ok(())
     }
 
     #[test]
-    fn test_validate_path_within_base_traversal_rejected() {
-        let temp_dir = tempfile::tempdir().unwrap();
+    fn test_validate_path_within_base_traversal_rejected(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = tempfile::tempdir()?;
         let base = temp_dir.path().join("allowed_base");
-        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&base)?;
 
         let outside_file = temp_dir.path().join("outside.txt");
-        std::fs::write(&outside_file, "secret").unwrap();
+        std::fs::write(&outside_file, "secret")?;
 
         // Path traversal using relative path components
         let traversal_path = base.join("../outside.txt");
@@ -78,5 +82,6 @@ mod path_validation_tests {
         let err = res.unwrap_err();
         assert!(matches!(err, MemFuseError::PolicyViolation(_)));
         assert!(err.to_string().contains("Path traversal detected"));
+        Ok(())
     }
 }
