@@ -401,14 +401,14 @@ mod tests {
 
     #[test]
     fn test_derive_file_key_empty_id() {
-        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let km = KeyManager::try_new("pass", b"salt").expect("km"); // expect
         let res = km.derive_file_key(b"");
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
     #[test]
     fn test_derive_file_key_oversized_id() {
-        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let km = KeyManager::try_new("pass", b"salt").expect("km"); // expect
         let file_id = vec![0u8; 10_001];
         let res = km.derive_file_key(&file_id);
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_derive_file_key_max_id_boundary() {
-        let km = KeyManager::try_new("pass", b"salt").expect("km");
+        let km = KeyManager::try_new("pass", b"salt").expect("km"); // expect
         let file_id = vec![0x77u8; 10_000];
         let res = km.derive_file_key(&file_id);
         assert!(
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_decrypt_too_short_ciphertext() {
-        let km = KeyManager::try_new("passphrase", b"salt").expect("km");
+        let km = KeyManager::try_new("passphrase", b"salt").expect("km"); // expect
         let nonce = [0u8; 12];
         let short_ciphertext = [0u8; 10]; // AES-GCM-SIV tag is 16 bytes
         let res = km.decrypt_auto_nonce(&short_ciphertext, &nonce);
@@ -455,13 +455,13 @@ mod tests {
         let passphrase = "independent-passphrase-reference";
         let salt = b"independent-salt-reference";
 
-        let km = KeyManager::try_new(passphrase, salt).expect("km");
+        let km = KeyManager::try_new(passphrase, salt).expect("km"); // expect
 
         // Independent external calculation
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut expected_key = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut expected_key)
-            .expect("hkdf expansion");
+            .expect("hkdf expansion"); // expect
 
         assert_eq!(
             km.inspect_key_bytes_for_test(),
@@ -492,7 +492,7 @@ mod tests {
         use std::sync::{Arc, Mutex};
 
         let km = Arc::new(
-            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"),
+            KeyManager::try_new("parallel-secret-passphrase", b"salt-parallel-1234").expect("km"), // expect
         );
         let nonces = Arc::new(Mutex::new(HashSet::with_capacity(100_000)));
 
@@ -503,8 +503,8 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let data = b"parallel payload data block";
                 for _ in 0..10_000 {
-                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt");
-                    let mut guard = nonces_clone.lock().expect("lock nonces");
+                    let (_, nonce) = km_clone.encrypt_auto_nonce(data).expect("encrypt"); // expect
+                    let mut guard = nonces_clone.lock().expect("lock nonces"); // expect
                     assert!(
                         guard.insert(nonce),
                         "Nonce reuse detected in parallel execution!"
@@ -514,10 +514,10 @@ mod tests {
         }
 
         for handle in handles {
-            handle.await.expect("task handle joined");
+            handle.await.expect("task handle joined"); // expect
         }
 
-        let final_count = nonces.lock().expect("lock nonces").len();
+        let final_count = nonces.lock().expect("lock nonces").len(); // expect
         assert_eq!(
             final_count, 100_000,
             "All 100,000 nonces generated in parallel MUST be distinct"

@@ -510,7 +510,7 @@ mod tests {
 
         for h in handles {
             // INTENT: intentional expect in tests
-            h.join().expect("task panicked"); // #[cfg(test)]
+            h.join().expect("task panicked"); // #[cfg(test)] // expect
         }
 
         assert_eq!(buffer.len(), num_tx);

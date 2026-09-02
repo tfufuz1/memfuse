@@ -473,7 +473,7 @@ mod tests {
         let chunks = chunker.chunk(DocId::new(5), "Plain single line document.");
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].content, "Plain single line document.");
-        let meta = chunks[0].metadata.as_ref().unwrap();
+        let meta = chunks[0].metadata.as_ref().unwrap(); // unwrap
         assert_eq!(meta["breadcrumb"], "");
         assert_eq!(meta["heading_level"], 0);
     }
@@ -490,7 +490,7 @@ mod tests {
         let chunks = chunker.chunk(DocId::new(6), markdown);
         // Level 3 heading should NOT split into a new section
         assert_eq!(chunks.len(), 1);
-        let meta = chunks[0].metadata.as_ref().unwrap();
+        let meta = chunks[0].metadata.as_ref().unwrap(); // unwrap
         assert_eq!(meta["breadcrumb"], "# Level 1");
     }
 }

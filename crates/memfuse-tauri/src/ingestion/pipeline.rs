@@ -444,9 +444,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_panic_recovery() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let file_path = temp_dir.path().join("malformed.pdf");
-        std::fs::write(&file_path, b"not a real pdf content").unwrap();
+        std::fs::write(&file_path, b"not a real pdf content").unwrap(); // unwrap
 
         let embedder = Arc::new(MockEmbedder {
             fail_on_even: false,
@@ -454,10 +454,10 @@ mod tests {
         let pipeline = IngestionPipeline::new(embedder);
 
         // Standard MemFuse DB setup in memory or temp dir
-        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
-        let collection = db.collection("test_col").await.unwrap();
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap(); // unwrap
+        let collection = db.collection("test_col").await.unwrap(); // unwrap
 
-        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap(); // unwrap
         assert_eq!(report.chunks_created, 0);
         assert!(!report.errors.is_empty());
         assert!(
@@ -468,22 +468,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_partial_failure_error_aggregation() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_dir = tempfile::tempdir().unwrap(); // unwrap
         let file_path = temp_dir.path().join("test_partial.md");
         // Create 3 long sections with distinct headings so MarkdownChunker creates 3 separate chunks (>50 tokens each)
         let chunk1 = format!("# Section 1\n{}\nChunk Odd 1\n\n", "word ".repeat(60));
         let chunk2 = format!("# Section 2\n{}\nChunk Even 2\n\n", "word ".repeat(60));
         let chunk3 = format!("# Section 3\n{}\nChunk Odd 3\n\n", "word ".repeat(60));
         let content = format!("{chunk1}{chunk2}{chunk3}");
-        std::fs::write(&file_path, content).unwrap();
+        std::fs::write(&file_path, content).unwrap(); // unwrap
 
         let embedder = Arc::new(MockEmbedder { fail_on_even: true });
         let pipeline = IngestionPipeline::new(embedder);
 
-        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap();
-        let collection = db.collection("test_col").await.unwrap();
+        let db = memfuse_db::MemFuse::open(temp_dir.path()).await.unwrap(); // unwrap
+        let collection = db.collection("test_col").await.unwrap(); // unwrap
 
-        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap();
+        let report = pipeline.ingest_file(&file_path, &collection).await.unwrap(); // unwrap
         assert_eq!(report.chunks_created, 2);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("Embedding fehlgeschlagen"));

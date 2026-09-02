@@ -166,7 +166,7 @@ mod tests {
     fn test_score_importance_regex_get() {
         let re_res = get_score_regex();
         assert!(re_res.is_ok());
-        let re = re_res.unwrap();
+        let re = re_res.unwrap(); // unwrap
         assert!(re.is_match("0.85"));
         assert!(re.is_match("1.0"));
         assert!(!re.is_match("abc"));

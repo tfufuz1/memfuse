@@ -1466,24 +1466,24 @@ mod tests {
             .collect();
 
         for key in &keys_to_delete {
-            storage.put(tx1, key, b"value").await.unwrap();
+            storage.put(tx1, key, b"value").await.unwrap(); // unwrap
         }
-        storage.commit(tx1).await.unwrap();
+        storage.commit(tx1).await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
         let count = storage
             .delete_many(tx2, keys_to_delete.clone())
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(count, 50);
 
         // Verify that stage_many inserted all 50 delete operations into tx_buffer for tx2 atomically
-        let staged_ops = storage.tx_buffer.get_ops(tx2).expect("ops staged");
+        let staged_ops = storage.tx_buffer.get_ops(tx2).expect("ops staged"); // expect
         assert_eq!(staged_ops.len(), 50);
 
-        storage.commit(tx2).await.unwrap();
+        storage.commit(tx2).await.unwrap(); // unwrap
         for key in &keys_to_delete {
-            assert_eq!(storage.get(key).await.unwrap(), None);
+            assert_eq!(storage.get(key).await.unwrap(), None); // unwrap
         }
     }
 
@@ -1670,6 +1670,7 @@ mod tests {
             assert_eq!(storage.get(b"k3").await.unwrap(), Some(b"v3".to_vec()));
             // unwrap
             // unwrap
+            // unwrap
         }
     }
     #[tokio::test]
@@ -1801,6 +1802,7 @@ mod tests {
             let mut count = 0;
             let mut stream = sstables[0].stream().await.unwrap(); // unwrap
             while let Some((_k, _v, _seq, tx)) = stream.next_entry().await.unwrap() {
+                // unwrap
                 // unwrap
                 assert!(
                     tx <= 5,
@@ -2184,6 +2186,7 @@ mod tests {
         assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec())); // unwrap
         assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
         // unwrap
+        // unwrap
     }
 
     #[tokio::test]
@@ -2353,19 +2356,19 @@ mod tests {
     async fn test_scan_prefix_at_snapshot_isolation() {
         let (storage, _tmp) = test_storage().await;
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"col:doc1", b"v1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
-        let seq_after_tx1 = storage.last_seq_no().await.unwrap();
+        storage.put(tx1, b"col:doc1", b"v1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
+        let seq_after_tx1 = storage.last_seq_no().await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"col:doc2", b"v2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"col:doc2", b"v2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
 
         // Scan at seq_after_tx1: must ONLY see doc1, NOT doc2
         let results = storage
             .scan_prefix_at(b"col:", seq_after_tx1)
             .await
-            .unwrap();
+            .unwrap(); // unwrap
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, b"col:doc1");
     }
@@ -2376,32 +2379,32 @@ mod tests {
 
         // seq 1: put key1 = v1, key2 = v2
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"pfx:1", b"v1").await.unwrap();
-        storage.put(tx1, b"pfx:2", b"v2").await.unwrap();
-        storage.commit(tx1).await.unwrap();
-        let seq1 = storage.last_seq_no().await.unwrap();
+        storage.put(tx1, b"pfx:1", b"v1").await.unwrap(); // unwrap
+        storage.put(tx1, b"pfx:2", b"v2").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
+        let seq1 = storage.last_seq_no().await.unwrap(); // unwrap
 
         // seq 2: update key1 = v1_new, delete key2
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"pfx:1", b"v1_new").await.unwrap();
-        storage.delete(tx2, b"pfx:2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
-        let seq2 = storage.last_seq_no().await.unwrap();
+        storage.put(tx2, b"pfx:1", b"v1_new").await.unwrap(); // unwrap
+        storage.delete(tx2, b"pfx:2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
+        let seq2 = storage.last_seq_no().await.unwrap(); // unwrap
 
         // seq 3: put key3 = v3
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"pfx:3", b"v3").await.unwrap();
-        storage.commit(tx3).await.unwrap();
+        storage.put(tx3, b"pfx:3", b"v3").await.unwrap(); // unwrap
+        storage.commit(tx3).await.unwrap(); // unwrap
 
         // scan_prefix_at at seq1: must see key1=v1, key2=v2, no key3
-        let res_seq1 = storage.scan_prefix_at(b"pfx:", seq1).await.unwrap();
+        let res_seq1 = storage.scan_prefix_at(b"pfx:", seq1).await.unwrap(); // unwrap
         assert_eq!(res_seq1.len(), 2);
         let map1: std::collections::HashMap<_, _> = res_seq1.into_iter().collect();
         assert_eq!(map1.get(&b"pfx:1"[..]), Some(&b"v1"[..].to_vec()));
         assert_eq!(map1.get(&b"pfx:2"[..]), Some(&b"v2"[..].to_vec()));
 
         // scan_prefix_at at seq2: must see key1=v1_new, key2 deleted, no key3
-        let res_seq2 = storage.scan_prefix_at(b"pfx:", seq2).await.unwrap();
+        let res_seq2 = storage.scan_prefix_at(b"pfx:", seq2).await.unwrap(); // unwrap
         assert_eq!(res_seq2.len(), 1);
         assert_eq!(res_seq2[0].0, b"pfx:1");
         assert_eq!(res_seq2[0].1, b"v1_new");
@@ -2413,27 +2416,27 @@ mod tests {
 
         // tx1: put pfx:a
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"pfx:a", b"val_a").await.unwrap();
-        storage.commit(tx1).await.unwrap();
-        let seq1 = storage.last_seq_no().await.unwrap();
+        storage.put(tx1, b"pfx:a", b"val_a").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
+        let seq1 = storage.last_seq_no().await.unwrap(); // unwrap
 
         // Flush to SSTable so pfx:a is in SSTable
-        storage.force_flush().await.unwrap();
+        storage.force_flush().await.unwrap(); // unwrap
 
         // tx2: delete pfx:a (tombstone in active memtable)
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"pfx:a").await.unwrap();
-        storage.commit(tx2).await.unwrap();
-        let seq2 = storage.last_seq_no().await.unwrap();
+        storage.delete(tx2, b"pfx:a").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
+        let seq2 = storage.last_seq_no().await.unwrap(); // unwrap
 
         // scan_prefix_at at seq1: must return pfx:a despite tombstone added at seq2
-        let res_seq1 = storage.scan_prefix_at(b"pfx:", seq1).await.unwrap();
+        let res_seq1 = storage.scan_prefix_at(b"pfx:", seq1).await.unwrap(); // unwrap
         assert_eq!(res_seq1.len(), 1);
         assert_eq!(res_seq1[0].0, b"pfx:a");
         assert_eq!(res_seq1[0].1, b"val_a");
 
         // scan_prefix_at at seq2: tombstone applies, returns empty
-        let res_seq2 = storage.scan_prefix_at(b"pfx:", seq2).await.unwrap();
+        let res_seq2 = storage.scan_prefix_at(b"pfx:", seq2).await.unwrap(); // unwrap
         assert!(res_seq2.is_empty());
     }
 
@@ -2460,10 +2463,10 @@ mod tests {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .unwrap();
+                .unwrap(); // unwrap
 
             rt.block_on(async {
-                let tmp = tempfile::TempDir::new().unwrap();
+                let tmp = tempfile::TempDir::new().unwrap(); // unwrap
                 let config = LsmConfig {
                     path: tmp.path().to_path_buf(),
                     memtable_size_limit: 1024 * 1024,
@@ -2472,7 +2475,7 @@ mod tests {
                     compaction: CompactionConfig::default(),
                     encryption_passphrase: None,
                 };
-                let storage = LsmStorage::new(config).await.unwrap();
+                let storage = LsmStorage::new(config).await.unwrap(); // unwrap
 
                 let mut current_tx = 1u64;
                 let mut tx_checkpoints = Vec::new();
@@ -2490,7 +2493,7 @@ mod tests {
                         }
                     }
                     if storage.commit(tx).await.is_ok() {
-                        let seq = storage.last_seq_no().await.unwrap();
+                        let seq = storage.last_seq_no().await.unwrap(); // unwrap
                         tx_checkpoints.push((current_tx, seq));
                         current_tx += 1;
                     }
@@ -2498,7 +2501,7 @@ mod tests {
 
                 // Verify scan_prefix_at at each target sequence against reference replay model
                 for &(_tx_num, target_seq) in &tx_checkpoints {
-                    let scanned = storage.scan_prefix_at(b"pfx:", target_seq).await.unwrap();
+                    let scanned = storage.scan_prefix_at(b"pfx:", target_seq).await.unwrap(); // unwrap
                     let actual_map: std::collections::BTreeMap<_, _> = scanned.into_iter().collect();
 
                     // Replay all committed ops up to target_seq to build expected state
@@ -2519,7 +2522,7 @@ mod tests {
 
                     let sstables = storage.sstables.read().await;
                     for sst in sstables.iter() {
-                        let sst_entries = sst.scan_prefix(b"pfx:").await.unwrap();
+                        let sst_entries = sst.scan_prefix(b"pfx:").await.unwrap(); // unwrap
                         for (k, v, seq, _tx) in sst_entries {
                             all_entries.push((k.to_vec(), v.to_vec(), seq));
                         }
@@ -2542,18 +2545,18 @@ mod tests {
                     prop_assert_eq!(actual_map, ref_map, "scan_prefix_at at seq {} must match reference model", target_seq);
                 }
                 Ok(())
-            }).unwrap();
+            }).unwrap(); // unwrap
         });
     }
 
     #[tokio::test]
     async fn test_input_boundary_guards() {
-        let tmp = TempDir::new().expect("temp dir");
+        let tmp = TempDir::new().expect("temp dir"); // expect
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
+        let storage = LsmStorage::new(config).await.expect("create storage"); // expect
         let tx = TxId::new(1);
 
         // 1. Empty key check
@@ -2615,15 +2618,15 @@ mod tests {
 
         // Put and commit a transaction
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.expect("put");
-        storage.commit(tx1).await.expect("commit");
+        storage.put(tx1, b"key1", b"val1").await.expect("put"); // expect
+        storage.commit(tx1).await.expect("commit"); // expect
 
         // Rollback to TxId::new(0) -> should wipe key1
         storage
             .rollback_to_tx(TxId::new(0))
             .await
-            .expect("rollback to 0");
-        assert_eq!(storage.get(b"key1").await.expect("get"), None);
+            .expect("rollback to 0"); // expect
+        assert_eq!(storage.get(b"key1").await.expect("get"), None); // expect
     }
 
     #[tokio::test]
@@ -2632,33 +2635,33 @@ mod tests {
 
         // a. Inserts committen
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
 
         // b. Delete (Tombstone) als letzte Op vor Target committen und flushen
         let tx3 = TxId::new(3);
-        storage.delete(tx3, b"key2").await.unwrap();
-        storage.commit(tx3).await.unwrap();
-        storage.force_flush().await.unwrap();
+        storage.delete(tx3, b"key2").await.unwrap(); // unwrap
+        storage.commit(tx3).await.unwrap(); // unwrap
+        storage.force_flush().await.unwrap(); // unwrap
 
         // c. Rollback auf target_tx (tx3)
-        storage.rollback_to_tx(tx3).await.unwrap();
+        storage.rollback_to_tx(tx3).await.unwrap(); // unwrap
 
         // d. Neuen Insert mit neuem Key committen
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"key3", b"val3").await.unwrap();
-        storage.commit(tx4).await.unwrap();
+        storage.put(tx4, b"key3", b"val3").await.unwrap(); // unwrap
+        storage.commit(tx4).await.unwrap(); // unwrap
 
         // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
         let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
-        let val = storage.get_at_seq(b"key3", current_max_seq).await.unwrap();
+        let val = storage.get_at_seq(b"key3", current_max_seq).await.unwrap(); // unwrap
         assert_eq!(val, Some(b"val3".to_vec()));
 
-        let last_seq = storage.last_seq_no().await.unwrap();
+        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap
         assert_eq!(
             last_seq & TOMBSTONE_BIT,
             0,
@@ -2672,32 +2675,32 @@ mod tests {
 
         // a. Inserts committen
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"k1", b"v1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"k1", b"v1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
-        storage.put(tx2, b"k2", b"v2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.put(tx2, b"k2", b"v2").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
 
         // b. Delete (Tombstone) im WAL als letzte Op vor Target committen (unflushed)
         let tx3 = TxId::new(3);
-        storage.delete(tx3, b"k2").await.unwrap();
-        storage.commit(tx3).await.unwrap();
+        storage.delete(tx3, b"k2").await.unwrap(); // unwrap
+        storage.commit(tx3).await.unwrap(); // unwrap
 
         // c. Rollback auf target_tx (tx3)
-        storage.rollback_to_tx(tx3).await.unwrap();
+        storage.rollback_to_tx(tx3).await.unwrap(); // unwrap
 
         // d. Neuen Insert mit neuem Key committen
         let tx4 = TxId::new(4);
-        storage.put(tx4, b"k3", b"v3").await.unwrap();
-        storage.commit(tx4).await.unwrap();
+        storage.put(tx4, b"k3", b"v3").await.unwrap(); // unwrap
+        storage.commit(tx4).await.unwrap(); // unwrap
 
         // e. Assert: Der neue Key ist lesbar und TOMBSTONE_BIT ist NICHT gesetzt
         let current_max_seq = storage.next_seq_no.load(Ordering::Acquire);
-        let val = storage.get_at_seq(b"k3", current_max_seq).await.unwrap();
+        let val = storage.get_at_seq(b"k3", current_max_seq).await.unwrap(); // unwrap
         assert_eq!(val, Some(b"v3".to_vec()));
 
-        let last_seq = storage.last_seq_no().await.unwrap();
+        let last_seq = storage.last_seq_no().await.unwrap(); // unwrap
         assert_eq!(
             last_seq & TOMBSTONE_BIT,
             0,
@@ -2710,28 +2713,28 @@ mod tests {
         let (storage, _tmp) = test_storage().await;
 
         let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
+        storage.commit(tx1).await.unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
-        storage.delete(tx2, b"key1").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+        storage.delete(tx2, b"key1").await.unwrap(); // unwrap
+        storage.commit(tx2).await.unwrap(); // unwrap
 
         // Rollback auf tx2
-        storage.rollback_to_tx(tx2).await.unwrap();
+        storage.rollback_to_tx(tx2).await.unwrap(); // unwrap
 
         // Abfolge von weiteren Inserts und Deletes in Folge
         let tx3 = TxId::new(3);
-        storage.put(tx3, b"key2", b"val2").await.unwrap();
-        storage.commit(tx3).await.unwrap();
+        storage.put(tx3, b"key2", b"val2").await.unwrap(); // unwrap
+        storage.commit(tx3).await.unwrap(); // unwrap
 
         let tx4 = TxId::new(4);
-        storage.delete(tx4, b"key2").await.unwrap();
-        storage.commit(tx4).await.unwrap();
+        storage.delete(tx4, b"key2").await.unwrap(); // unwrap
+        storage.commit(tx4).await.unwrap(); // unwrap
 
         let tx5 = TxId::new(5);
-        storage.put(tx5, b"key3", b"val3").await.unwrap();
-        storage.commit(tx5).await.unwrap();
+        storage.put(tx5, b"key3", b"val3").await.unwrap(); // unwrap
+        storage.commit(tx5).await.unwrap(); // unwrap
 
         // Prüfe direkt im MemTable, dass der neueste Zustand jedes Keys das korrekte TOMBSTONE_BIT trägt
         let state = storage.state.read().await;
@@ -2755,9 +2758,10 @@ mod tests {
         drop(state);
 
         // Verify final state via read path
-        assert_eq!(storage.get(b"key1").await.unwrap(), None);
-        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+        assert_eq!(storage.get(b"key1").await.unwrap(), None); // unwrap
+        assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
+        // unwrap
     }
 
     #[tokio::test]
@@ -2779,7 +2783,7 @@ mod tests {
 
         let storage = LsmStorage::new(config)
             .await
-            .expect("LsmStorage startup must succeed");
+            .expect("LsmStorage startup must succeed"); // expect
         assert_eq!(storage.sstables.read().await.len(), 0);
 
         // Assert corrupt .tmp file was removed from data directory during recovery

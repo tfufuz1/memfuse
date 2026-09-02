@@ -36,7 +36,7 @@ async fn create_mock_server_with_write(allow_db_writes: bool) -> (Arc<McpServer>
     let embedder = Arc::new(MockEmbedder { dimension: dim });
     let server = Arc::new(
         McpServer::with_write_permission(Arc::new(db), embedder, allow_db_writes)
-            .expect("server new"),
+            .expect("server new"), // expect
     );
     (server, tmp)
 }
@@ -230,7 +230,7 @@ async fn test_search_validates_empty_or_oversized_query() {
     // Whitespace query
     let req_whitespace = make_request("memfuse_search", json!({"query": "   "}));
     let resp = server.handle(req_whitespace).await;
-    let err = resp.error.expect("error expected for empty query");
+    let err = resp.error.expect("error expected for empty query"); // expect
     assert_eq!(err.code, -32602);
     assert!(err.message.contains("query cannot be empty"));
 
@@ -238,7 +238,7 @@ async fn test_search_validates_empty_or_oversized_query() {
     let huge_query = "x".repeat(crate::MAX_SEARCH_QUERY_BYTES + 1);
     let req_huge = make_request("memfuse_search", json!({"query": huge_query}));
     let resp_huge = server.handle(req_huge).await;
-    let err_huge = resp_huge.error.expect("error expected for oversized query");
+    let err_huge = resp_huge.error.expect("error expected for oversized query"); // expect
     assert_eq!(err_huge.code, -32602);
     assert!(err_huge.message.contains("query size exceeds limit"));
 }
@@ -256,7 +256,7 @@ async fn test_insert_validates_vector_nan_inf_and_empty() {
         }),
     );
     let resp = server.handle(req_empty_vec).await;
-    let err = resp.error.expect("error expected for empty vector");
+    let err = resp.error.expect("error expected for empty vector"); // expect
     assert_eq!(err.code, -32602);
     assert!(err.message.contains("vector cannot be empty"));
 
@@ -269,7 +269,7 @@ async fn test_insert_validates_vector_nan_inf_and_empty() {
         }),
     );
     let resp_inf = server.handle(req_inf).await;
-    let err_inf = resp_inf.error.expect("error expected for Inf in vector");
+    let err_inf = resp_inf.error.expect("error expected for Inf in vector"); // expect
     assert_eq!(err_inf.code, -32602);
     assert!(err_inf.message.contains("NaN or Inf"));
 }
@@ -287,7 +287,7 @@ async fn test_insert_validates_oversized_id() {
         }),
     );
     let resp = server.handle(req).await;
-    let err = resp.error.expect("error expected for long ID");
+    let err = resp.error.expect("error expected for long ID"); // expect
     assert_eq!(err.code, -32602);
     assert!(err.message.contains("id length exceeds limit"));
 }
@@ -333,9 +333,9 @@ async fn test_write_tool_rejected_when_read_only() {
             }),
         );
         let resp = server.handle(req).await;
-        let res_val = serde_json::to_value(&resp).unwrap();
+        let res_val = serde_json::to_value(&resp).unwrap(); // unwrap
         assert_eq!(res_val["result"]["isError"], true);
-        let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+        let text = res_val["result"]["content"][0]["text"].as_str().unwrap(); // unwrap
         assert!(
             text.contains("Sandbox: DB-Schreibzugriff gesperrt"),
             "Expected write rejection for '{tool}', got: '{text}'"
@@ -358,9 +358,9 @@ async fn test_write_tool_allowed_when_explicitly_enabled() {
         }),
     );
     let resp = server.handle(req).await;
-    let res_val = serde_json::to_value(&resp).unwrap();
+    let res_val = serde_json::to_value(&resp).unwrap(); // unwrap
     assert_ne!(res_val["result"]["isError"], true);
-    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap(); // unwrap
     assert!(text.contains("write_enabled_doc"));
 }
 
@@ -378,11 +378,11 @@ async fn test_read_tools_always_allowed_regardless_of_flag() {
     );
 
     let resp_ro = server_ro.handle(read_req.clone()).await;
-    let res_ro = serde_json::to_value(&resp_ro).unwrap();
+    let res_ro = serde_json::to_value(&resp_ro).unwrap(); // unwrap
     assert_ne!(res_ro["result"]["isError"], true);
 
     let resp_rw = server_rw.handle(read_req).await;
-    let res_rw = serde_json::to_value(&resp_rw).unwrap();
+    let res_rw = serde_json::to_value(&resp_rw).unwrap(); // unwrap
     assert_ne!(res_rw["result"]["isError"], true);
 }
 

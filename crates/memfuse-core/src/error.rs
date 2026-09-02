@@ -759,6 +759,6 @@ mod tests {
         );
         assert_eq!(dto.kind, "CustomKind");
         assert_eq!(dto.message, "Custom message");
-        assert_eq!(dto.details.expect("details present")["trace_id"], "12345");
+        assert_eq!(dto.details.expect("details present")["trace_id"], "12345"); // expect
     }
 }

@@ -411,7 +411,7 @@ mod tests {
             Some(serde_json::json!({"text": "rust programming"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         let config = MultiStepConfig {
             max_rounds: 3,
@@ -424,7 +424,7 @@ mod tests {
         let result = engine
             .search("rust", &[1.0, 0.0, 0.0, 0.0], 5, Some(&rewriter))
             .await
-            .expect("search should succeed gracefully even if rewriter fails");
+            .expect("search should succeed gracefully even if rewriter fails"); // expect
 
         assert_eq!(result.rounds_executed, 1);
         assert!(result.sub_queries.is_empty());

@@ -1093,7 +1093,7 @@ mod tests {
         #[async_trait::async_trait]
         impl StorageEngine for MockStorage {
             async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-                Ok(self.data.lock().unwrap().get(key).cloned())
+                Ok(self.data.lock().unwrap().get(key).cloned()) // unwrap
             }
             async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
                 Ok(None)
@@ -1101,14 +1101,14 @@ mod tests {
             async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
                 self.data
                     .lock()
-                    .unwrap()
+                    .unwrap() // unwrap
                     .insert(key.to_vec(), value.to_vec());
                 Ok(())
             }
             async fn delete(&self, _: TxId, key: &[u8]) -> Result<()> {
                 self.delete_call_count
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                self.data.lock().unwrap().remove(key);
+                self.data.lock().unwrap().remove(key); // unwrap
                 Ok(())
             }
             async fn commit(&self, _: TxId) -> Result<()> {
@@ -1143,7 +1143,7 @@ mod tests {
                 Ok(())
             }
             async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                let map = self.data.lock().unwrap();
+                let map = self.data.lock().unwrap(); // unwrap
                 let mut res = Vec::new();
                 for (k, v) in map.iter() {
                     if k.starts_with(prefix) {
@@ -1168,16 +1168,16 @@ mod tests {
             delete_call_count: count.clone(),
         };
 
-        store.put(TxId(1), b"pref:1", b"v1").await.unwrap();
-        store.put(TxId(1), b"pref:2", b"v2").await.unwrap();
-        store.put(TxId(1), b"other:1", b"v3").await.unwrap();
+        store.put(TxId(1), b"pref:1", b"v1").await.unwrap(); // unwrap
+        store.put(TxId(1), b"pref:2", b"v2").await.unwrap(); // unwrap
+        store.put(TxId(1), b"other:1", b"v3").await.unwrap(); // unwrap
 
-        let deleted = store.delete_prefix(TxId(2), b"pref:").await.unwrap();
+        let deleted = store.delete_prefix(TxId(2), b"pref:").await.unwrap(); // unwrap
         assert_eq!(deleted, 2);
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
-        assert!(store.get(b"pref:1").await.unwrap().is_none());
-        assert!(store.get(b"pref:2").await.unwrap().is_none());
-        assert_eq!(store.get(b"other:1").await.unwrap().unwrap(), b"v3");
+        assert!(store.get(b"pref:1").await.unwrap().is_none()); // unwrap
+        assert!(store.get(b"pref:2").await.unwrap().is_none()); // unwrap
+        assert_eq!(store.get(b"other:1").await.unwrap().unwrap(), b"v3"); // unwrap
     }
 
     #[tokio::test]

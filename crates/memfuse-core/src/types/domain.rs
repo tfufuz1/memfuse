@@ -831,7 +831,7 @@ mod tests {
         assert_eq!(DistanceMetric::Euclidean.compute_u8(&a, &b).unwrap(), 14); // unwrap
                                                                                // DotProduct: dot = 10*20 + 20*30 = 800 -> inverted: u32::MAX - 800
         assert_eq!(
-            DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(),
+            DistanceMetric::DotProduct.compute_u8(&a, &b).unwrap(), // unwrap
             u32::MAX - 800
         ); // unwrap
            // Cosine: orthogonal vectors → distance 1.0 → 1_000_000
@@ -923,11 +923,11 @@ mod tests {
         let f_f32: Vec<f32> = far_vec.iter().map(|&x| x as f32).collect();
 
         for metric in metrics {
-            let u8_close = metric.compute_u8(&query, &close_vec).unwrap();
-            let u8_far = metric.compute_u8(&query, &far_vec).unwrap();
+            let u8_close = metric.compute_u8(&query, &close_vec).unwrap(); // unwrap
+            let u8_far = metric.compute_u8(&query, &far_vec).unwrap(); // unwrap
 
-            let f32_close = metric.compute(&q_f32, &c_f32).unwrap();
-            let f32_far = metric.compute(&q_f32, &f_f32).unwrap();
+            let f32_close = metric.compute(&q_f32, &c_f32).unwrap(); // unwrap
+            let f32_far = metric.compute(&q_f32, &f_f32).unwrap(); // unwrap
 
             // Ranking order parity: smaller distance MUST mean closer for BOTH f32 and u8
             assert!(
@@ -1016,19 +1016,19 @@ mod tests {
 
         // 0-dim vectors
         assert_eq!(
-            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(),
+            DistanceMetric::Cosine.compute(&empty_a, &empty_b).unwrap(), // unwrap
             1.0
         ); // unwrap
         assert_eq!(
             DistanceMetric::Euclidean
                 .compute(&empty_a, &empty_b)
-                .unwrap(),
+                .unwrap(), // unwrap
             0.0
         ); // unwrap
         assert_eq!(
             DistanceMetric::DotProduct
                 .compute(&empty_a, &empty_b)
-                .unwrap(),
+                .unwrap(), // unwrap
             0.0
         ); // unwrap
 
@@ -1041,6 +1041,7 @@ mod tests {
         assert_eq!(DistanceMetric::Euclidean.compute(&a1, &b1).unwrap(), 1.0); // unwrap
                                                                                // DotProduct: -(3 * 4) = -12.0
         assert_eq!(DistanceMetric::DotProduct.compute(&a1, &b1).unwrap(), -12.0);
+        // unwrap
         // unwrap
     }
 
@@ -1160,18 +1161,18 @@ mod tests {
 
         // Tx #1: MAX_COLLECTION_SEQUENCE - 2 (Valid)
         let tx1 =
-            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 2 should succeed");
+            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 2 should succeed"); // expect
         assert_eq!(tx1.inner(), TxId::MAX_COLLECTION_SEQUENCE - 2);
         assert!(tx1.is_valid_origin());
 
         // Tx #2: MAX_COLLECTION_SEQUENCE - 1 (Valid)
         let tx2 =
-            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 1 should succeed");
+            allocate_simulated(&simulated_next_tx).expect("Allocation at MAX - 1 should succeed"); // expect
         assert_eq!(tx2.inner(), TxId::MAX_COLLECTION_SEQUENCE - 1);
         assert!(tx2.is_valid_origin());
 
         // Tx #3: MAX_COLLECTION_SEQUENCE (Exact upper boundary - Valid)
-        let tx3 = allocate_simulated(&simulated_next_tx).expect("Allocation at MAX should succeed");
+        let tx3 = allocate_simulated(&simulated_next_tx).expect("Allocation at MAX should succeed"); // expect
         assert_eq!(tx3.inner(), TxId::MAX_COLLECTION_SEQUENCE);
         assert!(tx3.is_valid_origin());
 
@@ -1218,13 +1219,13 @@ mod tests {
     fn test_entity_and_edge_try_new_validation() {
         assert!(Entity::try_new(EntityId::new(1), "", "Person").is_err());
         assert!(Entity::try_new(EntityId::new(1), "Alice", "   ").is_err());
-        let valid_ent = Entity::try_new(EntityId::new(1), "Alice", "Person").unwrap();
+        let valid_ent = Entity::try_new(EntityId::new(1), "Alice", "Person").unwrap(); // unwrap
         assert_eq!(valid_ent.name, "Alice");
 
         assert!(Edge::try_new(EntityId::new(1), EntityId::new(2), "", 1.0).is_err());
         assert!(Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", f32::NAN).is_err());
         assert!(Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", -0.5).is_err());
-        let valid_edge = Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", 0.8).unwrap();
+        let valid_edge = Edge::try_new(EntityId::new(1), EntityId::new(2), "KNOWS", 0.8).unwrap(); // unwrap
         assert_eq!(valid_edge.weight, 0.8);
     }
 
@@ -1245,17 +1246,17 @@ mod tests {
             assert_eq!(variant.as_metadata_key(), expected_key);
 
             // Verify Serde serialization produces exact lowercase metadata key
-            let ser = serde_json::to_string(&variant).unwrap();
+            let ser = serde_json::to_string(&variant).unwrap(); // unwrap
             let expected_json = format!("\"{expected_key}\"");
             assert_eq!(ser, expected_json);
 
             // Verify Serde deserialization from lowercase string
-            let deser: MemoryType = serde_json::from_str(&ser).unwrap();
+            let deser: MemoryType = serde_json::from_str(&ser).unwrap(); // unwrap
             assert_eq!(deser, variant);
 
             // Verify Serde deserialization backward compatibility from legacy CamelCase string
             let legacy_json = format!("\"{legacy_camel}\"");
-            let deser_legacy: MemoryType = serde_json::from_str(&legacy_json).unwrap();
+            let deser_legacy: MemoryType = serde_json::from_str(&legacy_json).unwrap(); // unwrap
             assert_eq!(deser_legacy, variant);
         }
     }
@@ -1314,7 +1315,7 @@ mod tests {
 
         for i in 0..KEY_COUNT {
             let key = format!("doc_key_test_sample_{i}");
-            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed");
+            let doc_id = DocId::from_key(&key).expect("DocId::from_key failed"); // expect
             assert!(
                 seen.insert(doc_id.inner()),
                 "Collision detected for DocId at key {key} (index {i})"
@@ -1421,13 +1422,13 @@ mod tests {
         ];
 
         for key in unicode_keys {
-            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key");
-            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key");
+            let doc_id1 = DocId::from_key(key).expect("DocId from unicode key"); // expect
+            let doc_id2 = DocId::from_key(key).expect("DocId from unicode key"); // expect
             assert_eq!(doc_id1, doc_id2);
             assert_ne!(doc_id1.inner(), 0);
 
-            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key");
-            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key");
+            let ent_id1 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
+            let ent_id2 = EntityId::from_key(key).expect("EntityId from unicode key"); // expect
             assert_eq!(ent_id1, ent_id2);
             assert_ne!(ent_id1.inner(), 0);
         }

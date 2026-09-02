@@ -609,18 +609,18 @@ mod tests {
     use tempfile::tempdir;
 
     async fn create_test_collection() -> Collection<LsmStorage, HnswIndex> {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().unwrap(); // unwrap
         let lsm_config = memfuse_store::LsmConfig {
             path: dir.path().to_path_buf(),
             ..Default::default()
         };
-        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
         let index = Arc::new(
             HnswIndex::try_new(memfuse_index::HnswConfig {
                 dimension: 4,
                 ..Default::default()
             })
-            .unwrap(),
+            .unwrap(), // unwrap
         );
         let graph = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(AtomicU64::new(1));
@@ -641,7 +641,7 @@ mod tests {
         use memfuse_core::{Edge, Entity, EntityId};
 
         let col = create_test_collection().await;
-        let tx_id = col.allocate_tx().unwrap();
+        let tx_id = col.allocate_tx().unwrap(); // unwrap
         let tx = DbTransaction::new(col.clone(), tx_id);
 
         let doc_id = DocId::new(100);
@@ -660,7 +660,7 @@ mod tests {
         use memfuse_core::EntityId;
 
         let col = create_test_collection().await;
-        let tx_id = col.allocate_tx().unwrap();
+        let tx_id = col.allocate_tx().unwrap(); // unwrap
         let tx = DbTransaction::new(col.clone(), tx_id);
 
         let doc_id = DocId::new(200);

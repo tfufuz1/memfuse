@@ -751,10 +751,12 @@ impl MemFuse {
         k: usize,
         filter: Option<MetadataFilter>,
     ) -> Result<Vec<SearchResult>> {
-        self.default_col()
-            .await?
-            .search_with_filter(query, k, filter)
-            .await
+        let col = self.default_col().await?;
+        let mut builder = col.query().vector(query).k(k);
+        if let Some(f) = filter {
+            builder = builder.metadata_filter(f);
+        }
+        builder.execute().await
     }
 
     /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
@@ -824,6 +826,7 @@ impl MemFuse {
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<SearchResult>> {
+        #[allow(deprecated)]
         self.default_col()
             .await?
             .search_filtered(query, k, filter)
