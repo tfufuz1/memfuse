@@ -188,6 +188,52 @@ mod tests {
             prop_assert!(score.is_finite(), "Score must be finite");
             prop_assert!(score >= 0.0, "Score must be non-negative");
         }
+
+        #[test]
+        fn prop_bm25_score_term_bounded_across_df_relative_to_n(
+            tf in 0..100_000u32,
+            doc_len in 0..100_000u32,
+            avg_doc_len in 0.0..100_000.0f32,
+            n in 0..100_000u32,
+            df_scenario in 0..5i32,
+            df_offset in 0..1_000u32,
+        ) {
+            let df = match df_scenario {
+                0 => 0, // df = 0
+                1 => n / 2, // df = n / 2
+                2 => n, // df = n
+                3 => n.saturating_add(df_offset), // df >= n (including corrupted df > n)
+                _ => df_offset % (n.saturating_add(1)), // arbitrary df <= n
+            };
+
+            let score = score_term(tf, doc_len, avg_doc_len, df, n);
+
+            // Core safety invariants for ALL inputs
+            prop_assert!(!score.is_nan(), "Score must never be NaN");
+            prop_assert!(score.is_finite(), "Score must be finite");
+            prop_assert!(score >= 0.0, "Score must be non-negative");
+
+            // Independent upper bound assertion:
+            // Since (tf * (k1 + 1)) / (tf + k1 * norm_len) <= (k1 + 1),
+            // and IDF <= ln((2N + 1) / 1) = ln(2N + 1) for valid df >= 0,
+            // or IDF = 1e-6 floor for df > N/2.
+            let max_possible_idf = if n == 0 {
+                1e-6f32
+            } else {
+                ((2.0 * (n as f64) + 1.0).ln() as f32).max(1e-6)
+            };
+            let upper_bound = (BM25_K1 + 1.0) * max_possible_idf + 1e-4; // float safety margin
+
+            prop_assert!(
+                score <= upper_bound,
+                "Score {} exceeded independent theoretical upper bound {} for tf={}, df={}, n={}",
+                score,
+                upper_bound,
+                tf,
+                df,
+                n
+            );
+        }
     }
 
     #[test]
@@ -229,6 +275,22 @@ mod tests {
     fn test_bm25_score_zero_n() {
         let score = score_term(2, 100, 150.0, 10, 0);
         assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_bm25_score_zero_df() {
+        // Dedicated test for Befund 3 (df = 0)
+        let score_std = score_term(2, 100, 150.0, 0, 1000);
+        assert_eq!(
+            score_std, 0.0,
+            "score_term must strictly return 0.0 when df = 0"
+        );
+
+        let score_custom = score_term_with_params(2, 100, 150.0, 0, 1000, 1.2, 0.5);
+        assert_eq!(
+            score_custom, 0.0,
+            "score_term_with_params must strictly return 0.0 when df = 0"
+        );
     }
 
     #[test]

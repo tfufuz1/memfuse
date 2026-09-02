@@ -783,17 +783,17 @@ impl HnswIndex {
                 conn_pos += 1;
 
                 for layer in 0..num_layers as usize {
-                let conns_guard = node.connections[layer].read();
-                let len = conns_guard.len() as u32;
+                    let conns_guard = node.connections[layer].read();
+                    let len = conns_guard.len() as u32;
                     writer
                         .write_all(&len.to_le_bytes())
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                for &conn in conns_guard.iter() {
+                    for &conn in conns_guard.iter() {
                         writer
                             .write_all(&conn.to_le_bytes())
                             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     }
-                conn_pos += 4 + (conns_guard.len() * 4) as u64;
+                    conn_pos += 4 + (conns_guard.len() * 4) as u64;
                 }
             }
             writer
@@ -1186,7 +1186,8 @@ impl HnswIndexCore {
                 if let Some(node) = nodes_guard.get(ram_idx) {
                     if let Some(conn_rwlock) = node.connections.get(layer) {
                         let mut conn_writer = conn_rwlock.write();
-                        conn_writer.retain(|&neighbor_u32| !deleted_guard.contains(neighbor_u32 as u64));
+                        conn_writer
+                            .retain(|&neighbor_u32| !deleted_guard.contains(neighbor_u32 as u64));
                     }
                 }
             }
@@ -3583,7 +3584,10 @@ mod tests {
                 assert!(res.is_ok(), "Search during rebuild must succeed");
                 let docs = res.unwrap(); // unwrap
                 for doc in docs {
-                    assert!(doc.doc_id.inner() >= 50, "Deleted doc_id should not be returned");
+                    assert!(
+                        doc.doc_id.inner() >= 50,
+                        "Deleted doc_id should not be returned"
+                    );
                 }
                 tokio::task::yield_now().await;
             }

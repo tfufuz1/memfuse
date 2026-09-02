@@ -239,9 +239,12 @@ impl GermanCompoundSplitter {
             const INTERFIXES: &[&str] = &["en", "er", "es", "e", "n", "s"];
             for &fuge in INTERFIXES {
                 if norm_sub.ends_with(fuge) && norm_sub.len() > fuge.len() {
-                    let norm_stem = &norm_sub[..norm_sub.len() - fuge.len()];
-                    if norm_stem.len() >= 2 && self.trie.contains(norm_stem) {
-                        return true;
+                    let stem_len = norm_sub.len() - fuge.len();
+                    if norm_sub.is_char_boundary(stem_len) {
+                        let norm_stem = &norm_sub[..stem_len];
+                        if norm_stem.len() >= 2 && self.trie.contains(norm_stem) {
+                            return true;
+                        }
                     }
                 }
             }
@@ -304,6 +307,10 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                     continue;
                 }
 
+                if !token.is_char_boundary(i) {
+                    continue;
+                }
+
                 let sub = &token[i..j];
                 let is_last = j == n;
 
@@ -346,7 +353,11 @@ impl MorphologicalTokenizer for GermanCompoundSplitter {
                 while curr > 0 {
                     if let Some(ref node) = dp[curr] {
                         let prev = node.prev;
-                        path.push(&token[prev..curr]);
+                        if token.is_char_boundary(prev) && token.is_char_boundary(curr) {
+                            path.push(&token[prev..curr]);
+                        } else {
+                            break;
+                        }
                         curr = prev;
                     } else {
                         break;
@@ -1027,5 +1038,109 @@ mod tests {
         assert_eq!(normalize_umlauts(""), "");
         assert_eq!(normalize_umlauts("ÄÖÜß"), "aeoeuess");
         assert_eq!(normalize_umlauts("Grüße aus Köln!"), "gruesse aus koeln!");
+    }
+
+    #[test]
+    fn fuzz_german_compound_splitter_utf8_panic_free_10k() {
+        let splitter = GermanCompoundSplitter::new();
+
+        // Building blocks: German umlauts, 4-byte Emojis, interfixes, common stems, random multi-byte UTF-8 chars
+        let alphabet = [
+            "ä",
+            "ö",
+            "ü",
+            "ß",
+            "Ä",
+            "Ö",
+            "Ü",
+            "😀",
+            "🚀",
+            "🔥",
+            "💡",
+            "🎉",
+            "⚙️",
+            "🦀",
+            "-s-",
+            "-n-",
+            "-en-",
+            "-e-",
+            "-er-",
+            "-es-",
+            "s",
+            "n",
+            "en",
+            "e",
+            "er",
+            "es",
+            "haus",
+            "auto",
+            "schiff",
+            "fahrt",
+            "kapitän",
+            "gesellschaft",
+            "ordnung",
+            "vertrag",
+            " ",
+            "\t",
+            "\n",
+            "1",
+            "2",
+            "3",
+            "!",
+            "@",
+            "#",
+            "$",
+            "%",
+            "^",
+            "&",
+            "*",
+            "(",
+            ")",
+            "äöü",
+            "🚀🔥",
+            "côte",
+            "d'ivoire",
+            "日本語",
+            "العربية",
+            "русский",
+        ];
+
+        // Simple deterministic xorshift64 PRNG for fast, dependency-free fuzzing
+        let mut state: u64 = 0x8A5B_4C3D_2E1F_0099;
+        let mut next_u64 = || {
+            let mut x = state;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            state = x;
+            x
+        };
+
+        let start = std::time::Instant::now();
+
+        for i in 0..10_000 {
+            // Generate a random string composed of 1 to 15 building blocks
+            let num_blocks = (next_u64() % 15 + 1) as usize;
+            let mut test_str = String::new();
+            for _ in 0..num_blocks {
+                let idx = (next_u64() as usize) % alphabet.len();
+                test_str.push_str(alphabet[idx]);
+            }
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let lower = test_str.to_lowercase();
+                let norm = normalize_umlauts(&lower);
+                let _ = splitter.decompose(&norm);
+            }));
+
+            assert!(
+                result.is_ok(),
+                "Fuzz iteration {} failed with panic for string: {:?}",
+                i,
+                test_str
+            );
+        }
+
+        println!("Fuzz 10,000 iterations completed in {:?}", start.elapsed());
     }
 }
