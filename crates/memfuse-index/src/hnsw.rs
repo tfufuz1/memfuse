@@ -57,12 +57,19 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
-/// Standard-Löschanteil (0.30 = 30 % gelöschte Knoten), ab dem ein Rebuild getriggert wird.
+/// Standard-Löschanteil (0.10 = 10 % gelöschte Knoten), ab dem ein Rebuild getriggert wird.
 ///
-/// Löschanteil, ab dem ein Rebuild ausgelöst wird (0.30 = 30 % gelöscht).
+/// Löschanteil, ab dem ein Rebuild ausgelöst wird (0.10 = 10 % gelöscht).
 /// `HnswConfig.rebuild_threshold` speichert den KOMPLEMENTÄREN Aktivitätsanteil
 /// (1.0 - Löschanteil) und wird intern mit dem aktuellen Aktivitäts-Score verglichen.
-pub const HNSW_REBUILD_DELETION_RATIO: f64 = 0.30;
+///
+/// Trade-off:
+/// - Niedrigerer Löschanteil-Schwellenwert (z.B. 0.10 = 10% gelöscht, Aktivitätsanteil 0.90):
+///   Rebuilds werden häufiger ausgelöst. Das reduziert Space Amplification und Suchlatenz
+///   (weniger tote Knoten im Graph), benötigt jedoch mehr Hintergrund-CPU.
+/// - Höherer Löschanteil-Schwellenwert (z.B. 0.30 = 30% gelöscht, Aktivitätsanteil 0.70):
+///   Spart Rebuild-CPU, führt aber bei lösch-intensiven Workloads zu höherer Tombstone-Akkumulation.
+pub const HNSW_REBUILD_DELETION_RATIO: f64 = 0.10;
 
 /// Configuration parameters for the HNSW index.
 #[derive(Debug, Clone)]
@@ -85,7 +92,7 @@ pub struct HnswConfig {
     /// Distance metric.
     pub distance_metric: DistanceMetric,
     /// Rebuild threshold (fraction of active nodes remaining below which rebuild is triggered or warning is logged).
-    /// Defaults to `1.0 - HNSW_REBUILD_DELETION_RATIO` (0.70, i.e., rebuild when active ratio falls below 70%).
+    /// Defaults to `1.0 - HNSW_REBUILD_DELETION_RATIO` (0.90, i.e., rebuild when active ratio falls below 90%).
     pub rebuild_threshold: f64,
     /// Whether to apply SQ8 Scalar Quantization to the index vectors to reduce RAM.
     pub quantize: bool,
@@ -103,7 +110,7 @@ impl Default for HnswConfig {
             ef_construction: 200,
             ef_search: 64,
             distance_metric: DistanceMetric::Cosine,
-            // Rebuild wird getriggert, wenn der Aktivitätsanteil unter 70% fällt (1.0 - 0.30 = 0.70)
+            // Rebuild wird getriggert, wenn der Aktivitätsanteil unter 90% fällt (1.0 - 0.10 = 0.90)
             rebuild_threshold: 1.0 - HNSW_REBUILD_DELETION_RATIO,
             quantize: false,
             quantizer_recalibration_sample_size: 10_000,
@@ -133,6 +140,12 @@ impl HnswConfig {
             return Err(MemFuseError::invalid_input(format!(
                 "ef_construction ({}) must be >= m ({})",
                 self.ef_construction, self.m
+            )));
+        }
+        if !(0.0..=1.0).contains(&self.rebuild_threshold) {
+            return Err(MemFuseError::invalid_input(format!(
+                "rebuild_threshold ({}) must be between 0.0 and 1.0",
+                self.rebuild_threshold
             )));
         }
         Ok(())
@@ -198,6 +211,17 @@ impl HnswConfigBuilder {
         self
     }
 
+    /// Sets the rebuild threshold (fraction of active non-deleted nodes remaining below which rebuild is triggered).
+    /// Value must be in range `0.0..=1.0`. For example, `0.90` triggers rebuild when >10% of nodes are deleted.
+    ///
+    /// Trade-off: Higher threshold (e.g. 0.90, i.e. 10% deleted) triggers rebuilds more frequently,
+    /// using more background CPU but reducing RAM space amplification and search latency.
+    /// Lower threshold (e.g. 0.70, i.e. 30% deleted) saves CPU at the expense of higher tombstone accumulation.
+    pub fn rebuild_threshold(mut self, threshold: f64) -> Self {
+        self.config.rebuild_threshold = threshold.clamp(0.0, 1.0);
+        self
+    }
+
     /// Build the configuration after validating bounds.
     pub fn build(self) -> Result<HnswConfig> {
         self.config.validate()?;
@@ -219,7 +243,7 @@ pub enum VectorData {
 struct HnswNode {
     doc_id: DocId,
     vector: VectorData,
-    connections: Vec<Vec<u32>>,
+    connections: Vec<RwLock<Vec<u32>>>,
     max_layer: usize,
     committed_tx: u64,
 }
@@ -277,6 +301,8 @@ pub struct HnswIndexCore {
     last_tx_id: AtomicU64,
     /// Sequence log tracking insertions and deletions for snapshot isolation (`search_at`).
     seq_log: RwLock<memfuse_core::SequenceLog>,
+    pub rebuild_count: AtomicU64,
+    pub visited_dead_nodes: AtomicU64,
 }
 
 impl HnswIndex {
@@ -304,6 +330,8 @@ impl HnswIndex {
                 mmap_index: RwLock::new(None),
                 last_tx_id: AtomicU64::new(0),
                 seq_log: RwLock::new(memfuse_core::SequenceLog::new()),
+                rebuild_count: AtomicU64::new(0),
+                visited_dead_nodes: AtomicU64::new(0),
             }),
         })
     }
@@ -335,6 +363,8 @@ impl HnswIndex {
                 mmap_index: RwLock::new(None),
                 last_tx_id: AtomicU64::new(0),
                 seq_log: RwLock::new(memfuse_core::SequenceLog::new()),
+                rebuild_count: AtomicU64::new(0),
+                visited_dead_nodes: AtomicU64::new(0),
             }),
         }
     }
@@ -541,6 +571,21 @@ impl HnswIndex {
         Ok(results)
     }
 
+    /// Returns the fraction of deleted nodes in the index (0.0 to 1.0).
+    pub fn deleted_ratio(&self) -> f64 {
+        self.inner.deleted_ratio()
+    }
+
+    /// Returns the total number of completed full index rebuilds.
+    pub fn rebuild_count(&self) -> u64 {
+        self.inner.rebuild_count()
+    }
+
+    /// Returns the total count of visited dead nodes during graph search/traversal.
+    pub fn visited_dead_nodes(&self) -> u64 {
+        self.inner.visited_dead_nodes()
+    }
+
     /// Graph connectivity score (1.0 = perfect, 0.0 = fully fragmented).
     pub fn connectivity_score(&self) -> f64 {
         self.inner.connectivity_score()
@@ -738,17 +783,17 @@ impl HnswIndex {
                 conn_pos += 1;
 
                 for layer in 0..num_layers as usize {
-                    let conns = &node.connections[layer];
-                    let len = conns.len() as u32;
+                let conns_guard = node.connections[layer].read();
+                let len = conns_guard.len() as u32;
                     writer
                         .write_all(&len.to_le_bytes())
                         .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-                    for &conn in conns {
+                for &conn in conns_guard.iter() {
                         writer
                             .write_all(&conn.to_le_bytes())
                             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
                     }
-                    conn_pos += 4 + (conns.len() * 4) as u64;
+                conn_pos += 4 + (conns_guard.len() * 4) as u64;
                 }
             }
             writer
@@ -1030,20 +1075,20 @@ impl HnswIndexCore {
                 return Ok(Cow::Owned(mmap.get_connections(&record, layer)?));
             }
             let ram_idx = idx - ctx.mmap_node_count;
-            return Ok(Cow::Borrowed(
+            return Ok(Cow::Owned(
                 ctx.nodes[ram_idx]
                     .connections
                     .get(layer)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]),
+                    .map(|v| v.read().clone())
+                    .unwrap_or_default(),
             ));
         }
-        Ok(Cow::Borrowed(
+        Ok(Cow::Owned(
             ctx.nodes[idx]
                 .connections
                 .get(layer)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]),
+                .map(|v| v.read().clone())
+                .unwrap_or_default(),
         ))
     }
 
@@ -1104,8 +1149,15 @@ impl HnswIndexCore {
             }
 
             let connections = self.resolve_connections(current.index, layer, &ctx)?;
+            let deleted_guard = self.deleted_nodes.read();
+            let mut has_dead_neighbors = false;
+
             for &neighbor_u32 in connections.iter() {
                 let neighbor = neighbor_u32 as usize;
+                if deleted_guard.contains(neighbor as u64) {
+                    self.visited_dead_nodes.fetch_add(1, Ordering::Relaxed);
+                    has_dead_neighbors = true;
+                }
                 if visited.insert(neighbor) {
                     let dist = self.resolve_dist(neighbor, query, query_quantized, &ctx)?;
                     let is_better = match results.peek() {
@@ -1123,6 +1175,18 @@ impl HnswIndexCore {
                         if results.len() > ef {
                             results.pop();
                         }
+                    }
+                }
+            }
+
+            // Incremental Lazy Neighbor Pruning:
+            // When traversing a RAM node that contains dead neighbors, lazily filter out tombstoned nodes from its adjacency list.
+            if has_dead_neighbors && current.index >= mmap_node_count {
+                let ram_idx = current.index - mmap_node_count;
+                if let Some(node) = nodes_guard.get(ram_idx) {
+                    if let Some(conn_rwlock) = node.connections.get(layer) {
+                        let mut conn_writer = conn_rwlock.write();
+                        conn_writer.retain(|&neighbor_u32| !deleted_guard.contains(neighbor_u32 as u64));
                     }
                 }
             }
@@ -1293,10 +1357,14 @@ impl HnswIndexCore {
         let new_idx = {
             let mut nodes = self.nodes.write();
             let idx = nodes.len();
+            let mut conns = Vec::with_capacity(new_layer + 1);
+            for _ in 0..=new_layer {
+                conns.push(RwLock::new(Vec::new()));
+            }
             nodes.push(HnswNode {
                 doc_id: id,
                 vector: vector_data,
-                connections: vec![vec![]; new_layer + 1],
+                connections: conns,
                 max_layer: new_layer,
                 committed_tx: 0,
             });
@@ -1380,7 +1448,11 @@ impl HnswIndexCore {
                 .unwrap_or(0);
 
             if let Some(new_node) = nodes.get_mut(new_idx - mmap_node_count) {
-                new_node.connections = final_connections.clone();
+                let mut conns = Vec::with_capacity(final_connections.len());
+                for layer_conns in final_connections.iter() {
+                    conns.push(RwLock::new(layer_conns.clone()));
+                }
+                new_node.connections = conns;
             } else {
                 return Err(MemFuseError::Index(format!(
                     "HNSW new node missing at index {}",
@@ -1409,7 +1481,8 @@ impl HnswIndexCore {
                                     neighbor_idx
                                 ))
                             })?;
-                        if let Some(conn_layer) = neighbor_node.connections.get_mut(layer) {
+                        if let Some(conn_layer_lock) = neighbor_node.connections.get(layer) {
+                            let mut conn_layer = conn_layer_lock.write();
                             conn_layer.push(new_idx as u32);
                             if conn_layer.len() > self.config.m * 2 {
                                 (true, conn_layer.clone())
@@ -1448,8 +1521,8 @@ impl HnswIndexCore {
                         };
 
                         if let Some(neighbor_node) = nodes.get_mut(neighbor_idx - mmap_node_count) {
-                            if let Some(cl) = neighbor_node.connections.get_mut(layer) {
-                                *cl = selected;
+                            if let Some(cl) = neighbor_node.connections.get(layer) {
+                                *cl.write() = selected;
                             }
                         }
                     }
@@ -1556,6 +1629,21 @@ impl HnswIndexCore {
             }
         }
         Ok(())
+    }
+
+    /// Returns the fraction of deleted nodes in the index (0.0 to 1.0).
+    pub fn deleted_ratio(&self) -> f64 {
+        1.0 - self.connectivity_score()
+    }
+
+    /// Returns the total number of completed full index rebuilds.
+    pub fn rebuild_count(&self) -> u64 {
+        self.rebuild_count.load(Ordering::SeqCst)
+    }
+
+    /// Returns the total count of visited dead nodes during graph search/traversal.
+    pub fn visited_dead_nodes(&self) -> u64 {
+        self.visited_dead_nodes.load(Ordering::SeqCst)
     }
 
     /// Graph connectivity score (1.0 = perfect, 0.0 = fully fragmented).
@@ -1737,6 +1825,7 @@ impl HnswIndexCore {
         }
 
         self.rebuilding.store(false, Ordering::SeqCst);
+        self.rebuild_count.fetch_add(1, Ordering::SeqCst);
         tracing::info!("HNSW rebuild completed in {:?}", start_time.elapsed());
         Ok(())
     }
@@ -2258,7 +2347,7 @@ impl VectorIndex for HnswIndex {
             .map(|n| {
                 n.connections
                     .iter()
-                    .map(|c| c.len() * std::mem::size_of::<u32>())
+                    .map(|c| c.read().len() * std::mem::size_of::<u32>())
                     .sum::<usize>()
             })
             .sum();
@@ -2273,6 +2362,8 @@ impl VectorIndex for HnswIndex {
                 + connection_memory
                 + (nodes.len() * std::mem::size_of::<HnswNode>()),
             num_layers: self.inner.max_layer.load(Ordering::SeqCst) as usize + 1,
+            deleted_ratio: self.deleted_ratio(),
+            rebuild_count: self.rebuild_count(),
         })
     }
 }
@@ -3358,5 +3449,149 @@ mod tests {
         );
         assert!(q.maxes[0] > initial_maxes[0]);
         assert!(q.mins[1] < initial_mins[1]);
+    }
+
+    #[tokio::test]
+    async fn test_lazy_neighbor_pruning_reduces_dead_node_visits() {
+        // Build index with high rebuild_threshold (1.0 = never trigger automatic rebuild) to test lazy pruning in isolation
+        let config = HnswConfigBuilder::new(4)
+            .m(16)
+            .ef_construction(100)
+            .ef_search(64)
+            .rebuild_threshold(0.0) // Disable automatic rebuild
+            .build()
+            .unwrap(); // unwrap
+
+        let index = HnswIndex::try_new(config).unwrap(); // unwrap
+        let tx1 = TxId::new(1);
+
+        let total_vectors = 100u64;
+        for i in 0..total_vectors {
+            let v = vec![i as f32, (i % 10) as f32, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap
+        }
+        index.commit(tx1).await.unwrap(); // unwrap
+
+        // Delete 30% of vectors (30 vectors)
+        let tx2 = TxId::new(2);
+        for i in (0..total_vectors).step_by(3) {
+            index.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
+        }
+        index.commit(tx2).await.unwrap(); // unwrap
+
+        let query = vec![50.0, 0.0, 0.0, 0.0];
+
+        // 1. Initial search pass: encounters dead nodes and triggers lazy pruning
+        let dead_visits_before = index.visited_dead_nodes();
+        for _ in 0..10 {
+            let _ = index.search(&query, 5).await.unwrap(); // unwrap
+        }
+        let dead_visits_first_pass = index.visited_dead_nodes() - dead_visits_before;
+
+        // 2. Second search pass: because dead neighbors were lazily pruned, dead node encounters should drop significantly
+        let dead_visits_mid = index.visited_dead_nodes();
+        for _ in 0..10 {
+            let _ = index.search(&query, 5).await.unwrap(); // unwrap
+        }
+        let dead_visits_second_pass = index.visited_dead_nodes() - dead_visits_mid;
+
+        assert!(
+            dead_visits_second_pass < dead_visits_first_pass,
+            "Lazy neighbor pruning must reduce visited dead node count on subsequent searches (pass 1: {}, pass 2: {})",
+            dead_visits_first_pass,
+            dead_visits_second_pass
+        );
+    }
+
+    #[tokio::test]
+    async fn test_configurable_rebuild_threshold() {
+        // Test custom rebuild_threshold via HnswConfigBuilder
+        let config = HnswConfigBuilder::new(4)
+            .rebuild_threshold(0.85) // Rebuild when active ratio falls below 85% (>15% deleted)
+            .build()
+            .unwrap(); // unwrap
+
+        let index = HnswIndex::try_new(config).unwrap(); // unwrap
+        let tx1 = TxId::new(1);
+
+        for i in 0u64..100 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap
+        }
+        index.commit(tx1).await.unwrap(); // unwrap
+
+        assert!(!index.is_rebuild_required());
+
+        // Delete 10 vectors -> 10% deleted -> score = 0.90 >= 0.85 (no rebuild required)
+        let tx2 = TxId::new(2);
+        for i in 0u64..10 {
+            index.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
+        }
+        index.commit(tx2).await.unwrap(); // unwrap
+
+        assert!(!index.is_rebuild_required());
+        assert_eq!(index.rebuild_count(), 0);
+
+        // Delete 10 more vectors -> 20% deleted -> score = 0.80 < 0.85 (rebuild required!)
+        let tx3 = TxId::new(3);
+        for i in 10u64..20 {
+            index.delete(tx3, DocId::new(i)).await.unwrap(); // unwrap
+        }
+        index.commit(tx3).await.unwrap(); // unwrap
+
+        let start = tokio::time::Instant::now();
+        while index.rebuild_count() == 0 && start.elapsed() < std::time::Duration::from_secs(5) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        assert!(index.rebuild_count() >= 1);
+        assert!(!index.is_rebuild_required());
+    }
+
+    #[tokio::test]
+    async fn test_parallel_search_during_rebuild_non_blocking() {
+        // Use a low rebuild threshold so commit() won't auto-trigger background rebuild
+        let config = HnswConfigBuilder::new(4)
+            .rebuild_threshold(0.10)
+            .build()
+            .unwrap(); // unwrap
+
+        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap()); // unwrap
+        let tx1 = TxId::new(1);
+
+        for i in 0u64..200 {
+            let v = vec![i as f32, (i % 5) as f32, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap
+        }
+        index.commit(tx1).await.unwrap(); // unwrap
+
+        // Delete 50 vectors (25% deleted, < 90% threshold so auto-rebuild is not triggered)
+        let tx2 = TxId::new(2);
+        for i in 0u64..50 {
+            index.delete(tx2, DocId::new(i)).await.unwrap(); // unwrap
+        }
+        index.commit(tx2).await.unwrap(); // unwrap
+
+        assert_eq!(index.rebuild_count(), 0);
+
+        // Spawn parallel searches while rebuild runs
+        let index_search = std::sync::Arc::clone(&index);
+        let search_handle = tokio::spawn(async move {
+            let query = vec![150.0, 0.0, 0.0, 0.0];
+            for _ in 0..100 {
+                let res = index_search.search(&query, 5).await;
+                assert!(res.is_ok(), "Search during rebuild must succeed");
+                let docs = res.unwrap(); // unwrap
+                for doc in docs {
+                    assert!(doc.doc_id.inner() >= 50, "Deleted doc_id should not be returned");
+                }
+                tokio::task::yield_now().await;
+            }
+        });
+
+        index.rebuild().await.unwrap(); // unwrap
+        search_handle.await.unwrap(); // unwrap
+
+        assert_eq!(index.rebuild_count(), 1);
     }
 }

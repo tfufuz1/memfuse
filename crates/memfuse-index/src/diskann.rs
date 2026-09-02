@@ -974,6 +974,8 @@ impl VectorIndex for DiskAnnIndex {
             num_vectors: count,
             memory_usage_bytes: cache_usage,
             num_layers: 1,
+            deleted_ratio: 0.0,
+            rebuild_count: 0,
         })
     }
 }
