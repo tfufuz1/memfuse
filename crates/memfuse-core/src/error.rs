@@ -181,6 +181,10 @@ pub enum MemFuseError {
         /// Detail text describing why capability is unsupported.
         reason: String,
     },
+
+    /// Optimistic concurrency control stale read or version conflict.
+    #[error("Stale read / OCC conflict: {0}")]
+    StaleRead(String),
 }
 
 impl MemFuseError {

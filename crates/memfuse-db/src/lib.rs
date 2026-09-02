@@ -81,7 +81,9 @@ pub mod collection;
 pub mod context;
 pub mod context_compaction;
 
-pub use context_compaction::{CompactedContext, CompactionStrategy, ContextCompactor, StatusToken};
+pub use context_compaction::{
+    CompactedContext, CompactionStrategy, ConsolidationSession, ContextCompactor, StatusToken,
+};
 
 #[cfg(feature = "sandbox")]
 #[async_trait::async_trait]
@@ -116,6 +118,9 @@ pub use memfuse_text::Language;
 ///
 /// # Phase-2-Roadmap
 /// Implementiert: "ProvenanceRecord (abfragbarer Herkunftsnachweis pro Suchergebnis)"
+///
+/// # Invariants
+/// - INV-PROV-1: sum(signal_contributions[*].rrf_contribution) ≈ unboosted RRF score (|Δ| < 1e-6)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvenanceRecord {
     /// Vektor-Distanz vor Normalisierung (None falls Vektor-Signal nicht gefeuert)
@@ -145,6 +150,25 @@ pub struct ProvenanceRecord {
     /// Index-Typ der das Ergebnis geliefert hat ("hnsw", "bm25", "graph", "diskann")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index_type: Option<String>,
+
+    /// Per-signal RRF attribution: maps signal name to its contribution details.
+    /// INV-PROV-1: The sum of all rrf_contribution values equals the unboosted RRF score.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub signal_contributions: std::collections::HashMap<String, SignalContribution>,
+}
+
+/// Detailed contribution of a single signal to the final RRF score.
+///
+/// Enables 4-signal attribution auditing: "Why did the agent remember fact X?"
+/// by recording the exact fraction each signal contributed to the fusion score.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignalContribution {
+    /// Raw score from the signal's native scoring system (e.g., cosine distance, BM25 TF-IDF).
+    pub raw_score: f32,
+    /// 1-indexed rank of the document within this signal's result list.
+    pub rank: u32,
+    /// Absolute RRF contribution: weight / (k + rank + 1).
+    pub rrf_contribution: f32,
 }
 
 /// User-facing search result containing the ID, score, and optional metadata.
@@ -1903,6 +1927,7 @@ mod tests {
             },
             source_collection: Some("test_col".to_string()),
             index_type: Some("hnsw".to_string()),
+            signal_contributions: std::collections::HashMap::new(),
         };
         let json = serde_json::to_string(&p).expect("serialize");
         let back: ProvenanceRecord = serde_json::from_str(&json).expect("deserialize");

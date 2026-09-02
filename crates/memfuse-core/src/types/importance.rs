@@ -61,6 +61,11 @@ pub enum DecayFunction {
         /// Transaction distance threshold before step reduction.
         access_count_floor: u32,
     },
+    /// Exponential decay measured in wall-clock seconds (bi-temporal decoupling).
+    WallClockExponential {
+        /// Half-life in elapsed wall-clock seconds.
+        half_life_secs: u64,
+    },
 }
 
 impl DecayFunction {
@@ -71,6 +76,11 @@ impl DecayFunction {
     /// # Invarianten & Edge Cases
     /// - If `now_tx < created_at_tx` (e.g., due to snapshot reads or TxId rewind), returns `1.0`.
     /// - Never panics under any combination of TxId values or zero division.
+    ///
+    /// # Bi-Temporal Note
+    /// For `Exponential` and `StepFloor`, decay is measured in TxId distance (mutation events),
+    /// NOT wall-clock time. In systems with high background activity, TxIds advance rapidly
+    /// causing premature decay. Use `WallClockExponential` for time-based decay.
     pub fn decay_factor(&self, created_at_tx: TxId, now_tx: TxId) -> f32 {
         let created_raw = created_at_tx.inner();
         let now_raw = now_tx.inner();
@@ -100,12 +110,54 @@ impl DecayFunction {
                     0.5
                 }
             }
+            Self::WallClockExponential { .. } => {
+                // Wall-clock decay cannot be computed from TxId alone.
+                // Return 1.0 (no decay) — callers should use decay_factor_wallclock() instead.
+                1.0
+            }
         };
 
         if factor.is_nan() || !factor.is_finite() {
             0.0
         } else {
             factor.clamp(0.0, 1.0)
+        }
+    }
+
+    /// Wall-clock based decay factor calculation.
+    ///
+    /// Returns a factor in `[0.0, 1.0]` based on elapsed wall-clock seconds.
+    /// For non-WallClockExponential variants, delegates to the TxId-based decay_factor.
+    ///
+    /// # Arguments
+    /// * `created_at_epoch_secs` - Unix timestamp (seconds) when the memory was created.
+    /// * `now_epoch_secs` - Current Unix timestamp (seconds).
+    /// * `created_at_tx` - TxId at creation time (used for TxId-based variants).
+    /// * `now_tx` - Current TxId (used for TxId-based variants).
+    pub fn decay_factor_wallclock(
+        &self,
+        created_at_epoch_secs: u64,
+        now_epoch_secs: u64,
+        created_at_tx: TxId,
+        now_tx: TxId,
+    ) -> f32 {
+        match self {
+            Self::WallClockExponential { half_life_secs } => {
+                if now_epoch_secs <= created_at_epoch_secs {
+                    return 1.0;
+                }
+                let elapsed = now_epoch_secs - created_at_epoch_secs;
+                if elapsed == 0 || *half_life_secs == 0 {
+                    return if *half_life_secs == 0 { 0.0 } else { 1.0 };
+                }
+                let factor = 0.5f32.powf(elapsed as f32 / *half_life_secs as f32);
+                if factor.is_nan() || !factor.is_finite() {
+                    0.0
+                } else {
+                    factor.clamp(0.0, 1.0)
+                }
+            }
+            _ => self.decay_factor(created_at_tx, now_tx),
         }
     }
 }
@@ -221,5 +273,49 @@ mod tests {
         // now_tx = 120 (1 half life elapsed) -> 0.8 * 0.5 = 0.4
         let eff = importance.effective_score(TxId::new(120));
         assert!((eff - 0.4).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_decay_factor_wall_clock_exponential() {
+        let decay = DecayFunction::WallClockExponential {
+            half_life_secs: 3600, // 1 hour half-life
+        };
+        let created_epoch = 1_700_000_000u64;
+        let created_tx = TxId::new(10);
+        let now_tx = TxId::new(100);
+
+        // TxId-based decay_factor returns 1.0 (requires wall-clock time)
+        assert_eq!(decay.decay_factor(created_tx, now_tx), 1.0);
+
+        // Same time -> 1.0
+        let f0 = decay.decay_factor_wallclock(created_epoch, created_epoch, created_tx, now_tx);
+        assert_eq!(f0, 1.0);
+
+        // 1 half-life elapsed (3600 secs) -> 0.5
+        let f1 = decay.decay_factor_wallclock(
+            created_epoch,
+            created_epoch + 3600,
+            created_tx,
+            now_tx,
+        );
+        assert!((f1 - 0.5).abs() < 1e-5);
+
+        // 2 half-lives elapsed (7200 secs) -> 0.25
+        let f2 = decay.decay_factor_wallclock(
+            created_epoch,
+            created_epoch + 7200,
+            created_tx,
+            now_tx,
+        );
+        assert!((f2 - 0.25).abs() < 1e-5);
+
+        // Out of order timestamps (now < created) -> 1.0
+        let f_rev = decay.decay_factor_wallclock(
+            created_epoch + 100,
+            created_epoch,
+            created_tx,
+            now_tx,
+        );
+        assert_eq!(f_rev, 1.0);
     }
 }

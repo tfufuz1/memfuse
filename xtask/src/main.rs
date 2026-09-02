@@ -1118,12 +1118,6 @@ fn main() {
                 process::exit(1);
             }
         }
-        "check-jules-context-freshness" => {
-            let success = run_check_jules_context_freshness();
-            if !success {
-                process::exit(1);
-            }
-        }
         "run-community-detection" => {
             println!("=== xtask run-community-detection ===");
             println!(
@@ -1136,12 +1130,6 @@ fn main() {
             let tags = scan_tags("crates");
             let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
             run_context_tags(&tags, extra_args);
-        }
-        "check-jules-context-freshness" => {
-            let success = run_check_jules_context_freshness();
-            if !success {
-                process::exit(1);
-            }
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);

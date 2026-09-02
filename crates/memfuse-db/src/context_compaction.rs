@@ -12,7 +12,8 @@
 //! Replaces stale tool outputs and long conversation histories with compact status tokens
 //! to preserve the LLM context window.
 
-use memfuse_core::{ContextChunk, DocId, Result, TokenBudget};
+use crate::collection::Collection;
+use memfuse_core::{ContextChunk, DocId, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
 use memfuse_ollama::OllamaClient;
 
 /// Strategie für Context Compaction.
@@ -233,6 +234,142 @@ impl ContextCompactor {
             "[Kompaktiert: {} Tokens — {}...]",
             chunk.token_count, preview
         )
+    }
+}
+
+/// Optimistic Concurrency Control (OCC) Consolidation Session for Sleep-Cycle Memory Compaction.
+///
+/// Prevents lost updates / phantom erasures by verifying that no source documents were modified
+/// while asynchronous LLM summarization was in progress. Also journals a `CommitIntent::Consolidation`
+/// entry into storage for crash resilience (INV-CONSOLIDATE-1, INV-CONSOLIDATE-2).
+pub struct ConsolidationSession<'a, S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
+    /// Reference to the active collection.
+    pub collection: &'a Collection<S, V>,
+    /// Source document IDs and their transaction IDs captured at read snapshot time.
+    pub source_docs: Vec<(DocId, TxId)>,
+    /// Storage key for the consolidation intent in WAL/LSM.
+    pub intent_key: Vec<u8>,
+    /// Target document identifier for the synthesized memory.
+    pub target_id: DocId,
+    /// Base transaction ID allocated when session started.
+    pub base_tx: TxId,
+}
+
+impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
+    /// Starts a consolidation session, snapshotting the version of each source document
+    /// and writing a `CommitIntent::Consolidation` intent to storage.
+    pub async fn start(
+        collection: &'a Collection<S, V>,
+        source_doc_ids: &[DocId],
+        target_id: DocId,
+    ) -> Result<Self> {
+        let base_tx = collection.allocate_tx()?;
+        let mut source_docs = Vec::with_capacity(source_doc_ids.len());
+        for &doc_id in source_doc_ids {
+            let tx = collection.get_doc_tx(doc_id).await?.unwrap_or(base_tx);
+            source_docs.push((doc_id, tx));
+        }
+
+        let intent_key = collection.namespaced_key(&target_id.inner().to_le_bytes(), 3);
+        let intent = crate::transaction::CommitIntent::Consolidation {
+            source_docs: source_docs.clone(),
+            target_id,
+            base_tx,
+        };
+        let intent_bytes = serde_json::to_vec(&intent)?;
+        collection.storage().put(base_tx, &intent_key, &intent_bytes).await?;
+        collection.storage().commit(base_tx).await?;
+
+        Ok(Self {
+            collection,
+            source_docs,
+            intent_key,
+            target_id,
+            base_tx,
+        })
+    }
+
+    /// Validates optimistic concurrency control: checks that every source document
+    /// has NOT been mutated since the consolidation session started.
+    pub async fn validate_occ(&self) -> Result<()> {
+        for &(doc_id, expected_tx) in &self.source_docs {
+            match self.collection.get_doc_tx(doc_id).await? {
+                Some(current_tx) => {
+                    if current_tx.inner() > expected_tx.inner() {
+                        return Err(memfuse_core::MemFuseError::StaleRead(format!(
+                            "OCC conflict: Document {:?} was mutated during consolidation (snapshot tx={}, current tx={})",
+                            doc_id, expected_tx, current_tx
+                        )));
+                    }
+                }
+                None => {
+                    return Err(memfuse_core::MemFuseError::StaleRead(format!(
+                        "OCC conflict: Document {:?} was deleted or missing during consolidation",
+                        doc_id
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Cancels / aborts the consolidation session, removing the intent key.
+    pub async fn abort(self) -> Result<()> {
+        let abort_tx = self.collection.allocate_tx()?;
+        self.collection.storage().delete(abort_tx, &self.intent_key).await?;
+        self.collection.storage().commit(abort_tx).await?;
+        Ok(())
+    }
+
+    /// Commits the consolidated document and removes the source documents.
+    pub async fn commit(
+        self,
+        target_string_id: &str,
+        embedding: &[f32],
+        summary_content: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let _guard = self.collection.insert_lock.lock().await;
+
+        // 1. Strict OCC validation under lock
+        self.validate_occ().await?;
+
+        // 2. Prepare transaction
+        let mut db_tx = self.collection.begin_transaction()?;
+
+        // 3. Insert target consolidated document
+        let mut final_metadata = metadata.unwrap_or_else(|| serde_json::json!({}));
+        if let Some(obj) = final_metadata.as_object_mut() {
+            obj.insert("consolidated".to_string(), serde_json::json!(true));
+            obj.insert(
+                "source_doc_ids".to_string(),
+                serde_json::json!(self.source_docs.iter().map(|(d, _)| d.inner()).collect::<Vec<_>>()),
+            );
+            obj.insert("summary".to_string(), serde_json::json!(summary_content));
+        }
+
+        self.collection
+            .insert_op(&db_tx, target_string_id, embedding, Some(final_metadata))
+            .await?;
+
+        // 4. Delete source docs
+        for &(src_id, _) in &self.source_docs {
+            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            if let Some(val) = self.collection.storage().get(&doc_key).await? {
+                if let Ok(meta) = serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
+                    let _ = self.collection.delete_op(&mut db_tx, &meta.id).await;
+                }
+            }
+        }
+
+        // 5. Delete intent key
+        let commit_tx = db_tx.tx_id;
+        self.collection.storage().delete(commit_tx, &self.intent_key).await?;
+
+        // 6. Commit transaction
+        db_tx.commit().await?;
+
+        Ok(())
     }
 }
 

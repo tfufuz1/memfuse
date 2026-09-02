@@ -45,6 +45,12 @@ pub enum CommitIntent {
     Committed,
     /// Transaction was aborted and compensated.
     Aborted,
+    /// Memory consolidation intent (Sleep-Cycle OCC).
+    Consolidation {
+        source_docs: Vec<(DocId, TxId)>,
+        target_id: DocId,
+        base_tx: TxId,
+    },
 }
 
 /// A transaction wrapper that ensures atomic multi-index commits across LSM-Store, HNSW-Index, Text-Index, and Graph-Index.

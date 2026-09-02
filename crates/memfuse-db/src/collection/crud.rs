@@ -7,7 +7,9 @@
 use super::{
     ensure_importance_metadata, extract_text, Collection, StoredDocument, StoredDocumentMeta,
 };
-use memfuse_core::{DocId, EntityId, Result, StorageEngine, VectorIndex, EXPIRY_METADATA_KEY};
+use memfuse_core::{
+    DocId, EntityId, Result, StorageEngine, TxId, VectorIndex, EXPIRY_METADATA_KEY,
+};
 
 pub(super) fn validate_doc_id(id: &str) -> Result<()> {
     if id.is_empty() {
@@ -260,6 +262,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut metadata = metadata;
         let text_opt = extract_text(&metadata);
         ensure_importance_metadata(&mut metadata, tx, text_opt.as_deref());
+        if let Some(serde_json::Value::Object(ref mut map)) = metadata {
+            map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
+        }
 
         let stored = StoredDocument {
             id: id.to_string(),
@@ -535,6 +540,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut metadata = metadata;
         let text_opt = extract_text(&metadata);
         ensure_importance_metadata(&mut metadata, tx, text_opt.as_deref());
+        if let Some(serde_json::Value::Object(ref mut map)) = metadata {
+            map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
+        }
 
         let stored = StoredDocument {
             id: id.to_string(),
@@ -574,6 +582,30 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.index.insert(tx, doc_id, embedding).await?;
 
         Ok(())
+    }
+
+    /// Returns the latest transaction ID for a document (via `updated_at_tx` or `created_at_tx`).
+    pub async fn get_doc_tx(&self, doc_id: DocId) -> Result<Option<TxId>> {
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+        if let Some(bytes) = self.storage.get(&doc_key).await? {
+            if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
+                if let Some(ref m) = meta.metadata {
+                    if let Some(tx_val) = m.get("updated_at_tx") {
+                        if let Some(u) = tx_val.as_u64() {
+                            return Ok(Some(TxId::new(u)));
+                        }
+                    }
+                    if let Some(imp) = m.get("importance") {
+                        if let Some(tx_val) = imp.get("created_at_tx") {
+                            if let Ok(tx) = serde_json::from_value::<TxId>(tx_val.clone()) {
+                                return Ok(Some(tx));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Deletes a document from the collection by its ID.
@@ -642,32 +674,35 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         let _guard = self.insert_lock.lock().await;
 
-        if relation == memfuse_core::types::domain::LinkRelation::Supersedes {
-            // Prevent cycles: if `to` transitively supersedes `from`, adding `from supersedes to`
-            // creates a cycle that displaces all documents in the cycle post-RRF (BL-1).
+        // Prevent cycles for ALL relation types: if `to` transitively reaches `from`
+        // via the same relation, adding `from -> to` creates a cycle.
+        // For Supersedes, cycles cause post-RRF displacement of all docs in the cycle (BL-1).
+        // For Associates/DerivedFrom/Elaborates, cycles cause unbounded BFS queue growth
+        // in traverse_links (P0 audit fix).
+        {
             let mut visited = std::collections::HashSet::new();
             let mut queue = std::collections::VecDeque::new();
-            queue.push_back(to);
             visited.insert(to);
+            queue.push_back(to);
 
-            let mut steps = 0;
+            let mut steps = 0u32;
+            const MAX_BFS_STEPS: u32 = 1000;
             while let Some(curr) = queue.pop_front() {
                 steps += 1;
-                if steps > 1000 {
+                if steps > MAX_BFS_STEPS {
                     break;
                 }
                 if curr == from {
                     return Err(memfuse_core::MemFuseError::InvalidInput(format!(
-                        "Cyclic Supersedes relation detected: document {:?} transitively supersedes {:?}",
-                        to, from
+                        "Cyclic {:?} relation detected: document {:?} transitively reaches {:?}",
+                        relation, to, from
                     )));
                 }
                 let links = self.get_links(curr).await?;
                 for link in links {
-                    if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
-                        if visited.insert(link.target) {
-                            queue.push_back(link.target);
-                        }
+                    // Only follow edges of the same relation type to detect typed cycles
+                    if link.relation == relation && visited.insert(link.target) {
+                        queue.push_back(link.target);
                     }
                 }
             }
@@ -705,6 +740,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                             memfuse_core::MemFuseError::Serialization(e.to_string())
                         })?;
                         obj.insert("links".to_string(), links_val);
+                        obj.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
                         let updated_bytes = serde_json::to_vec(&meta)?;
                         self.storage.put(tx, &doc_key, &updated_bytes).await?;
                         updated_links = true;
@@ -733,6 +769,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                             memfuse_core::MemFuseError::Serialization(e.to_string())
                         })?;
                         obj.insert("links".to_string(), links_val);
+                        obj.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
                         let updated_bytes = serde_json::to_vec(&full)?;
                         self.storage.put(tx, &doc_key, &updated_bytes).await?;
                         updated_links = true;

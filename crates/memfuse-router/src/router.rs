@@ -9,6 +9,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Calibrated confidence metrics for a routing decision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfidenceMetrics {
+    /// Lower bound of the confidence interval.
+    pub score_lower: f32,
+    /// Upper bound of the confidence interval.
+    pub score_upper: f32,
+    /// Whether the score was calibrated via conformal prediction.
+    pub calibrated: bool,
+    /// Current conformal quantile threshold used for this decision.
+    pub quantile_threshold: f32,
+}
+
 /// Result of a routing operation containing the selected profile and prepared context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingDecision {
@@ -16,6 +29,8 @@ pub struct RoutingDecision {
     pub profile: SlmProfile,
     /// The trimmed context window prepared specifically for the selected profile's token budget.
     pub context: ContextWindow,
+    /// Calibrated confidence metrics for auditing and cascade control.
+    pub confidence: Option<ConfidenceMetrics>,
 }
 
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
@@ -224,12 +239,39 @@ impl RouterEngine {
             if let Some(state) = cal.get_mut(&selected_profile.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence;
-                // Rekalibrierung versuchen (alle 10 Entscheidungen)
+
+                // Non-conformity score: inverse of confidence ratio, clamped to [0, 1]
+                // Higher = worse routing decision
+                let non_conformity = if confidence > 0.0 {
+                    (1.0 / confidence as f32).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                state.recalibrate_conformal(non_conformity);
+
+                // Legacy recalibration (alle 10 Entscheidungen)
                 if state.times_selected % 10 == 0 {
-                    state.recalibrate(0.7); // Schwellenwert: 70% Konfidenz
+                    state.recalibrate(0.7);
                 }
             }
         }
+
+        // Build confidence metrics for auditability
+        let confidence_metrics = {
+            let cal = self.calibration.read();
+            cal.get(&selected_profile.name).map(|state| {
+                let best_score = profile_scores
+                    .get(&selected_profile_idx)
+                    .copied()
+                    .unwrap_or(0.0);
+                ConfidenceMetrics {
+                    score_lower: best_score * 0.9, // Conservative lower bound
+                    score_upper: best_score * 1.1, // Conservative upper bound
+                    calibrated: state.conformal.window_total > 10,
+                    quantile_threshold: state.conformal.quantile_threshold,
+                }
+            })
+        };
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
@@ -240,6 +282,7 @@ impl RouterEngine {
         Ok(RoutingDecision {
             profile: selected_profile,
             context: context_window,
+            confidence: confidence_metrics,
         })
     }
 }

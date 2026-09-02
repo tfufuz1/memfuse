@@ -234,6 +234,16 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
                     .3
                     .signal_ranks
                     .insert(signal_name.clone(), (rank + 1) as u32);
+
+                // Record per-signal RRF contribution (INV-PROV-1)
+                entry.3.signal_contributions.insert(
+                    signal_name.clone(),
+                    crate::SignalContribution {
+                        raw_score: doc.score,
+                        rank: (rank + 1) as u32,
+                        rrf_contribution: score,
+                    },
+                );
             }
 
             match signal_kind {
@@ -811,6 +821,79 @@ mod tests {
         }];
         let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, -0.5)], 10);
         assert!(fused.is_empty());
+    }
+
+    #[test]
+    fn test_provenance_attribution_sums_to_rrf() {
+        let vec_set = (
+            "vector".to_string(),
+            vec![
+                SearchResult {
+                    id: "doc1".to_string(),
+                    score: 0.95,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc2".to_string(),
+                    score: 0.85,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+            ],
+            1.0,
+        );
+        let text_set = (
+            "text".to_string(),
+            vec![
+                SearchResult {
+                    id: "doc2".to_string(),
+                    score: 4.2,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc1".to_string(),
+                    score: 3.1,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+            ],
+            0.8,
+        );
+        let graph_set = (
+            "graph".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.7,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            }],
+            0.5,
+        );
+
+        let fused = weighted_reciprocal_rank_fusion(vec![vec_set, text_set, graph_set], 10);
+        assert_eq!(fused.len(), 2);
+
+        for res in &fused {
+            let prov = res.provenance.as_ref().expect("Provenance must be present");
+            assert!(!prov.signal_contributions.is_empty());
+            let sum_contrib: f32 = prov
+                .signal_contributions
+                .values()
+                .map(|c| c.rrf_contribution)
+                .sum();
+            assert!(
+                (sum_contrib - res.score).abs() < 1e-6,
+                "INV-PROV-1 violation: sum of contributions {sum_contrib} != final score {}",
+                res.score
+            );
+        }
     }
 
     #[cfg(test)]

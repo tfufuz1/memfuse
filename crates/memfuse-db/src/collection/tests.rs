@@ -2286,3 +2286,199 @@ async fn test_graph_mapping_invariant_missing_entity_graceful_degradation(
     assert_eq!(results[0].id, "doc_text_only");
     Ok(())
 }
+
+#[tokio::test]
+async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfuse_core::Result<()> {
+    use memfuse_core::DocId;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    // Insert 4 docs: doc1, doc2, doc3, doc4
+    col.insert("doc1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "alpha"}))).await?;
+    col.insert("doc2", &[0.9, 0.1, 0.0, 0.0], Some(serde_json::json!({"text": "beta"}))).await?;
+    col.insert("doc3", &[0.8, 0.2, 0.0, 0.0], Some(serde_json::json!({"text": "gamma"}))).await?;
+    col.insert("doc4", &[0.7, 0.3, 0.0, 0.0], Some(serde_json::json!({"text": "delta"}))).await?;
+
+    // doc2 supersedes doc1
+    col.link_memories(
+        DocId::from_key("doc2")?,
+        DocId::from_key("doc1")?,
+        memfuse_core::types::domain::LinkRelation::Supersedes,
+    ).await?;
+
+    // When searching with k = 2 and include_superseded = false,
+    // doc1 is displaced by doc2.
+    // With 3*k candidate pool, doc3 advances into top-2 so we still get 2 results!
+    let query = memfuse_core::HybridQuery::builder()
+        .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
+        .with_k(2)
+        .with_include_superseded(false)
+        .build()
+        .unwrap();
+    let results = col.hybrid_search_with_query(&query).await?;
+
+    assert_eq!(results.len(), 2, "Must return full requested k=2 even after supersedes displacement");
+    assert!(!results.iter().any(|r| r.id == "doc1"), "doc1 must be displaced");
+    assert!(results.iter().any(|r| r.id == "doc2"), "doc2 must be retained");
+    assert!(results.iter().any(|r| r.id == "doc3"), "doc3 must move up into top-2");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_link_memories_cycle_prevention_for_all_relations() -> memfuse_core::Result<()> {
+    use memfuse_core::DocId;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    col.insert("node_a", &[1.0, 0.0, 0.0, 0.0], None).await?;
+    col.insert("node_b", &[0.0, 1.0, 0.0, 0.0], None).await?;
+    col.insert("node_c", &[0.0, 0.0, 1.0, 0.0], None).await?;
+
+    let a = DocId::from_key("node_a")?;
+    let b = DocId::from_key("node_b")?;
+    let c = DocId::from_key("node_c")?;
+
+    let rel = memfuse_core::types::domain::LinkRelation::Elaborates;
+
+    // A -> B
+    col.link_memories(a, b, rel).await?;
+    // B -> C
+    col.link_memories(b, c, rel).await?;
+
+    // C -> A should fail with cycle detection error!
+    let cycle_res = col.link_memories(c, a, rel).await;
+    assert!(cycle_res.is_err(), "Cyclic link must be rejected");
+    let err_str = cycle_res.unwrap_err().to_string();
+    assert!(err_str.contains("Cyclic Elaborates relation detected"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_concurrent_mutation_aborts_consolidation() -> memfuse_core::Result<()> {
+    use memfuse_core::DocId;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    col.insert("source_1", &[1.0, 0.0, 0.0, 0.0], Some(serde_json::json!({"text": "Fact 1"}))).await?;
+    col.insert("source_2", &[0.0, 1.0, 0.0, 0.0], Some(serde_json::json!({"text": "Fact 2"}))).await?;
+
+    let d1 = DocId::from_key("source_1")?;
+    let d2 = DocId::from_key("source_2")?;
+    let target_id = DocId::from_key("summary_12")?;
+
+    // 1. Start consolidation session (snapshots source_docs and records intent)
+    let session = crate::context_compaction::ConsolidationSession::start(&col, &[d1, d2], target_id).await?;
+
+    // 2. Simulate concurrent mutation on source_2 while LLM synthesis is running
+    col.update("source_2", &[0.0, 1.0, 0.0, 0.0], Some(serde_json::json!({"text": "Fact 2 updated by agent"}))).await?;
+
+    // 3. Attempting to commit consolidation must fail with StaleRead error!
+    let commit_res = session.commit("summary_12", &[0.5, 0.5, 0.0, 0.0], "Summary of 1 and 2", None).await;
+    assert!(commit_res.is_err(), "Consolidation commit must fail under concurrent mutation");
+    match commit_res.unwrap_err() {
+        memfuse_core::MemFuseError::StaleRead(msg) => {
+            assert!(msg.contains("OCC conflict"));
+        }
+        other => panic!("Expected StaleRead error, got: {:?}", other),
+    }
+
+    // 4. Verify that original source documents are still intact!
+    let doc1 = col.get("source_1").await?;
+    let doc2 = col.get("source_2").await?;
+    assert!(doc1.is_some(), "source_1 must not be deleted on aborted consolidation");
+    assert!(doc2.is_some(), "source_2 must not be deleted on aborted consolidation");
+
+    Ok(())
+}

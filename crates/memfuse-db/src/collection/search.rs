@@ -584,18 +584,25 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
+        // Oversized candidate pool to prevent result shortfall when superseded docs are removed
+        let candidate_k = if query.include_superseded {
+            k
+        } else {
+            k.saturating_mul(3).min(memfuse_core::MAX_SEARCH_K).max(k)
+        };
+
         // 1. Vector Signal
         let vector_results = if is_vector_zero {
             Vec::new()
         } else {
-            self.search_filtered_at(vector, k, None, seq).await?
+            self.search_filtered_at(vector, candidate_k, None, seq).await?
         };
 
         // 2. Text Signal
         let text_results = if is_text_empty {
             Vec::new()
         } else {
-            let bm25_results = self.text_index.search_at(text, k, seq).await?;
+            let bm25_results = self.text_index.search_at(text, candidate_k, seq).await?;
             self.hydrate_from_tuples_at(
                 bm25_results
                     .into_iter()
@@ -715,10 +722,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 Self::DEFAULT_COMMUNITY_BOOST,
             )
             .await?;
-        fused_results.truncate(k);
+        // Use oversized candidate pool (3×k) for Supersedes resolution to prevent
+        // result shortfall when superseded docs are filtered out (P0 audit fix).
+        // This also ensures superseding documents outside the initial k window
+        // can still displace older ones.
+        let supersedes_pool_size = k.saturating_mul(3).max(k);
+        fused_results.truncate(supersedes_pool_size);
 
         if !query.include_superseded {
             // Post-RRF Supersedes Displacement (ADR-038)
+            // Scan the full oversized pool so that superseding docs on ranks k+1..3k
+            // can displace older docs at ranks 1..k.
             let mut superseded_targets = std::collections::HashSet::new();
             for res in &fused_results {
                 if let Ok(doc_id) = DocId::from_key(&res.id) {
@@ -740,6 +754,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 });
             }
         }
+
+        // Final truncation to requested k after Supersedes filtering
+        fused_results.truncate(k);
 
         Ok(fused_results)
     }

@@ -145,6 +145,7 @@ mod tests {
                 total_tokens: 2,
                 truncated: false,
             },
+            confidence: None,
         };
 
         let result = dispatch_to_slm(&decision).await;

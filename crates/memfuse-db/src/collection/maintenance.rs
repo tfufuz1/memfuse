@@ -47,6 +47,24 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         has_text,
                         has_graph,
                     } => (doc_ids, has_text, has_graph),
+                    CommitIntent::Consolidation {
+                        source_docs: _,
+                        target_id,
+                        base_tx: _,
+                    } => {
+                        // Crash Recovery during Sleep-Cycle Consolidation (INV-CONSOLIDATE-2)
+                        // If target_id was committed to storage, ensure it is re-synced to index.
+                        // If target_id was not yet committed, consolidation aborted; delete the intent.
+                        let target_doc_key = self.namespaced_key(&target_id.inner().to_le_bytes(), 1);
+                        if self.storage.get(&target_doc_key).await?.is_some() {
+                            (vec![target_id], true, false)
+                        } else {
+                            if let Err(e) = self.storage.delete(recovery_tx, &intent_key).await {
+                                tracing::warn!(key = ?intent_key, "Failed to delete interrupted consolidation intent: {e}");
+                            }
+                            continue;
+                        }
+                    }
                     _ => continue,
                 };
 

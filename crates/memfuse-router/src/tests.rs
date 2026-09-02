@@ -187,6 +187,7 @@ mod tests {
         let decision = RoutingDecision {
             profile,
             context: context_window,
+            confidence: None,
         };
 
         let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
@@ -810,6 +811,7 @@ mod tests {
                 total_tokens: 5,
                 truncated: false,
             },
+            confidence: None,
         };
         let res_err = dispatch_to_slm(&decision).await;
         assert!(
@@ -822,6 +824,7 @@ mod tests {
         let decision_closed = RoutingDecision {
             profile: profile_closed,
             context: decision.context.clone(),
+            confidence: None,
         };
         let res_closed = dispatch_to_slm(&decision_closed).await;
         assert!(
@@ -839,6 +842,7 @@ mod tests {
         let decision_rpc_err = RoutingDecision {
             profile: profile_rpc_err,
             context: decision.context.clone(),
+            confidence: None,
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
@@ -856,6 +860,7 @@ mod tests {
         let decision_obj = RoutingDecision {
             profile: profile_obj,
             context: decision.context.clone(),
+            confidence: None,
         };
         let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
         assert_eq!(res_obj, "{\"custom_data\":42}");
@@ -871,6 +876,7 @@ mod tests {
         let decision_empty = RoutingDecision {
             profile: profile_empty,
             context: decision.context.clone(),
+            confidence: None,
         };
         let res_empty = dispatch_to_slm(&decision_empty).await;
         assert!(
@@ -1204,6 +1210,7 @@ mod tests {
                 total_tokens: 5,
                 truncated: false,
             },
+            confidence: None,
         };
 
         let res = dispatch_to_slm(&decision).await;

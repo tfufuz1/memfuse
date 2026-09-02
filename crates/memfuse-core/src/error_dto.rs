@@ -252,6 +252,11 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                     "reason": reason,
                 })),
             },
+            MemFuseError::StaleRead(msg) => Self {
+                kind: "StaleRead".to_string(),
+                message: msg.clone(),
+                details: None,
+            },
         }
     }
 }
@@ -354,6 +359,7 @@ mod tests {
                 },
                 "CapabilityUnsupported",
             ),
+            (MemFuseError::StaleRead("test".into()), "StaleRead"),
         ];
 
         for (err, expected_kind) in variants {
