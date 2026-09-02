@@ -301,7 +301,9 @@ mod tests {
         // Simulate 10,000 requests where error occurs when score > 0.6
         let mut lcg = 123456789u64;
         for _ in 0..10_000 {
-            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            lcg = lcg
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let rand_val = ((lcg >> 32) as u32 as f32) / (u32::MAX as f32);
             cal.update(rand_val);
         }
