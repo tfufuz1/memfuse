@@ -57,8 +57,8 @@ pub enum CommitIntent {
 pub struct DbTransaction<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
     pub tx_id: TxId,
     collection: Collection<S, V>,
-    staged_forward_keys: Mutex<Vec<Vec<u8>>>,
-    staged_reverse_keys: Mutex<Vec<Vec<u8>>>,
+    staged_forward_keys: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
+    staged_reverse_keys: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
     staged_doc_ids: Mutex<Vec<DocId>>,
     staged_text_ops: Mutex<Vec<(DocId, String)>>,
     staged_text_deletes: Mutex<Vec<DocId>>,
@@ -87,17 +87,29 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
     /// Records keys and IDs that have been operated on for potential compensating rollback.
     pub fn record_keys(&self, forward: Vec<u8>, reverse: Vec<u8>, doc_id: DocId) {
+        self.record_keys_with_old_values(forward, None, reverse, None, doc_id);
+    }
+
+    /// Records keys and IDs along with pre-write values for potential compensating rollback.
+    pub fn record_keys_with_old_values(
+        &self,
+        forward: Vec<u8>,
+        old_forward: Option<Vec<u8>>,
+        reverse: Vec<u8>,
+        old_reverse: Option<Vec<u8>>,
+        doc_id: DocId,
+    ) {
         let mut fw = match self.staged_forward_keys.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        fw.push(forward);
+        fw.push((forward, old_forward));
 
         let mut rev = match self.staged_reverse_keys.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        rev.push(reverse);
+        rev.push((reverse, old_reverse));
 
         let mut ids = match self.staged_doc_ids.lock() {
             Ok(g) => g,
@@ -487,16 +499,52 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
             let mut comp_failed = false;
 
-            for f_key in &f_keys {
-                if let Err(e) = self.collection.storage.delete(rollback_tx, f_key).await {
-                    tracing::error!("[INV-DB-3] Compensating delete failed (forward): {}", e);
+            // NOTE: Previously, compensate_lsm unconditionally called storage.delete(rollback_tx, key)
+            // for all staged keys during rollback.
+            // BUG CAUSE: If the failed transaction was an UPDATE of an existing document,
+            // writing a tombstone (delete) permanently erased the pre-existing document from LSM,
+            // resulting in data loss instead of restoring the previous document state.
+            //
+            // FIX: If old_val is Some(bytes), restore the prior state via storage.put(rollback_tx, key, bytes).
+            // If old_val is None (original INSERT), write a tombstone via storage.delete(rollback_tx, key).
+            // Restoration uses a fresh, monotonically increasing rollback_tx (TxId), ensuring proper MVCC visibility.
+            for (f_key, old_val) in &f_keys {
+                let res = match old_val {
+                    Some(prev_bytes) => {
+                        self.collection
+                            .storage
+                            .put(rollback_tx, f_key, prev_bytes)
+                            .await
+                    }
+                    None => self.collection.storage.delete(rollback_tx, f_key).await,
+                };
+                if let Err(e) = res {
+                    tracing::error!(
+                        "[INV-DB-3] Compensating write/delete failed (forward): {}",
+                        e
+                    );
                     comp_failed = true;
                 }
             }
 
-            for r_key in &r_keys {
-                if let Err(e) = self.collection.storage.delete(rollback_tx, r_key).await {
-                    tracing::error!("[INV-DB-3] Compensating delete failed (reverse): {}", e);
+            for (r_key, old_val) in &r_keys {
+                if r_key.is_empty() {
+                    continue;
+                }
+                let res = match old_val {
+                    Some(prev_bytes) => {
+                        self.collection
+                            .storage
+                            .put(rollback_tx, r_key, prev_bytes)
+                            .await
+                    }
+                    None => self.collection.storage.delete(rollback_tx, r_key).await,
+                };
+                if let Err(e) = res {
+                    tracing::error!(
+                        "[INV-DB-3] Compensating write/delete failed (reverse): {}",
+                        e
+                    );
                     comp_failed = true;
                 }
             }

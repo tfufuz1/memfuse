@@ -16,6 +16,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         let key_str = format!("{}:{}:{}", from, label, to);
         let key = self.namespaced_key(key_str.as_bytes(), 2);
+        let old_val = self.storage.get_at_seq(&key, u64::MAX).await?;
+
         let val = serde_json::json!({
             "from": from,
             "to": to,
@@ -36,7 +38,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
 
         let dummy_doc_id = DocId::from_key(from)?;
-        db_tx.record_keys(key.clone(), vec![], dummy_doc_id);
+        db_tx.record_keys_with_old_values(key.clone(), old_val, vec![], None, dummy_doc_id);
 
         let from_entity = memfuse_core::Entity::new(from_id, from, "Node");
         let to_entity = memfuse_core::Entity::new(to_id, to, "Node");

@@ -277,16 +277,19 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // Document serialization is unencrypted before being sent to storage.
         // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let user_key = self.namespaced_key(id.as_bytes(), 0);
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+        let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
+        let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
+
         let data = serde_json::to_vec(&stored)?;
         self.storage.put(tx, &user_key, &data).await?;
 
-        // doc_key (key_type=1): NUR Metadaten (für Hydration nach Vektorsuche)
-        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let meta_data = serde_json::to_vec(&meta_only)?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
-        // Record for compensating transaction
-        db_tx.record_keys(user_key, doc_key, doc_id);
+        // Record for compensating transaction with pre-write values
+        db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
 
         self.index.insert(tx, doc_id, embedding).await?;
 
@@ -533,6 +536,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.check_doc_id_collision(doc_id, id).await?;
 
         let user_key = self.namespaced_key(id.as_bytes(), 0);
+        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+        let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
+        let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
 
         // Stage removal from old text index
         db_tx.stage_text_delete(doc_id);
@@ -551,14 +558,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
         let meta_only = StoredDocumentMeta::from(&stored);
         let data = serde_json::to_vec(&stored)?;
-
-        let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let meta_data = serde_json::to_vec(&meta_only)?;
 
         self.storage.put(tx, &user_key, &data).await?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
-        db_tx.record_keys(user_key, doc_key, doc_id);
+        db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
 
         // Stage re-insertion into text index if new text present
         if let Some(new_text) = extract_text(&metadata) {
@@ -635,6 +640,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
         let user_key = self.namespaced_key(id.as_bytes(), 0);
 
+        let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
+        let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
+
         let tx = db_tx.tx_id;
 
         db_tx.stage_text_delete(doc_id);
@@ -646,14 +654,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.storage.delete(tx, &user_key).await?;
         self.storage.delete(tx, &doc_key).await?;
 
-        db_tx.record_keys(user_key, doc_key, doc_id);
+        db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
 
-        if let Err(e) = self.index.delete(tx, doc_id).await {
-            tracing::warn!(
-                doc_id = ?doc_id,
-                "HNSW soft-delete fehlgeschlagen: {e}. Doc wird nach HNSW-Rebuild nicht mehr in Vektorsuchen erscheinen."
-            );
-        }
+        self.index.delete(tx, doc_id).await?;
 
         Ok(())
     }
