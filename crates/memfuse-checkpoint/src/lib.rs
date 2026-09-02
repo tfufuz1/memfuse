@@ -289,6 +289,32 @@ pub trait CheckpointRegistry: memfuse_core::traits::Checkpoint + Send + Sync {
     async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>>;
 }
 
+/// Counter metadata persisted to guarantee TxId monotonicity across restarts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TxCounterMeta {
+    pub high_water_mark: u64,
+}
+
+const TX_BATCH_SIZE: u64 = 100;
+
+async fn persist_hwm_internal<S: memfuse_core::StorageEngine>(
+    storage: &Arc<S>,
+    namespace: &str,
+    hwm: u64,
+) -> Result<()> {
+    let meta = TxCounterMeta {
+        high_water_mark: hwm,
+    };
+    let bytes = serde_json::to_vec(&meta)
+        .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+    let key = format!("{namespace}:checkpoint:__sys_tx_counter__");
+    let tx = TxId::new(TxId::INTERNAL_BASE + hwm);
+    storage.put(tx, key.as_bytes(), &bytes).await?;
+    storage.commit(tx).await?;
+    storage.flush().await?;
+    Ok(())
+}
+
 /// Registry für gespeicherte Checkpoints mit Thread-sicherem Zustand.
 ///
 /// # Invarianten
@@ -307,30 +333,145 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     write_lock: tokio::sync::Mutex<()>,
     /// Atomarer Zähler für interne TxIds (vermeidet Kollisionen)
     tx_counter: AtomicU64,
+    /// Reservierter High-Water-Mark Wert in persistentem Storage
+    allocated_hwm: AtomicU64,
+    /// Lock für HWM-Reservierung und Persistierung
+    hwm_lock: tokio::sync::Mutex<()>,
 }
 
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
-    pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Self {
-        Self {
+    /// Öffnet einen PersistentCheckpointStore asynchron mit Rekonstruktion und Monotonie-Garantie.
+    pub async fn open(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
+        let namespace = namespace.into();
+
+        // 1. Scan store for highest existing TxId under namespace
+        let prefix = format!("{namespace}:checkpoint:");
+        let entries = storage.scan_prefix(prefix.as_bytes()).await?;
+        let mut scanned_max_raw: Option<u64> = None;
+
+        for (_key, value_bytes) in entries {
+            let meta_tx = if let Ok(manifest) =
+                serde_json::from_slice::<CheckpointManifest>(&value_bytes)
+            {
+                Some(manifest.meta.tx_id)
+            } else if let Ok(meta) = serde_json::from_slice::<CheckpointMeta>(&value_bytes) {
+                Some(meta.tx_id)
+            } else {
+                None
+            };
+
+            if let Some(tx) = meta_tx {
+                if tx.inner() >= TxId::INTERNAL_BASE {
+                    let raw = tx.inner() - TxId::INTERNAL_BASE;
+                    scanned_max_raw = Some(scanned_max_raw.map_or(raw, |m| m.max(raw)));
+                }
+            }
+        }
+
+        if let Ok(last_tx) = storage.last_tx_id().await {
+            if last_tx.inner() >= TxId::INTERNAL_BASE {
+                let raw = last_tx.inner() - TxId::INTERNAL_BASE;
+                scanned_max_raw = Some(scanned_max_raw.map_or(raw, |m| m.max(raw)));
+            }
+        }
+
+        // 2. Read persisted counter metadata
+        let counter_key = format!("{namespace}:checkpoint:__sys_tx_counter__");
+        let persisted_val: Option<u64> = match storage.get(counter_key.as_bytes()).await {
+            Ok(Some(bytes)) => serde_json::from_slice::<TxCounterMeta>(&bytes)
+                .map(|m| m.high_water_mark)
+                .ok(),
+            _ => None,
+        };
+
+        // 3. Consistency check: if persisted value exists and is LESS THAN scanned max raw -> Hard Error (Requirement 4)
+        if let (Some(persisted), Some(scanned)) = (persisted_val, scanned_max_raw) {
+            if persisted < scanned {
+                return Err(MemFuseError::Internal(format!(
+                    "TxId collision / regression detected in namespace '{namespace}': \
+                     persisted tx_counter HWM ({persisted}) is strictly less than highest tx_id found in store ({scanned})"
+                )));
+            }
+        }
+
+        // 4. Determine initial start_raw
+        let start_raw = match (persisted_val, scanned_max_raw) {
+            (Some(p), _) => p + 1,
+            (None, Some(s)) => s + 1,
+            (None, None) => 0,
+        };
+
+        let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
+
+        Ok(Self {
             storage,
             checkpoints: RwLock::new(HashMap::new()),
             name_index: RwLock::new(HashMap::new()),
-            namespace: namespace.into(),
+            namespace,
             write_lock: tokio::sync::Mutex::new(()),
-            tx_counter: AtomicU64::new(0),
+            tx_counter: AtomicU64::new(start_raw),
+            allocated_hwm: AtomicU64::new(initial_hwm),
+            hwm_lock: tokio::sync::Mutex::new(()),
+        })
+    }
+
+    pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Self {
+        let ns = namespace.into();
+        let storage_clone = storage.clone();
+        let ns_clone = ns.clone();
+
+        let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+                tokio::task::block_in_place(|| handle.block_on(Self::open(storage_clone, ns_clone)))
+            } else {
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+                    rt.block_on(Self::open(storage_clone, ns_clone))
+                })
+                .join()
+                .map_err(|_| MemFuseError::Internal("Thread panic during PersistentCheckpointStore initialization".into()))
+                .and_then(|r| r)
+            }
+        } else {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| MemFuseError::Internal(e.to_string()))
+                .expect("Failed to create Tokio runtime");
+            rt.block_on(Self::open(storage_clone, ns_clone))
+        };
+
+        match res {
+            Ok(store) => store,
+            Err(e) => panic!("Failed to initialize PersistentCheckpointStore for namespace '{ns}': {e}"),
         }
     }
 
     // INVARIANT: Checkpoint TxIds use INTERNAL_BASE+n range to avoid
     // collision with Collection-sequenced TxIds [1, ~10^12].
     // See: DECISIONS.md AGT-GRAPH-001, TxId::INTERNAL_BASE
-    fn allocate_tx(&self) -> Result<TxId> {
+    pub async fn allocate_tx(&self) -> Result<TxId> {
         let raw = self.tx_counter.fetch_add(1, Ordering::SeqCst);
         if raw >= 1_000_000 {
             return Err(MemFuseError::Internal(
                 "Checkpoint TxId counter overflow".to_string(),
             ));
         }
+
+        let current_hwm = self.allocated_hwm.load(Ordering::SeqCst);
+        if raw >= current_hwm {
+            let _guard = self.hwm_lock.lock().await;
+            let active_hwm = self.allocated_hwm.load(Ordering::SeqCst);
+            if raw >= active_hwm {
+                let new_hwm = raw + TX_BATCH_SIZE - 1;
+                persist_hwm_internal(&self.storage, &self.namespace, new_hwm).await?;
+                self.allocated_hwm.store(new_hwm, Ordering::SeqCst);
+            }
+        }
+
         Ok(TxId::new(TxId::INTERNAL_BASE + raw))
     }
 
@@ -339,8 +480,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         note = "Use `allocate_tx()` instead — both methods are functionally identical, `allocate_tx()` is the canonical public API."
     )]
     #[allow(dead_code)]
-    fn next_tx(&self) -> Result<TxId> {
-        self.allocate_tx()
+    async fn next_tx(&self) -> Result<TxId> {
+        self.allocate_tx().await
     }
 
     /// Creates an ephemeral transactional checkpoint RAII guard.
@@ -434,7 +575,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let key = format!("{}:checkpoint:{}", self.namespace, name);
 
             // FIX CHK-002: Generiere eine eindeutige TxId statt INTERNAL_BASE
-            let unique_tx = self.allocate_tx()?;
+            let unique_tx = self.allocate_tx().await?;
 
             if let Err(e) = self.storage.delete(unique_tx, key.as_bytes()).await {
                 if let Err(rb_err) = self.storage.rollback(unique_tx).await {
@@ -471,7 +612,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let value = serde_json::to_vec(&manifest)
             .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
-        let tx = self.allocate_tx()?;
+        let tx = self.allocate_tx().await?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
             if let Err(rb_err) = self.storage.rollback(tx).await {
                 tracing::warn!(tx = ?tx, error = %rb_err, "Storage rollback failed during save_checkpoint_internal put");
@@ -534,7 +675,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let entries: Vec<(Vec<u8>, Vec<u8>)> = self.storage.scan_prefix(prefix.as_bytes()).await?;
 
         let mut result = Vec::with_capacity(entries.len());
-        for (_key_bytes, value_bytes) in entries {
+        for (key_bytes, value_bytes) in entries {
+            if key_bytes.ends_with(b":__sys_tx_counter__") {
+                continue;
+            }
             let meta =
                 if let Ok(manifest) = serde_json::from_slice::<CheckpointManifest>(&value_bytes) {
                     manifest.verify()?;
@@ -1113,14 +1257,14 @@ mod tests {
         assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
     }
 
-    #[test]
-    fn test_next_tx_overflow_returns_err() {
+    #[tokio::test]
+    async fn test_next_tx_overflow_returns_err() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
         store.tx_counter.store(1_000_000, Ordering::SeqCst);
 
-        let res = store.allocate_tx();
+        let res = store.allocate_tx().await;
         assert!(res.is_err());
         if let Err(MemFuseError::Internal(msg)) = res {
             assert!(msg.contains("overflow"));
@@ -1385,15 +1529,15 @@ mod tests {
     }
 
     #[allow(non_snake_case)]
-    #[test]
-    fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
+    #[tokio::test]
+    async fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test");
 
-        let tx1 = store.allocate_tx().expect("// expect #[cfg(test)]");
+        let tx1 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
         #[allow(deprecated)]
-        let tx2 = store.next_tx().expect("// expect #[cfg(test)]");
-        let tx3 = store.allocate_tx().expect("// expect #[cfg(test)]");
+        let tx2 = store.next_tx().await.expect("// expect #[cfg(test)]");
+        let tx3 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
 
         assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
         assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));
