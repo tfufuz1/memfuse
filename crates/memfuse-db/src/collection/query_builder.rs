@@ -260,7 +260,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
-    /// Executes search query, delegating core signal retrieval to `Collection::hybrid_search_with_strategy()`.
+    /// Executes search query, delegating core signal retrieval to `Collection::hybrid_search_with_query()`.
     pub async fn execute(self) -> Result<Vec<crate::SearchResult>> {
         let k = self.k.unwrap_or(10);
         if k == 0 {
@@ -285,7 +285,31 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         let graph_strat = self.strategy.as_ref().map(|s| s.to_graph_strategy());
 
         #[allow(deprecated)]
-        let mut results = if let Some(seq) = self.seq {
+        let mut results = if self.filter.is_some() || self.memory_type_filter.is_some() {
+            let hybrid_query = memfuse_core::HybridQuery {
+                text_query: self.text.clone(),
+                vector_query: self.vector.clone(),
+                graph_start_node: self
+                    .anchor_entities
+                    .as_ref()
+                    .and_then(|a| a.first())
+                    .map(|e| e.to_string()),
+                graph_strategy: self
+                    .strategy
+                    .as_ref()
+                    .map(|s| s.to_graph_strategy())
+                    .unwrap_or_default(),
+                fusion_weights: self.weights.unwrap_or_default(),
+                filter: self.filter.clone(),
+                memory_type_filter: self.memory_type_filter.clone(),
+                same_community_as: self.same_community_as,
+                include_superseded: false,
+                k: fetch_k,
+            };
+            self.collection
+                .hybrid_search_with_query(&hybrid_query)
+                .await?
+        } else if let Some(seq) = self.seq {
             if text_str.is_empty() && anchors.is_none() {
                 self.collection
                     .search_filtered_at(vector_slice, fetch_k, self.filter_fn.as_deref(), seq)

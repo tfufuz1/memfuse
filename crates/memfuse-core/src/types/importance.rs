@@ -292,30 +292,18 @@ mod tests {
         assert_eq!(f0, 1.0);
 
         // 1 half-life elapsed (3600 secs) -> 0.5
-        let f1 = decay.decay_factor_wallclock(
-            created_epoch,
-            created_epoch + 3600,
-            created_tx,
-            now_tx,
-        );
+        let f1 =
+            decay.decay_factor_wallclock(created_epoch, created_epoch + 3600, created_tx, now_tx);
         assert!((f1 - 0.5).abs() < 1e-5);
 
         // 2 half-lives elapsed (7200 secs) -> 0.25
-        let f2 = decay.decay_factor_wallclock(
-            created_epoch,
-            created_epoch + 7200,
-            created_tx,
-            now_tx,
-        );
+        let f2 =
+            decay.decay_factor_wallclock(created_epoch, created_epoch + 7200, created_tx, now_tx);
         assert!((f2 - 0.25).abs() < 1e-5);
 
         // Out of order timestamps (now < created) -> 1.0
-        let f_rev = decay.decay_factor_wallclock(
-            created_epoch + 100,
-            created_epoch,
-            created_tx,
-            now_tx,
-        );
+        let f_rev =
+            decay.decay_factor_wallclock(created_epoch + 100, created_epoch, created_tx, now_tx);
         assert_eq!(f_rev, 1.0);
     }
 }
