@@ -70,7 +70,7 @@ pub trait Snapshot: Send + Sync {
 }
 
 /// Statistics for a vector index.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct VectorIndexStats {
     /// Number of active (non-deleted) vectors.
     pub num_vectors: usize,
@@ -78,6 +78,12 @@ pub struct VectorIndexStats {
     pub memory_usage_bytes: usize,
     /// Number of HNSW layers.
     pub num_layers: usize,
+    /// Fraction of deleted vectors (0.0 to 1.0).
+    #[serde(default)]
+    pub deleted_ratio: f64,
+    /// Number of full index rebuilds completed.
+    #[serde(default)]
+    pub rebuild_count: u64,
 }
 
 /// Statistics for the storage engine.
@@ -776,6 +782,8 @@ mod capability_coverage {
                     num_vectors: 0,
                     memory_usage_bytes: 0,
                     num_layers: 0,
+                    deleted_ratio: 0.0,
+                    rebuild_count: 0,
                 })
             }
         }
@@ -1016,6 +1024,8 @@ mod tests {
             num_vectors: 100,
             memory_usage_bytes: 1024,
             num_layers: 5,
+            deleted_ratio: 0.1,
+            rebuild_count: 1,
         };
         let ser = serde_json::to_string(&v_stats).unwrap(); // unwrap
         let deser: VectorIndexStats = serde_json::from_str(&ser).unwrap(); // unwrap
@@ -1253,6 +1263,8 @@ mod tests {
                     num_vectors: 0,
                     memory_usage_bytes: 0,
                     num_layers: 0,
+                    deleted_ratio: 0.0,
+                    rebuild_count: 0,
                 })
             }
         }
