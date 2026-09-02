@@ -595,7 +595,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let vector_results = if is_vector_zero {
             Vec::new()
         } else {
-            self.search_filtered_at(vector, candidate_k, None, seq).await?
+            self.search_filtered_at(vector, candidate_k, None, seq)
+                .await?
         };
 
         // 2. Text Signal

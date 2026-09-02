@@ -442,7 +442,7 @@ mod tests {
         let legacy = col.search(&[1.0, 0.0, 0.0, 0.0], 2).await.unwrap(); // unwrap
         let builder_res = col
             .query()
-            .embedding(&[1.0, 0.0, 0.0, 0.0])
+            .embedding([1.0, 0.0, 0.0, 0.0])
             .k(2)
             .execute()
             .await
@@ -476,7 +476,7 @@ mod tests {
 
         let builder_res = col
             .query()
-            .embedding(&[1.0, 0.0, 0.0, 0.0])
+            .embedding([1.0, 0.0, 0.0, 0.0])
             .filter(filter)
             .k(10)
             .execute()
@@ -494,26 +494,29 @@ mod tests {
         let (col, _dir) = create_test_collection("test_hybrid").await;
         col.insert(
             "doc-1",
-            &[0.0; 4],
+            &[1.0, 0.0, 0.0, 0.0],
             Some(json!({"text": "rust programming language"})),
         )
         .await
         .unwrap(); // unwrap
         col.insert(
             "doc-2",
-            &[0.0; 4],
+            &[0.0, 1.0, 0.0, 0.0],
             Some(json!({"text": "python data science"})),
         )
         .await
         .unwrap(); // unwrap
 
         #[allow(deprecated)]
-        let legacy = col.hybrid_search("rust", &[0.0; 4], 5, None).await.unwrap(); // unwrap
+        let legacy = col
+            .hybrid_search("rust", &[1.0, 0.0, 0.0, 0.0], 5, None)
+            .await
+            .unwrap(); // unwrap
 
         let builder_res = col
             .query()
             .text("rust")
-            .embedding(&[0.0; 4])
+            .embedding([1.0, 0.0, 0.0, 0.0])
             .k(5)
             .execute()
             .await
@@ -540,7 +543,7 @@ mod tests {
         let builder_res = col
             .query()
             .text("alpha")
-            .vector(&[1.0, 0.0, 0.0, 0.0])
+            .vector([1.0, 0.0, 0.0, 0.0])
             .fusion_weights(weights.into())
             .strategy(SearchStrategy::Hops { max_hops: 2 })
             .k(5)
