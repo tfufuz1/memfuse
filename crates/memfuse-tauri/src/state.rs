@@ -1,3 +1,4 @@
+use crate::ingestion::IngestProgressConfig;
 use memfuse_db::MemFuse;
 use parking_lot::RwLock;
 use std::path::PathBuf;
@@ -15,7 +16,7 @@ use tokio::sync::Semaphore;
 /// DECISION-REF: ADR-014
 pub const MAX_CONCURRENT_REGEX_OPS: usize = 8;
 
-/// Globaler App-Zustand: hält die aktuell geöffnete lokale Datenbank.
+/// Globaler App-Zustand: hält die aktuell geöffnete lokale Datenbank und Konfigurationen.
 pub struct AppState {
     pub db: RwLock<Option<Arc<MemFuse>>>,
     pub db_path: RwLock<Option<PathBuf>>,
@@ -23,6 +24,8 @@ pub struct AppState {
     /// Schützt den tokio-Blocking-Thread-Pool bei Bulk-Transform-Szenarien.
     /// DECISION-REF: ADR-014
     pub regex_semaphore: Arc<Semaphore>,
+    /// Konfiguration für Throttling/Batching von Ingestion-Fortschrittsevents.
+    pub ingest_progress_config: RwLock<IngestProgressConfig>,
 }
 
 impl AppState {
@@ -31,6 +34,7 @@ impl AppState {
             db: RwLock::new(None),
             db_path: RwLock::new(None),
             regex_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_REGEX_OPS)),
+            ingest_progress_config: RwLock::new(IngestProgressConfig::default()),
         }
     }
 }
@@ -54,10 +58,18 @@ mod tests {
             state.regex_semaphore.available_permits(),
             MAX_CONCURRENT_REGEX_OPS
         );
+        assert_eq!(
+            *state.ingest_progress_config.read(),
+            IngestProgressConfig::default()
+        );
 
         let default_state = AppState::default();
         assert!(default_state.db.read().is_none());
         assert!(default_state.db_path.read().is_none());
+        assert_eq!(
+            *default_state.ingest_progress_config.read(),
+            IngestProgressConfig::default()
+        );
     }
 
     #[test]
