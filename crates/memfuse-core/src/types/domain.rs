@@ -1444,4 +1444,18 @@ mod tests {
         assert_eq!(entity_id.inner(), 42);
         assert_eq!(entity_id.as_bytes(), b"42");
     }
+
+    #[test]
+    fn test_tx_id_ranges_and_internal_boundary_checks() {
+        let valid_col_tx = TxId::new(500_000);
+        assert!(valid_col_tx.is_valid_origin());
+
+        let valid_internal_tx = TxId::internal();
+        assert!(valid_internal_tx.is_valid_origin());
+        assert_eq!(valid_internal_tx.inner(), TxId::INTERNAL_BASE);
+
+        // Wall-clock derived TxId in gap should fail is_valid_origin()
+        let wall_clock_gap_tx = TxId::new(1_700_000_000_000_000_000);
+        assert!(!wall_clock_gap_tx.is_valid_origin());
+    }
 }
