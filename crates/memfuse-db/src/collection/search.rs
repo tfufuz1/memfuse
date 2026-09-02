@@ -134,6 +134,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                                 score: sd.score,
                                 metadata: doc_metadata,
                                 matched_signals: vec![],
+                                provenance: None,
                             });
                             if results.len() >= k {
                                 break;
@@ -284,6 +285,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     score: sd.score,
                     metadata,
                     matched_signals: vec![],
+                    provenance: None,
                 });
             }
         }
@@ -317,6 +319,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     score,
                     metadata,
                     matched_signals: vec![],
+                    provenance: None,
                 });
             }
         }
@@ -383,6 +386,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                                 }
                             }
                             result.score = r.score;
+                            if let Some(p) = result.provenance.as_mut() {
+                                p.rerank_score = Some(r.score);
+                            }
                             reranked_results.push(result);
                         }
                     }
