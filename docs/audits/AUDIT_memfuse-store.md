@@ -230,3 +230,26 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
 - `cargo test -p memfuse-store --all-features`: **PASSED** (105 tests passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+
+---
+
+## 16. Storage Engine Deep Audit & Crash-Safety Verification (TS: 2026-09-02T08:29:47Z / SESSION: 02245a70)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Audit Timestamp**: `2026-09-02T08:29:47Z`
+- **Session Hash**: `02245a70`
+
+### Invariant & Crash-Safety Compliance Matrix
+1. **fsync Error Propagation Discipline**: Checked all `sync_all()` and `sync_data()` calls across `wal.rs`, `lsm.rs`, `sstable.rs`, and `compaction.rs`. Confirmed 100% propagation via `?` operator. Zero ignored return values.
+2. **MVCC Snapshot Isolation (`last_committed_tx` Single Load Rule)**: Confirmed single load into local variable at invocation head in `get_at_seq()` and `scan_prefix_at()`.
+3. **Atomic File Creation & Parent Dir Sync**: Verified `tmp` write -> `sync_all()` -> `rename()` -> parent directory `fsync()` atomic replacement pipeline in SSTable flush, compaction, and WAL rotation.
+4. **Zero Non-Test Unwraps / Expects**: Verified `#![deny(unsafe_code)]` compliance and zero unhandled panic vectors in production logic under `crates/memfuse-store/src/`.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --all-features`: **PASSED** (105 tests passed cleanly)
+- `cargo check --workspace --exclude memfuse-tauri --exclude xtask`: **PASSED** (Workspace compiles cleanly)
