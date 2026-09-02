@@ -1119,19 +1119,10 @@ mod tests {
         *storage.fail_on_put.lock() = Some(cp_key.to_vec());
 
         let res = store
-            .create_checkpoint(
-                "fail_write_cp",
-                "col1",
-                seq_no,
-                TxId::new(10),
-                serde_json::json!({}),
-            )
+            .create_checkpoint("fail_write_cp", "col1", seq_no, TxId::new(10), serde_json::json!({}))
             .await;
 
-        assert!(
-            res.is_err(),
-            "Checkpoint creation must fail when storage put fails"
-        );
+        assert!(res.is_err(), "Checkpoint creation must fail when storage put fails");
 
         // Yield execution briefly to allow drop task on Handle::spawn to complete if async
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1472,9 +1463,7 @@ mod tests {
             assert!(msg.contains("active async Tokio runtime context"));
             assert!(msg.contains("rollback().await"));
         } else {
-            panic!(
-                "Expected MemFuseError::Internal error message instructing to use rollback().await"
-            );
+            panic!("Expected MemFuseError::Internal error message instructing to use rollback().await");
         }
     }
 

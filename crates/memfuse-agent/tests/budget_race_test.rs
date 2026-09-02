@@ -238,7 +238,9 @@ async fn test_atomic_budget_reservation_concurrency_stress() -> Result<()> {
                     )
                     .unwrap();
 
-                    tool.execute(&ctx, serde_json::Value::Null).await.unwrap();
+                    tool.execute(&ctx, serde_json::Value::Null)
+                        .await
+                        .unwrap();
                     Ok::<(), ()>(())
                 } else {
                     Err::<(), ()>(())
