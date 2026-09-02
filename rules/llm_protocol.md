@@ -66,9 +66,9 @@ graph TD
 ---
 
 ## 3. Das AI-TAG Härtungs-Protokoll (Anti-Drift)
-Kann ein identifiziertes Risiko oder ein Architektur-Drift nicht sofort behoben werden, MUSS ein Inline-Tag hinterlassen werden:
+Kann ein identifiziertes Risiko oder ein Architektur-Drift nicht sofort behoben werden, MUSS ein Inline-Tag gemäß der kanonischen Definition in [`rules/tag_taxonomy.md`](tag_taxonomy.md) hinterlassen werden:
 ```rust
-// AI-TAG[KATEGORIE][SEVERITY] Kurzbeschreibung des Problems (ID: AGT-NNNN) (TS: YYYY-MM-DDTHH:MM:SSZ)
+// AI-TAG[KATEGORIE][SEVERITY] Kurzbeschreibung des Problems (ID: AGT-<CRATE>-<hash>) (TS: YYYY-MM-DDTHH:MM:SSZ) (SESSION: <hash>)
 // BEFUND: Detaillierte Analyse des Ist-Zustands im Code.
 // RISIKO: Was passiert bei Last, Ausfall oder Edge Cases?
 // EMPFEHLUNG: Konkreter Vorschlag für die Behebung.
@@ -76,9 +76,9 @@ Kann ein identifiziertes Risiko oder ein Architektur-Drift nicht sofort behoben 
 ```
 Beim Abschluss:
 ```rust
-// RESOLVED: AGT-XXXX — <fix> (TS: YYYY-MM-DDTHH:MM:SSZ)
+// RESOLVED: AGT-XXXX — <fix> (TS: YYYY-MM-DDTHH:MM:SSZ) (SESSION: <hash>)
 ```
-*   **Zeitstempel-Pflicht**: Das `TS:YYYY-MM-DDTHH:MM:SSZ`-Feld ist verpflichtend (ISO-8601 UTC). Fehlt das `TS:`-Feld, gilt dies als Grammatikverstoß.
+*   **Kanonische Spezifikation**: Die vollständige und einzig verbindliche Grammatik, Pflichtfelder (`TS:`, `SESSION:`, `AGT-<CRATE>-<hash>`) und CI-Gates sind in [`rules/tag_taxonomy.md`](tag_taxonomy.md) definiert.
 *   **Kategorien**: `HALLUCINATION` | `DUPLICATION` | `TEST-MIRRORING` | `DEPENDENCY` | `SPEC-DRIFT` | `CONTEXT-GAP` | `BOUNDARY-MISSING` | `CONVENTION-DRIFT` | `CONCURRENCY` | `PANIC-SAFETY` | `SMELL`.
 *   **Severities**: `BLOCKER` | `CRITICAL` | `MAJOR` | `MINOR`.
 
