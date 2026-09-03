@@ -13,7 +13,7 @@
 //! to preserve the LLM context window.
 
 use crate::collection::Collection;
-use memfuse_core::{ContextChunk, DocId, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
+use memfuse_core::{ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
 use memfuse_ollama::OllamaClient;
 
 /// Strategie für Context Compaction.
@@ -409,12 +409,29 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 4. Delete source docs
         for &(src_id, _) in &self.source_docs {
-            let doc_key = self
-                .collection
-                .namespaced_key(&src_id.inner().to_le_bytes(), 1);
-            if let Some(val) = self.collection.storage().get(&doc_key).await? {
-                let meta: crate::collection::StoredDocumentMeta = serde_json::from_slice(&val)?;
-                self.collection.delete_op(&mut db_tx, &meta.id).await?;
+            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            match self.collection.storage().get(&doc_key).await? {
+                Some(val) => {
+                    match serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
+                        Ok(meta) => {
+                            self.collection
+                                .delete_op(&mut db_tx, &meta.id)
+                                .await
+                                .map_err(|e| MemFuseError::Internal(format!(
+                                    "Consolidation commit: failed to delete source doc {:?}: {}",
+                                    src_id, e
+                                )))?;
+                        }
+                        Err(e) => {
+                            return Err(MemFuseError::Serialization(format!(
+                                "Consolidation commit: cannot deserialize meta for source doc {:?}: {}", src_id, e
+                            )));
+                        }
+                    }
+                }
+                None => {
+                    tracing::warn!(src_id = ?src_id, "Consolidation: source doc not found, already deleted — skipping");
+                }
             }
         }
 
@@ -692,7 +709,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_consolidation_commit_aborts_on_delete_failure(
+    async fn test_consolidation_aborts_on_delete_failure(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = tempfile::tempdir()?;
         let lsm_config = LsmConfig {
