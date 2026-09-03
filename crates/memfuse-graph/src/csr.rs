@@ -839,31 +839,36 @@ impl CsrGraph {
             return Ok(Vec::new());
         }
 
-        let mut neighbors = Vec::new();
+        let (start_edge, end_edge) = if start_idx < inner.offsets.len() - 1 {
+            (inner.offsets[start_idx], inner.offsets[start_idx + 1])
+        } else {
+            (0, 0)
+        };
+        let pending = inner.pending_edges.get(&start_idx);
+        let capacity = (end_edge - start_edge) + pending.map(|p| p.len()).unwrap_or(0);
+
+        let mut seen = HashSet::with_capacity(capacity);
+        let mut neighbors = Vec::with_capacity(capacity);
 
         // 1. CSR targets
-        if start_idx < inner.offsets.len() - 1 {
-            let start_edge = inner.offsets[start_idx];
-            let end_edge = inner.offsets[start_idx + 1];
-            for edge_idx in start_edge..end_edge {
-                let neighbor_idx = inner.targets[edge_idx];
-                if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner
-                        .entities
-                        .get(neighbor_idx)
-                        .is_some_and(|e| e.is_some())
-                {
-                    if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
-                        if !neighbors.contains(&id) {
-                            neighbors.push(id);
-                        }
+        for edge_idx in start_edge..end_edge {
+            let neighbor_idx = inner.targets[edge_idx];
+            if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
+                && inner
+                    .entities
+                    .get(neighbor_idx)
+                    .is_some_and(|e| e.is_some())
+            {
+                if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
+                    if seen.insert(id) {
+                        neighbors.push(id);
                     }
                 }
             }
         }
 
         // 2. Pending edges
-        if let Some(pending) = inner.pending_edges.get(&start_idx) {
+        if let Some(pending) = pending {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
@@ -873,7 +878,7 @@ impl CsrGraph {
                         .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
-                        if !neighbors.contains(&id) {
+                        if seen.insert(id) {
                             neighbors.push(id);
                         }
                     }
@@ -2280,6 +2285,58 @@ mod tests {
         graph.commit(tx).await.unwrap(); // unwrap
 
         let n = graph.neighbors(id_a).await.unwrap(); // unwrap
+        assert_eq!(n.len(), 2);
+        assert!(n.contains(&id_b));
+        assert!(n.contains(&id_c));
+    }
+
+    #[tokio::test]
+    async fn test_neighbors_deduplication_csr_and_pending() {
+        let graph = CsrGraph::new();
+        let tx1 = TxId::new(1);
+        let id_a = EntityId::new(1);
+        let id_b = EntityId::new(2);
+        let id_c = EntityId::new(3);
+
+        graph
+            .add_entity(tx1, Entity::new(id_a, "A", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id_b, "B", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx1, Entity::new(id_c, "C", "T"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx1, Edge::new(id_a, id_b, "rel1"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx1, Edge::new(id_a, id_c, "rel2"))
+            .await
+            .unwrap();
+        graph.commit(tx1).await.unwrap();
+
+        // Compact first transaction so edges a->b and a->c are in compacted CSR array
+        graph.compact();
+
+        // Add duplicate edges in tx2 (uncompacted delta buffer)
+        let tx2 = TxId::new(2);
+        graph
+            .add_edge(tx2, Edge::new(id_a, id_b, "rel1_dup"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx2, Edge::new(id_a, id_c, "rel2_dup"))
+            .await
+            .unwrap();
+        graph.commit(tx2).await.unwrap();
+
+        // Query neighbors: should return B and C exactly once
+        let n = graph.neighbors(id_a).await.unwrap();
         assert_eq!(n.len(), 2);
         assert!(n.contains(&id_b));
         assert!(n.contains(&id_c));
