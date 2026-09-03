@@ -3,65 +3,62 @@ crates/memfuse-agent/src/audit.rs:209:        audit_log.append(&entry1).await.un
 crates/memfuse-agent/src/audit.rs:210:        audit_log.append(&entry2).await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:212:        let replayed = audit_log.replay_task("task-123").await.unwrap(); // unwrap allowed
 crates/memfuse-agent/src/audit.rs:223:        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
-crates/memfuse-checkpoint/src/lib.rs:1176:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1177:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1188:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1192:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1193:        let all = store.list_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1231:            .expect("Failed to build Tokio runtime for test");
-crates/memfuse-checkpoint/src/lib.rs:1234:            PinGuard::pin(storage.clone(), seq_no).await.unwrap()
-crates/memfuse-checkpoint/src/lib.rs:1260:            let guard = PinGuard::pin(storage.clone(), seq_no).await.unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1268:        let recovered = registry.recover_and_clean(&*storage).await.unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1325:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1364:                    .expect("Failed to build Tokio runtime for panic test");
-crates/memfuse-checkpoint/src/lib.rs:1371:                        let _guard = store_clone.create_guard(TxId::new(7070)).unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1381:        .expect("Thread failed to join");
-crates/memfuse-checkpoint/src/lib.rs:1392:            .expect("Failed to build Tokio runtime for recovery test");
-crates/memfuse-checkpoint/src/lib.rs:1395:            let recovered = store.recover_orphaned_checkpoints().await.unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1411:            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1415:        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1427:        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1428:        let cp = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1451:        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1480:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1490:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1494:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1518:                .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1523:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1555:            let res = res.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1561:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1574:                let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1585:        .expect("// expect Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
-crates/memfuse-checkpoint/src/lib.rs:1595:            let _guard = store.create_guard(TxId::new(808)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1599:        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
-crates/memfuse-checkpoint/src/lib.rs:1612:        let guard = store.create_guard(TxId::new(909)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1628:        let guard = store.create_guard(TxId::new(1010)).unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1635:        .expect("rollback_blocking in async context timed out - possible deadlock!");
-crates/memfuse-checkpoint/src/lib.rs:1656:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1658:        let cp = guard.checkpoint().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1662:        let committed = guard.commit().unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1674:            .unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1677:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1679:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1685:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
-crates/memfuse-checkpoint/src/lib.rs:1789:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1794:            .expect("// expect #[cfg(test)]")
-crates/memfuse-checkpoint/src/lib.rs:1795:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1819:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1844:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1845:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
-crates/memfuse-checkpoint/src/lib.rs:1849:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1867:        let cp = guard.commit().expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1893:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1911:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1913:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1932:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1934:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1965:        let tx1 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1967:        let tx2 = store.next_tx().await.expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:1968:        let tx3 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:2002:            .expect("// expect #[cfg(test)]");
-crates/memfuse-checkpoint/src/lib.rs:2073:                let manifest = manifest.expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1077:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1078:        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1089:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1093:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1094:        let all = store.list_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1161:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1200:                    .expect("Failed to build Tokio runtime for panic test");
+crates/memfuse-checkpoint/src/lib.rs:1207:                        let _guard = store_clone.create_guard(TxId::new(7070)).unwrap();
+crates/memfuse-checkpoint/src/lib.rs:1217:        .expect("Thread failed to join");
+crates/memfuse-checkpoint/src/lib.rs:1228:            .expect("Failed to build Tokio runtime for recovery test");
+crates/memfuse-checkpoint/src/lib.rs:1231:            let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+crates/memfuse-checkpoint/src/lib.rs:1247:            let _guard = store.create_guard(TxId::new(42)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1251:        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+crates/memfuse-checkpoint/src/lib.rs:1263:        let guard = store.create_guard(TxId::new(100)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1264:        let cp = guard.commit().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1287:        let list = store.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1316:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1326:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1330:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1354:                .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1359:        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1391:            let res = res.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1397:        let all = store.list_named_checkpoints().await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1410:                let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1421:        .expect("// expect Thread panic in test_checkpoint_guard_dropped_outside_tokio_runtime");
+crates/memfuse-checkpoint/src/lib.rs:1431:            let _guard = store.create_guard(TxId::new(808)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1435:        let recovered = store.recover_orphaned_checkpoints().await.unwrap();
+crates/memfuse-checkpoint/src/lib.rs:1448:        let guard = store.create_guard(TxId::new(909)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1464:        let guard = store.create_guard(TxId::new(1010)).unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1471:        .expect("rollback_blocking in async context timed out - possible deadlock!");
+crates/memfuse-checkpoint/src/lib.rs:1492:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1494:        let cp = guard.checkpoint().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1498:        let committed = guard.commit().unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1510:            .unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1513:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_some()); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1515:        store.drop_checkpoint("drop_me").await.unwrap(); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1521:        assert!(store.get_checkpoint("drop_me").await.unwrap().is_none()); // unwrap
+crates/memfuse-checkpoint/src/lib.rs:1625:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1630:            .expect("// expect #[cfg(test)]")
+crates/memfuse-checkpoint/src/lib.rs:1631:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1655:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1680:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1681:        let cp = guard.checkpoint().expect("// expect #[cfg(test)]").clone();
+crates/memfuse-checkpoint/src/lib.rs:1685:        let committed_cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1703:        let cp = guard.commit().expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1729:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1747:        let json = serde_json::to_string(&meta).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1749:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1768:        let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1770:            serde_json::from_str(&json).expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1801:        let tx1 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1803:        let tx2 = store.next_tx().await.expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1804:        let tx3 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1838:            .expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:1909:                let manifest = manifest.expect("// expect #[cfg(test)]");
+crates/memfuse-checkpoint/src/lib.rs:562:                .expect("Failed to create Tokio runtime");
 crates/memfuse-core/src/error.rs:766:        assert_eq!(dto.details.expect("details present")["trace_id"], "12345"); // expect
 crates/memfuse-core/src/error_dto.rs:380:        let details = dto.details.as_ref().expect("details should exist"); // unwrap allowed
 crates/memfuse-core/src/error_dto.rs:384:        let json_str = serde_json::to_string(&dto).expect("serde serialize"); // unwrap allowed
