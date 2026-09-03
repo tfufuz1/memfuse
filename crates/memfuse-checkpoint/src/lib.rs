@@ -65,7 +65,7 @@ pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
         lock.push(cp);
     }
     if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
+        tracing::warn!(error = %err, "Failed to persist orphaned checkpoints");
     }
 }
 
@@ -86,7 +86,7 @@ pub fn clear_orphaned_checkpoint(tx_id: TxId) {
     let mut lock = ORPHANED_CHECKPOINTS.lock();
     lock.retain(|cp| cp.tx_id != tx_id);
     if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
+        tracing::warn!(error = %err, "Failed to persist orphaned checkpoints");
     }
 }
 
@@ -95,7 +95,7 @@ pub fn clear_all_orphaned_checkpoints() {
     let mut lock = ORPHANED_CHECKPOINTS.lock();
     lock.clear();
     if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
+        tracing::warn!(error = %err, "Failed to persist orphaned checkpoints");
     }
 }
 
