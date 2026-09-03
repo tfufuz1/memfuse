@@ -720,6 +720,41 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-048: WAL Legacy-Key Feature-Gating & Downgrade Protection
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: Die automatische Fallback-Entschlüsselung / Integritätsprüfung alter Write-Ahead-Logs mittels hartkodiertem `LEGACY_INTEGRITY_KEY` wird hinter das explizite Konfigurations-Flag `allow_legacy_integrity_key_fallback: bool` (Default: `false`) in `WalConfig` gestellt. Der Standardpfad in `Wal::open()` weist alte WAL-Dateien ohne explizites Opt-In als fehlerhaft zurück (`MemFuseError::wal_corruption`).
+*   **Alternativen**:
+    - Beibehaltung des automatischen Fallbacks: Verworfen, da ein Angreifer alte WAL-Dateien unterschieben und einen Silent Downgrade herbeiführen könnte.
+    - Vollständiges Entfernen von `LEGACY_INTEGRITY_KEY`: Verworfen, um Migrationstools das Auslesen alter Logdateien weiterhin zu ermöglichen.
+*   **Begründung**: Verhindert unbefugte Downgrade-Angriffe auf den WAL-Integritätsmechanismus, wahrt aber Abwärtskompatibilität bei expliziter Migration.
+
+---
+
+## ADR-049: Audit-Log Append-Only Enforcement via `put_kv_if_absent`
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: `Collection` wird um die atomare Methode `put_kv_if_absent(&self, id: &str, value: &serde_json::Value)` erweitert, die vor dem Schreiben eine tx-scoped Existenzprüfung durchführt und bei Treffer `MemFuseError::Conflict` zurückgibt. `AuditLog::append()` nutzt ausschließlich `put_kv_if_absent()`.
+*   **Alternativen**:
+    - Nutzung von `put_kv()` mit clientseitigem `get_kv()`-Check: Verworfen, da race-condition-anfällig bei parallelen `append()`-Aufrufen.
+    - Schreibsperre auf Tabellenebene: Verworfen wegen unötigem Performance-Overhead für nicht-kollidierende Steps.
+*   **Begründung**: Garantiert die deklarierte Invariante des Audit-Logs ("immutable append-only trail, zero overwrite/deletion paths").
+
+---
+
+## ADR-050: Router Single-Conformal Calibration & Lock Scope Consolidation
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    1. Die veraltete Methode `recalibrate()` in `ProfileCalibrationState` wird ersatzlos entfernt. `recalibrate_conformal()` dient als einziger Kalibriermechanismus im Router.
+    2. Profilselektion, Candidate Scoring und Kalibrierungs-Update in `RouterEngine::route()` werden innerhalb eines einzigen atomaren Schreib-Locks (`self.calibration.write()`) ausgeführt.
+*   **Alternativen**:
+    - Beibehaltung des dualen Kalibriersystems: Verworfen, da zwei konkurrierende Kalibriermethoden inkonsistente Schwellenwerte erzeugen.
+    - Zweiphasiges Locking (Read Lock für Kaskade, Write Lock für Update): Verworfen wegen TOCTOU-Race-Condition zwischen Read und Write.
+*   **Begründung**: Beseitigt TOCTOU-Races bei parallelen Routing-Anfragen und konsolidiert die Kalibrierung auf Conformal Prediction.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>

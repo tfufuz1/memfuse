@@ -1507,9 +1507,9 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile]);
 
-        // Perform 15 routing calls (> 10 samples)
+        // Perform 55 routing calls (>= 50 samples)
         let mut last_calibrated = false;
-        for i in 0..15 {
+        for i in 0..55 {
             let decision = router
                 .route(&vec_data, "convergence test content")
                 .await
@@ -1529,7 +1529,7 @@ mod tests {
 
         assert!(
             last_calibrated,
-            "After 15 decisions (> 10 samples), decision must be calibrated (calibrated = true)"
+            "After 55 decisions (>= 50 samples), decision must be calibrated (calibrated = true)"
         );
     }
 
