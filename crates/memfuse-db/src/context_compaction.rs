@@ -647,13 +647,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_consolidation_commit_aborts_on_delete_failure() {
-        let tmp = tempfile::tempdir().unwrap();
+    async fn test_consolidation_commit_aborts_on_delete_failure(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
         let lsm_config = LsmConfig {
             path: tmp.path().to_path_buf(),
             ..Default::default()
         };
-        let lsm = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let lsm = Arc::new(LsmStorage::new(lsm_config).await?);
         let fail_delete = Arc::new(AtomicBool::new(false));
         let faulty_storage = FaultyDeleteStorage {
             inner: lsm,
@@ -665,7 +666,7 @@ mod tests {
             dimension: dim,
             ..Default::default()
         };
-        let hnsw = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+        let hnsw = Arc::new(HnswIndex::try_new(hnsw_config)?);
         let graph = Arc::new(CsrGraph::with_storage(Arc::new(faulty_storage.clone())));
         let next_tx = Arc::new(AtomicU64::new(1));
 
@@ -681,21 +682,19 @@ mod tests {
 
         // 1. Insert source document
         let src_id_str = "source_doc_1";
-        let src_doc_id = DocId::from_key(src_id_str).unwrap();
+        let src_doc_id = DocId::from_key(src_id_str)?;
         col.insert(
             src_id_str,
             &[0.1, 0.2, 0.3, 0.4],
             Some(serde_json::json!({"text": "source text"})),
         )
-        .await
-        .unwrap();
+        .await?;
 
         // 2. Start consolidation session
         let target_str_id = "summary_target_doc";
-        let target_doc_id = DocId::from_key(target_str_id).unwrap();
-        let session = ConsolidationSession::start(&col, &[src_doc_id], target_doc_id)
-            .await
-            .unwrap();
+        let target_doc_id = DocId::from_key(target_str_id)?;
+        let session =
+            ConsolidationSession::start(&col, &[src_doc_id], target_doc_id).await?;
 
         // 3. Configure delete_op to fail via storage delete failure
         fail_delete.store(true, Ordering::SeqCst);
@@ -714,10 +713,12 @@ mod tests {
         assert!(res.is_err(), "commit() must return Err when delete_op fails");
 
         // 6. Assert summary target doc was not persisted
-        let summary_doc = col.get(target_str_id).await.unwrap();
+        let summary_doc = col.get(target_str_id).await?;
         assert!(
             summary_doc.is_none(),
             "Target summary document must not be persisted if commit aborts"
         );
+
+        Ok(())
     }
 }
