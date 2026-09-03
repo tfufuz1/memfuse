@@ -1428,15 +1428,15 @@ mod tests {
     }
 }
 
-// AI-TAG[BUG][MAJOR] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c)
-// BEFUND: _trigger_panic_for_test constructs and returns PyRuntimeError directly instead of causing an actual Rust panic wrapped in run_blocking_ffi.
-// RISIKO: FFI panic boundary catching (catch_unwind in run_blocking_ffi) is not exercised by pytest tests, causing tests/test_panic_isolation.py to fail and masking panic boundary regressions.
-// EMPFEHLUNG: Update _trigger_panic_for_test to invoke run_blocking_ffi(py, || panic!("{}", msg)).
+// AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c)
+// RESOLVED: _trigger_panic_for_test now calls run_blocking_ffi internally triggering a panic in the closure to test FFI panic containment.
 /// Internal helper function for testing FFI panic isolation.
 #[pyfunction]
-fn _trigger_panic_for_test(_py: Python<'_>, message: Option<String>) -> PyResult<()> {
+fn _trigger_panic_for_test(py: Python<'_>, message: Option<String>) -> PyResult<()> {
     let msg = message.unwrap_or_else(|| "Test panic for FFI isolation".to_string());
-    Err(PyRuntimeError::new_err(msg))
+    run_blocking_ffi(py, move || -> PyResult<()> {
+        panic!("{}", msg);
+    })
 }
 
 #[pymodule]
