@@ -64,7 +64,9 @@ pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
     if !lock.iter().any(|existing| existing.tx_id == cp.tx_id) {
         lock.push(cp);
     }
-    let _ = persist_orphaned_checkpoints_sync(&lock);
+    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
+        tracing::warn!(error = %err, "Failed to persist orphaned checkpoints");
+    }
 }
 
 /// Retrieves all active registered orphaned checkpoints.
@@ -83,14 +85,18 @@ pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
 pub fn clear_orphaned_checkpoint(tx_id: TxId) {
     let mut lock = ORPHANED_CHECKPOINTS.lock();
     lock.retain(|cp| cp.tx_id != tx_id);
-    let _ = persist_orphaned_checkpoints_sync(&lock);
+    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
+        tracing::warn!(error = %err, "Failed to persist orphaned checkpoints");
+    }
 }
 
 /// Clears all registered orphaned checkpoints.
 pub fn clear_all_orphaned_checkpoints() {
     let mut lock = ORPHANED_CHECKPOINTS.lock();
     lock.clear();
-    let _ = persist_orphaned_checkpoints_sync(&lock);
+    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
+        tracing::warn!(error = %err, "Failed to persist orphaned checkpoints");
+    }
 }
 
 /// Retained for backward compatibility. No background tasks are spawned during drop.
