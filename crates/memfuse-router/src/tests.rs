@@ -1597,4 +1597,78 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn test_parallel_route_conformal_calibration_monotonic_convergence() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "parallel_conv_entity";
+        collection
+            .insert(
+                key,
+                &vec_data,
+                Some(json!({"text": "parallel convergence content"})),
+            )
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
+
+        let profile = SlmProfile::new(
+            "parallel-conv-slm",
+            "http://localhost:9999/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.5,
+        );
+
+        let router = Arc::new(RouterEngine::new(collection, vec![profile]));
+
+        // Spawn 100 parallel route() tasks
+        let mut handles = Vec::new();
+        for _ in 0..100 {
+            let r = router.clone();
+            let vec_c = vec_data.clone();
+            handles.push(tokio::spawn(async move {
+                r.route(&vec_c, "parallel convergence content").await
+            }));
+        }
+
+        for h in handles {
+            let res = h.await.unwrap();
+            assert!(res.is_ok(), "route() failed in parallel task: {:?}", res);
+        }
+
+        let stats = router.calibration_stats();
+        let st = &stats["parallel-conv-slm"];
+
+        // Verify exact selected counts and total window
+        assert_eq!(st.times_selected, 100);
+        assert_eq!(st.conformal.window_total, 100);
+
+        // Verify calibrated_min_score stays strictly bounded and non-oscillating
+        let lower_bound = st.original_min_score * 0.5;
+        let upper_bound = st.original_min_score * 2.0;
+        assert!(
+            st.calibrated_min_score >= lower_bound && st.calibrated_min_score <= upper_bound,
+            "calibrated_min_score {} out of bounds [{}, {}]",
+            st.calibrated_min_score,
+            lower_bound,
+            upper_bound
+        );
+    }
 }
