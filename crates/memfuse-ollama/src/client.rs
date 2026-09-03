@@ -939,6 +939,119 @@ impl OllamaClient {
     }
 }
 
+/// Parsed RAG prompt template components.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct ParsedPrompt {
+    pub system: String,
+    pub context: String,
+    pub user_query: String,
+}
+
+/// Parses an XML RAG prompt template into system, context, and user_query parts.
+///
+/// Returns `Err(MemFuseError::Internal(...))` if XML structure is invalid or malformed.
+#[allow(dead_code)]
+pub(crate) fn parse_prompt_template(
+    prompt: &str,
+) -> std::result::Result<ParsedPrompt, MemFuseError> {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let wrapped = format!("<root>{}</root>", prompt);
+    let mut reader = Reader::from_str(&wrapped);
+    reader.config_mut().trim_text(false);
+
+    let mut buf = Vec::new();
+    let mut depth = 0;
+    let mut child_tags = Vec::new();
+    let mut current_tag = String::new();
+    let mut tag_contents = std::collections::HashMap::new();
+    let mut text_buf = String::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                depth += 1;
+                if depth == 2 {
+                    child_tags.push(name.clone());
+                    text_buf.clear();
+                } else if depth > 2 {
+                    return Err(MemFuseError::Internal(format!(
+                        "parse_prompt_template: nested tag '{}' inside '{}' is not allowed",
+                        name, current_tag
+                    )));
+                }
+                current_tag = name;
+            }
+            Ok(Event::End(_)) => {
+                if depth == 2 {
+                    let unescaped = quick_xml::escape::unescape(&text_buf).map_err(|e| {
+                        MemFuseError::Internal(format!(
+                            "parse_prompt_template: unescape failed: {}",
+                            e
+                        ))
+                    })?;
+                    tag_contents.insert(current_tag.clone(), unescaped.to_string());
+                }
+                depth -= 1;
+            }
+            Ok(Event::Eof) => break,
+            Ok(Event::Text(e)) => {
+                if depth == 2 {
+                    let text = reader.decoder().decode(e.as_ref()).map_err(|e| {
+                        MemFuseError::Internal(format!(
+                            "parse_prompt_template: decode text failed: {}",
+                            e
+                        ))
+                    })?;
+                    text_buf.push_str(&text);
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if depth == 2 {
+                    let text = reader.decoder().decode(e.as_ref()).map_err(|e| {
+                        MemFuseError::Internal(format!(
+                            "parse_prompt_template: decode ref failed: {}",
+                            e
+                        ))
+                    })?;
+                    text_buf.push('&');
+                    text_buf.push_str(&text);
+                    text_buf.push(';');
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                return Err(MemFuseError::Internal(format!(
+                    "parse_prompt_template: XML parse error at offset {}: {}",
+                    reader.buffer_position(),
+                    e
+                )));
+            }
+        }
+        buf.clear();
+    }
+
+    if child_tags != ["system", "context", "user_query"] {
+        return Err(MemFuseError::Internal(format!(
+            "parse_prompt_template: expected tags [system, context, user_query], got {:?}",
+            child_tags
+        )));
+    }
+
+    let system = tag_contents.remove("system").unwrap_or_default();
+    let context = tag_contents.remove("context").unwrap_or_default();
+    let user_query = tag_contents.remove("user_query").unwrap_or_default();
+
+    Ok(ParsedPrompt {
+        system,
+        context,
+        user_query,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1105,108 +1218,24 @@ mod tests {
     }
 
     use proptest::prelude::*;
-    use quick_xml::events::Event;
-    use quick_xml::reader::Reader;
 
     fn verify_xml_structure(sys: &str, rag: &str, query: &str) {
         let prompt = build_rag_prompt(sys, rag, query);
-        let wrapped = format!("<root>{}</root>", prompt);
-        let mut reader = Reader::from_str(&wrapped);
-        reader.config_mut().trim_text(false);
-
-        let mut buf = Vec::new();
-        let mut depth = 0;
-        let mut child_tags = Vec::new();
-        let mut current_tag = String::new();
-        let mut tag_contents = std::collections::HashMap::new();
-
-        let mut text_buf = String::new();
-
-        loop {
-            match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                    assert!(
-                        e.attributes().next().is_none(),
-                        "No attributes expected on tag {}, but found some in prompt: {}",
-                        name,
-                        prompt
-                    );
-                    depth += 1;
-                    if depth == 2 {
-                        child_tags.push(name.clone());
-                        text_buf.clear();
-                    } else if depth > 2 {
-                        panic!(
-                            "Nested tag '{}' found inside '{}' in prompt:\n{}",
-                            name, current_tag, prompt
-                        );
-                    }
-                    current_tag = name;
-                }
-                Ok(Event::End(_)) => {
-                    if depth == 2 {
-                        let unescaped = quick_xml::escape::unescape(&text_buf)
-                            .expect("Unescape should succeed");
-                        tag_contents.insert(current_tag.clone(), unescaped.to_string());
-                    }
-                    depth -= 1;
-                }
-                Ok(Event::Eof) => break,
-                Ok(Event::Text(e)) => {
-                    if depth == 2 {
-                        let text = reader.decoder().decode(e.as_ref()).expect("Decode text");
-                        text_buf.push_str(&text);
-                    }
-                }
-                Ok(Event::GeneralRef(e)) => {
-                    if depth == 2 {
-                        let text = reader.decoder().decode(e.as_ref()).expect("Decode ref");
-                        text_buf.push('&');
-                        text_buf.push_str(&text);
-                        text_buf.push(';');
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => panic!("XML parsing failed for prompt:\n{}\nError: {e}", prompt),
-            }
-            buf.clear();
-        }
-
+        let parsed = parse_prompt_template(&prompt).expect("parse_prompt_template should succeed");
         assert_eq!(
-            child_tags,
-            vec!["system", "context", "user_query"],
-            "Child tags under root must be exactly system, context, user_query"
-        );
-        assert_eq!(
-            tag_contents.get("system").map(|s| s.as_str()).unwrap_or(""),
-            sys,
+            parsed.system, sys,
             "system content mismatch for sys={:?}, rag={:?}, query={:?}",
-            sys,
-            rag,
-            query
+            sys, rag, query
         );
         assert_eq!(
-            tag_contents
-                .get("context")
-                .map(|s| s.as_str())
-                .unwrap_or(""),
-            rag,
+            parsed.context, rag,
             "context content mismatch for sys={:?}, rag={:?}, query={:?}",
-            sys,
-            rag,
-            query
+            sys, rag, query
         );
         assert_eq!(
-            tag_contents
-                .get("user_query")
-                .map(|s| s.as_str())
-                .unwrap_or(""),
-            query,
+            parsed.user_query, query,
             "user_query content mismatch for sys={:?}, rag={:?}, query={:?}",
-            sys,
-            rag,
-            query
+            sys, rag, query
         );
     }
 
@@ -2122,5 +2151,73 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, MemFuseError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_parse_prompt_template_valid_xml() {
+        let prompt = "<system>Sys</system>\n<context>Ctx</context>\n<user_query>Q</user_query>";
+        let parsed =
+            parse_prompt_template(prompt).expect("Valid prompt template should parse successfully");
+        assert_eq!(
+            parsed,
+            ParsedPrompt {
+                system: "Sys".to_string(),
+                context: "Ctx".to_string(),
+                user_query: "Q".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_prompt_template_malformed_xml_returns_error() {
+        let malformed_prompts = [
+            "<system>Unclosed system tag",
+            "<system>Sys</system><context>Ctx",
+            "<invalid>tag</invalid>",
+            "<system><nested>Illegal nested</nested></system><context>Ctx</context><user_query>Q</user_query>",
+            "<system>Sys</system><context>Ctx</context><user_query>Q</user_query><extra>Extra</extra>",
+            "<user_query>Wrong order</user_query><context>Ctx</context><system>Sys</system>",
+        ];
+
+        for prompt in &malformed_prompts {
+            let res = parse_prompt_template(prompt);
+            assert!(
+                res.is_err(),
+                "Expected parse error for prompt: {}, got: {:?}",
+                prompt,
+                res
+            );
+            if let Err(err) = res {
+                assert!(
+                    matches!(err, MemFuseError::Internal(_)),
+                    "Expected MemFuseError::Internal, got: {:?}",
+                    err
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_prompt_template_nested_tag_error_message() {
+        let prompt = "<system>Sys<nested>Tag</nested></system><context>Ctx</context><user_query>Q</user_query>";
+        let err = parse_prompt_template(prompt).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nested tag 'nested' inside 'system' is not allowed"),
+            "Unexpected error message: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_prompt_template_unexpected_tags_error_message() {
+        let prompt = "<system>Sys</system><other>Ctx</other><user_query>Q</user_query>";
+        let err = parse_prompt_template(prompt).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("expected tags [system, context, user_query], got [\"system\", \"other\", \"user_query\"]"),
+            "Unexpected error message: {}",
+            msg
+        );
     }
 }

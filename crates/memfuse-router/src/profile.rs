@@ -4,22 +4,6 @@ use memfuse_core::{MemFuseError, Result, TokenBudget};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-fn serialize_sorted_set<S>(set: &HashSet<u64>, s: S) -> std::result::Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let mut v: Vec<u64> = set.iter().copied().collect();
-    v.sort_unstable();
-    v.serialize(s)
-}
-
-fn deserialize_set<'de, D>(d: D) -> std::result::Result<HashSet<u64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Vec::<u64>::deserialize(d).map(|v| v.into_iter().collect())
-}
-
 /// Represents a Small Language Model (SLM) target and its domain expertise parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlmProfile {
@@ -28,10 +12,7 @@ pub struct SlmProfile {
     /// MCP endpoint address or URI for client communication.
     pub mcp_endpoint: String,
     /// Set of graph community IDs this SLM is domain-responsible for.
-    #[serde(
-        serialize_with = "serialize_sorted_set",
-        deserialize_with = "deserialize_set"
-    )]
+    #[serde(with = "serde_sorted_u64_set")]
     pub domain_communities: HashSet<u64>,
     /// Token budget configuration for prompt context trimming.
     pub token_budget: TokenBudget,
@@ -256,29 +237,7 @@ impl ProfileCalibrationState {
         adjusted
     }
 
-    /// Legacy recalibration (kept for backward compatibility).
-    /// Erhöht min_score falls durchschnittliche Konfidenz unter Schwellenwert.
-    /// Gibt true zurück wenn eine Anpassung vorgenommen wurde.
-    pub fn recalibrate(&mut self, low_confidence_threshold: f64) -> bool {
-        if self.times_selected < 10 {
-            // Nicht genug Daten für Kalibrierung
-            return false;
-        }
-        let avg = self.average_confidence();
-        if avg < low_confidence_threshold {
-            // Score um 10% erhöhen, max 2× original
-            let new_score = (self.calibrated_min_score * 1.1).min(self.original_min_score * 2.0);
-            if new_score != self.calibrated_min_score {
-                self.calibrated_min_score = new_score;
-                return true;
-            }
-        } else if avg > low_confidence_threshold * 1.5 {
-            // Konfidenz gut → Score in Richtung original relaxieren
-            let new_score = (self.calibrated_min_score * 0.95).max(self.original_min_score);
-            self.calibrated_min_score = new_score;
-        }
-        false
-    }
+    // ADR-028: recalibrate() removed — only recalibrate_conformal() is authoritative
 
     /// Setzt Kalibrierungsstate vollständig zurück.
     pub fn reset(&mut self) {
@@ -286,6 +245,20 @@ impl ProfileCalibrationState {
         self.cumulative_confidence = 1.0;
         self.calibrated_min_score = self.original_min_score;
         self.conformal = ConformalCalibrator::new(0.05, 0.01, self.original_min_score);
+    }
+}
+
+mod serde_sorted_u64_set {
+    use std::collections::HashSet;
+    use serde::{Deserializer, Serializer, Deserialize, Serialize};
+
+    pub fn serialize<S: Serializer>(set: &HashSet<u64>, s: S) -> Result<S::Ok, S::Error> {
+        let mut v: Vec<u64> = set.iter().copied().collect();
+        v.sort_unstable();
+        v.serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<HashSet<u64>, D::Error> {
+        Vec::<u64>::deserialize(d).map(|v| v.into_iter().collect())
     }
 }
 
@@ -383,6 +356,24 @@ mod tests {
         // Round-trip deserialization
         let deserialized: SlmProfile = serde_json::from_str(&json_str)?;
         assert_eq!(deserialized, profile);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_legacy_json_array() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let profile_orig = SlmProfile::new(
+            "test-slm",
+            "http://localhost:8000/mcp",
+            vec![1, 2, 3],
+            TokenBudget::new(1000, 100),
+            0.5,
+        );
+        let raw_json = serde_json::to_string(&profile_orig)?;
+
+        let profile: SlmProfile = serde_json::from_str(&raw_json)?;
+        let expected_set: HashSet<u64> = [1, 2, 3].into_iter().collect();
+        assert_eq!(profile.domain_communities, expected_set);
 
         Ok(())
     }

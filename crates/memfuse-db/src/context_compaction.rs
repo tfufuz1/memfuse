@@ -13,7 +13,7 @@
 //! to preserve the LLM context window.
 
 use crate::collection::Collection;
-use memfuse_core::{ContextChunk, DocId, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
+use memfuse_core::{ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
 use memfuse_ollama::OllamaClient;
 
 /// Strategie für Context Compaction.
@@ -316,6 +316,51 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
         Ok(())
     }
 
+    /// Refreshes the consolidation session by reading the current transaction IDs of all source documents.
+    /// This is used to retry consolidation after an OCC conflict, allowing the caller to re-summarize
+    /// only the documents that have actually changed.
+    /// Returns a list of document IDs that were mutated or deleted since the session started.
+    pub async fn refresh(&mut self) -> Result<Vec<DocId>> {
+        let mut changed_docs = Vec::new();
+        let mut new_source_docs = Vec::with_capacity(self.source_docs.len());
+
+        let new_base_tx = self.collection.allocate_tx()?;
+
+        for &(doc_id, expected_tx) in &self.source_docs {
+            match self.collection.get_doc_tx(doc_id).await? {
+                Some(current_tx) => {
+                    if current_tx.inner() > expected_tx.inner() {
+                        changed_docs.push(doc_id);
+                    }
+                    new_source_docs.push((doc_id, current_tx));
+                }
+                None => {
+                    changed_docs.push(doc_id);
+                    // If deleted, we just track the current new_base_tx
+                    new_source_docs.push((doc_id, new_base_tx));
+                }
+            }
+        }
+
+        self.source_docs = new_source_docs;
+
+        // Update intent in storage
+        let intent = crate::transaction::CommitIntent::Consolidation {
+            source_docs: self.source_docs.clone(),
+            target_id: self.target_id,
+            base_tx: new_base_tx,
+        };
+        let intent_bytes = serde_json::to_vec(&intent)?;
+        self.collection
+            .storage()
+            .put(new_base_tx, &self.intent_key, &intent_bytes)
+            .await?;
+        self.collection.storage().commit(new_base_tx).await?;
+        self.base_tx = new_base_tx;
+
+        Ok(changed_docs)
+    }
+
     /// Cancels / aborts the consolidation session, removing the intent key.
     pub async fn abort(self) -> Result<()> {
         let abort_tx = self.collection.allocate_tx()?;
@@ -364,12 +409,29 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 4. Delete source docs
         for &(src_id, _) in &self.source_docs {
-            let doc_key = self
-                .collection
-                .namespaced_key(&src_id.inner().to_le_bytes(), 1);
-            if let Some(val) = self.collection.storage().get(&doc_key).await? {
-                let meta: crate::collection::StoredDocumentMeta = serde_json::from_slice(&val)?;
-                self.collection.delete_op(&mut db_tx, &meta.id).await?;
+            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            match self.collection.storage().get(&doc_key).await? {
+                Some(val) => {
+                    match serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
+                        Ok(meta) => {
+                            self.collection
+                                .delete_op(&mut db_tx, &meta.id)
+                                .await
+                                .map_err(|e| MemFuseError::Internal(format!(
+                                    "Consolidation commit: failed to delete source doc {:?}: {}",
+                                    src_id, e
+                                )))?;
+                        }
+                        Err(e) => {
+                            return Err(MemFuseError::Serialization(format!(
+                                "Consolidation commit: cannot deserialize meta for source doc {:?}: {}", src_id, e
+                            )));
+                        }
+                    }
+                }
+                None => {
+                    tracing::warn!(src_id = ?src_id, "Consolidation: source doc not found, already deleted — skipping");
+                }
             }
         }
 
@@ -647,7 +709,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_consolidation_commit_aborts_on_delete_failure(
+    async fn test_consolidation_aborts_on_delete_failure(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let tmp = tempfile::tempdir()?;
         let lsm_config = LsmConfig {

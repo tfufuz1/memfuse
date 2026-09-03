@@ -276,3 +276,37 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
 - `cargo test -p memfuse-store --all-features`: **PASSED** (110 tests passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+
+---
+
+## 18. Storage Engine Chaos-Engineering Audit & Deep Verification (TS: 2026-09-03T19:48:00Z / SESSION: 471b8c2b)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Audit Timestamp**: `2026-09-03T19:48:00Z`
+- **Session Hash**: `471b8c2b`
+
+### Chaos-Engineering & Fault-Injection Matrix
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write (WAL / SSTable) | OK | WAL-Truncation & HMAC-Chain Repair erkennt inkomplette Records; Reopen nach Crash stellt konsistenten Zustand her (`test_wal_crash_consistency_write_without_fsync`, `test_batch_encrypted_wal_truncation_crash_consistency`) | — |
+| Disk-Full (ENOSPC) | OK | `MemFuseError::Storage(...)` wird kontrolliert aus `sync_all()` und File-Writes propagiert, 0 Panics | — |
+| OOM / Backpressure | OK | MemTable Memory-Cap und bounded WAL Buffering begrenzen Heap-Allokationen unter Last | — |
+| SIGBUS / Mmap-Truncation | N/A | `mmap.rs` ist ein sicherer Skeleton-Wrapper ohne unsafe dereferencing | — |
+| SIGKILL / Partial-Write Recovery | OK | UUID Sidecar & WAL Batch Atomicity Recovery reparieren abgebrochene Transaktionsblöcke sauber (`test_append_batch_partial_write_atomicity`, `test_uuid_sidecar_crash_fault_injection`) | — |
+
+### Static Analysis & Invariant Compliance Matrix
+1. **fsync & Directory Sync Discipline (APM-1)**: All file writes (`wal.rs`, `sstable.rs`, `lsm.rs`) perform `sync_all()` on the file handle and `fsync_parent_dir()` on the parent directory.
+2. **MVCC Single-Load Rule**: `last_committed_tx` is loaded exactly once at read entrypoints (`get_at_seq`, `scan_prefix_at`) in `lsm.rs`.
+3. **Zero Production Unwraps / Expects**: Confirmed 0 non-test `.unwrap()` and `.expect()` calls in `crates/memfuse-store/src/`.
+4. **Unsafe Block Audit**: Verified that all `unsafe` blocks in `wal.rs` (Windows Win32 token/DACL security programming) carry explicit `// SAFETY:` rationale comments and error handling.
+5. **Clean Tags**: Zero unresolved `AI-TAG` or open `ANCHOR` tags in `crates/memfuse-store/src/`.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --all-features`: **PASSED** (110 tests passed cleanly)
+- `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
