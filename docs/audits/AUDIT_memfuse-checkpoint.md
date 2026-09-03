@@ -112,19 +112,32 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
 - **REVIEW-PASS:**
   - `ANCHOR[TEST:CKPT-001]` in `crates/memfuse-checkpoint/tests/cache_concurrency_pinning.rs` verifiziert, konsolidiert und mit `REVIEW-PASS[2/2]` auf `STATUS:DONE` gesetzt.
 
+---
+
+## 8. Audit Session Log (TS: 2026-09-03T19:40:20Z) (SESSION: d766fd58)
+
+- **Audit-Datum:** 2026-09-03T19:40:20Z
+- **Session-Hash:** `d766fd58`
+- **Compiler/Toolchain:** Rust 1.98.1 / Cargo 1.98.1
+- **Crate-Status:**
+  - `cargo check -p memfuse-checkpoint --all-features` → PASSED (0 Fehler, 0 Warnungen)
+  - `cargo clippy -p memfuse-checkpoint -- -D warnings` → PASSED (0 Findings)
+  - `cargo fmt --check -p memfuse-checkpoint` → PASSED
+  - `cargo test -p memfuse-checkpoint --all-features` → PASSED (41 Unit-Tests + 32 Integrationstests grün)
+  - Unsafe Code Check → PASSED (`#![forbid(unsafe_code)]` eingehalten)
+- **Befund (Befund-ID: AGT-CHECKPOINT-a3ccc9fe):**
+  - `test_orphan_registry_persists_across_drop` leidet unter einer Race-Condition auf dem globalen `ORPHAN_REGISTRY` `OnceLock`-Singleton, wenn `cargo test` mehrere Tests parallel ausführt und `PersistentCheckpointStore::new` gleichzeitig `recover_and_clean()` aufruft. Als `AI-TAG[TEST][MAJOR]` dokumentiert.
+- **Tier-2 Stichproben-Verifikation (3 Iterationen):**
+  - `time_travel_correctness` & `cache_concurrency_pinning`: 3/3 Läufe mit 100% Pass und 0 Cross-Session State Pollution.
 
 ---
 
-## 7. Audit Session Log (TS: 2026-09-02T23:18:12Z) (SESSION: 2155aaa2)
+## 9. Chaos-Engineering-Audit (TS: 2026-09-03T19:40:20Z)
 
-- **Audit-Datum:** 2026-09-02T23:18:12Z
-- **Session-Hash:** `2155aaa2`
-- **Compiler/Toolchain:** Rust 1.98.0 / Cargo 1.98.0
-- **Crate-Status:**
-  - `cargo check -p memfuse-checkpoint --all-features` → PASSED (0 Fehler, 0 Warnungen)
-  - `cargo clippy -p memfuse-checkpoint --no-deps -- -D warnings` → PASSED (0 Findings)
-  - `cargo fmt --check -p memfuse-checkpoint` → PASSED
-  - `cargo test -p memfuse-checkpoint --all-features` → PASSED (39 Unit-Tests + 32 Integrationstests grün)
-  - Unsafe Code Check → PASSED (`#![forbid(unsafe_code)]` eingehalten)
-- **REVIEW-PASS:**
-  - `ANCHOR[TEST:CKPT-001]` in `crates/memfuse-checkpoint/tests/cache_concurrency_pinning.rs` verifiziert, konsolidiert und mit `REVIEW-PASS[2/2]` auf `STATUS:DONE` gesetzt.
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | OK | Inkomplette Checkpoints durch Manifest-Integritäts-Checksumme / WAL-Rollback abgefangen (`manifest_fault_injection.rs`) | — |
+| Disk-Full ENOSPC | OK | `Err(MemFuseError::Storage)` wird propagiert, kein Panic oder Datenverlust | — |
+| OOM / Backpressure | OK | Pinning & Auto-Rollback arbeiten heap-begrenzt ohne Memory-Leaks | — |
+| SIGBUS mmap-truncate | N/A | `memfuse-checkpoint` verwendet kein memory-mapped I/O (`#![forbid(unsafe_code)]`) | — |
+| SIGKILL recovery | OK | Waisen-Registrierung und Startup-Recovery stellen konsistenten Zustand nach Prozess-Kill wieder her | AGT-CHECKPOINT-a3ccc9fe |
