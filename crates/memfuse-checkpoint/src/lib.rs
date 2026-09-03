@@ -1214,8 +1214,11 @@ mod tests {
         assert!(!storage.pinned.lock().contains(&seq_no));
     }
 
+    static ORPHAN_TEST_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     #[test]
     fn test_orphan_registry_persists_across_drop() {
+        let _guard = ORPHAN_TEST_MUTEX.lock();
         let registry = global_orphan_registry();
         registry.clear_all();
 
@@ -1245,6 +1248,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_orphan_recovery_on_startup() {
+        let _guard = ORPHAN_TEST_MUTEX.lock();
         let registry = global_orphan_registry();
         registry.clear_all();
 
