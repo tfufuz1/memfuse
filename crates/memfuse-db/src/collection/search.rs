@@ -702,6 +702,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .await?;
                 filter_pre_rrf(raw_vec_results)
             }
+        } else if is_filtered {
+            let raw_vec_results = self
+                .search_filtered_at(vector, candidate_k, None, seq)
+                .await?;
+            filter_pre_rrf(raw_vec_results)
         } else {
             let raw_vec_results = self
                 .search_filtered_at(vector, candidate_k, None, seq)
