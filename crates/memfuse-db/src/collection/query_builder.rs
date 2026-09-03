@@ -103,6 +103,7 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     anchor_entities: Option<Vec<EntityId>>,
     same_community_as: Option<EntityId>,
     memory_type_filter: Option<Vec<MemoryType>>,
+    include_provenance: bool,
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
@@ -123,6 +124,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             anchor_entities: None,
             same_community_as: None,
             memory_type_filter: None,
+            include_provenance: false,
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
@@ -214,6 +216,12 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets whether to calculate and attach ProvenanceRecord to output results.
+    pub fn include_provenance(mut self, include: bool) -> Self {
+        self.include_provenance = include;
+        self
+    }
+
     /// Alias for `.memory_type_filter()`.
     pub fn memory_types(self, types: impl IntoIterator<Item = MemoryType>) -> Self {
         self.memory_type_filter(types)
@@ -256,6 +264,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self.filter = query.filter.clone();
         self.same_community_as = query.same_community_as;
         self.memory_type_filter = query.memory_type_filter.clone();
+        self.include_provenance = query.include_provenance;
         self.k = Some(query.k);
         self
     }
@@ -304,6 +313,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 memory_type_filter: self.memory_type_filter.clone(),
                 same_community_as: self.same_community_as,
                 include_superseded: false,
+                include_provenance: self.include_provenance,
                 k: fetch_k,
             };
             self.collection

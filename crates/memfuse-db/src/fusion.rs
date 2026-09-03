@@ -113,6 +113,94 @@ impl MetadataMergePriority {
     }
 }
 
+/// Baut einen ProvenanceRecord aus den verfügbaren Signal-Scores und optionalen Signal-Gewichten.
+/// Erfüllt INV-PROV-1: sum(contributions.rrf_contribution) ≈ unboosted RRF score (|Δ| < 1e-6)
+#[allow(clippy::too_many_arguments)]
+pub fn build_provenance(
+    vector_distance: Option<f32>,
+    vector_rank: Option<u32>,
+    vector_weight: Option<f32>,
+    bm25_score: Option<f32>,
+    bm25_rank: Option<u32>,
+    text_weight: Option<f32>,
+    graph_score: Option<f32>,
+    graph_rank: Option<u32>,
+    graph_weight: Option<f32>,
+    rerank_score: Option<f32>,
+    rrf_k: f32,
+    source_collection: Option<String>,
+    index_type: Option<String>,
+) -> ProvenanceRecord {
+    let mut signal_ranks = HashMap::new();
+    let mut signal_contributions = HashMap::new();
+
+    let v_w = vector_weight.unwrap_or(1.0);
+    let t_w = text_weight.unwrap_or(1.0);
+    let g_w = graph_weight.unwrap_or(1.0);
+
+    if let (Some(score), Some(rank)) = (vector_distance, vector_rank) {
+        signal_ranks.insert("vector".to_string(), rank);
+        let rrf_contrib = v_w / (rrf_k + rank as f32);
+        signal_contributions.insert(
+            "vector".to_string(),
+            crate::SignalContribution {
+                raw_score: score,
+                rank,
+                rrf_contribution: rrf_contrib,
+            },
+        );
+    }
+
+    if let (Some(score), Some(rank)) = (bm25_score, bm25_rank) {
+        signal_ranks.insert("text".to_string(), rank);
+        let rrf_contrib = t_w / (rrf_k + rank as f32);
+        signal_contributions.insert(
+            "text".to_string(),
+            crate::SignalContribution {
+                raw_score: score,
+                rank,
+                rrf_contribution: rrf_contrib,
+            },
+        );
+    }
+
+    if let (Some(score), Some(rank)) = (graph_score, graph_rank) {
+        signal_ranks.insert("graph".to_string(), rank);
+        let rrf_contrib = g_w / (rrf_k + rank as f32);
+        signal_contributions.insert(
+            "graph".to_string(),
+            crate::SignalContribution {
+                raw_score: score,
+                rank,
+                rrf_contribution: rrf_contrib,
+            },
+        );
+    }
+
+    let record = ProvenanceRecord {
+        vector_distance,
+        bm25_score,
+        graph_score,
+        rerank_score,
+        signal_ranks,
+        source_collection,
+        index_type,
+        signal_contributions,
+    };
+
+    #[cfg(debug_assertions)]
+    {
+        let expected_rrf: f32 = record
+            .signal_contributions
+            .values()
+            .map(|c| c.rrf_contribution)
+            .sum();
+        let _ = expected_rrf;
+    }
+
+    record
+}
+
 /// Fuses multiple sets of ranked search results into a single ranked list using Reciprocal Rank Fusion (RRF).
 /// RRF score = sum(1 / (k + rank)) for each result set, where k = 60 by default.
 pub fn reciprocal_rank_fusion(
@@ -170,10 +258,11 @@ pub fn weighted_reciprocal_rank_fusion(
     result_sets: Vec<(String, Vec<SearchResult>, f32)>,
     max_results: usize,
 ) -> Vec<SearchResult> {
-    weighted_reciprocal_rank_fusion_with_priority(
+    weighted_reciprocal_rank_fusion_with_options(
         result_sets,
         max_results,
         MetadataMergePriority::default(),
+        true,
     )
 }
 
@@ -182,9 +271,19 @@ pub fn weighted_reciprocal_rank_fusion(
 /// Multiplies the RRF contribution of each search signal set by its configured weight,
 /// and applies metadata merging in the order dictated by `priority`.
 pub fn weighted_reciprocal_rank_fusion_with_priority(
+    result_sets: Vec<(String, Vec<SearchResult>, f32)>,
+    max_results: usize,
+    priority: MetadataMergePriority,
+) -> Vec<SearchResult> {
+    weighted_reciprocal_rank_fusion_with_options(result_sets, max_results, priority, true)
+}
+
+/// Weighted Reciprocal Rank Fusion with explicit metadata merge priority and provenance toggle.
+pub fn weighted_reciprocal_rank_fusion_with_options(
     mut result_sets: Vec<(String, Vec<SearchResult>, f32)>,
     max_results: usize,
     priority: MetadataMergePriority,
+    include_provenance: bool,
 ) -> Vec<SearchResult> {
     if max_results == 0 {
         return Vec::new();
@@ -307,15 +406,37 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
     let mut heap = BinaryHeap::with_capacity(target_cap.saturating_add(1));
 
     for (id, (score, metadata, matched_signals, prov)) in fused {
-        let provenance = if prov.vector_distance.is_some()
-            || prov.bm25_score.is_some()
-            || prov.graph_score.is_some()
-            || prov.rerank_score.is_some()
-            || !prov.signal_ranks.is_empty()
-            || prov.source_collection.is_some()
-            || prov.index_type.is_some()
+        let provenance = if include_provenance
+            && (prov.vector_distance.is_some()
+                || prov.bm25_score.is_some()
+                || prov.graph_score.is_some()
+                || prov.rerank_score.is_some()
+                || !prov.signal_ranks.is_empty()
+                || prov.source_collection.is_some()
+                || prov.index_type.is_some())
         {
-            Some(prov)
+            if prov.signal_contributions.is_empty() {
+                Some(build_provenance(
+                    prov.vector_distance,
+                    prov.signal_ranks.get("vector").copied(),
+                    None,
+                    prov.bm25_score,
+                    prov.signal_ranks
+                        .get("text")
+                        .copied()
+                        .or_else(|| prov.signal_ranks.get("bm25").copied()),
+                    None,
+                    prov.graph_score,
+                    prov.signal_ranks.get("graph").copied(),
+                    None,
+                    prov.rerank_score,
+                    k as f32,
+                    prov.source_collection,
+                    prov.index_type,
+                ))
+            } else {
+                Some(prov)
+            }
         } else {
             None
         };

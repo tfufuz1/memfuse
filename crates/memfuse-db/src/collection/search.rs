@@ -619,7 +619,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion(signal_sets, usize::MAX);
+        let fused = crate::fusion::weighted_reciprocal_rank_fusion_with_options(
+            signal_sets,
+            usize::MAX,
+            crate::fusion::MetadataMergePriority::default(),
+            true,
+        );
 
         let mut boosted = self
             .apply_community_boost_post_rrf(
@@ -842,7 +847,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             signal_sets.push(("graph".to_string(), graph_results, gw));
         }
 
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion(signal_sets, usize::MAX);
+        let fused = crate::fusion::weighted_reciprocal_rank_fusion_with_options(
+            signal_sets,
+            usize::MAX,
+            crate::fusion::MetadataMergePriority::default(),
+            query.include_provenance,
+        );
 
         let mut fused_results = self
             .apply_community_boost_post_rrf(

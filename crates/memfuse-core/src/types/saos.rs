@@ -225,6 +225,9 @@ pub struct HybridQuery {
     /// Controls whether superseded Zettelkasten memory chunks are included in results (ADR-038). Default: false.
     #[serde(default)]
     pub include_superseded: bool,
+    /// Controls whether ProvenanceRecord is attached to SearchResult output. Default: false.
+    #[serde(default)]
+    pub include_provenance: bool,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -248,6 +251,7 @@ pub struct HybridQueryBuilder {
     same_community_as: Option<EntityId>,
     memory_type_filter: Option<Vec<MemoryType>>,
     include_superseded: bool,
+    include_provenance: bool,
     k: Option<usize>,
 }
 
@@ -311,6 +315,12 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets whether to calculate and attach ProvenanceRecord to output results.
+    pub fn with_include_provenance(mut self, include: bool) -> Self {
+        self.include_provenance = include;
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -340,6 +350,7 @@ impl HybridQueryBuilder {
             same_community_as: self.same_community_as,
             memory_type_filter: self.memory_type_filter,
             include_superseded: self.include_superseded,
+            include_provenance: self.include_provenance,
             k: self.k.unwrap_or(10),
         })
     }
