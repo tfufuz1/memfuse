@@ -1,7 +1,8 @@
-// ANCHOR[TEST:CKPT-001] STATUS:IN-PROGRESS AGENT:1 (TS:2026-09-01T23:07:05Z) (SESSION: 358e3b0a)
+// ANCHOR[TEST:CKPT-001] STATUS:DONE (TS:2026-09-02T23:18:12Z) (SESSION: 358e3b0a)
 // AUFGABE : Verify Concurrent Checkpoint Pinning & GC Exclusions
 // GATE    : cargo test -p memfuse-checkpoint --test cache_concurrency_pinning
-// REVIEW-PASS[1/2] (TS:2026-09-01T23:07:05Z) (SESSION: 358e3b0a) PRÜFER-KONTEXT: FRESH - Test covers concurrent pinning, GC safety, and cache behavior.
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CKPT-001) (TS:2026-09-01T23:09:00Z) (SESSION: fdf7a62e) PRÜFER-KONTEXT: FRESH - Test covers concurrent pinning, GC safety, and cache behavior.
+// REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CKPT-001) (TS:2026-09-02T23:18:12Z) (SESSION: 2155aaa2) PRÜFER-KONTEXT: FRESH - Confirmed concurrent stress test, cache hit/miss reloading, and unpinning lifecycle.
 
 use memfuse_checkpoint::PersistentCheckpointStore;
 use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
@@ -208,10 +209,6 @@ async fn test_concurrent_stress_read_write() {
 }
 
 /// Test GC & Pinning Lifecycle: verifying `pin_checkpoint` and `unpin_checkpoint` invariants.
-// ANCHOR[TEST:CKPT-001] STATUS:IN-PROGRESS AGENT:Jules (TS:2026-09-01T23:09:00Z) (SESSION: fdf7a62e)
-// AUFGABE : Concurrent Checkpoint Pinning & GC Exclusions Test Coverage.
-// GATE    : cargo test -p memfuse-checkpoint --test cache_concurrency_pinning
-// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:CKPT-001) (TS:2026-09-01T23:09:00Z) (SESSION: fdf7a62e)
 #[tokio::test]
 async fn test_pinning_and_gc_exclusion_lifecycle() {
     let storage = Arc::new(TrackingMockStorage::new());

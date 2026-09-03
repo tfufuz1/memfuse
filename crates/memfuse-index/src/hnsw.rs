@@ -423,7 +423,7 @@ impl HnswIndex {
             let mmap_guard = self.inner.mmap_index.read();
             let mmap_node_count = mmap_guard
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let ctx = SearchContext {
                 nodes: &nodes,
@@ -700,21 +700,19 @@ impl HnswIndex {
             };
 
             // Initial header
-            let mut header = crate::persistence::HnswHeader {
-                magic: crate::persistence::HNSW_MAGIC,
-                version: crate::persistence::HNSW_VERSION,
-                dimension: inner.config.dimension as u32,
-                m: inner.config.m as u32,
-                metric: inner.config.distance_metric as u8,
-                quantized: if inner.config.quantize { 1 } else { 0 },
+            let mut header = crate::persistence::HnswHeader::new(
+                inner.config.dimension as u32,
+                inner.config.m as u32,
+                inner.config.distance_metric as u8,
+                if inner.config.quantize { 1 } else { 0 },
                 q_min,
                 q_max,
-                node_count: node_count as u64,
-                entry_point: entry_point.map(|i| i as i64).unwrap_or(-1),
+                node_count as u64,
+                entry_point.map(|i| i as i64).unwrap_or(-1),
                 nodes_offset,
-                connections_offset: 0,
-                last_tx_id: inner.last_tx_id.load(Ordering::SeqCst),
-            };
+                0,
+                inner.last_tx_id.load(Ordering::SeqCst),
+            );
 
             // 1. Placeholder Header
             writer
@@ -764,7 +762,7 @@ impl HnswIndex {
 
             // 4. Connections Block (Align to 4 bytes)
             let connections_offset = (current_pos + 3) & !3;
-            header.connections_offset = connections_offset;
+            header.set_connections_offset(connections_offset);
 
             if connections_offset > current_pos {
                 let padding = [0u8; 4];
@@ -852,8 +850,8 @@ impl HnswIndex {
         &self,
         mmap_index: crate::persistence::MmapIndex,
     ) -> Result<()> {
-        let ep = if mmap_index.header.entry_point >= 0 {
-            Some(mmap_index.header.entry_point as usize)
+        let ep = if mmap_index.header.entry_point() >= 0 {
+            Some(mmap_index.header.entry_point() as usize)
         } else {
             None
         };
@@ -875,10 +873,10 @@ impl HnswIndex {
             self.inner.max_layer.store(max_layer, Ordering::SeqCst);
         }
 
-        if mmap_index.header.quantized != 0 {
+        if mmap_index.header.is_quantized() {
             let dim = self.inner.config.dimension;
-            let q_min = mmap_index.header.q_min;
-            let q_max = mmap_index.header.q_max;
+            let q_min = mmap_index.header.q_min();
+            let q_max = mmap_index.header.q_max();
             let range = if (q_max - q_min).abs() < f32::EPSILON {
                 1e-6
             } else {
@@ -901,7 +899,7 @@ impl HnswIndex {
         let mut guard = self.inner.mmap_index.write();
         self.inner
             .last_tx_id
-            .store(mmap_index.header.last_tx_id, Ordering::SeqCst);
+            .store(mmap_index.header.last_tx_id(), Ordering::SeqCst);
         *guard = Some(mmap_index);
         Ok(())
     }
@@ -996,7 +994,7 @@ impl HnswIndexCore {
         record: &crate::persistence::NodeRecord,
     ) -> Result<f32> {
         let vector_bytes = mmap.get_vector(record)?;
-        if mmap.header.quantized != 0 {
+        if mmap.header.is_quantized() {
             let guard = self.quantizer.read();
             let q = guard
                 .as_ref()
@@ -1116,7 +1114,7 @@ impl HnswIndexCore {
         let mmap_guard = self.mmap_index.read();
         let mmap_node_count = mmap_guard
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
 
         let ctx = SearchContext {
@@ -1208,7 +1206,7 @@ impl HnswIndexCore {
                 if idx < ctx.mmap_node_count {
                     let record = mmap.get_node_record(idx)?;
                     let bytes = mmap.get_vector(&record)?;
-                    return if mmap.header.quantized != 0 {
+                    return if mmap.header.is_quantized() {
                         Ok(VectorData::U8(bytes.to_vec()))
                     } else {
                         let mut v = vec![0.0f32; self.config.dimension];
@@ -1352,7 +1350,7 @@ impl HnswIndexCore {
             .mmap_index
             .read()
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
 
         let new_idx = {
@@ -1381,7 +1379,7 @@ impl HnswIndexCore {
             let mmap_guard = self.mmap_index.read();
             let mmap_node_count = mmap_guard
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let ctx = SearchContext {
                 nodes: &nodes_read,
@@ -1445,7 +1443,7 @@ impl HnswIndexCore {
             let mmap_guard = self.mmap_index.read();
             let mmap_node_count = mmap_guard
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
 
             if let Some(new_node) = nodes.get_mut(new_idx - mmap_node_count) {
@@ -1563,7 +1561,7 @@ impl HnswIndexCore {
                 let mmap_guard = self.mmap_index.read();
                 let mmap_node_count = mmap_guard
                     .as_ref()
-                    .map(|m| m.header.node_count as usize)
+                    .map(|m| m.header.node_count() as usize)
                     .unwrap_or(0);
                 let deleted = self.deleted_nodes.read();
 
@@ -1654,7 +1652,7 @@ impl HnswIndexCore {
             .mmap_index
             .read()
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
         let total = mmap_count + self.nodes.read().len();
         if total == 0 {
@@ -1702,7 +1700,7 @@ impl HnswIndexCore {
                 .mmap_index
                 .read()
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let deleted_nodes = self.deleted_nodes.read();
             let mut active = Vec::with_capacity(nodes.len());
@@ -1772,7 +1770,7 @@ impl HnswIndexCore {
                 .mmap_index
                 .read()
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             if let Some(&global_idx) = new_index.inner.doc_to_node.read().get(&doc_id.inner()) {
                 if global_idx >= mmap_count {
@@ -1812,7 +1810,7 @@ impl HnswIndexCore {
                 .mmap_index
                 .read()
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let mut new_deleted = RoaringTreemap::new();
             for del_idx in deleted_nodes.iter() {
@@ -1910,7 +1908,7 @@ impl VectorIndex for HnswIndex {
         let mmap_guard = self.inner.mmap_index.read();
         let mmap_node_count = mmap_guard
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
 
         let mut ep = Vec::new();
@@ -2146,7 +2144,7 @@ impl VectorIndex for HnswIndex {
                 .mmap_index
                 .read()
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let doc_map = self.inner.doc_to_node.read();
             let mut nodes = self.inner.nodes.write();
@@ -2241,7 +2239,7 @@ impl VectorIndex for HnswIndex {
                 .mmap_index
                 .read()
                 .as_ref()
-                .map(|m| m.header.node_count as usize)
+                .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let mut deleted = self.inner.deleted_nodes.write();
             for &idx in &indices_to_remove {
@@ -2279,7 +2277,7 @@ impl VectorIndex for HnswIndex {
         let mmap_guard = self.inner.mmap_index.read();
         let mmap_node_count = mmap_guard
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
         let deleted = self.inner.deleted_nodes.read();
 
@@ -2309,7 +2307,7 @@ impl VectorIndex for HnswIndex {
             .mmap_index
             .read()
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
         let total = mmap_count + self.inner.nodes.read().len();
         let deleted = self.inner.deleted_count.load(Ordering::SeqCst) as usize;
@@ -2329,7 +2327,7 @@ impl VectorIndex for HnswIndex {
         let mmap_guard = self.inner.mmap_index.read();
         let mmap_count = mmap_guard
             .as_ref()
-            .map(|m| m.header.node_count as usize)
+            .map(|m| m.header.node_count() as usize)
             .unwrap_or(0);
 
         let deleted_count = self.inner.deleted_count.load(Ordering::SeqCst) as usize;
