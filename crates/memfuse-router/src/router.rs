@@ -164,59 +164,13 @@ impl RouterEngine {
             }
         }
 
-        // 3. Select profile with highest aggregated relevance score using calibrated thresholds
-        let effective_profiles: Vec<SlmProfile> = {
+        // 3. Select profile using calibrated cascade routing
+        let (selected_profile_idx, selected_profile, confidence_metrics) = {
             let cal = self.calibration.read();
-            profiles
-                .iter()
-                .map(|p| {
-                    let mut ep = p.clone();
-                    if let Some(state) = cal.get(&p.name) {
-                        ep.min_relevance_score = state.calibrated_min_score;
-                    }
-                    ep
-                })
-                .collect()
+            self.select_profile_cascade(&chunks, &profiles, &cal)?
         };
 
-        let profile_scores = compute_profile_scores(&effective_profiles, &chunks);
-
-        let (selected_profile_idx, selected_profile) = match select_profile_from_chunks(
-            &effective_profiles,
-            &chunks,
-        ) {
-            Ok(idx) => (idx, profiles[idx].clone()),
-            Err(MemFuseError::NotFound(ref msg)) if msg.contains("min_relevance_score") => {
-                // Kaskaden-Fallback: Profil mit niedrigstem min_relevance_score
-                // (oder kalibriertem calibrated_min_score) als Notfall-Profil
-                let cal = self.calibration.read();
-                let fallback_idx = profiles
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| {
-                        let score_a = cal
-                            .get(&a.name)
-                            .map(|s| s.calibrated_min_score)
-                            .unwrap_or(a.min_relevance_score);
-                        let score_b = cal
-                            .get(&b.name)
-                            .map(|s| s.calibrated_min_score)
-                            .unwrap_or(b.min_relevance_score);
-                        score_a.total_cmp(&score_b)
-                    })
-                    .map(|(idx, _)| idx)
-                    .ok_or_else(|| {
-                        MemFuseError::NotFound("Keine SLM-Profile konfiguriert".to_string())
-                    })?;
-
-                tracing::warn!(
-                    profile = %profiles[fallback_idx].name,
-                    "Kaskaden-Fallback: Kein Profil über Schwellenwert, nutze Profil mit niedrigstem min_relevance_score"
-                );
-                (fallback_idx, profiles[fallback_idx].clone())
-            }
-            Err(other) => return Err(other),
-        };
+        let profile_scores = compute_profile_scores(&profiles, &chunks);
 
         // Kalibrierungs-Tracking: Konfidenz berechnen
         {
@@ -256,23 +210,6 @@ impl RouterEngine {
             }
         }
 
-        // Build confidence metrics for auditability
-        let confidence_metrics = {
-            let cal = self.calibration.read();
-            cal.get(&selected_profile.name).map(|state| {
-                let best_score = profile_scores
-                    .get(&selected_profile_idx)
-                    .copied()
-                    .unwrap_or(0.0);
-                ConfidenceMetrics {
-                    score_lower: best_score * 0.9, // Conservative lower bound
-                    score_upper: best_score * 1.1, // Conservative upper bound
-                    calibrated: state.conformal.window_total > 10,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                }
-            })
-        };
-
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
@@ -282,9 +219,161 @@ impl RouterEngine {
         Ok(RoutingDecision {
             profile: selected_profile,
             context: context_window,
-            confidence: confidence_metrics,
+            confidence: Some(confidence_metrics),
         })
     }
+
+    /// Kalibriertes Kaskaden-Routing.
+    ///
+    /// Algorithmus:
+    /// 1. Sortiere Profile absteigend nach min_relevance_score (präzisestes zuerst).
+    /// 2. Für jedes Profil in dieser Reihenfolge:
+    ///    - Berechne Aggregat-Score der Chunks (existing logic)
+    ///    - Hole ConformalCalibrator für dieses Profil aus self.calibration
+    ///    - Prüfe: score >= calibrator.quantile_threshold (oder profile.min_relevance_score)
+    ///      JA: Dieses Profil nehmen, ConfidenceMetrics.calibrated = true
+    ///      NEIN: Weiter zum nächsten Profil (Kaskade)
+    /// 3. Falls kein Profil den kalibrierten Schwellenwert erfüllt:
+    ///    - Nehme das letzte (geringstes min_relevance_score) als sicheren Fallback
+    ///    - ConfidenceMetrics.calibrated = false, tracing::warn! ausgeben
+    ///
+    /// # Returns
+    /// (profil_index, SlmProfile, ConfidenceMetrics)
+    pub(crate) fn select_profile_cascade(
+        &self,
+        chunks: &[(ContextChunk, Option<u64>)],
+        profiles: &[SlmProfile],
+        calibration: &HashMap<String, ProfileCalibrationState>,
+    ) -> Result<(usize, SlmProfile, ConfidenceMetrics)> {
+        if chunks.is_empty() {
+            return Err(MemFuseError::NotFound(
+                "Keine gültigen Chunks aus Suchergebnissen ermittelbar".to_string(),
+            ));
+        }
+
+        if !chunks.iter().any(|(c, _)| c.relevance.is_finite()) {
+            tracing::error!(
+                "Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung"
+            );
+            return Err(MemFuseError::NotFound(
+                "Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung".to_string(),
+            ));
+        }
+
+        if profiles.is_empty() {
+            return Err(MemFuseError::NotFound(
+                "Keine SLM-Profile konfiguriert".to_string(),
+            ));
+        }
+
+        // Filter profiles by community match eligibility.
+        // A profile is eligible if its domain_communities is empty, OR if at least one chunk matches one of its domain_communities.
+        let eligible_profiles: Vec<(usize, &SlmProfile)> = profiles
+            .iter()
+            .enumerate()
+            .filter(|(_, profile)| {
+                profile.domain_communities.is_empty()
+                    || chunks.iter().any(|(_, comm_id)| {
+                        comm_id.is_some_and(|cid| profile.domain_communities.contains(&cid))
+                    })
+            })
+            .collect();
+
+        if eligible_profiles.is_empty() {
+            return Err(MemFuseError::NotFound(
+                "Kein SLM-Profil entspricht der Community-Zuordnung".to_string(),
+            ));
+        }
+
+        // 1. Sort eligible profile indices descending by min_relevance_score (most precise first).
+        // Tie-breaking: when min_relevance_scores are equal, candidate score descending, then lower original index.
+        let mut sorted_profiles = eligible_profiles;
+        sorted_profiles.sort_by(|(idx_a, a), (idx_b, b)| {
+            b.min_relevance_score
+                .total_cmp(&a.min_relevance_score)
+                .then_with(|| {
+                    let score_a = compute_profile_score(a, chunks);
+                    let score_b = compute_profile_score(b, chunks);
+                    score_b.total_cmp(&score_a).then_with(|| idx_a.cmp(idx_b))
+                })
+        });
+
+        // 2. Cascade evaluation in descending min_relevance_score order
+        for &(orig_idx, profile) in &sorted_profiles {
+            let score = compute_profile_score(profile, chunks);
+            let state = calibration.get(&profile.name);
+
+            let (threshold, is_calibrated) = match state {
+                Some(st) if st.conformal.window_total > 10 => {
+                    (st.calibrated_min_score, true)
+                }
+                _ => (profile.min_relevance_score, false),
+            };
+
+            if score >= threshold {
+                let q_threshold = state
+                    .map(|st| st.conformal.quantile_threshold)
+                    .unwrap_or(profile.min_relevance_score);
+                let confidence = ConfidenceMetrics {
+                    score_lower: score * 0.9,
+                    score_upper: score * 1.1,
+                    calibrated: is_calibrated,
+                    quantile_threshold: q_threshold,
+                };
+                return Ok((orig_idx, profile.clone(), confidence));
+            }
+        }
+
+        // 3. Fallback: Take the eligible profile with lowest min_relevance_score (last in cascade)
+        let &(fallback_idx, fallback_profile) = match sorted_profiles.last() {
+            Some(p) => p,
+            None => {
+                return Err(MemFuseError::NotFound(
+                    "Keine SLM-Profile konfiguriert".to_string(),
+                ));
+            }
+        };
+        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let state = calibration.get(&fallback_profile.name);
+        let q_threshold = state
+            .map(|st| st.conformal.quantile_threshold)
+            .unwrap_or(fallback_profile.min_relevance_score);
+
+        tracing::warn!(
+            profile = %fallback_profile.name,
+            "Kaskaden-Fallback: Kein Profil über Schwellenwert, nutze Profil mit niedrigstem min_relevance_score"
+        );
+
+        let confidence = ConfidenceMetrics {
+            score_lower: fallback_score * 0.9,
+            score_upper: fallback_score * 1.1,
+            calibrated: false,
+            quantile_threshold: q_threshold,
+        };
+
+        Ok((fallback_idx, fallback_profile.clone(), confidence))
+    }
+}
+
+/// Computes the aggregate relevance score for a single profile across chunks.
+pub(crate) fn compute_profile_score(
+    profile: &SlmProfile,
+    chunks: &[(ContextChunk, Option<u64>)],
+) -> f32 {
+    let mut aggregated_score = 0.0f32;
+    for (chunk, comm_id) in chunks {
+        if !chunk.relevance.is_finite() {
+            continue;
+        }
+        let mut score = chunk.relevance;
+        if let Some(c_id) = comm_id {
+            if profile.domain_communities.contains(c_id) {
+                score *= 1.2;
+            }
+        }
+        aggregated_score += score;
+    }
+    aggregated_score
 }
 
 /// Computes candidate scores for all profiles across chunks.
@@ -292,33 +381,14 @@ pub(crate) fn compute_profile_scores(
     profiles: &[SlmProfile],
     chunks: &[(ContextChunk, Option<u64>)],
 ) -> HashMap<usize, f32> {
-    let mut profile_scores: HashMap<usize, f32> = HashMap::new();
-
-    for (idx, profile) in profiles.iter().enumerate() {
-        let mut aggregated_score = 0.0f32;
-
-        for (chunk, comm_id) in chunks {
-            if !chunk.relevance.is_finite() {
-                continue;
-            }
-            let mut score = chunk.relevance;
-            if let Some(c_id) = comm_id {
-                if profile.domain_communities.contains(c_id) {
-                    score *= 1.2;
-                }
-            }
-            aggregated_score += score;
-        }
-
-        profile_scores.insert(idx, aggregated_score);
-    }
-
-    profile_scores
+    profiles
+        .iter()
+        .enumerate()
+        .map(|(idx, profile)| (idx, compute_profile_score(profile, chunks)))
+        .collect()
 }
 
-/// Computes the NaN-safe maximum score across chunks for a given profile.
-///
-/// Filters out non-finite scores (`NaN` and `Inf`) before performing the fold aggregation.
+#[allow(dead_code)]
 pub(crate) fn compute_max_score(
     profile: &SlmProfile,
     chunks: &[(ContextChunk, Option<u64>)],
@@ -338,13 +408,7 @@ pub(crate) fn compute_max_score(
         .fold(0.0f32, f32::max)
 }
 
-/// Selects the best matching SLM profile index based on candidate chunks and domain community matches.
-///
-/// # Errors
-/// Returns `MemFuseError::NotFound` if:
-/// - `chunks` is empty.
-/// - All chunk relevance scores are non-finite (`NaN`/`Inf`), indicating possible upstream corruption.
-/// - No candidate SLM profile satisfies the minimum relevance threshold or community match.
+#[allow(dead_code)]
 pub(crate) fn select_profile_from_chunks(
     profiles: &[SlmProfile],
     chunks: &[(ContextChunk, Option<u64>)],
@@ -355,7 +419,6 @@ pub(crate) fn select_profile_from_chunks(
         ));
     }
 
-    // Explicitly check for upstream distance corruption where all relevance scores are NaN/Inf
     if !chunks.iter().any(|(c, _)| c.relevance.is_finite()) {
         tracing::error!(
             "Alle Chunk-Relevanzwerte sind NaN/Inf — mögliche Upstream-Korruption in der Distanzberechnung"
