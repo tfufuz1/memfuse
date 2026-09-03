@@ -119,7 +119,12 @@ async fn test_supersedes_displacement_logic() {
         .build()
         .unwrap();
 
-    let results_filtered = col.hybrid_search_with_query(&q_default).await.unwrap();
+    let results_filtered = col
+        .query()
+        .query_config(&q_default)
+        .execute()
+        .await
+        .unwrap();
     // doc-old should be displaced by doc-new
     let ids_filtered: Vec<String> = results_filtered.into_iter().map(|r| r.id).collect();
     assert!(ids_filtered.contains(&"doc-new".to_string()));
@@ -133,7 +138,12 @@ async fn test_supersedes_displacement_logic() {
         .build()
         .unwrap();
 
-    let results_all = col.hybrid_search_with_query(&q_include_all).await.unwrap();
+    let results_all = col
+        .query()
+        .query_config(&q_include_all)
+        .execute()
+        .await
+        .unwrap();
     let ids_all: Vec<String> = results_all.into_iter().map(|r| r.id).collect();
     assert!(ids_all.contains(&"doc-new".to_string()));
     assert!(ids_all.contains(&"doc-old".to_string()));

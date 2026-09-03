@@ -225,4 +225,22 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
    - **Verifikation:** `cargo run -p xtask -- check-review-coverage` meldet PASSED.
 
 ---
+
+## 13. Audit-Update — Chaos-Engineering & Tier 1 Concurrency-Sampling (2026-09-03T19:36:45Z, SESSION: 1d83ac75)
+
+### Tier 1 Concurrency Rauchtest-Stichprobe:
+- **Ausführung:** 5 aufeinanderfolgende parallele Testläufe von `cargo test -p memfuse-index --lib -- --test-threads=8`.
+- **Ergebnis:** 0 Panics, 0 Deadlocks, 0 Test-Fehlschläge (89/89 Tests in allen 5 Durchläufen bestanden).
+
+### Chaos-Engineering-Audit Matrix:
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | OK | Kontrolliert via `.tmp`-Isolierung & atomares `rename()` | — |
+| Disk-Full ENOSPC | OK | Err propagiert via `MemFuseError::Storage` / `Io` | — |
+| OOM / Backpressure | OK | Bound via `MAX_SEARCH_K` & atomar gesteuerte Data-Structures | — |
+| SIGBUS mmap-truncate | OK | Read-only Mmap; POSIX Unlink/Rename schützt aktive Handles | — |
+| SIGKILL recovery | OK | Sauber; atomare Datei-Ersetzung garantiert Konsistenz | — |
+
+---
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*

@@ -1428,11 +1428,13 @@ mod tests {
     }
 }
 
+// AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c)
+// RESOLVED: _trigger_panic_for_test now calls run_blocking_ffi internally triggering a panic in the closure to test FFI panic containment.
 /// Internal helper function for testing FFI panic isolation.
 #[pyfunction]
 fn _trigger_panic_for_test(py: Python<'_>, message: Option<String>) -> PyResult<()> {
     let msg = message.unwrap_or_else(|| "Test panic for FFI isolation".to_string());
-    run_blocking_ffi(py, move || {
+    run_blocking_ffi(py, move || -> PyResult<()> {
         panic!("{}", msg);
     })
 }

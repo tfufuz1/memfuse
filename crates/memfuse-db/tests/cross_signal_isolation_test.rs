@@ -49,7 +49,7 @@ async fn test_cross_signal_isolation_single_run() -> Result<()> {
     let pinned_res = collection
         .query()
         .text("rust")
-        .vector(vec_query)
+        .vector([0.0, 1.0, 0.0, 0.0])
         .seq(seq1)
         .k(5)
         .execute()
@@ -116,7 +116,7 @@ async fn test_cross_signal_isolation_100_iterations_stress() -> Result<()> {
         let results = collection
             .query()
             .text("quantum")
-            .vector(vec_query_v2)
+            .vector([0.0, 1.0, 0.0, 0.0])
             .seq(seq_v1)
             .k(5)
             .execute()

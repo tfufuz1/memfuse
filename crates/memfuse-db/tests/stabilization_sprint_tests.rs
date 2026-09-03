@@ -89,6 +89,7 @@ async fn test_concurrent_inserts_toctou_safety() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_hybrid_search_uses_all_signals_and_weights() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {

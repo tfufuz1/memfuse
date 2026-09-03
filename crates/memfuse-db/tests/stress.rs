@@ -42,8 +42,13 @@ async fn test_orchestrator_stress_concurrency() {
                     .expect("insert");
 
                 // Search - should find itself
-                #[allow(deprecated)]
-                let results = col.search(&vec, 1).await.expect("search");
+                let results = col
+                    .query()
+                    .embedding(&vec)
+                    .k(1)
+                    .execute()
+                    .await
+                    .expect("search");
                 assert!(!results.is_empty());
                 assert_eq!(
                     results[0].id, id,
