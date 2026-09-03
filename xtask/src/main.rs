@@ -23,7 +23,7 @@ fn chrono_or_today() -> String {
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -1045,32 +1045,30 @@ pub fn validate_tags_items(tags: &[TagItem]) -> bool {
 
     for tag in tags {
         if (tag.tag_type == "AI-TAG" || tag.tag_type == "ANCHOR") && !tag.is_resolved {
-            let parsed_dt =
-                match NaiveDateTime::parse_from_str(&tag.timestamp, "%Y-%m-%dT%H:%M:%SZ") {
-                    Ok(dt) => dt,
-                    Err(_) => {
-                        eprintln!("❌ [GATE-7]: Tag ohne gültigen ISO-8601 Zeitstempel");
-                        eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
-                        eprintln!("Ursache: TS-Feld fehlt oder ungültig formatiert");
-                        eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
-                        eprintln!(
-                            "   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)"
-                        );
-                        eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
-                        eprintln!();
-                        success = false;
-                        continue;
-                    }
-                };
+            let parsed_dt = match NaiveDateTime::parse_from_str(
+                &tag.timestamp,
+                "%Y-%m-%dT%H:%M:%SZ",
+            ) {
+                Ok(dt) => dt,
+                Err(_) => {
+                    eprintln!("❌ [GATE-7]: Tag ohne gültigen ISO-8601 Zeitstempel");
+                    eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
+                    eprintln!("Ursache: TS-Feld fehlt oder ungültig formatiert");
+                    eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
+                    eprintln!("   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)");
+                    eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
+                    eprintln!();
+                    success = false;
+                    continue;
+                }
+            };
 
             if parsed_dt >= cutoff_dt && tag.session.is_none() {
                 eprintln!("❌ [GATE-7]: Tag (>= 2026-08-29) ohne SESSION:-Feld");
                 eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
                 eprintln!("Ursache: SESSION-Feld fehlt bei neuem Tag (>= 2026-08-29)");
                 eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
-                eprintln!(
-                    "   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)"
-                );
+                eprintln!("   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)");
                 eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
                 eprintln!();
                 success = false;
@@ -1129,7 +1127,10 @@ pub fn run_validate_tags(fix: bool) -> bool {
                                         if fix {
                                             let today_str = today.format("%Y-%m-%d").to_string();
                                             line_str = ws_tag_re
-                                                .replace(&line_str, format!("{} {}", tag_prefix, today_str))
+                                                .replace(
+                                                    &line_str,
+                                                    format!("{} {}", tag_prefix, today_str),
+                                                )
                                                 .to_string();
                                             modified = true;
                                         } else {
@@ -1144,7 +1145,10 @@ pub fn run_validate_tags(fix: bool) -> bool {
                                         if fix {
                                             let today_str = today.format("%Y-%m-%d").to_string();
                                             line_str = ws_tag_re
-                                                .replace(&line_str, format!("{} {}", tag_prefix, today_str))
+                                                .replace(
+                                                    &line_str,
+                                                    format!("{} {}", tag_prefix, today_str),
+                                                )
                                                 .to_string();
                                             modified = true;
                                         } else {
@@ -1184,6 +1188,170 @@ pub fn run_validate_tags(fix: bool) -> bool {
         eprintln!("=== xtask validate-tags FAILED ===");
     }
     final_success
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct UnwrapBaselineEntry {
+    pub file: String,
+    pub hash: String,
+}
+
+pub struct UnwrapOccurrence {
+    pub file: String,
+    pub line_num: usize,
+    pub hash: String,
+}
+
+pub fn fnv1a_hash(input: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in input.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{:016x}", hash)
+}
+
+pub fn scan_unwrap_expect_occurrences_at(root: &Path) -> Vec<UnwrapOccurrence> {
+    let mut occurrences = Vec::new();
+    let scan_dir = if root.join("crates").exists() {
+        root.join("crates")
+    } else {
+        root.to_path_buf()
+    };
+
+    for entry in WalkDir::new(&scan_dir)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            let rel_path = path
+                .strip_prefix(root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            if let Ok(content) = fs::read_to_string(path) {
+                let lines: Vec<&str> = content.lines().collect();
+                for (idx, line) in lines.iter().enumerate() {
+                    if line.contains(".unwrap()") || line.contains(".expect(") {
+                        let line_num = idx + 1;
+                        let start = if idx > 0 { idx - 1 } else { 0 };
+                        let end = std::cmp::min(idx + 1, lines.len().saturating_sub(1));
+                        let window_str = lines[start..=end].join("\n");
+                        let hash = fnv1a_hash(&window_str);
+
+                        occurrences.push(UnwrapOccurrence {
+                            file: rel_path.clone(),
+                            line_num,
+                            hash,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    occurrences
+}
+
+pub fn run_update_unwrap_baseline_at(root: &Path) -> bool {
+    let occurrences = scan_unwrap_expect_occurrences_at(root);
+    let mut entries: Vec<UnwrapBaselineEntry> = occurrences
+        .into_iter()
+        .map(|occ| UnwrapBaselineEntry {
+            file: occ.file,
+            hash: occ.hash,
+        })
+        .collect();
+
+    entries.sort();
+    entries.dedup();
+
+    let json_path = root.join(".unwrap-baseline.json");
+    let json_content = match serde_json::to_string_pretty(&entries) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to serialize baseline entries: {}", e);
+            return false;
+        }
+    };
+
+    if let Err(e) = fs::write(&json_path, json_content) {
+        eprintln!("Failed to write {}: {}", json_path.display(), e);
+        return false;
+    }
+
+    println!(
+        "Baseline updated: {} unwrap/expect calls recorded.",
+        entries.len()
+    );
+    true
+}
+
+pub fn run_update_unwrap_baseline() -> bool {
+    let root = find_root_dir();
+    run_update_unwrap_baseline_at(&root)
+}
+
+pub fn run_check_unwrap_baseline_at(root: &Path) -> bool {
+    println!("=== Running xtask check-unwrap-baseline ===");
+    let json_path = root.join(".unwrap-baseline.json");
+    if !json_path.exists() {
+        eprintln!("❌ [GATE-2]: .unwrap-baseline.json missing!");
+        eprintln!("💡 AUTOMATISCHE BEHEBUNG: cargo xtask update-unwrap-baseline");
+        return false;
+    }
+
+    let json_content = match fs::read_to_string(&json_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("❌ Failed to read .unwrap-baseline.json: {}", e);
+            return false;
+        }
+    };
+
+    let baseline_entries: Vec<UnwrapBaselineEntry> = match serde_json::from_str(&json_content) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("❌ Failed to parse .unwrap-baseline.json: {}", e);
+            return false;
+        }
+    };
+
+    let baseline_set: std::collections::HashSet<(&str, &str)> = baseline_entries
+        .iter()
+        .map(|e| (e.file.as_str(), e.hash.as_str()))
+        .collect();
+
+    let occurrences = scan_unwrap_expect_occurrences_at(root);
+    let mut violations = Vec::new();
+
+    for occ in &occurrences {
+        if !baseline_set.contains(&(occ.file.as_str(), occ.hash.as_str())) {
+            violations.push(occ);
+        }
+    }
+
+    if !violations.is_empty() {
+        for v in &violations {
+            eprintln!(
+                "❌ [GATE-2]: {}:{} — new .unwrap() not in baseline",
+                v.file, v.line_num
+            );
+        }
+        eprintln!("💡 AUTOMATISCHE BEHEBUNG: cargo xtask update-unwrap-baseline");
+        return false;
+    }
+
+    println!("✅ Baseline check passed: no new unwrap/expect occurrences found.");
+    true
+}
+
+pub fn run_check_unwrap_baseline() -> bool {
+    let root = find_root_dir();
+    run_check_unwrap_baseline_at(&root)
 }
 
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
@@ -1306,6 +1474,18 @@ fn main() {
                 process::exit(1);
             }
         }
+        "update-unwrap-baseline" => {
+            let success = run_update_unwrap_baseline();
+            if !success {
+                process::exit(1);
+            }
+        }
+        "check-unwrap-baseline" => {
+            let success = run_check_unwrap_baseline();
+            if !success {
+                process::exit(1);
+            }
+        }
         "run-community-detection" => {
             println!("=== xtask run-community-detection ===");
             println!(
@@ -1321,7 +1501,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
@@ -1544,7 +1724,9 @@ mod tests {
             file_path: "crates/memfuse-test/src/lib.rs".to_string(),
             line_num: 10,
             tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] New tag (TS: 2026-08-29T10:00:00Z) (SESSION: a3f29c1d)".to_string(),
+            raw:
+                "// AI-TAG[SMELL][CRITICAL] New tag (TS: 2026-08-29T10:00:00Z) (SESSION: a3f29c1d)"
+                    .to_string(),
             timestamp: "2026-08-29T10:00:00Z".to_string(),
             category: Some("SMELL".to_string()),
             severity: Some("CRITICAL".to_string()),
@@ -1854,6 +2036,56 @@ mod tests {
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].severity, Some("CRITICAL"));
         assert_eq!(res[0].id, Some("AGT-STORE-111"));
+    }
+
+    #[test]
+    fn test_baseline_detects_new_unwrap() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let crates_dir = temp_dir.path().join("crates/foo/src");
+        fs::create_dir_all(&crates_dir).unwrap();
+        let file_path = crates_dir.join("lib.rs");
+
+        // Initial file without .unwrap()
+        fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n").unwrap();
+
+        // Generate baseline (0 occurrences)
+        assert!(run_update_unwrap_baseline_at(temp_dir.path()));
+        assert!(run_check_unwrap_baseline_at(temp_dir.path()));
+
+        // Add a .unwrap() call to the file
+        fs::write(
+            &file_path,
+            "pub fn add(a: i32, b: i32) -> i32 { Some(a + b).unwrap() }\n",
+        )
+        .unwrap();
+
+        // Check should fail because of the new .unwrap() occurrence
+        assert!(!run_check_unwrap_baseline_at(temp_dir.path()));
+    }
+
+    #[test]
+    fn test_baseline_allows_removed_unwrap() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let crates_dir = temp_dir.path().join("crates/foo/src");
+        fs::create_dir_all(&crates_dir).unwrap();
+        let file_path = crates_dir.join("lib.rs");
+
+        // Initial file with .unwrap()
+        fs::write(
+            &file_path,
+            "pub fn add(a: i32, b: i32) -> i32 { Some(a + b).unwrap() }\n",
+        )
+        .unwrap();
+
+        // Generate baseline (1 occurrence)
+        assert!(run_update_unwrap_baseline_at(temp_dir.path()));
+        assert!(run_check_unwrap_baseline_at(temp_dir.path()));
+
+        // Remove the .unwrap() call
+        fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n").unwrap();
+
+        // Check should succeed because removing unwrap calls is allowed
+        assert!(run_check_unwrap_baseline_at(temp_dir.path()));
     }
 
     #[test]

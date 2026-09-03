@@ -106,8 +106,7 @@ fn get_runtime(py: Python<'_>) -> PyResult<Arc<Runtime>> {
 
 /// Converts a Python dict to a serde_json::Value.
 fn dict_to_json(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<serde_json::Value> {
-    depythonize(d)
-        .map_err(|e| PyValueError::new_err(format!("Metadata error: {}", e)))
+    depythonize(d).map_err(|e| PyValueError::new_err(format!("Metadata error: {}", e)))
 }
 
 /// Converts an optional Python dict to an optional serde_json::Value.
@@ -1361,7 +1360,8 @@ mod tests {
 
     #[cfg(test)]
     fn _simulate_panic_for_test() -> ! {
-        #[cfg(test)] panic!("Simulated Rust core panic");
+        #[cfg(test)]
+        panic!("Simulated Rust core panic");
     }
 
     #[test]
