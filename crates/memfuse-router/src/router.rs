@@ -188,12 +188,10 @@ impl RouterEngine {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence;
 
-                // Non-conformity score: inverse of confidence ratio, clamped to [0, 1]
-                let non_conformity = if confidence > 0.0 {
-                    (1.0 / confidence as f32).clamp(0.0, 1.0)
-                } else {
-                    1.0
-                };
+                // Non-conformity score: margin between threshold and actual score.
+                // Measures how close the routing decision was to failing (or how badly it failed).
+                let q_threshold = state.conformal.quantile_threshold;
+                let non_conformity = (q_threshold - best_score).max(0.0).clamp(0.0, 1.0);
                 state.recalibrate_conformal(non_conformity);
             }
 
@@ -294,7 +292,7 @@ impl RouterEngine {
             let state = calibration.get(&profile.name);
 
             let (threshold, is_calibrated) = match state {
-                Some(st) if st.conformal.window_total > 10 => (st.calibrated_min_score, true),
+                Some(st) if st.conformal.window_total >= 50 => (st.calibrated_min_score, true),
                 _ => (profile.min_relevance_score, false),
             };
 
