@@ -63,14 +63,8 @@ jobs:
           fi
           echo "✅ Alle TODOs nutzen AI-TAG Syntax"
 
-      - name: "Gate 7: TS & SESSION Pflichtfelder (dynamisch via xtask)"
-        run: |
-          cargo run -p xtask -- validate-tags || {
-            echo "💡 CI-FIXER GUIDANCE: Füge fehlende (TS:...) (SESSION:...) Felder zu den oben"
-            echo "   genannten Tags hinzu. Format: TS:YYYY-MM-DDTHH:MM:SSZ SESSION:8hexchars"
-            exit 1
-          }
-          echo "✅ Alle Tags haben gültige TS: und SESSION: Felder"
+      - name: Gate 7 — ISO-8601 tag validation
+        run: cargo xtask validate-tags
 
       - name: "Gate 5: Dokumentation ist synchron mit Inline-Tags (kein Drift)"
         run: |

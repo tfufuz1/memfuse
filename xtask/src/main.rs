@@ -1010,6 +1010,27 @@ pub fn run_check_consistency() -> bool {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum TagDateStatus {
+    Valid,
+    Stale(String),
+    Malformed(String),
+}
+
+pub fn validate_working_state_tag_date(date_str: &str, today: NaiveDate) -> TagDateStatus {
+    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(parsed_date) => {
+            let days_diff = (today - parsed_date).num_days();
+            if days_diff > 90 {
+                TagDateStatus::Stale(date_str.to_string())
+            } else {
+                TagDateStatus::Valid
+            }
+        }
+        Err(_) => TagDateStatus::Malformed(date_str.to_string()),
+    }
+}
+
 pub fn validate_tags_items(tags: &[TagItem]) -> bool {
     let cutoff_date = match NaiveDate::from_ymd_opt(CUTOFF_YEAR, CUTOFF_MONTH, CUTOFF_DAY) {
         Some(d) => d,
@@ -1060,16 +1081,109 @@ pub fn validate_tags_items(tags: &[TagItem]) -> bool {
     success
 }
 
-pub fn run_validate_tags() -> bool {
-    println!("=== Running xtask validate-tags ===");
+pub fn run_validate_tags(fix: bool) -> bool {
+    println!("=== Running xtask validate-tags (fix={}) ===", fix);
+    let root = find_root_dir();
+    let today = chrono::Local::now().date_naive();
+    let tag_prefix = concat!("WORKING", "_STATE:");
+    let ws_tag_pattern = format!(r#"{}\s*([^\s\->"']+)"#, tag_prefix);
+    let ws_tag_re = Regex::new(&ws_tag_pattern).unwrap();
+
+    let mut ws_success = true;
+
+    for entry in WalkDir::new(&root)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            name != "target" && name != ".git" && name != ".cargo" && name != "node_modules"
+        })
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if ext == "rs" || ext == "md" || ext == "toml" {
+                    let rel_path = path
+                        .strip_prefix(&root)
+                        .unwrap_or(path)
+                        .to_string_lossy()
+                        .to_string();
+
+                    if let Ok(content) = fs::read_to_string(path) {
+                        let mut modified = false;
+                        let mut new_lines = Vec::new();
+
+                        for (idx, line) in content.lines().enumerate() {
+                            let line_num = idx + 1;
+                            let mut line_str = line.to_string();
+
+                            if let Some(caps) = ws_tag_re.captures(line) {
+                                let date_str = &caps[1];
+                                match validate_working_state_tag_date(date_str, today) {
+                                    TagDateStatus::Valid => {}
+                                    TagDateStatus::Stale(s) => {
+                                        eprintln!(
+                                            "❌ [GATE-7]: {}:{} — tag date {} is stale (>90 days)💡 AUTOMATISCHE BEHEBUNG: cargo xtask validate-tags --fix",
+                                            rel_path, line_num, s
+                                        );
+                                        if fix {
+                                            let today_str = today.format("%Y-%m-%d").to_string();
+                                            line_str = ws_tag_re
+                                                .replace(&line_str, format!("{} {}", tag_prefix, today_str))
+                                                .to_string();
+                                            modified = true;
+                                        } else {
+                                            ws_success = false;
+                                        }
+                                    }
+                                    TagDateStatus::Malformed(m) => {
+                                        eprintln!(
+                                            "❌ [GATE-7]: {}:{} — tag date {} is malformed (expected YYYY-MM-DD)",
+                                            rel_path, line_num, m
+                                        );
+                                        if fix {
+                                            let today_str = today.format("%Y-%m-%d").to_string();
+                                            line_str = ws_tag_re
+                                                .replace(&line_str, format!("{} {}", tag_prefix, today_str))
+                                                .to_string();
+                                            modified = true;
+                                        } else {
+                                            ws_success = false;
+                                        }
+                                    }
+                                }
+                            }
+                            new_lines.push(line_str);
+                        }
+
+                        if fix && modified {
+                            let mut updated_content = new_lines.join("\n");
+                            if content.ends_with('\n') {
+                                updated_content.push('\n');
+                            }
+                            if let Err(e) = fs::write(path, updated_content) {
+                                eprintln!("❌ Failed to write fixes to {}: {}", rel_path, e);
+                                ws_success = false;
+                            } else {
+                                println!("💡 Fixed stale tag date in {}", rel_path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let tags = scan_tags("crates");
-    let success = validate_tags_items(&tags);
-    if success {
-        println!("✅ Alle Tags haben gültige TS: und SESSION: Felder");
+    let tag_items_success = validate_tags_items(&tags);
+
+    let final_success = ws_success && tag_items_success;
+    if final_success {
+        println!("✅ Alle Tags sind gültig.");
     } else {
         eprintln!("=== xtask validate-tags FAILED ===");
     }
-    success
+    final_success
 }
 
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
@@ -1169,7 +1283,8 @@ fn main() {
             }
         }
         "validate-tags" => {
-            let success = run_validate_tags();
+            let fix = args.iter().any(|arg| arg == "--fix");
+            let success = run_validate_tags(fix);
             process::exit(if success { 0 } else { 1 });
         }
         "check-jules-context-freshness" => {
@@ -1316,6 +1431,36 @@ pub fn run_context_tags(tags: &[TagItem], args: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_working_state_tag_date_recent_valid() {
+        let today = NaiveDate::from_ymd_opt(2026, 9, 3).unwrap();
+        let date_str = "2026-09-01";
+        assert_eq!(
+            validate_working_state_tag_date(date_str, today),
+            TagDateStatus::Valid
+        );
+    }
+
+    #[test]
+    fn test_validate_working_state_tag_date_stale() {
+        let today = NaiveDate::from_ymd_opt(2026, 9, 3).unwrap();
+        let date_str = "2026-06-03"; // 92 days ago
+        assert_eq!(
+            validate_working_state_tag_date(date_str, today),
+            TagDateStatus::Stale("2026-06-03".to_string())
+        );
+    }
+
+    #[test]
+    fn test_validate_working_state_tag_date_malformed() {
+        let today = NaiveDate::from_ymd_opt(2026, 9, 3).unwrap();
+        let date_str = "2026-13-45";
+        assert_eq!(
+            validate_working_state_tag_date(date_str, today),
+            TagDateStatus::Malformed("2026-13-45".to_string())
+        );
+    }
 
     #[test]
     fn test_validate_tags_no_ts_field() {
