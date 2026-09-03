@@ -648,11 +648,12 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .and_then(|r| r)
             }
         } else {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| MemFuseError::Internal(e.to_string()))
-                .expect("Failed to create Tokio runtime");
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    panic!("Failed to create Tokio runtime: {e}");
+                }
+            };
             rt.block_on(Self::open(storage_clone, ns_clone))
         };
 
