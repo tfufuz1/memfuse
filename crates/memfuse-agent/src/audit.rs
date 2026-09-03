@@ -220,7 +220,10 @@ mod tests {
     #[tokio::test]
     async fn test_audit_log_append_only_duplicate_rejection() {
         let storage = Arc::new(InMemoryStorageEngine::new());
-        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
+        let index = match HnswIndex::try_new(HnswConfig::default()) {
+            Ok(idx) => Arc::new(idx),
+            Err(e) => panic!("HnswIndex creation failed: {e}"),
+        };
         let graph_index = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
 
@@ -245,10 +248,9 @@ mod tests {
             error: None,
         };
 
-        audit_log
-            .append(&entry)
-            .await
-            .expect("first append must succeed");
+        if let Err(e) = audit_log.append(&entry).await {
+            panic!("first append must succeed, got error: {e}");
+        }
 
         let duplicate_entry = AuditEntry {
             task_id: "task-dup".to_string(),
@@ -259,12 +261,12 @@ mod tests {
             error: None,
         };
 
-        let err = audit_log.append(&duplicate_entry).await.unwrap_err();
-        assert!(
-            matches!(err, memfuse_core::MemFuseError::Conflict(_)),
-            "Duplicate audit entry append must be rejected with Conflict error, got: {:?}",
-            err
-        );
+        match audit_log.append(&duplicate_entry).await {
+            Err(memfuse_core::MemFuseError::Conflict(_)) => {}
+            res => panic!(
+                "Duplicate audit entry append must be rejected with Conflict error, got: {res:?}"
+            ),
+        }
     }
 
     #[tokio::test]

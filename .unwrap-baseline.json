@@ -20,10 +20,6 @@
     "hash": "d2dcbe8e6a988a96"
   },
   {
-    "file": "crates/memfuse-agent/src/audit.rs",
-    "hash": "e387b6e8fe6745ac"
-  },
-  {
     "file": "crates/memfuse-agent/tests/agent_recovery.rs",
     "hash": "1030b93beb9458d0"
   },
