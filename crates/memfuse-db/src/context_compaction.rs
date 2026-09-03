@@ -368,11 +368,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
                 .collection
                 .namespaced_key(&src_id.inner().to_le_bytes(), 1);
             if let Some(val) = self.collection.storage().get(&doc_key).await? {
-                if let Ok(meta) =
-                    serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val)
-                {
-                    let _ = self.collection.delete_op(&mut db_tx, &meta.id).await;
-                }
+                let meta: crate::collection::StoredDocumentMeta = serde_json::from_slice(&val)?;
+                self.collection.delete_op(&mut db_tx, &meta.id).await?;
             }
         }
 
@@ -554,5 +551,173 @@ mod tests {
         assert!(result.status_tokens.is_empty());
         assert_eq!(result.tokens_used, 0);
         assert!(result.source_doc_ids.is_empty());
+    }
+
+    use memfuse_core::StorageStats;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::{HnswConfig, HnswIndex};
+    use memfuse_store::{LsmConfig, LsmStorage};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    #[derive(Clone)]
+    struct FaultyDeleteStorage {
+        inner: Arc<LsmStorage>,
+        fail_delete: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl StorageEngine for FaultyDeleteStorage {
+        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+            self.inner.get(key).await
+        }
+
+        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+            self.inner.get_at_seq(key, seq).await
+        }
+
+        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+            self.inner.put(tx_id, key, value).await
+        }
+
+        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+            if self.fail_delete.load(Ordering::SeqCst) {
+                return Err(memfuse_core::MemFuseError::Transaction(
+                    "INJECTED FAULT: Storage delete failure".into(),
+                ));
+            }
+            self.inner.delete(tx_id, key).await
+        }
+
+        async fn commit(&self, tx_id: TxId) -> Result<()> {
+            self.inner.commit(tx_id).await
+        }
+
+        async fn rollback(&self, tx_id: TxId) -> Result<()> {
+            self.inner.rollback(tx_id).await
+        }
+
+        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+            self.inner.rollback_to_tx(tx_id).await
+        }
+
+        async fn flush(&self) -> Result<()> {
+            self.inner.flush().await
+        }
+
+        async fn stats(&self) -> Result<StorageStats> {
+            self.inner.stats().await
+        }
+
+        async fn last_seq_no(&self) -> Result<u64> {
+            self.inner.last_seq_no().await
+        }
+
+        async fn last_tx_id(&self) -> Result<TxId> {
+            self.inner.last_tx_id().await
+        }
+
+        async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+            self.inner.pin_checkpoint(seq_no).await
+        }
+
+        async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+            self.inner.unpin_checkpoint(seq_no).await
+        }
+
+        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.inner.scan_prefix(prefix).await
+        }
+
+        async fn scan_prefix_at(
+            &self,
+            prefix: &[u8],
+            seq_no: u64,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.inner.scan_prefix_at(prefix, seq_no).await
+        }
+
+        async fn scan(
+            &self,
+            start: std::ops::Bound<&[u8]>,
+            end: std::ops::Bound<&[u8]>,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            self.inner.scan(start, end).await
+        }
+    }
+
+    #[tokio::test]
+    async fn test_consolidation_commit_aborts_on_delete_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lsm_config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let lsm = Arc::new(LsmStorage::new(lsm_config).await.unwrap());
+        let fail_delete = Arc::new(AtomicBool::new(false));
+        let faulty_storage = FaultyDeleteStorage {
+            inner: lsm,
+            fail_delete: fail_delete.clone(),
+        };
+
+        let dim = 4;
+        let hnsw_config = HnswConfig {
+            dimension: dim,
+            ..Default::default()
+        };
+        let hnsw = Arc::new(HnswIndex::try_new(hnsw_config).unwrap());
+        let graph = Arc::new(CsrGraph::with_storage(Arc::new(faulty_storage.clone())));
+        let next_tx = Arc::new(AtomicU64::new(1));
+
+        let col = Collection::new(
+            "test_col".to_string(),
+            Arc::new(faulty_storage),
+            hnsw,
+            graph,
+            next_tx,
+            dim,
+            memfuse_text::Language::English,
+        );
+
+        // 1. Insert source document
+        let src_id_str = "source_doc_1";
+        let src_doc_id = DocId::from_key(src_id_str).unwrap();
+        col.insert(
+            src_id_str,
+            &[0.1, 0.2, 0.3, 0.4],
+            Some(serde_json::json!({"text": "source text"})),
+        )
+        .await
+        .unwrap();
+
+        // 2. Start consolidation session
+        let target_str_id = "summary_target_doc";
+        let target_doc_id = DocId::from_key(target_str_id).unwrap();
+        let session = ConsolidationSession::start(&col, &[src_doc_id], target_doc_id)
+            .await
+            .unwrap();
+
+        // 3. Configure delete_op to fail via storage delete failure
+        fail_delete.store(true, Ordering::SeqCst);
+
+        // 4. Call commit
+        let res = session
+            .commit(
+                target_str_id,
+                &[0.1, 0.2, 0.3, 0.4],
+                "Summary of source doc",
+                None,
+            )
+            .await;
+
+        // 5. Assert commit returned Err
+        assert!(res.is_err(), "commit() must return Err when delete_op fails");
+
+        // 6. Assert summary target doc was not persisted
+        let summary_doc = col.get(target_str_id).await.unwrap();
+        assert!(
+            summary_doc.is_none(),
+            "Target summary document must not be persisted if commit aborts"
+        );
     }
 }
