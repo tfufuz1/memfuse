@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use memfuse_checkpoint::{
     clear_all_orphaned_checkpoints, CheckpointManifest, CheckpointMeta, PersistentCheckpointStore,
 };

@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;

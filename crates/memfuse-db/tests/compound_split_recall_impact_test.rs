@@ -1,6 +1,8 @@
 // TEST-SUITE: Compound Split Recall Impact Benchmark (memfuse-index / memfuse-db)
 // PURPOSE: Quantify actual search quality / recall degradation caused by un-split German compounds in 4-signal fusion.
 
+#![allow(deprecated, clippy::needless_range_loop)]
+
 use memfuse_core::FusionWeights;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use tempfile::tempdir;

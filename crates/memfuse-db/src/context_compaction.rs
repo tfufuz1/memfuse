@@ -407,7 +407,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
             .insert_op(&db_tx, target_string_id, embedding, Some(final_metadata))
             .await?;
 
-        // 4. Delete source docs
+        // 4. Delete source docs — Fehler MÜSSEN die Konsolidierung abbrechen
         for &(src_id, _) in &self.source_docs {
             let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
             match self.collection.storage().get(&doc_key).await? {

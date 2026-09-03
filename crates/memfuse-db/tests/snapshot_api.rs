@@ -1,5 +1,7 @@
 //! BL-01-DB-001 — Snapshot-Recovery API integration tests.
 
+#![allow(deprecated)]
+
 use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;

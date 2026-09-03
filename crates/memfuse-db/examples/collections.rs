@@ -6,6 +6,8 @@
 //!
 //! Run with: `cargo run --example collections`
 
+#![allow(deprecated)]
+
 use memfuse_db::{MemFuse, MemFuseConfig};
 
 #[tokio::main]

@@ -189,6 +189,7 @@ impl RouterEngine {
                 self.select_profile_cascade(&chunks, &effective_profiles, &cal)?;
             let profile_scores = compute_profile_scores(&effective_profiles, &chunks);
 
+            let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
             let second_best = profile_scores
                 .iter()
@@ -200,6 +201,7 @@ impl RouterEngine {
             } else {
                 2.0 // Single candidate -> high confidence
             };
+            let non_conformity = (1.0 / confidence_ratio as f32).clamp(0.0, 1.0);
 
             let q_threshold = cal
                 .get(&selected_profile.name)
@@ -212,6 +214,19 @@ impl RouterEngine {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
                 state.recalibrate_conformal(non_conformity);
+
+                metrics = ConfidenceMetrics {
+                    score_lower: if state.conformal.window_total > 30 {
+                        Some(best_score * (1.0 - state.conformal.alpha))
+                    } else {
+                        None
+                    },
+                    score_upper: None,
+                    calibrated: state.conformal.window_total > 10,
+                    quantile_threshold: state.conformal.quantile_threshold,
+                    non_conformity_score: non_conformity,
+                    selection_margin: confidence_ratio as f32,
+                };
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
@@ -227,10 +242,10 @@ impl RouterEngine {
             (selected_profile, metrics)
         }; // Write lock released
 
-        // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
+        // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
-        context_mgr.set_relevance_threshold(0.0);
+        context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
 
         Ok(RoutingDecision {
@@ -354,7 +369,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)
@@ -383,20 +398,7 @@ pub(crate) fn compute_profile_score(
     profile: &SlmProfile,
     chunks: &[(ContextChunk, Option<u64>)],
 ) -> f32 {
-    let mut aggregated_score = 0.0f32;
-    for (chunk, comm_id) in chunks {
-        if !chunk.relevance.is_finite() {
-            continue;
-        }
-        let mut score = chunk.relevance;
-        if let Some(c_id) = comm_id {
-            if profile.domain_communities.contains(c_id) {
-                score *= 1.2;
-            }
-        }
-        aggregated_score += score;
-    }
-    aggregated_score
+    score_profile(profile, chunks).aggregated_score
 }
 
 /// Computes candidate scores for all profiles across chunks.
@@ -416,19 +418,7 @@ pub(crate) fn compute_max_score(
     profile: &SlmProfile,
     chunks: &[(ContextChunk, Option<u64>)],
 ) -> f32 {
-    chunks
-        .iter()
-        .map(|(c, c_id)| {
-            let mut s = c.relevance;
-            if let Some(id) = c_id {
-                if profile.domain_communities.contains(id) {
-                    s *= 1.2;
-                }
-            }
-            s
-        })
-        .filter(|score| score.is_finite())
-        .fold(0.0f32, f32::max)
+    score_profile(profile, chunks).max_score
 }
 
 #[allow(dead_code)]
@@ -455,31 +445,13 @@ pub(crate) fn select_profile_from_chunks(
     let mut any_community_matched = false;
 
     for (idx, profile) in profiles.iter().enumerate() {
-        let mut aggregated_score = 0.0f32;
-        let mut matched_community = false;
-
-        for (chunk, comm_id) in chunks {
-            if !chunk.relevance.is_finite() {
-                continue;
-            }
-            let mut score = chunk.relevance;
-            if let Some(c_id) = comm_id {
-                if profile.domain_communities.contains(c_id) {
-                    score *= 1.2;
-                    matched_community = true;
-                    any_community_matched = true;
-                }
-            }
-            aggregated_score += score;
+        let scoring = score_profile(profile, chunks);
+        if scoring.community_matched {
+            any_community_matched = true;
         }
 
-        let max_score = compute_max_score(profile, chunks);
-
-        if matched_community
-            && (aggregated_score >= profile.min_relevance_score
-                || max_score >= profile.min_relevance_score)
-        {
-            profile_scores.insert(idx, aggregated_score);
+        if scoring.community_matched && scoring.aggregated_score >= profile.min_relevance_score {
+            profile_scores.insert(idx, scoring.aggregated_score);
         }
     }
 

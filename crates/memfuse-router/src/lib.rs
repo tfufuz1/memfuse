@@ -1,6 +1,7 @@
 pub mod dispatch;
 pub mod profile;
 pub mod router;
+pub mod serde_helpers;
 
 #[cfg(test)]
 mod tests;

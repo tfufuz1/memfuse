@@ -77,7 +77,7 @@ impl ContextManager {
     pub fn new(budget: TokenBudget) -> Self {
         Self {
             budget,
-            relevance_threshold: 0.1,
+            relevance_threshold: 0.0,
         }
     }
 
@@ -499,7 +499,7 @@ mod token_tests {
     #[test]
     fn test_context_manager_relevance_threshold_setter_getter() {
         let mut mgr = ContextManager::with_defaults();
-        assert_eq!(mgr.relevance_threshold(), 0.1);
+        assert_eq!(mgr.relevance_threshold(), 0.0);
         mgr.set_relevance_threshold(0.75);
         assert_eq!(mgr.relevance_threshold(), 0.75);
     }

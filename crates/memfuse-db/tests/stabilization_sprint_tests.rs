@@ -137,6 +137,7 @@ async fn test_hybrid_search_uses_all_signals_and_weights() {
 
     // Hybrid search with custom fusion weights
     let weights = FusionWeights::new(0.5, 0.3, 0.2).unwrap();
+    #[allow(deprecated)]
     let results = col
         .hybrid_search_with_weights(text_query, &vector_query, 10, None, Some(&weights))
         .await

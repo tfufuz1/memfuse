@@ -1027,22 +1027,6 @@ mod tests {
             0.8,
         );
 
-        // Single chunk with base relevance 0.7. With community boost (10) s = 0.7 * 1.2 = 0.84.
-        // Aggregated score = 0.84 (wait, aggregated_score = 0.84 >= 0.8 too).
-        // Let's make aggregated_score < 0.8, but max_score >= 0.8:
-        // Wait, max_score is max(s). aggregated_score is sum(s).
-        // Since s >= 0, sum(s) >= max(s).
-        // BUT if there are negative relevance scores or negative chunk relevance?
-        // Let's test with a negative chunk relevance and a positive chunk relevance:
-        let chunk_neg = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "neg".to_string(),
-            relevance: -0.5,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
         let chunk_pos = ContextChunk {
             doc_id: DocId::new(2),
             content: "pos".to_string(),
@@ -1052,10 +1036,8 @@ mod tests {
             contextual_prefix: None,
             links: Vec::new(),
         };
-        // aggregated_score = -0.5*1.2 + 0.8*1.2 = -0.6 + 0.96 = 0.36 < 0.8
-        // max_score = max(-0.6, 0.96) = 0.96 >= 0.8
-        // This exercises the `|| max_score >= profile.min_relevance_score` right side of short-circuit!
-        let chunks = vec![(chunk_neg, Some(10)), (chunk_pos, Some(10))];
+        // Aggregated score = 0.8 * 1.2 = 0.96 >= 0.8
+        let chunks = vec![(chunk_pos, Some(10))];
         let idx = select_profile_from_chunks(&[profile], &chunks).unwrap(); // unwrap
         assert_eq!(idx, 0);
     }

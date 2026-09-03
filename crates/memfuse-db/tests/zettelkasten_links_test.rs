@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use memfuse_core::types::domain::{DocId, LinkRelation, TxId};
 use memfuse_core::HybridQuery;
 use memfuse_db::MemFuse;
