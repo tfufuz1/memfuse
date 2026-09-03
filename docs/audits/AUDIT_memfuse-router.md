@@ -64,3 +64,24 @@ TOTAL                             288                 5    98.26%          23   
 ## 5. Session Log & Verification (2026-09-03)
 - **Dispatch Stdin Race Condition Fix**: `dispatch_to_slm` in `crates/memfuse-router/src/dispatch.rs` was hardened so `stdin.write_all` and `stdin.flush` I/O errors return descriptive `MemFuseError::Internal` errors matching dispatch error handling invariants.
 - **Verification**: All 36 unit/integration tests in `memfuse-router` pass reliably (`cargo test -p memfuse-router --all-features`). Zero clippy warnings, zero formatting diffs, zero unsafe blocks.
+
+---
+
+## 6. Audit Findings & Chaos Engineering Report (2026-09-03)
+
+### Audit Findings
+
+| ID | Severity | Category | File & Location | Description | Status |
+|---|---|---|---|---|---|
+| `AGT-ROUTER-2db4f208` | MAJOR | LOGIC | `src/router.rs:298` | Calibration warmup window total threshold in `select_profile_cascade` requires `window_total >= 50`, while `test_calibrated_threshold_convergence` expected calibration after 15 calls. | OPEN |
+| `AGT-ROUTER-19a753f1` | MINOR | SMELL | `src/tests.rs:1510` | `test_calibrated_threshold_convergence` asserts calibration after 15 iterations, mismatching the engine's 50-sample requirement. | OPEN |
+
+### Chaos Engineering Report
+
+| Scenario | Result | Recovery Behavior | Findings |
+|---|---|---|---|
+| Crash mid-write | OK | Stateles / In-memory routing logic; no direct disk persistence | — |
+| Disk-Full ENOSPC | OK | Stdio IPC buffer writes return controlled `MemFuseError::Internal` error | — |
+| OOM / Backpressure | OK | ContextWindow trimming enforces bounded memory via `TokenBudget` | — |
+| SIGBUS mmap-truncate | N/A | `memfuse-router` does not use `mmap` or unsafe memory mapping | — |
+| SIGKILL recovery | OK | Stateless engine re-initializes from `Collection<LsmStorage>` on restart | — |
