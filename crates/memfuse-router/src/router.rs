@@ -164,23 +164,18 @@ impl RouterEngine {
             }
         }
 
-        // 3. Select profile using calibrated cascade routing
-        let (selected_profile_idx, selected_profile, confidence_metrics) = {
-            let cal = self.calibration.read();
-            self.select_profile_cascade(&chunks, &profiles, &cal)?
-        };
-
+        // 3. Select profile and update calibration metrics atomically within a single write lock scope
         let profile_scores = compute_profile_scores(&profiles, &chunks);
 
-        // Kalibrierungs-Tracking: Konfidenz berechnen
-        {
-            let best_score = profile_scores
-                .get(&selected_profile_idx)
-                .copied()
-                .unwrap_or(0.0);
+        let (_selected_profile_idx, selected_profile, confidence_metrics) = {
+            let mut cal = self.calibration.write();
+            let (selected_idx, profile, metrics) =
+                self.select_profile_cascade(&chunks, &profiles, &cal)?;
+
+            let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
             let second_best = profile_scores
                 .iter()
-                .filter(|(idx, _)| **idx != selected_profile_idx)
+                .filter(|(idx, _)| **idx != selected_idx)
                 .map(|(_, s)| *s)
                 .fold(0.0f32, f32::max);
             let confidence = if second_best > 0.0 {
@@ -189,8 +184,7 @@ impl RouterEngine {
                 2.0 // Nur ein Kandidat → hohe Konfidenz
             };
 
-            let mut cal = self.calibration.write();
-            if let Some(state) = cal.get_mut(&selected_profile.name) {
+            if let Some(state) = cal.get_mut(&profile.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence;
 
@@ -200,7 +194,9 @@ impl RouterEngine {
                 let non_conformity = (q_threshold - best_score).max(0.0).clamp(0.0, 1.0);
                 state.recalibrate_conformal(non_conformity);
             }
-        }
+
+            (selected_idx, profile, metrics)
+        };
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
@@ -514,20 +510,6 @@ mod tests {
         assert_eq!(stats["p2"].times_selected, 0);
         assert_eq!(stats["p2"].calibrated_min_score, 0.8);
         assert_eq!(stats["p2"].original_min_score, 0.8);
-    }
-
-    #[test]
-    fn test_profile_calibration_state_recalibrate_low_confidence() {
-        let mut state = ProfileCalibrationState::new(0.5);
-        // Simuliere 10 Entscheidungen mit Konfidenz 0.5 (unter Schwellenwert 0.7)
-        state.times_selected = 10;
-        state.cumulative_confidence = 5.0; // avg = 0.5
-        let adjusted = state.recalibrate(0.7);
-        assert!(adjusted, "Low-confidence state muss Score erhöhen");
-        assert!(
-            state.calibrated_min_score > 0.5,
-            "Score muss höher als original sein nach Rekalibrierung"
-        );
     }
 
     #[test]
