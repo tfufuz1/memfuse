@@ -8,8 +8,11 @@
 
 Stand letzter Prüfung: 2026-09-03
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-py/src/lib.rs` | 1431 | `AGT-PY-ff475c8e` | `BUG` | `MAJOR` | `2026-09-03T19:29:58Z` | // AI-TAG[BUG][MAJOR] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c) |
 
 
 ## Crate-Inventar & Status
