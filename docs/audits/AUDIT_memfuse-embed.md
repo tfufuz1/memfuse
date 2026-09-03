@@ -214,3 +214,20 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
 - **Unit & Integration Suite:** 10/10 tests passed (`cargo test -p memfuse-embed`).
 - **Clippy & Formatting:** `cargo clippy -p memfuse-embed -- -D warnings` and `cargo fmt --check -p memfuse-embed` both clean with 0 findings.
 - **DAG Architectural Integrity:** `memfuse-embed` strictly obeys Layer 3 DAG boundaries with no upward imports.
+
+## 12. Chaos-Engineering-Audit & Final Verification (2026-09-03) (SESSION: 6da6a1c8)
+
+### 12.1 Chaos-Engineering-Results
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | N/A | In-memory / stateless (keine Disk-Persistence-Schreibpfade in `memfuse-embed`) | — |
+| Disk-Full ENOSPC | N/A | Keine direkten Disk-Writes | — |
+| OOM / Backpressure | OK | Bounds via `MAX_EMBED_BATCH_SIZE` (10,000) and `MAX_CANDIDATES` (10,000) plus Semaphore permit limits | — |
+| SIGBUS mmap-truncate | N/A | Kein mmap in `memfuse-embed` | — |
+| SIGKILL recovery | N/A | Stateless / keine Persistent Recovery Prozeduren erforderlich | — |
+
+### 12.2 Quality Gates & Review Pass
+- **Review Pass:** Added `REVIEW-PASS[2/2]` in `crates/memfuse-embed/src/lib.rs` (SESSION: 6da6a1c8).
+- **Hermetic Isolation & Safety:** `#![deny(unsafe_code)]` with 0 unsafe blocks in production.
+- **Verification Suite:** `cargo test -p memfuse-embed` (10/10 green), `cargo clippy -p memfuse-embed -- -D warnings` (clean), `cargo fmt --check -p memfuse-embed` (clean), `cargo check --workspace --exclude memfuse-tauri` (clean).
