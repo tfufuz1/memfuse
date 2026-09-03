@@ -83,6 +83,7 @@ async fn test_get_at_snapshot_sees_old_value() {
 /// Hybrid and Vector Search must exhibit snapshot isolation even if
 /// writes happen while the search is hydrated from storage.
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_search_isolation_concurrent_writes() {
     let (db, _tmp) = test_db(4).await;
     let col = db.collection("isolation").await.expect("col");

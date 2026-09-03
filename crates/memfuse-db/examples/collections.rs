@@ -57,13 +57,13 @@ async fn main() -> memfuse_core::Result<()> {
     // --- Search within each collection (isolated) ---
     let query = [0.1, 0.9, 0.0, 0.0]; // "coding-like" vector
 
-    let agent_results = agents.search(&query, 2).await?;
+    let agent_results = agents.query().embedding(query).k(2).execute().await?;
     println!("=== Agents Collection ===");
     for r in &agent_results {
         println!("  {} (score: {:.4})", r.id, r.score);
     }
 
-    let tool_results = tools.search(&query, 2).await?;
+    let tool_results = tools.query().embedding(query).k(2).execute().await?;
     println!("\n=== Tools Collection ===");
     for r in &tool_results {
         println!("  {} (score: {:.4})", r.id, r.score);

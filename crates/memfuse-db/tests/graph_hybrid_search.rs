@@ -4,6 +4,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_hybrid_search_includes_graph_signal() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
@@ -79,6 +80,7 @@ async fn test_hybrid_search_includes_graph_signal() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_relate_updates_graph_index_and_affects_hybrid_search() {
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {
@@ -135,6 +137,7 @@ async fn test_relate_updates_graph_index_and_affects_hybrid_search() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_hybrid_search_with_ppr_strategy() {
     use memfuse_core::{GraphTraversalStrategy, PprConfig};
 

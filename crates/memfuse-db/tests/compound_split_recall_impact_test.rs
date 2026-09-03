@@ -14,9 +14,9 @@ struct CorpusDoc {
 
 fn create_embedding(seed: usize, dimension: usize) -> Vec<f32> {
     let mut vec = vec![0.0f32; dimension];
-    for i in 0..dimension {
-        let val = ((i + seed * 13) % 100) as f32 / 100.0;
-        vec[i] = val;
+    for (i, val) in vec.iter_mut().enumerate().take(dimension) {
+        let v = ((i + seed * 13) % 100) as f32 / 100.0;
+        *val = v;
     }
     // Normalize vector
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -234,6 +234,7 @@ fn get_test_queries() -> Vec<TestQuery> {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_compound_split_recall_impact_evaluation() {
     let dim = 16;
     let corpus = get_corpus(dim);

@@ -41,7 +41,13 @@ async fn test_concurrent_collection_ops() {
                     .expect("insert");
 
                 // Search
-                let results = col.search(&vec, 1).await.expect("search");
+                let results = col
+                    .query()
+                    .embedding(&vec)
+                    .k(1)
+                    .execute()
+                    .await
+                    .expect("search");
                 assert!(
                     !results.is_empty(),
                     "Search should find at least one result (itself)"

@@ -1143,7 +1143,7 @@ mod tests {
             0.5,
         );
 
-        let err_empty = select_profile_from_chunks(&[profile.clone()], &[]);
+        let err_empty = select_profile_from_chunks(std::slice::from_ref(&profile), &[]);
         assert!(
             matches!(err_empty, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
         );
@@ -1161,7 +1161,8 @@ mod tests {
             Some(999),
         );
 
-        let err_unmatched = select_profile_from_chunks(&[profile.clone()], &[chunk_unmatched]);
+        let err_unmatched =
+            select_profile_from_chunks(std::slice::from_ref(&profile), &[chunk_unmatched]);
         assert!(
             matches!(err_unmatched, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
         );
@@ -1179,7 +1180,8 @@ mod tests {
             Some(100),
         );
 
-        let err_low = select_profile_from_chunks(&[profile.clone()], &[chunk_low_score]);
+        let err_low =
+            select_profile_from_chunks(std::slice::from_ref(&profile), &[chunk_low_score]);
         assert!(
             matches!(err_low, Err(MemFuseError::NotFound(msg)) if msg.contains("Kein SLM-Profil"))
         );
@@ -1464,7 +1466,7 @@ mod tests {
 
         assert_eq!(selected.name, "low-slm");
         assert_eq!(idx, 2);
-        assert_eq!(metrics.calibrated, false);
+        assert!(!metrics.calibrated);
     }
 
     #[tokio::test]

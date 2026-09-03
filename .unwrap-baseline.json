@@ -4417,10 +4417,6 @@
   },
   {
     "file": "crates/memfuse-db/tests/concurrent_collection_stress.rs",
-    "hash": "42d560ae8c1abd89"
-  },
-  {
-    "file": "crates/memfuse-db/tests/concurrent_collection_stress.rs",
     "hash": "7621995c4187d449"
   },
   {
@@ -4434,6 +4430,10 @@
   {
     "file": "crates/memfuse-db/tests/concurrent_collection_stress.rs",
     "hash": "dcb6277192c3e7ac"
+  },
+  {
+    "file": "crates/memfuse-db/tests/concurrent_collection_stress.rs",
+    "hash": "e6c069ab996e9be1"
   },
   {
     "file": "crates/memfuse-db/tests/concurrent_collection_stress.rs",
@@ -5585,15 +5585,15 @@
   },
   {
     "file": "crates/memfuse-db/tests/stress.rs",
-    "hash": "62f96e7b3de932cf"
-  },
-  {
-    "file": "crates/memfuse-db/tests/stress.rs",
     "hash": "6e11efee00f2fbbe"
   },
   {
     "file": "crates/memfuse-db/tests/stress.rs",
     "hash": "7f07eb24073050ab"
+  },
+  {
+    "file": "crates/memfuse-db/tests/stress.rs",
+    "hash": "88d0e5f75fe559d9"
   },
   {
     "file": "crates/memfuse-db/tests/stress.rs",
@@ -5773,10 +5773,6 @@
   },
   {
     "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
-    "hash": "3dd3ceb526a1c673"
-  },
-  {
-    "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
     "hash": "40a32fe9fd5e0af1"
   },
   {
@@ -5837,6 +5833,10 @@
   },
   {
     "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
+    "hash": "a85e7b31e1aac08f"
+  },
+  {
+    "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
     "hash": "b43aa94d4501fb13"
   },
   {
@@ -5853,15 +5853,15 @@
   },
   {
     "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
+    "hash": "c70fc6fa957e0e85"
+  },
+  {
+    "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
     "hash": "d3740b0a740fd869"
   },
   {
     "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
     "hash": "d93dd7217e5a0c61"
-  },
-  {
-    "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
-    "hash": "e272c6ca52f0c9a8"
   },
   {
     "file": "crates/memfuse-db/tests/zettelkasten_links_test.rs",
