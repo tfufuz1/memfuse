@@ -8,12 +8,11 @@
 
 Stand letzter Prüfung: 2026-09-03
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **2 offene Tags**
+Ergebnis: **1 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-router/src/router.rs` | 298 | `AGT-ROUTER-2db4f208` | `LOGIC` | `MAJOR` | `2026-09-03T19:29:29Z` | // AI-TAG[LOGIC][MAJOR] Calibration warmup window total mismatch with tests (ID: AGT-ROUTER-2db4f208) (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395) |
-| `crates/memfuse-router/src/tests.rs` | 1510 | `AGT-ROUTER-19a753f1` | `SMELL` | `MINOR` | `2026-09-03T19:29:29Z` | // AI-TAG[SMELL][MINOR] Test expects calibration after 15 calls while router engine requires window_total >= 50 (ID: AGT-ROUTER-19a753f1) (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395) |
+| `crates/memfuse-py/src/lib.rs` | 1431 | `AGT-PY-ff475c8e` | `BUG` | `MAJOR` | `2026-09-03T19:29:58Z` | // AI-TAG[BUG][MAJOR] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c) |
 
 
 ## Crate-Inventar & Status
@@ -25,14 +24,14 @@ Ergebnis: **2 offene Tags**
 | `memfuse-crypto` | 1 | 2390 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 7027 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11704 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 13487 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 13527 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5157 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 18724 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 4440 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-db` | 2 | 18726 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 4478 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1191 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 3045 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1496 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 2829 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 2780 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3436 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 4417 | 🟢 Clean |  |
 
