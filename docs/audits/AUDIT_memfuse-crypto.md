@@ -273,3 +273,43 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto`:
   - AES-256-GCM-SIV Nonce-Misuse Resistance & HKDF Domain-Separation verifiziert.
   - WAL HMAC-SHA256 Chaining & Constant-Time Verification (`subtle::ConstantTimeEq`) verifiziert.
   - Code-Formatting in `crypto.rs` und `wal_crypto.rs` vollständig eingehalten.
+
+---
+
+## 16. Re-Audit Verification & Chaos Engineering Audit (2026-09-03)
+
+**Datum:** 2026-09-03T19:31:53Z (SESSION: a413a598)
+**Status:** **VERIFIED (AUDIT COMPLETED — 2 FINDINGS TAGGED)**
+
+Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` inklusive Tier-1 Concurrency-Stichprobe und Chaos Engineering Assessment:
+
+### 16.1 Statische Analyse & Gate-Stack
+- **Kompilierung & Clippy:**
+  - `cargo check -p memfuse-crypto --all-features` -> 0 Fehler, 0 Warnungen
+  - `cargo clippy -p memfuse-crypto -- -D warnings` -> 0 Findings
+  - `cargo fmt --check -p memfuse-crypto` -> 0 Formatting Diffs
+- **Test-Abdeckung (Debug Mode):**
+  - `cargo test -p memfuse-crypto --all-features` -> 89 Unit-, Integration-, Proptest-, Stress- und RFC-Vektor-Tests (55 Unit-Tests, 3 Anti-Tamper Matrix, 10 Key Separation, 5 Namespace Isolation, 4 Nonce Reuse, 2 Nonce Stress, 4 Proptests, 6 RFC Vectors) erfolgreich ausgeführt.
+- **Produktionscode Safety:**
+  - Zero `unsafe` Blöcke unter `crates/memfuse-crypto/src/` (`#![forbid(unsafe_code)]` im Produktionscode strikt aktiv).
+  - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
+
+### 16.2 Concurrency Rauchtest
+- 5 aufeinanderfolgende Testläufe mit `--test-threads=8` ohne Deadlocks oder Nonce-Kollisionen ausgeführt.
+
+### 16.3 Chaos-Engineering-Audit
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund / Anmerkung |
+|---|---|---|---|
+| Crash mid-write | OK | Inkomplette/unvollständige Chunks werden von `decrypt_chunk` oder `verify_and_update_v3` mit `WalCorruption`/`Crypto` Fehler abgelehnt | Controlled error handling |
+| Disk-Full ENOSPC | OK | In-memory Buffer Prüfungen begrenzen Payloads (`MAX_CHUNK_SIZE` = 100MB), kein unkontrollierter Crash | Err propagiert |
+| OOM / Backpressure | OK | Strict Caps (100 MB max chunk size, 10 KB salt/file_id limits) in `try_new`, `derive_file_key`, `encrypt_chunk` | Memory bounds enforced |
+| SIGBUS mmap-truncate | N/A | `memfuse-crypto` nutzt kein `mmap` | - |
+| SIGKILL recovery | OK | WAL HMAC-Kette (`IntegrityVerifier`) erkennt unvollständige/fehlende Transaktionen beim Neustart | Sauberer Rejection-Pfad |
+
+### 16.4 Neue Audit-Befunde (2026-09-03)
+
+| ID | Datei | Zeile | Schweregrad | Kategorie | Kurzbeschreibung |
+|---|---|---|---|---|---|
+| `AGT-CRYPTO-7519b7cd` | `anti_tamper.rs` | 113 | MAJOR | CORRECTNESS | UAF/Use-After-Drop in Test `test_zeroize_on_drop_wipes_memory` bewirkt Test-Failure unter `--release` |
+| `AGT-CRYPTO-dd984bc2` | `anti_tamper.rs` | 54 | MINOR | SECURITY | Manuelle XOR-Schleife in `VolatileEncryptionKey::eq` sollte auf `subtle::ConstantTimeEq` umgestellt werden |

@@ -459,18 +459,36 @@ impl MemFuse {
         Ok(())
     }
 
-    /// Scans storage for all transaction intent keys with `"pending"` status.
+    /// Scans storage for all transaction intent keys with `"pending"` or `"consolidation"` status.
+    /// Performs garbage collection by treating orphaned Consolidation intents as pending
+    /// so they get cleaned up by repair_on_open.
     #[tracing::instrument(level = "trace", skip(self))]
     async fn scan_pending_intents(&self) -> Result<Vec<Vec<u8>>> {
         let mut pending = Vec::new();
+
+        let mut process_intent = |key: Vec<u8>, value: Vec<u8>| {
+            // Legacy support
+            if value == b"pending" {
+                pending.push(key);
+                return;
+            }
+            if let Ok(intent) = serde_json::from_slice::<crate::transaction::CommitIntent>(&value) {
+                match intent {
+                    crate::transaction::CommitIntent::Pending { .. } => pending.push(key),
+                    crate::transaction::CommitIntent::Consolidation { .. } => {
+                        // Orphaned consolidation sessions on startup get cleaned up
+                        pending.push(key);
+                    }
+                    _ => {}
+                }
+            }
+        };
 
         // Scan default collection's intent namespace
         let default_prefix = b"__tx_intent:";
         let entries = self.storage.scan_prefix(default_prefix).await?;
         for (key, value) in entries {
-            if value == b"pending" {
-                pending.push(key);
-            }
+            process_intent(key, value);
         }
 
         // Scan named collections' intent namespaces (key_type=3 within each prefix)
@@ -484,9 +502,7 @@ impl MemFuse {
                 ns_prefix.push(3); // key_type=3 for tx intents
                 let ns_entries = self.storage.scan_prefix(&ns_prefix).await?;
                 for (ns_key, ns_value) in ns_entries {
-                    if ns_value == b"pending" {
-                        pending.push(ns_key);
-                    }
+                    process_intent(ns_key, ns_value);
                 }
             }
         }
@@ -1050,51 +1066,6 @@ impl MemFuse {
         self.storage.close().await?;
         self.flush().await?;
         Ok(())
-    }
-
-    /// Initializes this node as a single-node Raft cluster.
-    #[cfg(feature = "cluster")]
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn init_cluster(&self, _node_id: u64, _addr: &str) -> Result<()> {
-        Err(memfuse_core::MemFuseError::Internal(
-            "Cluster feature is archived/disabled".into(),
-        ))
-    }
-
-    /// Joins an existing Raft cluster.
-    #[cfg(feature = "cluster")]
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn join_cluster(&self, _node_id: u64, _addr: &str) -> Result<()> {
-        Err(memfuse_core::MemFuseError::Internal(
-            "Cluster feature is archived/disabled".into(),
-        ))
-    }
-
-    /// Adds a new node to the cluster.
-    #[cfg(feature = "cluster")]
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn add_node(&self, _node_id: u64, _addr: &str) -> Result<()> {
-        Err(memfuse_core::MemFuseError::Internal(
-            "Cluster feature is archived/disabled".into(),
-        ))
-    }
-
-    /// Removes a node from the cluster.
-    #[cfg(feature = "cluster")]
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn remove_node(&self, _node_id: u64) -> Result<()> {
-        Err(memfuse_core::MemFuseError::Internal(
-            "Cluster feature is archived/disabled".into(),
-        ))
-    }
-
-    /// Returns Raft metrics.
-    #[cfg(feature = "cluster")]
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn raft_metrics(&self) -> Result<String> {
-        Err(memfuse_core::MemFuseError::Internal(
-            "Cluster feature is archived/disabled".into(),
-        ))
     }
 
     /// Sets the text embedder for default collection operations.

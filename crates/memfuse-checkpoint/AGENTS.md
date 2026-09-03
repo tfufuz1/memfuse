@@ -44,6 +44,7 @@ Wenn ein Checkpoint gelöscht wird, MUSS er unpinned werden.
 // === Checkpoint Lifecycle ===
 pub struct CheckpointGuard<S: StorageEngine> { ... }
 impl<S> CheckpointGuard<S> {
+    pub fn new(checkpoint: StateCheckpoint, storage: Arc<S>, namespace: impl Into<String>) -> Self;
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self>;
     pub fn commit(self) -> Result<StateCheckpoint>;
     pub async fn rollback(self) -> Result<()>;

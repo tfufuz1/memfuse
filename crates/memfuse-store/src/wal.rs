@@ -348,11 +348,10 @@ impl WalEntry {
     }
 }
 
-/// Configuration options for WAL operation and integrity verification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Configuration options for opening a Write-Ahead Log.
+#[derive(Debug, Clone, Default)]
 pub struct WalConfig {
-    /// Allows falling back to `LEGACY_INTEGRITY_KEY` if key-based verification fails.
-    /// Default is `false` for security (downgrade protection / ADR-049).
+    pub key_manager: Option<Arc<KeyManager>>,
     pub allow_legacy_integrity_key_fallback: bool,
 }
 
@@ -363,7 +362,7 @@ pub struct Wal {
     size: std::sync::atomic::AtomicU64,
     key_manager: Option<Arc<KeyManager>>,
     fallback_integrity_key: Option<[u8; 32]>,
-    config: WalConfig,
+    allow_legacy_integrity_key_fallback: bool,
     /// Last HMAC written to the log, used for hash-chaining.
     last_hmac: tokio::sync::Mutex<[u8; 32]>,
 }
@@ -412,12 +411,7 @@ impl Wal {
 
     /// Opens or creates a WAL file.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Self::open_with_key_manager_and_config(path, None, WalConfig::default()).await
-    }
-
-    /// Opens or creates a WAL file with explicit WalConfig.
-    pub async fn open_with_config(path: impl AsRef<Path>, config: WalConfig) -> Result<Self> {
-        Self::open_with_key_manager_and_config(path, None, config).await
+        Self::open_with_config(path, WalConfig::default()).await
     }
 
     /// Opens or creates a WAL file with an optional KeyManager.
@@ -425,22 +419,25 @@ impl Wal {
         path: impl AsRef<Path>,
         key_manager: Option<Arc<KeyManager>>,
     ) -> Result<Self> {
-        Self::open_with_key_manager_and_config(path, key_manager, WalConfig::default()).await
+        Self::open_with_config(
+            path,
+            WalConfig {
+                key_manager,
+                allow_legacy_integrity_key_fallback: false,
+            },
+        )
+        .await
     }
 
-    /// Opens or creates a WAL file with an optional KeyManager and explicit WalConfig.
-    pub async fn open_with_key_manager_and_config(
-        path: impl AsRef<Path>,
-        key_manager: Option<Arc<KeyManager>>,
-        config: WalConfig,
-    ) -> Result<Self> {
+    /// Opens or creates a WAL file with explicit configuration options.
+    pub async fn open_with_config(path: impl AsRef<Path>, config: WalConfig) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 
         // SD-09-CRYPTO-002: Use a persisted UUID v4 as file_id instead of the
         // filename.  This makes the WAL's cryptographic sub-key independent of
         // the filesystem path — renaming or moving the file cannot cause nonce-
         // reuse between two WAL instances sharing the same master key.
-        let (derived_key_manager, fallback_integrity_key) = if let Some(km) = key_manager {
+        let (derived_key_manager, fallback_integrity_key) = if let Some(km) = config.key_manager {
             let uuid_bytes = Self::load_or_create_wal_uuid(&path).await?;
             (Some(Arc::new(km.derive_file_key(&uuid_bytes)?)), None)
         } else {
@@ -497,7 +494,7 @@ impl Wal {
             file: tokio::sync::Mutex::new(file),
             key_manager: derived_key_manager,
             fallback_integrity_key,
-            config,
+            allow_legacy_integrity_key_fallback: config.allow_legacy_integrity_key_fallback,
             last_hmac: tokio::sync::Mutex::new([0u8; 32]),
         };
 
@@ -1259,7 +1256,7 @@ impl Wal {
                     };
 
                     if let Err(e) = verify_res {
-                        if !using_legacy_key && self.config.allow_legacy_integrity_key_fallback {
+                        if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
                             let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
                             let legacy_res =
                                 match version {
@@ -1369,7 +1366,7 @@ impl Wal {
                 };
 
                 if let Err(e) = verify_res {
-                    if !using_legacy_key && self.config.allow_legacy_integrity_key_fallback {
+                    if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
                         let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
                         let legacy_res = match version {
                             WalVersion::V3 => {
@@ -2026,30 +2023,32 @@ mod tests {
             let legacy_entry =
                 WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
 
-            let mut wal_file_bytes = Vec::new();
-            wal_file_bytes.extend_from_slice(&WAL_V3_HEADER);
-            wal_file_bytes.extend_from_slice(&legacy_entry.to_bytes().expect("to_bytes"));
+            let mut wal_bytes = Vec::new();
+            wal_bytes.extend_from_slice(&WAL_V3_HEADER);
+            wal_bytes.extend_from_slice(&legacy_entry.to_bytes().expect("to_bytes"));
 
-            tokio::fs::write(&wal_path, &wal_file_bytes) // expect
+            tokio::fs::write(&wal_path, wal_bytes) // expect
                 .await
                 .expect("write legacy WAL"); // expect
         }
 
-        // Opening with default config must fail when fallback is disabled (ADR-049 downgrade protection)
+        // Opening without explicit opt-in must fail (downgrade attack protection)
+        let open_res = Wal::open(&wal_path).await;
         assert!(
-            Wal::open(&wal_path).await.is_err(),
-            "Default WAL open must reject legacy static integrity key without explicit fallback opt-in"
+            open_res.is_err(),
+            "Opening legacy WAL without allow_legacy_integrity_key_fallback must fail"
         );
 
-        // Opening with explicit legacy fallback enabled must succeed
+        // Opening with explicit opt-in must succeed
         let wal = Wal::open_with_config(
             &wal_path,
             WalConfig {
                 allow_legacy_integrity_key_fallback: true,
+                ..Default::default()
             },
         )
         .await
-        .expect("open legacy wal with fallback"); // expect
+        .expect("open legacy wal with fallback opt-in"); // expect
         let entries = wal.replay().await.expect("replay legacy wal"); // expect
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].1.seq_no, 1);

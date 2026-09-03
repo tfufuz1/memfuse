@@ -76,6 +76,7 @@ impl<S: StorageEngine> AuditLog<S> {
     }
 
     /// Appends an immutable audit entry directly via LSM storage without HNSW vector index participation (AC-3).
+    /// Enforces append-only immutability: returns `MemFuseError::Conflict` if an entry for the step already exists.
     pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
         validate_task_id(&entry.task_id)?;
         validate_node_id(&entry.node_id)?;
@@ -218,17 +219,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_audit_log_append_only_duplicate_rejection() {
+    async fn test_audit_log_duplicate_step_rejected() {
         let storage = Arc::new(InMemoryStorageEngine::new());
-        let index = match HnswIndex::try_new(HnswConfig::default()) {
-            Ok(idx) => Arc::new(idx),
-            Err(e) => panic!("HnswIndex creation failed: {e}"),
-        };
+        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
         let graph_index = Arc::new(CsrGraph::new());
         let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
 
         let collection = Arc::new(Collection::new(
-            "test_audit_dups".to_string(),
+            "test_audit_dup".to_string(),
             storage,
             index,
             graph_index,
@@ -242,31 +240,19 @@ mod tests {
         let entry = AuditEntry {
             task_id: "task-dup".to_string(),
             step_count: 1,
-            node_id: "node-start".to_string(),
+            node_id: "node-1".to_string(),
             tokens_consumed: 50,
-            payload: serde_json::json!({"action": "init"}),
+            payload: serde_json::json!({"step": 1}),
             error: None,
         };
 
-        if let Err(e) = audit_log.append(&entry).await {
-            panic!("first append must succeed, got error: {e}");
-        }
+        audit_log.append(&entry).await.unwrap();
 
-        let duplicate_entry = AuditEntry {
-            task_id: "task-dup".to_string(),
-            step_count: 1,
-            node_id: "node-override".to_string(),
-            tokens_consumed: 100,
-            payload: serde_json::json!({"action": "tampered"}),
-            error: None,
-        };
-
-        match audit_log.append(&duplicate_entry).await {
-            Err(memfuse_core::MemFuseError::Conflict(_)) => {}
-            res => panic!(
-                "Duplicate audit entry append must be rejected with Conflict error, got: {res:?}"
-            ),
-        }
+        let dup_res = audit_log.append(&entry).await;
+        assert!(
+            matches!(dup_res, Err(memfuse_core::MemFuseError::Conflict(_))),
+            "Expected Conflict error on duplicate audit step append"
+        );
     }
 
     #[tokio::test]

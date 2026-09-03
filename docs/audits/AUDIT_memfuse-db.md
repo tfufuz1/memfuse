@@ -270,3 +270,19 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 - **Befund:** Im ungesiebten Vektorsuchpfad (`query.filter = None`) in `hybrid_search_with_query_at` wurde `filter_pre_rrf` nicht auf die Roh-Ergebnisse angewendet. Wenn eine Abfrage `memory_type_filter` ohne ein zusätzliches Metadaten-`FilterExpr` nutzte, wurden Nicht-Treffer für den geforderten `MemoryType` fälschlicherweise nicht vor dem RRF-Schritt gefiltert.
 - **Fix:** Aufruf von `filter_pre_rrf(raw_vec_results)` im `else`-Zweig ergänzt.
 - **Verifikation:** `test_hybrid_search_with_query_memory_type_filter` sowie die gesamte Testsuite in `memfuse-db` sind grün.
+
+---
+
+## 10. Tier-1 Concurrency & Chaos-Engineering Audit (2026-09-03)
+
+**Datum:** 03. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: 2bf6c3bb)
+**Aktion:** Tier-1 Concurrency & Fault-Injection verification on `memfuse-db`
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write / 2PC Failure | OK | Staged 2PC rollback / repair_on_open reconciles pending intents | — |
+| Disk-Full ENOSPC | OK | Err(MemFuseError::Storage) propagates properly, no panic | — |
+| OOM / Backpressure | OK | Monotonic TxId allocation & bounded heap allocation in RRF | — |
+| Concurrency Smoke | OK | 3/3 iterations of multithreaded test suites passed without deadlock/panic | — |
+| Snapshot Isolation | OK | Snapshot recovery & cross-signal isolation tests passed 100% | — |

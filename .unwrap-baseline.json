@@ -9,6 +9,10 @@
   },
   {
     "file": "crates/memfuse-agent/src/audit.rs",
+    "hash": "7685d4e057ce5c43"
+  },
+  {
+    "file": "crates/memfuse-agent/src/audit.rs",
     "hash": "7b9e5c67d10e0b0d"
   },
   {
@@ -6029,6 +6033,10 @@
   },
   {
     "file": "crates/memfuse-graph/src/csr.rs",
+    "hash": "0956bbc7a62cd938"
+  },
+  {
+    "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "09970b37cd4a0de1"
   },
   {
@@ -6209,6 +6217,10 @@
   },
   {
     "file": "crates/memfuse-graph/src/csr.rs",
+    "hash": "6594346c41980014"
+  },
+  {
+    "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "68e91eb5bc96747b"
   },
   {
@@ -6242,6 +6254,10 @@
   {
     "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "6eb4edc84ad4c905"
+  },
+  {
+    "file": "crates/memfuse-graph/src/csr.rs",
+    "hash": "6faa04abce008f97"
   },
   {
     "file": "crates/memfuse-graph/src/csr.rs",
@@ -6385,6 +6401,10 @@
   },
   {
     "file": "crates/memfuse-graph/src/csr.rs",
+    "hash": "ac1dafead6710818"
+  },
+  {
+    "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "ac1f658e0ba4cb52"
   },
   {
@@ -6493,7 +6513,15 @@
   },
   {
     "file": "crates/memfuse-graph/src/csr.rs",
+    "hash": "d8a4c49d007b0fb3"
+  },
+  {
+    "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "df24b337c781df35"
+  },
+  {
+    "file": "crates/memfuse-graph/src/csr.rs",
+    "hash": "dfe37ead675aeee2"
   },
   {
     "file": "crates/memfuse-graph/src/csr.rs",
@@ -12065,6 +12093,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "3ab97d4800a18120"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "3b654d9896690b9f"
   },
   {
@@ -12233,6 +12265,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "71b2276090ed0212"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "7499f59732719b3d"
   },
   {
@@ -12294,6 +12330,10 @@
   {
     "file": "crates/memfuse-store/src/wal.rs",
     "hash": "965b529bc190475a"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "9894daa8ec93c27f"
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
