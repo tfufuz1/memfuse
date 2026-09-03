@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn test_domain_communities_contains_is_o1() {
+    fn test_domain_communities_contains_is_o1() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let communities: HashSet<u64> = (1..=1000).collect();
         let profile = SlmProfile::new(
             "test-slm",
@@ -367,22 +367,22 @@ mod tests {
         assert!(!profile.domain_communities.contains(&1001));
 
         // Assert JSON serialization produces sorted array
-        let json_str = serde_json::to_string(&profile).expect("serialize profile");
-        let json_val: serde_json::Value =
-            serde_json::from_str(&json_str).expect("parse json value");
+        let json_str = serde_json::to_string(&profile)?;
+        let json_val: serde_json::Value = serde_json::from_str(&json_str)?;
 
         let arr = json_val["domain_communities"]
             .as_array()
-            .expect("domain_communities is array");
+            .ok_or("domain_communities is not an array")?;
 
         assert_eq!(arr.len(), 1000);
         let expected_sorted: Vec<u64> = (1..=1000).collect();
-        let actual_arr: Vec<u64> = arr.iter().map(|v| v.as_u64().unwrap()).collect();
+        let actual_arr: Vec<u64> = arr.iter().filter_map(|v| v.as_u64()).collect();
         assert_eq!(actual_arr, expected_sorted);
 
         // Round-trip deserialization
-        let deserialized: SlmProfile =
-            serde_json::from_str(&json_str).expect("deserialize profile");
+        let deserialized: SlmProfile = serde_json::from_str(&json_str)?;
         assert_eq!(deserialized, profile);
+
+        Ok(())
     }
 }
