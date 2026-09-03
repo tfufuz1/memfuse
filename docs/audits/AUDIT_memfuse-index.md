@@ -225,17 +225,4 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
    - **Verifikation:** `cargo run -p xtask -- check-review-coverage` meldet PASSED.
 
 ---
-
-## 13. Audit-Update (2026-09-02T23:11:01Z, SESSION: bd3e8055)
-
-### Durchgeführte Verifizierungen & Review Coverage:
-1. **Multi-Session Review Coverage (`TEST:AGT-INDEX-006`):**
-   - **Prüfung:** Dritter `REVIEW-PASS`-Eintrag für `ANCHOR[TEST:AGT-INDEX-006]` in `crates/memfuse-index/src/hnsw.rs` hinzugefügt zur Abdeckung von Snapshot-Isolation bei Soft-Deletes.
-   - **Verifikation:** `cargo run -p xtask -- check-review-coverage` meldet PASSED.
-
-2. **Vollständige Crate-Verifikation:**
-   - **Prüfung:** `cargo check -p memfuse-index --all-features`, `cargo clippy -p memfuse-index -- -D warnings`, `cargo fmt --check -p memfuse-index`, `cargo test -p memfuse-index --lib`, and `cargo check --workspace --exclude memfuse-tauri`.
-   - **Ergebnis:** 0 Fehler, 0 Warnungen, 87 unittests bestanden.
-
----
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
