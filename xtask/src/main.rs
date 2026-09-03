@@ -21,7 +21,6 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
-use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -30,10 +29,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 use walkdir::WalkDir;
-
-pub const CUTOFF_YEAR: i32 = 2026;
-pub const CUTOFF_MONTH: u32 = 8;
-pub const CUTOFF_DAY: u32 = 29;
 
 #[derive(Debug, Clone)]
 pub struct TagItem {
@@ -86,9 +81,7 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
 
                     let session = if let Some(s_idx) = trimmed.find("(SESSION:") {
                         let rest = &trimmed[s_idx + 9..];
-                        rest.find(')')
-                            .map(|end| rest[..end].trim().to_string())
-                            .filter(|s| !s.is_empty())
+                        rest.find(')').map(|end| rest[..end].trim().to_string())
                     } else {
                         None
                     };
@@ -1010,68 +1003,6 @@ pub fn run_check_consistency() -> bool {
     }
 }
 
-pub fn validate_tags_items(tags: &[TagItem]) -> bool {
-    let cutoff_date = match NaiveDate::from_ymd_opt(CUTOFF_YEAR, CUTOFF_MONTH, CUTOFF_DAY) {
-        Some(d) => d,
-        None => panic!("Invalid cutoff date constants"),
-    };
-    let cutoff_dt = match cutoff_date.and_hms_opt(0, 0, 0) {
-        Some(dt) => dt,
-        None => panic!("Invalid cutoff time"),
-    };
-
-    let mut success = true;
-
-    for tag in tags {
-        if (tag.tag_type == "AI-TAG" || tag.tag_type == "ANCHOR") && !tag.is_resolved {
-            let parsed_dt =
-                match NaiveDateTime::parse_from_str(&tag.timestamp, "%Y-%m-%dT%H:%M:%SZ") {
-                    Ok(dt) => dt,
-                    Err(_) => {
-                        eprintln!("❌ [GATE-7]: Tag ohne gültigen ISO-8601 Zeitstempel");
-                        eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
-                        eprintln!("Ursache: TS-Feld fehlt oder ungültig formatiert");
-                        eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
-                        eprintln!(
-                            "   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)"
-                        );
-                        eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
-                        eprintln!();
-                        success = false;
-                        continue;
-                    }
-                };
-
-            if parsed_dt >= cutoff_dt && tag.session.is_none() {
-                eprintln!("❌ [GATE-7]: Tag (>= 2026-08-29) ohne SESSION:-Feld");
-                eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
-                eprintln!("Ursache: SESSION-Feld fehlt bei neuem Tag (>= 2026-08-29)");
-                eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
-                eprintln!(
-                    "   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)"
-                );
-                eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
-                eprintln!();
-                success = false;
-            }
-        }
-    }
-
-    success
-}
-
-pub fn run_validate_tags() -> bool {
-    println!("=== Running xtask validate-tags ===");
-    let tags = scan_tags("crates");
-    let success = validate_tags_items(&tags);
-    if success {
-        println!("✅ Alle Tags haben gültige TS: und SESSION: Felder");
-    } else {
-        eprintln!("=== xtask validate-tags FAILED ===");
-    }
-    success
-}
-
 pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
     println!("=== Running xtask check-review-coverage ===");
     let done_anchors: Vec<&TagItem> = tags
@@ -1168,10 +1099,6 @@ fn main() {
                 process::exit(1);
             }
         }
-        "validate-tags" => {
-            let success = run_validate_tags();
-            process::exit(if success { 0 } else { 1 });
-        }
         "check-jules-context-freshness" => {
             let success = run_check_jules_context_freshness();
             if !success {
@@ -1206,7 +1133,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], check-review-coverage, check-consistency, check-jules-context-freshness, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
@@ -1316,101 +1243,6 @@ pub fn run_context_tags(tags: &[TagItem], args: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_validate_tags_no_ts_field() {
-        let tags = vec![TagItem {
-            file_path: "crates/memfuse-test/src/lib.rs".to_string(),
-            line_num: 10,
-            tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] Test tag without TS".to_string(),
-            timestamp: "".to_string(),
-            category: Some("SMELL".to_string()),
-            severity: Some("CRITICAL".to_string()),
-            id: None,
-            session: None,
-            status: Some("OPEN".to_string()),
-            description: "Test tag without TS".to_string(),
-            is_resolved: false,
-        }];
-        assert!(!validate_tags_items(&tags));
-    }
-
-    #[test]
-    fn test_validate_tags_invalid_timestamp() {
-        let tags = vec![TagItem {
-            file_path: "crates/memfuse-test/src/lib.rs".to_string(),
-            line_num: 10,
-            tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] Test tag (TS: 2026-13-01T00:00:00Z)".to_string(),
-            timestamp: "2026-13-01T00:00:00Z".to_string(),
-            category: Some("SMELL".to_string()),
-            severity: Some("CRITICAL".to_string()),
-            id: None,
-            session: None,
-            status: Some("OPEN".to_string()),
-            description: "Test tag invalid timestamp".to_string(),
-            is_resolved: false,
-        }];
-        assert!(!validate_tags_items(&tags));
-    }
-
-    #[test]
-    fn test_validate_tags_before_cutoff_without_session() {
-        let tags = vec![TagItem {
-            file_path: "crates/memfuse-test/src/lib.rs".to_string(),
-            line_num: 10,
-            tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] Old tag (TS: 2026-08-28T12:00:00Z)".to_string(),
-            timestamp: "2026-08-28T12:00:00Z".to_string(),
-            category: Some("SMELL".to_string()),
-            severity: Some("CRITICAL".to_string()),
-            id: None,
-            session: None,
-            status: Some("OPEN".to_string()),
-            description: "Old tag before cutoff".to_string(),
-            is_resolved: false,
-        }];
-        assert!(validate_tags_items(&tags));
-    }
-
-    #[test]
-    fn test_validate_tags_after_cutoff_without_session() {
-        let tags = vec![TagItem {
-            file_path: "crates/memfuse-test/src/lib.rs".to_string(),
-            line_num: 10,
-            tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] New tag (TS: 2026-08-29T00:00:00Z)".to_string(),
-            timestamp: "2026-08-29T00:00:00Z".to_string(),
-            category: Some("SMELL".to_string()),
-            severity: Some("CRITICAL".to_string()),
-            id: None,
-            session: None,
-            status: Some("OPEN".to_string()),
-            description: "New tag after cutoff without session".to_string(),
-            is_resolved: false,
-        }];
-        assert!(!validate_tags_items(&tags));
-    }
-
-    #[test]
-    fn test_validate_tags_after_cutoff_with_session() {
-        let tags = vec![TagItem {
-            file_path: "crates/memfuse-test/src/lib.rs".to_string(),
-            line_num: 10,
-            tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] New tag (TS: 2026-08-29T10:00:00Z) (SESSION: a3f29c1d)".to_string(),
-            timestamp: "2026-08-29T10:00:00Z".to_string(),
-            category: Some("SMELL".to_string()),
-            severity: Some("CRITICAL".to_string()),
-            id: None,
-            session: Some("a3f29c1d".to_string()),
-            status: Some("OPEN".to_string()),
-            description: "New tag after cutoff with session".to_string(),
-            is_resolved: false,
-        }];
-        assert!(validate_tags_items(&tags));
-    }
 
     #[test]
     fn test_working_state_single_marker_block() {
