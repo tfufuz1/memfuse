@@ -24,7 +24,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-store` | 1 | 13528 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5157 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 18725 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 4490 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-agent` | 3 | 4492 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1191 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 3045 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1496 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
