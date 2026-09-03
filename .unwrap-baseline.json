@@ -9421,10 +9421,6 @@
   },
   {
     "file": "crates/memfuse-ollama/src/client.rs",
-    "hash": "0fe7c3238c1564a7"
-  },
-  {
-    "file": "crates/memfuse-ollama/src/client.rs",
     "hash": "11ddbb19c64583c4"
   },
   {
@@ -9441,10 +9437,6 @@
   },
   {
     "file": "crates/memfuse-ollama/src/client.rs",
-    "hash": "2a061da142008dec"
-  },
-  {
-    "file": "crates/memfuse-ollama/src/client.rs",
     "hash": "33b2a89829c6dc58"
   },
   {
@@ -9458,10 +9450,6 @@
   {
     "file": "crates/memfuse-ollama/src/client.rs",
     "hash": "40364557c2b7460d"
-  },
-  {
-    "file": "crates/memfuse-ollama/src/client.rs",
-    "hash": "4a621cce54d0972d"
   },
   {
     "file": "crates/memfuse-ollama/src/client.rs",
@@ -9501,6 +9489,10 @@
   },
   {
     "file": "crates/memfuse-ollama/src/client.rs",
+    "hash": "9bd9b121f3b144d8"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/client.rs",
     "hash": "ab57b1b662ab1423"
   },
   {
@@ -9526,6 +9518,10 @@
   {
     "file": "crates/memfuse-ollama/src/client.rs",
     "hash": "dcb90ee50064867d"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/client.rs",
+    "hash": "e02a5361ab479c8a"
   },
   {
     "file": "crates/memfuse-ollama/src/client.rs",
