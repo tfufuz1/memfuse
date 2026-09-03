@@ -311,6 +311,77 @@ crates/memfuse-db/src/collection/query_builder.rs:603:            .unwrap(); // 
 crates/memfuse-db/src/collection/query_builder.rs:606:        let legacy = col.hybrid_search_with_query(&hybrid_query).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/query_builder.rs:613:            .unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:100:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:113:    col.relate("doc1", "doc2", "references").await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:116:    let rels = col.scan_prefix("__rel:").await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:121:    let id1 = EntityId::from_key("doc1").unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:122:    let id2 = EntityId::from_key("doc2").unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:123:    let neighbors = graph.neighbors(id1).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:203:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:305:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:310:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:316:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:347:    let remaining_rels = storage.scan_prefix(&rel_prefix).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:373:    let result = embedder.embed("hello").await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:386:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:391:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:396:    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:413:        .unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:432:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:437:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:442:    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:538:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:543:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:548:    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:566:        .unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:573:        .unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:590:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:595:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:601:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:619:    col.insert(id1, &emb1, None).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:622:    let doc1 = col.get(id1).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:633:    let meta_bytes = serde_json::to_vec(&existing_meta).unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:634:    col.storage.put(tx, &doc_key, &meta_bytes).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:635:    col.storage.commit(tx).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:670:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:675:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:681:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:696:    let tx1 = col.next_tx().unwrap(); // unwrap allowed
+crates/memfuse-db/src/collection/tests.rs:697:    let tx2 = col.next_tx().unwrap(); // unwrap allowed
+crates/memfuse-db/src/collection/tests.rs:698:    let tx3 = col.next_tx().unwrap(); // unwrap allowed
+crates/memfuse-db/src/collection/tests.rs:714:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:719:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:725:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:740:    let tx1 = col.allocate_tx().unwrap(); // unwrap allowed
+crates/memfuse-db/src/collection/tests.rs:741:    let tx2 = col.allocate_tx().unwrap(); // unwrap allowed
+crates/memfuse-db/src/collection/tests.rs:742:    let tx3 = col.allocate_tx().unwrap(); // unwrap allowed
+crates/memfuse-db/src/collection/tests.rs:758:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:763:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:769:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:792:                c.insert(&id, &[1.0, 0.0, 0.0, 0.0], None).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:804:            c.insert_many(&docs).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:814:                c.upsert(&id, &[0.0, 0.0, 1.0, 0.0], None).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:815:                c.update(&id, &[0.0, 0.0, 1.0, 1.0], None).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:827:            c.upsert_many(&docs).await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:832:        h.await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:848:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:855:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:862:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:880:    .unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:881:    let reaped = col.trigger_reaper().await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:883:    assert!(col.get("doc_no_created_at").await.unwrap().is_some()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:896:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:903:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:910:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:928:    .unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:929:    let reaped = col.trigger_reaper().await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:931:    assert!(col.get("doc_zero_ttl").await.unwrap().is_some()); // unwrap
+crates/memfuse-db/src/collection/tests.rs:945:    let text = extracted.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:961:    let dir = tempdir().unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:968:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:975:        .unwrap(), // unwrap
+crates/memfuse-db/src/collection/tests.rs:993:    .unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:994:    let reaped = col.trigger_reaper().await.unwrap(); // unwrap
+crates/memfuse-db/src/collection/tests.rs:996:    assert!(col.get("doc_overflow").await.unwrap().is_some()); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1010:    let dir = tempdir().unwrap(); // unwrap allowed (AGENT:04)
 crates/memfuse-db/src/collection/tests.rs:1017:        .unwrap(), // unwrap allowed (AGENT:04)
 crates/memfuse-db/src/collection/tests.rs:1024:        .unwrap(), // unwrap allowed (AGENT:04)
@@ -331,16 +402,11 @@ crates/memfuse-db/src/collection/tests.rs:1098:        .unwrap(), // unwrap
 crates/memfuse-db/src/collection/tests.rs:1116:    .unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1123:    .unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1128:        .unwrap(); // unwrap
-crates/memfuse-db/src/collection/tests.rs:113:    col.relate("doc1", "doc2", "references").await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1154:    let dir = tempdir().unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1161:        .unwrap(), // unwrap
 crates/memfuse-db/src/collection/tests.rs:1168:        .unwrap(), // unwrap
-crates/memfuse-db/src/collection/tests.rs:116:    let rels = col.scan_prefix("__rel:").await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1181:    col.insert("doc_test", &vec, None).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1195:    let doc = col.get("doc_test").await.unwrap().unwrap(); // unwrap
-crates/memfuse-db/src/collection/tests.rs:121:    let id1 = EntityId::from_key("doc1").unwrap(); // unwrap
-crates/memfuse-db/src/collection/tests.rs:122:    let id2 = EntityId::from_key("doc2").unwrap(); // unwrap
-crates/memfuse-db/src/collection/tests.rs:123:    let neighbors = graph.neighbors(id1).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1241:    let dir = tempdir().unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1246:    let storage = Arc::new(LsmStorage::new(lsm_config).await.unwrap()); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1252:        .unwrap(), // unwrap
@@ -395,7 +461,6 @@ crates/memfuse-db/src/collection/tests.rs:1674:        .unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1676:    storage.commit(tx).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1677:    col.text_index.commit(tx).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1683:        .unwrap(); // unwrap
-crates/memfuse-db/src/collection/tests.rs:16:    let dir = tempdir().unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1703:    let dir = tempfile::tempdir().unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:1710:        .unwrap(), // unwrap
 crates/memfuse-db/src/collection/tests.rs:1717:        .unwrap(), // unwrap
@@ -426,7 +491,6 @@ crates/memfuse-db/src/collection/tests.rs:2014:        task.await.unwrap(); // u
 crates/memfuse-db/src/collection/tests.rs:2020:        let doc = col.get(&key).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:2031:        .unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:2034:    let synthetic_doc_id = DocId::from_key("colliding_target_key").unwrap(); // unwrap
-crates/memfuse-db/src/collection/tests.rs:203:        .unwrap(), // unwrap
 crates/memfuse-db/src/collection/tests.rs:2041:    let meta_bytes = serde_json::to_vec(&existing_meta).unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:2042:    storage.put(tx, &doc_key, &meta_bytes).await.unwrap(); // unwrap
 crates/memfuse-db/src/collection/tests.rs:2043:    storage.commit(tx).await.unwrap(); // unwrap
@@ -717,7 +781,6 @@ crates/memfuse-embed/src/reranker.rs:457:            .expect("Failed to construc
 crates/memfuse-embed/src/reranker.rs:474:        let reranker = Arc::new(CrossEncoderReranker::new(config).unwrap()); // unwrap
 crates/memfuse-embed/src/reranker.rs:490:            let res = handle.await.unwrap(); // unwrap
 crates/memfuse-embed/src/reranker.rs:492:            assert_eq!(res.unwrap().len(), 10); // unwrap
-crates/memfuse-embed/src/reranker.rs:90:    // Poison-Mechanismus hat. Kein .unwrap()/.map_err() nötig. // unwrap
 crates/memfuse-graph/src/community.rs:257:                .unwrap(); // unwrap
 crates/memfuse-graph/src/community.rs:264:            .unwrap(); // unwrap
 crates/memfuse-graph/src/community.rs:268:            .unwrap(); // unwrap
@@ -1557,8 +1620,6 @@ crates/memfuse-router/src/tests.rs:166:        .unwrap();
 crates/memfuse-router/src/tests.rs:193:        let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
 crates/memfuse-router/src/tests.rs:197:            std::fs::read_to_string(&captured_req_path).expect("read captured request");
 crates/memfuse-router/src/tests.rs:199:            serde_json::from_str(&captured_str).expect("parse captured request");
-crates/memfuse-router/src/tests.rs:19:        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:20:        let collection = db.collection("default").await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:214:        let dir = tempfile::tempdir().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:219:        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:220:        let collection = db.collection("default").await.unwrap(); // unwrap
@@ -1582,34 +1643,23 @@ crates/memfuse-router/src/tests.rs:313:            .unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:314:        db.inner_storage().commit(tx).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:336:        let d1 = router.route(&vec_data, "test content").await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:349:        let d2 = router.route(&vec_data, "test content").await.unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:36:            .unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:45:            .unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:48:        let eid_coding = EntityId::from_key(coding_key).unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:49:        let eid_docs = EntityId::from_key(docs_key).unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:54:            .unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:58:        let tx = db.allocate_tx().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:620:        let dir = tempfile::tempdir().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:625:        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:626:        let collection = db.collection("default").await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:637:        let dir = tempfile::tempdir().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:642:        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:643:        let collection = db.collection("default").await.unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:64:            .put(tx, &comm_key_coding, &serde_json::to_vec(&100u64).unwrap()) // unwrap
 crates/memfuse-router/src/tests.rs:662:        let dir = tempfile::tempdir().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:667:        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:668:        let collection = db.collection("default").await.unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:66:            .unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:678:            .unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:68:            .put(tx, &comm_key_docs, &serde_json::to_vec(&200u64).unwrap()) // unwrap
 crates/memfuse-router/src/tests.rs:696:        let dir = tempfile::tempdir().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:701:        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:702:        let collection = db.collection("default").await.unwrap(); // unwrap
-crates/memfuse-router/src/tests.rs:70:            .unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:712:            .unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:714:        let eid = EntityId::from_key(coding_key).unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:715:        let tx = db.allocate_tx().unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:718:            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap()) // unwrap
-crates/memfuse-router/src/tests.rs:71:        db.inner_storage().commit(tx).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:720:            .unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:721:        db.inner_storage().commit(tx).await.unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:867:        let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
