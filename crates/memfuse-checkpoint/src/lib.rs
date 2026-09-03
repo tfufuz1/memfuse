@@ -182,6 +182,14 @@ pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
     lock.clone()
 }
 
+/// Retrieves orphaned checkpoints registered for a specific namespace.
+pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> {
+    get_orphaned_checkpoints()
+        .into_iter()
+        .filter(|cp| cp.namespace.as_deref() == Some(ns))
+        .collect()
+}
+
 /// Removes a specific orphaned checkpoint after recovery.
 pub fn clear_orphaned_checkpoint(tx_id: TxId) {
     let mut lock = ORPHANED_CHECKPOINTS.lock();
@@ -363,6 +371,8 @@ impl CheckpointMeta {
 pub struct StateCheckpoint {
     pub tx_id: TxId,
     pub timestamp_ms: u64,
+    #[serde(default)]
+    pub namespace: Option<String>,
 }
 
 /// RAII Guard, der explizit über [`commit`](Self::commit) oder [`rollback`](Self::rollback) finalisiert werden MUSS.
@@ -376,13 +386,15 @@ pub struct StateCheckpoint {
 pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<S>,
+    namespace: String,
 }
 
 impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
-    pub fn new(checkpoint: StateCheckpoint, storage: Arc<S>) -> Self {
+    pub fn new(checkpoint: StateCheckpoint, storage: Arc<S>, namespace: impl Into<String>) -> Self {
         Self {
             checkpoint: Some(checkpoint),
             storage,
+            namespace: namespace.into(),
         }
     }
 
@@ -391,8 +403,9 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         let cp = StateCheckpoint {
             tx_id: tx,
             timestamp_ms: monotonic_timestamp_ms(),
+            namespace: Some("agent_step".to_string()),
         };
-        Ok(Self::new(cp, storage))
+        Ok(Self::new(cp, storage, "agent_step"))
     }
 
     pub fn checkpoint(&self) -> Result<&StateCheckpoint> {
@@ -474,7 +487,8 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
 
 impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
     fn drop(&mut self) {
-        if let Some(cp) = self.checkpoint.take() {
+        if let Some(mut cp) = self.checkpoint.take() {
+            cp.namespace = Some(self.namespace.clone());
             SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
             tracing::error!(
                 tx_id = ?cp.tx_id,
@@ -710,8 +724,13 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         let cp = StateCheckpoint {
             tx_id,
             timestamp_ms,
+            namespace: Some(self.namespace.clone()),
         };
-        Ok(CheckpointGuard::new(cp, Arc::clone(&self.storage)))
+        Ok(CheckpointGuard::new(
+            cp,
+            Arc::clone(&self.storage),
+            &self.namespace,
+        ))
     }
 
     /// Creates a new persistent checkpoint.
@@ -1865,8 +1884,10 @@ mod tests {
             StateCheckpoint {
                 tx_id: TxId::new(777),
                 timestamp_ms: 12345,
+                namespace: Some("test".to_string()),
             },
             storage,
+            "test",
         );
 
         assert!(guard.checkpoint().is_ok());
@@ -1934,6 +1955,7 @@ mod tests {
         let cp = StateCheckpoint {
             tx_id: TxId::new(888),
             timestamp_ms: 1700000000123,
+            namespace: Some("test_ns".to_string()),
         };
 
         let json = serde_json::to_string(&cp).expect("// expect #[cfg(test)]");
@@ -1942,6 +1964,50 @@ mod tests {
 
         assert_eq!(deserialized.tx_id, TxId::new(888));
         assert_eq!(deserialized.timestamp_ms, 1700000000123);
+        assert_eq!(deserialized.namespace, Some("test_ns".to_string()));
+    }
+
+    #[test]
+    fn state_checkpoint_deserializes_legacy_json_without_namespace() {
+        let legacy_json = r#"{"tx_id": 999, "timestamp_ms": 1700000000000}"#;
+        let deserialized: StateCheckpoint =
+            serde_json::from_str(legacy_json).expect("Legacy JSON without namespace must deserialize");
+
+        assert_eq!(deserialized.tx_id, TxId::new(999));
+        assert_eq!(deserialized.timestamp_ms, 1700000000000);
+        assert_eq!(deserialized.namespace, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_orphaned_checkpoints_for_namespace() {
+        clear_all_orphaned_checkpoints();
+        let storage = Arc::new(MockStorage::new());
+        let store_a = PersistentCheckpointStore::new(storage.clone(), "ns_a");
+        let store_b = PersistentCheckpointStore::new(storage.clone(), "ns_b");
+
+        {
+            let _guard_a1 = store_a.create_guard(TxId::new(1001)).unwrap();
+            let _guard_a2 = store_a.create_guard(TxId::new(1002)).unwrap();
+            let _guard_b1 = store_b.create_guard(TxId::new(2001)).unwrap();
+            // All 3 guards drop here uncommitted
+        }
+
+        let orphans_a = get_orphaned_checkpoints_for_namespace("ns_a");
+        let orphans_b = get_orphaned_checkpoints_for_namespace("ns_b");
+        let orphans_none = get_orphaned_checkpoints_for_namespace("nonexistent");
+
+        assert_eq!(orphans_a.len(), 2);
+        assert!(orphans_a.iter().all(|cp| cp.namespace.as_deref() == Some("ns_a")));
+        let tx_a: Vec<TxId> = orphans_a.iter().map(|cp| cp.tx_id).collect();
+        assert!(tx_a.contains(&TxId::new(1001)));
+        assert!(tx_a.contains(&TxId::new(1002)));
+
+        assert_eq!(orphans_b.len(), 1);
+        assert_eq!(orphans_b[0].tx_id, TxId::new(2001));
+        assert_eq!(orphans_b[0].namespace.as_deref(), Some("ns_b"));
+
+        assert!(orphans_none.is_empty());
+        clear_all_orphaned_checkpoints();
     }
 
     #[allow(non_snake_case)]
@@ -2019,6 +2085,7 @@ mod tests {
         let consumed_guard = CheckpointGuard::<MockStorage> {
             checkpoint: None,
             storage: dummy_storage,
+            namespace: "test".to_string(),
         };
         assert!(matches!(
             consumed_guard.checkpoint(),
@@ -2028,6 +2095,7 @@ mod tests {
         let consumed_guard2 = CheckpointGuard::<MockStorage> {
             checkpoint: None,
             storage: Arc::new(MockStorage::new()),
+            namespace: "test".to_string(),
         };
         assert!(matches!(
             consumed_guard2.commit(),
@@ -2037,6 +2105,7 @@ mod tests {
         let consumed_guard3 = CheckpointGuard::<MockStorage> {
             checkpoint: None,
             storage: Arc::new(MockStorage::new()),
+            namespace: "test".to_string(),
         };
         let res = consumed_guard3.rollback().await;
         assert!(matches!(res, Err(MemFuseError::Internal(_))));
