@@ -1500,11 +1500,6 @@ crates/memfuse-ollama/src/model_info.rs:126:        let listener = tokio::net::T
 crates/memfuse-ollama/src/model_info.rs:127:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/model_info.rs:179:        let info: ModelInfo = serde_json::from_str(json).unwrap(); // unwrap
 crates/memfuse-py/src/lib.rs:1235:            let rt = rt_res.unwrap();
-crates/memfuse-router/src/profile.rs:370:        let json_str = serde_json::to_string(&profile).expect("serialize profile");
-crates/memfuse-router/src/profile.rs:372:            serde_json::from_str(&json_str).expect("parse json value");
-crates/memfuse-router/src/profile.rs:376:            .expect("domain_communities is array");
-crates/memfuse-router/src/profile.rs:380:        let actual_arr: Vec<u64> = arr.iter().map(|v| v.as_u64().unwrap()).collect();
-crates/memfuse-router/src/profile.rs:385:            serde_json::from_str(&json_str).expect("deserialize profile");
 crates/memfuse-router/src/router.rs:493:        let dir = tempfile::tempdir().unwrap();
 crates/memfuse-router/src/router.rs:500:            .unwrap();
 crates/memfuse-router/src/router.rs:501:        let collection = db.collection("default").await.unwrap();

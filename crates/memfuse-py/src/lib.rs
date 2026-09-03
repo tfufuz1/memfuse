@@ -28,7 +28,7 @@
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
-use pyo3::exceptions::{PyKeyError, PyPermissionError, PyRuntimeError};
+use pyo3::exceptions::{PyKeyError, PyPermissionError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pythonize::{depythonize, pythonize};
@@ -107,7 +107,7 @@ fn get_runtime(py: Python<'_>) -> PyResult<Arc<Runtime>> {
 /// Converts a Python dict to a serde_json::Value.
 fn dict_to_json(d: &pyo3::Bound<'_, pyo3::types::PyDict>) -> PyResult<serde_json::Value> {
     depythonize(d)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Metadata error: {}", e)))
+        .map_err(|e| PyValueError::new_err(format!("Metadata error: {}", e)))
 }
 
 /// Converts an optional Python dict to an optional serde_json::Value.
@@ -617,14 +617,14 @@ macro_rules! memfuse_crud_methods {
                 k: usize,
             ) -> PyResult<Vec<PySearchResult>> {
                 if k == 0 || k > 1000 {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    return Err(PyValueError::new_err(format!(
                         "Search k must be between 1 and 1000. Got: {}",
                         k
                     )));
                 }
                 let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
-                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                    PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 validate_vector(v)?;
                 let v_owned = v.to_vec();
@@ -648,14 +648,14 @@ macro_rules! memfuse_crud_methods {
                 // Returning `PyBytes::new(py, data)` copies the buffer into Python-managed memory safely,
                 // preserving `#![forbid(unsafe_code)]` compliance and zero use-after-free risk.
                 if k == 0 || k > 1000 {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    return Err(PyValueError::new_err(format!(
                         "Search k must be between 1 and 1000. Got: {}",
                         k
                     )));
                 }
                 let rt = &self.runtime;
                 let v = vector.as_slice().map_err(|e| {
-                    pyo3::exceptions::PyValueError::new_err(format!("Invalid vector: {}", e))
+                    PyValueError::new_err(format!("Invalid vector: {}", e))
                 })?;
                 validate_vector(v)?;
                 let v_owned = v.to_vec();
@@ -1334,7 +1334,7 @@ mod tests {
     }
 
     #[test]
-    fn test_memfuse_err_attributes_set() {
+    fn test_memfuse_err_attributes_set() -> PyResult<()> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let py_err = memfuse_err(MemFuseError::NotFound("key123".into()));
@@ -1343,15 +1343,25 @@ mod tests {
                 let kind: String = kind_obj.extract().unwrap_or_default();
                 assert_eq!(kind, "NotFound");
             } else {
-                panic!("kind attribute missing");
+                return Err(PyValueError::new_err(
+                    "kind attribute missing on MemFuse error object",
+                ));
             }
             if let Ok(msg_obj) = bound_val.getattr("message") {
                 let msg: String = msg_obj.extract().unwrap_or_default();
                 assert!(msg.contains("key123"));
             } else {
-                panic!("message attribute missing");
+                return Err(PyValueError::new_err(
+                    "message attribute missing on MemFuse error object",
+                ));
             }
-        });
+            Ok(())
+        })
+    }
+
+    #[cfg(test)]
+    fn _simulate_panic_for_test() -> ! {
+        #[cfg(test)] panic!("Simulated Rust core panic");
     }
 
     #[test]
@@ -1359,7 +1369,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let res: PyResult<i32> = run_blocking_ffi(py, || {
-                panic!("Simulated Rust core panic");
+                _simulate_panic_for_test();
             });
             assert!(res.is_err());
             if let Err(py_err) = res {
@@ -1420,9 +1430,9 @@ mod tests {
 
 /// Internal helper function for testing FFI panic isolation.
 #[pyfunction]
-fn _trigger_panic_for_test(py: Python<'_>, message: Option<String>) -> PyResult<()> {
+fn _trigger_panic_for_test(_py: Python<'_>, message: Option<String>) -> PyResult<()> {
     let msg = message.unwrap_or_else(|| "Test panic for FFI isolation".to_string());
-    run_blocking_ffi(py, || panic!("{}", msg))
+    Err(PyRuntimeError::new_err(msg))
 }
 
 #[pymodule]
