@@ -291,6 +291,10 @@ impl RouterEngine {
             let score = compute_profile_score(profile, chunks);
             let state = calibration.get(&profile.name);
 
+            // AI-TAG[LOGIC][MAJOR] Calibration warmup window total mismatch with tests (ID: AGT-ROUTER-2db4f208) (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395)
+            // BEFUND: router.rs requires st.conformal.window_total >= 50 for is_calibrated=true, whereas test_calibrated_threshold_convergence expects calibration after >10 samples (15 calls).
+            // RISIKO: Inconsistency between test assertions and runtime calibration warmup window causes test failures or delayed calibration activation in production.
+            // EMPFEHLUNG: Align the window_total threshold between select_profile_cascade and unit tests or adjust test iteration count.
             let (threshold, is_calibrated) = match state {
                 Some(st) if st.conformal.window_total >= 50 => (st.calibrated_min_score, true),
                 _ => (profile.min_relevance_score, false),
