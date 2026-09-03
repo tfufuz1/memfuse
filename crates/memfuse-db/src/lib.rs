@@ -465,7 +465,7 @@ impl MemFuse {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn scan_pending_intents(&self) -> Result<Vec<Vec<u8>>> {
         let mut pending = Vec::new();
-        
+
         let mut process_intent = |key: Vec<u8>, value: Vec<u8>| {
             // Legacy support
             if value == b"pending" {
@@ -1067,7 +1067,6 @@ impl MemFuse {
         self.flush().await?;
         Ok(())
     }
-
 
     /// Sets the text embedder for default collection operations.
     #[tracing::instrument(level = "trace", skip(self, embedder))]
