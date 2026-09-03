@@ -648,7 +648,10 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .and_then(|r| r)
             }
         } else {
-            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
                 Ok(rt) => rt,
                 Err(e) => {
                     panic!("Failed to create Tokio runtime: {e}");
@@ -964,7 +967,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Checks the serialization barrier (`last_tx <= cp.tx_id`) before executing rollback.
     /// Recovers all registered/persisted orphaned sequence pins (ADR-052).
     pub async fn recover_orphaned_pins(&self) -> Result<Vec<PinId>> {
-        global_orphan_registry().recover_and_clean(&*self.storage).await
+        global_orphan_registry()
+            .recover_and_clean(&*self.storage)
+            .await
     }
 
     pub async fn recover_orphaned_checkpoints(&self) -> Result<Vec<TxId>> {
@@ -1230,9 +1235,7 @@ mod tests {
             .build()
             .expect("Failed to build Tokio runtime for test");
 
-        let guard = rt.block_on(async {
-            PinGuard::pin(storage.clone(), seq_no).await.unwrap()
-        });
+        let guard = rt.block_on(async { PinGuard::pin(storage.clone(), seq_no).await.unwrap() });
 
         // Drop guard without runtime or explicit unpin/defuse
         drop(guard);

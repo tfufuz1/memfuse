@@ -693,8 +693,7 @@ mod tests {
         // 2. Start consolidation session
         let target_str_id = "summary_target_doc";
         let target_doc_id = DocId::from_key(target_str_id)?;
-        let session =
-            ConsolidationSession::start(&col, &[src_doc_id], target_doc_id).await?;
+        let session = ConsolidationSession::start(&col, &[src_doc_id], target_doc_id).await?;
 
         // 3. Configure delete_op to fail via storage delete failure
         fail_delete.store(true, Ordering::SeqCst);
@@ -710,7 +709,10 @@ mod tests {
             .await;
 
         // 5. Assert commit returned Err
-        assert!(res.is_err(), "commit() must return Err when delete_op fails");
+        assert!(
+            res.is_err(),
+            "commit() must return Err when delete_op fails"
+        );
 
         // 6. Assert summary target doc was not persisted
         let summary_doc = col.get(target_str_id).await?;

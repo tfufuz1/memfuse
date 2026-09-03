@@ -349,7 +349,8 @@ mod tests {
     }
 
     #[test]
-    fn test_domain_communities_contains_is_o1() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn test_domain_communities_contains_is_o1(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let communities: HashSet<u64> = (1..=1000).collect();
         let profile = SlmProfile::new(
             "test-slm",

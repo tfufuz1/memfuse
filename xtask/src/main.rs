@@ -1045,32 +1045,30 @@ pub fn validate_tags_items(tags: &[TagItem]) -> bool {
 
     for tag in tags {
         if (tag.tag_type == "AI-TAG" || tag.tag_type == "ANCHOR") && !tag.is_resolved {
-            let parsed_dt =
-                match NaiveDateTime::parse_from_str(&tag.timestamp, "%Y-%m-%dT%H:%M:%SZ") {
-                    Ok(dt) => dt,
-                    Err(_) => {
-                        eprintln!("❌ [GATE-7]: Tag ohne gültigen ISO-8601 Zeitstempel");
-                        eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
-                        eprintln!("Ursache: TS-Feld fehlt oder ungültig formatiert");
-                        eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
-                        eprintln!(
-                            "   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)"
-                        );
-                        eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
-                        eprintln!();
-                        success = false;
-                        continue;
-                    }
-                };
+            let parsed_dt = match NaiveDateTime::parse_from_str(
+                &tag.timestamp,
+                "%Y-%m-%dT%H:%M:%SZ",
+            ) {
+                Ok(dt) => dt,
+                Err(_) => {
+                    eprintln!("❌ [GATE-7]: Tag ohne gültigen ISO-8601 Zeitstempel");
+                    eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
+                    eprintln!("Ursache: TS-Feld fehlt oder ungültig formatiert");
+                    eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
+                    eprintln!("   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)");
+                    eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
+                    eprintln!();
+                    success = false;
+                    continue;
+                }
+            };
 
             if parsed_dt >= cutoff_dt && tag.session.is_none() {
                 eprintln!("❌ [GATE-7]: Tag (>= 2026-08-29) ohne SESSION:-Feld");
                 eprintln!("Betroffene Datei: {}:{}", tag.file_path, tag.line_num);
                 eprintln!("Ursache: SESSION-Feld fehlt bei neuem Tag (>= 2026-08-29)");
                 eprintln!("💡 AUTOMATISCHE BEHEBUNG (CI-FIXER GUIDANCE):");
-                eprintln!(
-                    "   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)"
-                );
+                eprintln!("   Füge hinzu: (TS:2026-XX-XXTXX:XX:XXZ) (SESSION:XXXXXXXX)");
                 eprintln!("   Format: ISO-8601 UTC, SESSION = erste 8 Hex-Zeichen der aktuellen Session-ID");
                 eprintln!();
                 success = false;
@@ -1129,7 +1127,10 @@ pub fn run_validate_tags(fix: bool) -> bool {
                                         if fix {
                                             let today_str = today.format("%Y-%m-%d").to_string();
                                             line_str = ws_tag_re
-                                                .replace(&line_str, format!("{} {}", tag_prefix, today_str))
+                                                .replace(
+                                                    &line_str,
+                                                    format!("{} {}", tag_prefix, today_str),
+                                                )
                                                 .to_string();
                                             modified = true;
                                         } else {
@@ -1144,7 +1145,10 @@ pub fn run_validate_tags(fix: bool) -> bool {
                                         if fix {
                                             let today_str = today.format("%Y-%m-%d").to_string();
                                             line_str = ws_tag_re
-                                                .replace(&line_str, format!("{} {}", tag_prefix, today_str))
+                                                .replace(
+                                                    &line_str,
+                                                    format!("{} {}", tag_prefix, today_str),
+                                                )
                                                 .to_string();
                                             modified = true;
                                         } else {
@@ -1720,7 +1724,9 @@ mod tests {
             file_path: "crates/memfuse-test/src/lib.rs".to_string(),
             line_num: 10,
             tag_type: "AI-TAG".to_string(),
-            raw: "// AI-TAG[SMELL][CRITICAL] New tag (TS: 2026-08-29T10:00:00Z) (SESSION: a3f29c1d)".to_string(),
+            raw:
+                "// AI-TAG[SMELL][CRITICAL] New tag (TS: 2026-08-29T10:00:00Z) (SESSION: a3f29c1d)"
+                    .to_string(),
             timestamp: "2026-08-29T10:00:00Z".to_string(),
             category: Some("SMELL".to_string()),
             severity: Some("CRITICAL".to_string()),

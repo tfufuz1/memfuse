@@ -1372,7 +1372,9 @@ mod tests {
             ..Default::default()
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config)).unwrap();
+        let db = rt
+            .block_on(MemFuse::open_with_config(dir.path(), config))
+            .unwrap();
         let collection = rt.block_on(db.collection("default")).unwrap();
 
         let router = RouterEngine::new(collection, profiles.clone());
@@ -1436,7 +1438,9 @@ mod tests {
             ..Default::default()
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config)).unwrap();
+        let db = rt
+            .block_on(MemFuse::open_with_config(dir.path(), config))
+            .unwrap();
         let collection = rt.block_on(db.collection("default")).unwrap();
 
         let router = RouterEngine::new(collection, profiles.clone());
@@ -1476,7 +1480,11 @@ mod tests {
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         let key = "convergence_entity";
         collection
-            .insert(key, &vec_data, Some(json!({"text": "convergence test content"})))
+            .insert(
+                key,
+                &vec_data,
+                Some(json!({"text": "convergence test content"})),
+            )
             .await
             .unwrap();
 
@@ -1502,7 +1510,10 @@ mod tests {
         // Perform 15 routing calls (> 10 samples)
         let mut last_calibrated = false;
         for i in 0..15 {
-            let decision = router.route(&vec_data, "convergence test content").await.unwrap();
+            let decision = router
+                .route(&vec_data, "convergence test content")
+                .await
+                .unwrap();
             let conf = decision.confidence.expect("Confidence metrics present");
             last_calibrated = conf.calibrated;
             let cal_stats = router.calibration_stats();
@@ -1516,7 +1527,10 @@ mod tests {
             );
         }
 
-        assert!(last_calibrated, "After 15 decisions (> 10 samples), decision must be calibrated (calibrated = true)");
+        assert!(
+            last_calibrated,
+            "After 15 decisions (> 10 samples), decision must be calibrated (calibrated = true)"
+        );
     }
 
     #[tokio::test]
@@ -1532,7 +1546,11 @@ mod tests {
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         let key = "det_entity";
         collection
-            .insert(key, &vec_data, Some(json!({"text": "deterministic content"})))
+            .insert(
+                key,
+                &vec_data,
+                Some(json!({"text": "deterministic content"})),
+            )
             .await
             .unwrap();
 
@@ -1562,13 +1580,20 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![p1, p2]);
 
-        let first_decision = router.route(&vec_data, "deterministic content").await.unwrap();
+        let first_decision = router
+            .route(&vec_data, "deterministic content")
+            .await
+            .unwrap();
 
         for i in 0..50 {
-            let next_decision = router.route(&vec_data, "deterministic content").await.unwrap();
+            let next_decision = router
+                .route(&vec_data, "deterministic content")
+                .await
+                .unwrap();
             assert_eq!(
                 next_decision.profile.name, first_decision.profile.name,
-                "Inconsistent profile selected at iteration {}", i
+                "Inconsistent profile selected at iteration {}",
+                i
             );
         }
     }

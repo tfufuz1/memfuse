@@ -304,9 +304,7 @@ impl RouterEngine {
             let state = calibration.get(&profile.name);
 
             let (threshold, is_calibrated) = match state {
-                Some(st) if st.conformal.window_total > 10 => {
-                    (st.calibrated_min_score, true)
-                }
+                Some(st) if st.conformal.window_total > 10 => (st.calibrated_min_score, true),
                 _ => (profile.min_relevance_score, false),
             };
 

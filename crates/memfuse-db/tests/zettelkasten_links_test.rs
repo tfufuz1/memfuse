@@ -215,38 +215,57 @@ async fn test_relation_cycle_does_not_hang() {
     let dummy_emb = vec![0.1f32; 768];
 
     // Create 3 documents: doc-a, doc-b, doc-c
-    db.insert("doc-a", &dummy_emb, Some(serde_json::json!({"text": "Doc A"})))
-        .await
-        .unwrap();
-    db.insert("doc-b", &dummy_emb, Some(serde_json::json!({"text": "Doc B"})))
-        .await
-        .unwrap();
-    db.insert("doc-c", &dummy_emb, Some(serde_json::json!({"text": "Doc C"})))
-        .await
-        .unwrap();
+    db.insert(
+        "doc-a",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc A"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-b",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc B"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-c",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc C"})),
+    )
+    .await
+    .unwrap();
 
     let id_a = DocId::from_key("doc-a").unwrap();
     let id_b = DocId::from_key("doc-b").unwrap();
     let id_c = DocId::from_key("doc-c").unwrap();
 
     // 1. Selbstreferenz: A -> A
-    let self_res = col.link_memories(id_a, id_a, LinkRelation::Elaborates).await;
+    let self_res = col
+        .link_memories(id_a, id_a, LinkRelation::Elaborates)
+        .await;
     assert!(self_res.is_err(), "Self-reference must be rejected");
 
     // 2. 2-Knoten-Zyklus: A -> B (Elaborates), then B -> A (Elaborates) rejected
     col.link_memories(id_a, id_b, LinkRelation::Elaborates)
         .await
         .unwrap();
-    let cycle2_res = col.link_memories(id_b, id_a, LinkRelation::Elaborates).await;
-    assert!(cycle2_res.is_err(), "2-node cycle link creation must be rejected");
+    let cycle2_res = col
+        .link_memories(id_b, id_a, LinkRelation::Elaborates)
+        .await;
+    assert!(
+        cycle2_res.is_err(),
+        "2-node cycle link creation must be rejected"
+    );
 
     // Test traversal on 2-node graph with hard timeout
-    let traverse_2node = tokio::time::timeout(
-        Duration::from_secs(5),
-        col.traverse_links(id_a, 10),
-    )
-    .await;
-    assert!(traverse_2node.is_ok(), "Timeout bei 2-Knoten-Zyklus - Endlosschleife!");
+    let traverse_2node =
+        tokio::time::timeout(Duration::from_secs(5), col.traverse_links(id_a, 10)).await;
+    assert!(
+        traverse_2node.is_ok(),
+        "Timeout bei 2-Knoten-Zyklus - Endlosschleife!"
+    );
     let links_2node = traverse_2node.unwrap().unwrap();
     assert_eq!(links_2node, vec![(id_b, 1)]);
 
@@ -255,16 +274,18 @@ async fn test_relation_cycle_does_not_hang() {
         .await
         .unwrap();
 
-    let traverse_fast = tokio::time::timeout(
-        Duration::from_secs(5),
-        col.traverse_links(id_a, 10),
-    )
-    .await;
+    let traverse_fast =
+        tokio::time::timeout(Duration::from_secs(5), col.traverse_links(id_a, 10)).await;
     assert!(traverse_fast.is_ok(), "Timeout bei Fast-Zyklus!");
     let links_fast = traverse_fast.unwrap().unwrap();
     assert_eq!(links_fast, vec![(id_b, 1), (id_c, 2)]);
 
     // 4. 3-Knoten-Zyklus: C -> A must be rejected
-    let cycle3_res = col.link_memories(id_c, id_a, LinkRelation::Elaborates).await;
-    assert!(cycle3_res.is_err(), "3-node cycle link creation must be rejected");
+    let cycle3_res = col
+        .link_memories(id_c, id_a, LinkRelation::Elaborates)
+        .await;
+    assert!(
+        cycle3_res.is_err(),
+        "3-node cycle link creation must be rejected"
+    );
 }
