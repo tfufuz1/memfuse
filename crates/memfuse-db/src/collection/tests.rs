@@ -1632,19 +1632,19 @@ async fn test_collection_with_diskann_index_hybrid_search() {
     let doc2_user_key = col.namespaced_key(b"doc2", 0);
     let doc2_meta_key = col.namespaced_key(&doc2_id.inner().to_le_bytes(), 1);
 
-    let doc1_data = StoredDocument {
+    let doc1_data = super::StoredDocument {
         id: "doc1".to_string(),
         embedding: vec![1.0, 0.0, 0.0, 0.0],
         metadata: Some(serde_json::json!({ "text": "rust database systems" })),
     };
-    let doc1_meta = StoredDocumentMeta::from(&doc1_data);
+    let doc1_meta = super::StoredDocumentMeta::from(&doc1_data);
 
-    let doc2_data = StoredDocument {
+    let doc2_data = super::StoredDocument {
         id: "doc2".to_string(),
         embedding: vec![0.0, 1.0, 0.0, 0.0],
         metadata: Some(serde_json::json!({ "text": "python scripting language" })),
     };
-    let doc2_meta = StoredDocumentMeta::from(&doc2_data);
+    let doc2_meta = super::StoredDocumentMeta::from(&doc2_data);
 
     storage
         .put(tx, &doc1_user_key, &serde_json::to_vec(&doc1_data).unwrap()) // unwrap
