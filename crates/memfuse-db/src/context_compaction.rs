@@ -323,9 +323,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
     pub async fn refresh(&mut self) -> Result<Vec<DocId>> {
         let mut changed_docs = Vec::new();
         let mut new_source_docs = Vec::with_capacity(self.source_docs.len());
-        
+
         let new_base_tx = self.collection.allocate_tx()?;
-        
+
         for &(doc_id, expected_tx) in &self.source_docs {
             match self.collection.get_doc_tx(doc_id).await? {
                 Some(current_tx) => {
@@ -341,9 +341,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
                 }
             }
         }
-        
+
         self.source_docs = new_source_docs;
-        
+
         // Update intent in storage
         let intent = crate::transaction::CommitIntent::Consolidation {
             source_docs: self.source_docs.clone(),
@@ -357,7 +357,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
             .await?;
         self.collection.storage().commit(new_base_tx).await?;
         self.base_tx = new_base_tx;
-        
+
         Ok(changed_docs)
     }
 
