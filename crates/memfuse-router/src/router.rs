@@ -181,7 +181,7 @@ impl RouterEngine {
             let confidence = if second_best > 0.0 {
                 (best_score / second_best) as f64
             } else {
-                2.0 // Nur ein Kandidat → hohe Konfidenz
+                2.0 // Single candidate -> high confidence
             };
 
             if let Some(state) = cal.get_mut(&profile.name) {

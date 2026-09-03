@@ -12161,6 +12161,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "4940574465915d17"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "4c7f7b3a2640170f"
   },
   {
@@ -12361,6 +12365,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "aa20a5731aaaee4e"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "abac365b9d4b146b"
   },
   {
@@ -12430,6 +12438,10 @@
   {
     "file": "crates/memfuse-store/src/wal.rs",
     "hash": "c199dd1b172d2238"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "c22a96ca82e88bdc"
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
