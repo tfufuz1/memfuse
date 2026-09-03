@@ -32,9 +32,110 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Type alias for sequence numbers managed as pinned checkpoint identifiers.
+pub type PinId = u64;
+
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SKIPPED_ROLLBACKS: AtomicU64 = AtomicU64::new(0);
 static ORPHANED_CHECKPOINTS: Mutex<Vec<StateCheckpoint>> = Mutex::new(Vec::new());
+pub static ORPHAN_REGISTRY: std::sync::OnceLock<OrphanRegistry> = std::sync::OnceLock::new();
+
+pub fn global_orphan_registry() -> &'static OrphanRegistry {
+    ORPHAN_REGISTRY.get_or_init(OrphanRegistry::default)
+}
+
+fn orphan_pin_file_path() -> std::path::PathBuf {
+    std::env::var("MEMFUSE_ORPHAN_PIN_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("memfuse_orphaned_pins.json"))
+}
+
+/// Durable append-only registry for orphaned sequence pins (ADR-052).
+pub struct OrphanRegistry {
+    orphans: Mutex<Vec<PinId>>,
+    file_path: std::path::PathBuf,
+}
+
+impl Default for OrphanRegistry {
+    fn default() -> Self {
+        Self::new(orphan_pin_file_path())
+    }
+}
+
+impl OrphanRegistry {
+    pub fn new(file_path: impl Into<std::path::PathBuf>) -> Self {
+        let path = file_path.into();
+        let loaded = Self::load_file_sync(&path);
+        Self {
+            orphans: Mutex::new(loaded),
+            file_path: path,
+        }
+    }
+
+    fn load_file_sync(path: &std::path::Path) -> Vec<PinId> {
+        if let Ok(data) = std::fs::read(path) {
+            if let Ok(list) = serde_json::from_slice::<Vec<PinId>>(&data) {
+                return list;
+            }
+        }
+        Vec::new()
+    }
+
+    fn persist_sync(&self, list: &[PinId]) -> std::io::Result<()> {
+        let data = serde_json::to_vec_pretty(list)?;
+        std::fs::write(&self.file_path, data)
+    }
+
+    /// Synchronously registers an orphaned sequence pin and persists to disk.
+    pub fn register_orphan(&self, pin_id: PinId) -> std::io::Result<()> {
+        let mut lock = self.orphans.lock();
+        if !lock.contains(&pin_id) {
+            lock.push(pin_id);
+        }
+        self.persist_sync(&lock)
+    }
+
+    /// Retrieves all currently registered orphaned pin sequence numbers.
+    pub fn get_orphans(&self) -> Vec<PinId> {
+        self.orphans.lock().clone()
+    }
+
+    /// Synchronously clears memory and disk records.
+    pub fn clear_all(&self) {
+        let mut lock = self.orphans.lock();
+        lock.clear();
+        if let Err(err) = self.persist_sync(&lock) {
+            tracing::warn!(?err, "Failed to persist cleared orphan registry");
+        }
+    }
+
+    /// Recovers all registered orphaned pins by unpinning them in storage and cleaning the registry.
+    pub async fn recover_and_clean<S: memfuse_core::StorageEngine>(
+        &self,
+        storage: &S,
+    ) -> Result<Vec<PinId>> {
+        let orphans = self.get_orphans();
+        let mut recovered = Vec::new();
+
+        for pin_id in orphans {
+            if let Err(e) = storage.unpin_checkpoint(pin_id).await {
+                tracing::warn!(pin_id = pin_id, error = %e, "Failed to unpin orphaned pin during recovery");
+            } else {
+                recovered.push(pin_id);
+            }
+        }
+
+        if !recovered.is_empty() {
+            let mut lock = self.orphans.lock();
+            lock.retain(|p| !recovered.contains(p));
+            if let Err(err) = self.persist_sync(&lock) {
+                tracing::warn!(?err, "Failed to persist orphan pin registry after recovery");
+            }
+        }
+
+        Ok(recovered)
+    }
+}
 
 fn orphan_file_path() -> std::path::PathBuf {
     std::env::var("MEMFUSE_ORPHAN_PATH")
@@ -226,25 +327,12 @@ impl<S: memfuse_core::StorageEngine> PinGuard<S> {
 impl<S: memfuse_core::StorageEngine> Drop for PinGuard<S> {
     fn drop(&mut self) {
         if let Some(seq_no) = self.seq_no.take() {
-            let storage = Arc::clone(&self.storage);
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move {
-                    if let Err(e) = storage.unpin_checkpoint(seq_no).await {
-                        tracing::warn!(
-                            seq = seq_no,
-                            "Failed to unpin checkpoint in PinGuard drop: {e}"
-                        );
-                    }
-                });
-            } else {
-                std::thread::spawn(move || {
-                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        let _ = rt.block_on(storage.unpin_checkpoint(seq_no));
-                    }
-                });
+            if let Err(e) = global_orphan_registry().register_orphan(seq_no) {
+                tracing::error!(
+                    pin_id = ?seq_no,
+                    error = %e,
+                    "CRITICAL: PinGuard drop could not register orphan — manual recovery may be needed"
+                );
             }
         }
     }
@@ -518,6 +606,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
 
+        // 5. Recover orphaned sequence pins on startup (ADR-052)
+        if let Err(err) = global_orphan_registry().recover_and_clean(&*storage).await {
+            tracing::warn!(?err, "Failed to recover orphaned pins during store startup");
+        }
+
         Ok(Self {
             storage,
             checkpoints: RwLock::new(HashMap::new()),
@@ -555,11 +648,12 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .and_then(|r| r)
             }
         } else {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| MemFuseError::Internal(e.to_string()))
-                .expect("Failed to create Tokio runtime");
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    panic!("Failed to create Tokio runtime: {e}");
+                }
+            };
             rt.block_on(Self::open(storage_clone, ns_clone))
         };
 
@@ -868,6 +962,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     /// Recovers all registered/persisted orphaned checkpoints during controlled startup or recovery.
     /// Checks the serialization barrier (`last_tx <= cp.tx_id`) before executing rollback.
+    /// Recovers all registered/persisted orphaned sequence pins (ADR-052).
+    pub async fn recover_orphaned_pins(&self) -> Result<Vec<PinId>> {
+        global_orphan_registry().recover_and_clean(&*self.storage).await
+    }
+
     pub async fn recover_orphaned_checkpoints(&self) -> Result<Vec<TxId>> {
         let _guard = self.write_lock.lock().await;
         let orphans = get_orphaned_checkpoints();
@@ -1113,6 +1212,71 @@ mod tests {
 
         assert!(res.is_err());
         assert!(!storage.pinned.lock().contains(&seq_no));
+    }
+
+    static ORPHAN_TEST_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    #[test]
+    fn test_orphan_registry_persists_across_drop() {
+        let _guard = ORPHAN_TEST_MUTEX.lock();
+        let registry = global_orphan_registry();
+        registry.clear_all();
+
+        let storage = Arc::new(MockStorage::new());
+        let seq_no = 12345;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build Tokio runtime for test");
+
+        let guard = rt.block_on(async {
+            PinGuard::pin(storage.clone(), seq_no).await.unwrap()
+        });
+
+        // Drop guard without runtime or explicit unpin/defuse
+        drop(guard);
+
+        // Verify orphan ID appears in registry
+        let orphans = registry.get_orphans();
+        assert!(
+            orphans.contains(&seq_no),
+            "Orphan sequence number 12345 must appear in registry upon PinGuard drop"
+        );
+        registry.clear_all();
+    }
+
+    #[tokio::test]
+    async fn test_orphan_recovery_on_startup() {
+        let _guard = ORPHAN_TEST_MUTEX.lock();
+        let registry = global_orphan_registry();
+        registry.clear_all();
+
+        let storage = Arc::new(MockStorage::new());
+        let seq_no = 67890;
+
+        // Pin checkpoint and drop guard to register as orphan
+        {
+            let guard = PinGuard::pin(storage.clone(), seq_no).await.unwrap();
+            drop(guard);
+        }
+
+        assert!(storage.pinned.lock().contains(&seq_no));
+        assert!(registry.get_orphans().contains(&seq_no));
+
+        // Simulate startup / recover_and_clean
+        let recovered = registry.recover_and_clean(&*storage).await.unwrap();
+
+        assert_eq!(recovered, vec![seq_no]);
+        assert!(
+            !storage.pinned.lock().contains(&seq_no),
+            "Storage sequence number 67890 must be unpinned after recovery"
+        );
+        assert!(
+            registry.get_orphans().is_empty(),
+            "Orphan registry must be empty after recovery"
+        );
+        registry.clear_all();
     }
 
     #[tokio::test]
