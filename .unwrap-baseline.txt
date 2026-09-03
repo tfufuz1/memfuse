@@ -1701,12 +1701,12 @@ crates/memfuse-ollama/src/model_info.rs:126:        let listener = tokio::net::T
 crates/memfuse-ollama/src/model_info.rs:127:        let addr = listener.local_addr().unwrap(); // unwrap
 crates/memfuse-ollama/src/model_info.rs:179:        let info: ModelInfo = serde_json::from_str(json).unwrap(); // unwrap
 crates/memfuse-py/src/lib.rs:1235:            let rt = rt_res.unwrap();
-crates/memfuse-router/src/router.rs:430:        let dir = tempfile::tempdir().unwrap();
-crates/memfuse-router/src/router.rs:437:            .unwrap();
-crates/memfuse-router/src/router.rs:438:        let collection = db.collection("default").await.unwrap();
-crates/memfuse-router/src/router.rs:494:        let dir = tempfile::tempdir().unwrap();
-crates/memfuse-router/src/router.rs:501:            .unwrap();
-crates/memfuse-router/src/router.rs:502:        let collection = db.collection("default").await.unwrap();
+crates/memfuse-router/src/router.rs:493:        let dir = tempfile::tempdir().unwrap();
+crates/memfuse-router/src/router.rs:500:            .unwrap();
+crates/memfuse-router/src/router.rs:501:        let collection = db.collection("default").await.unwrap();
+crates/memfuse-router/src/router.rs:557:        let dir = tempfile::tempdir().unwrap();
+crates/memfuse-router/src/router.rs:564:            .unwrap();
+crates/memfuse-router/src/router.rs:565:        let collection = db.collection("default").await.unwrap();
 crates/memfuse-router/src/tests.rs:1059:        let idx = select_profile_from_chunks(&[profile], &chunks).unwrap(); // unwrap
 crates/memfuse-router/src/tests.rs:107:            .expect("Routing docs"); // expect
 crates/memfuse-router/src/tests.rs:1098:        let dir = tempfile::tempdir().unwrap(); // unwrap

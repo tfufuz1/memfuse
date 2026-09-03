@@ -325,8 +325,14 @@ impl RouterEngine {
         }
 
         // 3. Fallback: Take the eligible profile with lowest min_relevance_score (last in cascade)
-        let &(fallback_idx, fallback_profile) =
-            sorted_profiles.last().expect("eligible_profiles is non-empty");
+        let &(fallback_idx, fallback_profile) = match sorted_profiles.last() {
+            Some(p) => p,
+            None => {
+                return Err(MemFuseError::NotFound(
+                    "Keine SLM-Profile konfiguriert".to_string(),
+                ));
+            }
+        };
         let fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
