@@ -697,12 +697,9 @@ impl DiskAnnIndex {
                 let doc_id_end = doc_id_offset
                     .checked_add(8)
                     .ok_or_else(|| MemFuseError::Index("DocId end offset overflow".into()))?;
-                let doc_id_bytes =
-                    mmap_ref
-                        .get(doc_id_offset..doc_id_end)
-                        .ok_or_else(|| {
-                            MemFuseError::Storage("DiskANN file truncated before doc_id".into())
-                        })?;
+                let doc_id_bytes = mmap_ref.get(doc_id_offset..doc_id_end).ok_or_else(|| {
+                    MemFuseError::Storage("DiskANN file truncated before doc_id".into())
+                })?;
                 let doc_id = u64::from_le_bytes(
                     doc_id_bytes
                         .try_into()
@@ -787,11 +784,9 @@ impl DiskAnnIndex {
                 let slice = node_data
                     .get(cursor..next_cursor)
                     .ok_or_else(|| MemFuseError::Index("Truncated f32 vector data".into()))?;
-                v.push(f32::from_le_bytes(
-                    slice
-                        .try_into()
-                        .map_err(|_| MemFuseError::Index("Invalid vector data".into()))?,
-                ));
+                v.push(f32::from_le_bytes(slice.try_into().map_err(|_| {
+                    MemFuseError::Index("Invalid vector data".into())
+                })?));
                 cursor = next_cursor;
             }
             VectorData::F32(v)
@@ -1450,9 +1445,7 @@ mod tests {
             };
             let index = DiskAnnIndex::try_new(config).unwrap();
 
-            let spawn_res = tokio::spawn(async move {
-                index.load().await
-            }).await;
+            let spawn_res = tokio::spawn(async move { index.load().await }).await;
             assert!(
                 spawn_res.is_ok(),
                 "DiskAnnIndex::load panicked on file size {}!",
@@ -1500,9 +1493,7 @@ mod tests {
         let reloaded = DiskAnnIndex::try_new(config).unwrap();
 
         let reloaded_clone = reloaded.clone();
-        let spawn_res = tokio::spawn(async move {
-            reloaded_clone.load().await
-        }).await;
+        let spawn_res = tokio::spawn(async move { reloaded_clone.load().await }).await;
         assert!(
             spawn_res.is_ok(),
             "DiskAnnIndex::load panicked on corrupt node_count/offset!"
@@ -1515,10 +1506,12 @@ mod tests {
         );
 
         // Also test load_node directly on reloaded index with truncated/corrupt file
-        let catch_node = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            reloaded.load_node(9999)
-        }));
-        assert!(catch_node.is_ok(), "load_node panicked on out of bounds node index!");
+        let catch_node =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reloaded.load_node(9999)));
+        assert!(
+            catch_node.is_ok(),
+            "load_node panicked on out of bounds node index!"
+        );
         assert!(catch_node.unwrap().is_err());
     }
 

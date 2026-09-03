@@ -152,16 +152,16 @@ fn test_mmap_connection_len_overflow_returns_err() {
 
     // Header mit validen Basiswerten + connections_offset = 64
     let header = HnswHeader::new(
-        4,          // dim
-        16,         // m
-        1,          // metric
-        0,          // quantized
-        0.0, 1.0,   // q_min, q_max
-        1,          // node_count
-        0,          // entry_point
-        64,         // nodes_offset
-        128,        // connections_offset
-        1,          // last_tx_id
+        4,  // dim
+        16, // m
+        1,  // metric
+        0,  // quantized
+        0.0, 1.0, // q_min, q_max
+        1,   // node_count
+        0,   // entry_point
+        64,  // nodes_offset
+        128, // connections_offset
+        1,   // last_tx_id
     );
 
     let mut data = Vec::new();
@@ -192,7 +192,10 @@ fn test_mmap_connection_len_overflow_returns_err() {
 
     // Calling get_connections with corrupt len near u32::MAX must NOT panic or overflow
     let catch_res = std::panic::catch_unwind(|| mmap_index.get_connections(&node_rec, 0));
-    assert!(catch_res.is_ok(), "get_connections panicked on u32::MAX length!");
+    assert!(
+        catch_res.is_ok(),
+        "get_connections panicked on u32::MAX length!"
+    );
 
     let conn_res = catch_res.unwrap();
     assert!(

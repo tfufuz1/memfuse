@@ -8,11 +8,8 @@
 
 Stand letzter Prüfung: 2026-09-03
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **0 offene Tags**
 
-| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
-|---|---|---|---|---|---|---|
-| `crates/memfuse-index/src/distance.rs` | 72 | `AGT-INDEX-002` | `CONCURRENCY` | `MINOR` | `2026-09-01T23:05:53Z` | // AI-TAG[CONCURRENCY][MINOR] AGT-INDEX-002 (TS:2026-09-01T23:05:53Z) (SESSION:297af137) — Stable SIMD Migration: |
 
 
 ## Crate-Inventar & Status
