@@ -1507,6 +1507,10 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile]);
 
+        // AI-TAG[SMELL][MINOR] Test expects calibration after 15 calls while router engine requires window_total >= 50 (ID: AGT-ROUTER-19a753f1) (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395)
+        // BEFUND: test_calibrated_threshold_convergence loops 15 times and asserts last_calibrated is true, but select_profile_cascade requires window_total >= 50.
+        // RISIKO: Test fails deterministically on cargo test.
+        // EMPFEHLUNG: Update test to perform >= 50 calls or adjust router engine threshold.
         // Perform 15 routing calls (> 10 samples)
         let mut last_calibrated = false;
         for i in 0..15 {
