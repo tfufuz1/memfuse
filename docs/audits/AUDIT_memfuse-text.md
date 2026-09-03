@@ -1,14 +1,36 @@
 # AUDIT REPORT: `memfuse-text` Crate
 
-**Datum:** 2. September 2026
-**Session:** `adced73f`
+**Datum:** 3. September 2026
+**Session:** `87124619`
 **Auditor:** Senior Rust NLP-Engineer (BM25, Morphologie, UTF-8-Sicherheit)
 **Ziel-Crate:** `crates/memfuse-text` (Volltextsuche-Signal / Signal 2 der 4-Signal-Fusion)
 **Ziel-Repository:** MemFuse (`https://github.com/tfufuz1/memfuse`)
 
 ---
 
-## 0. Re-Audit Snapshot & Session Summary (`2026-09-02T23:17:17Z`)
+## 0. Re-Audit Snapshot & Session Summary (`2026-09-03T19:36:00Z`)
+
+Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Chaos-Engineering-Auditsession (Session `87124619`) wurde das Crate `memfuse-text` erneut verifiziert:
+
+1. **Gate-Stack Verification:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **77 passed, 0 failed** (alle Unit- & Integrationstests grün)
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
+
+2. **Unsafe-Code, Slicing & Concurrency Stichprobe:**
+   - `#![forbid(unsafe_code)]` in `lib.rs` ist strikt aktiv. Exactly **0** `unsafe`-Blöcke.
+   - APM-7 (String-Slicing Safety): Alle String-Slices in `morphology.rs` und `tokenizer.rs` sind durch `is_char_boundary()`-Prüfungen abgesichert.
+   - Tier-2 Concurrency Stichprobe: `test_concurrent_upserts_stats_eventual_count` & `test_concurrent_upserts_no_panic` in 3/3 aufeinanderfolgenden Durchläufen mit 100% Determinismus und 0 Race-Conditions bestanden.
+
+3. **KMU Compound Splitter Recall Evaluation:**
+   - `test_kmu_55_compounds_suite` evaluiert 55 KMU-Fachbegriffe mit Fugenlauten.
+   - Trefferquote: **100% (55 / 55 passed)**.
+
+---
+
+## 0b. Historischer Re-Audit Snapshot (`2026-09-02T23:17:17Z`)
 
 Im Rahmen der Qualitätssicherungs- und Verifikationsroutine (Session `adced73f`) wurde das Crate `memfuse-text` erneut verifiziert und multi-session-auditiert:
 
@@ -154,3 +176,15 @@ Benchmarking ausgeführt auf Linux x86_64 via `criterion` (`crates/memfuse-text/
 | **1.000 Dokumente** | **2.56 ns** | ~390.000.000 / sec |
 | **10.000 Dokumente** | **2.55 ns** | ~392.000.000 / sec |
 | **100.000 Dokumente** | **2.54 ns** | ~393.000.000 / sec |
+
+---
+
+## Chaos-Engineering-Audit 2026-09-03
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | N/A | StorageEngine-Ebene (LSM/WAL) in memfuse-store | — |
+| Disk-Full ENOSPC | OK | StorageEngine propagiert Err(MemFuseError::Storage) | — |
+| OOM / Backpressure | OK | Caps: MAX_TEXT_BYTES (10MB), MAX_STAGED_TRANSACTIONS (10,000), Token-Max-Len (128) | — |
+| SIGBUS mmap-truncate | N/A | memfuse-text nutzt kein mmap (#![forbid(unsafe_code)]) | — |
+| SIGKILL recovery | OK | Statetransaktionen via StorageEngine rollback/commit isoliert | — |

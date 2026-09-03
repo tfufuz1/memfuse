@@ -76,6 +76,7 @@ impl<S: StorageEngine> AuditLog<S> {
     }
 
     /// Appends an immutable audit entry directly via LSM storage without HNSW vector index participation (AC-3).
+    /// Enforces append-only immutability: returns `MemFuseError::Conflict` if an entry for the step already exists.
     pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
         validate_task_id(&entry.task_id)?;
         validate_node_id(&entry.node_id)?;
@@ -85,7 +86,7 @@ impl<S: StorageEngine> AuditLog<S> {
         let payload = serde_json::to_value(entry)
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
 
-        self.collection.put_kv(&audit_id, &payload).await
+        self.collection.put_kv_if_absent(&audit_id, &payload).await
     }
 
     /// Replays all audit entries for a given task via scan_prefix.
@@ -215,6 +216,43 @@ mod tests {
         assert_eq!(replayed[0].node_id, "node-start");
         assert_eq!(replayed[1].step_count, 2);
         assert_eq!(replayed[1].node_id, "node-process");
+    }
+
+    #[tokio::test]
+    async fn test_audit_log_duplicate_step_rejected() {
+        let storage = Arc::new(InMemoryStorageEngine::new());
+        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+        let collection = Arc::new(Collection::new(
+            "test_audit_dup".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            1536,
+            memfuse_text::Language::English,
+        ));
+
+        let audit_log = AuditLog::new(collection);
+
+        let entry = AuditEntry {
+            task_id: "task-dup".to_string(),
+            step_count: 1,
+            node_id: "node-1".to_string(),
+            tokens_consumed: 50,
+            payload: serde_json::json!({"step": 1}),
+            error: None,
+        };
+
+        audit_log.append(&entry).await.unwrap();
+
+        let dup_res = audit_log.append(&entry).await;
+        assert!(
+            matches!(dup_res, Err(memfuse_core::MemFuseError::Conflict(_))),
+            "Expected Conflict error on duplicate audit step append"
+        );
     }
 
     #[tokio::test]
