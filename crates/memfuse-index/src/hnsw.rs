@@ -3156,6 +3156,7 @@ mod tests {
 
         // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-01T12:00:00Z) (SESSION: b8e4f1a2)
         // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-01T23:05:53Z) (SESSION: 297af137)
+        // REVIEW-PASS[3/2] STATUS:PASS (ID: TEST:AGT-INDEX-006) (TS: 2026-09-02T23:11:01Z) (SESSION: bd3e8055)
         // ANCHOR[TEST:AGT-INDEX-006] STATUS:DONE (TS:2026-09-01T11:30:00Z) (SESSION:016eab33)
         // Snapshot-Isolation bei Soft-Delete fixiert: search_at() ignoriert
         // deleted_nodes-Bitmap und nutzt ausschließlich seq_log.is_visible().
