@@ -194,8 +194,7 @@ mod tests {
 
     #[test]
     fn test_extract_email_malformed_returns_error_no_panic() {
-        let malformed_eml =
-            b"From: =?invalid_charset?Q?something?=\nContent-Type: multipart/invalid";
+        let malformed_eml = b"From: =?invalid_charset?Q?something?=\nContent-Type: multipart/invalid";
         let res = extract_email_bytes(malformed_eml);
         assert!(res.is_ok()); // mailparse is very tolerant, but shouldn't panic
     }
