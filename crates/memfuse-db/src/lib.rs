@@ -1984,6 +1984,54 @@ mod tests {
             "provenance=None soll im JSON weggelassen werden: {json}"
         );
     }
+
+    #[tokio::test]
+    async fn test_provenance_rrf_sum_invariant() {
+        let (db, _tmp) = test_db(4).await;
+        let col = db.collection("prov_test").await.expect("collection");
+
+        for i in 0..10 {
+            let id = format!("doc-{}", i);
+            let val = (i as f32) / 10.0;
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": format!("rust memory system {}", i) })),
+            )
+            .await
+            .expect("insert");
+        }
+
+        let results = col
+            .query()
+            .text("rust memory")
+            .embedding([0.5, 0.5, 0.0, 0.0])
+            .include_provenance(true)
+            .k(5)
+            .execute()
+            .await
+            .expect("search");
+
+        assert!(!results.is_empty(), "Results must not be empty");
+
+        for result in &results {
+            let prov = result
+                .provenance
+                .as_ref()
+                .expect("Provenance must be present when include_provenance=true");
+            let sum_contrib: f32 = prov
+                .signal_contributions
+                .values()
+                .map(|c| c.rrf_contribution)
+                .sum();
+            assert!(
+                (sum_contrib - result.score).abs() < 1e-6,
+                "INV-PROV-1 verletzt: Summe der Signal-Beiträge ({}) ≠ RRF-Score ({})",
+                sum_contrib,
+                result.score
+            );
+        }
+    }
 }
 
 #[cfg(all(test, feature = "sandbox"))]
