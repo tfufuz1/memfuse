@@ -1221,6 +1221,10 @@ mod tests {
 
     static ORPHAN_TEST_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
+    // AI-TAG[TEST][MAJOR] Parallel unit test race condition on global_orphan_registry OnceLock singleton (ID: AGT-CHECKPOINT-a3ccc9fe) (TS: 2026-09-03T19:40:20Z) (SESSION: d766fd58)
+    // BEFUND: global_orphan_registry() is a process-wide OnceLock singleton pointing to a shared orphan pin file. When `PersistentCheckpointStore::new` is instantiated concurrently in other tests, it invokes `recover_and_clean()`, which mutates/clears `ORPHAN_REGISTRY` while `test_orphan_registry_persists_across_drop` is running.
+    // RISIKO: Flaky test failure under parallel `cargo test` runs when `test_orphan_registry_persists_across_drop` races with `PersistentCheckpointStore::new` in parallel threads.
+    // EMPFEHLUNG: Isolate orphan registry path in tests via tempdir or `MEMFUSE_ORPHAN_PIN_PATH` env var per test instance.
     #[test]
     fn test_orphan_registry_persists_across_drop() {
         let _guard = ORPHAN_TEST_MUTEX.lock();
