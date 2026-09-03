@@ -85,7 +85,7 @@ impl<S: StorageEngine> AuditLog<S> {
         let payload = serde_json::to_value(entry)
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
 
-        self.collection.put_kv(&audit_id, &payload).await
+        self.collection.put_kv_if_absent(&audit_id, &payload).await
     }
 
     /// Replays all audit entries for a given task via scan_prefix.
@@ -215,6 +215,56 @@ mod tests {
         assert_eq!(replayed[0].node_id, "node-start");
         assert_eq!(replayed[1].step_count, 2);
         assert_eq!(replayed[1].node_id, "node-process");
+    }
+
+    #[tokio::test]
+    async fn test_audit_log_append_only_duplicate_rejection() {
+        let storage = Arc::new(InMemoryStorageEngine::new());
+        let index = Arc::new(HnswIndex::try_new(HnswConfig::default()).unwrap());
+        let graph_index = Arc::new(CsrGraph::new());
+        let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+        let collection = Arc::new(Collection::new(
+            "test_audit_dups".to_string(),
+            storage,
+            index,
+            graph_index,
+            next_tx,
+            1536,
+            memfuse_text::Language::English,
+        ));
+
+        let audit_log = AuditLog::new(collection);
+
+        let entry = AuditEntry {
+            task_id: "task-dup".to_string(),
+            step_count: 1,
+            node_id: "node-start".to_string(),
+            tokens_consumed: 50,
+            payload: serde_json::json!({"action": "init"}),
+            error: None,
+        };
+
+        audit_log
+            .append(&entry)
+            .await
+            .expect("first append must succeed");
+
+        let duplicate_entry = AuditEntry {
+            task_id: "task-dup".to_string(),
+            step_count: 1,
+            node_id: "node-override".to_string(),
+            tokens_consumed: 100,
+            payload: serde_json::json!({"action": "tampered"}),
+            error: None,
+        };
+
+        let err = audit_log.append(&duplicate_entry).await.unwrap_err();
+        assert!(
+            matches!(err, memfuse_core::MemFuseError::Conflict(_)),
+            "Duplicate audit entry append must be rejected with Conflict error, got: {:?}",
+            err
+        );
     }
 
     #[tokio::test]

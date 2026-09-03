@@ -210,6 +210,24 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         Ok(())
     }
 
+    /// Stores a non-vector key-value entry directly in LSM storage only if key does not already exist.
+    /// Returns `MemFuseError::Conflict` if entry already exists (ADR-050 append-only enforcement).
+    #[tracing::instrument(level = "trace", skip(self, value))]
+    pub async fn put_kv_if_absent(&self, id: &str, value: &serde_json::Value) -> Result<()> {
+        validate_doc_id(id)?;
+        let user_key = self.namespaced_key(id.as_bytes(), 0);
+        if self.storage.get(&user_key).await?.is_some() {
+            return Err(memfuse_core::MemFuseError::Conflict(format!(
+                "Key '{id}' already exists in KV storage"
+            )));
+        }
+        let tx = self.allocate_tx()?;
+        let data = serde_json::to_vec(value)?;
+        self.storage.put(tx, &user_key, &data).await?;
+        self.storage.commit(tx).await?;
+        Ok(())
+    }
+
     /// Retrieves a key-value entry directly from LSM storage.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_kv(&self, id: &str) -> Result<Option<serde_json::Value>> {

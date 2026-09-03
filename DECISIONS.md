@@ -720,6 +720,46 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-048: Python FFI Panic-Isolation
+
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Entschieden
+*   **Kontext**: Rust `panic!` Aufrufe an der FFI-Grenze zu Python führen zum unkontrollierten Absturz des CPython-Interpreters.
+*   **Entscheidung**: `panic!` Aufrufe in `memfuse-py` wurden eliminiert und durch strukturierte `PyErr`-Rückgaben (z.B. `PyValueError`, `PyRuntimeError`) ersetzt. Core-Aktionen werden über `run_blocking_ffi` mit `catch_unwind` abgesichert.
+*   **Begründung**: Garantiert Stabilität der Python-Bindings und verhindert Interpreter-Abstürze bei unerwarteten Rust-Panic-Zuständen.
+
+---
+
+## ADR-049: WAL Legacy-Key Feature-Gating
+
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Entschieden
+*   **Kontext**: Der `LEGACY_INTEGRITY_KEY` ist ein hartkodierter, öffentlich bekannter Fallback-HMAC-Schlüssel aus früheren WAL-Versionen. Automatische Fallbacks bergen Risiken von Downgrade-Angriffen auf die WAL-Integrität.
+*   **Entscheidung**: Fallback auf `LEGACY_INTEGRITY_KEY` wird über `WalConfig::allow_legacy_integrity_key_fallback` explizit opt-in (Standard: `false`). Standard-Replays lehnen WAL-Dateien ohne gültigen per-Instance Integritätsschlüssel ab.
+*   **Begründung**: Verhindert Downgrade-Angriffe auf WAL-Integritätsprüfungen in Produktionsumgebungen, während Migrationspfade explizit aktivierbar bleiben.
+
+---
+
+## ADR-050: Audit-Log Append-Only Enforcement
+
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Entschieden
+*   **Kontext**: Audit-Logs im `memfuse-agent` erfordern unbedingte Unveränderlichkeit (Append-Only Invariante). Bisheriges `put_kv` überschrieb bestehende Schlüssel ohne Prüfungen.
+*   **Entscheidung**: Einführung von `Collection::put_kv_if_absent()`, das die Existenz des Schlüssels prüft und bei Duplikaten `MemFuseError::Conflict` zurückgibt. `AuditLog::append()` nutzt ausschließlich diesen atomaren Existenzcheck.
+*   **Begründung**: Garantiert die Unveränderbarkeit von Audit-Einträgen auf Ebene des KV-Speichers.
+
+---
+
+## ADR-051: Legacy recalibrate() Removal
+
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Entschieden
+*   **Kontext**: Im `memfuse-router` existierten zwei konkurrierende Kalibrierungs-Methoden (`recalibrate_conformal()` und die Legacy-Methode `recalibrate()`). Letztere überschrieb periodisch (alle 10 Routing-Entscheidungen) das Ergebnis der conformal calibration. Zudem traten bei separaten Read-/Write-Lock-Sprüngen im Routing-Pfad TOCTOU Race Conditions auf.
+*   **Entscheidung**: `recalibrate()` wurde vollständig entfernt. `recalibrate_conformal()` bleibt der einzige Kalibriermechanismus. Lock-Acquisition und Kalibrierungs-Updates in `route()` wurden konsolidiert.
+*   **Begründung**: Konsolidiert den Kalibrierpfad auf Conformal Prediction und eliminiert TOCTOU-Races bei der Profilauswahl.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>

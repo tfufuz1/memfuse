@@ -21,14 +21,14 @@ Ergebnis: **0 offene Tags**
 | `memfuse-crypto` | 1 | 2390 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 7027 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11704 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 13487 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 13528 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5157 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 18707 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 4440 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-db` | 2 | 18725 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 4487 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1191 | 🧊 Optional |  |
 | `memfuse-ollama` | 3 | 3045 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1496 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 2828 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 2791 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3436 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 4417 | 🟢 Clean |  |
 

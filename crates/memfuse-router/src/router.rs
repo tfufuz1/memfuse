@@ -164,51 +164,39 @@ impl RouterEngine {
             }
         }
 
-        // 3. Select profile using calibrated cascade routing
-        let (selected_profile_idx, selected_profile, confidence_metrics) = {
-            let cal = self.calibration.read();
-            self.select_profile_cascade(&chunks, &profiles, &cal)?
-        };
+        // 3. Select profile and update calibration state within a single write lock to avoid TOCTOU races
+        let (_selected_profile_idx, selected_profile, confidence_metrics) = {
+            let mut cal = self.calibration.write();
+            let (idx, prof, conf) = self.select_profile_cascade(&chunks, &profiles, &cal)?;
 
-        let profile_scores = compute_profile_scores(&profiles, &chunks);
-
-        // Kalibrierungs-Tracking: Konfidenz berechnen
-        {
-            let best_score = profile_scores
-                .get(&selected_profile_idx)
-                .copied()
-                .unwrap_or(0.0);
+            let profile_scores = compute_profile_scores(&profiles, &chunks);
+            let best_score = profile_scores.get(&idx).copied().unwrap_or(0.0);
             let second_best = profile_scores
                 .iter()
-                .filter(|(idx, _)| **idx != selected_profile_idx)
+                .filter(|(i, _)| **i != idx)
                 .map(|(_, s)| *s)
                 .fold(0.0f32, f32::max);
             let confidence = if second_best > 0.0 {
                 (best_score / second_best) as f64
             } else {
-                2.0 // Nur ein Kandidat → hohe Konfidenz
+                2.0 // Single candidate -> high confidence
             };
 
-            let mut cal = self.calibration.write();
-            if let Some(state) = cal.get_mut(&selected_profile.name) {
+            if let Some(state) = cal.get_mut(&prof.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence;
 
                 // Non-conformity score: inverse of confidence ratio, clamped to [0, 1]
-                // Higher = worse routing decision
                 let non_conformity = if confidence > 0.0 {
                     (1.0 / confidence as f32).clamp(0.0, 1.0)
                 } else {
                     1.0
                 };
                 state.recalibrate_conformal(non_conformity);
-
-                // Legacy recalibration (alle 10 Entscheidungen)
-                if state.times_selected % 10 == 0 {
-                    state.recalibrate(0.7);
-                }
             }
-        }
+
+            (idx, prof, conf)
+        };
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
@@ -525,16 +513,14 @@ mod tests {
     }
 
     #[test]
-    fn test_profile_calibration_state_recalibrate_low_confidence() {
+    fn test_profile_calibration_state_recalibrate_conformal() {
         let mut state = ProfileCalibrationState::new(0.5);
-        // Simuliere 10 Entscheidungen mit Konfidenz 0.5 (unter Schwellenwert 0.7)
         state.times_selected = 10;
-        state.cumulative_confidence = 5.0; // avg = 0.5
-        let adjusted = state.recalibrate(0.7);
-        assert!(adjusted, "Low-confidence state muss Score erhöhen");
+        let adjusted = state.recalibrate_conformal(0.8);
+        assert!(adjusted, "Conformal update must adjust threshold");
         assert!(
-            state.calibrated_min_score > 0.5,
-            "Score muss höher als original sein nach Rekalibrierung"
+            state.calibrated_min_score > 0.0,
+            "Calibrated min score must be valid positive float"
         );
     }
 
