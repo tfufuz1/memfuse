@@ -510,19 +510,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_header_roundtrip_and_errors() -> Result<()> {
-        let header = HnswHeader::new(
-            128,
-            16,
-            1,
-            0,
-            -1.0,
-            1.0,
-            100,
-            5,
-            64,
-            256,
-            42,
-        );
+        let header = HnswHeader::new(128, 16, 1, 0, -1.0, 1.0, 100, 5, 64, 256, 42);
 
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), HnswHeader::SIZE);
