@@ -259,6 +259,7 @@ impl ProfileCalibrationState {
     /// Legacy recalibration (kept for backward compatibility).
     /// Erhöht min_score falls durchschnittliche Konfidenz unter Schwellenwert.
     /// Gibt true zurück wenn eine Anpassung vorgenommen wurde.
+    #[deprecated(since = "0.1.0", note = "use recalibrate_conformal instead")]
     pub fn recalibrate(&mut self, low_confidence_threshold: f64) -> bool {
         if self.times_selected < 10 {
             // Nicht genug Daten für Kalibrierung

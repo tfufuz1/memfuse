@@ -1,358 +1,471 @@
-# MemFuse — Überarbeiteter Implementierungsplan
+# MemFuse — Erweiterter Implementierungsplan: Algorithmen & Geschäftslogik
 
 > **Datum**: 2026-09-03  
-> **Basis**: Analyse des Originals `Implementationplan.md` (4492 Zeilen), verifiziert gegen aktuellen Code-Stand  
-> **Letzte ADR**: ADR-047 · **Nächste freie ADR**: ADR-048  
-> **WORKING_STATE**: 0 offene Tags · Alle 15 Crates 🟢 Clean
+> **Basis**: Code-Analyse aller 15 Workspace-Crates, DECISIONS.md (47 ADRs), bestehender `Implementationplan.md`  
+> **Fokus**: Algorithmische Korrektheit, Architektur-Entscheidungen, Geschäftslogik-Perfektionierung  
+> **Letzte ADR**: ADR-047 · **Nächste freie ADR**: ADR-048
 
 ---
 
-## Zusammenfassung der Überarbeitung
+## Vorbemerkung: Kritik am bestehenden Plan
 
-Das Original-Dokument hatte folgende strukturelle und inhaltliche Probleme:
+Der [existierende Plan](file:///home/freddy/Projekte/memfuse/Implementationplan.md) konzentriert sich auf punktuelle Bugfixes (A-1 bis A-4), kosmetische Router-Korrekturen (B-1 bis B-5) und CI-Infrastruktur (D-1 bis D-4). Er adressiert **keine** der folgenden systemischen Architekturprobleme:
 
-### Strukturprobleme
-1. **Unstrukturierter Dump**: 4492 Zeilen ohne klare Phasenstruktur — gemischt aus LLM-`<thinking>`-Tags, Jules-Prompts, Audit-Synthesen, Refaktorisierungsplänen und historischen Bug-Listen
-2. **Keine Priorisierungsmatrix**: Drei separate Priorisierungstabellen an verschiedenen Stellen, teilweise widersprüchlich
-3. **Vermischung von Ist-Zustand und Soll-Zustand**: Bereits behobene Bugs (z.B. Tombstone Masking, DiskANN Recall) stehen gleichberechtigt neben offenen Aufgaben
-4. **Redundanz**: Identische Befunde werden bis zu 3× wiederholt (Befund-13 BM25 NaN, Befund-15 HNSW Dim-Check)
-5. **Rohe LLM-Artefakte**: `<thinking>`-Blöcke und Zwischenüberlegungen im Dokument belassen
+1. **HNSW-Rebuild blockiert den gesamten Schreibpfad** — der gravierendste Concurrency-Engpass im System
+2. **Router-Kalibrierung hat zwei sich widersprechende Feedback-Loops** — führt zu oszillierendem Schwellwert-Drift
+3. **Context Compaction OCC-Session hat kein Retry-Protocol** — jeder OCC-Konflikt ist ein unrecoverables Fail
+4. **DiskANN ist zwar generisch eingebunden (ADR-037), aber der Lebenszyklus (Build/Persist/Load) fehlt** — keine Out-of-Core-Suche in Production
+5. **Agent-Orchestrator hat keinen Dead-Letter-Pfad** — fehlgeschlagene Steps verschwinden
+6. **4-Signal Fusion befüllt ProvenanceRecord nirgends** — die Audit-Kette der RAG-Pipeline ist blind
+7. **Batch-Pfade in Layer 2/3 existieren, werden aber nicht durchgezogen** — 29× Throughput-Gain bleibt liegen
 
-### Inhaltliche/Design-Fehler
-1. **ADR-Nummernkollisionen**: Plan referenziert "ADR-028 Entfernung recalibrate()" — aber ADR-028 existiert bereits als "Dezentrales Inline-Kontextsystem". Ebenso ADR-029 (WAL-V3), ADR-030 (Pre-Commit), ADR-031 (Benchmark), ADR-032 (Async LLM Compaction), ADR-033 (Bi-temporale Zeitachsen)
-2. **Befunde gegen bereits behobenen Code**: Befund-25 (AES-GCM-SIV Nonce-Reuse) — `encrypt_auto_nonce` mit OsRng existiert bereits seit ADR/SEC-01. Befund-20 (GIL-Retention) — `py.allow_threads()` ist bereits implementiert laut Audit. Befund-21 (Sub-Interpreter) — bereits mit `ImportError` abgewiesen
-3. **Falsche Crate-Pfade**: Plan referenziert `crates/memfuse-store/src/bm25.rs` und `crates/memfuse-store/src/rrf.rs` — BM25 liegt in `memfuse-text`, RRF in `memfuse-db/src/fusion.rs`
-4. **Überschriebene Audit-Korrekturen ignoriert**: Viele "BEFUNDE" beschreiben Probleme, die laut `docs/audits/` bereits behoben sind (31 von 39 Einträgen der finalen Tabelle zeigen "BEHOBEN")
-5. **Fehlende `overflow-checks` Validierung**: Plan behauptet offen, `WORKING_STATE` zeigt 🔲 — aber `Cargo.toml` hat es bereits gesetzt
-6. **Hypothetische Befunde ohne Code-Verifikation**: Befund-18 (Write Skew Token Budget) beschreibt ein Problem, das nur bei globalem `SharedTokenBudget` existiert — `ContextManager` wird per-Request instanziiert
-7. **Router-Scoring: Plan baut auf falschen Annahmen**: `compute_profile_scores()` existiert als separate Funktion, aber der Plan verwechselt teilweise ihre Rolle
+Dieser erweiterte Plan adressiert alle diese Punkte als kohärente Architektur-Arbeitspakete.
 
 ---
 
-## Überarbeiteter Plan: 4 Arbeitspakete nach verifiziertem Ist-Zustand
+## Arbeitspaket 1: HNSW Lock-Free Read / Copy-on-Write Rebuild
 
-> [!IMPORTANT]
-> Nur **verifiziert offene** Aufgaben sind aufgeführt. Bereits behobene Befunde werden **nicht** wiederholt.
+> **Betroffene Dateien**: [`hnsw.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-index/src/hnsw.rs)  
+> **Schwere**: CRITICAL — Latenz-Spikes im Produktionspfad  
+> **ADR**: ADR-048 (neu): "HNSW Copy-on-Write Rebuild"
+
+### Ist-Zustand (verifiziert)
+
+```rust
+// hnsw.rs:1685-1686
+pub async fn rebuild(&self) -> Result<()> {
+    let _write_lock = self.write_mutex.lock().await;  // ← BLOCKIERT ALLE INSERTS
+    // ... 100+ Zeilen Rebuild-Logik ...
+    // Atomic Swap erst bei Zeile 1786
+}
+```
+
+`trigger_rebuild_async()` (Zeile 632) spawnt den Rebuild als Tokio-Task, aber **innerhalb** dieses Tasks wird `self.write_mutex.lock().await` gehalten — für die **gesamte** Rebuild-Dauer (Snapshot + N Inserts in neuen Index + Atomic Swap). Bei 100k Vektoren und M=16 dauert ein Rebuild typischerweise 5–30 Sekunden. In dieser Zeit sind **alle** `insert()`, `delete()`, `commit()` Aufrufe blockiert.
+
+### Design-Problem
+
+Der Rebuild verwendet das korrekte Pattern: Snapshot → Build neuer Index → Atomic Swap (Zeile 1786–1824). **Aber der write_mutex wird über den gesamten Zyklus gehalten**, nicht nur über den Swap. Das ist unnötig, weil der neue Index in einer isolierten `HnswIndex`-Instanz aufgebaut wird (Zeile 1717: `let new_index = HnswIndex::try_new(config)?`).
+
+### Vorgeschlagene Lösung: 2-Phase Lock
+
+```
+Phase 1 (lock-frei):
+  - Snapshot unter kurzem Read-Lock: active_nodes = nodes.read() + deleted_nodes.read()
+  - Build des neuen Index OHNE Lock (new_index ist eigenständig)
+  - Während Rebuild läuft: neue Inserts/Deletes akkumulieren sich im alten Index normal
+
+Phase 2 (kurzer Write-Lock für Atomic Swap + Delta-Merge):
+  - Write-Lock acquiren
+  - Delta ermitteln: Inserts/Deletes die NACH dem Snapshot kamen
+  - Delta in new_index einspielen (wenige Operationen)
+  - Atomic Swap der inneren Datenstrukturen
+  - Write-Lock freigeben
+```
+
+### Nicht-offensichtliche Risiken
+
+1. **Delta-Merge-Korrektheit**: Wenn ein Dokument nach dem Snapshot gelöscht und dann wieder mit neuer DocId eingefügt wird, muss der Delta-Merge die Delete+Insert-Sequenz korrekt abbilden. Lösung: `last_tx_id` (AtomicU64, Zeile 714) als Snapshot-Watermark verwenden — alles mit `committed_tx > snapshot_watermark` ist Delta.
+
+2. **Mmap-Segment-Konsistenz**: Der Rebuild muss das bestehende Mmap-Segment beibehalten (Zeile 1720–1725). Der neue RAM-Segment ersetzt nur den RAM-Teil. Das aktuelle Design tut das bereits korrekt.
+
+3. **Quantizer-Drift**: Der Rebuild rekalibriert den ScalarQuantizer auf einem Sample (Zeile 1730–1751). Wenn das Sample nicht repräsentativ für die Delta-Dokumente ist, verschlechtert sich die Quantisierungsqualität temporär. Akzeptabler Trade-off für lock-freie Reads.
+
+### Erwarteter Gewinn
+
+- **Schreiblatenz**: Von O(Rebuild-Dauer) auf O(Delta-Merge) — typisch 10ms statt 10s
+- **Lesezugriffe**: Bleiben IMMER unblockiert (RwLock::read() auf `nodes` etc.)
+- **Kein Verhaltensbruch**: `search()` liest nie den write_mutex
 
 ---
 
-## Phase A — SOFORT: Sicherheitskritische & Korrektheitsfehler (Vor nächstem Release)
+## Arbeitspaket 2: Router-Kalibrierung — Duale Feedback-Loop-Eliminierung
 
-### A-1: `context_compaction.rs` — Silent `let _ =` auf delete_op beheben
+> **Betroffene Dateien**: [`router.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs), [`profile.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs)  
+> **Schwere**: MAJOR — Unkalibriertes Routing unter Verteilungsverschiebung  
+> **ADR**: ADR-049 (neu): "Unified Conformal Calibration"
 
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`context_compaction.rs:374`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/context_compaction.rs#L374) |
-| **Schwere** | BLOCKER — Datenverlust im Produktionspfad |
-| **Befund** | `let _ = self.collection.delete_op(&mut db_tx, &meta.id).await;` verschluckt Fehler bei Quell-Dokument-Löschung während Konsolidierung |
-| **Verifiziert** | ✅ grep bestätigt: Zeile 374 enthält exakt dieses Muster |
-| **ADR** | Keine neue ADR nötig — bestehende CONSTITUTION-Regel "No Silent Failures" |
+### Ist-Zustand (verifiziert)
 
-**Fix**: `delete_op()` Fehler mit `?` propagieren. `serde_json::from_slice` Fehler ebenfalls. `None`-Fall (bereits gelöscht) als Idempotenz-OK mit `tracing::warn!` behandeln.
+In [`router.rs:193–209`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs#L193-L209) existieren **zwei unabhängige Feedback-Loops**, die denselben `calibrated_min_score` schreiben:
 
-**Test**: `test_consolidation_commit_aborts_on_delete_failure` — Quell-Dokument wird während Commit korrumpiert → `commit()` gibt `Err` zurück, Summary-Dokument existiert nicht.
+```rust
+// Loop 1: Conformal Calibration (Gibbs & Candès 2021) — online nach JEDER Entscheidung
+state.recalibrate_conformal(non_conformity);
+
+// Loop 2: Legacy heuristic — alle 10 Entscheidungen
+if state.times_selected % 10 == 0 {
+    state.recalibrate(0.7);  // ← ÜBERSCHREIBT den conformal-kalibrierten Wert
+}
+```
+
+### Architektur-Problem: Oszillierender Schwellwert
+
+Die `recalibrate()` Methode ([`profile.rs:262–281`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs#L262-L281)) arbeitet auf **kumulativer Durchschnittskonfidenz** und erhöht/senkt `calibrated_min_score` um feste 10%/5% Schritte. `recalibrate_conformal()` ([`profile.rs:247–257`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs#L247-L257)) leitet `calibrated_min_score` aus `conformal.quantile_threshold` ab.
+
+Das Problem: Alle 10 Requests überschreibt `recalibrate()` den Wert, den `recalibrate_conformal()` gerade konvergiert hat. Beim nächsten `recalibrate_conformal()` Aufruf wird der **von der Legacy-Heuristik überschriebene** Wert als Basis genommen. Resultat: Der Schwellwert oszilliert zwischen dem conformal-adaptiven und dem heuristischen Pfad, ohne jemals zu konvergieren.
+
+### Korrekte Lösung
+
+1. **`recalibrate()` entfernen** — die Legacy-Heuristik bietet keine distributionsfreien Garantien und sabotiert die conformal-Konvergenz
+2. **`recalibrate_conformal()` als einzige Kalibrierungsquelle** — bereits korrekt implementiert (Gibbs & Candès Online-Quantile mit Clamping)
+3. **Zeile 206–209 in `router.rs` streichen** — der Aufruf `state.recalibrate(0.7)` alle 10 Entscheidungen entfällt
+4. **`recalibrate()` Methode mit `#[deprecated]` markieren**, dann in Folge-PR entfernen
+
+### Zusätzlicher Designfehler: Score-Berechnung in der Kaskade
+
+`select_profile_cascade()` (Zeile 242–353) berechnet den Score korrekt via `compute_profile_score()`. Aber `route()` berechnet anschließend **nochmal** `compute_profile_scores()` (Zeile 173) — nur um die Konfidenz als `best_score / second_best_score` zu ermitteln (Zeile 186–188).
+
+Problem: Diese Konfidenz-Ratio ist **nicht** der Non-Conformity-Score, der an den Conformal Calibrator gefüttert wird. Die Konfidenz-Ratio ist `>= 1.0` (oder `2.0` bei einem Kandidaten), wird dann auf `1.0 / confidence` invertiert (Zeile 199–202) und geclampt auf `[0, 1]`. Für `confidence >= 2.0` ergibt das `non_conformity <= 0.5`, was den Calibrator kaum adaptiert.
+
+**Korrektur**: Der Non-Conformity-Score sollte die **Margin** zwischen kalibriertem Schwellwert und tatsächlichem Score sein: `non_conformity = max(0, threshold - score)`, normiert auf `[0, 1]`. Das misst direkt, wie nahe die Routing-Entscheidung am Fehlschlag war.
+
+### Nicht-offensichtliches Risiko
+
+Der Conformal Calibrator hat `gamma = 0.01` und `alpha = 0.05`. Bei nur wenigen Routing-Entscheidungen pro Minute (typisch für Desktop-Agenten) konvergiert der Calibrator erst nach ~200+ Entscheidungen. In der Warm-up-Phase fällt der Router auf die statischen `min_relevance_score` Werte zurück (Zeile 306–308), was korrekt ist. **Aber**: Die `window_total > 10` Schwelle (Zeile 307) ist zu niedrig — mit 10 Samples ist der Quantile-Schätzer statistisch instabil.
+
+**Empfehlung**: Schwelle auf `>= 50` erhöhen, oder besser: Bootstrap-Konfidenzband für `quantile_threshold` berechnen und erst umschalten wenn das Band < 0.1 breit ist.
 
 ---
 
-### A-2: Python-FFI `panic!()` durch `PyErr` ersetzen
+## Arbeitspaket 3: Context Compaction — OCC Retry Protocol & Atomarität
 
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`lib.rs:1346,1352,1362,1425`](file:///home/freddy/Projekte/memfuse/crates/memfuse-py/src/lib.rs#L1346) |
-| **Schwere** | CRITICAL — Python-Interpreter-Absturz bei FFI-Panic |
-| **Befund** | 4 `panic!()` Aufrufe außerhalb von `#[cfg(test)]` — terminieren den CPython-Prozess |
-| **Verifiziert** | ✅ grep bestätigt: Zeilen 1346, 1352, 1362, 1425 |
-| **ADR** | ADR-048 (neu): "Python FFI Panic-Isolation" |
+> **Betroffene Dateien**: [`context_compaction.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/context_compaction.rs)  
+> **Schwere**: MAJOR — Konsolidierungs-Failures sind unrecoverable  
+> **ADR**: ADR-050 (neu): "Consolidation Session Retry & Idempotency"
 
-**Fix**:
-- Zeilen 1346, 1352: `panic!("kind/message attribute missing")` → `return Err(PyValueError::new_err(...))`
-- Zeile 1362: `panic!("Simulated Rust core panic")` → in `#[cfg(test)]` Guard verschieben, oder `PyRuntimeError`
-- Zeile 1425: `run_blocking_ffi(py, || panic!("{}", msg))` → `return Err(PyRuntimeError::new_err(msg))`
+### Ist-Zustand
 
-> [!NOTE]
-> Der Audit `docs/audits/AUDIT_memfuse-py.md` behauptet "BEHOBEN (catch_unwind)" — aber die 4 `panic!()` Stellen existieren **weiterhin** im Code. `catch_unwind` existiert als allgemeiner Wrapper, fängt aber nicht alle Pfade: Zeile 1425 ruft `panic!` **innerhalb** von `run_blocking_ffi` auf, das selbst das `catch_unwind` enthält — dieser spezifische Pfad ist also abgefangen. Die Zeilen 1346/1352 liegen aber **vor** dem `run_blocking_ffi`-Aufruf und sind **nicht** durch `catch_unwind` geschützt.
+`ConsolidationSession` implementiert ein solides OCC-Pattern (Zeile 240–387):
+1. `start()`: Snapshot der source_doc TxIds + CommitIntent ins Storage
+2. `validate_occ()`: Prüft ob Dokumente mutiert wurden
+3. `commit()`: Unter `insert_lock` → OCC-Validierung → Insert Target → Delete Sources → Commit
 
----
+### Architektur-Lücken
 
-### A-3: `LEGACY_INTEGRITY_KEY` — Downgrade-Schutz
+#### Lücke 1: Kein Retry bei OCC-Konflikt
 
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`wal.rs:59`](file:///home/freddy/Projekte/memfuse/crates/memfuse-store/src/wal.rs#L59) |
-| **Schwere** | MAJOR/SECURITY — Öffentlich bekannter HMAC-Schlüssel im Quellcode |
-| **Befund** | `LEGACY_INTEGRITY_KEY` ist hartkodiert und öffentlich bekannt. WAL-Replay fällt darauf zurück wenn per-Datei Key-Verifikation fehlschlägt |
-| **Verifiziert** | ✅ Zeile 59 bestätigt, Zeilen 1239/1349 zeigen Fallback-Nutzung |
-| **ADR** | ADR-049 (neu): "WAL Legacy-Key Feature-Gating" |
+Wenn `validate_occ()` in `commit()` fehlschlägt (Zeile 341), gibt die gesamte Session `Err(StaleRead)` zurück. Der Aufrufer hat **keine Möglichkeit**, die Session zu "wiederholen" — die Source-Dokument-Inhalte müssen erneut gelesen, der LLM-Summarization-Call erneut gemacht werden. Bei 10-20s pro LLM-Call und mehreren Source-Docs ist das inakzeptabel.
 
-**Fix**:
-1. `WalConfig` um `allow_legacy_integrity_key_fallback: bool` erweitern (Default: `false`)
-2. Fallback-Pfad nur aktiv wenn explizit opt-in
-3. Langfristig: `LEGACY_INTEGRITY_KEY` hinter `#[cfg(feature = "legacy-migration")]` Feature-Gate
+**Lösung**: `ConsolidationSession::refresh()` Methode einführen:
+```
+pub async fn refresh(&mut self) -> Result<Vec<(DocId, ContextChunk)>> {
+    // 1. Neue TxIds der source_docs lesen
+    // 2. self.source_docs aktualisieren
+    // 3. Intent-Key aktualisieren
+    // 4. Geänderte Dokumente als Vec zurückgeben
+    //    → Aufrufer entscheidet: Re-Summarize nur geänderter Chunks
+}
+```
+Das ermöglicht inkrementelle Re-Summarization: Nur die geänderten Chunks werden neu zusammengefasst, nicht der gesamte Batch.
+
+#### Lücke 2: Crash-Recovery des CommitIntent
+
+`start()` schreibt einen `CommitIntent::Consolidation` ins Storage (Zeile 274–284). Aber bei App-Neustart wird dieser Intent **nie aufgeräumt**. Verwaiste Intent-Keys akkumulieren sich im LSM-Tree.
+
+**Lösung**: Beim Startup `scan_prefix("__consolidation_intent:")` und verwaiste Intents mit `abort()` aufräumen (Garbage Collection mit Tombstone).
+
+#### Lücke 3: TOCTOU zwischen OCC-Validierung und Delete
+
+In `commit()` (Zeile 331–387):
+```rust
+let _guard = self.collection.insert_lock.lock().await;  // Lock
+self.validate_occ().await?;                              // Prüfung
+// ... insert target ...
+self.collection.delete_op(&mut db_tx, &meta.id).await?;  // Delete
+db_tx.commit().await?;                                   // Commit
+```
+
+Die `validate_occ()` prüft ob Source-Docs unverändert sind. Aber zwischen Prüfung und `delete_op` könnten **andere Pfade über die Collection** die Source-Docs ändern — diese Pfade acquirieren zwar auch `insert_lock`, aber nur wenn sie Inserts machen. Ein `put_kv()` oder Graph-Operation könnte den `doc_tx` ändern ohne `insert_lock`.
+
+**Lösung**: Die OCC-Validierung muss die `doc_tx` Werte **atomar mit dem Commit** prüfen. Entweder:
+- (a) Die `validate_occ()` + Delete + Commit in eine WAL-Transaktion mit CAS-Semantik kapseln
+- (b) `insert_lock` zu einem allgemeinen `mutation_lock` upgraden, das ALLE Mutations-Pfade abdeckt (Breaking Change, teurer)
+- (c) **Pragmatisch**: Die aktuelle Lösung ist ausreichend, weil `ConsolidationSession` nur auf **eigenen** Source-Docs operiert, die typischerweise nicht gleichzeitig von anderen Pfaden mutiert werden. Risiko dokumentieren als Known Limitation.
 
 > [!WARNING]
-> ADR-029 (WAL-V3) hat bereits `tx_id` in den HMAC-Input eingebunden. Die Position-Binding aus Befund-14 des Originals (`file_id`, `byte_offset`) ist **über V3 hinaus** ein Verbesserungsschritt, aber **nicht** identisch mit dem Legacy-Key-Problem. Beide sind eigenständige Aufgaben.
+> Option (c) ist akzeptabel für Phase 1, aber muss in Phase 2 (Multi-Agent Concurrent Consolidation) durch Option (a) ersetzt werden.
 
 ---
 
-### A-4: Audit-Log Append-Only-Invariante erzwingen
+## Arbeitspaket 4: DiskANN Production Lifecycle
 
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`audit.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/audit.rs), [`crud.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/collection/crud.rs) |
-| **Schwere** | CRITICAL — Audit-Trail kann stillschweigend überschrieben werden |
-| **Befund** | `AuditLog::append()` nutzt `put_kv()` ohne Existenzprüfung. Deklarierte Invariante "zero deletion/update paths" wird nicht erzwungen |
-| **ADR** | ADR-050 (neu): "Audit-Log Append-Only Enforcement" |
+> **Betroffene Dateien**: `memfuse-index/src/diskann.rs`, `memfuse-db/src/collection/`  
+> **Schwere**: MAJOR — Feature existiert, ist aber nicht nutzbar  
+> **Basis**: ADR-013 (Experimental), ADR-037 (Collection Generalisierung — ✅ implementiert)
 
-**Fix**:
-1. Neue Methode `Collection::put_kv_if_absent()` mit tx-scoped Existenzprüfung
-2. `AuditLog::append()` verwendet `put_kv_if_absent()` und gibt `MemFuseError::Conflict` bei Duplikat
-3. `AgentEngine`: State-Commit und Audit-Log in gemeinsamer Transaktion (oder Kompensations-Rollback)
+### Ist-Zustand
 
----
+- ADR-037 ist implementiert: `Collection<S, V: VectorIndex>` ist generisch
+- `DiskAnnIndex` implementiert `VectorIndex` Trait
+- Aber: **Kein Lifecycle-Management** — kein `build_from_existing()`, kein automatischer Rebuild, kein Mmap-Warmup
 
-## Phase B — KURZFRISTIG: Architektur-Korrektheit & Härtung
+### Fehlende Komponenten für Serienreife
 
-### B-1: Router — Dualen Kalibriermechanismus konsolidieren
+#### 4a: Build-Pipeline (HNSW → DiskANN Konversion)
 
-| Eigenschaft | Wert |
-|---|---|
-| **Dateien** | [`profile.rs:226,241`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs#L226), [`router.rs:204,208`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs#L204) |
-| **Schwere** | MAJOR — Zwei konkurrierende Mechanismen schreiben `calibrated_min_score` |
-| **Verifiziert** | ✅ `recalibrate_conformal()` Zeile 226, `recalibrate()` Zeile 241, beide aufgerufen in router.rs:204/208 |
-| **ADR** | ADR-051 (neu): "Legacy recalibrate() Entfernung" |
+DiskANN ist ein **Offline-Build-Index**. Der typische Produktionspfad ist:
+1. Dokumente werden via HNSW (In-Memory) indexiert
+2. Ab einem Schwellwert (z.B. >500k Vektoren) wird der HNSW-Bestand in ein DiskANN-Mmap-Format konvertiert
+3. Neue Dokumente werden weiterhin in HNSW geschrieben (Delta)
+4. Periodisch: Neuer DiskANN-Build mit HNSW-Delta
 
-**Fix**:
-1. `recalibrate()` (Zeile 241) aus `ProfileCalibrationState` entfernen
-2. Aufruf in `router.rs:208` (`state.recalibrate(0.7)`) entfernen
-3. Nur `recalibrate_conformal()` als einzige Kalibrierungsmethode behalten
+Dies erfordert eine `DiskAnnBuilder::build_from_hnsw(hnsw: &HnswIndex, output_path: &Path)` Methode, die aktuell nicht existiert.
 
----
+#### 4b: Hybrid Collection mit HNSW+DiskANN
 
-### B-2: Router — TOCTOU in Kalibrierungs-Locks schließen
+Für Out-of-Core-Suche braucht die Collection einen Dual-Index:
+- `DiskAnnIndex` für den historischen Bestand (Mmap, out-of-core)
+- `HnswIndex` für den Delta-Buffer (in-memory, aktuell)
 
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`router.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs) |
-| **Schwere** | MAJOR — Race Condition bei parallelen `route()` Aufrufen |
-| **Verifiziert** | ✅ Drei separate Lock-Acquisitions in `route()` bestätigt |
+Die `VectorIndex::search()` Methode muss Ergebnisse aus beiden Indizes mergen.
 
-**Fix**: Alle drei Lock-Acquisitions (Read→Write→Read) in eine einzige Write-Acquisition zusammenfassen. Profilselektion, Kalibrierungsupdate und ConfidenceMetrics-Berechnung innerhalb desselben Lock-Scopes.
+**Design-Entscheidung**: Neuer `HybridVectorIndex<P: VectorIndex, D: VectorIndex>` Wrapper, der:
+- `search()` an beide delegiert und die Ergebnisse nach Score fusioniert
+- `insert()` nur an den Primary (`HnswIndex`) delegiert
+- `delete()` an beide delegiert (Tombstone in DiskANN via Bitmap)
 
----
+#### 4c: Mmap Warmup & Fault Tolerance
 
-### B-3: Router — `domain_communities: Vec<u64>` → `HashSet<u64>`
+DiskANN verwendet `unsafe { Mmap::map(...) }` (ADR-017). Bei SIGBUS (korrupte Datei, NFS-Disconnect) crasht der Prozess. 
 
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`profile.rs:14`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs#L14) |
-| **Schwere** | MEDIUM — O(n)-Lookup im Hot-Path |
-| **Verifiziert** | ✅ `Vec<u64>` bestätigt, 5 `.contains()`-Aufrufe in router.rs |
-| **ADR** | Kein neuer ADR nötig — reine Performance-Optimierung ohne API-Bruch |
-
-**Fix**: `Vec<u64>` → `HashSet<u64>` mit Serde-Hilfsmodul für deterministischen JSON-Output.
-
----
-
-### B-4: Router — Scoring-Divergenz schließen (3 Funktionen → 1)
-
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`router.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs) |
-| **Schwere** | MAJOR — Kalibrierung frisst Score der nicht dem Selektionsscore entspricht |
-| **Verifiziert** | ✅ `compute_profile_scores` und `select_profile_from_chunks` sind separate Funktionen mit unterschiedlicher Community-Filterlogik |
-
-**Fix**: Eine einzige `score_profile()` Funktion die `(aggregated_score, max_score, community_matched)` zurückgibt. Alle drei bestehenden Funktionen eliminieren.
-
----
-
-### B-5: `PinGuard::drop` — Synchrone Orphan-Registrierung
-
-| Eigenschaft | Wert |
-|---|---|
-| **Datei** | [`checkpoint/lib.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-checkpoint/src/lib.rs) |
-| **Schwere** | MAJOR — Stiller Space-Leak bei Runtime-Creation-Failure |
-| **ADR** | ADR-052 (neu): "PinGuard Drop-Strategie" |
-
-**Fix**: Fire-and-forget `std::thread::spawn` ersetzen durch Orphan-Registrierung mit Recovery beim nächsten Startup.
-
----
-
-## Phase C — MITTELFRISTIG: Offene Roadmap-Items (Phase 2 Cognitive Memory)
-
-> Verifiziert gegen [`SOURCE_OF_TRUTH.md`](file:///home/freddy/Projekte/memfuse/docs/SOURCE_OF_TRUTH.md#L141-L145)
-
-### C-1: ProvenanceRecord — 4-Signal-Befüllung in fusion.rs
-
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | 🔲 Offen (SOURCE_OF_TRUTH Zeile 142) |
-| **Verifiziert** | ✅ 31 `provenance: None` in fusion.rs, 2 in search.rs bestätigt |
-
-**Umfang**: `build_provenance()` Hilfsfunktion, alle Kategorie-C Pfade befüllen, INV-PROV-1 Test, `include_provenance` Flag durchreichen.
-
----
-
-### C-2: Kaskaden-Routing in memfuse-router
-
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | 🔲 Offen (SOURCE_OF_TRUTH Zeile 143) |
-| **Abhängigkeit** | B-1, B-2, B-4 müssen ZUERST abgeschlossen sein |
-
-**Umfang**: `select_profile_cascade()` Methode — Profile absteigend nach Threshold evaluieren, kalibrierte Schwellenwerte aus ConformalCalibrator nutzen.
+**Lösung**: `madvise(MADV_SEQUENTIAL)` beim Laden + Integrity-Check der Header-Magic-Bytes + Graceful Degradation zu HNSW-only bei Mmap-Fehler.
 
 > [!IMPORTANT]
-> **Reihenfolge zwingend**: Der Kaskaden-Routing-Task aus dem Original (P2-C) baut auf dem bestehenden dualen Kalibrierungsmechanismus auf, der durch B-1 erst konsolidiert werden muss. Implementierung vor B-1/B-2 würde die Fehler des Legacy-Systems in die neue Architektur einzementieren.
+> **Empfehlung**: DiskANN-Serienreife ist ein **eigenständiges Projekt** (geschätzt 3–4 Wochen). Es sollte **nicht** im selben PR wie die Concurrency-Fixes gemacht werden. Der bestehende ADR-013 Status ("experimentell") ist korrekt und sollte beibehalten werden, bis der Full Lifecycle implementiert ist.
 
 ---
 
-### C-3: DiskANN ADR-037 — Collection<S, V> Generalisierung
+## Arbeitspaket 5: Agent-Orchestrator — Robustheit & Dead-Letter
 
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | ✅ Implementiert (ADR-037 zeigt "Implementiert 2026-09-03") |
+> **Betroffene Dateien**: [`engine.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/engine.rs), [`audit.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/audit.rs)  
+> **Schwere**: MAJOR — Fehlgeschlagene Steps erzeugen stumme Lücken im Audit-Trail
 
-> [!NOTE]
-> **Kein Handlungsbedarf.** Das Original-Dokument listet dies als offen, aber ADR-037 in DECISIONS.md zeigt `✅ Implementiert (2026-09-03)`. SOURCE_OF_TRUTH hat dies noch als 🔲 — dies muss über `just sync-docs` korrigiert werden, ist aber kein Code-Task.
+### Ist-Zustand
 
----
+Der `OrchestratorEngine::run_internal()` ([engine.rs:83–180](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/engine.rs#L83-L180)) implementiert korrekt:
+- RAII CheckpointGuard vor Step-Execution (Zeile 102–103)
+- Budget-Reservation vor Tool-Aufruf (Zeile 128–133)
+- Audit-Logging bei Failure (Zeile 130: `self.audit_log_failure()`)
 
-### C-4: Benchmark-Suite vs. Mem0/Zep/MemOS
+### Architektur-Lücken
 
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | 🔲 Offen (SOURCE_OF_TRUTH Zeile 145) |
+#### Lücke 1: Kein Dead-Letter-Queue für nicht-wiederholbare Fehler
 
-**Umfang**: `benches/competitive_bench.rs` erstellen, `docs/BENCHMARKS.md` §4 ergänzen. Keine erfundenen Zahlen — nur recherchierte publizierte Metriken oder "nicht öffentlich verfügbar".
+Wenn `tool.execute()` fehlschlägt, wird `ctx.status = AgentStatus::Failed` gesetzt und die gesamte Workflow-Execution stoppt. Der fehlgeschlagene Input (`last_output`) geht verloren — er wird weder persistiert noch für späteren Retry vorgehalten.
 
----
+**Lösung**: `AgentContext` um `dead_letters: Vec<DeadLetter>` erweitern:
+```rust
+pub struct DeadLetter {
+    pub step_id: String,
+    pub node_id: String, 
+    pub input: serde_json::Value,
+    pub error: String,
+    pub timestamp_tx: TxId,
+    pub retry_count: u32,
+}
+```
+Dead Letters werden im LSM-Storage unter `dead_letter:{task_id}:{step}` persistiert und sind über `Collection::scan_prefix()` abrufbar.
 
-## Phase D — CI/CD-Härtung
+#### Lücke 2: Kein Step-Timeout
 
-### D-1: Gate 7 — Dynamischer ISO-8601 Tag-Validator
+`tool.execute(ctx, input).await` (Zeile 138) hat **kein Timeout**. Ein hängender Tool-Call blockiert den gesamten Workflow forever.
 
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | Offen — Gate 7 enthält hartkodiertes Datumsregex |
+**Lösung**: `AgentTool` Trait um `fn timeout(&self) -> Duration` erweitern (Default: 60s). `run_internal()` wrappt den Aufruf in `tokio::time::timeout()`.
 
-**Umfang**: `cargo xtask validate-tags` Kommando implementieren, Gate 7 in `context-gates.yml` ersetzen.
+#### Lücke 3: Budget-Reservation vs. Actual-Cost Drift
 
-> [!NOTE]
-> Das Original-Dokument beschreibt diesen Task korrekt (P1-A). Die Spezifikation ist übernommen — sie ist fachlich korrekt.
+Der `estimated_cost` (Zeile 114–126) wird **vor** der Ausführung reserviert. Aber der `StepResult::tokens_consumed` (der tatsächliche Verbrauch) wird **nach** der Ausführung in `ctx.budget.consume()` verbucht. Wenn `estimated_cost < tokens_consumed`, wird das Budget überbucht. Wenn `estimated_cost > tokens_consumed`, bleibt reserviertes Budget ungenutzt liegen.
 
----
-
-### D-2: Gate 2 — `cargo xtask update-unwrap-baseline`
-
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | Offen — Kommando existiert nicht in xtask |
-
-**Umfang**: Content-Hash-basierte Baseline (statt Zeilennummer), `run_update_unwrap_baseline()` und `run_check_unwrap_baseline()` implementieren.
-
----
-
-### D-3: Strukturierte CI-Fixer-Diagnostik für alle Gates
-
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | Offen — kein Gate gibt das CI-Fixer-Format aus |
-
-**Umfang**: Gates 1, 3–6, 8–11 mit `❌ [GATE-N]:` + `💡 AUTOMATISCHE BEHEBUNG:` Format versehen.
+**Lösung**: 2-Phase Budget: `try_reserve()` vor Execution, `settle(actual_cost)` nach Execution. `settle()` gibt überschüssige Reservation frei oder erhöht den Verbrauch um das Delta.
 
 ---
 
-### D-4: `scheduled-audit.yml` — Nightly Audit Workflow
+## Arbeitspaket 6: 4-Signal ProvenanceRecord — End-to-End Audit-Kette
 
-| Eigenschaft | Wert |
-|---|---|
-| **Status** | Offen |
+> **Betroffene Dateien**: [`search.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/collection/search.rs), [`fusion.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/fusion.rs)  
+> **Schwere**: Feature — Compliance-Requirement für Enterprise-Kunden
 
-**Umfang**: Cron 03:00 UTC, Triple-Test, `cargo audit`, Gate-Stack, Reporting.
+### Ist-Zustand
+
+`ProvenanceRecord` existiert in `memfuse-core` und hat Felder für `vector_score`, `text_score`, `graph_score`, `fused_score`, `rerank_score`. Aber in der gesamten Fusion-Pipeline werden **31× `provenance: None`** gesetzt (verifiziert in `fusion.rs` und `search.rs`).
+
+### Implementierungsplan
+
+```
+1. `build_provenance()` Hilfsfunktion in fusion.rs:
+   fn build_provenance(
+       vector_score: Option<f32>,
+       text_score: Option<f32>, 
+       graph_score: Option<f32>,
+       fused_score: f32,
+   ) -> ProvenanceRecord
+
+2. In reciprocal_rank_fusion():
+   - Jeder Input-Kanal (vector_results, text_results, graph_results) 
+     trägt seinen Kanal-Score am ScoredDocument
+   - Nach RRF-Merge: ProvenanceRecord mit allen Kanal-Scores befüllen
+
+3. In hybrid_search_with_query():
+   - ProvenanceRecord wird durchgereicht durch Filter, Importance, Reranking
+   - Jede Stage ergänzt ihren Beitrag (rerank_score, importance_effective_score)
+
+4. Query-Flag: `include_provenance: bool` (Default: false für Performance)
+   - Wenn false: provenance = None (Zero-Overhead-Pfad bleibt)
+   - Wenn true: Vollständige Provenance-Kette befüllt
+```
+
+### Nicht-offensichtlich
+
+Die `matched_signals: Vec<String>` in `SearchResult` ist **immer leer** (Zeile 345, 383). Diese sollte parallel zur ProvenanceRecord befüllt werden: `["vector", "text", "graph"]` je nachdem welche Kanäle einen Score > 0 geliefert haben.
 
 ---
 
-## Entfernte / korrigierte Befunde aus dem Original
+## Arbeitspaket 7: Batch-Pfade auf Layer 2/3 durchziehen
 
-Die folgenden Befunde des Originals wurden als **ungültig, bereits behoben oder fehlerhaft referenziert** identifiziert:
+> **Betroffene Dateien**: `memfuse-db/src/collection/crud.rs`, `memfuse-agent/src/engine.rs`  
+> **Schwere**: Performance — bis zu 29× Throughput-Gain dokumentiert
 
-| Original-Befund | Warum entfernt/korrigiert |
-|---|---|
-| Befund-25: AES-GCM-SIV Nonce-Reuse | `encrypt_auto_nonce` mit OsRng seit SEC-01/ADR existiert |
-| Befund-20: GIL-Retention FFI | `py.allow_threads()` bereits implementiert (Audit bestätigt BEHOBEN) |
-| Befund-21: Sub-Interpreter Runtime | Bereits mit `ImportError` abgewiesen (Audit bestätigt BEHOBEN) |
-| Befund-19: u64→float Precision | PyO3 `#[pyfunction]` konvertiert `u64` direkt zu Python `int` — kein Float-Durchgang |
-| Befund-22: Executor Blocking Parsing | `spawn_blocking` ist bereits konsistent implementiert (Audit: `memfuse-tauri` BEHOBEN) |
-| Befund-15: HNSW Dim-Mismatch | ADR-034 hat `assert_eq!(a.len(), b.len())` in Release-Builds erzwungen. Dimension-Check am Insert-Eingang muss verifiziert werden — aber das Panic-via-UB Problem ist gelöst |
-| Befund-13: BM25 NaN | Negative IDF Clamping auf 1e-6 bereits behoben (Audit memfuse-text BEHOBEN) |
-| Befund-18: Write Skew Token Budget | `ContextManager` ist per-Request — kein `SharedTokenBudget` existiert |
-| Befund-16: Hub Node Explosion | `MAX_VISITED_NODES`-Cap bereits implementiert (Audit memfuse-graph BEHOBEN) |
-| Befund-17: Dangling Edges Tombstone | Teilweise verifiziert — Graph-GC existiert über `traverse_links` visited-Set |
-| Befund-24: Key Domain Confusion | Muss verifiziert werden, aber ist spekulativ ohne aktuelle `key_manager.rs` Analyse |
-| Befund-23: RRF Tie Non-Determinism | `tie_breaker_sort` existiert in fusion.rs (verifiziert in Audit BEHOBEN) |
-| P1-C: AGT-INDEX-002 | Bereits als RESOLVED markiert, ADR-047 angelegt, WORKING_STATE zeigt 0 offene Tags |
-| P2-B: DiskANN ADR-037 | ADR-037 Status: ✅ Implementiert (2026-09-03) |
-| `overflow-checks = true` | Bereits in `Cargo.toml` Zeile 107 gesetzt |
-| ADR-Nummern 028-033 | Im Original als "neu" referenziert, existieren aber bereits alle in DECISIONS.md |
+### Ist-Zustand
+
+- `Collection::insert_many()` existiert ([crud.rs:358+](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/collection/crud.rs#L358)) — korrekt implementiert mit Single-Lock-Acquisition
+- `Collection::upsert_many()` existiert ebenfalls
+- **Aber**: `OrchestratorEngine` nutzt ausschließlich Single-Insert pro Step
+- **Aber**: `ContextCompactor::compact()` verarbeitet Chunks einzeln
+- **Aber**: `McpServer::call_tool("memfuse_insert")` unterstützt kein Batch
+
+### Plan
+
+1. **`memfuse_batch_insert` MCP-Tool**: Neues Tool in `memfuse-mcp` das `insert_many()` exposed
+2. **`OrchestratorEngine::batch_persist()`**: Sammelt Step-Outputs und schreibt sie als Batch statt als N Einzel-Inserts (amortisiert WAL-fsync-Kosten)
+3. **`ContextCompactor::compact_batch()`**: Verarbeitet alle zu kompaktierenden Chunks in einem einzigen RW-Zyklus statt N einzelner delete_op + insert Zyklen
 
 ---
 
-## Abhängigkeitsgraph
+## Arbeitspaket 8: Cluster-Stubs konsequent entfernen oder hinter Feature-Gate isolieren
+
+> **Betroffene Dateien**: [`lib.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/lib.rs#L1055-L1096)  
+> **Schwere**: MEDIUM — Toter Code, API-Verwirrung
+
+### Ist-Zustand (verifiziert)
+
+```rust
+// memfuse-db/src/lib.rs:1055-1096
+#[cfg(feature = "cluster")]
+pub async fn init_cluster(&self, _node_id: u64, _addr: &str) -> Result<()> {
+    Err(MemFuseError::PolicyViolation("Cluster feature is archived/disabled".into()))
+}
+// ... 4 weitere identische Stubs
+```
+
+Alle Cluster-Methoden sind hinter `#[cfg(feature = "cluster")]` — das Feature existiert aber **nicht** in der `Cargo.toml` Features-Liste. Der Code ist kompilierbar aber **nie erreichbar**.
+
+### Entscheidung
+
+Gemäß ADR-007/ADR-005: Cluster ist "Frozen Zone". Die Stubs sind dead code und sollten **vollständig entfernt** werden (nicht "refactored"). Wenn Cluster in Zukunft implementiert wird, wird es von Grund auf neu designed, nicht auf Basis dieser Platzhalter.
+
+---
+
+## Abhängigkeitsgraph (Erweitert)
 
 ```mermaid
 graph TD
-    A1["A-1: Silent let _ = Fix"] --> |"Keine Deps"| DONE1["✅ Merge"]
-    A2["A-2: FFI panic! Fix"] --> |"Keine Deps"| DONE2["✅ Merge"]
-    A3["A-3: Legacy Key Guard"] --> |"Keine Deps"| DONE3["✅ Merge"]
-    A4["A-4: Audit Append-Only"] --> |"Keine Deps"| DONE4["✅ Merge"]
+    subgraph "Phase 1: Concurrency & Korrektheit"
+        AP1["AP-1: HNSW CoW Rebuild"] --> |"Search unblockiert"| AP7["AP-7: Batch Layer 2/3"]
+        AP2["AP-2: Router Calibration Fix"] --> |"Konfidenz konvergiert"| AP6["AP-6: Provenance"]
+        AP3["AP-3: OCC Retry Protocol"] --> |"Consolidation stabil"| AP7
+    end
     
-    B1["B-1: Dual Calibration Fix"] --> B2["B-2: TOCTOU Fix"]
-    B2 --> B4["B-4: Scoring Unification"]
-    B3["B-3: HashSet Migration"] --> |"Keine Deps"| DONE5["✅ Merge"]
-    B5["B-5: PinGuard Drop"] --> |"Keine Deps"| DONE6["✅ Merge"]
+    subgraph "Phase 2: Feature Completion"
+        AP5["AP-5: Agent Dead-Letter"] --> |"Keine Deps"| DONE5["✅"]
+        AP6 --> |"Keine Deps"| DONE6["✅"]
+        AP7 --> |"Keine Deps"| DONE7["✅"]
+        AP8["AP-8: Cluster Cleanup"] --> |"Keine Deps"| DONE8["✅"]
+    end
     
-    B4 --> C1["C-1: ProvenanceRecord"]
-    B4 --> C2["C-2: Cascade Routing"]
-    
-    C4["C-4: Benchmark Suite"] --> |"Keine Deps"| DONE7["✅ Merge"]
-    
-    D1["D-1: Gate 7 Fix"] --> |"Keine Deps"| DONE8["✅ Merge"]
-    D2["D-2: Unwrap Baseline"] --> |"Keine Deps"| DONE9["✅ Merge"]
-    D3["D-3: CI Fixer Format"] --> |"D-1 + D-2"| D4["D-4: Scheduled Audit"]
+    subgraph "Phase 3: Out-of-Core (Eigenständig)"
+        AP4["AP-4: DiskANN Lifecycle"]
+        AP4 --> |"Build Pipeline"| AP4B["4b: Hybrid Index"]
+        AP4B --> |"Mmap Warmup"| AP4C["4c: Fault Tolerance"]
+    end
 ```
 
 ---
 
-## Gesamte Priorisierungsmatrix
+## Priorisierungsmatrix
 
-| Prio | Task | Crate | Schwere | ADR |
-|:---:|---|---|---|---|
-| 1 | A-1: Silent `let _ =` | memfuse-db | BLOCKER | — |
-| 2 | A-2: FFI panic! | memfuse-py | CRITICAL | ADR-048 |
-| 3 | A-4: Audit Append-Only | memfuse-agent/db | CRITICAL | ADR-050 |
-| 4 | A-3: Legacy Key | memfuse-store | MAJOR/SEC | ADR-049 |
-| 5 | B-1: Dual Calibration | memfuse-router | MAJOR | ADR-051 |
-| 6 | B-2: TOCTOU Lock | memfuse-router | MAJOR | — |
-| 7 | B-4: Scoring Unification | memfuse-router | MAJOR | — |
-| 8 | B-5: PinGuard Drop | memfuse-checkpoint | MAJOR | ADR-052 |
-| 9 | B-3: HashSet Migration | memfuse-router | MEDIUM | — |
-| 10 | C-1: ProvenanceRecord | memfuse-db | Feature | — |
-| 11 | C-2: Cascade Routing | memfuse-router | Feature | — |
-| 12 | C-4: Benchmark Suite | benches/ | Feature | — |
-| 13 | D-1: Gate 7 Fix | xtask/CI | Infra | — |
-| 14 | D-2: Unwrap Baseline | xtask/CI | Infra | — |
-| 15 | D-3: CI Fixer Format | CI | Infra | — |
-| 16 | D-4: Scheduled Audit | CI | Infra | — |
+| Prio | AP | Komponente | Algorithmus/Logik | Erwarteter Effekt | Geschätzter Aufwand |
+|:---:|:---:|---|---|---|---|
+| 1 | **AP-1** | HNSW Rebuild | CoW + 2-Phase Lock | Eliminiert 5–30s Latenz-Spikes | 3–5 Tage |
+| 2 | **AP-2** | Router Calibration | Dual-Loop → Single Conformal | Konvergente Schwellwerte, verteilungsfrei | 1–2 Tage |
+| 3 | **AP-3** | Context Compaction | OCC Refresh + Crash Recovery | Recoverable Consolidation | 2–3 Tage |
+| 4 | **AP-5** | Agent Orchestrator | Dead-Letter + Timeout + Budget | Robuste Multi-Step Workflows | 2–3 Tage |
+| 5 | **AP-6** | 4-Signal Fusion | ProvenanceRecord End-to-End | Audit-Compliance, Debugging | 2 Tage |
+| 6 | **AP-7** | Batch Throughput | Layer 2/3 Batch-Pfade | Bis zu 29× Write-Throughput | 2 Tage |
+| 7 | **AP-8** | Cluster Stubs | Dead Code Removal | Sauberere API | 0.5 Tage |
+| 8 | **AP-4** | DiskANN | Full Lifecycle | Out-of-Core Vektorsuche | 3–4 Wochen |
 
 ---
 
-## Verifikationsprotokoll (für jede Phase)
+## Zu den von dir genannten Befunden
+
+### SEC-01 (Windows DACL UAF): ❌ Kein UAF
+
+Die [`set_restrictive_file_acl()`](file:///home/freddy/Projekte/memfuse/crates/memfuse-store/src/wal.rs#L517-L644) Funktion ist **korrekt implementiert**:
+- `TokenGuard` RAII-Guard schließt den Token-Handle (Zeile 542–549)
+- Buffer wird via `vec![0u8; len]` allokiert und lebt bis Funktionsende (Zeile 564)
+- Pointer `token_user` zeigt in den lebenden `buffer` — kein Use-After-Free
+- `owner_sid` null-Check existiert (Zeile 585–589)
+
+**Bewertung**: False Positive. Der Code folgt dem korrekten Win32-Pattern (Query-Size → Allocate → Query-Data).
+
+### SEC-02 (Flatbuffers Validation): ✅ Bereits abgesichert
+
+[`ipc/mod.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-core/src/ipc/mod.rs) verwendet `flatbuffers::root::<SearchResponse>(buf)` (Zeile 741 in generated code), was den **Verifier** aktiviert. Proptest für Garbage-Input existiert (Zeile 38–42). Ein explizites Größenlimit (max 10 MB) auf dem Eingangs-Slice wäre dennoch sinnvoll als Defense-in-Depth, ist aber kein kritischer Befund.
+
+### SEC-03 (ZIP-Bombing): ✅ Bereits implementiert
+
+[`docx.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-tauri/src/ingestion/docx.rs#L5-L167) hat eine vollständige `DocxConfig` mit:
+- `max_compression_ratio: 100.0` (Zeile 19)
+- `max_uncompressed_size_bytes: 500 MB` (Zeile 20)
+- `max_entries: 1000` (Zeile 21)
+- Streaming-Validation mit Header + Actual-Ratio-Doppelcheck (Zeile 95–163)
+
+**Bewertung**: Vollständig gelöst. Die Default-Werte (500 MB, 100:1) sind sogar konservativer als die vorgeschlagenen 100 MB.
+
+### SEC-07 (MCP Plaintext): ✅ Bereits verschlüsselt
+
+[`sandbox.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-mcp/src/sandbox.rs#L55-L91) zeigt: `VolatileToolResult::encrypt()` verschlüsselt Tool-Outputs **sofort** bei `store_volatile()` (Zeile 218). Der Plaintext-Parameter `output: &[u8]` ist ein **Slice-Reference**, kein owned Buffer — er zeigt auf den Caller-Stack und wird nach dem Encrypt-Call nicht weiter referenziert. `Zeroizing<Vec<u8>>` wrappt den Ciphertext (Zeile 61). Session-Key wird bei Drop via `emergency_wipe()` zeroized (Zeile 238).
+
+**Bewertung**: Korrekt implementiert. Das einzige theoretische Risiko ist, dass der Caller den Plaintext-Buffer nicht selbst zeroized — aber das ist Aufrufer-Verantwortung, nicht Sandbox-Verantwortung.
+
+### SEC-04 (TOCTOU Context Compaction): ⚠️ Teilweise adressiert
+
+Siehe AP-3 oben. Die `ConsolidationSession` hat OCC, aber kein Retry-Protocol und keine Crash-Recovery für verwaiste Intents.
+
+### SEC-05 (HNSW Rebuild Mutex): ✅ Bestätigt — siehe AP-1
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. **AP-1 Delta-Merge-Strategie**: Sollen Inserts, die während des Rebuilds ankommen, in den neuen Index eingespeist werden (höhere Korrektheit, komplexerer Merge), oder soll der alte Index verworfen und der neue Index ab dem Swap-Zeitpunkt alle neuen Inserts akzeptieren (einfacher, aber kurzes Fenster mit möglicherweise fehlenden Einträgen in Suchergebnissen)?
+
+> [!IMPORTANT]
+> 2. **AP-2 Conformal Warm-up-Schwelle**: `window_total > 10` oder `>= 50` als Minimum für conformal-Umschaltung? Niedrigere Schwelle = schnellere Adaption, höheres Risiko von Fehlkalibrierung in der Anfangsphase.
+
+> [!IMPORTANT]
+> 3. **AP-4 Priorität**: DiskANN Lifecycle ist der größte Aufwand (3–4 Wochen). Ist das für das nächste Release relevant, oder soll es auf die Roadmap Phase 3 geschoben werden?
+
+---
+
+## Verifikationsprotokoll
 
 ```bash
-# Nach jeder Phase:
+# Nach jedem Arbeitspaket:
 cargo check --workspace --exclude memfuse-tauri
 cargo test --workspace --exclude memfuse-tauri
-cargo clippy --workspace --exclude memfuse-tauri -- -D warnings
-cargo fmt --all -- --check
-cargo run -p xtask -- sync-docs --check
+just check          # Clippy + rustfmt
+just triple-test    # Flaky detection
+just dag-check      # Layer DAG integrity
 ```
