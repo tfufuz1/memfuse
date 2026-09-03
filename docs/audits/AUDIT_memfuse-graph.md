@@ -1,7 +1,7 @@
 # Audit Report: `memfuse-graph` (CSR Graph Engine, PPR, BFS & Session-DAG)
 
-**Date:** 2026-09-02T23:29:04Z
-**Session:** a6e3902d
+**Date:** 2026-09-02T08:16:08Z
+**Session:** 31767094
 **Auditor:** Senior Rust Graph-Algorithmen-Ingenieur (Jules)
 **Layer:** Layer 1 (CSR-Wissensgraph + Session-DAG)
 
@@ -9,10 +9,10 @@
 
 ## 1. Executive Summary
 
-A comprehensive verification and quality audit was conducted on `memfuse-graph` (comprising `csr.rs`, `ppr.rs`, `community.rs`, `session_dag.rs`, and `lib.rs`).
+A comprehensive verification and quality audit was conducted on `memfuse-graph` (comprising `csr.rs`, `ppr.rs`, `community.rs`, `bfs.rs`, `session_dag.rs`, and `lib.rs`).
 The crate enforces `#![forbid(unsafe_code)]`, strict `AGT-GRAPH-001` TxId origin invariants, and zero unhandled panics (`.unwrap()`/`.expect()`) in production logic.
 
-All 84 unit tests, proptest suites, and benchmark integration tests pass cleanly, verifying structural CSR compact offsets, PPR mass conservation, hub node visited cap limits, and bi-temporal traversal consistency. Zero open `AI-TAG` or `ANCHOR` findings remain in `memfuse-graph`.
+All 77 unit tests and benchmark integration tests pass cleanly, verifying structural CSR compact offsets, PPR mass conservation, hub node visited cap limits, and bi-temporal traversal consistency.
 
 ---
 
@@ -23,7 +23,7 @@ All 84 unit tests, proptest suites, and benchmark integration tests pass cleanly
 | **Cargo Check** | PASSED | `cargo check -p memfuse-graph --all-features` |
 | **Cargo Clippy** | PASSED | `cargo clippy -p memfuse-graph -- -D warnings` |
 | **Cargo Format** | PASSED | `cargo fmt --check -p memfuse-graph` |
-| **Cargo Test** | PASSED | `cargo test -p memfuse-graph --all-features` (84/84 passed) |
+| **Cargo Test** | PASSED | `cargo test -p memfuse-graph --all-features` (77/77 passed) |
 | **Workspace Check** | PASSED | `cargo check --workspace --exclude memfuse-tauri` |
 | **Unsafe Audit** | PASSED | Explicit `#![forbid(unsafe_code)]` enforced in `lib.rs` |
 | **Zero-Panic Rule** | PASSED | Zero `.unwrap()`/`.expect()` calls in non-test paths |

@@ -242,9 +242,8 @@ async fn test_missing_arguments() {
     assert!(text.contains("id fehlt") || text.contains("text fehlt"));
 }
 
-// ANCHOR[TEST:MCP-002] STATUS:DONE (ID: TEST:MCP-002) (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage
-// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:MCP-002) (TS:2026-09-02T08:19:33Z) (SESSION: e2c39779) PRÜFER-KONTEXT: FRESH — Error-Path Coverage verified in test_malformed_request_returns_error and unit tests.
-// REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:MCP-002) (TS:2026-09-02T23:25:00Z) (SESSION: 4e4bb530) PRÜFER-KONTEXT: FRESH — Independent review pass confirming complete JSON-RPC 2.0 error path coverage across test_malformed_request_returns_error, test_unknown_tool_returns_error, test_search_missing_collection_returns_error, test_insert_empty_text_returns_error, test_jsonrpc_null_id_preserved_in_error_response, test_tools_call_without_name_field_returns_error, test_insert_missing_collection_field_returns_error, and unit tests in tests.rs.
+// ANCHOR[TEST:MCP-002] STATUS:IN-PROGRESS (TS:2026-08-31T21:12:53Z) (SESSION: 2c814094) — Error-Path Coverage
+// REVIEW-PASS[1/2] STATUS:IN-PROGRESS (TS:2026-09-02T08:19:33Z) (SESSION: e2c39779) PRÜFER-KONTEXT: FRESH — Error-Path Coverage verified in test_malformed_request_returns_error and unit tests.
 #[tokio::test]
 async fn test_malformed_request_returns_error() {
     // TESTZWECK: Fehlende Pflichtparameter müssen Fehlermeldung erzeugen

@@ -505,14 +505,10 @@ mod tests {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let payload = vec![0xABu8; MAX_CHUNK_SIZE]; // Exactly 100 MB
-        let encrypted = wal
-            .encrypt_chunk(&payload)
-            .expect("100MB payload encryption");
+        let encrypted = wal.encrypt_chunk(&payload).expect("100MB payload encryption");
         assert_eq!(encrypted.len(), 12 + MAX_CHUNK_SIZE + 16);
 
-        let decrypted = wal
-            .decrypt_chunk(&encrypted)
-            .expect("100MB payload decryption");
+        let decrypted = wal.decrypt_chunk(&encrypted).expect("100MB payload decryption");
         assert_eq!(decrypted.len(), MAX_CHUNK_SIZE);
     }
 
@@ -565,10 +561,7 @@ mod tests {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let max_id = vec![0x33u8; 10_000];
         let res = EncryptedWal::new(km, &max_id);
-        assert!(
-            res.is_ok(),
-            "file_id of exactly 10,000 bytes MUST be accepted"
-        );
+        assert!(res.is_ok(), "file_id of exactly 10,000 bytes MUST be accepted");
     }
 
     #[test]
@@ -586,10 +579,7 @@ mod tests {
     fn test_wal_hmac_max_key_boundary() {
         let max_key = vec![0x55u8; 10_000];
         let res = WalHmac::new(&max_key);
-        assert!(
-            res.is_ok(),
-            "integrity_key of exactly 10,000 bytes MUST be accepted"
-        );
+        assert!(res.is_ok(), "integrity_key of exactly 10,000 bytes MUST be accepted");
     }
 
     #[test]

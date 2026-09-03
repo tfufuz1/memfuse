@@ -19,21 +19,21 @@ Ergebnis: **1 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 8740 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | 1 | 4512 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2390 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-core` | 0 | 8547 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | 1 | 4501 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-crypto` | 1 | 2378 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 7027 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11211 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 13487 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5154 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 18268 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 4433 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-db` | 2 | 18265 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 4435 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-embed` | 3 | 1191 | 🧊 Optional |  |
-| `memfuse-ollama` | 3 | 3045 | 🟢 Clean |  |
-| `memfuse-py` | 3 | 1486 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-ollama` | 3 | 3025 | 🟢 Clean |  |
+| `memfuse-py` | 3 | 1487 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 2434 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3435 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 4417 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 4409 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

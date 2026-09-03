@@ -234,6 +234,7 @@ fn validate_vector(vector: &[f32]) -> PyResult<()> {
     Ok(())
 }
 
+
 /// Validates a document ID provided as a string or numeric value.
 fn validate_id_obj(id_obj: &pyo3::Bound<'_, pyo3::types::PyAny>) -> PyResult<String> {
     if let Ok(id_str) = id_obj.extract::<String>() {

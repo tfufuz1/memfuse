@@ -654,9 +654,6 @@ mod tests {
     // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-02T08:18:07Z) (SESSION: b952fab8)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified test_kmu_55_compounds_suite (100% recall across 55 test cases) and entire memfuse-text test suite.
-    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-02T23:17:17Z) (SESSION: adced73f)
-    // PRÜFER-KONTEXT: FRESH
-    // BEFUND: Re-verified memfuse-text gate-stack, zero unsafe, APM-7 slicing safety, and 77/77 tests passed.
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
