@@ -1,35 +1,7 @@
-platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
-rootdir: /app/crates/memfuse-py
-configfile: pyproject.toml
-plugins: anyio-4.14.2
-collected 36 items
-
-crates/memfuse-py/tests/test_bindings.py .............                  [ 36%]
-crates/memfuse-py/tests/test_errors.py .........                        [ 61%]
-crates/memfuse-py/tests/test_gil_concurrency.py ...                     [ 69%]
-crates/memfuse-py/tests/test_mcp_real.py ...                            [ 77%]
-crates/memfuse-py/tests/test_mcp_stub.py ..                             [ 83%]
-crates/memfuse-py/tests/test_recovery.py ..                             [ 88%]
-crates/memfuse-py/tests/test_subinterpreter.py ....                     [100%]
-
-```
-
-Ergebnis: **Alle 36 Tests erfolgreich (PASSED)**.
-
----
-
-## 5. Audit-Status
-
-- **Zero-Panic-Boundary:** 🟢 In Ordnung
-- **GIL Release:** 🟢 In Ordnung
-- **Sub-Interpreter Guard:** 🟢 In Ordnung
-- **Unsafe-Code:** 🟢 0 Unsafe Blocks (`#![forbid(unsafe_code)]`)
-- **DAG-Invariante:** 🟢 Formell genehmigte Ausnahme (ADR-044 / ARCH:DAG-003)
-- **Gesamtergebnis:** 🟢 **PASSED** (Stand: 2026-09-02)
 # Audit-Report: `memfuse-py` (Layer 3 — Python PyO3 Bindings)
 
-**Datum/Zeit:** 2026-09-01T23:15:00Z
-**Session:** `9cd9a63a`
+**Datum/Zeit:** 2026-09-03T19:29:58Z
+**Session:** `94a6a82c`
 **Crate:** `memfuse-py`
 **Rolle:** Senior Rust FFI-Engineer — PyO3, GIL, Zero-Panic-Boundary
 
@@ -60,11 +32,39 @@ The current audit verified:
 
 - **Rust Unit & Sanity Checks**: `cargo check -p memfuse-py --all-features` (0 errors, 0 warnings).
 - **Clippy Analysis**: `cargo clippy -p memfuse-py --no-deps -- -D warnings` (0 findings).
-- **Python Integration Test Suite**: 38 pytest tests executed across `tests/test_bindings.py`, `tests/test_errors.py`, `tests/test_gil_concurrency.py`, `tests/test_mcp_real.py`, `tests/test_mcp_stub.py`, `tests/test_recovery.py`, and `tests/test_subinterpreter.py` — 100% passed.
+- **Rust Integration Test Suite**: `cargo test -p memfuse-py --all-features` (100% passed).
+- **Tier 1 Concurrency Verification**: 5 consecutive runs of `cargo test -p memfuse-py --all-features -- --test-threads=8` executed with 0 failures and 0 panics.
 
 ---
 
-## Changes Implemented in Session `9cd9a63a`
+## Audit Findings in Session `94a6a82c` (TS: 2026-09-03T19:29:58Z)
+
+| ID | Kategorie | Severity | Datei | Zeile | Beschreibung |
+|---|---|---|---|---|---|
+| `AGT-PY-ff475c8e` | BUG | MAJOR | `crates/memfuse-py/src/lib.rs` | 1435 | `_trigger_panic_for_test` returns `PyRuntimeError` directly instead of panicking inside `run_blocking_ffi` |
+
+### Detailed Analysis (`AGT-PY-ff475c8e`)
+- **Befund:** `_trigger_panic_for_test` constructs and returns `PyRuntimeError` directly instead of causing an actual Rust panic wrapped in `run_blocking_ffi`.
+- **Risiko:** FFI panic boundary catching (`catch_unwind` in `run_blocking_ffi`) is not exercised by pytest tests, causing `tests/test_panic_isolation.py` to fail and masking panic boundary regressions.
+- **Empfehlung:** Update `_trigger_panic_for_test` to invoke `run_blocking_ffi(py, || panic!("{}", msg))`.
+
+---
+
+## Chaos-Engineering-Audit 2026-09-03
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | OK | WAL-Flushing & Atomic Storage recover on restart | — |
+| Disk-Full ENOSPC | OK | Storage error maps to MemFuseIOError, no panic | — |
+| OOM / Backpressure | OK | MAX_BATCH_SIZE (10,000) & thread pool bounds enforced | — |
+| SIGBUS mmap-truncate | N/A | No direct mmap usage in memfuse-py | — |
+| SIGKILL recovery | OK | LSM/WAL state clean on reopen | — |
+
+---
+
+## Historical Session Audits
+
+### Changes Implemented in Session `9cd9a63a`
 
 1. **`crates/memfuse-py/src/lib.rs`**:
    - Enhanced `validate_id` to enforce `id.len() <= MAX_ID_LENGTH` (1024 bytes), returning `MemFuseValueError` on violation.
@@ -73,9 +73,7 @@ The current audit verified:
    - Added `test_long_id_validation` verifying oversized document ID handling.
    - Added `test_long_collection_name_validation` verifying oversized collection name handling.
 
----
-
-## Changes Implemented in Session `8e159fc9` (TS: 2026-09-02T08:30:27Z)
+### Changes Implemented in Session `8e159fc9` (TS: 2026-09-02T08:30:27Z)
 
 1. **`crates/memfuse-py/src/lib.rs`**:
    - Standardized `validate_collection_name`, `validate_db_path`, and `validate_query_text` to return `MemFuseValueError` instead of standard `PyValueError`.
