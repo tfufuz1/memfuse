@@ -2,6 +2,23 @@
 
 use memfuse_core::{MemFuseError, Result, TokenBudget};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+fn serialize_sorted_set<S>(set: &HashSet<u64>, s: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut v: Vec<u64> = set.iter().copied().collect();
+    v.sort_unstable();
+    v.serialize(s)
+}
+
+fn deserialize_set<'de, D>(d: D) -> std::result::Result<HashSet<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<u64>::deserialize(d).map(|v| v.into_iter().collect())
+}
 
 /// Represents a Small Language Model (SLM) target and its domain expertise parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10,8 +27,12 @@ pub struct SlmProfile {
     pub name: String,
     /// MCP endpoint address or URI for client communication.
     pub mcp_endpoint: String,
-    /// Vector of graph community IDs this SLM is domain-responsible for.
-    pub domain_communities: Vec<u64>,
+    /// Set of graph community IDs this SLM is domain-responsible for.
+    #[serde(
+        serialize_with = "serialize_sorted_set",
+        deserialize_with = "deserialize_set"
+    )]
+    pub domain_communities: HashSet<u64>,
     /// Token budget configuration for prompt context trimming.
     pub token_budget: TokenBudget,
     /// Minimum relevance threshold score required for routing candidates.
@@ -23,14 +44,14 @@ impl SlmProfile {
     pub fn new(
         name: impl Into<String>,
         mcp_endpoint: impl Into<String>,
-        domain_communities: Vec<u64>,
+        domain_communities: impl IntoIterator<Item = u64>,
         token_budget: TokenBudget,
         min_relevance_score: f32,
     ) -> Self {
         Self {
             name: name.into(),
             mcp_endpoint: mcp_endpoint.into(),
-            domain_communities,
+            domain_communities: domain_communities.into_iter().collect(),
             token_budget,
             min_relevance_score,
         }
@@ -60,7 +81,7 @@ impl SlmProfile {
     pub fn try_new(
         name: impl Into<String>,
         mcp_endpoint: impl Into<String>,
-        domain_communities: Vec<u64>,
+        domain_communities: impl IntoIterator<Item = u64>,
         token_budget: TokenBudget,
         min_relevance_score: f32,
     ) -> Result<Self> {
@@ -325,5 +346,43 @@ mod tests {
         let adjusted = state.recalibrate_conformal(0.8);
         assert!(adjusted);
         assert!(state.calibrated_min_score >= 0.3 && state.calibrated_min_score <= 1.2);
+    }
+
+    #[test]
+    fn test_domain_communities_contains_is_o1() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let communities: HashSet<u64> = (1..=1000).collect();
+        let profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost:8000/mcp",
+            communities,
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        // Assert .contains(&target_id) returns correct bool
+        assert!(profile.domain_communities.contains(&500));
+        assert!(profile.domain_communities.contains(&1));
+        assert!(profile.domain_communities.contains(&1000));
+        assert!(!profile.domain_communities.contains(&0));
+        assert!(!profile.domain_communities.contains(&1001));
+
+        // Assert JSON serialization produces sorted array
+        let json_str = serde_json::to_string(&profile)?;
+        let json_val: serde_json::Value = serde_json::from_str(&json_str)?;
+
+        let arr = json_val["domain_communities"]
+            .as_array()
+            .ok_or("domain_communities is not an array")?;
+
+        assert_eq!(arr.len(), 1000);
+        let expected_sorted: Vec<u64> = (1..=1000).collect();
+        let actual_arr: Vec<u64> = arr.iter().filter_map(|v| v.as_u64()).collect();
+        assert_eq!(actual_arr, expected_sorted);
+
+        // Round-trip deserialization
+        let deserialized: SlmProfile = serde_json::from_str(&json_str)?;
+        assert_eq!(deserialized, profile);
+
+        Ok(())
     }
 }
