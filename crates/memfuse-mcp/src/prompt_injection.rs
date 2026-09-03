@@ -99,8 +99,8 @@ impl SecurityAuditLogger {
         if let Some(path) = &self.file_path {
             if let Ok(json_line) = serde_json::to_string(&record) {
                 if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-                    if let Err(e) = writeln!(file, "{json_line}") {
-                        tracing::warn!("Failed to write security audit record: {e}");
+                    if let Err(err) = writeln!(file, "{json_line}") {
+                        tracing::warn!(?err, "Failed to write security audit record to file");
                     }
                 }
             }

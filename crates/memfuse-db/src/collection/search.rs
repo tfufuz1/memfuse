@@ -708,8 +708,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 .await?;
             filter_pre_rrf(raw_vec_results)
         } else {
-            self.search_filtered_at(vector, candidate_k, None, seq)
-                .await?
+            let raw_vec_results = self
+                .search_filtered_at(vector, candidate_k, None, seq)
+                .await?;
+            filter_pre_rrf(raw_vec_results)
         };
 
         // 2. Text Signal
