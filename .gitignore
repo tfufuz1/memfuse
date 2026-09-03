@@ -26,8 +26,7 @@ clippy*.log
 *_output.txt
 memfuse_orphaned_checkpoints.json
 
-# TODO: .unwrap-baseline.json is generated, not tracked in git (or commit if team prefers)
-.unwrap-baseline.json
+# TODO: .unwrap-baseline.json is tracked in repository to provide baseline for Gate 2
 
 # Kompilierte Ad-hoc-Binaries ohne Cargo-Build-System
 /fix_unsafe
