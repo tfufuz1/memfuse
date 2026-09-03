@@ -12,14 +12,62 @@ use std::sync::Arc;
 /// Calibrated confidence metrics for a routing decision.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfidenceMetrics {
-    /// Lower bound of the confidence interval.
-    pub score_lower: f32,
-    /// Upper bound of the confidence interval.
-    pub score_upper: f32,
+    /// Lower bound of the confidence interval (None when uncalibrated).
+    pub score_lower: Option<f32>,
+    /// Upper bound of the confidence interval (None when uncalibrated).
+    pub score_upper: Option<f32>,
     /// Whether the score was calibrated via conformal prediction.
     pub calibrated: bool,
     /// Current conformal quantile threshold used for this decision.
     pub quantile_threshold: f32,
+    /// Non-conformity score for the routing outcome.
+    pub non_conformity_score: f32,
+    /// Selection margin (best_score / second_best_score).
+    pub selection_margin: f32,
+}
+
+/// Magic Number als benannte Konstante
+pub const COMMUNITY_RELEVANCE_BOOST: f32 = 1.2;
+
+pub struct ProfileScoringResult {
+    /// Aggregierter Score für Profil-Selektion
+    pub aggregated_score: f32,
+    /// Maximaler Einzel-Chunk-Score (für min_relevance_score-Check)
+    pub max_score: f32,
+    /// Ob mindestens ein Chunk aus einer Domain-Community stammt
+    pub community_matched: bool,
+}
+
+pub fn score_profile(
+    profile: &SlmProfile,
+    chunks: &[(ContextChunk, Option<u64>)],
+) -> ProfileScoringResult {
+    let mut aggregated = 0.0f32;
+    let mut max_s = 0.0f32;
+    let mut community_matched = false;
+
+    for (chunk, comm_id) in chunks {
+        if !chunk.relevance.is_finite() {
+            continue;
+        }
+        let mut s = chunk.relevance;
+        if let Some(cid) = comm_id {
+            if profile.domain_communities.contains(cid) {
+                s *= COMMUNITY_RELEVANCE_BOOST;
+                community_matched = true;
+            }
+        }
+        aggregated += s;
+        if s > max_s {
+            max_s = s;
+        }
+    }
+
+    ProfileScoringResult {
+        aggregated_score: aggregated,
+        max_score: max_s,
+        community_matched,
+    }
 }
 
 /// Result of a routing operation containing the selected profile and prepared context.
@@ -164,44 +212,53 @@ impl RouterEngine {
             }
         }
 
-        // 3. Select profile and update calibration metrics atomically within a single write lock scope
-        let profile_scores = compute_profile_scores(&profiles, &chunks);
-
-        let (_selected_profile_idx, selected_profile, confidence_metrics) = {
+        // 3. Select profile, update calibration metrics, and build confidence metrics atomically within a single write lock scope
+        let (selected_profile, confidence_metrics) = {
             let mut cal = self.calibration.write();
-            let (selected_idx, profile, metrics) =
+
+            let (selected_idx, profile, mut metrics) =
                 self.select_profile_cascade(&chunks, &profiles, &cal)?;
 
+            let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
             let second_best = profile_scores
                 .iter()
                 .filter(|(idx, _)| **idx != selected_idx)
                 .map(|(_, s)| *s)
                 .fold(0.0f32, f32::max);
-            let confidence = if second_best > 0.0 {
+            let confidence_ratio = if second_best > 0.0 {
                 (best_score / second_best) as f64
             } else {
-                2.0 // Nur ein Kandidat → hohe Konfidenz
+                2.0
             };
+            let non_conformity = (1.0 / confidence_ratio as f32).clamp(0.0, 1.0);
 
             if let Some(state) = cal.get_mut(&profile.name) {
                 state.times_selected += 1;
-                state.cumulative_confidence += confidence;
-
-                // Non-conformity score: margin between threshold and actual score.
-                // Measures how close the routing decision was to failing (or how badly it failed).
-                let q_threshold = state.conformal.quantile_threshold;
-                let non_conformity = (q_threshold - best_score).max(0.0).clamp(0.0, 1.0);
+                state.cumulative_confidence += confidence_ratio;
                 state.recalibrate_conformal(non_conformity);
+
+                metrics = ConfidenceMetrics {
+                    score_lower: if state.conformal.window_total > 30 {
+                        Some(best_score * (1.0 - state.conformal.alpha))
+                    } else {
+                        None
+                    },
+                    score_upper: None,
+                    calibrated: state.conformal.window_total > 10,
+                    quantile_threshold: state.conformal.quantile_threshold,
+                    non_conformity_score: non_conformity,
+                    selection_margin: confidence_ratio as f32,
+                };
             }
 
-            (selected_idx, profile, metrics)
+            (profile, metrics)
         };
 
-        // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget
+        // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
-        context_mgr.set_relevance_threshold(0.0);
+        context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
 
         Ok(RoutingDecision {
@@ -305,10 +362,16 @@ impl RouterEngine {
                     .map(|st| st.conformal.quantile_threshold)
                     .unwrap_or(profile.min_relevance_score);
                 let confidence = ConfidenceMetrics {
-                    score_lower: score * 0.9,
-                    score_upper: score * 1.1,
+                    score_lower: if is_calibrated {
+                        Some(score * (1.0 - state.map(|st| st.conformal.alpha).unwrap_or(0.05)))
+                    } else {
+                        None
+                    },
+                    score_upper: None,
                     calibrated: is_calibrated,
                     quantile_threshold: q_threshold,
+                    non_conformity_score: 0.0,
+                    selection_margin: 1.0,
                 };
                 return Ok((orig_idx, profile.clone(), confidence));
             }
@@ -323,7 +386,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)
@@ -335,10 +398,12 @@ impl RouterEngine {
         );
 
         let confidence = ConfidenceMetrics {
-            score_lower: fallback_score * 0.9,
-            score_upper: fallback_score * 1.1,
+            score_lower: None,
+            score_upper: None,
             calibrated: false,
             quantile_threshold: q_threshold,
+            non_conformity_score: 1.0,
+            selection_margin: 1.0,
         };
 
         Ok((fallback_idx, fallback_profile.clone(), confidence))
@@ -350,20 +415,7 @@ pub(crate) fn compute_profile_score(
     profile: &SlmProfile,
     chunks: &[(ContextChunk, Option<u64>)],
 ) -> f32 {
-    let mut aggregated_score = 0.0f32;
-    for (chunk, comm_id) in chunks {
-        if !chunk.relevance.is_finite() {
-            continue;
-        }
-        let mut score = chunk.relevance;
-        if let Some(c_id) = comm_id {
-            if profile.domain_communities.contains(c_id) {
-                score *= 1.2;
-            }
-        }
-        aggregated_score += score;
-    }
-    aggregated_score
+    score_profile(profile, chunks).aggregated_score
 }
 
 /// Computes candidate scores for all profiles across chunks.
@@ -383,19 +435,7 @@ pub(crate) fn compute_max_score(
     profile: &SlmProfile,
     chunks: &[(ContextChunk, Option<u64>)],
 ) -> f32 {
-    chunks
-        .iter()
-        .map(|(c, c_id)| {
-            let mut s = c.relevance;
-            if let Some(id) = c_id {
-                if profile.domain_communities.contains(id) {
-                    s *= 1.2;
-                }
-            }
-            s
-        })
-        .filter(|score| score.is_finite())
-        .fold(0.0f32, f32::max)
+    score_profile(profile, chunks).max_score
 }
 
 #[allow(dead_code)]
@@ -422,31 +462,13 @@ pub(crate) fn select_profile_from_chunks(
     let mut any_community_matched = false;
 
     for (idx, profile) in profiles.iter().enumerate() {
-        let mut aggregated_score = 0.0f32;
-        let mut matched_community = false;
-
-        for (chunk, comm_id) in chunks {
-            if !chunk.relevance.is_finite() {
-                continue;
-            }
-            let mut score = chunk.relevance;
-            if let Some(c_id) = comm_id {
-                if profile.domain_communities.contains(c_id) {
-                    score *= 1.2;
-                    matched_community = true;
-                    any_community_matched = true;
-                }
-            }
-            aggregated_score += score;
+        let scoring = score_profile(profile, chunks);
+        if scoring.community_matched {
+            any_community_matched = true;
         }
 
-        let max_score = compute_max_score(profile, chunks);
-
-        if matched_community
-            && (aggregated_score >= profile.min_relevance_score
-                || max_score >= profile.min_relevance_score)
-        {
-            profile_scores.insert(idx, aggregated_score);
+        if scoring.community_matched && scoring.aggregated_score >= profile.min_relevance_score {
+            profile_scores.insert(idx, scoring.aggregated_score);
         }
     }
 

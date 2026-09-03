@@ -1,4 +1,4 @@
-#![allow(clippy::await_holding_lock)]
+#![allow(clippy::await_holding_lock, deprecated)]
 
 use memfuse_checkpoint::{
     clear_all_orphaned_checkpoints, orphaned_checkpoint_count, CheckpointGuard,

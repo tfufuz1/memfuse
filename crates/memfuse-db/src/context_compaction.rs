@@ -407,14 +407,44 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
             .insert_op(&db_tx, target_string_id, embedding, Some(final_metadata))
             .await?;
 
-        // 4. Delete source docs
+        // 4. Delete source docs — Fehler MÜSSEN die Konsolidierung abbrechen
         for &(src_id, _) in &self.source_docs {
             let doc_key = self
                 .collection
                 .namespaced_key(&src_id.inner().to_le_bytes(), 1);
-            if let Some(val) = self.collection.storage().get(&doc_key).await? {
-                let meta: crate::collection::StoredDocumentMeta = serde_json::from_slice(&val)?;
-                self.collection.delete_op(&mut db_tx, &meta.id).await?;
+            match self.collection.storage().get(&doc_key).await? {
+                Some(val) => {
+                    match serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
+                        Ok(meta) => {
+                            self.collection
+                                .delete_op(&mut db_tx, &meta.id)
+                                .await
+                                .map_err(|e| {
+                                    memfuse_core::MemFuseError::Internal(format!(
+                                        "Consolidation commit: failed to delete source doc \
+                                         {:?} (tx={:?}): {}",
+                                        src_id, db_tx.tx_id, e
+                                    ))
+                                })?;
+                        }
+                        Err(e) => {
+                            return Err(memfuse_core::MemFuseError::Serialization(format!(
+                                "Consolidation commit: cannot deserialize meta for source \
+                                 doc {:?}: {}",
+                                src_id, e
+                            )));
+                        }
+                    }
+                }
+                None => {
+                    // Dokument bereits gelöscht (z.B. concurrent delete) — als
+                    // Idempotenz-OK behandeln, aber loggen
+                    tracing::warn!(
+                        src_id = ?src_id,
+                        "Consolidation commit: source doc not found in storage \
+                         (already deleted?), skipping"
+                    );
+                }
             }
         }
 

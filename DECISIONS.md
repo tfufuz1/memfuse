@@ -755,6 +755,58 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-051: Context Compaction Delete Error Propagation
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: In `ConsolidationSession::commit()` MUSS das Ergebnis der Quelldokument-Löschung (`delete_op`) zwingend mit `?` propagiert werden. Deserialisierungsfehler beim Lesen der Quelldokument-Metadaten geben `MemFuseError::Serialization` zurück. Nicht mehr auffindbare Quelldokumente werden geloggt und als Idempotenz-OK übergangen.
+*   **Begründung**: Verhindert Datenverlust und stille Discards im Konsolidierungspfad.
+
+---
+
+## ADR-052: Synchronous PinGuard Drop Orphan Registration
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: `PinGuard::drop` registriert verwaiste Sequenznummern synchron via `OrphanRegistry` ohne asynchrone Tasks (`tokio::spawn`) abzuspalten.
+*   **Begründung**: Verhindert verdeckte Space-Leaks und unvollständige Drops bei Prozess-Shutdowns.
+
+---
+
+## ADR-053: Instance-Scoped Orphan State in PersistentCheckpointStore
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: Verwaiste Checkpoint- und Pin-Zustände werden instanzspezifisch in `PersistentCheckpointStore` verwaltet anstatt über prozessglobale statische Variablen (`ORPHANED_CHECKPOINTS`). Globale Hilfsfunktionen werden als `#[deprecated]` markiert.
+*   **Begründung**: Stellt die Korrektheit in Multi-Session-Servern (MCP, Tauri) sicher, in denen mehrere unabhängige MemFuse-Instanzen parallel existieren.
+
+---
+
+## ADR-054: Unified Router Scoring & TOCTOU-Safe Calibration Scope
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    1. `SlmProfile::domain_communities` nutzt `HashSet<u64>` für O(1) Community-Lookups mit deterministischer `sorted_u64_set` Serde-Unterstützung.
+    2. Candidate Scoring wird in der zentralen Hilfsfunktion `score_profile()` mit der benannten Konstante `COMMUNITY_RELEVANCE_BOOST = 1.2` konsolidiert.
+    3. Die legacy `recalibrate()` Methode wird aus `ProfileCalibrationState` entfernt.
+    4. Routing-Entscheidung, Scoring und Kalibrierungs-Updates in `RouterEngine::route()` erfolgen atomar innerhalb einer einzigen Schreib-Lock-Akquise.
+*   **Begründung**: Schließt Race Conditions (TOCTOU) bei parallelem Routing, eliminiert redundante Scoring-Implementierungen und vereinheitlicht die Konformal-Kalibrierung.
+
+---
+
+## ADR-055: WAL Legacy Key Fallback Protection
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: Der Fallback auf den statischen `LEGACY_INTEGRITY_KEY` beim Replay alter Write-Ahead-Logs erfordert das explizite Flag `allow_legacy_integrity_key_fallback: bool` (Default: `false`).
+*   **Begründung**: Schützt vor unbefugten Downgrade-Angriffen auf den WAL-Integritätsmechanismus.
+
+---
+
+## ADR-056: Python FFI Panic Isolation via PyErr Exception Mapping
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: Ersetzung aller `panic!()` Aufrufe in Nicht-Test-Quellcode von `memfuse-py` durch strukturierte PyO3 Exception-Returns (`PyValueError`, `PyRuntimeError`). Blockierende Aufrufe werden durch `run_blocking_ffi` mit `std::panic::catch_unwind` geschützt.
+*   **Begründung**: Verhindert CPython-Prozessabstürze über die PyO3 FFI-Grenze hinweg.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>

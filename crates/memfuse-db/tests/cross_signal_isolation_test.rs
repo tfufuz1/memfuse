@@ -45,10 +45,11 @@ async fn test_cross_signal_isolation_single_run() -> Result<()> {
     // Vector signal (HNSW): searches unpinned live in-memory state (vector is [0.0, 1.0, 0.0, 0.0]), so HNSW matches doc-1.
     // Text signal (BM25): search_at(seq1) searches BM25 index at seq1 (text was "rust memory safety"), so BM25 matches doc-1.
     // Storage hydration: get_at_seq(seq1) hydratises storage at seq1 snapshot (version "v1").
+    let vec_query = [0.0, 1.0, 0.0, 0.0];
     let pinned_res = collection
         .query()
         .text("rust")
-        .vector(&[0.0, 1.0, 0.0, 0.0])
+        .vector(vec_query)
         .seq(seq1)
         .k(5)
         .execute()
@@ -111,10 +112,11 @@ async fn test_cross_signal_isolation_100_iterations_stress() -> Result<()> {
             .await?;
 
         // Step 3: Query pinned at seq_v1 using v2 vector [0.0, 1.0, 0.0, 0.0] and v1 text "quantum"
+        let vec_query_v2 = [0.0, 1.0, 0.0, 0.0];
         let results = collection
             .query()
             .text("quantum")
-            .vector(&[0.0, 1.0, 0.0, 0.0])
+            .vector(vec_query_v2)
             .seq(seq_v1)
             .k(5)
             .execute()

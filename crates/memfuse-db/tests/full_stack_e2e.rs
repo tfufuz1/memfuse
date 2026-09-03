@@ -1,6 +1,8 @@
 //! End-to-End integration tests for the full MemFuse stack.
 // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z)
 
+#![allow(deprecated)]
+
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;

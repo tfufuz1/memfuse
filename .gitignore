@@ -25,6 +25,7 @@ CLAUDE.local.md
 clippy*.log
 *_output.txt
 memfuse_orphaned_checkpoints.json
+*_orphaned_checkpoints.json
 
 # TODO: .unwrap-baseline.json is tracked in repository to provide baseline for Gate 2
 

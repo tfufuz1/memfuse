@@ -41,6 +41,7 @@ async fn test_concurrent_collection_ops() {
                     .expect("insert");
 
                 // Search
+                #[allow(deprecated)]
                 let results = col.search(&vec, 1).await.expect("search");
                 assert!(
                     !results.is_empty(),
