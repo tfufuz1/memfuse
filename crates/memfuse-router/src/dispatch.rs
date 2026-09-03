@@ -49,11 +49,18 @@ pub async fn dispatch_to_slm(decision: &RoutingDecision) -> Result<String> {
         })?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(&payload_bytes)
-            .await
-            .map_err(MemFuseError::Io)?;
-        stdin.flush().await.map_err(MemFuseError::Io)?;
+        if let Err(e) = stdin.write_all(&payload_bytes).await {
+            return Err(MemFuseError::Internal(format!(
+                "Fehler bei MCP-Dispatch an {}: Stdin write failed: {e}",
+                decision.profile.mcp_endpoint
+            )));
+        }
+        if let Err(e) = stdin.flush().await {
+            return Err(MemFuseError::Internal(format!(
+                "Fehler bei MCP-Dispatch an {}: Stdin flush failed: {e}",
+                decision.profile.mcp_endpoint
+            )));
+        }
     } else {
         return Err(MemFuseError::Internal(format!(
             "Fehler bei MCP-Dispatch an {}: Failed to open child stdin",
