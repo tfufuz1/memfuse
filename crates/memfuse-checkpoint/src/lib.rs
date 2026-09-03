@@ -1970,8 +1970,10 @@ mod tests {
     #[test]
     fn state_checkpoint_deserializes_legacy_json_without_namespace() {
         let legacy_json = r#"{"tx_id": 999, "timestamp_ms": 1700000000000}"#;
-        let deserialized: StateCheckpoint =
-            serde_json::from_str(legacy_json).expect("Legacy JSON without namespace must deserialize");
+        let deserialized: StateCheckpoint = match serde_json::from_str(legacy_json) {
+            Ok(cp) => cp,
+            Err(e) => panic!("Legacy JSON without namespace must deserialize: {e}"),
+        };
 
         assert_eq!(deserialized.tx_id, TxId::new(999));
         assert_eq!(deserialized.timestamp_ms, 1700000000000);
@@ -1986,9 +1988,18 @@ mod tests {
         let store_b = PersistentCheckpointStore::new(storage.clone(), "ns_b");
 
         {
-            let _guard_a1 = store_a.create_guard(TxId::new(1001)).unwrap();
-            let _guard_a2 = store_a.create_guard(TxId::new(1002)).unwrap();
-            let _guard_b1 = store_b.create_guard(TxId::new(2001)).unwrap();
+            let _guard_a1 = match store_a.create_guard(TxId::new(1001)) {
+                Ok(g) => g,
+                Err(e) => panic!("create_guard failed: {e}"),
+            };
+            let _guard_a2 = match store_a.create_guard(TxId::new(1002)) {
+                Ok(g) => g,
+                Err(e) => panic!("create_guard failed: {e}"),
+            };
+            let _guard_b1 = match store_b.create_guard(TxId::new(2001)) {
+                Ok(g) => g,
+                Err(e) => panic!("create_guard failed: {e}"),
+            };
             // All 3 guards drop here uncommitted
         }
 
