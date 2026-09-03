@@ -20,21 +20,7 @@ jobs:
           echo "✅ Keine offenen kritischen/blockierenden Tags"
 
       - name: "Gate 2: Keine neuen .unwrap()/.expect() in Produktionscode"
-        run: |
-          if [ ! -f .unwrap-baseline.txt ]; then
-            echo "❌ .unwrap-baseline.txt fehlt!"
-            exit 1
-          fi
-
-          CURRENT=$(grep -rn "\.unwrap()\|\.expect(" crates/*/src/ --include="*.rs" || true)
-          NEW_FINDINGS=$(echo "$CURRENT" | grep -F -x -v -f .unwrap-baseline.txt || true)
-
-          if [ -n "$NEW_FINDINGS" ]; then
-            echo "❌ Neue .unwrap()/.expect() Aufrufe in Produktionscode gefunden (nicht in Baseline):"
-            echo "$NEW_FINDINGS"
-            exit 1
-          fi
-          echo "✅ Keine neuen .unwrap()/.expect() Aufrufe in Produktionscode"
+        run: cargo xtask check-unwrap-baseline
 
       - name: "Gate 3: Kein silent let _ für IO-Operationen"
         run: |
