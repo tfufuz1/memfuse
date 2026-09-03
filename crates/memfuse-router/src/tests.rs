@@ -1331,4 +1331,245 @@ mod tests {
         assert!(res.is_ok());
         Ok(())
     }
+
+    #[test]
+    fn test_cascade_hit() {
+        use crate::profile::ProfileCalibrationState;
+        use memfuse_core::{ContextChunk, DocId};
+        use std::collections::HashMap;
+
+        let profile_high = SlmProfile::new(
+            "high-slm",
+            "http://localhost/high",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.8,
+        );
+        let profile_mid = SlmProfile::new(
+            "mid-slm",
+            "http://localhost/mid",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.5,
+        );
+        let profile_low = SlmProfile::new(
+            "low-slm",
+            "http://localhost/low",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.2,
+        );
+
+        let profiles = vec![
+            profile_mid.clone(),
+            profile_high.clone(),
+            profile_low.clone(),
+        ];
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config)).unwrap();
+        let collection = rt.block_on(db.collection("default")).unwrap();
+
+        let router = RouterEngine::new(collection, profiles.clone());
+        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+
+        // Chunk score: 0.5 (with community 1 match: 0.5 * 1.2 = 0.6)
+        // 0.6 >= mid threshold (0.5), but < high threshold (0.8)
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "cascade hit text".to_string(),
+            relevance: 0.5,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let chunks = vec![(chunk, Some(1))];
+
+        let (idx, selected, metrics) = router
+            .select_profile_cascade(&chunks, &profiles, &calibration)
+            .expect("Cascade selection succeeds");
+
+        assert_eq!(selected.name, "mid-slm");
+        assert_eq!(idx, 0); // profile_mid was at original index 0
+        assert!(!metrics.calibrated); // window_total <= 10
+    }
+
+    #[test]
+    fn test_cascade_fallthrough() {
+        use crate::profile::ProfileCalibrationState;
+        use memfuse_core::{ContextChunk, DocId};
+        use std::collections::HashMap;
+
+        let profile_high = SlmProfile::new(
+            "high-slm",
+            "http://localhost/high",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.9,
+        );
+        let profile_mid = SlmProfile::new(
+            "mid-slm",
+            "http://localhost/mid",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.7,
+        );
+        let profile_low = SlmProfile::new(
+            "low-slm",
+            "http://localhost/low",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.5,
+        );
+
+        let profiles = vec![profile_high, profile_mid, profile_low.clone()];
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config)).unwrap();
+        let collection = rt.block_on(db.collection("default")).unwrap();
+
+        let router = RouterEngine::new(collection, profiles.clone());
+        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+
+        // Chunk score = 0.1 (0.1 * 1.2 = 0.12) < low threshold (0.5) -> falls through to last profile
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "low score content".to_string(),
+            relevance: 0.1,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let chunks = vec![(chunk, Some(1))];
+
+        let (idx, selected, metrics) = router
+            .select_profile_cascade(&chunks, &profiles, &calibration)
+            .expect("Cascade fallthrough succeeds");
+
+        assert_eq!(selected.name, "low-slm");
+        assert_eq!(idx, 2);
+        assert_eq!(metrics.calibrated, false);
+    }
+
+    #[tokio::test]
+    async fn test_calibrated_threshold_convergence() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "convergence_entity";
+        collection
+            .insert(key, &vec_data, Some(json!({"text": "convergence test content"})))
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
+
+        let profile = SlmProfile::new(
+            "conv-slm",
+            "http://localhost:9999/mcp",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.001,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+
+        // Perform 15 routing calls (> 10 samples)
+        let mut last_calibrated = false;
+        for i in 0..15 {
+            let decision = router.route(&vec_data, "convergence test content").await.unwrap();
+            let conf = decision.confidence.expect("Confidence metrics present");
+            last_calibrated = conf.calibrated;
+            let cal_stats = router.calibration_stats();
+            let st = &cal_stats["conv-slm"];
+            println!(
+                "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
+                i + 1,
+                st.conformal.window_total,
+                st.conformal.quantile_threshold,
+                conf.calibrated
+            );
+        }
+
+        assert!(last_calibrated, "After 15 decisions (> 10 samples), decision must be calibrated (calibrated = true)");
+    }
+
+    #[tokio::test]
+    async fn test_cascade_determinism() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "det_entity";
+        collection
+            .insert(key, &vec_data, Some(json!({"text": "deterministic content"})))
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
+
+        let p1 = SlmProfile::new(
+            "slm-1",
+            "http://localhost/1",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+        let p2 = SlmProfile::new(
+            "slm-2",
+            "http://localhost/2",
+            vec![100],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let router = RouterEngine::new(collection, vec![p1, p2]);
+
+        let first_decision = router.route(&vec_data, "deterministic content").await.unwrap();
+
+        for i in 0..50 {
+            let next_decision = router.route(&vec_data, "deterministic content").await.unwrap();
+            assert_eq!(
+                next_decision.profile.name, first_decision.profile.name,
+                "Inconsistent profile selected at iteration {}", i
+            );
+        }
+    }
 }
