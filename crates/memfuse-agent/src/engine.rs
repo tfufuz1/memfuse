@@ -40,7 +40,7 @@ impl OrchestratorEngine {
             tools: HashMap::new(),
             checkpoint_store: Arc::new(
                 PersistentCheckpointStore::new(storage, "agent")
-                    .expect("Failed to initialize checkpoint store"),
+                    .expect("Failed to initialize PersistentCheckpointStore for agent"),
             ),
         }
     }
@@ -430,8 +430,7 @@ impl OrchestratorEngine {
             error: None,
         };
 
-        let audit_log = crate::audit::AuditLog::new(Arc::clone(&ctx.state_collection));
-        audit_log.append(&entry).await
+        crate::audit::AuditLog::append_to(&ctx.state_collection, &entry).await
     }
 
     async fn audit_log_failure(&self, ctx: &AgentContext, error_message: &str) -> Result<()> {
@@ -444,8 +443,7 @@ impl OrchestratorEngine {
             error: Some(error_message.to_string()),
         };
 
-        let audit_log = crate::audit::AuditLog::new(Arc::clone(&ctx.state_collection));
-        audit_log.append(&entry).await
+        crate::audit::AuditLog::append_to(&ctx.state_collection, &entry).await
     }
 
     async fn persist_final_state(&self, ctx: &AgentContext) -> Result<()> {
