@@ -45,7 +45,7 @@ pub struct RoutingDecision {
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
     profiles: RwLock<Vec<SlmProfile>>,
-    calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
+    pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
 }
 
 impl RouterEngine {
@@ -134,6 +134,12 @@ impl RouterEngine {
         query_embedding: &[f32],
         query_text: &str,
     ) -> Result<RoutingDecision> {
+        if query_embedding.iter().any(|v| !v.is_finite()) {
+            return Err(MemFuseError::InvalidInput(
+                "query_embedding contains non-finite values (NaN/Inf)".to_string(),
+            ));
+        }
+
         // Snapshot profiles atomically to guarantee caller consistency during hot-reloads
         let profiles = self.profiles.read().clone();
 
@@ -146,7 +152,11 @@ impl RouterEngine {
         // 1. Perform hybrid search with standard fusion weights
         let search_results = self
             .collection
-            .hybrid_search_with_strategy(query_text, query_embedding, 10, None, None, None, None)
+            .query()
+            .text(query_text)
+            .embedding(query_embedding)
+            .k(10)
+            .execute()
             .await?;
 
         if search_results.is_empty() {
@@ -200,19 +210,19 @@ impl RouterEngine {
                 .filter(|(idx, _)| **idx != selected_idx)
                 .map(|(_, s)| *s)
                 .fold(0.0f32, f32::max);
+
             let confidence_ratio = if second_best > 0.0 {
                 (best_score / second_best) as f64
             } else {
                 2.0 // Single candidate -> high confidence
             };
 
-            let q_threshold = cal
-                .get(&selected_profile.name)
-                .map(|st| st.conformal.quantile_threshold)
-                .unwrap_or(selected_profile.min_relevance_score);
-            let non_conformity = (q_threshold - best_score).max(0.0).clamp(0.0, 1.0);
+            let non_conformity = if best_score > 0.0 {
+                (1.0 / confidence_ratio as f32).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
 
-            // 3. Update calibration state in-place (recalibrate_conformal only)
             if let Some(state) = cal.get_mut(&selected_profile.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
@@ -390,8 +400,8 @@ impl RouterEngine {
         );
 
         let confidence = ConfidenceMetrics {
-            score_lower: Some(fallback_score * 0.9),
-            score_upper: Some(fallback_score * 1.1),
+            score_lower: None,
+            score_upper: None,
             calibrated: false,
             quantile_threshold: q_threshold,
             non_conformity_score: 0.0,
