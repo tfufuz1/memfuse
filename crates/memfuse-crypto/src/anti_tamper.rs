@@ -59,7 +59,10 @@ impl std::fmt::Debug for VolatileEncryptionKey {
 // RESOLVED: Replaced manual XOR loop with subtle::ConstantTimeEq for provably constant-time slice comparison.
 impl PartialEq for VolatileEncryptionKey {
     fn eq(&self, other: &Self) -> bool {
-        self.key_bytes.as_slice().ct_eq(other.key_bytes.as_slice()).into()
+        self.key_bytes
+            .as_slice()
+            .ct_eq(other.key_bytes.as_slice())
+            .into()
     }
 }
 
