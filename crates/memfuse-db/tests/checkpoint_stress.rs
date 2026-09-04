@@ -21,7 +21,7 @@ async fn test_checkpoint_concurrency_stress() {
     );
     let manager = Arc::new(
         PersistentCheckpointStore::new(storage.clone(), "stress-test")
-            .expect("cp_manager"),
+            .expect("failed to create checkpoint store"),
     );
 
     let num_writer_tasks = 5;

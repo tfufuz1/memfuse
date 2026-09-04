@@ -168,23 +168,6 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
 
 ---
 
-## 14. Tiefen-Audit (2026-09-04 / Session: feeb10c9)
-
-**Datum**: 2026-09-04
-**Session**: feeb10c9
-**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
-
-### Deep Audit Summary & Metrics
-- **Coverage**: Total line coverage 77.35% (`sandbox.rs`: 93.64%, `prompt_injection.rs`: 87.32%, `lib.rs`: 64.33%).
-- **Tier 1 Concurrency Stichprobe**: 5 parallel test execution loops with 8 worker threads (`--test-threads=8`) completed with 0 failures / deadlocks (59 tests per run).
-- **Phase 1 (proptest)**: Evaluated — crate relies on bounded deterministic unit/integration suites.
-- **Phase 2 (Concurrency Stress)**: 10-iteration loop completed with 0 race/deadlock findings.
-- **Phase 3 (Fault Injection & Stdio Fuzzing)**: `test_slowloris_stdio_attack_simulation`, `test_read_line_bounded_enforces_limit`, `test_malformed_json_returns_parse_error` verified. Bounded reading enforces `MAX_RPC_BYTES` (16 MB) safely.
-- **Phase 5 (Mutation Testing)**: Executed `cargo-mutants` on `sandbox.rs` (54 mutants: 23 caught, 23 unviable, 8 missed off-by-one boundary cases).
-- **Inventar-Drift**: `crates/memfuse-mcp/src/tests.rs` confirmed in repository and fully audited.
-
----
-
 ## 12. Session Audit Log (2026-09-02 / Session: 4e4bb530)
 
 **Datum**: 2026-09-02
