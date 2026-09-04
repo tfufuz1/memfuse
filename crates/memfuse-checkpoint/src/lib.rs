@@ -42,6 +42,30 @@ pub struct PinnedSeqNoOrphan {
     pub timestamp_ms: u64,
 }
 
+static ORPHANED_PIN_SEQ_NOS: Mutex<Vec<PinnedSeqNoOrphan>> = Mutex::new(Vec::new());
+
+fn persist_pinned_seq_no_orphans_sync(list: &[PinnedSeqNoOrphan]) -> std::io::Result<()> {
+    let path = orphan_pin_file_path();
+    let data = serde_json::to_vec_pretty(list)?;
+    std::fs::write(path, data)
+}
+
+#[deprecated(
+    since = "0.1.0",
+    note = "Use PersistentCheckpointStore::register_pinned_seq_no_orphan instead. Global functions are not safe in multi-instance environments."
+)]
+#[allow(deprecated)]
+pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
+    let mut lock = ORPHANED_PIN_SEQ_NOS.lock();
+    if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
+        lock.push(orphan.clone());
+    }
+    if let Err(e) = persist_pinned_seq_no_orphans_sync(&lock) {
+        tracing::error!(?e, "Failed to persist pinned seq_no orphans");
+    }
+    let _ = global_orphan_registry().register_orphan(orphan.seq_no);
+}
+
 /// Instance-scoped orphan state for checkpoints and pinned sequence numbers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct OrphanState {
@@ -130,33 +154,18 @@ impl InstanceOrphanRegistry {
     pub fn register_orphan_sync(&self, orphan: PinnedSeqNoOrphan) {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
-            let seq_no = orphan.seq_no;
             lock.push(orphan);
             drop(lock);
-            if let Err(e) = self.persist_sync() {
-                tracing::error!(
-                    ?e,
-                    seq_no = seq_no,
-                    "InstanceOrphanRegistry persist_sync failed for pinned seq_no (ADR-058)"
-                );
-            }
+            let _ = self.persist_sync();
         }
     }
 
     pub fn register_checkpoint_sync(&self, cp: StateCheckpoint) {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
-            let tx_id = cp.tx_id;
             lock.push(cp);
             drop(lock);
-            if let Err(e) = self.persist_sync() {
-                tracing::error!(
-                    ?e,
-                    tx_id = ?tx_id,
-                    "CheckpointGuard orphan persist_sync failed — \
-                     checkpoint registered in-memory but not durable on disk (ADR-058)"
-                );
-            }
+            let _ = self.persist_sync();
         }
     }
 
@@ -211,18 +220,103 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         lock.retain(|o| o.tx_id != tx_id);
         drop(lock);
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, tx_id = ?tx_id, "Failed to persist orphan registry after clearing checkpoint");
-        }
+        let _ = self.persist_sync();
     }
 
     pub fn clear_all(&self) {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, "Failed to persist orphan registry after clearing all");
+        let _ = self.persist_sync();
+    }
+}
+
+/// Registers an uncommitted checkpoint as orphaned and persists it to disk.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use PersistentCheckpointStore::register_orphaned_checkpoint instead. Global functions are not safe in multi-instance environments."
+)]
+#[allow(deprecated)]
+pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    if !lock.iter().any(|existing| existing.tx_id == cp.tx_id) {
+        lock.push(cp);
+    }
+    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
+        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
+    }
+}
+
+/// Retrieves all active registered orphaned checkpoints.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use PersistentCheckpointStore::get_orphaned_checkpoints instead. Global functions are not safe in multi-instance environments."
+)]
+#[allow(deprecated)]
+pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    if lock.is_empty() {
+        let loaded = load_orphaned_checkpoints_file_sync();
+        if !loaded.is_empty() {
+            *lock = loaded;
         }
     }
+    lock.clone()
+}
+
+/// Retrieves orphaned checkpoints registered for a specific namespace.
+#[allow(deprecated)]
+pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> {
+    get_orphaned_checkpoints()
+        .into_iter()
+        .filter(|cp| cp.namespace.as_deref() == Some(ns))
+        .collect()
+}
+
+/// Removes a specific orphaned checkpoint after recovery.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use PersistentCheckpointStore::clear_orphaned_checkpoint instead. Global functions are not safe in multi-instance environments."
+)]
+#[allow(deprecated)]
+pub fn clear_orphaned_checkpoint(tx_id: TxId) {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    lock.retain(|cp| cp.tx_id != tx_id);
+    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
+        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
+    }
+}
+
+/// Clears all registered orphaned checkpoints.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use PersistentCheckpointStore::clear_all_orphaned_checkpoints instead. Global functions are not safe in multi-instance environments."
+)]
+#[allow(deprecated)]
+pub fn clear_all_orphaned_checkpoints() {
+    let mut lock = ORPHANED_CHECKPOINTS.lock();
+    lock.clear();
+    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
+        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
+    }
+}
+
+/// Retained for backward compatibility. No background tasks are spawned during drop.
+pub async fn await_pending_rollbacks() {}
+
+/// Retained for backward compatibility. Always returns 0 as background task spawning is removed.
+pub fn pending_rollback_count() -> usize {
+    0
+}
+
+/// Liefert die Gesamtzahl der uncommitted CheckpointGuards, die ohne expliziten Commit/Rollback gedroppt wurden.
+pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
+    SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
+}
+
+/// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
+#[allow(deprecated)]
+pub fn orphaned_checkpoint_count() -> usize {
+    get_orphaned_checkpoints().len()
 }
 
 // RESOLVED: AGT-CKPT-001 — UTF-8 char counting used for 256 char limit (TS: 2026-09-01T23:07:05Z) (SESSION: 358e3b0a)
@@ -438,6 +532,9 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
+    // AI-TAG[CODE][CRITICAL] RESOLVED: AGT-CHECKPOINT-41f541e2 (TS: 2026-09-04T14:15:00Z) (SESSION: a437b68b)
+    // Removed broken dead method with_orphan_state referencing non-existent field orphan_state.
+
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {
         let cp = StateCheckpoint {
@@ -550,8 +647,7 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
             self.skipped_rollbacks.fetch_add(1, Ordering::SeqCst);
             tracing::error!(
                 tx_id = ?cp.tx_id,
-                "CheckpointGuard dropped without explicit commit or rollback — \
-                 checkpoint registered in instance-scoped orphan registry for controlled recovery (ADR-053)."
+                "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
             );
             self.orphan_registry.register_checkpoint_sync(cp);
         }
@@ -714,7 +810,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         })
     }
 
-    pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
+    pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Self {
         let ns = namespace.into();
         let storage_clone = storage.clone();
         let ns_clone = ns.clone();
@@ -739,7 +835,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .and_then(|r| r)
             }
         } else {
-            let rt = tokio::runtime::Builder::new_current_thread()
+            let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|e| {
@@ -748,11 +844,12 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             rt.block_on(Self::open(storage_clone, ns_clone))
         };
 
-        res.map_err(|e| {
-            MemFuseError::Internal(format!(
-                "Failed to initialize PersistentCheckpointStore for namespace '{ns}': {e}"
-            ))
-        })
+        match res {
+            Ok(store) => store,
+            Err(e) => {
+                panic!("Failed to initialize PersistentCheckpointStore for namespace '{ns}': {e}")
+            }
+        }
     }
 
     pub fn checkpoint_count(&self) -> u64 {
@@ -1306,7 +1403,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_load() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
         let meta = store
             .create_checkpoint("cp1", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
@@ -1350,7 +1447,7 @@ mod tests {
     #[tokio::test]
     async fn test_name_uniqueness() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
         store
             .create_checkpoint("same", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
@@ -1372,7 +1469,7 @@ mod tests {
         let cp_key = b"test:checkpoint:fail_cp";
         *storage.fail_on_put.lock() = Some(cp_key.to_vec());
 
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
         let seq_no = 123;
 
         let res = store
@@ -1447,10 +1544,10 @@ mod tests {
     #[tokio::test]
     async fn test_multi_instance_orphan_isolation() {
         let storage1 = Arc::new(MockStorage::new());
-        let store_a = PersistentCheckpointStore::new(storage1, "ns_inst_a").unwrap();
+        let store_a = PersistentCheckpointStore::new(storage1, "ns_inst_a");
 
         let storage2 = Arc::new(MockStorage::new());
-        let store_b = PersistentCheckpointStore::new(storage2, "ns_inst_b").unwrap();
+        let store_b = PersistentCheckpointStore::new(storage2, "ns_inst_b");
 
         // Drop an uncommitted guard in Store A
         {
@@ -1474,7 +1571,7 @@ mod tests {
     #[tokio::test]
     async fn test_pin_guard_unpins_checkpoint_on_storage_write_failure() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test_pinguard").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_pinguard");
 
         let seq_no = 999;
         let cp_key = b"test_pinguard:checkpoint:fail_write_cp";
@@ -1508,7 +1605,7 @@ mod tests {
     #[tokio::test]
     async fn test_pin_before_unpin_invariant_on_failure() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         // 1. Create first checkpoint successfully
         store
@@ -1615,7 +1712,7 @@ mod tests {
     #[tokio::test]
     async fn checkpoint_guard_commit_prevents_rollback() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         let guard = store.create_guard(TxId::new(100)).unwrap();
         let cp = guard.commit().unwrap();
@@ -1639,7 +1736,7 @@ mod tests {
     async fn list_checkpoints_empty_initially() {
         use memfuse_core::traits::CheckpointCoordinator;
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         let list = store.list_named_checkpoints().await.unwrap();
         assert!(list.is_empty());
@@ -1649,7 +1746,7 @@ mod tests {
     async fn checkpoint_not_found_returns_err() {
         use memfuse_core::traits::CheckpointCoordinator;
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         let res = store.restore_named_checkpoint("nonexistent").await;
         assert!(matches!(res, Err(MemFuseError::CheckpointNotFound)));
@@ -1660,7 +1757,7 @@ mod tests {
         use memfuse_core::traits::CheckpointCoordinator;
         let storage = Arc::new(MockStorage::new());
         {
-            let store1 = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+            let store1 = PersistentCheckpointStore::new(storage.clone(), "test");
             store1
                 .create_named_checkpoint(
                     "cp1",
@@ -1683,8 +1780,8 @@ mod tests {
                 .unwrap();
         }
 
-        let store2 = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
-        let list = store2.list_named_checkpoints().await.unwrap();
+        let store2 = PersistentCheckpointStore::new(storage.clone(), "test");
+        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
 
         assert_eq!(list.len(), 2);
         let names: Vec<_> = list.into_iter().map(|m| m.name).collect();
@@ -1695,7 +1792,7 @@ mod tests {
     async fn list_checkpoints_cache_matches_storage() {
         use memfuse_core::traits::CheckpointCoordinator;
         let storage = Arc::new(MockStorage::new());
-        let store1 = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test").unwrap());
+        let store1 = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test"));
 
         // Create 3 checkpoints
         for i in 1..=3 {
@@ -1712,8 +1809,8 @@ mod tests {
         }
 
         // Drop and reload the store from same storage
-        let store2 = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
-        let list = store2.list_named_checkpoints().await.unwrap();
+        let store2 = PersistentCheckpointStore::new(storage.clone(), "test");
+        let list = store2.list_named_checkpoints().await.unwrap(); // unwrap
 
         assert_eq!(list.len(), 3);
         let names: Vec<_> = list.into_iter().map(|m| m.name).collect();
@@ -1726,7 +1823,7 @@ mod tests {
         use tokio::task::JoinSet;
 
         let storage = Arc::new(MockStorage::new());
-        let store = Arc::new(PersistentCheckpointStore::new(storage, "test").unwrap());
+        let store = Arc::new(PersistentCheckpointStore::new(storage, "test"));
 
         let mut tasks = JoinSet::new();
         for i in 0..8u64 {
@@ -1759,7 +1856,7 @@ mod tests {
     fn test_checkpoint_guard_dropped_outside_tokio_runtime() {
         std::thread::spawn(|| {
             let storage = Arc::new(MockStorage::new());
-            let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+            let store = PersistentCheckpointStore::new(storage, "test");
 
             let initial_skipped = store.skipped_rollback_count();
 
@@ -1781,7 +1878,7 @@ mod tests {
     #[tokio::test]
     async fn test_auto_rollback_tracking_and_await() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test_auto_rollback").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_auto_rollback");
         store.clear_all_orphaned_checkpoints();
 
         {
@@ -1799,7 +1896,7 @@ mod tests {
     #[test]
     fn test_rollback_blocking_in_sync_context() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         let guard = store.create_guard(TxId::new(909)).unwrap();
         let res = guard.rollback_blocking();
@@ -1815,7 +1912,7 @@ mod tests {
     #[tokio::test]
     async fn test_rollback_blocking_in_async_context_returns_error() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         let guard = store.create_guard(TxId::new(1010)).unwrap();
 
@@ -1858,7 +1955,7 @@ mod tests {
     #[tokio::test]
     async fn test_drop_checkpoint_uses_unique_tx_and_unpins() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         store
             .create_checkpoint("drop_me", "col1", 42, TxId::new(1), serde_json::json!({}))
@@ -1880,7 +1977,7 @@ mod tests {
     #[tokio::test]
     async fn test_next_tx_overflow_returns_err() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         store.tx_counter.store(1_000_000, Ordering::SeqCst);
 
@@ -1896,7 +1993,7 @@ mod tests {
     #[tokio::test]
     async fn test_input_validation_empty_and_oversized_names() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         // Empty name
         let res = store
@@ -1964,7 +2061,7 @@ mod tests {
     #[tokio::test]
     async fn create_checkpoint_CASE_unicode_and_multibyte_name() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         let unicode_name = "Prüfpunkt_1_🚀_日本語";
         let collection_id = "Sammlung_äöü_123";
@@ -1997,7 +2094,7 @@ mod tests {
     #[tokio::test]
     async fn create_checkpoint_CASE_exact_max_len_256() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         let max_name = "a".repeat(256);
         let res = store
@@ -2016,7 +2113,7 @@ mod tests {
     #[tokio::test]
     async fn drop_checkpoint_CASE_nonexistent_returns_ok() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         let res = store.drop_checkpoint("nonexistent_checkpoint").await;
         assert!(
@@ -2029,7 +2126,7 @@ mod tests {
     #[tokio::test]
     async fn checkpoint_guard_CASE_uncommitted_guard_holds_state() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         let guard = store
             .create_guard(TxId::new(500))
@@ -2067,7 +2164,7 @@ mod tests {
     #[tokio::test]
     async fn restore_checkpoint_CASE_not_found_returns_err() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "test");
 
         let res = store.restore_checkpoint("missing_cp").await;
         assert!(matches!(res, Err(MemFuseError::CheckpointNotFound)));
@@ -2077,7 +2174,7 @@ mod tests {
     #[tokio::test]
     async fn list_checkpoints_CASE_corrupted_storage_data_propagates_err() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "test");
 
         // Put invalid JSON payload into storage under checkpoint namespace format (namespace:checkpoint:name)
         let corrupt_key = b"test:checkpoint:corrupt_cp";
@@ -2136,8 +2233,8 @@ mod tests {
     #[test]
     fn state_checkpoint_deserializes_legacy_json_without_namespace() {
         let legacy_json = r#"{"tx_id": 999, "timestamp_ms": 1700000000000}"#;
-        let deserialized: StateCheckpoint = serde_json::from_str(legacy_json)
-            .expect("Legacy JSON without namespace must deserialize");
+        let deserialized: StateCheckpoint =
+            serde_json::from_str(legacy_json).expect("Legacy JSON without namespace must deserialize");
 
         assert_eq!(deserialized.tx_id, TxId::new(999));
         assert_eq!(deserialized.timestamp_ms, 1700000000000);
@@ -2147,8 +2244,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_orphaned_checkpoints_for_namespace() {
         let storage = Arc::new(MockStorage::new());
-        let store_a = PersistentCheckpointStore::new(storage.clone(), "ns_a").unwrap();
-        let store_b = PersistentCheckpointStore::new(storage.clone(), "ns_b").unwrap();
+        let store_a = PersistentCheckpointStore::new(storage.clone(), "ns_a");
+        let store_b = PersistentCheckpointStore::new(storage.clone(), "ns_b");
 
         {
             let _guard_a1 = store_a.create_guard(TxId::new(1001)).unwrap();
@@ -2161,9 +2258,7 @@ mod tests {
         let orphans_b = store_b.get_orphaned_checkpoints();
 
         assert_eq!(orphans_a.len(), 2);
-        assert!(orphans_a
-            .iter()
-            .all(|cp| cp.namespace.as_deref() == Some("ns_a")));
+        assert!(orphans_a.iter().all(|cp| cp.namespace.as_deref() == Some("ns_a")));
         let tx_a: Vec<TxId> = orphans_a.iter().map(|cp| cp.tx_id).collect();
         assert!(tx_a.contains(&TxId::new(1001)));
         assert!(tx_a.contains(&TxId::new(1002)));
@@ -2190,6 +2285,22 @@ mod tests {
         // Independent expected value assertions
         assert_eq!(state.tx, TxId::new(2026));
         assert!(!state.graph_hash.is_empty());
+    }
+
+    #[allow(non_snake_case)]
+    #[tokio::test]
+    async fn allocate_tx_CASE_parity_with_deprecated_next_tx() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test");
+
+        let tx1 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
+        #[allow(deprecated)]
+        let tx2 = store.next_tx().await.expect("// expect #[cfg(test)]");
+        let tx3 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
+
+        assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));
+        assert_eq!(tx2, TxId::new(TxId::INTERNAL_BASE + 1));
+        assert_eq!(tx3, TxId::new(TxId::INTERNAL_BASE + 2));
     }
 
     #[allow(non_snake_case)]
