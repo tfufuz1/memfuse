@@ -4,6 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
 | `TS:2026-09-02T23:19:10Z (SESSION: 088b4a44)` | `crates/memfuse-agent/src/step.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Step result structures and AgentTool trait definitions for orchestration. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
@@ -43,7 +44,6 @@
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
-| `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/persistence.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistenz-Schicht für HNSW-Dateiserialisierung (`.hnsw`) und mmap-basiertes Lesen. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/chunker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Markdown-basierte semantische Textzerlegung (WP-7.1) und UTF-8-sicheres Chunken. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/crud.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CRUD-Operationen (Insert, Upsert, Update, Delete, Get) für Collection. |
