@@ -252,6 +252,7 @@ pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
 }
 
 /// Retrieves orphaned checkpoints registered for a specific namespace.
+#[allow(deprecated)]
 pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> {
     get_orphaned_checkpoints()
         .into_iter()
@@ -301,6 +302,7 @@ pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
 /// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
 #[allow(deprecated)]
 pub fn orphaned_checkpoint_count() -> usize {
+    #[allow(deprecated)]
     get_orphaned_checkpoints().len()
 }
 
@@ -593,13 +595,6 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
                 tx_id = ?cp.tx_id,
                 "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
             );
-            if let Some(ref orphan_state) = self.orphan_state {
-                let mut state = orphan_state.lock();
-                if !state.checkpoints.iter().any(|e| e.tx_id == cp.tx_id) {
-                    state.checkpoints.push(cp.clone());
-                    let _ = state.persist_sync();
-                }
-            }
             #[allow(deprecated)]
             register_orphaned_checkpoint(cp);
         }
@@ -663,6 +658,7 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     /// Lock für HWM-Reservierung und Persistierung
     hwm_lock: tokio::sync::Mutex<()>,
     /// Instanz-spezifischer Orphan State
+    #[allow(dead_code)]
     orphan_state: Arc<Mutex<OrphanState>>,
 }
 
@@ -1107,14 +1103,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     pub async fn recover_orphaned_checkpoints(&self) -> Result<Vec<TxId>> {
         let _guard = self.write_lock.lock().await;
-        let mut orphans = self.get_orphaned_checkpoints();
         #[allow(deprecated)]
-        let global_orphans = get_orphaned_checkpoints();
-        for go in global_orphans {
-            if !orphans.iter().any(|o| o.tx_id == go.tx_id) {
-                orphans.push(go);
-            }
-        }
+        let orphans = get_orphaned_checkpoints();
 
         let mut recovered = Vec::new();
         let last_tx = self.storage.last_tx_id().await?;
@@ -1125,7 +1115,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                     tracing::error!(tx_id = ?cp.tx_id, "Failed to recover orphaned checkpoint: {e}");
                 } else {
                     recovered.push(cp.tx_id);
-                    self.clear_orphaned_checkpoint(cp.tx_id);
                     #[allow(deprecated)]
                     clear_orphaned_checkpoint(cp.tx_id);
                 }
@@ -1135,7 +1124,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                     last_tx = ?last_tx,
                     "Orphaned checkpoint skipped during recovery due to serialization barrier (newer transaction committed)"
                 );
-                self.clear_orphaned_checkpoint(cp.tx_id);
                 #[allow(deprecated)]
                 clear_orphaned_checkpoint(cp.tx_id);
             }
