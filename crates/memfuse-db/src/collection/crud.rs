@@ -60,7 +60,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<()> {
         let embedding = {
             let embedder = {
-                let guard = self.embedder.read();
+                let guard = self.embedder.read().await;
                 guard
                     .as_ref()
                     .ok_or_else(|| {
@@ -97,7 +97,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<()> {
         let embedding = {
             let embedder = {
-                let guard = self.embedder.read();
+                let guard = self.embedder.read().await;
                 guard
                     .as_ref()
                     .ok_or_else(|| {

@@ -101,7 +101,7 @@ impl StorageEngine for FaultyMockStorage {
 #[tokio::test]
 async fn test_storage_put_failure_handling() {
     let storage = Arc::new(FaultyMockStorage::new(true, false));
-    let store = PersistentCheckpointStore::new(storage.clone(), "ns_err").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "ns_err");
 
     let res = store
         .create_checkpoint("fail_cp", "col1", 99, TxId::new(1), serde_json::json!({}))
@@ -127,7 +127,7 @@ async fn test_storage_put_failure_handling() {
 #[tokio::test]
 async fn test_storage_commit_failure_handling() {
     let storage = Arc::new(FaultyMockStorage::new(false, true));
-    let store = PersistentCheckpointStore::new(storage.clone(), "ns_err").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "ns_err");
 
     let res = store
         .create_checkpoint(
@@ -153,7 +153,7 @@ async fn test_storage_commit_failure_handling() {
 #[tokio::test]
 async fn test_restore_nonexistent_checkpoint_returns_not_found() {
     let storage = Arc::new(FaultyMockStorage::new(false, false));
-    let store = PersistentCheckpointStore::new(storage, "ns_err").unwrap();
+    let store = PersistentCheckpointStore::new(storage, "ns_err");
 
     let res = store.restore_checkpoint("does_not_exist").await;
     assert!(
@@ -166,7 +166,7 @@ async fn test_restore_nonexistent_checkpoint_returns_not_found() {
 #[tokio::test]
 async fn test_identifier_input_boundary_validation() {
     let storage = Arc::new(FaultyMockStorage::new(false, false));
-    let store = PersistentCheckpointStore::new(storage, "ns_err").unwrap();
+    let store = PersistentCheckpointStore::new(storage, "ns_err");
 
     // 1. Empty checkpoint name
     let res = store

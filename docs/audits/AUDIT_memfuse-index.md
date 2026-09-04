@@ -242,6 +242,21 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 | SIGBUS mmap-truncate | OK | Read-only Mmap; POSIX Unlink/Rename schützt aktive Handles | — |
 | SIGKILL recovery | OK | Sauber; atomare Datei-Ersetzung garantiert Konsistenz | — |
 
+## 14. Audit-Update — HNSW & SIMD Verification & Workspace Integration Audit (2026-09-04T11:40:35Z, SESSION: 1a901c59)
+
+### Key Verifications & Results:
+1. **Inventory Reality Check (Schritt 0):**
+   - Verified present files in `crates/memfuse-index/src/`: `lib.rs`, `hnsw.rs`, `distance.rs`, `quantize.rs`, `diskann.rs`, `persistence.rs`.
+   - Inventarabgleich: Keine Abweichungen, Stand 2026-09-03 bestätigt.
+
+2. **Crate & Workspace Verification:**
+   - `cargo check -p memfuse-index --all-features`: 0 errors, 0 warnings.
+   - `cargo clippy -p memfuse-index -- -D warnings`: 0 findings.
+   - `cargo fmt --check -p memfuse-index`: 0 diffs.
+   - `cargo test -p memfuse-index --lib`: 89 unit tests passed cleanly (0.95s).
+   - `cargo test -p memfuse-index --release`: All unit, integration, recall, and proptest test suites passed cleanly.
+   - `cargo audit -p memfuse-index`: 0 vulnerabilities reported.
+
 ---
 
 ## 14. Audit-Update — Complete Crate Audit & Workspace Integration Verification (2026-09-04T11:41:29Z, SESSION: 00bde7d5)

@@ -1,6 +1,5 @@
 use memfuse_core::{Entity, EntityId, GraphIndex};
 use memfuse_graph::csr::{CsrGraph, CsrGraphConfig};
-use std::sync::Arc;
 use std::time::Instant;
 
 #[tokio::test]
@@ -11,9 +10,9 @@ async fn bench_single_compaction_scaling() {
 
     for &num_committed in &sizes {
         // Create graph with very large rebuild_threshold so auto-compaction is not triggered during prep
-        let graph = Arc::new(CsrGraph::with_config(CsrGraphConfig {
+        let graph = CsrGraph::with_config(CsrGraphConfig {
             rebuild_threshold: usize::MAX,
-        }));
+        });
 
         // Populate committed entities and edges
         let num_nodes = num_committed.max(2);
@@ -31,7 +30,6 @@ async fn bench_single_compaction_scaling() {
             let dst = ((i + 1) % num_nodes) + 1;
             graph
                 .insert_edge_direct(EntityId::new(src as u64), EntityId::new(dst as u64), 1.0)
-                .await
                 .unwrap();
         }
 
@@ -47,7 +45,6 @@ async fn bench_single_compaction_scaling() {
             let dst = ((j + 7) % num_nodes) + 1;
             graph
                 .insert_edge_direct(EntityId::new(src as u64), EntityId::new(dst as u64), 0.5)
-                .await
                 .unwrap();
         }
 
@@ -76,7 +73,7 @@ async fn bench_amortized_1m_edge_inserts() {
     let total_inserts: usize = 1_000_000;
     let rebuild_threshold = 1000;
 
-    let graph = Arc::new(CsrGraph::with_config(CsrGraphConfig { rebuild_threshold }));
+    let graph = CsrGraph::with_config(CsrGraphConfig { rebuild_threshold });
 
     let num_nodes: u64 = 100_000; // 100k distinct nodes
     for i in 1..=num_nodes {
@@ -97,7 +94,7 @@ async fn bench_amortized_1m_edge_inserts() {
         let dst = EntityId::new(((i as u64 * 3 + 7) % num_nodes) + 1);
 
         let t0 = Instant::now();
-        graph.insert_edge_direct(src, dst, 1.0).await.unwrap();
+        graph.insert_edge_direct(src, dst, 1.0).unwrap();
         let elapsed_nanos = t0.elapsed().as_nanos() as u64;
         latencies_nanos.push(elapsed_nanos);
 
