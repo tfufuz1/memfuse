@@ -1009,6 +1009,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "4677f0c8508dd79d"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "4a9bf711144495f6"
   },
   {
@@ -1082,10 +1086,6 @@
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "86e72ca5f879417e"
-  },
-  {
-    "file": "crates/memfuse-checkpoint/src/lib.rs",
-    "hash": "87c4d8dfb52ffa5c"
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
