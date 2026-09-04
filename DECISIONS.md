@@ -807,6 +807,14 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-057: Side-Channel Timing Mitigation via ConstantTimeEq in VolatileEncryptionKey
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: `VolatileEncryptionKey::eq` in `memfuse-crypto` nutzt `subtle::ConstantTimeEq` für Vergleiche.
+*   **Begründung**: Verhindert Side-Channel Timing-Angriffe auf kryptographische Schlüsselvergleiche.
+
+---
+
 ## ADR-058: Error-Logging-Pattern für synchrones Orphan-State Persistieren in Checkpoint
 *   **Datum**: 2026-09-04
 *   **Status**: ✅ Final
