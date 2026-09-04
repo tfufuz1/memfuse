@@ -61,7 +61,8 @@ async fn test_layer_001_fork_diverge_merge() {
                 .await
                 .expect("storage"),
         );
-        let cp_manager = PersistentCheckpointStore::new(storage.clone(), "test").expect("cp_manager");
+        let cp_manager =
+            PersistentCheckpointStore::new(storage.clone(), "test").expect("checkpoint store");
 
         _cp_v1 = cp_manager
             .create_checkpoint("v1", "main", 0, TxId::new(0), json!({}))
@@ -142,7 +143,8 @@ async fn test_layer_001_fork_diverge_merge() {
                 .await
                 .expect("storage"),
         );
-        let cp_manager = PersistentCheckpointStore::new(storage.clone(), "test").expect("cp_manager");
+        let cp_manager =
+            PersistentCheckpointStore::new(storage.clone(), "test").expect("cp_manager");
         cp_manager.drop_checkpoint("v1").await.expect("drop cp");
     }
 }
