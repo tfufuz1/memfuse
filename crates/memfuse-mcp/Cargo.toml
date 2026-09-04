@@ -25,7 +25,7 @@ tracing-subscriber = { workspace = true }
 unicode-normalization = "0.1"
 # NO Axum — MCP transport is stdio only (ADR-010). Adding HTTP here is an architecture violation.
 # MCP stdio transport helpers (already transitively present via tokio)
-tokio-util = { workspace = true, features = ["codec"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 futures-util = "0.3"
 
 [dev-dependencies]
