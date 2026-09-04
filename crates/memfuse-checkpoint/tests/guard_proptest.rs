@@ -119,7 +119,7 @@ proptest! {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let storage = Arc::new(TrackingMockStorage::new());
-            let store = PersistentCheckpointStore::new(storage.clone(), "prop_ns");
+            let store = PersistentCheckpointStore::new(storage.clone(), "prop_ns").unwrap();
 
             let mut expected_rollbacks = Vec::new();
 

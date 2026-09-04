@@ -121,7 +121,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         let embedding = {
             let embedder = {
-                let guard = self.embedder.read().await;
+                let guard = self.embedder.read();
                 guard
                     .as_ref()
                     .ok_or_else(|| {

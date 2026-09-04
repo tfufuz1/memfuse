@@ -285,7 +285,7 @@ impl StorageEngine for NamespaceStorageEngine {
 #[tokio::test]
 async fn test_time_travel_sequence_byte_exact_recovery() {
     let storage = Arc::new(VersionedMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "ns_tt");
+    let store = PersistentCheckpointStore::new(storage.clone(), "ns_tt").unwrap();
 
     // 1. Establish State A
     let tx_a = TxId::new(10);
@@ -683,7 +683,7 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
         shared_storage.clone(),
         "guard_beta:",
     ));
-    let store_beta = PersistentCheckpointStore::new(storage_beta.clone(), "ns_guard_beta");
+    let store_beta = PersistentCheckpointStore::new(storage_beta.clone(), "ns_guard_beta").unwrap();
 
     // Baseline state for both sessions
     let tx_base_a = TxId::new(10);
@@ -745,13 +745,13 @@ async fn test_concurrent_pinning_lifecycle_isolation() {
         shared_storage.clone(),
         "pin_alpha:",
     ));
-    let store_alpha = PersistentCheckpointStore::new(storage_alpha, "ns_pin_alpha");
+    let store_alpha = PersistentCheckpointStore::new(storage_alpha, "ns_pin_alpha").unwrap();
 
     let storage_beta = Arc::new(NamespaceStorageEngine::new(
         shared_storage.clone(),
         "pin_beta:",
     ));
-    let store_beta = PersistentCheckpointStore::new(storage_beta, "ns_pin_beta");
+    let store_beta = PersistentCheckpointStore::new(storage_beta, "ns_pin_beta").unwrap();
 
     // Session Alpha creates CP_A1 (seq_no 100)
     store_alpha
