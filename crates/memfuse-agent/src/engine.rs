@@ -10,8 +10,9 @@
 //! Implements the core execution loop: checkpoint → execute → commit → audit → resolve-next.
 
 use crate::context::{validate_node_id, AgentContext, MAX_ID_LEN};
+use crate::dlq::DeadLetterQueue;
 use crate::graph::{AgentNode, NodeType, StateGraph};
-use crate::step::{AgentTool, StepResult};
+use crate::step::{AgentTool, DeadLetterReason, StepDeadLetter, StepResult};
 use memfuse_checkpoint::{
     CheckpointGuard, CheckpointMeta, CheckpointRegistry, PersistentCheckpointStore,
 };
@@ -20,6 +21,7 @@ use memfuse_core::{MemFuseError, Result};
 use memfuse_store::LsmStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 /// Reason for exiting `OrchestratorEngine::run_event_loop`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,7 @@ pub enum EventLoopExitReason {
 pub struct OrchestratorEngine {
     pub tools: HashMap<String, Box<dyn AgentTool>>,
     pub checkpoint_store: Arc<dyn CheckpointRegistry>,
+    pub dead_letter_queue: Option<DeadLetterQueue>,
 }
 
 impl OrchestratorEngine {
@@ -39,9 +42,10 @@ impl OrchestratorEngine {
         Self {
             tools: HashMap::new(),
             checkpoint_store: Arc::new(
-                PersistentCheckpointStore::new(storage, "agent")
+                PersistentCheckpointStore::new(storage.clone(), "agent")
                     .expect("Failed to initialize PersistentCheckpointStore for agent"),
             ),
+            dead_letter_queue: Some(DeadLetterQueue::new(storage)),
         }
     }
 
@@ -130,6 +134,25 @@ impl OrchestratorEngine {
 
                     if node.node_type != NodeType::Start {
                         if let Err(err) = ctx.budget.try_reserve(estimated_cost) {
+                            if let Some(ref dlq) = self.dead_letter_queue {
+                                let letter = StepDeadLetter {
+                                    session_id: ctx.task_id.clone(),
+                                    node_id: node.id.clone(),
+                                    failure_reason: DeadLetterReason::BudgetExhausted {
+                                        available: ctx.budget.available(),
+                                        required: estimated_cost,
+                                    },
+                                    input: input.clone(),
+                                    attempt: 0,
+                                    failed_at_secs: SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs(),
+                                };
+                                if let Err(e) = dlq.push(&letter).await {
+                                    tracing::error!("DLQ push failed: {}", e);
+                                }
+                            }
                             self.audit_log_failure(ctx, &err.to_string()).await?;
                             return Err(err);
                         }
@@ -138,7 +161,110 @@ impl OrchestratorEngine {
                     // 2. Resolve handler (Optional for Start nodes)
                     let result_res = if let Some(handler_name) = &node.handler {
                         if let Some(tool) = self.tools.get(handler_name) {
-                            tool.execute(ctx, input).await
+                            let timeout_duration =
+                                std::time::Duration::from_millis(tool.timeout_ms());
+                            let max_attempts = if tool.is_retriable() {
+                                tool.max_retries() + 1
+                            } else {
+                                1
+                            };
+                            let mut execution_res = Err(MemFuseError::Internal(format!(
+                                "Tool {} failed without execution",
+                                handler_name
+                            )));
+
+                            'retry: for attempt in 0..max_attempts {
+                                if attempt > 0 {
+                                    let wait_ms = 100u64 * (1u64 << attempt.min(4));
+                                    tokio::time::sleep(std::time::Duration::from_millis(wait_ms))
+                                        .await;
+                                }
+
+                                let execute_future = tool.execute(ctx, input.clone());
+
+                                match tokio::time::timeout(timeout_duration, execute_future).await {
+                                    Ok(Ok(result)) => {
+                                        execution_res = Ok(result);
+                                        break 'retry;
+                                    }
+                                    Ok(Err(e)) => {
+                                        let err_msg = e.to_string();
+                                        execution_res = Err(e);
+                                        if !tool.is_retriable() {
+                                            if let Some(ref dlq) = self.dead_letter_queue {
+                                                let letter = StepDeadLetter {
+                                                    session_id: ctx.task_id.clone(),
+                                                    node_id: node.id.clone(),
+                                                    failure_reason: DeadLetterReason::ToolError {
+                                                        message: err_msg,
+                                                    },
+                                                    input: input.clone(),
+                                                    attempt: attempt as u32,
+                                                    failed_at_secs: SystemTime::now()
+                                                        .duration_since(std::time::UNIX_EPOCH)
+                                                        .unwrap_or_default()
+                                                        .as_secs(),
+                                                };
+                                                if let Err(dlq_err) = dlq.push(&letter).await {
+                                                    tracing::error!("DLQ push failed: {}", dlq_err);
+                                                }
+                                            }
+                                            break 'retry;
+                                        } else if attempt + 1 == max_attempts {
+                                            if let Some(ref dlq) = self.dead_letter_queue {
+                                                let letter = StepDeadLetter {
+                                                    session_id: ctx.task_id.clone(),
+                                                    node_id: node.id.clone(),
+                                                    failure_reason:
+                                                        DeadLetterReason::MaxRetriesExceeded {
+                                                            attempts: max_attempts,
+                                                        },
+                                                    input: input.clone(),
+                                                    attempt: attempt as u32,
+                                                    failed_at_secs: SystemTime::now()
+                                                        .duration_since(std::time::UNIX_EPOCH)
+                                                        .unwrap_or_default()
+                                                        .as_secs(),
+                                                };
+                                                if let Err(dlq_err) = dlq.push(&letter).await {
+                                                    tracing::error!("DLQ push failed: {}", dlq_err);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(_elapsed) => {
+                                        let timeout_err = MemFuseError::Timeout {
+                                            operation: format!("tool:{}", handler_name),
+                                            timeout_ms: tool.timeout_ms(),
+                                        };
+                                        execution_res = Err(timeout_err);
+
+                                        if let Some(ref dlq) = self.dead_letter_queue {
+                                            let letter = StepDeadLetter {
+                                                session_id: ctx.task_id.clone(),
+                                                node_id: node.id.clone(),
+                                                failure_reason: DeadLetterReason::Timeout {
+                                                    timeout_ms: tool.timeout_ms(),
+                                                },
+                                                input: input.clone(),
+                                                attempt: attempt as u32,
+                                                failed_at_secs: SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap_or_default()
+                                                    .as_secs(),
+                                            };
+                                            if let Err(dlq_err) = dlq.push(&letter).await {
+                                                tracing::error!("DLQ push failed: {}", dlq_err);
+                                            }
+                                        }
+
+                                        if !tool.is_retriable() {
+                                            break 'retry;
+                                        }
+                                    }
+                                }
+                            }
+                            execution_res
                         } else {
                             Err(MemFuseError::Internal(format!(
                                 "Tool {} not registered",
