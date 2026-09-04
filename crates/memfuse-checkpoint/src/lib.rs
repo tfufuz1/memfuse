@@ -1383,10 +1383,10 @@ mod tests {
     #[tokio::test]
     async fn test_checkpoint_counter_is_instance_scoped() {
         let storage1 = Arc::new(MockStorage::new());
-        let store1 = PersistentCheckpointStore::new(storage1, "ns1").unwrap();
+        let store1 = PersistentCheckpointStore::new(storage1, "ns1");
 
         let storage2 = Arc::new(MockStorage::new());
-        let store2 = PersistentCheckpointStore::new(storage2, "ns2").unwrap();
+        let store2 = PersistentCheckpointStore::new(storage2, "ns2");
 
         assert_eq!(store1.checkpoint_count(), 0);
         assert_eq!(store2.checkpoint_count(), 0);
@@ -1482,7 +1482,7 @@ mod tests {
     async fn test_orphan_recovery_on_startup() {
         let storage = Arc::new(MockStorage::new());
         let store =
-            PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery").unwrap();
+            PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery");
         let seq_no = 67890;
 
         // Pin checkpoint and register orphan directly on store
@@ -1498,7 +1498,7 @@ mod tests {
         // Recover orphaned pins via store
         let recovered = store.recover_orphaned_pins().await.unwrap();
 
-        assert_eq!(recovered, vec![seq_no]);
+        assert_eq!(recovered, vec![PinId::new(seq_no)]);
         assert!(
             !storage.pinned.lock().contains(&seq_no),
             "Storage sequence number 67890 must be unpinned after recovery"
@@ -1620,7 +1620,7 @@ mod tests {
                     .expect("Failed to build Tokio runtime for panic test");
 
                 let store =
-                    Arc::new(PersistentCheckpointStore::new(storage, "test_panic").unwrap());
+                    Arc::new(PersistentCheckpointStore::new(storage, "test_panic"));
                 let store_clone = Arc::clone(&store);
 
                 let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1662,7 +1662,7 @@ mod tests {
     async fn checkpoint_guard_rollback_on_drop() {
         let storage = Arc::new(MockStorage::new());
         let store =
-            PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop").unwrap();
+            PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop");
         store.clear_all_orphaned_checkpoints();
 
         {
@@ -2262,8 +2262,7 @@ mod tests {
         let store = PersistentCheckpointStore::new(storage, "test");
 
         let tx1 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
-        #[allow(deprecated)]
-        let tx2 = store.next_tx().await.expect("// expect #[cfg(test)]");
+        let tx2 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
         let tx3 = store.allocate_tx().await.expect("// expect #[cfg(test)]");
 
         assert_eq!(tx1, TxId::new(TxId::INTERNAL_BASE));

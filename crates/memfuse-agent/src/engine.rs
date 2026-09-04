@@ -36,7 +36,7 @@ pub struct OrchestratorEngine {
 
 impl OrchestratorEngine {
     pub fn try_new(storage: Arc<LsmStorage>) -> Result<Self> {
-        let store = PersistentCheckpointStore::new(storage, "agent")?;
+        let store = PersistentCheckpointStore::new(storage, "agent");
         Ok(Self {
             tools: HashMap::new(),
             checkpoint_store: Arc::new(store),
