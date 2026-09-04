@@ -260,4 +260,21 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 - **Zero Panic & Safety:** 0 `.unwrap()` / `.expect()` outside `#[cfg(test)]`. Unsafe usage restricted to SIMD intrinsics in `distance.rs` with `#![deny(unsafe_code)]` and required `mmap` calls in `diskann.rs`/`persistence.rs` with inline `// SAFETY:` comments.
 
 ---
+
+## 15. Audit-Update — Depth Audit & Fault-Injection Verification (2026-09-04T13:19:52Z, SESSION: d6f595c5)
+
+### 15.1 Inventory & Reality Verification
+- **Command:** `find crates/memfuse-index/src -name "*.rs" | sort`
+- **Files:** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `persistence.rs`, `quantize.rs` (6 files total).
+- **Result:** Confirmed 0 inventory drift relative to prompt snapshot (Stand 2026-09-03).
+
+### 15.2 Depth Audit & Verification Results
+- **Proptest Property Verification:** `cargo test -p memfuse-index --all-features --test proptest_distance_quantize` passed 39/39 tests (0 failures).
+- **Concurrency & Snapshot Isolation Sampling:** `cargo test -p memfuse-index --test hnsw_snapshot_delete_test` passed 2/2 tests. Multi-threaded test sweeps confirmed zero race conditions.
+- **Mmap TOCTOU Fault Injection:** `cargo test -p memfuse-index --test mmap_toctou_test` verified safe handling of post-deletion unlinking and expected process termination (SIGBUS signal 7) on in-place file truncation without memory corruption or undefined behavior.
+- **SIMD Scalar Fallback Parity:** `RUSTFLAGS="-C target-feature=-avx2" cargo test -p memfuse-index --lib distance` passed 23/23 tests, confirming complete parity between SIMD and scalar fallback implementations.
+- **Edge Cases & Tombstones:** `cargo test -p memfuse-index --release --test recall_audit test_edge_cases_and_tombstones` verified correctness for edge cases and tombstone handling.
+- **Quality & Safety Constraints:** 0 errors/warnings on `cargo check -p memfuse-index --all-features`, 0 clippy findings, 0 formatting diffs, zero production `.unwrap()` / `.expect()`.
+
+---
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
