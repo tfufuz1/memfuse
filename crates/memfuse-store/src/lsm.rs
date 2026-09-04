@@ -1116,10 +1116,9 @@ impl StorageEngine for LsmStorage {
                 // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
                 // WAL-Datei aufräumen (best-effort)
                 drop(state);
-                let _ = tokio::fs::remove_file(
-                    &self.config.path.join(format!("wal-{}.log", flush_id)),
-                )
-                .await;
+                let _ =
+                    tokio::fs::remove_file(&self.config.path.join(format!("wal-{}.log", flush_id)))
+                        .await;
                 return Ok(());
             }
             let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));

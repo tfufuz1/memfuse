@@ -387,7 +387,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn evaluate_importance_with_llm(
         &self,
         doc_id: &str,
-        ollama: &memfuse_ollama::OllamaClient,
+        ollama: &(impl memfuse_ollama::OllamaApi + ?Sized),
+        model: &str,
     ) -> Result<memfuse_core::ImportanceScore> {
         let user_key = self.namespaced_key(doc_id.as_bytes(), 0);
         let Some(data) = self.storage.get(&user_key).await? else {
@@ -407,8 +408,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             text.chars().take(500).collect::<String>()
         );
 
-        let model = &ollama.config().model;
-        let response = ollama.generate_text(model, &prompt).await.map_err(|e| {
+        let response = ollama.chat(model, &prompt).await.map_err(|e| {
             memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
         })?;
 
