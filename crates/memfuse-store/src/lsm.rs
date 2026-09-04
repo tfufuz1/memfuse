@@ -262,6 +262,7 @@ impl LsmStorage {
             .transpose()?;
 
         // Discover and sort all WAL files for replay
+        let mut max_wal_id: Option<u64> = None;
         let mut wal_files = Vec::new();
         let mut entries = tokio::fs::read_dir(&config.path)
             .await
@@ -273,6 +274,8 @@ impl LsmStorage {
             if name_str.starts_with("wal-") && name_str.ends_with(".log") {
                 if let Ok(ts) = name_str[4..name_str.len() - 4].parse::<u128>() {
                     wal_files.push((ts, entry.path()));
+                    let id = ts as u64;
+                    max_wal_id = Some(max_wal_id.map_or(id, |m| m.max(id)));
                 }
             } else if name_str == "wal.log" {
                 // Legacy WAL
