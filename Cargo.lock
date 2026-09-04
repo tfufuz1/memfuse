@@ -2733,7 +2733,6 @@ dependencies = [
  "memfuse-embed",
  "memfuse-graph",
  "memfuse-index",
- "memfuse-ollama",
  "memfuse-store",
  "memfuse-text",
  "parking_lot",

@@ -6,7 +6,7 @@
 
 use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
 use memfuse_core::{
-    DocId, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+    DocId, EntityId, GraphIndex, LlmTextGenerator, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
     EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
