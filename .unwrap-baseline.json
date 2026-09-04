@@ -10117,6 +10117,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "571c6d2003bffcaf"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "5a0e8a4217925b63"
   },
   {
@@ -10161,11 +10165,15 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "7a51fdefcddf24fa"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "7c8325147d9cdc62"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "814766dacbad69a1"
+    "hash": "8093e02a944b78f2"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10198,6 +10206,10 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "ab57b1b662ab1423"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "aef570b23c312680"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10249,7 +10261,7 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ecfddf64a81d1a72"
+    "hash": "ecff54360b1df174"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",

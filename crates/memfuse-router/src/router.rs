@@ -21,7 +21,7 @@ pub struct ConfidenceMetrics {
     pub score_lower: Option<f32>,
     /// Upper bound of the confidence interval (None when not calibrated).
     pub score_upper: Option<f32>,
-    /// Whether the score was calibrated via outcome-driven conformal calibration.
+    /// Whether the score was calibrated via conformal-inspired score adaptation.
     pub calibrated: bool,
     /// Current conformal quantile threshold used for this decision.
     pub quantile_threshold: f32,
@@ -40,7 +40,7 @@ pub struct RoutingDecision {
     pub context: ContextWindow,
     /// Calibrated confidence metrics for auditing and cascade control.
     pub confidence: Option<ConfidenceMetrics>,
-    /// Eindeutige ID dieser Routing-Entscheidung.
+    /// Unique decision identifier used to report ground-truth outcomes via `record_outcome()`.
     pub decision_id: DecisionId,
 }
 
@@ -123,42 +123,6 @@ impl RouterEngine {
         if let Some(state) = self.calibration.write().get_mut(profile_name) {
             state.reset();
         }
-    }
-
-    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
-    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
-    /// mit einem echten Ground-Truth-Signal.
-    ///
-    /// Gibt true zurück wenn die Decision gefunden und verarbeitet wurde,
-    /// false wenn die DecisionId unbekannt ist (z.B. nach Restart).
-    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
-        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
-            Some(name) => name,
-            None => {
-                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
-                return false;
-            }
-        };
-
-        let non_conformity = outcome.non_conformity_score();
-
-        let mut cal = self.calibration.write();
-        if let Some(state) = cal.get_mut(&profile_name) {
-            state.recalibrate_conformal(non_conformity);
-            tracing::debug!(
-                profile = %profile_name,
-                ?outcome,
-                non_conformity,
-                "Router outcome recorded"
-            );
-        }
-        true
-    }
-
-    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
-    /// Sollte in normaler Laufzeit nahe 0 bleiben.
-    pub fn pending_decision_count(&self) -> usize {
-        self.pending_decisions.read().len()
     }
 
     /// Setzt Kalibrierungsstatistik für alle Profile zurück.
@@ -303,6 +267,7 @@ impl RouterEngine {
             if let Some(state) = cal.get_mut(&selected_profile.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
+                // Kalibrierung erfolgt nicht mehr sofort hier, sondern in record_outcome()
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
@@ -335,11 +300,6 @@ impl RouterEngine {
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
         context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
-
-        let decision_id = DecisionId::new();
-        self.pending_decisions
-            .write()
-            .insert(decision_id, selected_profile.name.clone());
 
         Ok(RoutingDecision {
             profile: selected_profile,
@@ -463,7 +423,6 @@ impl RouterEngine {
                 ));
             }
         };
-        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)

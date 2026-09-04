@@ -88,7 +88,7 @@ pub struct AgentContext {
     pub memory: HashMap<String, serde_json::Value>,
     /// History of attached background telemetry events.
     pub events: VecDeque<crate::event_source::BackgroundEvent>,
-    /// Offene Routing-Entscheidung, deren Ergebnis nach Tool-Ausführung zurückgemeldet werden soll.
+    /// Optional pending router decision awaiting ground-truth outcome recording.
     pub pending_routing_decision:
         Option<(Arc<memfuse_router::RouterEngine>, memfuse_router::DecisionId)>,
 }

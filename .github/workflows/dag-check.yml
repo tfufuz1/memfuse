@@ -84,7 +84,7 @@ jobs:
             exit 1
           fi
           echo "Verifying memfuse-agent..."
-          if cargo tree -p memfuse-agent --edges no-dev | grep -E -v "memfuse-agent|memfuse-core|memfuse-db|memfuse-graph|memfuse-checkpoint|memfuse-store|memfuse-crypto|memfuse-index|memfuse-text|memfuse-ollama" | grep -q "memfuse-"; then
+          if cargo tree -p memfuse-agent --edges no-dev | grep -E -v "memfuse-agent|memfuse-core|memfuse-db|memfuse-graph|memfuse-checkpoint|memfuse-store|memfuse-crypto|memfuse-index|memfuse-text|memfuse-ollama|memfuse-router" | grep -q "memfuse-"; then
             echo "ERROR: memfuse-agent violates DAG."
             cargo tree -p memfuse-agent --edges no-dev | grep "memfuse-"
             exit 1

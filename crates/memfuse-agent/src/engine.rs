@@ -161,11 +161,11 @@ impl OrchestratorEngine {
                     };
 
                     if let Some((router, decision_id)) = ctx.pending_routing_decision.take() {
-                        let outcome = match &result_res {
-                            Ok(_) => memfuse_router::RoutingOutcome::Success,
-                            Err(err) => memfuse_router::RoutingOutcome::Rejected {
-                                reason: Some(err.to_string()),
-                            },
+                        let outcome = if result_res.is_ok() {
+                            memfuse_router::RoutingOutcome::Success
+                        } else {
+                            let err_msg = result_res.as_ref().err().map(|e| e.to_string());
+                            memfuse_router::RoutingOutcome::Rejected { reason: err_msg }
                         };
                         router.record_outcome(decision_id, outcome);
                     }

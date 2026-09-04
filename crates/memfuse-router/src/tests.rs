@@ -3,7 +3,9 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use crate::{dispatch_to_slm, DecisionId, RouterEngine, RoutingDecision, RoutingOutcome, SlmProfile};
+    use crate::{
+        dispatch_to_slm, DecisionId, RouterEngine, RoutingDecision, RoutingOutcome, SlmProfile,
+    };
     use memfuse_core::{EntityId, MemFuseError, StorageEngine, TokenBudget};
     use memfuse_db::{MemFuse, MemFuseConfig};
     use serde_json::json;
@@ -1505,9 +1507,8 @@ mod tests {
                 .route(&vec_data, "convergence test content")
                 .await
                 .unwrap();
-            let conf = decision.confidence.expect("Confidence metrics present");
-            last_calibrated = conf.calibrated;
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+            let _conf = decision.confidence.expect("Confidence metrics present");
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
             let calibrated = st.conformal.window_total >= 30;
@@ -1638,8 +1639,8 @@ mod tests {
             let r = router.clone();
             let vec_c = vec_data.clone();
             handles.push(tokio::spawn(async move {
-                let decision = r.route(&vec_c, "parallel convergence content").await?;
-                r.record_outcome(decision.decision_id, RoutingOutcome::Success);
+                let d = r.route(&vec_c, "parallel convergence content").await?;
+                r.record_outcome(d.decision_id, RoutingOutcome::Success);
                 Ok::<(), MemFuseError>(())
             }));
         }
@@ -1815,37 +1816,42 @@ mod tests {
         let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
         let collection = db.collection("default").await.unwrap();
 
-        let vec_coding = vec![1.0, 0.0, 0.0, 0.0];
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "entity_1";
         collection
-            .insert(
-                "coding_doc",
-                &vec_coding,
-                Some(json!({"text": "function test() {}"})),
-            )
+            .insert(key, &vec_data, Some(json!({"text": "sample text"})))
             .await
             .unwrap();
 
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
+
         let profile = SlmProfile::new(
             "default",
-            "http://localhost:9999/mcp",
-            vec![],
+            "http://localhost:1111",
+            vec![100],
             TokenBudget::new(1000, 100),
             0.01,
         );
 
         let router = RouterEngine::new(collection, vec![profile]);
-        let decision = router.route(&vec_coding, "function test").await.unwrap();
+        let decision = router.route(&vec_data, "sample text").await.unwrap();
 
         let cal_before = router.calibration_stats();
+        assert_eq!(cal_before["default"].conformal.window_total, 0);
 
-        let recorded = router.record_outcome(decision.decision_id, RoutingOutcome::Success);
-        assert!(recorded);
+        let ok = router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        assert!(ok);
 
         let cal_after = router.calibration_stats();
-        assert!(
-            cal_after["default"].conformal.window_total > cal_before["default"].conformal.window_total,
-            "window_total should increase after record_outcome"
-        );
+        assert_eq!(cal_after["default"].conformal.window_total, 1);
+        assert!(cal_after["default"].conformal.window_total > cal_before["default"].conformal.window_total);
     }
 
     #[tokio::test]
@@ -1860,15 +1866,15 @@ mod tests {
 
         let profile = SlmProfile::new(
             "default",
-            "http://localhost:9999/mcp",
-            vec![],
+            "http://localhost:1111",
+            vec![100],
             TokenBudget::new(1000, 100),
             0.01,
         );
 
         let router = RouterEngine::new(collection, vec![profile]);
         let unknown_id = DecisionId::new();
-
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
+        assert_eq!(router.pending_decision_count(), 0);
     }
 }
