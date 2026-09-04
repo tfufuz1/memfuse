@@ -474,6 +474,7 @@ pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
 /// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
 #[allow(deprecated)]
 pub fn orphaned_checkpoint_count() -> usize {
+    #[allow(deprecated)]
     get_orphaned_checkpoints().len()
 }
 
