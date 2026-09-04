@@ -289,67 +289,11 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         let empty_vec = Vec::new();
         let vector_slice = self.vector.as_deref().unwrap_or(&empty_vec);
 
-        let anchors = self.anchor_entities.as_deref();
-        let weights = self.weights.as_ref();
-        let graph_strat = self.strategy.as_ref().map(|s| s.to_graph_strategy());
-
         #[allow(deprecated)]
-        let mut results = if self.filter.is_some() || self.memory_type_filter.is_some() {
-            let hybrid_query = memfuse_core::HybridQuery {
-                text_query: self.text.clone(),
-                vector_query: self.vector.clone(),
-                graph_start_node: self
-                    .anchor_entities
-                    .as_ref()
-                    .and_then(|a| a.first())
-                    .map(|e| e.to_string()),
-                graph_strategy: self
-                    .strategy
-                    .as_ref()
-                    .map(|s| s.to_graph_strategy())
-                    .unwrap_or_default(),
-                fusion_weights: self.weights.unwrap_or_default(),
-                filter: self.filter.clone(),
-                memory_type_filter: self.memory_type_filter.clone(),
-                same_community_as: self.same_community_as,
-                include_superseded: false,
-                include_provenance: self.include_provenance,
-                k: fetch_k,
-            };
-            self.collection
-                .hybrid_search_with_query(&hybrid_query)
-                .await?
-        } else if let Some(seq) = self.seq {
-            if text_str.is_empty() && anchors.is_none() {
-                self.collection
-                    .search_filtered_at(vector_slice, fetch_k, self.filter_fn.as_deref(), seq)
-                    .await?
-            } else {
-                self.collection
-                    .hybrid_search_with_strategy(
-                        text_str,
-                        vector_slice,
-                        fetch_k,
-                        anchors,
-                        weights,
-                        graph_strat.as_ref(),
-                        self.same_community_as,
-                    )
-                    .await?
-            }
-        } else {
-            self.collection
-                .hybrid_search_with_strategy(
-                    text_str,
-                    vector_slice,
-                    fetch_k,
-                    anchors,
-                    weights,
-                    graph_strat.as_ref(),
-                    self.same_community_as,
-                )
-                .await?
-        };
+        let mut results = self
+            .collection
+            .hybrid_search_with_query(&hybrid_query)
+            .await?;
 
         if let Some(ref filter_expr) = self.filter {
             results.retain(|res| {
