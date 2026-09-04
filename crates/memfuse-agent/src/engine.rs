@@ -36,8 +36,6 @@ pub struct OrchestratorEngine {
 
 impl OrchestratorEngine {
     pub fn new(storage: Arc<LsmStorage>) -> Self {
-        let store = PersistentCheckpointStore::new(storage, "agent")
-            .unwrap_or_else(|e| panic!("Failed to initialize PersistentCheckpointStore: {e}"));
         Self {
             tools: HashMap::new(),
             checkpoint_store: Arc::new(
@@ -397,7 +395,7 @@ impl OrchestratorEngine {
                                 _ = shutdown.cancelled() => {
                                     return Ok(EventLoopExitReason::Shutdown);
                                 }
-                                _ = source.wait_until_ready() => {}
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
                             }
                         }
                     }
