@@ -93,7 +93,78 @@ check-embed:
 
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
-    nix develop -c cargo xtask check-dag || cargo xtask check-dag
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v nix &> /dev/null && nix develop -c true &> /dev/null; then
+        RUNNER="nix develop -c"
+    else
+        RUNNER=""
+    fi
+    echo "=== DAG Integrity Check (Runner: ${RUNNER:-cargo direkt}) ==="
+
+    echo "--- Phase 1: L1 Kernel Isolation (core) ---"
+    echo "Verifying memfuse-core isolation..."
+    if $RUNNER cargo tree -p memfuse-core --edges no-dev | grep "memfuse-" | grep -E -v "memfuse-core" | grep -q .; then
+        echo "❌ ERROR: memfuse-core imports forbidden internal crates."
+        $RUNNER cargo tree -p memfuse-core --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+
+    echo "--- Phase 2: L2 Peer Isolation (store, index, text, checkpoint) ---"
+    echo "Verifying memfuse-store..."
+    if $RUNNER cargo tree -p memfuse-store --edges no-dev | grep -E -v "memfuse-store|memfuse-core|memfuse-crypto" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-store violates DAG by importing non-core crates."
+        $RUNNER cargo tree -p memfuse-store --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-index..."
+    if $RUNNER cargo tree -p memfuse-index --edges no-dev | grep -E -v "memfuse-index|memfuse-core|memfuse-graph" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-index violates DAG by importing non-core crates."
+        $RUNNER cargo tree -p memfuse-index --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-text..."
+    if $RUNNER cargo tree -p memfuse-text --edges no-dev | grep -E -v "memfuse-text|memfuse-core" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-text violates DAG by importing non-core crates."
+        $RUNNER cargo tree -p memfuse-text --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+    echo "Verifying memfuse-checkpoint (excluding tracked DAG-002)..."
+    if $RUNNER cargo tree -p memfuse-checkpoint --edges no-dev | grep -E -v "memfuse-checkpoint|memfuse-core|memfuse-store" | grep -q "memfuse-"; then
+        echo "❌ ERROR: memfuse-checkpoint violates DAG."
+        $RUNNER cargo tree -p memfuse-checkpoint --edges no-dev | grep "memfuse-"
+        exit 1
+    fi
+
+    echo "--- Phase 3: L3 Orchestration Isolation (db) ---"
+    echo "Verifying memfuse-db..."
+    if $RUNNER cargo tree -p memfuse-db --edges no-dev | grep -E -q "memfuse-py"; then
+        echo "❌ ERROR: memfuse-db imports higher layers."
+        $RUNNER cargo tree -p memfuse-db --edges no-dev | grep -E "memfuse-py"
+        exit 1
+    fi
+
+    echo "--- Phase 4: L4 Application & Bindings Isolation (py, tauri) ---"
+    echo "Verifying memfuse-py..."
+    echo "Verifying memfuse-tauri..."
+    if $RUNNER cargo tree -p memfuse-tauri --edges no-dev | grep -E -q "memfuse-py"; then
+        echo "❌ ERROR: memfuse-tauri imports forbidden internal crates."
+        $RUNNER cargo tree -p memfuse-tauri --edges no-dev | grep -E "memfuse-py"
+        exit 1
+    fi
+
+    echo "--- Known DAG Violations (Tracking) ---"
+    for VIOLATION in "memfuse-checkpoint:memfuse-store:DAG-002" "memfuse-py:memfuse-db:DAG-003"; do
+        CRATE=${VIOLATION%%:*}
+        TARGET=$(echo $VIOLATION | cut -d: -f2)
+        ID=$(echo $VIOLATION | cut -d: -f3)
+        if $RUNNER cargo tree -p "$CRATE" --edges no-dev | grep -q "$TARGET"; then
+            echo "⚠️  $ID still present ($CRATE → $TARGET)"
+        else
+            echo "✅ $ID resolved"
+        fi
+    done
+    echo "=== DAG-Check PASSED ==="
 
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check

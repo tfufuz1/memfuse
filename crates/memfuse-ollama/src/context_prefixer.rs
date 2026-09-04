@@ -13,10 +13,9 @@
 //! Empirisch: 49% weniger Retrieval-Fehler vs. naïves Chunking.
 //! Mit Cross-Encoder Reranking: 67% Reduktion.
 
-use crate::api::OllamaApi;
-use crate::prompt::xml_escape;
+use crate::client::xml_escape;
+use crate::OllamaClient;
 use memfuse_core::MemFuseError;
-use std::sync::Arc;
 
 /// Konfiguration für Kontext-Präfix-Generierung.
 #[derive(Debug, Clone)]
@@ -49,14 +48,13 @@ impl Default for ContextPrefixConfig {
 /// ```no_run
 /// # async fn example() -> Result<(), memfuse_core::MemFuseError> {
 /// use memfuse_ollama::{OllamaClient, ContextPrefixEngine, ContextPrefixConfig};
-/// use std::sync::Arc;
-/// let client = Arc::new(OllamaClient::new("http://localhost:11434"));
+/// let client = OllamaClient::new("http://localhost:11434");
 /// let engine = ContextPrefixEngine::new(client, ContextPrefixConfig::default());
 /// let prefix = engine.generate_prefix("Volltext des Dokuments...", "Chunk-Inhalt...").await?;
 /// # Ok(()) }
 /// ```
 pub struct ContextPrefixEngine {
-    client: Arc<dyn OllamaApi>,
+    client: OllamaClient,
     config: ContextPrefixConfig,
 }
 
@@ -64,7 +62,7 @@ pub struct ContextPrefixEngine {
 pub type ContextPrefixer = ContextPrefixEngine;
 
 impl ContextPrefixEngine {
-    pub fn new(client: Arc<dyn OllamaApi>, config: ContextPrefixConfig) -> Self {
+    pub fn new(client: OllamaClient, config: ContextPrefixConfig) -> Self {
         Self { client, config }
     }
 
@@ -109,7 +107,10 @@ impl ContextPrefixEngine {
              Nur der beschreibende Text, keine Einleitung."
         );
 
-        let raw = self.client.chat(&self.config.model, &prompt).await?;
+        let raw = self
+            .client
+            .generate_text(&self.config.model, &prompt)
+            .await?;
 
         // Prefix auf konfigurierte Token/Wort- und Zeichen-Grenze kürzen
         Ok(truncate_prefix(&raw, self.config.max_prefix_tokens, max_p))
@@ -243,15 +244,39 @@ mod tests {
         );
     }
 
-    use crate::mock::MockOllamaClient;
-
     #[tokio::test]
     async fn test_generate_prefix_mock() {
-        let mock = Arc::new(MockOllamaClient::new(
-            vec![],
-            "Dies ist ein Kontext-Präfix.",
-        ));
-        let engine = ContextPrefixEngine::new(mock, ContextPrefixConfig::default());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let req_str = String::from_utf8_lossy(&buf[..n]);
+                assert!(req_str.contains("<document>"));
+                assert!(req_str.contains("<chunk>"));
+
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": "Dies ist ein Kontext-Präfix."
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let engine = ContextPrefixEngine::new(client, ContextPrefixConfig::default());
         let prefix = engine
             .generate_prefix("Gesamtdokument Inhalt", "Chunk Inhalt")
             .await
@@ -261,8 +286,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_prefix_batch_mock() {
-        let mock = Arc::new(MockOllamaClient::new(vec![], "Präfix"));
-        let engine = ContextPrefixEngine::new(mock, ContextPrefixConfig::default());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": "Präfix"
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let engine = ContextPrefixEngine::new(client, ContextPrefixConfig::default());
         let chunks = vec!["Chunk 1", "Chunk 2"];
         let prefixes = engine.generate_prefix_batch("Dokument", &chunks).await;
         assert_eq!(prefixes.len(), 2);

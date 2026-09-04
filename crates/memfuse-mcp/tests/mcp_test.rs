@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use memfuse_core::{Result, TextEmbeddingEngine};
 use memfuse_db::MemFuse;
 use memfuse_mcp::{
     protocol::JsonRpcRequest,
@@ -27,12 +26,23 @@ struct MockEmbedder {
 }
 
 #[async_trait]
-impl TextEmbeddingEngine for MockEmbedder {
-    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+impl memfuse_core::EmbeddingProvider for MockEmbedder {
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+
+    async fn embed(&self, _text: &str) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
         Ok(vec![0.1f32; self.dimension])
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    fn embedding_dim(&self) -> usize {
+        self.dimension
+    }
+
+    async fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> std::result::Result<Vec<Vec<f32>>, memfuse_core::EmbeddingError> {
         Ok(vec![vec![0.1f32; self.dimension]; texts.len()])
     }
 }

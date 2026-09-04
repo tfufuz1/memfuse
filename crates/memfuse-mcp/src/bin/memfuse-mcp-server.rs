@@ -1,6 +1,5 @@
 use memfuse_db::MemFuse;
-use memfuse_mcp::McpServer;
-use memfuse_ollama::OllamaEmbedder;
+use memfuse_mcp::{EmbeddingConfig, McpServer};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -18,10 +17,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cloned()
         .unwrap_or_else(|| "./memfuse_data".to_string());
 
-    let ollama_url = std::env::var("MEMFUSE_OLLAMA_URL")
-        .unwrap_or_else(|_| memfuse_ollama::DEFAULT_BASE_URL.to_string());
-    let embed_model = std::env::var("MEMFUSE_EMBED_MODEL")
-        .unwrap_or_else(|_| memfuse_ollama::DEFAULT_EMBED_MODEL.to_string());
+    let mut config = EmbeddingConfig::from_env();
+
+    if let Some(i) = args.iter().position(|a| a == "--provider") {
+        if let Some(val) = args.get(i + 1) {
+            config.provider = val.clone();
+        }
+    }
+    if let Some(i) = args.iter().position(|a| a == "--ollama-url") {
+        if let Some(val) = args.get(i + 1) {
+            config.ollama_url = val.clone();
+        }
+    }
+    if let Some(i) = args.iter().position(|a| a == "--embed-model") {
+        if let Some(val) = args.get(i + 1) {
+            config.embed_model = val.clone();
+        }
+    }
+    if let Some(i) = args.iter().position(|a| a == "--onnx-model-path") {
+        if let Some(val) = args.get(i + 1) {
+            config.onnx_model_path = Some(std::path::PathBuf::from(val));
+        }
+    }
 
     let allow_write = if args.iter().any(|a| a == "--read-only") {
         false
@@ -32,12 +49,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let db = Arc::new(MemFuse::open(&db_path).await?);
-    let embedder = Arc::new(OllamaEmbedder::new(&ollama_url, &embed_model));
+    let embedder = config.build_provider()?;
     let server = Arc::new(McpServer::with_write_permission(db, embedder, allow_write)?);
 
     tracing::info!(
         db_path,
         allow_write,
+        provider = %config.provider,
         "MemFuse MCP-Server gestartet (stdio transport)"
     );
     server.run_stdio().await?;

@@ -573,17 +573,6 @@ mod tests {
         assert_eq!(result.tokens_used, 15); // combined_token_count, not raw token_count
     }
 
-    struct UnreachableLlmGenerator;
-    #[async_trait::async_trait]
-    impl LlmTextGenerator for UnreachableLlmGenerator {
-        async fn generate(&self, _prompt: &str) -> Result<String> {
-            Err(MemFuseError::Io(std::io::Error::new(
-                std::io::ErrorKind::ConnectionRefused,
-                "Unreachable LLM generator",
-            )))
-        }
-    }
-
     #[tokio::test]
     async fn test_consolidate_via_llm_error_propagation_on_unreachable_client() {
         let budget = TokenBudget::new(100, 0);
@@ -594,7 +583,8 @@ mod tests {
             },
         );
 
-        let dead_llm = UnreachableLlmGenerator;
+        // Client pointing to an unreachable / closed port
+        let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         let chunks = vec![
             make_chunk(101, "First chunk content", 0.9, false),
@@ -612,7 +602,7 @@ mod tests {
     async fn test_consolidate_via_llm_provenance_and_empty() {
         let budget = TokenBudget::new(100, 0);
         let compactor = ContextCompactor::new(budget, CompactionStrategy::Summarize);
-        let dead_llm = UnreachableLlmGenerator;
+        let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         // Empty chunks slice test
         let empty_res = compactor
