@@ -330,8 +330,10 @@ impl RouterEngine {
         // Tie-breaking: when min_relevance_scores are equal, candidate score descending, then lower original index.
         let mut sorted_profiles = eligible_profiles;
         sorted_profiles.sort_by(|(idx_a, a), (idx_b, b)| {
-            b.min_relevance_score
-                .total_cmp(&a.min_relevance_score)
+            let orig_a = calibration.get(&a.name).map(|s| s.original_min_score).unwrap_or(a.min_relevance_score);
+            let orig_b = calibration.get(&b.name).map(|s| s.original_min_score).unwrap_or(b.min_relevance_score);
+            orig_b
+                .total_cmp(&orig_a)
                 .then_with(|| {
                     let score_a = compute_profile_score(a, chunks);
                     let score_b = compute_profile_score(b, chunks);
