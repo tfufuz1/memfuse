@@ -193,9 +193,7 @@ impl RouterEngine {
                 .map(|p| {
                     let mut ep = p.clone();
                     if let Some(state) = cal.get(&p.name) {
-                        if state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 {
-                            ep.min_relevance_score = state.calibrated_min_score;
-                        }
+                        ep.min_relevance_score = state.calibrated_min_score;
                     }
                     ep
                 })
@@ -245,8 +243,20 @@ impl RouterEngine {
                     quantile_threshold: state.conformal.quantile_threshold,
                     non_conformity_score: non_conformity,
                     selection_margin: confidence_ratio as f32,
-                }
-            });
+                };
+            }
+
+            // 4. Construct ConfidenceMetrics from updated lock state
+            let metrics = cal
+                .get(&selected_profile.name)
+                .map(|state| ConfidenceMetrics {
+                    score_lower: None, // Uncalibrated without ground truth
+                    score_upper: None,
+                    calibrated: state.conformal.window_total > 30,
+                    quantile_threshold: state.conformal.quantile_threshold,
+                    non_conformity_score: non_conformity,
+                    selection_margin: confidence_ratio as f32,
+                });
 
             (selected_profile, metrics)
         }; // Write lock released
@@ -330,10 +340,8 @@ impl RouterEngine {
         // Tie-breaking: when min_relevance_scores are equal, candidate score descending, then lower original index.
         let mut sorted_profiles = eligible_profiles;
         sorted_profiles.sort_by(|(idx_a, a), (idx_b, b)| {
-            let orig_a = calibration.get(&a.name).map(|s| s.original_min_score).unwrap_or(a.min_relevance_score);
-            let orig_b = calibration.get(&b.name).map(|s| s.original_min_score).unwrap_or(b.min_relevance_score);
-            orig_b
-                .total_cmp(&orig_a)
+            b.min_relevance_score
+                .total_cmp(&a.min_relevance_score)
                 .then_with(|| {
                     let score_a = compute_profile_score(a, chunks);
                     let score_b = compute_profile_score(b, chunks);
@@ -380,7 +388,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let _fallback_score = compute_profile_score(fallback_profile, chunks);
+        let fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)

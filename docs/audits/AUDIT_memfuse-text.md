@@ -188,30 +188,3 @@ Benchmarking ausgeführt auf Linux x86_64 via `criterion` (`crates/memfuse-text/
 | OOM / Backpressure | OK | Caps: MAX_TEXT_BYTES (10MB), MAX_STAGED_TRANSACTIONS (10,000), Token-Max-Len (128) | — |
 | SIGBUS mmap-truncate | N/A | memfuse-text nutzt kein mmap (#![forbid(unsafe_code)]) | — |
 | SIGKILL recovery | OK | Statetransaktionen via StorageEngine rollback/commit isoliert | — |
-
----
-
-## Re-Audit Snapshot & Session Summary (`2026-09-04T12:58:41Z`)
-
-Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Domain-APM-Auditsession (Session `eede4c84`) wurde das Crate `memfuse-text` erneut verifiziert:
-
-1. **Gate-Stack Verification:**
-   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
-   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
-   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
-   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **77 passed, 0 failed** (alle Unit- & Integrationstests grün)
-   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
-
-2. **Property-Based & Concurrency Testing:**
-   - `proptest` Scenarios (`prop_bm25_score_term_bounded_across_df_relative_to_n`, `prop_bm25_score_term_finite_and_non_negative`, `prop_high_density_multibyte_never_panics`) $\rightarrow$ **100% passed**
-   - Concurrency Stresstest Suite (`concurrent_metadata.rs`) unter `--test-threads=8` $\rightarrow$ **0 Race Conditions, 0 Deadlocks**
-
-3. **Domain Anti-Pattern Matrix (APM) Verification:**
-   - **APM-14 (Tie-Breaker-Determinismus):** In `InvertedIndex::search_bm25_at` werden Suchergebnisse primär absteigend nach BM25-Score und sekundär aufsteigend nach `DocId` sortiert (`then_with(|| a.0.cmp(&b.0))`) $\rightarrow$ **100% deterministisch**
-   - **APM-16 (NaN/Inf-Propagation):** `BM25::new()` erzwingt $k_1 \ge 0.0$ und $0.0 \le b \le 1.0$; `score_term_with_params()` fangt $df > N/2$ und $df > N$ über einen $10^{-6}$ Floor ab $\rightarrow$ **Keine NaN/Inf-Pfade**
-   - **APM-22 / APM-23 (Score-Konfidenz & Drift):** Index-Statistiken (`total_docs`, `total_tokens`, `avg_doc_len_x1000`) werden bei jedem Commit/Rollback atomar aktualisiert
-   - **APM-24 (Provenienzverlust):** `ScoredDocument` verknüpft `DocId` und BM25-Score verlustfrei für die RRF-Fusion in `memfuse-db`
-   - **APM-36 (Vektor-Dimensionalität):** N/A für Volltext-Index; Textlängen sind strikt durch `MAX_TEXT_BYTES` (10 MB) begrenzt
-
-4. **Multi-Session Review Pass:**
-   - `ANCHOR[TEST:TXT-001]` in `crates/memfuse-text/src/morphology.rs` wurde mit einem weiteren `REVIEW-PASS` aus Session `eede4c84` (`TS: 2026-09-04T12:58:41Z`) bestätigt.
