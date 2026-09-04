@@ -15,7 +15,7 @@ Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse stor
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
 Layer 2:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
-Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-store)
+Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
           memfuse-ollama —  (deps: memfuse-core)
           memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
