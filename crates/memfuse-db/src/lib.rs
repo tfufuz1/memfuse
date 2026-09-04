@@ -11,8 +11,8 @@
 //! ## Concurrency & Lock Hierarchy
 //! When acquiring multiple locks in `MemFuse`, the following order must be respected to avoid deadlocks:
 //! 1. `MemFuse::collections` (`tokio::sync::RwLock`)
-//! 2. `MemFuse::embedder` (`parking_lot::RwLock`)
-//! 3. `Collection::insert_lock` (`tokio::sync::Mutex`) / `Collection::embedder` (`parking_lot::RwLock`)
+//! 2. `MemFuse::embedder` (`tokio::sync::RwLock`)
+//! 3. `Collection::insert_lock` (`tokio::sync::Mutex`) / `Collection::embedder` (`tokio::sync::RwLock`)
 //!
 //!
 //! MemFuse is a zero-boilerplate embedded database for AI agent memory.
@@ -248,8 +248,8 @@ impl Default for MemFuseConfig {
 ///    Registry for active collection instances.
 /// 2. `Collection::insert_lock` (`tokio::sync::Mutex`):
 ///    Mutex serializing mutation paths (`insert`, `update`, `delete`, `relate`, `repair`, `drop_collection`) per collection.
-/// 3. `Collection::embedder` / `MemFuse::embedder` (`parking_lot::RwLock`):
-///    Synchronous lock guarding configured text embedding engines.
+/// 3. `Collection::embedder` / `MemFuse::embedder` (`tokio::sync::RwLock`):
+///    Async RwLock guarding configured text embedding engines.
 ///
 /// **Rule**: Higher-level locks MUST always be acquired BEFORE lower-level locks. Never acquire `collections`
 /// while holding `insert_lock` or `embedder`.
@@ -273,7 +273,7 @@ pub struct MemFuse {
     #[allow(dead_code)]
     raft: tokio::sync::OnceCell<()>,
     /// Global text embedder for default collection.
-    embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
+    embedder: tokio::sync::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
@@ -345,7 +345,7 @@ impl MemFuse {
             task_tracker,
             #[cfg(feature = "cluster")]
             raft: tokio::sync::OnceCell::new(),
-            embedder: parking_lot::RwLock::new(None),
+            embedder: tokio::sync::RwLock::new(None),
         };
 
         // Initialize already existing collections from storage
@@ -572,7 +572,7 @@ impl MemFuse {
         );
 
         // Inherit global embedder if set
-        if let Some(emb) = self.embedder.read().as_ref() {
+        if let Some(emb) = self.embedder.read().await.as_ref() {
             col = col.with_embedder(Arc::clone(emb));
         }
 
@@ -1072,12 +1072,13 @@ impl MemFuse {
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub async fn with_embedder(self, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
         {
-            let mut guard = self.embedder.write();
+            let mut guard = self.embedder.write().await;
             *guard = Some(Arc::clone(&embedder));
         }
         let cols = self.collections.read().await;
         if let Some(col) = cols.get("default") {
-            *col.embedder.write() = Some(embedder);
+            let mut col_guard = col.embedder.write().await;
+            *col_guard = Some(embedder);
         }
         drop(cols);
 
@@ -1088,12 +1089,12 @@ impl MemFuse {
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub async fn set_embedder(&self, embedder: Arc<dyn TextEmbeddingEngine>) -> Result<()> {
         {
-            let mut guard = self.embedder.write();
+            let mut guard = self.embedder.write().await;
             *guard = Some(Arc::clone(&embedder));
         }
         let collections_read = self.collections.read().await;
         if let Some(col) = collections_read.get("default") {
-            let mut guard = col.embedder.write();
+            let mut guard = col.embedder.write().await;
             *guard = Some(embedder);
         }
         Ok(())
