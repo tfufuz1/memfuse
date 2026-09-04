@@ -141,3 +141,25 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
 | OOM / Backpressure | OK | Pinning & Auto-Rollback arbeiten heap-begrenzt ohne Memory-Leaks | — |
 | SIGBUS mmap-truncate | N/A | `memfuse-checkpoint` verwendet kein memory-mapped I/O (`#![forbid(unsafe_code)]`) | — |
 | SIGKILL recovery | OK | Waisen-Registrierung und Startup-Recovery stellen konsistenten Zustand nach Prozess-Kill wieder her | AGT-CHECKPOINT-a3ccc9fe |
+
+---
+
+## 10. Audit Session Log (TS: 2026-09-04T12:12:00Z) (SESSION: 562e163b)
+
+- **Audit-Datum:** 2026-09-04T12:12:00Z
+- **Session-Hash:** `562e163b`
+- **Compiler/Toolchain:** Rust 1.98.1 / Cargo 1.98.1
+- **Inventar-Realitätsabgleich (Schritt 0):**
+  - `src/lib.rs` als einzige `.rs`-Quelldatei unter `crates/memfuse-checkpoint/src` bestätigt. Kein Inventar-Drift gegenüber Prompter-Stand (2026-09-03).
+- **Entwicklung & Befundverifikation:**
+  - `AGT-CHECKPOINT-a3ccc9fe` (Global Orphan Registry Race Condition) verifiziert als **RESOLVED** in HEAD (`ec2f47b`, `e263474`, `3d4aa73`): `InstanceOrphanRegistry` ersetzt das prozess-globale Singleton vollständig durch instanz-isoliertes Orphan-State-Tracking gemäß ADR-052, ADR-053, ADR-057 und ADR-058.
+- **Dependency-Audit (Modus A):**
+  - `cargo tree -p memfuse-checkpoint` & `cargo audit` durchgeführt.
+  - Lizenz: `workspace` (MIT OR Apache-2.0). 0 Sicherheitslücken in den direkten/transitiven Abhängigkeiten von `memfuse-checkpoint`.
+- **Crate- & Workspace-Status:**
+  - `cargo check -p memfuse-checkpoint --all-features` → PASSED (0 Fehler, 0 Warnungen)
+  - `cargo clippy -p memfuse-checkpoint -- -D warnings` → PASSED (0 Findings)
+  - `cargo fmt --check -p memfuse-checkpoint` → PASSED (0 Diffs)
+  - `cargo test -p memfuse-checkpoint --all-features` → PASSED (44 Unit-Tests + 32 Integrationstests grün)
+  - `cargo check --workspace --exclude memfuse-tauri` → PASSED
+  - `cargo xtask check-jules-context-freshness` → PASSED
