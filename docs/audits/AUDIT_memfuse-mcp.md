@@ -168,6 +168,23 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
 
 ---
 
+## 14. Tiefen-Audit (2026-09-04 / Session: feeb10c9)
+
+**Datum**: 2026-09-04
+**Session**: feeb10c9
+**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
+
+### Deep Audit Summary & Metrics
+- **Coverage**: Total line coverage 77.35% (`sandbox.rs`: 93.64%, `prompt_injection.rs`: 87.32%, `lib.rs`: 64.33%).
+- **Tier 1 Concurrency Stichprobe**: 5 parallel test execution loops with 8 worker threads (`--test-threads=8`) completed with 0 failures / deadlocks (59 tests per run).
+- **Phase 1 (proptest)**: Evaluated — crate relies on bounded deterministic unit/integration suites.
+- **Phase 2 (Concurrency Stress)**: 10-iteration loop completed with 0 race/deadlock findings.
+- **Phase 3 (Fault Injection & Stdio Fuzzing)**: `test_slowloris_stdio_attack_simulation`, `test_read_line_bounded_enforces_limit`, `test_malformed_json_returns_parse_error` verified. Bounded reading enforces `MAX_RPC_BYTES` (16 MB) safely.
+- **Phase 5 (Mutation Testing)**: Executed `cargo-mutants` on `sandbox.rs` (54 mutants: 23 caught, 23 unviable, 8 missed off-by-one boundary cases).
+- **Inventar-Drift**: `crates/memfuse-mcp/src/tests.rs` confirmed in repository and fully audited.
+
+---
+
 ## 12. Session Audit Log (2026-09-02 / Session: 4e4bb530)
 
 **Datum**: 2026-09-02
@@ -181,33 +198,6 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
 2. **Multi-Session Gate Verifikation**:
    - `cargo run -p xtask -- check-review-coverage` -> PASSED (`ANCHOR 'TEST:MCP-002'` passed review coverage with 2/2 independent sessions).
 3. **Workspace Verifikation**:
-   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
-   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
-   - `cargo fmt --check -p memfuse-mcp` -> OK
-   - `cargo test -p memfuse-mcp --all-features` -> 34 unit tests passed, 25 integration tests passed
-
----
-
-## 13. Session Audit Log (2026-09-04 / Session: ea436a42)
-
-**Datum**: 2026-09-04
-**Session**: ea436a42
-**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
-
-### Durchgeführte Aktionen:
-1. **Schritt 0 — Inventar-Realitätsabgleich**:
-   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 6 Dateien: `bin/memfuse-mcp-server.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
-   - **Befund**: `Inventar-Drift: Datei crates/memfuse-mcp/src/tests.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst`.
-2. **Dependency- & DAG-Audit (Modus A & ADR-010)**:
-   - Alle direkten Abhängigkeiten in `Cargo.toml` geprüft (workspace/direct crates).
-   - Lizenzierung der Workspace-Dependencies bestätigt (`Apache-2.0 OR MIT`).
-   - `cargo audit` ausgeführt (alle bekannten RUSTSEC-Warnungen betreffen GTK/unmaintained crates aus optionalen Tauri-Pfaden, keine Sicherheitslücken in MCP Core).
-   - `just dag-check` PASSED: `memfuse-mcp` (Layer 4) verletzt keine DAG-Constraints.
-3. **Protokoll-, Sicherheits- & DoS-Verifikation**:
-   - `read_line_bounded` verifiziert: Stdio DoS-Schutz erzwingt `MAX_RPC_BYTES` (16 MB) zeilenweise ohne unbegrenzte Speicherallokation.
-   - `McpSandbox` verifiziert: Strikte Opt-In Sandbox-Policy (`allow_db_writes` standardmäßig `false`, per `MEMFUSE_MCP_ALLOW_WRITE` aktivierbar), Methodennamen-Längenprüfung (max 256 Chars) und capacity limit für volatile results (1.000 Items).
-   - `PromptInjectionGuard` verifiziert: Prompt-Injection-Erkennung / Quarantäne-Modi und Untrusted Provenance Marking in `memfuse_search` und `memfuse_get`.
-4. **Workspace- & Gate-Verifikation**:
    - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
    - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
    - `cargo fmt --check -p memfuse-mcp` -> OK

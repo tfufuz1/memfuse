@@ -1547,7 +1547,19 @@ impl SstableStream {
 impl SstableReader {
     /// Scans the SSTable for keys starting with the given prefix.
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
-        let mut results = Vec::with_capacity(16);
+        self.scan_prefix_bounded(prefix, usize::MAX).await
+    }
+
+    /// Scans the SSTable for keys starting with the given prefix up to `max_entries`.
+    pub async fn scan_prefix_bounded(
+        &self,
+        prefix: &[u8],
+        max_entries: usize,
+    ) -> Result<Vec<(Bytes, Bytes, u64, u64)>> {
+        if max_entries == 0 {
+            return Ok(Vec::new());
+        }
+        let mut results = Vec::with_capacity(16.min(max_entries));
 
         let start_idx = match self.index.binary_search_by(|(k, _)| k.as_ref().cmp(prefix)) {
             Ok(i) => i,
@@ -1663,6 +1675,10 @@ impl SstableReader {
                     let key_bytes = block_data.slice(entry_off + 2..entry_off + 2 + k_len);
                     let val_bytes = block_data.slice(ep..ep + v_len);
                     results.push((key_bytes, val_bytes, seq_no, tx_id));
+                    if results.len() >= max_entries {
+                        broke = true;
+                        break;
+                    }
                 }
             }
             if broke {

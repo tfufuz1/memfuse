@@ -226,7 +226,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         }
 
         for edge in edges {
-            GraphIndex::add_edge(&*self.collection.graph_index, self.tx_id, edge)
+            memfuse_core::GraphIndex::add_edge(&*self.collection.graph_index, self.tx_id, edge)
                 .await?;
         }
 
