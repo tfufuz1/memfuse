@@ -1,8 +1,4 @@
-#![allow(deprecated)]
-
-use memfuse_checkpoint::{
-    clear_all_orphaned_checkpoints, CheckpointManifest, CheckpointMeta, PersistentCheckpointStore,
-};
+use memfuse_checkpoint::{CheckpointManifest, CheckpointMeta, PersistentCheckpointStore};
 use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use proptest::prelude::*;
@@ -120,7 +116,6 @@ proptest! {
 
     #[test]
     fn prop_guard_random_lifecycle_sequences(steps in proptest::collection::vec(arb_guard_step(), 1..15)) {
-        clear_all_orphaned_checkpoints();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let storage = Arc::new(TrackingMockStorage::new());

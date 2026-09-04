@@ -219,17 +219,12 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         };
 
         for entity in entities {
-            self.collection
-                .graph_index
-                .add_entity(self.tx_id, entity)
+            GraphIndex::add_entity(self.collection.graph_index.as_ref(), self.tx_id, entity)
                 .await?;
         }
 
         for edge in edges {
-            self.collection
-                .graph_index
-                .add_edge(self.tx_id, edge)
-                .await?;
+            GraphIndex::add_edge(self.collection.graph_index.as_ref(), self.tx_id, edge).await?;
         }
 
         let edge_deletes = {
@@ -241,9 +236,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         };
 
         for (from, to) in edge_deletes {
-            self.collection
-                .graph_index
-                .remove_edge(self.tx_id, from, to)
+            GraphIndex::remove_edge(self.collection.graph_index.as_ref(), self.tx_id, from, to)
                 .await?;
         }
 
