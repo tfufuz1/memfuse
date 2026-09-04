@@ -9,10 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Mindestanzahl Calibration-Samples für verlässliche Conformal-Quantile.
-/// Unterhalb dieses Wertes gelten alle Konfidenzmetriken als "unkalibriert".
-const CALIBRATION_WARMUP_WINDOW: u32 = 30;
-
 /// Calibrated confidence metrics for a routing decision.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfidenceMetrics {
@@ -128,7 +124,6 @@ impl RouterEngine {
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
-    #[allow(deprecated)]
     pub async fn route(
         &self,
         query_embedding: &[f32],
@@ -192,6 +187,7 @@ impl RouterEngine {
             // 2. Scoring + Cascade Selection
             let (selected_idx, selected_profile, _) =
                 self.select_profile_cascade(&chunks, &effective_profiles, &cal)?;
+            let profile_scores = compute_profile_scores(&effective_profiles, &chunks);
 
             let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
@@ -205,6 +201,7 @@ impl RouterEngine {
             } else {
                 2.0 // Single candidate -> high confidence
             };
+            let non_conformity = (1.0 / confidence_ratio as f32).clamp(0.0, 1.0);
 
             let q_threshold = cal
                 .get(&selected_profile.name)
@@ -217,19 +214,15 @@ impl RouterEngine {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
                 state.recalibrate_conformal(non_conformity);
-            }
 
-            // 4. Construct ConfidenceMetrics from updated lock state
-            let metrics = cal.get(&selected_profile.name).map(|state| {
-                let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
-                ConfidenceMetrics {
-                    score_lower: if calibrated {
+                metrics = ConfidenceMetrics {
+                    score_lower: if state.conformal.window_total > 30 {
                         Some(best_score * (1.0 - state.conformal.alpha))
                     } else {
                         None
                     },
                     score_upper: None,
-                    calibrated,
+                    calibrated: state.conformal.window_total > 10,
                     quantile_threshold: state.conformal.quantile_threshold,
                     non_conformity_score: non_conformity,
                     selection_margin: confidence_ratio as f32,
@@ -237,16 +230,14 @@ impl RouterEngine {
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
-            let metrics = cal
-                .get(&selected_profile.name)
-                .map(|state| ConfidenceMetrics {
-                    score_lower: None, // Uncalibrated without ground truth
-                    score_upper: None,
-                    calibrated: state.conformal.window_total > 30,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                    non_conformity_score: non_conformity,
-                    selection_margin: confidence_ratio as f32,
-                });
+            let metrics = cal.get(&selected_profile.name).map(|state| ConfidenceMetrics {
+                score_lower: None, // Uncalibrated without ground truth
+                score_upper: None,
+                calibrated: state.conformal.window_total > 30,
+                quantile_threshold: state.conformal.quantile_threshold,
+                non_conformity_score: non_conformity,
+                selection_margin: confidence_ratio as f32,
+            });
 
             (selected_profile, metrics)
         }; // Write lock released
@@ -344,12 +335,12 @@ impl RouterEngine {
             let score = compute_profile_score(profile, chunks);
             let state = calibration.get(&profile.name);
 
-            // AI-TAG[LOGIC][MAJOR] RESOLVED: AGT-ROUTER-2db4f208 (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395)
-            // BEFUND: Unified calibration warmup window threshold using CALIBRATION_WARMUP_WINDOW = 30 across route() and select_profile_cascade().
+            // AI-TAG[LOGIC][MAJOR] Calibration warmup window total mismatch with tests (ID: AGT-ROUTER-2db4f208) (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395)
+            // BEFUND: router.rs requires st.conformal.window_total >= 50 for is_calibrated=true, whereas test_calibrated_threshold_convergence expects calibration after >10 samples (15 calls).
+            // RISIKO: Inconsistency between test assertions and runtime calibration warmup window causes test failures or delayed calibration activation in production.
+            // EMPFEHLUNG: Align the window_total threshold between select_profile_cascade and unit tests or adjust test iteration count.
             let (threshold, is_calibrated) = match state {
-                Some(st) if st.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 => {
-                    (st.calibrated_min_score, true)
-                }
+                Some(st) if st.conformal.window_total >= 50 => (st.calibrated_min_score, true),
                 _ => (profile.min_relevance_score, false),
             };
 
@@ -378,7 +369,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)
@@ -399,53 +390,6 @@ impl RouterEngine {
         };
 
         Ok((fallback_idx, fallback_profile.clone(), confidence))
-    }
-}
-
-pub(crate) const COMMUNITY_RELEVANCE_BOOST: f32 = 1.2;
-
-#[derive(Debug, Clone)]
-pub(crate) struct ProfileScoring {
-    pub aggregated_score: f32,
-    pub max_score: f32,
-    pub community_matched: bool,
-}
-
-pub(crate) fn score_profile(
-    profile: &SlmProfile,
-    chunks: &[(ContextChunk, Option<u64>)],
-) -> ProfileScoring {
-    let mut aggregated_score = 0.0f32;
-    let mut max_score = 0.0f32;
-    let mut community_matched = profile.domain_communities.is_empty();
-
-    for (chunk, comm_id) in chunks {
-        if !chunk.relevance.is_finite() {
-            continue;
-        }
-
-        let is_match = profile.domain_communities.is_empty()
-            || comm_id.is_some_and(|cid| profile.domain_communities.contains(&cid));
-
-        if is_match {
-            community_matched = true;
-            let boost = if comm_id.is_some_and(|cid| profile.domain_communities.contains(&cid)) {
-                COMMUNITY_RELEVANCE_BOOST
-            } else {
-                1.0
-            };
-            let boosted_relevance = chunk.relevance * boost;
-            aggregated_score += boosted_relevance;
-            if boosted_relevance > max_score {
-                max_score = boosted_relevance;
-            }
-        }
-    }
-
-    ProfileScoring {
-        aggregated_score,
-        max_score,
-        community_matched,
     }
 }
 
