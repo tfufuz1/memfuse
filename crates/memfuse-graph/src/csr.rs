@@ -424,40 +424,10 @@ impl CsrGraph {
         Ok(())
     }
 
-    /// Directly inserts an edge into the CSR graph without staging.
-    pub fn insert_edge_direct(&self, from: EntityId, to: EntityId, weight: f32) -> Result<()> {
-        self.insert_edge_direct_with_validity(from, to, weight, None, None)
-    }
-
-    /// Directly inserts an edge with validity into the CSR graph without staging.
-    ///
-    /// # Weight Validation & Policy
-    /// Edge weights represent relationship strengths or score-decay factors in graph traversal and PPR.
-    /// Negative, infinite, or NaN weights can cause pruning failure in BFS traversal or invalid PageRank calculations.
-    /// Therefore, edge weights MUST be finite and non-negative (`0.0 <= weight`).
-    pub fn insert_edge_direct_with_validity(
-        &self,
-        from: EntityId,
-        to: EntityId,
-        weight: f32,
-        tx_valid_from: Option<TxId>,
-        tx_valid_to: Option<TxId>,
-    ) -> Result<()> {
-        self.insert_edge_direct_with_bitemporal_validity(
-            from,
-            to,
-            weight,
-            tx_valid_from,
-            tx_valid_to,
-            None,
-            None,
-        )
-    }
-
-    /// Directly inserts an edge with full bi-temporal validity into the CSR graph without staging.
+    /// Inserts an edge directly into the CSR graph with bi-temporal validity, offloading compaction asynchronously if needed.
     #[allow(clippy::too_many_arguments)]
-    pub fn insert_edge_direct_with_bitemporal_validity(
-        &self,
+    pub async fn add_edge(
+        self: &Arc<Self>,
         from: EntityId,
         to: EntityId,
         weight: f32,
@@ -471,27 +441,89 @@ impl CsrGraph {
                 "Invalid edge weight {weight}: weight must be finite and non-negative"
             )));
         }
-        let mut inner = self.inner.write();
-        let from_idx = inner.get_or_create_index(from);
-        let to_idx = inner.get_or_create_index(to);
-        inner
-            .pending_edges
-            .entry(from_idx)
-            .or_default()
-            .push(EdgePayload {
-                target: to_idx,
-                weight,
-                tx_valid_from,
-                tx_valid_to,
-                business_valid_from,
-                business_valid_to,
-            });
-        inner.pending_edge_count += 1;
-        inner.is_dirty = true;
-        if inner.pending_edge_count >= self.config.rebuild_threshold {
-            inner.compact();
+
+        // Phase 1: Edge einfügen (Write-Lock kurz halten, kein I/O)
+        let needs_compact = {
+            let mut inner = self.inner.write();
+            let from_idx = inner.get_or_create_index(from);
+            let to_idx = inner.get_or_create_index(to);
+            inner
+                .pending_edges
+                .entry(from_idx)
+                .or_default()
+                .push(EdgePayload {
+                    target: to_idx,
+                    weight,
+                    tx_valid_from,
+                    tx_valid_to,
+                    business_valid_from,
+                    business_valid_to,
+                });
+            inner.pending_edge_count += 1;
+            inner.is_dirty = true;
+            inner.pending_edge_count >= self.config.rebuild_threshold
+        }; // Write-Lock freigegeben
+
+        // Phase 2: Compact außerhalb des Write-Locks (falls nötig)
+        if needs_compact {
+            // compact_async holt sich intern den Write-Lock in spawn_blocking
+            self.compact_async().await?;
         }
+
         Ok(())
+    }
+
+    /// Directly inserts an edge into the CSR graph without staging.
+    pub async fn insert_edge_direct(
+        self: &Arc<Self>,
+        from: EntityId,
+        to: EntityId,
+        weight: f32,
+    ) -> Result<()> {
+        self.add_edge(from, to, weight, None, None, None, None)
+            .await
+    }
+
+    /// Directly inserts an edge with validity into the CSR graph without staging.
+    ///
+    /// # Weight Validation & Policy
+    /// Edge weights represent relationship strengths or score-decay factors in graph traversal and PPR.
+    /// Negative, infinite, or NaN weights can cause pruning failure in BFS traversal or invalid PageRank calculations.
+    /// Therefore, edge weights MUST be finite and non-negative (`0.0 <= weight`).
+    pub async fn insert_edge_direct_with_validity(
+        self: &Arc<Self>,
+        from: EntityId,
+        to: EntityId,
+        weight: f32,
+        tx_valid_from: Option<TxId>,
+        tx_valid_to: Option<TxId>,
+    ) -> Result<()> {
+        self.add_edge(from, to, weight, tx_valid_from, tx_valid_to, None, None)
+            .await
+    }
+
+    /// Directly inserts an edge with full bi-temporal validity into the CSR graph without staging.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_edge_direct_with_bitemporal_validity(
+        self: &Arc<Self>,
+        from: EntityId,
+        to: EntityId,
+        weight: f32,
+        tx_valid_from: Option<TxId>,
+        tx_valid_to: Option<TxId>,
+        business_valid_from: Option<i64>,
+        business_valid_to: Option<i64>,
+    ) -> Result<()> {
+        self.add_edge(
+            from,
+            to,
+            weight,
+            tx_valid_from,
+            tx_valid_to,
+            business_valid_from,
+            business_valid_to,
+        )
+        .await
     }
 
     /// Fügt eine Entity direkt ein (für load_from_storage).
@@ -866,7 +898,7 @@ impl CsrGraph {
             }
         }
         // 2. Pending edges
-        if let Some(pending) = pending {
+        if let Some(pending) = inner.pending_edges.get(&start_idx) {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
@@ -1691,34 +1723,41 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_edge_weights_rejected() {
-        let graph = CsrGraph::new();
+        let graph = Arc::new(CsrGraph::new());
         let tx = TxId::new(1);
         let id1 = EntityId::new(1);
         let id2 = EntityId::new(2);
 
         // NaN weight
-        let err_nan = graph.insert_edge_direct(id1, id2, f32::NAN).unwrap_err();
+        let err_nan = graph
+            .insert_edge_direct(id1, id2, f32::NAN)
+            .await
+            .unwrap_err();
         assert!(matches!(err_nan, MemFuseError::InvalidInput(_)));
 
         // Infinity weight
         let err_inf = graph
             .insert_edge_direct(id1, id2, f32::INFINITY)
+            .await
             .unwrap_err();
         assert!(matches!(err_inf, MemFuseError::InvalidInput(_)));
 
         // Neg Infinity weight
         let err_neginf = graph
             .insert_edge_direct(id1, id2, f32::NEG_INFINITY)
+            .await
             .unwrap_err();
         assert!(matches!(err_neginf, MemFuseError::InvalidInput(_)));
 
         // Negative weight
-        let err_neg = graph.insert_edge_direct(id1, id2, -1.0).unwrap_err();
+        let err_neg = graph.insert_edge_direct(id1, id2, -1.0).await.unwrap_err();
         assert!(matches!(err_neg, MemFuseError::InvalidInput(_)));
 
         // add_edge with NaN
         let edge_nan = Edge::new(id1, id2, "rel").with_weight(f32::NAN);
-        let err_add = graph.add_edge(tx, edge_nan).await.unwrap_err();
+        let err_add = GraphIndex::add_edge(graph.as_ref(), tx, edge_nan)
+            .await
+            .unwrap_err();
         assert!(matches!(err_add, MemFuseError::InvalidInput(_)));
     }
 
@@ -2561,7 +2600,7 @@ mod tests {
             let handle = tokio::spawn(async move {
                 let tx = TxId::new(100 + i);
                 let target = EntityId::new(i);
-                g.add_edge(tx, Edge::new(center_id, target, "connect"))
+                GraphIndex::add_edge(g.as_ref(), tx, Edge::new(center_id, target, "connect"))
                     .await
                     .unwrap(); // unwrap
                 g.commit(tx).await.unwrap(); // unwrap
@@ -3063,10 +3102,13 @@ mod tests {
             .add_entity(tx, Entity::new(EntityId::new(2), "B", "T"))
             .await
             .unwrap(); // unwrap allowed
-        graph
-            .add_edge(tx, Edge::new(EntityId::new(1), EntityId::new(2), "rel"))
-            .await
-            .unwrap(); // unwrap allowed
+        GraphIndex::add_edge(
+            graph.as_ref(),
+            tx,
+            Edge::new(EntityId::new(1), EntityId::new(2), "rel"),
+        )
+        .await
+        .unwrap(); // unwrap allowed
         graph.commit(tx).await.unwrap(); // unwrap allowed
 
         assert!(graph.inner.read().is_dirty);
@@ -3118,10 +3160,10 @@ mod tests {
         assert!(graph.storage.is_some());
     }
 
-    #[test]
+    #[tokio::test]
     #[allow(non_snake_case)]
-    fn insert_entity_direct_and_edge_direct_CASE_and_boundaries() {
-        let graph = CsrGraph::new();
+    async fn insert_entity_direct_and_edge_direct_CASE_and_boundaries() {
+        let graph = Arc::new(CsrGraph::new());
 
         let id1 = EntityId::new(10);
         let id2 = EntityId::new(20);
@@ -3146,6 +3188,7 @@ mod tests {
                 Some(TxId::new(5)),
                 Some(TxId::new(50)),
             )
+            .await
             .unwrap(); // unwrap allowed
 
         assert_eq!(graph.edge_count(), 1);
@@ -3359,38 +3402,43 @@ mod tests {
             node_count in 1..=30usize,
             edge_pairs in proptest::collection::vec((0..30usize, 0..30usize, 0.1f32..2.0f32), 1..100)
         ) {
-            let graph = CsrGraph::new();
-            for i in 0..node_count {
-                graph.insert_entity_direct(Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Type")).unwrap(); // unwrap
-            }
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            let res: std::result::Result<(), proptest::test_runner::TestCaseError> = rt.block_on(async {
+                let graph = Arc::new(CsrGraph::new());
+                for i in 0..node_count {
+                    graph.insert_entity_direct(Entity::new(EntityId::new(i as u64 + 1), format!("N{i}"), "Type")).unwrap(); // unwrap
+                }
 
-            for (src, dst, w) in edge_pairs {
-                let src_id = EntityId::new((src % node_count) as u64 + 1);
-                let dst_id = EntityId::new((dst % node_count) as u64 + 1);
-                graph.insert_edge_direct(src_id, dst_id, w).unwrap(); // unwrap
-            }
+                for (src, dst, w) in edge_pairs {
+                    let src_id = EntityId::new((src % node_count) as u64 + 1);
+                    let dst_id = EntityId::new((dst % node_count) as u64 + 1);
+                    graph.insert_edge_direct(src_id, dst_id, w).await.unwrap(); // unwrap
+                }
 
-            graph.compact();
+                graph.compact();
 
-            let inner = graph.inner.read();
+                let inner = graph.inner.read();
 
-            // Invariant 1: offsets length must equal reverse_map length + 1 after compaction
-            proptest::prop_assert_eq!(inner.offsets.len(), inner.reverse_map.len() + 1);
+                // Invariant 1: offsets length must equal reverse_map length + 1 after compaction
+                proptest::prop_assert_eq!(inner.offsets.len(), inner.reverse_map.len() + 1);
 
-            // Invariant 2: offsets must be monotonically non-decreasing
-            for window in inner.offsets.windows(2) {
-                proptest::prop_assert!(window[0] <= window[1]);
-            }
+                // Invariant 2: offsets must be monotonically non-decreasing
+                for window in inner.offsets.windows(2) {
+                    proptest::prop_assert!(window[0] <= window[1]);
+                }
 
-            // Invariant 3: final offset must match targets length
-            proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len()); // unwrap
+                // Invariant 3: final offset must match targets length
+                proptest::prop_assert_eq!(*inner.offsets.last().unwrap(), inner.targets.len()); // unwrap
 
-            // Invariant 4: parallel arrays (targets, weights, tx_valid_froms, tx_valid_tos, business_valid_froms, business_valid_tos) must have equal lengths
-            proptest::prop_assert_eq!(inner.targets.len(), inner.weights.len());
-            proptest::prop_assert_eq!(inner.targets.len(), inner.tx_valid_froms.len());
-            proptest::prop_assert_eq!(inner.targets.len(), inner.tx_valid_tos.len());
-            proptest::prop_assert_eq!(inner.targets.len(), inner.business_valid_froms.len());
-            proptest::prop_assert_eq!(inner.targets.len(), inner.business_valid_tos.len());
+                // Invariant 4: parallel arrays (targets, weights, tx_valid_froms, tx_valid_tos, business_valid_froms, business_valid_tos) must have equal lengths
+                proptest::prop_assert_eq!(inner.targets.len(), inner.weights.len());
+                proptest::prop_assert_eq!(inner.targets.len(), inner.tx_valid_froms.len());
+                proptest::prop_assert_eq!(inner.targets.len(), inner.tx_valid_tos.len());
+                proptest::prop_assert_eq!(inner.targets.len(), inner.business_valid_froms.len());
+                proptest::prop_assert_eq!(inner.targets.len(), inner.business_valid_tos.len());
+                Ok(())
+            });
+            res?;
         }
     }
 
@@ -3551,22 +3599,22 @@ mod tests {
     #[tokio::test]
     async fn test_hub_node_1m_neighbors_bfs_capped() -> memfuse_core::Result<()> {
         // Use a high rebuild_threshold to avoid repeated O(N) CSR compactions during setup
-        let graph = CsrGraph::with_config(CsrGraphConfig {
+        let graph = Arc::new(CsrGraph::with_config(CsrGraphConfig {
             rebuild_threshold: 2_000_000,
-        });
+        }));
         let start = EntityId::new(1);
         let hub = EntityId::new(2);
 
         // Build 1,000,000 outgoing edges directly in CSR layout
         graph.insert_entity_direct(Entity::new(start, "StartNode", "Type"))?;
         graph.insert_entity_direct(Entity::new(hub, "HubNode", "Supernode"))?;
-        graph.insert_edge_direct(start, hub, 1.0)?;
+        graph.insert_edge_direct(start, hub, 1.0).await?;
 
         let num_neighbors = 1_000_000usize;
         for i in 0..num_neighbors {
             let leaf_id = EntityId::new(3 + i as u64);
             graph.insert_entity_direct(Entity::new(leaf_id, "Leaf", "Type"))?;
-            graph.insert_edge_direct(hub, leaf_id, 0.9)?;
+            graph.insert_edge_direct(hub, leaf_id, 0.9).await?;
         }
         graph.compact();
 

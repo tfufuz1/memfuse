@@ -208,7 +208,13 @@ pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
     if let Err(e) = persist_pinned_seq_no_orphans_sync(&lock) {
         tracing::error!(?e, "Failed to persist pinned seq_no orphans");
     }
-    let _ = global_orphan_registry().register_orphan(orphan.seq_no);
+    if let Err(e) = global_orphan_registry().register_orphan(orphan.seq_no) {
+        tracing::error!(
+            ?e,
+            seq_no = orphan.seq_no,
+            "Failed to register pinned seq_no in global orphan registry (ADR-058)"
+        );
+    }
 }
 
 /// Instance-scoped orphan state for checkpoints and pinned sequence numbers.
@@ -297,18 +303,33 @@ impl InstanceOrphanRegistry {
     pub fn register_orphan_sync(&self, orphan: PinnedSeqNoOrphan) {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
+            let seq_no = orphan.seq_no;
             lock.push(orphan);
             drop(lock);
-            let _ = self.persist_sync();
+            if let Err(e) = self.persist_sync() {
+                tracing::error!(
+                    ?e,
+                    seq_no = seq_no,
+                    "InstanceOrphanRegistry persist_sync failed for pinned seq_no (ADR-058)"
+                );
+            }
         }
     }
 
     pub fn register_checkpoint_sync(&self, cp: StateCheckpoint) {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
+            let tx_id = cp.tx_id;
             lock.push(cp);
             drop(lock);
-            let _ = self.persist_sync();
+            if let Err(e) = self.persist_sync() {
+                tracing::error!(
+                    ?e,
+                    tx_id = ?tx_id,
+                    "CheckpointGuard orphan persist_sync failed — \
+                     checkpoint registered in-memory but not durable on disk (ADR-058)"
+                );
+            }
         }
     }
 
@@ -316,7 +337,9 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after draining pins");
+        }
         drained
     }
 
@@ -328,14 +351,18 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         lock.retain(|o| o.seq_no != seq_no);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, seq_no = seq_no, "Failed to persist orphan registry after clearing pin");
+        }
     }
 
     pub fn drain_orphaned_checkpoints(&self) -> Vec<StateCheckpoint> {
         let mut lock = self.checkpoints.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after draining checkpoints");
+        }
         drained
     }
 
@@ -347,13 +374,17 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         lock.retain(|o| o.tx_id != tx_id);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, tx_id = ?tx_id, "Failed to persist orphan registry after clearing checkpoint");
+        }
     }
 
     pub fn clear_all(&self) {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after clearing all");
+        }
     }
 }
 
@@ -660,12 +691,7 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
             timestamp_ms: monotonic_timestamp_ms(),
             namespace: Some("agent_step".to_string()),
         };
-        Ok(Self::with_registry(
-            cp,
-            storage,
-            "agent_step",
-            orphan_registry,
-        ))
+        Ok(Self::with_registry(cp, storage, "agent_step", orphan_registry))
     }
 
     pub fn checkpoint(&self) -> Result<&StateCheckpoint> {
@@ -752,7 +778,8 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
             SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
             tracing::error!(
                 tx_id = ?cp.tx_id,
-                "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
+                "CheckpointGuard dropped without explicit commit or rollback — \
+                 checkpoint registered in instance-scoped orphan registry for controlled recovery (ADR-053)."
             );
             self.orphan_registry.register_checkpoint_sync(cp);
         }
@@ -1560,11 +1587,7 @@ mod tests {
             .build()
             .expect("Failed to build Tokio runtime for test");
 
-        let guard = rt.block_on(async {
-            PinGuard::pin(storage.clone(), seq_no, registry.clone())
-                .await
-                .unwrap()
-        });
+        let guard = rt.block_on(async { PinGuard::pin(storage.clone(), seq_no, registry.clone()).await.unwrap() });
 
         // Drop guard without runtime or explicit unpin/defuse
         drop(guard);
@@ -1572,8 +1595,7 @@ mod tests {
         // Verify orphan ID appears in registry
         let orphans = registry.get_orphan_pins();
         assert_eq!(
-            orphans.len(),
-            1,
+            orphans.len(), 1,
             "Orphan sequence number 12345 must appear in registry upon PinGuard drop"
         );
         assert_eq!(orphans[0].seq_no, seq_no);

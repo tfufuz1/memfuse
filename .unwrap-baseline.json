@@ -961,6 +961,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "498e2c0475fef0c6"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "4a9bf711144495f6"
   },
   {
@@ -1105,6 +1109,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "e73a7fa845312586"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "e928fc98624cd8c3"
   },
   {
@@ -1114,6 +1122,10 @@
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "ee932bc3cf6ecd5a"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "f32f6685ffd5ca6f"
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
