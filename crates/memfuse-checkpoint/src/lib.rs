@@ -672,6 +672,11 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
+    pub fn with_orphan_state(mut self, orphan_state: Arc<Mutex<OrphanState>>) -> Self {
+        self.orphan_state = Some(orphan_state);
+        self
+    }
+
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {
         let cp = StateCheckpoint {
