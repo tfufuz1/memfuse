@@ -249,8 +249,8 @@ impl ProfileCalibrationState {
 }
 
 mod serde_sorted_u64_set {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::HashSet;
+    use serde::{Deserializer, Serializer, Deserialize, Serialize};
 
     pub fn serialize<S: Serializer>(set: &HashSet<u64>, s: S) -> Result<S::Ok, S::Error> {
         let mut v: Vec<u64> = set.iter().copied().collect();

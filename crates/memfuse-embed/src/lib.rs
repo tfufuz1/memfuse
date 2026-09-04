@@ -34,14 +34,11 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "onnx")]
 pub mod reranker;
-#[cfg(feature = "onnx")]
 pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
 
-/// Conservative default. Override via `TextEmbedderConfig::max_batch_size`.
-/// At 1536D × 512 × f32 = ~3 MB input tensor; safe within 128 MB memory budgets.
-pub const MAX_EMBED_BATCH_SIZE: usize = 512;
+/// Maximum allowed batch size for text embedding queries to prevent unbounded resource exhaustion.
+pub const MAX_EMBED_BATCH_SIZE: usize = 10_000;
 
 /// Configuration settings for the text embedder.
 #[cfg(feature = "onnx")]
@@ -53,8 +50,6 @@ pub struct TextEmbedderConfig {
     pub pool_size: usize,
     /// Expected output embedding dimension (optional).
     pub expected_dim: Option<usize>,
-    /// Maximum batch size for embed_batch(). Default: MAX_EMBED_BATCH_SIZE (512).
-    pub max_batch_size: usize,
 }
 
 #[cfg(feature = "onnx")]
@@ -64,7 +59,6 @@ impl Default for TextEmbedderConfig {
             max_sequence_length: 512,
             pool_size: 2,
             expected_dim: None,
-            max_batch_size: MAX_EMBED_BATCH_SIZE,
         }
     }
 }
@@ -100,12 +94,11 @@ impl TextEmbeddingEngine for TextEmbedder {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let limit = self.config.max_batch_size;
-        if texts.len() > limit {
+        if texts.len() > MAX_EMBED_BATCH_SIZE {
             return Err(MemFuseError::InvalidInput(format!(
-                "Batch size {} exceeds max_batch_size {}. Split into smaller batches.",
+                "Batch size {} exceeds maximum allowed limit {}",
                 texts.len(),
-                limit
+                MAX_EMBED_BATCH_SIZE
             )));
         }
 
@@ -398,7 +391,6 @@ mod tests {
         let cfg = TextEmbedderConfig::default();
         assert_eq!(cfg.max_sequence_length, 512);
         assert_eq!(cfg.pool_size, 2);
-        assert_eq!(cfg.max_batch_size, MAX_EMBED_BATCH_SIZE);
     }
 
     #[cfg(feature = "onnx")]
@@ -522,7 +514,7 @@ mod tests {
         assert!(res.is_err());
         if let Err(err) = res {
             assert!(matches!(err, MemFuseError::InvalidInput(_)));
-            assert!(err.to_string().contains("exceeds max_batch_size"));
+            assert!(err.to_string().contains("exceeds maximum allowed limit"));
         } else {
             panic!("Expected InvalidInput error for oversized embed batch");
         }
