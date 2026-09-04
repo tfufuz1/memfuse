@@ -8,11 +8,8 @@
 
 Stand letzter Prüfung: 2026-09-04
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **0 offene Tags**
 
-| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
-|---|---|---|---|---|---|---|
-| `crates/memfuse-checkpoint/src/lib.rs` | 685 | `AGT-CHECKPOINT-41f541e2` | `CODE` | `CRITICAL` | `2026-09-04T13:15:38Z` | // AI-TAG[CODE][CRITICAL] Broken method referencing non-existent field orphan_state (ID: AGT-CHECKPOINT-41f541e2) (TS: 2026-09-04T13:15:38Z) (SESSION: 129e4a1f) |
 
 
 ## Crate-Inventar & Status
@@ -20,7 +17,7 @@ Ergebnis: **1 offene Tags**
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 8751 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-checkpoint` | 1 | 5125 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-checkpoint` | 1 | 5098 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2393 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 7184 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11704 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
