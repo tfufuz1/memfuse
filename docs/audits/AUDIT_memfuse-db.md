@@ -286,3 +286,22 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 | OOM / Backpressure | OK | Monotonic TxId allocation & bounded heap allocation in RRF | — |
 | Concurrency Smoke | OK | 3/3 iterations of multithreaded test suites passed without deadlock/panic | — |
 | Snapshot Isolation | OK | Snapshot recovery & cross-signal isolation tests passed 100% | — |
+
+---
+
+## 12. Tier-1 Deep Audit & Inventar-Realitätsabgleich (2026-09-04)
+
+**Datum:** 04. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: d01ee970)
+**Aktion:** Tier-1 Deep Audit, Concurrency Smoke Check & Inventar-Realitätsabgleich in `crates/memfuse-db`
+
+### Befunde & Durchgeführte Maßnahmen:
+1. **Inventar-Realitätsabgleich (Schritt 0):**
+   - **Prompter-Inventar (2026-09-03):** `lib.rs`, `fusion.rs`, `collection/search.rs`, `collection/relate.rs`, `collection/mod.rs`, `transaction.rs`, `multistep.rs`, `context_compaction.rs`.
+   - **Inventar-Drift Befund:** 9 zusätzliche Dateien im Repo identifiziert: `chunker.rs`, `collection/crud.rs`, `collection/maintenance.rs`, `collection/query_builder.rs`, `collection/tests.rs`, `collection/tx.rs`, `context.rs`, `filter.rs`, `reaper.rs`.
+2. **Method Shadowing in Transaction & Tests:**
+   - In `crates/memfuse-db/src/transaction.rs` und `tests/graph_hybrid_search.rs` wurde der Trait-Aufruf `GraphIndex::add_edge(&*graph, ...)` explizit qualifiziert, da die Inherent-Methode `CsrGraph::add_edge` mit 7 Argumenten die Trait-Methode überschattete.
+3. **Befund AGT-DB-2f1b6962 (QueryBuilder Supersedes Displacement Bypass):**
+   - **AI-TAG:** `AI-TAG[SEARCH][MAJOR] (ID: AGT-DB-2f1b6962)` in `crates/memfuse-db/src/collection/query_builder.rs`.
+   - **Befund:** `QueryBuilder` übernimmt `include_superseded` nicht in `query_config()` und delegiert bei `filter == None` an `hybrid_search_with_strategy()`, wodurch die Post-RRF Supersedes-Verdrängung (ADR-038) übergangen wird.
+   - **Auswirkung:** Der Test `test_supersedes_displacement_logic` schlägt fehl, bis ein separater Fix-Auftrag `QueryBuilder` um `include_superseded` erweitert und `hybrid_search_with_query()` nutzt.
