@@ -809,8 +809,8 @@ impl Wal {
         } else {
             use rand::RngCore;
 
-            let mut bytes = [0u8; 16];
-            rand::thread_rng().fill_bytes(&mut bytes);
+            let uuid = uuid::Uuid::new_v4();
+            let bytes = *uuid.as_bytes();
 
             let uuid_filename = uuid_path
                 .file_name()
