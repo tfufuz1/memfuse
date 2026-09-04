@@ -9,9 +9,7 @@ pub mod model_info;
 pub mod prompt;
 
 pub use api::OllamaApi;
-pub use client::{
-    OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL,
-};
+pub use client::{OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 pub use context_prefixer::{ContextPrefixConfig, ContextPrefixEngine, ContextPrefixer};
 pub use embedding::OllamaEmbedder;
 pub use importance::score_importance;

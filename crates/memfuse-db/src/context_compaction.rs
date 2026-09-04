@@ -411,7 +411,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 4. Delete source docs — Fehler MÜSSEN die Konsolidierung abbrechen
         for &(src_id, _) in &self.source_docs {
-            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            let doc_key = self
+                .collection
+                .namespaced_key(&src_id.inner().to_le_bytes(), 1);
             match self.collection.storage().get(&doc_key).await? {
                 Some(val) => {
                     match serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
@@ -419,10 +421,12 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
                             self.collection
                                 .delete_op(&mut db_tx, &meta.id)
                                 .await
-                                .map_err(|e| MemFuseError::Internal(format!(
+                                .map_err(|e| {
+                                    MemFuseError::Internal(format!(
                                     "Consolidation commit: failed to delete source doc {:?}: {}",
                                     src_id, e
-                                )))?;
+                                ))
+                                })?;
                         }
                         Err(e) => {
                             return Err(MemFuseError::Serialization(format!(
@@ -588,7 +592,9 @@ mod tests {
             make_chunk(102, "Second chunk content", 0.8, false),
         ];
 
-        let res = compactor.consolidate_via_llm(&chunks, &dead_client, "llama3.2").await;
+        let res = compactor
+            .consolidate_via_llm(&chunks, &dead_client, "llama3.2")
+            .await;
         // Must return an Error and NOT fall back silently to StatusToken inside compaction.rs
         assert!(res.is_err());
     }
@@ -600,7 +606,9 @@ mod tests {
         let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         // Empty chunks slice test
-        let empty_res = compactor.consolidate_via_llm(&[], &dead_client, "llama3.2").await;
+        let empty_res = compactor
+            .consolidate_via_llm(&[], &dead_client, "llama3.2")
+            .await;
         assert!(empty_res.is_ok());
         let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
         assert!(empty_ctx.retained_chunks.is_empty());

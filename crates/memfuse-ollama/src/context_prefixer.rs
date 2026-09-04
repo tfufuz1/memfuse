@@ -109,10 +109,7 @@ impl ContextPrefixEngine {
              Nur der beschreibende Text, keine Einleitung."
         );
 
-        let raw = self
-            .client
-            .chat(&self.config.model, &prompt)
-            .await?;
+        let raw = self.client.chat(&self.config.model, &prompt).await?;
 
         // Prefix auf konfigurierte Token/Wort- und Zeichen-Grenze kürzen
         Ok(truncate_prefix(&raw, self.config.max_prefix_tokens, max_p))
@@ -250,7 +247,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_prefix_mock() {
-        let mock = Arc::new(MockOllamaClient::new(vec![], "Dies ist ein Kontext-Präfix."));
+        let mock = Arc::new(MockOllamaClient::new(
+            vec![],
+            "Dies ist ein Kontext-Präfix.",
+        ));
         let engine = ContextPrefixEngine::new(mock, ContextPrefixConfig::default());
         let prefix = engine
             .generate_prefix("Gesamtdokument Inhalt", "Chunk Inhalt")
