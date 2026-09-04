@@ -230,16 +230,14 @@ impl RouterEngine {
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
-            let metrics = cal
-                .get(&selected_profile.name)
-                .map(|state| ConfidenceMetrics {
-                    score_lower: None, // Uncalibrated without ground truth
-                    score_upper: None,
-                    calibrated: state.conformal.window_total > 30,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                    non_conformity_score: non_conformity,
-                    selection_margin: confidence_ratio as f32,
-                });
+            let metrics = cal.get(&selected_profile.name).map(|state| ConfidenceMetrics {
+                score_lower: None, // Uncalibrated without ground truth
+                score_upper: None,
+                calibrated: state.conformal.window_total > 30,
+                quantile_threshold: state.conformal.quantile_threshold,
+                non_conformity_score: non_conformity,
+                selection_margin: confidence_ratio as f32,
+            });
 
             (selected_profile, metrics)
         }; // Write lock released
