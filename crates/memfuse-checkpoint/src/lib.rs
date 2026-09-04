@@ -1587,7 +1587,7 @@ mod tests {
             .build()
             .expect("Failed to build Tokio runtime for test");
 
-        let guard = rt.block_on(async { PinGuard::pin(storage.clone(), seq_no, registry.clone()).await.unwrap() });
+        let guard = rt.block_on(async { PinGuard::pin(storage.clone(), seq_no, registry.clone()).await.expect("// expect #[cfg(test)]") });
 
         // Drop guard without runtime or explicit unpin/defuse
         drop(guard);
@@ -1608,7 +1608,7 @@ mod tests {
         let seq_no = 67890;
 
         // Pin checkpoint and register orphan directly on store
-        storage.pin_checkpoint(seq_no).await.unwrap();
+        storage.pin_checkpoint(seq_no).await.expect("// expect #[cfg(test)]");
         store.register_pinned_seq_no_orphan(PinnedSeqNoOrphan {
             seq_no,
             timestamp_ms: monotonic_timestamp_ms(),
@@ -1618,7 +1618,7 @@ mod tests {
         assert!(!store.orphan_registry().get_orphan_pins().is_empty());
 
         // Recover orphaned pins via store
-        let recovered = store.recover_orphaned_pins().await.unwrap();
+        let recovered = store.recover_orphaned_pins().await.expect("// expect #[cfg(test)]");
 
         assert_eq!(recovered, vec![seq_no]);
         assert!(
@@ -1641,7 +1641,7 @@ mod tests {
 
         // Drop an uncommitted guard in Store A
         {
-            let _guard_a = store_a.create_guard(TxId::new(5555)).unwrap();
+            let _guard_a = store_a.create_guard(TxId::new(5555)).expect("// expect #[cfg(test)]");
             // _guard_a drops here without commit or rollback
         }
 
