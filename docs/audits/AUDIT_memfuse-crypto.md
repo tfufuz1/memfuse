@@ -333,3 +333,25 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto`:
   - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
 - **Befund-Remediation:**
   - `AGT-CRYPTO-dd984bc2` (Constant-Time Eq in `VolatileEncryptionKey::eq`) und `AGT-CRYPTO-7519b7cd` (ManuallyDrop in `test_zeroize_on_drop_wipes_memory`) vollständig verifiziert und gelöst.
+
+---
+
+## 18. Re-Audit & Verification (2026-09-04)
+
+**Datum:** 2026-09-04T12:57:15Z (SESSION: ecb4a0df)
+**Status:** **ALL CHECKS GREEN (VERIFIED — 0 OPEN FINDINGS)**
+
+Erneute Tiefenprüfung aller kryptographischen Subsysteme in `memfuse-crypto`:
+- **Inventarabgleich (Schritt 0):** Stand 2026-09-03 erneut bestätigt (`anti_tamper.rs`, `crypto.rs`, `lib.rs`, `wal_crypto.rs`). Keine Inventar-Drifts.
+- **Kompilierung & Statische Analyse:**
+  - `cargo check -p memfuse-crypto --all-features` -> 0 Fehler, 0 Warnungen
+  - `cargo clippy -p memfuse-crypto --all-features -- -D warnings` -> 0 Findings
+  - `cargo fmt --check -p memfuse-crypto` -> 0 Formatting Diffs
+- **Test-Abdeckung & Safety:**
+  - `cargo test -p memfuse-crypto --all-features` -> 89 Tests (55 Unit-, 3 Anti-Tamper Matrix-, 10 Key Separation-, 5 Namespace Isolation-, 4 Nonce Reuse-, 2 Nonce Stress-, 4 Proptests-, 6 RFC Vectors-Tests) 100% grün.
+  - Zero `unsafe` Blöcke in Quellcode unter `crates/memfuse-crypto/src/` (`#![forbid(unsafe_code)]` im Produktionscode strikt aktiv).
+  - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
+- **Subsystem- & Invarianten-Verifikation:**
+  - AES-256-GCM-SIV Nonce-Misuse Resistance & HKDF Domain-Separation verifiziert.
+  - WAL HMAC-SHA256 Chaining & Constant-Time Verification (`subtle::ConstantTimeEq`) verifiziert.
+  - `VolatileEncryptionKey` Zeroize-Drop-Semantik & Memory-Wipe verifiziert.
