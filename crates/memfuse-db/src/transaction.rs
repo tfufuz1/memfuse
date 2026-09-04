@@ -226,10 +226,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         }
 
         for edge in edges {
-            self.collection
-                .graph_index
-                .add_edge(self.tx_id, edge)
-                .await?;
+            GraphIndex::add_edge(self.collection.graph_index.as_ref(), self.tx_id, edge).await?;
         }
 
         let edge_deletes = {
