@@ -84,8 +84,6 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
-/// Global atomic counter for generating unique WAL log file names across flushes.
-static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
@@ -229,6 +227,7 @@ pub struct LsmStorage {
     commit_mutex: tokio::sync::Mutex<()>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
+    flush_counter: AtomicU64,
 }
 
 impl LsmStorage {
@@ -473,6 +472,7 @@ impl LsmStorage {
             commit_mutex: tokio::sync::Mutex::new(()),
             cancel_token,
             task_tracker,
+            flush_counter: AtomicU64::new(0),
         })
     }
 
@@ -1096,7 +1096,7 @@ impl StorageEngine for LsmStorage {
         } // read lock freigegeben
 
         // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
-        let flush_id = FLUSH_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
         // WAL wird HIER erstellt — kein Lock gehalten
         let new_wal = Wal::open_with_config(
