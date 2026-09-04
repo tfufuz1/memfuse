@@ -14,9 +14,9 @@
 
 use crate::collection::Collection;
 use memfuse_core::{
-    ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex,
+    ContextChunk, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine, TokenBudget, TxId,
+    VectorIndex,
 };
-use memfuse_ollama::OllamaApi;
 
 /// Strategie für Context Compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,8 +148,8 @@ impl ContextCompactor {
     pub async fn consolidate_via_llm(
         &self,
         chunks: &[ContextChunk],
-        ollama: &(impl OllamaApi + ?Sized),
-        model: &str,
+        generator: &(impl LlmTextGenerator + ?Sized),
+        _model: &str,
     ) -> Result<CompactedContext> {
         if chunks.is_empty() {
             return Ok(CompactedContext {
@@ -178,7 +178,7 @@ impl ContextCompactor {
             prompt_content
         );
 
-        let summary_text = ollama.chat(model, &prompt).await?;
+        let summary_text = generator.generate(&prompt).await?;
 
         let estimated_tokens = crate::context::ContextManager::estimate_tokens(&summary_text);
 
@@ -411,7 +411,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 4. Delete source docs — Fehler MÜSSEN die Konsolidierung abbrechen
         for &(src_id, _) in &self.source_docs {
-            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            let doc_key = self
+                .collection
+                .namespaced_key(&src_id.inner().to_le_bytes(), 1);
             match self.collection.storage().get(&doc_key).await? {
                 Some(val) => {
                     match serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
@@ -419,10 +421,12 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
                             self.collection
                                 .delete_op(&mut db_tx, &meta.id)
                                 .await
-                                .map_err(|e| MemFuseError::Internal(format!(
+                                .map_err(|e| {
+                                    MemFuseError::Internal(format!(
                                     "Consolidation commit: failed to delete source doc {:?}: {}",
                                     src_id, e
-                                )))?;
+                                ))
+                                })?;
                         }
                         Err(e) => {
                             return Err(MemFuseError::Serialization(format!(
@@ -454,7 +458,6 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memfuse_ollama::OllamaClient;
 
     fn make_chunk(id: u64, content: &str, relevance: f32, is_tool: bool) -> ContextChunk {
         let metadata = if is_tool {
@@ -588,7 +591,9 @@ mod tests {
             make_chunk(102, "Second chunk content", 0.8, false),
         ];
 
-        let res = compactor.consolidate_via_llm(&chunks, &dead_client, "llama3.2").await;
+        let res = compactor
+            .consolidate_via_llm(&chunks, &dead_llm, "llama3.2")
+            .await;
         // Must return an Error and NOT fall back silently to StatusToken inside compaction.rs
         assert!(res.is_err());
     }
@@ -600,7 +605,9 @@ mod tests {
         let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         // Empty chunks slice test
-        let empty_res = compactor.consolidate_via_llm(&[], &dead_client, "llama3.2").await;
+        let empty_res = compactor
+            .consolidate_via_llm(&[], &dead_llm, "llama3.2")
+            .await;
         assert!(empty_res.is_ok());
         let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
         assert!(empty_ctx.retained_chunks.is_empty());

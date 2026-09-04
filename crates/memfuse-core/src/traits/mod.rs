@@ -14,10 +14,15 @@
 // INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
+use ahash::AHashMap;
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+/// Trait and mock definitions for text embedding providers and LLMs.
+pub mod embedding;
+pub use embedding::*;
 
 /// Abstract contract for generating consistent checkpoints.
 #[async_trait]
@@ -513,8 +518,7 @@ pub trait GraphIndex: Send + Sync + 'static {
         start_nodes: &[crate::types::EntityId],
         max_hops: usize,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        let mut combined: std::collections::HashMap<crate::types::EntityId, f32> =
-            std::collections::HashMap::new();
+        let mut combined: AHashMap<crate::types::EntityId, f32> = AHashMap::default();
         for &start in start_nodes {
             let results = self.traverse(start, max_hops).await?;
             for (entity_id, score) in results {
@@ -1134,7 +1138,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_many_default_impl_deletes_all_keys() {
         struct MockStorage {
-            data: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
+            data: std::sync::Arc<std::sync::Mutex<AHashMap<Vec<u8>, Vec<u8>>>>,
             delete_call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         }
 
@@ -1209,7 +1213,7 @@ mod tests {
             }
         }
 
-        let map = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let map = std::sync::Arc::new(std::sync::Mutex::new(AHashMap::default()));
         let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let store = MockStorage {
             data: map.clone(),

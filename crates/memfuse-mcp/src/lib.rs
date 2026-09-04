@@ -1,8 +1,11 @@
+pub mod config;
 pub mod prompt_injection;
 pub mod protocol;
 pub mod sandbox;
 #[cfg(test)]
 mod tests;
+
+pub use config::*;
 
 pub use prompt_injection::{
     PromptInjectionConfig, PromptInjectionGuard, QuarantinePolicy, SecurityAuditLogger,
@@ -16,7 +19,7 @@ pub use prompt_injection::{
 // HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
 // SIEHE AUCH:  ADR-010, rules/async-io.md
 
-use memfuse_core::{DocId, MemFuseError, TextEmbeddingEngine, MAX_SEARCH_K};
+use memfuse_core::{DocId, EmbeddingProvider, MemFuseError, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
 use protocol::{response_from_error, JsonRpcRequest, JsonRpcResponse, McpError};
@@ -129,7 +132,7 @@ fn validate_collection_name(name: &str) -> Result<(), McpError> {
 
 pub struct McpServer {
     pub db: Arc<MemFuse>,
-    pub embedder: Arc<dyn TextEmbeddingEngine>,
+    pub embedder: Arc<dyn EmbeddingProvider>,
     pub sandbox: Arc<McpSandbox>,
     pub injection_guard: Arc<PromptInjectionGuard>,
 }
@@ -137,14 +140,14 @@ pub struct McpServer {
 impl McpServer {
     pub fn new(
         db: Arc<MemFuse>,
-        embedder: Arc<dyn TextEmbeddingEngine>,
+        embedder: Arc<dyn EmbeddingProvider>,
     ) -> Result<Self, MemFuseError> {
         Self::with_write_permission(db, embedder, is_write_allowed_by_env())
     }
 
     pub fn with_write_permission(
         db: Arc<MemFuse>,
-        embedder: Arc<dyn TextEmbeddingEngine>,
+        embedder: Arc<dyn EmbeddingProvider>,
         allow_db_writes: bool,
     ) -> Result<Self, MemFuseError> {
         let policy = SandboxPolicy {
@@ -160,7 +163,7 @@ impl McpServer {
 
     pub fn with_sandbox(
         db: Arc<MemFuse>,
-        embedder: Arc<dyn TextEmbeddingEngine>,
+        embedder: Arc<dyn EmbeddingProvider>,
         sandbox: Arc<McpSandbox>,
     ) -> Self {
         Self {

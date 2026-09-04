@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 description = "Core types, traits, and error handling for MemFuse"
 
+[features]
+test-utils = []
+
 [dependencies]
 # Standard error derive macro for MemFuseError.
 thiserror = { workspace = true }
