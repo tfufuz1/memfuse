@@ -120,8 +120,6 @@ proptest! {
 
     #[test]
     fn prop_guard_random_lifecycle_sequences(steps in proptest::collection::vec(arb_guard_step(), 1..15)) {
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         clear_all_orphaned_checkpoints();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
