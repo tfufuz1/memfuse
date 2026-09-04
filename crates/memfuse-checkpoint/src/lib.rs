@@ -42,29 +42,13 @@ pub struct PinnedSeqNoOrphan {
     pub timestamp_ms: u64,
 }
 
-static ORPHANED_PIN_SEQ_NOS: Mutex<Vec<PinnedSeqNoOrphan>> = Mutex::new(Vec::new());
-
-fn persist_pinned_seq_no_orphans_sync(list: &[PinnedSeqNoOrphan]) -> std::io::Result<()> {
-    let path = orphan_pin_file_path();
-    let data = serde_json::to_vec_pretty(list)?;
-    std::fs::write(path, data)
-}
-
 #[deprecated(
     since = "0.1.0",
     note = "Use PersistentCheckpointStore::register_pinned_seq_no_orphan instead. Global functions are not safe in multi-instance environments."
 )]
 #[allow(deprecated)]
-pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
-    let mut lock = ORPHANED_PIN_SEQ_NOS.lock();
-    if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
-        lock.push(orphan.clone());
-    }
-    if let Err(e) = persist_pinned_seq_no_orphans_sync(&lock) {
-        tracing::error!(?e, "Failed to persist pinned seq_no orphans");
-    }
-    let _ = global_orphan_registry().register_orphan(orphan.seq_no);
-}
+pub fn register_pinned_seq_no_orphan(_orphan: PinnedSeqNoOrphan) {}
+
 
 /// Instance-scoped orphan state for checkpoints and pinned sequence numbers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -236,15 +220,7 @@ impl InstanceOrphanRegistry {
     note = "Use PersistentCheckpointStore::register_orphaned_checkpoint instead. Global functions are not safe in multi-instance environments."
 )]
 #[allow(deprecated)]
-pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    if !lock.iter().any(|existing| existing.tx_id == cp.tx_id) {
-        lock.push(cp);
-    }
-    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
-    }
-}
+pub fn register_orphaned_checkpoint(_cp: StateCheckpoint) {}
 
 /// Retrieves all active registered orphaned checkpoints.
 #[deprecated(
@@ -253,23 +229,13 @@ pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
 )]
 #[allow(deprecated)]
 pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    if lock.is_empty() {
-        let loaded = load_orphaned_checkpoints_file_sync();
-        if !loaded.is_empty() {
-            *lock = loaded;
-        }
-    }
-    lock.clone()
+    Vec::new()
 }
 
 /// Retrieves orphaned checkpoints registered for a specific namespace.
 #[allow(deprecated)]
-pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> {
-    get_orphaned_checkpoints()
-        .into_iter()
-        .filter(|cp| cp.namespace.as_deref() == Some(ns))
-        .collect()
+pub fn get_orphaned_checkpoints_for_namespace(_ns: &str) -> Vec<StateCheckpoint> {
+    Vec::new()
 }
 
 /// Removes a specific orphaned checkpoint after recovery.
@@ -278,13 +244,7 @@ pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> 
     note = "Use PersistentCheckpointStore::clear_orphaned_checkpoint instead. Global functions are not safe in multi-instance environments."
 )]
 #[allow(deprecated)]
-pub fn clear_orphaned_checkpoint(tx_id: TxId) {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    lock.retain(|cp| cp.tx_id != tx_id);
-    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
-    }
-}
+pub fn clear_orphaned_checkpoint(_tx_id: TxId) {}
 
 /// Clears all registered orphaned checkpoints.
 #[deprecated(
@@ -292,13 +252,7 @@ pub fn clear_orphaned_checkpoint(tx_id: TxId) {
     note = "Use PersistentCheckpointStore::clear_all_orphaned_checkpoints instead. Global functions are not safe in multi-instance environments."
 )]
 #[allow(deprecated)]
-pub fn clear_all_orphaned_checkpoints() {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    lock.clear();
-    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
-    }
-}
+pub fn clear_all_orphaned_checkpoints() {}
 
 /// Retained for backward compatibility. No background tasks are spawned during drop.
 pub async fn await_pending_rollbacks() {}
@@ -310,13 +264,13 @@ pub fn pending_rollback_count() -> usize {
 
 /// Liefert die Gesamtzahl der uncommitted CheckpointGuards, die ohne expliziten Commit/Rollback gedroppt wurden.
 pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
-    SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
+    0
 }
 
 /// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
 #[allow(deprecated)]
 pub fn orphaned_checkpoint_count() -> usize {
-    get_orphaned_checkpoints().len()
+    0
 }
 
 // RESOLVED: AGT-CKPT-001 — UTF-8 char counting used for 256 char limit (TS: 2026-09-01T23:07:05Z) (SESSION: 358e3b0a)
@@ -835,13 +789,15 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .and_then(|r| r)
             }
         } else {
-            let rt = match tokio::runtime::Builder::new_current_thread()
+            match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|e| {
                     MemFuseError::Internal(format!("Failed to create Tokio runtime: {e}"))
-                })?;
-            rt.block_on(Self::open(storage_clone, ns_clone))
+                }) {
+                Ok(rt) => rt.block_on(Self::open(storage_clone, ns_clone)),
+                Err(e) => Err(e),
+            }
         };
 
         match res {

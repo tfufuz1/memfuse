@@ -38,10 +38,7 @@ impl OrchestratorEngine {
     pub fn new(storage: Arc<LsmStorage>) -> Self {
         Self {
             tools: HashMap::new(),
-            checkpoint_store: Arc::new(
-                PersistentCheckpointStore::new(storage, "agent")
-                    .expect("// expect OrchestratorEngine initialization"),
-            ),
+            checkpoint_store: Arc::new(PersistentCheckpointStore::new(storage, "agent")),
         }
     }
 
