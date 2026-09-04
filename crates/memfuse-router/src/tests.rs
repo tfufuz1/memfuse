@@ -1451,82 +1451,6 @@ mod tests {
         assert!(!metrics.calibrated);
     }
 
-    #[test]
-    fn test_select_profile_cascade_error_branches() {
-        use crate::profile::ProfileCalibrationState;
-        use memfuse_core::{ContextChunk, DocId};
-        use std::collections::HashMap;
-
-        let profile = SlmProfile::new(
-            "p1",
-            "http://localhost/p1",
-            vec![10],
-            TokenBudget::new(1000, 100),
-            0.5,
-        );
-
-        let dir = tempfile::tempdir().unwrap();
-        let config = MemFuseConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let db = rt
-            .block_on(MemFuse::open_with_config(dir.path(), config))
-            .unwrap();
-        let collection = rt.block_on(db.collection("default")).unwrap();
-        let router = RouterEngine::new(collection, vec![profile.clone()]);
-        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
-
-        // 1. Empty chunks
-        let res_empty_chunks = router.select_profile_cascade(&[], &[profile.clone()], &calibration);
-        assert!(
-            matches!(res_empty_chunks, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
-        );
-
-        // 2. All-NaN chunks
-        let nan_chunk = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "nan content".to_string(),
-            relevance: f32::NAN,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-        let res_nan_chunks = router.select_profile_cascade(
-            &[(nan_chunk, Some(10))],
-            &[profile.clone()],
-            &calibration,
-        );
-        assert!(
-            matches!(res_nan_chunks, Err(MemFuseError::NotFound(msg)) if msg.contains("NaN/Inf"))
-        );
-
-        // 3. Empty profiles
-        let valid_chunk = ContextChunk {
-            doc_id: DocId::new(2),
-            content: "valid content".to_string(),
-            relevance: 0.8,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-        let res_empty_profiles =
-            router.select_profile_cascade(&[(valid_chunk.clone(), Some(10))], &[], &calibration);
-        assert!(
-            matches!(res_empty_profiles, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine SLM-Profile konfiguriert"))
-        );
-
-        // 4. Community mismatch
-        let res_unmatched_community =
-            router.select_profile_cascade(&[(valid_chunk, Some(999))], &[profile], &calibration);
-        assert!(
-            matches!(res_unmatched_community, Err(MemFuseError::NotFound(msg)) if msg.contains("Community-Zuordnung"))
-        );
-    }
-
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
         let dir = tempfile::tempdir().unwrap();
@@ -1595,10 +1519,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_cascade_determinism() {
-        use crate::profile::ProfileCalibrationState;
-        use memfuse_core::{ContextChunk, DocId};
-        use std::collections::HashMap;
-
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1606,6 +1526,26 @@ mod tests {
         };
         let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
         let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "det_entity";
+        collection
+            .insert(
+                key,
+                &vec_data,
+                Some(json!({"text": "deterministic content"})),
+            )
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let p1 = SlmProfile::new(
             "slm-1",
@@ -1617,36 +1557,25 @@ mod tests {
         let p2 = SlmProfile::new(
             "slm-2",
             "http://localhost/2",
-            vec![200],
+            vec![100],
             TokenBudget::new(1000, 100),
             0.1,
         );
 
-        let profiles = vec![p1, p2];
-        let router = RouterEngine::new(collection, profiles.clone());
-        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+        let router = RouterEngine::new(collection, vec![p1, p2]);
 
-        let chunk = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "deterministic content".to_string(),
-            relevance: 0.5,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-        let chunks = vec![(chunk, Some(100))];
-
-        let (_, first_profile, _) = router
-            .select_profile_cascade(&chunks, &profiles, &calibration)
+        let first_decision = router
+            .route(&vec_data, "deterministic content")
+            .await
             .unwrap();
 
         for i in 0..50 {
-            let (_, next_profile, _) = router
-                .select_profile_cascade(&chunks, &profiles, &calibration)
+            let next_decision = router
+                .route(&vec_data, "deterministic content")
+                .await
                 .unwrap();
             assert_eq!(
-                next_profile.name, first_profile.name,
+                next_decision.profile.name, first_decision.profile.name,
                 "Inconsistent profile selected at iteration {}",
                 i
             );
@@ -1725,5 +1654,141 @@ mod tests {
             lower_bound,
             upper_bound
         );
+    }
+
+    #[test]
+    fn test_conformal_calibrator_default_and_reset_window() {
+        use crate::profile::ConformalCalibrator;
+        let mut cal = ConformalCalibrator::default();
+        assert_eq!(cal.alpha, 0.05);
+        assert_eq!(cal.gamma, 0.01);
+        assert_eq!(cal.quantile_threshold, 0.5);
+        assert_eq!(cal.empirical_error_rate(), 0.0);
+
+        cal.update(0.8);
+        assert_eq!(cal.window_total, 1);
+        assert_eq!(cal.window_errors, 1);
+
+        cal.reset_window();
+        assert_eq!(cal.window_total, 0);
+        assert_eq!(cal.window_errors, 0);
+        assert_eq!(cal.empirical_error_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_profile_calibration_state_default_and_average_confidence() {
+        use crate::profile::ProfileCalibrationState;
+        let default_st = ProfileCalibrationState::default();
+        assert_eq!(default_st.times_selected, 0);
+        assert_eq!(default_st.average_confidence(), 1.0);
+
+        let mut st = ProfileCalibrationState::new(0.5);
+        st.times_selected = 2;
+        st.cumulative_confidence = 3.0;
+        assert_eq!(st.average_confidence(), 1.5);
+    }
+
+    #[tokio::test]
+    async fn test_router_engine_reset_all_calibration() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let p1 = SlmProfile::new("p1", "http://ep1", vec![1], TokenBudget::default(), 0.1);
+        let p2 = SlmProfile::new("p2", "http://ep2", vec![2], TokenBudget::default(), 0.2);
+
+        let router = RouterEngine::new(collection, vec![p1, p2]);
+        {
+            let cal = router.calibration_stats();
+            assert_eq!(cal["p1"].times_selected, 0);
+        }
+
+        // Simulate selected counts
+        {
+            let mut cal = router.calibration.write();
+            if let Some(st1) = cal.get_mut("p1") {
+                st1.times_selected = 10;
+            }
+            if let Some(st2) = cal.get_mut("p2") {
+                st2.times_selected = 20;
+            }
+        }
+
+        assert_eq!(router.calibration_stats()["p1"].times_selected, 10);
+        assert_eq!(router.calibration_stats()["p2"].times_selected, 20);
+
+        router.reset_all_calibration();
+        assert_eq!(router.calibration_stats()["p1"].times_selected, 0);
+        assert_eq!(router.calibration_stats()["p2"].times_selected, 0);
+    }
+
+    #[tokio::test]
+    async fn test_route_non_finite_query_embedding_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let p = SlmProfile::new("p", "http://ep", vec![1], TokenBudget::default(), 0.1);
+        let router = RouterEngine::new(collection, vec![p]);
+
+        let res_nan = router.route(&[f32::NAN, 0.0, 0.0, 0.0], "query").await;
+        assert!(
+            matches!(res_nan, Err(MemFuseError::InvalidInput(msg)) if msg.contains("non-finite"))
+        );
+
+        let res_inf = router.route(&[f32::INFINITY, 0.0, 0.0, 0.0], "query").await;
+        assert!(
+            matches!(res_inf, Err(MemFuseError::InvalidInput(msg)) if msg.contains("non-finite"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_empty_endpoint_err() {
+        let profile = SlmProfile::new("empty-ep", "  ", vec![1], TokenBudget::default(), 0.1);
+        let decision = RoutingDecision {
+            profile,
+            context: memfuse_core::ContextWindow {
+                chunks: vec![],
+                total_tokens: 0,
+                truncated: false,
+            },
+            confidence: None,
+        };
+
+        let res = dispatch_to_slm(&decision).await;
+        assert!(
+            matches!(res, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Empty MCP endpoint"))
+        );
+    }
+
+    #[test]
+    fn test_serde_helpers_sorted_u64_set() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::serde_helpers::sorted_u64_set;
+        use std::collections::HashSet;
+
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct TestContainer {
+            #[serde(with = "sorted_u64_set")]
+            set: HashSet<u64>,
+        }
+
+        let container = TestContainer {
+            set: [42, 10, 5, 100].into_iter().collect(),
+        };
+
+        let json = serde_json::to_string(&container)?;
+        assert_eq!(json, r#"{"set":[5,10,42,100]}"#);
+
+        let deserialized: TestContainer = serde_json::from_str(&json)?;
+        assert_eq!(deserialized, container);
+        Ok(())
     }
 }

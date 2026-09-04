@@ -141,7 +141,6 @@ async fn run_amplification_benchmark() {
             max_memory_bytes: Some(128 * 1024 * 1024),
         },
         encryption_passphrase: None,
-        min_wal_version: memfuse_store::wal::WalVersion::V2,
     };
 
     let tracker = FileWriteTracker::new(db_path.clone());
