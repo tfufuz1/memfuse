@@ -62,7 +62,7 @@
 use crate::compaction::{CompactionConfig, CompactionEngine};
 use crate::memtable::MemTable;
 use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableReader};
-use crate::wal::{Wal, WalOp};
+use crate::wal::{Wal, WalConfig, WalOp, WalVersion};
 use bytes::Bytes;
 use memfuse_core::{
     DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result, SnapshotRegistry,
@@ -84,8 +84,6 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
-/// Global atomic counter for generating unique WAL log file names across flushes.
-static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
@@ -187,6 +185,9 @@ pub struct LsmConfig {
     /// Configuration for background compaction.
     pub compaction: CompactionConfig,
     pub encryption_passphrase: Option<String>,
+    /// Minimum WAL version accepted on open. Default: V2.
+    /// Set to V1 only for legacy database migrations. V1 has no HMAC protection.
+    pub min_wal_version: WalVersion,
 }
 
 impl Default for LsmConfig {
@@ -198,6 +199,7 @@ impl Default for LsmConfig {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         }
     }
 }
@@ -225,6 +227,7 @@ pub struct LsmStorage {
     commit_mutex: tokio::sync::Mutex<()>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
+    flush_counter: AtomicU64,
 }
 
 impl LsmStorage {
@@ -288,7 +291,15 @@ impl LsmStorage {
         let mut last_wal = None;
 
         for (_ts, wal_path) in &wal_files {
-            let wal = Wal::open_with_key_manager(wal_path, key_manager.clone()).await?;
+            let wal = Wal::open_with_config(
+                wal_path,
+                WalConfig {
+                    key_manager: key_manager.clone(),
+                    min_wal_version: config.min_wal_version,
+                    ..Default::default()
+                },
+            )
+            .await?;
             let wal_entries = wal.replay().await?;
 
             for (lsn, entry, _offset) in &wal_entries {
@@ -327,7 +338,15 @@ impl LsmStorage {
             w
         } else {
             // No WAL found, create a new one
-            Wal::open_with_key_manager(config.path.join("wal.log"), key_manager.clone()).await?
+            Wal::open_with_config(
+                config.path.join("wal.log"),
+                WalConfig {
+                    key_manager: key_manager.clone(),
+                    min_wal_version: config.min_wal_version,
+                    ..Default::default()
+                },
+            )
+            .await?
         };
 
         let budget_config = ResourceBudget {
@@ -453,6 +472,7 @@ impl LsmStorage {
             commit_mutex: tokio::sync::Mutex::new(()),
             cancel_token,
             task_tracker,
+            flush_counter: AtomicU64::new(0),
         })
     }
 
@@ -1076,10 +1096,18 @@ impl StorageEngine for LsmStorage {
         } // read lock freigegeben
 
         // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
-        let flush_id = FLUSH_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
         // WAL wird HIER erstellt — kein Lock gehalten
-        let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
+        let new_wal = Wal::open_with_config(
+            wal_path,
+            WalConfig {
+                key_manager: self.key_manager.clone(),
+                min_wal_version: self.config.min_wal_version,
+                ..Default::default()
+            },
+        )
+        .await?;
 
         // ── Phase 2: Atomarer In-Memory-Swap (Write-Lock, nur Pointer-Ops) ───
         let (old_memtable, old_wal_path) = {
@@ -1088,10 +1116,9 @@ impl StorageEngine for LsmStorage {
                 // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
                 // WAL-Datei aufräumen (best-effort)
                 drop(state);
-                let _ = tokio::fs::remove_file(
-                    &self.config.path.join(format!("wal-{}.log", flush_id)),
-                )
-                .await;
+                let _ =
+                    tokio::fs::remove_file(&self.config.path.join(format!("wal-{}.log", flush_id)))
+                        .await;
                 return Ok(());
             }
             let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
@@ -1384,6 +1411,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
         (storage, tmp)
@@ -1581,6 +1609,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -1676,6 +1705,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
 
         {
@@ -1732,6 +1762,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -1808,6 +1839,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -1890,6 +1922,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -1935,6 +1968,7 @@ mod tests {
                 max_memory_bytes: Some(1024 * 1024),
             },
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config.clone())
             .await
@@ -1994,6 +2028,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
 
         {
@@ -2214,6 +2249,7 @@ mod tests {
                 max_memory_bytes: Some(1024 * 1024),
             },
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config.clone())
             .await
@@ -2281,6 +2317,7 @@ mod tests {
                 max_memory_bytes: Some(1024 * 1024),
             },
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -2382,6 +2419,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
 
         // 1. Open storage, write, commit WITHOUT explicit force_flush(), call close()
@@ -2523,6 +2561,7 @@ mod tests {
                     tx_timeout: Duration::from_secs(60),
                     compaction: CompactionConfig::default(),
                     encryption_passphrase: None,
+                    min_wal_version: WalVersion::V2,
                 };
                 let storage = LsmStorage::new(config).await.unwrap(); // unwrap
 
@@ -2874,6 +2913,7 @@ mod tests {
             tx_timeout: std::time::Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            min_wal_version: WalVersion::V2,
         };
 
         let storage = LsmStorage::new(config)
