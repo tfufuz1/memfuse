@@ -208,7 +208,9 @@ pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
     if let Err(e) = persist_pinned_seq_no_orphans_sync(&lock) {
         tracing::error!(?e, "Failed to persist pinned seq_no orphans");
     }
-    let _ = global_orphan_registry().register_orphan(orphan.seq_no);
+    if let Err(e) = global_orphan_registry().register_orphan(orphan.seq_no) {
+        tracing::error!(?e, "Failed to register orphan pin in global orphan registry");
+    }
 }
 
 /// Instance-scoped orphan state for checkpoints and pinned sequence numbers.
@@ -299,7 +301,9 @@ impl InstanceOrphanRegistry {
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
             lock.push(orphan);
             drop(lock);
-            let _ = self.persist_sync();
+            if let Err(e) = self.persist_sync() {
+                tracing::error!(?e, "Failed to persist orphan pin state");
+            }
         }
     }
 
@@ -308,7 +312,9 @@ impl InstanceOrphanRegistry {
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
             lock.push(cp);
             drop(lock);
-            let _ = self.persist_sync();
+            if let Err(e) = self.persist_sync() {
+                tracing::error!(?e, "Failed to persist orphaned checkpoint state");
+            }
         }
     }
 
@@ -316,7 +322,9 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist orphan pins state after drain");
+        }
         drained
     }
 
@@ -328,14 +336,18 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         lock.retain(|o| o.seq_no != seq_no);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, seq_no = seq_no, "Failed to persist orphan pin state after clear");
+        }
     }
 
     pub fn drain_orphaned_checkpoints(&self) -> Vec<StateCheckpoint> {
         let mut lock = self.checkpoints.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist orphaned checkpoints state after drain");
+        }
         drained
     }
 
@@ -347,13 +359,17 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         lock.retain(|o| o.tx_id != tx_id);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, tx_id = ?tx_id, "Failed to persist orphaned checkpoint state after clear");
+        }
     }
 
     pub fn clear_all(&self) {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
-        let _ = self.persist_sync();
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist orphan state after clear_all");
+        }
     }
 }
 
