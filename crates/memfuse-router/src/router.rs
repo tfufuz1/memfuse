@@ -37,6 +37,8 @@ pub struct RoutingDecision {
     pub confidence: Option<ConfidenceMetrics>,
 }
 
+pub const CALIBRATION_WARMUP_WINDOW: u64 = 10;
+
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
@@ -363,7 +365,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)
