@@ -2694,6 +2694,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "criterion",
+ "dirs",
  "futures-executor",
  "memfuse-core",
  "parking_lot",
