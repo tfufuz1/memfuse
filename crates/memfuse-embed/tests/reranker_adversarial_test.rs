@@ -2,8 +2,6 @@
 // STAND: 2026-08-31
 // ZWECK: Quantitativer Test- & Benchmark-Suite für Cross-Encoder Reranker Adversarial Attacks.
 
-#![cfg(feature = "onnx")]
-
 use memfuse_embed::{CrossEncoderReranker, RerankConfig};
 
 /// Testet die Auswirkung von Keyword/Query-Stuffing auf die Sequenzlänge und Reranker-Struktur.
