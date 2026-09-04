@@ -7,8 +7,8 @@
 
 //! LLM-based Memory Importance scoring using Ollama generate_text.
 
-use crate::client::xml_escape;
-use crate::OllamaClient;
+use crate::api::OllamaApi;
+use crate::prompt::xml_escape;
 use memfuse_core::{ImportanceScore, MemFuseError, Result};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -36,7 +36,11 @@ fn get_score_regex() -> Result<&'static Regex> {
 /// - Returns `MemFuseError::InvalidInput` if `chunk_text` is empty.
 /// - Returns `MemFuseError::Internal` if LLM response cannot be parsed as a float.
 /// - Returns `MemFuseError::Storage` / `MemFuseError::Io` on network or Ollama API errors.
-pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result<ImportanceScore> {
+pub async fn score_importance(
+    client: &(impl OllamaApi + ?Sized),
+    model: &str,
+    chunk_text: &str,
+) -> Result<ImportanceScore> {
     if chunk_text.trim().is_empty() {
         return Err(MemFuseError::InvalidInput(
             "chunk_text must not be empty".into(),
@@ -60,9 +64,7 @@ pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result
          Return ONLY a single floating-point number between 0.0 and 1.0. No explanations or extra text."
     );
 
-    let raw_response = client
-        .generate_text(&client.config().model, &prompt)
-        .await?;
+    let raw_response = client.chat(model, &prompt).await?;
 
     let score = parse_importance_score_response(&raw_response);
     Ok(score)
@@ -98,42 +100,22 @@ pub fn parse_importance_score_response(raw_response: &str) -> ImportanceScore {
 mod tests {
     use super::*;
 
+    use crate::mock::MockOllamaClient;
+
     #[tokio::test]
     async fn test_score_importance_empty_text_error() {
-        let client = OllamaClient::new("http://localhost:11434");
-        let res = score_importance(&client, "   ").await;
+        let client = MockOllamaClient::default();
+        let res = score_importance(&client, "llama3.2", "   ").await;
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
     #[tokio::test]
     async fn test_score_importance_mock_success() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr = listener.local_addr().unwrap(); // unwrap
-        let server_url = format!("http://{}", addr);
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                let mut buf = [0u8; 4096];
-                let _ = socket.read(&mut buf).await;
-                let body = serde_json::json!({
-                    "message": {
-                        "role": "assistant",
-                        "content": " Based on evaluation: 0.85 (High importance)"
-                    }
-                })
-                .to_string();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                socket.write_all(response.as_bytes()).await.ok();
-            }
-        });
-
-        let client = OllamaClient::new(server_url);
-        let score = score_importance(&client, "User prefers dark mode.")
+        let client = MockOllamaClient::new(
+            vec![],
+            " Based on evaluation: 0.85 (High importance)",
+        );
+        let score = score_importance(&client, "llama3.2", "User prefers dark mode.")
             .await
             .unwrap(); // unwrap
         assert_eq!(score.value(), 0.85);
@@ -141,33 +123,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_score_importance_mock_invalid_response_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
-        let addr = listener.local_addr().unwrap(); // unwrap
-        let server_url = format!("http://{}", addr);
-
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                let mut buf = [0u8; 4096];
-                let _ = socket.read(&mut buf).await;
-                let body = serde_json::json!({
-                    "message": {
-                        "role": "assistant",
-                        "content": "I am not able to rate this memory."
-                    }
-                })
-                .to_string();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                socket.write_all(response.as_bytes()).await.ok();
-            }
-        });
-
-        let client = OllamaClient::new(server_url);
-        let res = score_importance(&client, "Some chunk text").await;
+        let client = MockOllamaClient::new(vec![], "I am not able to rate this memory.");
+        let res = score_importance(&client, "llama3.2", "Some chunk text").await;
         assert!(res.is_ok());
         assert_eq!(res.unwrap().value(), 0.5);
     }
