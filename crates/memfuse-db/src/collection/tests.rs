@@ -1183,7 +1183,7 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
 
     let res = col
-        .evaluate_importance_with_llm("doc_test", &dead_ollama, "llama3.2")
+        .evaluate_importance_with_llm("doc_test", &dead_ollama)
         .await;
     assert!(res.is_err());
     assert!(matches!(

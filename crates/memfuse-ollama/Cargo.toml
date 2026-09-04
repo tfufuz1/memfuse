@@ -17,9 +17,5 @@ rand = { workspace = true }
 regex = { workspace = true }
 quick-xml = "0.41"
 
-[features]
-test-utils = []
-
 [dev-dependencies]
 proptest = "1.4"
-memfuse-ollama = { path = ".", features = ["test-utils"] }

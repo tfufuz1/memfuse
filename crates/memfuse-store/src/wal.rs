@@ -5,13 +5,6 @@
 // INVARIANTEN: fsync NACH jedem Schreibvorgang (ADR-002); WAL VOR MemTable schreiben
 // NICHT-OFFENSICHTLICH: sync_all() auf dem Verzeichnis-FD nötig, nicht nur auf der Datei
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md ADR-002
-//!
-//! WAL Version Policy:
-//! - V1: No HMAC. Accepted only when `LsmConfig::min_wal_version = V1` (migration mode).
-//!   Immediately promoted to V3 after replay.
-//! - V2: HMAC without tx_id. Accepted and promoted to V3 on next compaction.
-//! - V3: Full HMAC with tx_id. Default for new databases.
-//!   Production databases MUST use V3.
 
 use memfuse_core::{MemFuseError, Result, TxId};
 use memfuse_crypto::crypto::KeyManager;
@@ -48,14 +41,14 @@ pub const WAL_V2_HEADER: [u8; 4] = *b"MFW2";
 /// Magic header for V3 WAL files (`b"MFW3"`).
 pub const WAL_V3_HEADER: [u8; 4] = *b"MFW3";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalVersion {
     V1, // Legacy: kein HMAC
     V2, // Current: HMAC ohne tx_id
     V3, // New: HMAC mit tx_id
 }
 
-/// Non-ASCII legacy key. Databases created with the prior ASCII key are not supported after this change.
+/// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
 ///
 /// Cryptographic Audit Guarantee (Task E):
 /// 1. This key is ONLY used during replay of pre-migration WAL files when per-file key verification fails.
@@ -63,12 +56,7 @@ pub enum WalVersion {
 /// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
-pub(crate) const LEGACY_INTEGRITY_KEY: [u8; 32] = [
-    0xDE, 0xAD, 0xC0, 0xDE, 0x4D, 0x46, 0x57, 0x31,
-    0x00, 0xFF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
-    0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
-    0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-];
+pub(crate) const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
 
 /// A single entry in the Write-Ahead Log.
 #[derive(Debug, Clone)]
@@ -361,23 +349,10 @@ impl WalEntry {
 }
 
 /// Configuration options for opening a Write-Ahead Log.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct WalConfig {
     pub key_manager: Option<Arc<KeyManager>>,
     pub allow_legacy_integrity_key_fallback: bool,
-    /// Minimum WAL version accepted on open. Default: V2.
-    /// Set to V1 only for legacy database migrations. V1 has no HMAC protection.
-    pub min_wal_version: WalVersion,
-}
-
-impl Default for WalConfig {
-    fn default() -> Self {
-        Self {
-            key_manager: None,
-            allow_legacy_integrity_key_fallback: false,
-            min_wal_version: WalVersion::V2,
-        }
-    }
 }
 
 /// Write-Ahead Log for crash recovery.
@@ -449,7 +424,6 @@ impl Wal {
             WalConfig {
                 key_manager,
                 allow_legacy_integrity_key_fallback: false,
-                min_wal_version: WalVersion::V2,
             },
         )
         .await
@@ -524,21 +498,15 @@ impl Wal {
             last_hmac: tokio::sync::Mutex::new([0u8; 32]),
         };
 
-        let min_wal_version = config.min_wal_version;
-
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
-            let (entries, version) = wal.replay_with_size_and_version(metadata.len(), min_wal_version).await?;
+            let (entries, version) = wal.replay_with_size_and_version(metadata.len()).await?;
             if version != WalVersion::V3 {
-                if version == WalVersion::V1 {
-                    tracing::warn!("V1 WAL replayed. Immediately rewriting as V3 to close integrity gap.");
-                } else {
-                    tracing::info!(
-                        "WAL {:?} format detected at {:?}. Will be rewritten as V3 after successful replay.",
-                        version,
-                        wal.path
-                    );
-                }
+                tracing::info!(
+                    "WAL {:?} format detected at {:?}. Will be rewritten as V3 after successful replay.",
+                    version,
+                    wal.path
+                );
                 wal.rewrite_as_v3(&entries).await?;
             } else if let Some((_, last_entry, _)) = entries.last() {
                 let mut guard = wal.last_hmac.lock().await;
@@ -1050,14 +1018,13 @@ impl Wal {
     }
 
     async fn replay_with_size(&self, file_size: u64) -> Result<Vec<(u64, WalEntry, u64)>> {
-        let (entries, _) = self.replay_with_size_and_version(file_size, WalVersion::V1).await?;
+        let (entries, _) = self.replay_with_size_and_version(file_size).await?;
         Ok(entries)
     }
 
     async fn replay_with_size_and_version(
         &self,
         file_size: u64,
-        min_wal_version: WalVersion,
     ) -> Result<(Vec<(u64, WalEntry, u64)>, WalVersion)> {
         let mut file = self.file.lock().await;
         use tokio::io::AsyncSeekExt;
@@ -1105,15 +1072,6 @@ impl Wal {
                 }
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             }
-        }
-
-        if version < min_wal_version {
-            return Err(MemFuseError::Storage(format!(
-                "WAL version {:?} is below minimum required version {:?}. \
-                 Set LsmConfig::min_wal_version = WalVersion::V1 to allow legacy replay \
-                 (WARNING: no HMAC integrity check for V1 files).",
-                version, min_wal_version
-            )));
         }
 
         loop {
@@ -2145,7 +2103,6 @@ mod tests {
                 .open(&wal_path)
                 .await
                 .expect("open for append"); // expect
-            file.write_all(&WAL_V3_HEADER).await.expect("write header"); // expect
             let bytes = entry.to_bytes().expect("to_bytes"); // expect
             file.write_all(&bytes).await.expect("write_all"); // expect
             file.flush().await.expect("flush"); // expect
@@ -2210,15 +2167,15 @@ mod tests {
         let entries = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
         assert_eq!(entries.len(), 3);
 
-        // Serialize all 3 entries into a single bytes payload with WAL_V3_HEADER
-        let mut batch_bytes = Vec::from(WAL_V3_HEADER.as_slice());
+        // Serialize all 3 entries into a single bytes payload
+        let mut batch_bytes = Vec::new();
         for e in &entries {
             batch_bytes.extend_from_slice(&e.to_bytes().expect("to_bytes")); // expect
         }
 
         // Truncate the batch in the middle of entry 2 (partial write during crash)
-        // Header (4) + each entry ~101 bytes. Total ~307 bytes.
-        // Subtracting 120 bytes leaves ~187 bytes, truncating entry 2 mid-write.
+        // Each entry is ~101 bytes. Total ~303 bytes.
+        // Subtracting 120 bytes leaves ~183 bytes, truncating entry 2 mid-write.
         let truncated_len = batch_bytes.len() - 120;
         let truncated_bytes = &batch_bytes[..truncated_len];
 
@@ -2428,17 +2385,10 @@ mod tests {
             .await
             .expect("write v1 wal"); // expect
 
-        // Reopen via Wal::open_with_config with min_wal_version: WalVersion::V1 and replay
-        let wal = Wal::open_with_config(
-            &wal_path,
-            WalConfig {
-                key_manager: Some(km),
-                min_wal_version: WalVersion::V1,
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("open v1 wal"); // expect
+        // Reopen via standard Wal::open_with_key_manager and replay
+        let wal = Wal::open_with_key_manager(&wal_path, Some(km))
+            .await
+            .expect("open v1 wal"); // expect
         let replayed = wal.replay().await.expect("replay v1 wal"); // expect
 
         assert_eq!(
@@ -2886,98 +2836,5 @@ mod tests {
 
         // Both WAL instances are opened successfully
         assert_eq!(wal1.path(), wal2.path());
-    }
-
-    #[tokio::test]
-    async fn test_v1_rejected_by_default() {
-        let dir = tempdir().expect("tempdir"); // expect
-        let wal_path = dir.path().join("v1_default.wal");
-
-        let op = WalOp::Put {
-            tx_id: TxId::new(1),
-            key: b"v1_key".to_vec(),
-            value: b"v1_val".to_vec(),
-        };
-        let legacy_entry =
-            WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
-        tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes")) // expect
-            .await
-            .expect("write v1 wal"); // expect
-
-        let open_res = Wal::open(&wal_path).await;
-        assert!(open_res.is_err(), "Opening V1 WAL by default must fail");
-        let err_str = open_res.err().unwrap().to_string(); // unwrap
-        assert!(
-            err_str.contains("below minimum required version"),
-            "Error must mention version requirements, got: {}",
-            err_str
-        );
-    }
-
-    #[tokio::test]
-    async fn test_v1_accepted_with_explicit_config() {
-        let dir = tempdir().expect("tempdir"); // expect
-        let wal_path = dir.path().join("v1_accepted.wal");
-
-        let op = WalOp::Put {
-            tx_id: TxId::new(1),
-            key: b"v1_key".to_vec(),
-            value: b"v1_val".to_vec(),
-        };
-        let legacy_entry =
-            WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
-        tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes")) // expect
-            .await
-            .expect("write v1 wal"); // expect
-
-        let wal = Wal::open_with_config(
-            &wal_path,
-            WalConfig {
-                allow_legacy_integrity_key_fallback: true,
-                min_wal_version: WalVersion::V1,
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("open v1 wal with explicit min_wal_version = V1"); // expect
-
-        let entries = wal.replay().await.expect("replay"); // expect
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].1.seq_no, 1);
-    }
-
-    #[tokio::test]
-    async fn test_v1_promoted_to_v3_after_replay() {
-        let dir = tempdir().expect("tempdir"); // expect
-        let wal_path = dir.path().join("v1_promote.wal");
-
-        let op = WalOp::Put {
-            tx_id: TxId::new(1),
-            key: b"v1_key".to_vec(),
-            value: b"v1_val".to_vec(),
-        };
-        let legacy_entry =
-            WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
-        tokio::fs::write(&wal_path, legacy_entry.to_bytes().expect("to_bytes")) // expect
-            .await
-            .expect("write v1 wal"); // expect
-
-        let _wal = Wal::open_with_config(
-            &wal_path,
-            WalConfig {
-                allow_legacy_integrity_key_fallback: true,
-                min_wal_version: WalVersion::V1,
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("open v1 wal"); // expect
-
-        let file_bytes = tokio::fs::read(&wal_path).await.expect("read wal file"); // expect
-        assert_eq!(
-            &file_bytes[0..4],
-            &WAL_V3_HEADER,
-            "Replayed V1 WAL must be promoted to V3 format"
-        );
     }
 }
