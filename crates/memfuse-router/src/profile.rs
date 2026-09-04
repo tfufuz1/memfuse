@@ -78,8 +78,8 @@ impl SlmProfile {
     }
 }
 
-/// Online Conformal Calibrator based on quantile-based threshold adaptation
-/// (Gibbs & Candès, 2021). Conformal-inspirierte Kalibrierung (Coverage-Garantie erst mit record_outcome()).
+/// Conformal-inspirierte Kalibrierung (Coverage-Garantie erst mit record_outcome()).
+/// Basierend auf quantile-basierter Schwellenwert-Adaption (Gibbs & Candès, 2021).
 ///
 /// The threshold `quantile_threshold` is updated via:
 ///   q_{t+1} = q_t + gamma * (alpha - I(s_t > q_t))

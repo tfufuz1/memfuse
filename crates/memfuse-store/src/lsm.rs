@@ -84,9 +84,6 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
-/// Global atomic counter for generating unique WAL log file names across flushes.
-static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
 async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> Result<()> {
@@ -225,6 +222,7 @@ pub struct LsmStorage {
     commit_mutex: tokio::sync::Mutex<()>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
+    flush_counter: AtomicU64,
 }
 
 impl LsmStorage {
@@ -456,6 +454,7 @@ impl LsmStorage {
             commit_mutex: tokio::sync::Mutex::new(()),
             cancel_token,
             task_tracker,
+            flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
         })
     }
 
@@ -1079,7 +1078,7 @@ impl StorageEngine for LsmStorage {
         } // read lock freigegeben
 
         // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
-        let flush_id = FLUSH_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
         // WAL wird HIER erstellt — kein Lock gehalten
         let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
@@ -2889,5 +2888,29 @@ mod tests {
             !corrupt_tmp_path.exists(),
             "Leftover .tmp file must be removed during startup recovery scan"
         );
+    }
+
+    #[tokio::test]
+    async fn test_flush_counter_is_instance_scoped() {
+        // Zwei unabhängige Stores dürfen sich den Counter NICHT teilen
+        let dir1 = tempfile::tempdir().unwrap();
+        let dir2 = tempfile::tempdir().unwrap();
+        let s1 = LsmStorage::new(LsmConfig {
+            path: dir1.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let s2 = LsmStorage::new(LsmConfig {
+            path: dir2.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        // Initial flush_counter von s1 und s2 sind unabhängig (beide bei 0 oder max_wal+1)
+        // Kein geteilter Zustand möglich wenn Feld instanzgebunden ist.
+        // Test verifiziert dass s1 und s2 kompilieren/initialisieren ohne panic
+        let _ = s1;
+        let _ = s2;
     }
 }

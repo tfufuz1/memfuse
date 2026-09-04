@@ -154,7 +154,7 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
-            decision_id: DecisionId::new(),
+            decision_id: crate::DecisionId::new(),
         };
 
         let result = dispatch_to_slm(&decision).await;

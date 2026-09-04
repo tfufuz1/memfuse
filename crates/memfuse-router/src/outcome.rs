@@ -1,4 +1,4 @@
-//! Routing outcomes and decision identifiers for ground-truth feedback calibration.
+//! Outcome types and decision tracking identifiers for router calibration.
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -11,12 +11,12 @@ pub struct DecisionId(u64);
 static DECISION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 impl DecisionId {
-    /// Creates a new unique `DecisionId` using an atomic counter.
+    /// Erstellt eine neue eindeutige `DecisionId`.
     pub fn new() -> Self {
         DecisionId(DECISION_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
-    /// Returns the raw integer value of the decision identifier.
+    /// Liefert den zugrundeliegenden `u64`-Wert der `DecisionId`.
     pub fn inner(self) -> u64 {
         self.0
     }
