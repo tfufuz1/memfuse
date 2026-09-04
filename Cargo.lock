@@ -2833,6 +2833,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "memfuse-core",
+ "memfuse-ollama",
  "proptest",
  "quick-xml",
  "rand 0.8.8",

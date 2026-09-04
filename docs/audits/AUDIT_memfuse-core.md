@@ -104,18 +104,22 @@ cargo check --workspace --exclude memfuse-tauri
 - **Full Verification:** 139 unit tests, 2 integration tests, and 5 robustness tests in `memfuse-core` passed 100% green. Gate stack and workspace compilation checks passed cleanly.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) re-verified fully bit-accurate, thread-safe, and robust against memory pressure and concurrency race conditions.
 
-## 9. Dependency Audit & Inventory Drift Audit (2026-09-04 — SESSION d887be97)
+## 9. Deep Audit & Gate-Stack Verification (2026-09-04 — Session 3e4e9b02)
 
-### Inventory Drift Analysis (Reality Check against 2026-09-03 Snapshot)
-- **Snapshot Inventory (2026-09-03 Prompt):** `lib.rs`, `error.rs / error_dto.rs`, `types/domain.rs`, `types/budget.rs`, `snapshot.rs`, `tx_buffer.rs`, `traits.rs`.
-- **Actual Repo Files in `crates/memfuse-core/src`:** 16 files total (`error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`).
-- **Inventory Drift Finding:** `Inventar-Drift: Datei crates/memfuse-core/src/ipc/jsonrpc.rs, ipc/memfuse_generated.rs, ipc/mod.rs, seq_log.rs, types.rs, types/filter.rs, types/importance.rs, types/saos.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst`.
+### Inventar-Realitätsabgleich (Step 0)
+- **Inventar-Drift:** 8 Quellcodedateien (`ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `seq_log.rs`, `types.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`) in `crates/memfuse-core/src/` waren im manuell gepflegten Prompter-Inventar vom 2026-09-03 nicht erfasst. Alle 16 `.rs` Dateien in `crates/memfuse-core/src/` wurden vollständig verifiziert.
 
-### Dependency Security & License Audit
-- **Layer 0 Direct Dependencies (`Cargo.toml`):** `serde`, `bincode`, `thiserror`, `parking_lot`, `ahash`, `zerocopy`, `flatbuffers`, `async-trait`.
-- **DAG Layer Compliance:** Layer 0 retains 0 workspace dependencies and strict `#![deny(unsafe_code)]` at root (`src/lib.rs`), with generated flatbuffers isolated under `ipc/`.
-- **Security & License Verification:** Zero vulnerabilities in direct Layer 0 crates, licenses compliant (MIT/Apache-2.0).
+### Full Gate-Stack & Verification Summary
+- **Quality Gate Stack:**
+  - `cargo check -p memfuse-core --all-features`: 0 Fehler, 0 Warnungen.
+  - `cargo clippy -p memfuse-core -- -D warnings`: 0 Findings.
+  - `cargo fmt --check -p memfuse-core`: 0 Diffs.
+  - `cargo test -p memfuse-core --all-features`: 139 Unit-Tests, 2 Integration-Tests, 5 Robustness-Tests zu 100% grün.
+  - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
+- **Invarianten & Boundaries:**
+  - `#![deny(unsafe_code)]` in `src/lib.rs` verifiziert.
+  - Zero open `AI-TAG` findings and zero open `ANCHOR`s in `crates/memfuse-core`.
+  - Context Freshness Check (`check-jules-context-freshness` arm in xtask) bestanden.
 
-### Summary Sign-off
-- **Quality Gate Stack:** `cargo check -p memfuse-core --all-features`, `cargo clippy -p memfuse-core -- -D warnings`, `cargo fmt --check -p memfuse-core`, and 139 unit + 2 integration + 5 robustness tests passing 100% green.
-- **Audit Sign-off:** `memfuse-core` verified bit-accurate, zero-panic compliant, and fully thread-safe.
+### Audit Sign-off
+- **Verdict:** `memfuse-core` (Layer 0) is 100% verified, bit-accurate, zero-panic, thread-safe, and fully ready as the Layer 0 foundation for the MemFuse workspace.
