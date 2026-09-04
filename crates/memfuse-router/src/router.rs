@@ -188,8 +188,6 @@ impl RouterEngine {
             let (selected_idx, selected_profile, _) =
                 self.select_profile_cascade(&chunks, &effective_profiles, &cal)?;
             let profile_scores = compute_profile_scores(&effective_profiles, &chunks);
-
-            let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
             let second_best = profile_scores
                 .iter()
@@ -201,7 +199,6 @@ impl RouterEngine {
             } else {
                 2.0 // Single candidate -> high confidence
             };
-            let non_conformity = (1.0 / confidence_ratio as f32).clamp(0.0, 1.0);
 
             let q_threshold = cal
                 .get(&selected_profile.name)
@@ -214,19 +211,6 @@ impl RouterEngine {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
                 state.recalibrate_conformal(non_conformity);
-
-                metrics = ConfidenceMetrics {
-                    score_lower: if state.conformal.window_total > 30 {
-                        Some(best_score * (1.0 - state.conformal.alpha))
-                    } else {
-                        None
-                    },
-                    score_upper: None,
-                    calibrated: state.conformal.window_total > 10,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                    non_conformity_score: non_conformity,
-                    selection_margin: confidence_ratio as f32,
-                };
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
@@ -369,7 +353,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let _fallback_score = compute_profile_score(fallback_profile, chunks);
+        let fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)
@@ -390,6 +374,54 @@ impl RouterEngine {
         };
 
         Ok((fallback_idx, fallback_profile.clone(), confidence))
+    }
+}
+
+/// Community relevance boost constant per ADR-054.
+pub(crate) const COMMUNITY_RELEVANCE_BOOST: f32 = 1.2;
+
+/// Detailed scoring result for a profile against chunks.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProfileScoringResult {
+    pub aggregated_score: f32,
+    pub max_score: f32,
+    pub community_matched: bool,
+}
+
+/// Central candidate profile scoring helper (ADR-054).
+pub(crate) fn score_profile(
+    profile: &SlmProfile,
+    chunks: &[(ContextChunk, Option<u64>)],
+) -> ProfileScoringResult {
+    let mut max_score = 0.0f32;
+    let mut community_matched = profile.domain_communities.is_empty();
+
+    for (chunk, comm_id) in chunks {
+        if !chunk.relevance.is_finite() {
+            continue;
+        }
+
+        let is_comm_match = comm_id.is_some_and(|cid| profile.domain_communities.contains(&cid));
+        if is_comm_match {
+            community_matched = true;
+        }
+
+        let boost = if is_comm_match {
+            COMMUNITY_RELEVANCE_BOOST
+        } else {
+            1.0
+        };
+
+        let score = chunk.relevance * boost;
+        if score > max_score {
+            max_score = score;
+        }
+    }
+
+    ProfileScoringResult {
+        aggregated_score: max_score,
+        max_score,
+        community_matched,
     }
 }
 
