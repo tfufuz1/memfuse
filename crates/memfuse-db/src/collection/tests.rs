@@ -1194,7 +1194,7 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     let dead_llm = DeadLlm;
 
     let res = col
-        .evaluate_importance_with_llm("doc_test", &dead_ollama, "llama3.2")
+        .evaluate_importance_with_llm("doc_test", &dead_llm, "llama3.2")
         .await;
     assert!(res.is_err());
     assert!(matches!(

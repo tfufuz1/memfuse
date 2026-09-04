@@ -320,30 +320,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             k: fetch_k,
         };
 
-        let hybrid_query = memfuse_core::HybridQuery {
-            text_query: self.text.clone(),
-            vector_query: self.vector.clone(),
-            graph_start_node: self
-                .anchor_entities
-                .as_ref()
-                .and_then(|a| a.first())
-                .map(|e| e.to_string()),
-            graph_strategy: self
-                .strategy
-                .as_ref()
-                .map(|s| s.to_graph_strategy())
-                .unwrap_or_default(),
-            fusion_weights: weights_val.as_ref().cloned().unwrap_or_default(),
-            filter: self.filter.clone(),
-            memory_type_filter: self.memory_type_filter.clone(),
-            same_community_as: self.same_community_as,
-            include_superseded: self.include_superseded,
-            include_provenance: self.include_provenance,
-            k: fetch_k,
-        };
-
         #[allow(deprecated)]
-        let mut results = self.collection
+        let mut results = self
+            .collection
             .hybrid_search_with_query(&hybrid_query)
             .await?;
 
