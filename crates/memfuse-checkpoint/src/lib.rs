@@ -486,6 +486,7 @@ pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     checkpoint: Option<StateCheckpoint>,
     storage: Arc<S>,
     namespace: String,
+    orphan_state: Option<Arc<Mutex<OrphanState>>>,
 }
 
 impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
@@ -494,7 +495,13 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
             checkpoint: Some(checkpoint),
             storage,
             namespace: namespace.into(),
+            orphan_state: None,
         }
+    }
+
+    pub fn with_orphan_state(mut self, orphan_state: Arc<Mutex<OrphanState>>) -> Self {
+        self.orphan_state = Some(orphan_state);
+        self
     }
 
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
@@ -844,7 +851,33 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             cp,
             Arc::clone(&self.storage),
             &self.namespace,
-        ))
+        )
+        .with_orphan_state(Arc::clone(&self.orphan_state)))
+    }
+
+    pub fn get_orphaned_checkpoints(&self) -> Vec<StateCheckpoint> {
+        let state = self.orphan_state.lock();
+        state.checkpoints.clone()
+    }
+
+    pub fn clear_orphaned_checkpoint(&self, tx_id: TxId) {
+        let mut state = self.orphan_state.lock();
+        state.checkpoints.retain(|cp| cp.tx_id != tx_id);
+        let _ = state.persist_sync();
+    }
+
+    pub fn clear_all_orphaned_checkpoints(&self) {
+        let mut state = self.orphan_state.lock();
+        state.checkpoints.clear();
+        let _ = state.persist_sync();
+    }
+
+    pub fn register_orphaned_checkpoint(&self, cp: StateCheckpoint) {
+        let mut state = self.orphan_state.lock();
+        if !state.checkpoints.iter().any(|e| e.tx_id == cp.tx_id) {
+            state.checkpoints.push(cp);
+            let _ = state.persist_sync();
+        }
     }
 
     /// Creates a new persistent checkpoint.
