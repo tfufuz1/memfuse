@@ -85,6 +85,14 @@ pub trait EventSource: Send + Sync {
     fn is_exhausted(&self) -> bool {
         false
     }
+
+    /// Waits until a new event is likely available or the timeout expires.
+    /// Default implementation: short sleep fallback for polling-based sources.
+    /// Implementations with push notifications (e.g. `tokio::sync::Notify`) should override
+    /// this method to wait on signals instead of polling.
+    async fn wait_for_event(&self) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 /// Maximum capacity for pending background telemetry events queue before dropping or rejecting.
@@ -185,6 +193,10 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
         }
 
         Ok(None)
+    }
+
+    async fn wait_for_event(&self) {
+        tokio::time::sleep(self.poll_interval).await;
     }
 }
 
