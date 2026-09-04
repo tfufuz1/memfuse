@@ -224,9 +224,8 @@ pub struct MemFuseConfig {
 
 impl Default for MemFuseConfig {
     fn default() -> Self {
-        // Dimension passt zum Standard-Embed-Modell (nomic-embed-text = 768)
-        let default_model = memfuse_ollama::DEFAULT_EMBED_MODEL;
-        let dimension = memfuse_ollama::model_info::known_dimension(default_model).unwrap_or(768); // sicherer Fallback = nomic-embed-text
+        // Standard-Dimension für nomic-embed-text = 768
+        let dimension = 768;
 
         Self {
             dimension,
