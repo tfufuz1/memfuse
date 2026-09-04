@@ -36,9 +36,11 @@ pub struct OrchestratorEngine {
 
 impl OrchestratorEngine {
     pub fn new(storage: Arc<LsmStorage>) -> Self {
+        let store = PersistentCheckpointStore::new(storage, "agent")
+            .expect("Failed to initialize PersistentCheckpointStore for agent");
         Self {
             tools: HashMap::new(),
-            checkpoint_store: Arc::new(PersistentCheckpointStore::new(storage, "agent")),
+            checkpoint_store: Arc::new(store),
         }
     }
 

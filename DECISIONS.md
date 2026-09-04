@@ -807,6 +807,14 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-057: Constant-Time Key Comparison for Anti-Tamper Security
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: `PartialEq` für `VolatileEncryptionKey` nutzt `subtle::ConstantTimeEq` für provabel konstante Slice-Vergleiche.
+*   **Begründung**: Verhindert Timing-Angriffe auf den Schlüsselvergleich.
+
+---
+
 ## ADR-058: Error-Logging-Pattern für synchrones Orphan-State Persistieren in Checkpoint
 *   **Datum**: 2026-09-04
 *   **Status**: ✅ Final

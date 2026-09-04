@@ -24,7 +24,7 @@ fn chrono_or_today() -> String {
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -296,6 +296,166 @@ pub fn scan_tags<P: AsRef<Path>>(root: P) -> Vec<TagItem> {
     tags
 }
 
+pub fn load_layer_policy(root_dir: &Path) -> HashMap<String, u8> {
+    let mut policy = HashMap::new();
+    let policy_path = root_dir.join("xtask/layer-policy.toml");
+    if let Ok(content) = fs::read_to_string(&policy_path) {
+        if let Ok(val) = toml::from_str::<toml::Value>(&content) {
+            if let Some(layers) = val.get("layers").and_then(|l| l.as_table()) {
+                for (crate_name, layer_val) in layers {
+                    if let Some(l) = layer_val.as_integer() {
+                        policy.insert(crate_name.clone(), l as u8);
+                    }
+                }
+            }
+        }
+    }
+    policy
+}
+
+pub fn run_check_dag() -> bool {
+    println!("=== Running xtask check-dag ===");
+    let root = find_root_dir();
+    let layer_policy = load_layer_policy(&root);
+
+    if layer_policy.is_empty() {
+        eprintln!("❌ Failed to load layer policy from xtask/layer-policy.toml");
+        return false;
+    }
+
+    let crates = get_workspace_crates();
+    let mut crate_map: HashMap<String, CrateInfo> = HashMap::new();
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+
+    for c in &crates {
+        crate_map.insert(c.name.clone(), c.clone());
+        in_degree.insert(c.name.clone(), 0);
+        adj.insert(c.name.clone(), Vec::new());
+    }
+
+    // Build directed graph of workspace dependencies (Edge from crate to dependency)
+    for c in &crates {
+        for dep in &c.dependencies {
+            if crate_map.contains_key(dep) {
+                adj.get_mut(&c.name).unwrap().push(dep.clone());
+            }
+        }
+    }
+
+    // 1. Cycle Detection using DFS / Kahn's Algorithm
+    for deps in adj.values() {
+        for dep in deps {
+            *in_degree.get_mut(dep).unwrap() += 1;
+        }
+    }
+
+    let mut queue: VecDeque<String> = in_degree
+        .iter()
+        .filter(|(_, &deg)| deg == 0)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let mut visited_count = 0;
+    while let Some(node) = queue.pop_front() {
+        visited_count += 1;
+        if let Some(neighbors) = adj.get(&node) {
+            for neighbor in neighbors {
+                let deg = in_degree.get_mut(neighbor).unwrap();
+                *deg -= 1;
+                if *deg == 0 {
+                    queue.push_back(neighbor.clone());
+                }
+            }
+        }
+    }
+
+    let mut success = true;
+
+    if visited_count < crates.len() {
+        eprintln!("❌ Dependency cycle detected in workspace dependencies!");
+        let mut state: HashMap<String, u8> = crates.iter().map(|c| (c.name.clone(), 0)).collect();
+        let mut path: Vec<String> = Vec::new();
+
+        fn dfs_cycle(
+            u: &str,
+            adj: &HashMap<String, Vec<String>>,
+            state: &mut HashMap<String, u8>,
+            path: &mut Vec<String>,
+        ) -> bool {
+            state.insert(u.to_string(), 1);
+            path.push(u.to_string());
+            if let Some(neighbors) = adj.get(u) {
+                for v in neighbors {
+                    if state.get(v) == Some(&1) {
+                        path.push(v.to_string());
+                        return true;
+                    }
+                    if state.get(v) == Some(&0) {
+                        if dfs_cycle(v, adj, state, path) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            state.insert(u.to_string(), 2);
+            path.pop();
+            false
+        }
+
+        for c in &crates {
+            if state.get(&c.name) == Some(&0) {
+                if dfs_cycle(&c.name, &adj, &mut state, &mut path) {
+                    eprintln!("Cycle path: {}", path.join(" -> "));
+                    break;
+                }
+            }
+        }
+        success = false;
+    }
+
+    // 2. Layer Violation Detection
+    let mut violations = Vec::new();
+
+    for c in &crates {
+        let from_layer = match layer_policy.get(&c.name) {
+            Some(&l) => l,
+            None => {
+                eprintln!("❌ Missing layer policy entry for crate '{}'", c.name);
+                success = false;
+                continue;
+            }
+        };
+
+        for dep_name in &c.dependencies {
+            if let Some(&to_layer) = layer_policy.get(dep_name) {
+                if from_layer < to_layer {
+                    violations.push((c.name.clone(), from_layer, dep_name.clone(), to_layer));
+                }
+            }
+        }
+    }
+
+    if !violations.is_empty() {
+        eprintln!("❌ Layer violation(s) detected in workspace:");
+        for (from_crate, from_layer, to_crate, to_layer) in &violations {
+            eprintln!(
+                "  - Illegal upward dependency: '{}' (Layer {}) -> '{}' (Layer {})",
+                from_crate, from_layer, to_crate, to_layer
+            );
+        }
+        success = false;
+    }
+
+    if success {
+        println!("✅ DAG integrity check PASSED (No cycles, no layer violations).");
+    } else {
+        eprintln!("=== xtask check-dag FAILED ===");
+    }
+
+    success
+}
+
 pub fn calculate_crate_loc<P: AsRef<Path>>(dir: P) -> usize {
     let mut loc = 0;
     for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
@@ -378,16 +538,8 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
         dependencies.sort();
         dependencies.dedup();
 
-        let layer = match name.as_str() {
-            "memfuse-core" => 0,
-            "memfuse-store" | "memfuse-index" | "memfuse-text" | "memfuse-crypto"
-            | "memfuse-graph" | "memfuse-checkpoint" => 1,
-            "memfuse-db" => 2,
-            "memfuse-py" | "memfuse-ollama" | "memfuse-embed" | "memfuse-agent"
-            | "memfuse-router" => 3,
-            "memfuse-mcp" | "memfuse-tauri" => 4,
-            _ => 99,
-        };
+        let layer_policy = load_layer_policy(&root_dir);
+        let layer = layer_policy.get(&name).copied().unwrap_or(99);
 
         let crate_dir = root_dir.join(path_str);
         let loc = calculate_crate_loc(&crate_dir);
@@ -1450,6 +1602,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-dag" => {
+            let success = run_check_dag();
+            if !success {
+                process::exit(1);
+            }
+        }
         "validate-tags" => {
             let fix = args.iter().any(|arg| arg == "--fix");
             let success = run_validate_tags(fix);
@@ -1501,7 +1659,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: check-dag, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }

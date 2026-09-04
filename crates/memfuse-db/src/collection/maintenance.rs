@@ -6,7 +6,7 @@
 
 use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
 use memfuse_core::{
-    DocId, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+    DocId, EntityId, GraphIndex, LlmTextGenerator, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
     EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
@@ -387,7 +387,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn evaluate_importance_with_llm(
         &self,
         doc_id: &str,
-        ollama: &memfuse_ollama::OllamaClient,
+        llm: &dyn LlmTextGenerator,
     ) -> Result<memfuse_core::ImportanceScore> {
         let user_key = self.namespaced_key(doc_id.as_bytes(), 0);
         let Some(data) = self.storage.get(&user_key).await? else {
@@ -407,8 +407,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             text.chars().take(500).collect::<String>()
         );
 
-        let model = &ollama.config().model;
-        let response = ollama.generate_text(model, &prompt).await.map_err(|e| {
+        let response = llm.generate(&prompt).await.map_err(|e| {
             memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
         })?;
 

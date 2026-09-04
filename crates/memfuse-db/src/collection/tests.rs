@@ -1180,10 +1180,21 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     let vec = vec![1.0, 0.0, 0.0, 0.0];
     col.insert("doc_test", &vec, None).await.unwrap(); // unwrap
 
-    let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
+    struct DeadLlm;
+    #[async_trait::async_trait]
+    impl memfuse_core::LlmTextGenerator for DeadLlm {
+        async fn generate(&self, _prompt: &str) -> memfuse_core::Result<String> {
+            Err(memfuse_core::MemFuseError::Io(std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "Dead LLM",
+            )))
+        }
+    }
+
+    let dead_llm = DeadLlm;
 
     let res = col
-        .evaluate_importance_with_llm("doc_test", &dead_ollama)
+        .evaluate_importance_with_llm("doc_test", &dead_llm)
         .await;
     assert!(res.is_err());
     assert!(matches!(

@@ -103,6 +103,7 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     anchor_entities: Option<Vec<EntityId>>,
     same_community_as: Option<EntityId>,
     memory_type_filter: Option<Vec<MemoryType>>,
+    include_superseded: bool,
     include_provenance: bool,
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
@@ -124,6 +125,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             anchor_entities: None,
             same_community_as: None,
             memory_type_filter: None,
+            include_superseded: false,
             include_provenance: false,
             filter_fn: None,
             #[cfg(feature = "reranking")]
@@ -264,6 +266,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self.filter = query.filter.clone();
         self.same_community_as = query.same_community_as;
         self.memory_type_filter = query.memory_type_filter.clone();
+        self.include_superseded = query.include_superseded;
         self.include_provenance = query.include_provenance;
         self.k = Some(query.k);
         self
@@ -290,32 +293,33 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         let vector_slice = self.vector.as_deref().unwrap_or(&empty_vec);
 
         let anchors = self.anchor_entities.as_deref();
-        let weights = self.weights.as_ref();
+        let weights_val = self.weights;
         let graph_strat = self.strategy.as_ref().map(|s| s.to_graph_strategy());
 
+        let hybrid_query = memfuse_core::HybridQuery {
+            text_query: self.text.clone(),
+            vector_query: self.vector.clone(),
+            graph_start_node: self
+                .anchor_entities
+                .as_ref()
+                .and_then(|a| a.first())
+                .map(|e| e.to_string()),
+            graph_strategy: self
+                .strategy
+                .as_ref()
+                .map(|s| s.to_graph_strategy())
+                .unwrap_or_default(),
+            fusion_weights: weights_val.as_ref().cloned().unwrap_or_default(),
+            filter: self.filter.clone(),
+            memory_type_filter: self.memory_type_filter.clone(),
+            same_community_as: self.same_community_as,
+            include_superseded: self.include_superseded,
+            include_provenance: self.include_provenance,
+            k: fetch_k,
+        };
+
         #[allow(deprecated)]
-        let mut results = if self.filter.is_some() || self.memory_type_filter.is_some() {
-            let hybrid_query = memfuse_core::HybridQuery {
-                text_query: self.text.clone(),
-                vector_query: self.vector.clone(),
-                graph_start_node: self
-                    .anchor_entities
-                    .as_ref()
-                    .and_then(|a| a.first())
-                    .map(|e| e.to_string()),
-                graph_strategy: self
-                    .strategy
-                    .as_ref()
-                    .map(|s| s.to_graph_strategy())
-                    .unwrap_or_default(),
-                fusion_weights: self.weights.unwrap_or_default(),
-                filter: self.filter.clone(),
-                memory_type_filter: self.memory_type_filter.clone(),
-                same_community_as: self.same_community_as,
-                include_superseded: false,
-                include_provenance: self.include_provenance,
-                k: fetch_k,
-            };
+        let mut results = if self.filter.is_some() || self.memory_type_filter.is_some() || !self.include_superseded {
             self.collection
                 .hybrid_search_with_query(&hybrid_query)
                 .await?
@@ -331,7 +335,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                         vector_slice,
                         fetch_k,
                         anchors,
-                        weights,
+                        weights_val.as_ref(),
                         graph_strat.as_ref(),
                         self.same_community_as,
                     )
@@ -344,7 +348,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                     vector_slice,
                     fetch_k,
                     anchors,
-                    weights,
+                    weights_val.as_ref(),
                     graph_strat.as_ref(),
                     self.same_community_as,
                 )
