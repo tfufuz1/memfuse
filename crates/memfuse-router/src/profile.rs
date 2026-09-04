@@ -79,14 +79,13 @@ impl SlmProfile {
 }
 
 /// Online Conformal Calibrator based on quantile-based threshold adaptation
-/// (Gibbs & Candès, 2021). Provides distribution-free coverage guarantees
-/// without assumptions about the underlying score distribution.
+/// (Gibbs & Candès, 2021). Conformal-inspirierte Kalibrierung (Coverage-Garantie erst mit record_outcome()).
 ///
 /// The threshold `quantile_threshold` is updated via:
 ///   q_{t+1} = q_t + gamma * (alpha - I(s_t > q_t))
 ///
 /// This guarantees that the empirical error rate converges to `alpha`
-/// regardless of the distribution shift in local SLM confidence scores.
+/// regardless of the distribution shift in local SLM confidence scores when ground-truth outcomes are recorded.
 ///
 /// # Invariants
 /// - INV-ROUTER-1: `quantile_threshold` is always in `[0.0, 1.0]`.

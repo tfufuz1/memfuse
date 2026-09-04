@@ -2675,6 +2675,7 @@ dependencies = [
  "memfuse-db",
  "memfuse-graph",
  "memfuse-index",
+ "memfuse-router",
  "memfuse-store",
  "memfuse-text",
  "serde",

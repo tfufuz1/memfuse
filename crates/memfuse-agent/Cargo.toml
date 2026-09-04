@@ -16,6 +16,7 @@ memfuse-db         = { workspace = true }
 memfuse-graph      = { workspace = true }
 memfuse-checkpoint = { workspace = true }
 memfuse-store      = { workspace = true }
+memfuse-router      = { workspace = true }
 serde              = { workspace = true, features = ["derive"] }
 serde_json         = { workspace = true }
 tracing            = { workspace = true }

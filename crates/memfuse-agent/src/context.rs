@@ -88,6 +88,9 @@ pub struct AgentContext {
     pub memory: HashMap<String, serde_json::Value>,
     /// History of attached background telemetry events.
     pub events: VecDeque<crate::event_source::BackgroundEvent>,
+    /// Optional pending router decision awaiting ground-truth outcome recording.
+    pub pending_routing_decision:
+        Option<(Arc<memfuse_router::RouterEngine>, memfuse_router::DecisionId)>,
 }
 
 impl AgentContext {
@@ -125,6 +128,7 @@ impl AgentContext {
             status: AgentStatus::Idle,
             memory: HashMap::new(),
             events: VecDeque::new(),
+            pending_routing_decision: None,
         })
     }
 
