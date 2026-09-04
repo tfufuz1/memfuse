@@ -38,11 +38,13 @@ fn get_stats() -> (u64, u64) {
     )
 }
 
+use std::sync::Arc;
+
 #[tokio::test]
 async fn test_ppr_alloc_reduction_100k_nodes() {
     const NUM_NODES: usize = 100_000;
 
-    let graph = CsrGraph::new();
+    let graph = Arc::new(CsrGraph::new());
 
     // Construct a large graph with 100,000 nodes and linear edges i -> i + 1
     for i in 1..=NUM_NODES {
@@ -57,6 +59,7 @@ async fn test_ppr_alloc_reduction_100k_nodes() {
         let dst = EntityId::new((i + 1) as u64);
         graph
             .insert_edge_direct(src, dst, 1.0)
+            .await
             .expect("insert edge");
     }
 
