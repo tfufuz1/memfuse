@@ -219,12 +219,14 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         };
 
         for entity in entities {
-            GraphIndex::add_entity(self.collection.graph_index.as_ref(), self.tx_id, entity)
+            self.collection
+                .graph_index
+                .add_entity(self.tx_id, entity)
                 .await?;
         }
 
         for edge in edges {
-            memfuse_core::GraphIndex::add_edge(&*self.collection.graph_index, self.tx_id, edge)
+            GraphIndex::add_edge(&*self.collection.graph_index, self.tx_id, edge)
                 .await?;
         }
 
@@ -237,7 +239,9 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         };
 
         for (from, to) in edge_deletes {
-            GraphIndex::remove_edge(self.collection.graph_index.as_ref(), self.tx_id, from, to)
+            self.collection
+                .graph_index
+                .remove_edge(self.tx_id, from, to)
                 .await?;
         }
 

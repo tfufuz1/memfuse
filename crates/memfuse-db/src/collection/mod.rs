@@ -232,18 +232,12 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) storage: Arc<S>,
     pub(super) next_tx: Arc<AtomicU64>,
     pub(super) dimension: usize,
-    pub(super) embedder: tokio::sync::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
+    pub(super) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     pub(super) insert_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
     fn clone(&self) -> Self {
-        // SYNC-ONLY: must not be called from async context with lock held; try_read non-blocking
-        let embedder_opt = self
-            .embedder
-            .try_read()
-            .ok()
-            .and_then(|g| g.as_ref().map(Arc::clone));
         Self {
             name: self.name.clone(),
             prefix: self.prefix.clone(),
@@ -253,7 +247,7 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             storage: self.storage.clone(),
             next_tx: self.next_tx.clone(),
             dimension: self.dimension,
-            embedder: tokio::sync::RwLock::new(embedder_opt),
+            embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
             insert_lock: self.insert_lock.clone(),
         }
     }
@@ -317,7 +311,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             storage,
             next_tx,
             dimension,
-            embedder: tokio::sync::RwLock::new(None),
+            embedder: parking_lot::RwLock::new(None),
             insert_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
@@ -329,15 +323,18 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
     /// Sets the text embedder for this collection (consuming version).
     #[tracing::instrument(level = "trace", skip(self, embedder))]
-    pub fn with_embedder(mut self, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
-        *self.embedder.get_mut() = Some(embedder);
+    pub fn with_embedder(self, embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
+        {
+            let mut guard = self.embedder.write();
+            *guard = Some(embedder);
+        }
         self
     }
 
     /// Configures the text embedder for this collection.
     #[tracing::instrument(level = "trace", skip(self, embedder))]
     pub async fn set_embedder(&self, embedder: Arc<dyn TextEmbeddingEngine>) -> Result<()> {
-        let mut guard = self.embedder.write().await;
+        let mut guard = self.embedder.write();
         *guard = Some(embedder);
         Ok(())
     }

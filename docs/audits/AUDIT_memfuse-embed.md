@@ -232,12 +232,14 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
 - **Hermetic Isolation & Safety:** `#![deny(unsafe_code)]` with 0 unsafe blocks in production.
 - **Verification Suite:** `cargo test -p memfuse-embed` (10/10 green), `cargo clippy -p memfuse-embed -- -D warnings` (clean), `cargo fmt --check -p memfuse-embed` (clean), `cargo check --workspace --exclude memfuse-tauri` (clean).
 
-## 13. Re-Verifikation & Context-Freshness Audit (2026-09-04) (SESSION: 0f7b5aac)
+## 13. Re-Verifikation & Tiefen-Audit (2026-09-04) (SESSION: 3e5150c8)
 
-### 13.1 Inventory & Drift Assessment
-- **Inventory Check (Step 0):** Inventory verified against `crates/memfuse-embed/src/`. Files confirmed: `lib.rs`, `reranker.rs`. No drift detected (`Stand: 2026-09-03` inventory confirmed).
+### 13.1 Step 0 Inventory Reality Check
+- Verified file inventory for `crates/memfuse-embed/src`: `lib.rs`, `reranker.rs`. Stand 2026-09-03 confirmed (no drift).
 
-### 13.2 Quality Gates & Freshness Verification
-- **Jules Context Freshness:** Updated `.jules/JULES_CONTEXT.md` timestamp header to `2026-09-04`. `cargo run -p xtask -- check-jules-context-freshness` PASSED.
-- **Safety & Quality Verification:** Verified `#![deny(unsafe_code)]` (0 unsafe blocks), zero unwrap/expect in production code paths, clean DAG Layer 3 boundaries.
-- **Suite Execution:** `cargo test -p memfuse-embed` (10/10 green), `cargo clippy -p memfuse-embed -- -D warnings` (clean), `cargo fmt --check -p memfuse-embed` (clean), `cargo check --workspace --exclude memfuse-tauri` (clean).
+### 13.2 Quality Gates & Verification
+- **Hermetic Feature-Gate Isolation:** `cargo check -p memfuse-embed` (default) verified. Non-ONNX build is pure Rust with zero external heavy C++ dependencies.
+- **Unsafe Code Invariant:** `#![deny(unsafe_code)]` with 0 production `unsafe` blocks in `crates/memfuse-embed/src/`.
+- **Unit & Integration Suite:** 10/10 tests passed (`cargo test -p memfuse-embed`).
+- **Clippy & Formatting:** `cargo clippy -p memfuse-embed -- -D warnings` (clean) and `cargo fmt --check -p memfuse-embed` (clean).
+- **DAG Architecture Integrity:** `memfuse-embed` (Layer 3) strictly obeys DAG rules with imports restricted to Layer 0 (`memfuse-core`).

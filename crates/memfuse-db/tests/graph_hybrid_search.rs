@@ -54,7 +54,7 @@ async fn test_hybrid_search_includes_graph_signal() {
         .expect("add target entity");
 
     GraphIndex::add_edge(
-        graph.as_ref(),
+        &*graph,
         tx,
         Edge::new(anchor_eid, target_eid, "references").with_weight(1.0),
     )

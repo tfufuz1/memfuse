@@ -285,7 +285,7 @@ impl StorageEngine for NamespaceStorageEngine {
 #[tokio::test]
 async fn test_time_travel_sequence_byte_exact_recovery() {
     let storage = Arc::new(VersionedMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "ns_tt");
+    let store = PersistentCheckpointStore::new(storage.clone(), "ns_tt").unwrap();
 
     // 1. Establish State A
     let tx_a = TxId::new(10);
@@ -374,12 +374,12 @@ async fn test_concurrent_two_session_time_travel_isolation() {
         "alpha:",
     ));
     let store_alpha =
-        Arc::new(PersistentCheckpointStore::new(storage_alpha.clone(), "ns_alpha"));
+        Arc::new(PersistentCheckpointStore::new(storage_alpha.clone(), "ns_alpha").unwrap());
 
     // Agent Session Beta (Namespace: ns_beta, Collection: col_beta)
     let storage_beta = Arc::new(NamespaceStorageEngine::new(shared_storage.clone(), "beta:"));
     let store_beta =
-        Arc::new(PersistentCheckpointStore::new(storage_beta.clone(), "ns_beta"));
+        Arc::new(PersistentCheckpointStore::new(storage_beta.clone(), "ns_beta").unwrap());
 
     // 1. Session Alpha establishes State A1
     let tx_a1 = TxId::new(101);
@@ -548,7 +548,8 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
                 &format!("alpha_iter_{iter}:"),
             ));
             let store_a = Arc::new(
-                PersistentCheckpointStore::new(storage_a.clone(), format!("ns_alpha_{iter}")),
+                PersistentCheckpointStore::new(storage_a.clone(), format!("ns_alpha_{iter}"))
+                    .unwrap(),
             );
 
             let storage_b = Arc::new(NamespaceStorageEngine::new(
@@ -556,7 +557,8 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
                 &format!("beta_iter_{iter}:"),
             ));
             let store_b = Arc::new(
-                PersistentCheckpointStore::new(storage_b.clone(), format!("ns_beta_{iter}")),
+                PersistentCheckpointStore::new(storage_b.clone(), format!("ns_beta_{iter}"))
+                    .unwrap(),
             );
 
             let tx_base_a = 100u64;
@@ -675,13 +677,13 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
         "guard_alpha:",
     ));
     let store_alpha =
-        PersistentCheckpointStore::new(storage_alpha.clone(), "ns_guard_alpha");
+        PersistentCheckpointStore::new(storage_alpha.clone(), "ns_guard_alpha").unwrap();
 
     let storage_beta = Arc::new(NamespaceStorageEngine::new(
         shared_storage.clone(),
         "guard_beta:",
     ));
-    let store_beta = PersistentCheckpointStore::new(storage_beta.clone(), "ns_guard_beta");
+    let store_beta = PersistentCheckpointStore::new(storage_beta.clone(), "ns_guard_beta").unwrap();
 
     // Baseline state for both sessions
     let tx_base_a = TxId::new(10);
@@ -743,13 +745,13 @@ async fn test_concurrent_pinning_lifecycle_isolation() {
         shared_storage.clone(),
         "pin_alpha:",
     ));
-    let store_alpha = PersistentCheckpointStore::new(storage_alpha, "ns_pin_alpha");
+    let store_alpha = PersistentCheckpointStore::new(storage_alpha, "ns_pin_alpha").unwrap();
 
     let storage_beta = Arc::new(NamespaceStorageEngine::new(
         shared_storage.clone(),
         "pin_beta:",
     ));
-    let store_beta = PersistentCheckpointStore::new(storage_beta, "ns_pin_beta");
+    let store_beta = PersistentCheckpointStore::new(storage_beta, "ns_pin_beta").unwrap();
 
     // Session Alpha creates CP_A1 (seq_no 100)
     store_alpha

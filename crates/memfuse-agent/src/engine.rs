@@ -35,16 +35,13 @@ pub struct OrchestratorEngine {
 }
 
 impl OrchestratorEngine {
-    pub fn try_new(storage: Arc<LsmStorage>) -> Result<Self> {
-        let store = PersistentCheckpointStore::new(storage, "agent");
-        Ok(Self {
+    pub fn new(storage: Arc<LsmStorage>) -> Self {
+        let store = PersistentCheckpointStore::new(storage, "agent")
+            .expect("Failed to initialize PersistentCheckpointStore for agent");
+        Self {
             tools: HashMap::new(),
             checkpoint_store: Arc::new(store),
-        })
-    }
-
-    pub fn new(storage: Arc<LsmStorage>) -> Self {
-        Self::try_new(storage).expect("Failed to initialize PersistentCheckpointStore for OrchestratorEngine")
+        }
     }
 
     /// Helper constructor creating OrchestratorEngine directly from MemFuse DB handle.
