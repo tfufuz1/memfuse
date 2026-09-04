@@ -1595,6 +1595,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cascade_determinism() {
+        use crate::profile::ProfileCalibrationState;
+        use memfuse_core::{ContextChunk, DocId};
+        use std::collections::HashMap;
+
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1602,26 +1606,6 @@ mod tests {
         };
         let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
         let collection = db.collection("default").await.unwrap();
-
-        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
-        let key = "det_entity";
-        collection
-            .insert(
-                key,
-                &vec_data,
-                Some(json!({"text": "deterministic content"})),
-            )
-            .await
-            .unwrap();
-
-        let eid = EntityId::from_key(key).unwrap();
-        let tx = db.allocate_tx().unwrap();
-        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
-        db.inner_storage()
-            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
-            .await
-            .unwrap();
-        db.inner_storage().commit(tx).await.unwrap();
 
         let p1 = SlmProfile::new(
             "slm-1",
@@ -1638,20 +1622,31 @@ mod tests {
             0.1,
         );
 
-        let router = RouterEngine::new(collection, vec![p1, p2]);
+        let profiles = vec![p1, p2];
+        let router = RouterEngine::new(collection, profiles.clone());
+        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
 
-        let first_decision = router
-            .route(&vec_data, "deterministic content")
-            .await
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "deterministic content".to_string(),
+            relevance: 0.5,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let chunks = vec![(chunk, Some(100))];
+
+        let (_, first_profile, _) = router
+            .select_profile_cascade(&chunks, &profiles, &calibration)
             .unwrap();
 
         for i in 0..50 {
-            let next_decision = router
-                .route(&vec_data, "deterministic content")
-                .await
+            let (_, next_profile, _) = router
+                .select_profile_cascade(&chunks, &profiles, &calibration)
                 .unwrap();
             assert_eq!(
-                next_decision.profile.name, first_decision.profile.name,
+                next_profile.name, first_profile.name,
                 "Inconsistent profile selected at iteration {}",
                 i
             );
