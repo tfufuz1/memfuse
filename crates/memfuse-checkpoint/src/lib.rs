@@ -316,7 +316,9 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after draining pins");
+        }
         drained
     }
 
@@ -328,14 +330,18 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         lock.retain(|o| o.seq_no != seq_no);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, seq_no = seq_no, "Failed to persist orphan registry after clearing pin");
+        }
     }
 
     pub fn drain_orphaned_checkpoints(&self) -> Vec<StateCheckpoint> {
         let mut lock = self.checkpoints.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after draining checkpoints");
+        }
         drained
     }
 
@@ -640,6 +646,9 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
+    // AI-TAG[CODE][CRITICAL] RESOLVED: AGT-CHECKPOINT-41f541e2 (TS: 2026-09-04T14:15:00Z) (SESSION: a437b68b)
+    // Removed broken dead method with_orphan_state referencing non-existent field orphan_state.
+
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {
         let cp = StateCheckpoint {
@@ -932,12 +941,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             let rt = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-            {
-                Ok(rt) => rt,
-                Err(e) => {
-                    panic!("Failed to create Tokio runtime: {e}");
-                }
-            };
+                .map_err(|e| MemFuseError::Internal(format!("Failed to create Tokio runtime: {e}")))?;
             rt.block_on(Self::open(storage_clone, ns_clone))
         };
 
@@ -1572,7 +1576,7 @@ mod tests {
     #[tokio::test]
     async fn test_orphan_recovery_on_startup() {
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery");
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery").unwrap();
         let seq_no = 67890;
 
         // Pin checkpoint and register orphan directly on store
@@ -1709,7 +1713,7 @@ mod tests {
                     .build()
                     .expect("Failed to build Tokio runtime for panic test");
 
-                let store = Arc::new(PersistentCheckpointStore::new(storage, "test_panic"));
+                let store = Arc::new(PersistentCheckpointStore::new(storage, "test_panic").unwrap());
                 let store_clone = Arc::clone(&store);
 
                 let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1752,7 +1756,7 @@ mod tests {
         #[allow(deprecated)]
         clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop");
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop").unwrap();
         store.clear_all_orphaned_checkpoints();
 
         {

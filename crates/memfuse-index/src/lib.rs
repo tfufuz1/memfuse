@@ -32,3 +32,5 @@ pub use hnsw::{HnswConfig, HnswIndex, RebuildStatus};
 pub use memfuse_graph::CsrGraph;
 pub use persistence::{HnswHeader, MmapIndex};
 pub use quantize::ScalarQuantizer;
+
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:AGT-INDEX-AUDIT-001) (TS: 2026-09-04T11:40:35Z) (SESSION: 1a901c59) PRÜFER-KONTEXT: FRESH

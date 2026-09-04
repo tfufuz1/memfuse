@@ -13,8 +13,10 @@
 //! to preserve the LLM context window.
 
 use crate::collection::Collection;
-use memfuse_core::{ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
-use memfuse_ollama::OllamaClient;
+use memfuse_core::{
+    ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex,
+};
+use memfuse_ollama::OllamaApi;
 
 /// Strategie für Context Compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,7 +148,8 @@ impl ContextCompactor {
     pub async fn consolidate_via_llm(
         &self,
         chunks: &[ContextChunk],
-        ollama: &OllamaClient,
+        ollama: &(impl OllamaApi + ?Sized),
+        model: &str,
     ) -> Result<CompactedContext> {
         if chunks.is_empty() {
             return Ok(CompactedContext {
@@ -175,8 +178,7 @@ impl ContextCompactor {
             prompt_content
         );
 
-        let model = &ollama.config().model;
-        let summary_text = ollama.generate_text(model, &prompt).await?;
+        let summary_text = ollama.chat(model, &prompt).await?;
 
         let estimated_tokens = crate::context::ContextManager::estimate_tokens(&summary_text);
 
@@ -452,6 +454,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_ollama::OllamaClient;
 
     fn make_chunk(id: u64, content: &str, relevance: f32, is_tool: bool) -> ContextChunk {
         let metadata = if is_tool {
@@ -585,7 +588,7 @@ mod tests {
             make_chunk(102, "Second chunk content", 0.8, false),
         ];
 
-        let res = compactor.consolidate_via_llm(&chunks, &dead_client).await;
+        let res = compactor.consolidate_via_llm(&chunks, &dead_client, "llama3.2").await;
         // Must return an Error and NOT fall back silently to StatusToken inside compaction.rs
         assert!(res.is_err());
     }
@@ -597,7 +600,7 @@ mod tests {
         let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         // Empty chunks slice test
-        let empty_res = compactor.consolidate_via_llm(&[], &dead_client).await;
+        let empty_res = compactor.consolidate_via_llm(&[], &dead_client, "llama3.2").await;
         assert!(empty_res.is_ok());
         let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
         assert!(empty_ctx.retained_chunks.is_empty());
