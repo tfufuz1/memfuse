@@ -807,6 +807,17 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-057: PersistentCheckpointStore Synchronous Constructor Error Propagation
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: Die Signatur von `PersistentCheckpointStore::new()` in `crates/memfuse-checkpoint/src/lib.rs` wird von `pub fn new(...) -> Self` auf `pub fn new(...) -> Result<Self>` geändert. Die bisherigen `panic!`-Aufrufe bei Fehlschlägen des Tokio-Runtime-Aufbaus oder der `Self::open()`-Initialisierung werden durch `MemFuseError::Internal(String)` ersetzt.
+*   **Alternativen**:
+    - Belassen von `panic!` im Konstruktor: Verworfen, da unfehlbare öffentliche Konstruktoren mit versteckten Panics gegen CONSTITUTION.md §1 verstoßen.
+    - Einführung einer neuen `CheckpointInitError`-Variante: Verworfen, da `MemFuseError::Internal` crate-weit für unklassifizierbare Initialisierungsfehler etabliert ist.
+*   **Begründung**: Stellt sicher, dass Fehlschläge beim synchronen Instanziieren des Checkpoint-Stores geordnet als `Result::Err` an den Aufrufer propagiert werden und den Host-Prozess nicht crashen.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>
