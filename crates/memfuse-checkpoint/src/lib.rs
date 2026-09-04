@@ -2098,8 +2098,8 @@ mod tests {
     #[test]
     fn state_checkpoint_deserializes_legacy_json_without_namespace() {
         let legacy_json = r#"{"tx_id": 999, "timestamp_ms": 1700000000000}"#;
-        let deserialized: StateCheckpoint =
-            serde_json::from_str(legacy_json).expect("Legacy JSON without namespace must deserialize");
+        let deserialized: StateCheckpoint = serde_json::from_str(legacy_json)
+            .expect("Legacy JSON without namespace must deserialize");
 
         assert_eq!(deserialized.tx_id, TxId::new(999));
         assert_eq!(deserialized.timestamp_ms, 1700000000000);
@@ -2125,7 +2125,9 @@ mod tests {
         let orphans_none = get_orphaned_checkpoints_for_namespace("nonexistent");
 
         assert_eq!(orphans_a.len(), 2);
-        assert!(orphans_a.iter().all(|cp| cp.namespace.as_deref() == Some("ns_a")));
+        assert!(orphans_a
+            .iter()
+            .all(|cp| cp.namespace.as_deref() == Some("ns_a")));
         let tx_a: Vec<TxId> = orphans_a.iter().map(|cp| cp.tx_id).collect();
         assert!(tx_a.contains(&TxId::new(1001)));
         assert!(tx_a.contains(&TxId::new(1002)));

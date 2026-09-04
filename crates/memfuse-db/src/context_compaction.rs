@@ -13,7 +13,9 @@
 //! to preserve the LLM context window.
 
 use crate::collection::Collection;
-use memfuse_core::{ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex};
+use memfuse_core::{
+    ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex,
+};
 use memfuse_ollama::OllamaClient;
 
 /// Strategie für Context Compaction.
@@ -409,7 +411,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         // 4. Delete source docs — Fehler MÜSSEN die Konsolidierung abbrechen
         for &(src_id, _) in &self.source_docs {
-            let doc_key = self.collection.namespaced_key(&src_id.inner().to_le_bytes(), 1);
+            let doc_key = self
+                .collection
+                .namespaced_key(&src_id.inner().to_le_bytes(), 1);
             match self.collection.storage().get(&doc_key).await? {
                 Some(val) => {
                     match serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val) {
@@ -417,10 +421,12 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
                             self.collection
                                 .delete_op(&mut db_tx, &meta.id)
                                 .await
-                                .map_err(|e| MemFuseError::Internal(format!(
+                                .map_err(|e| {
+                                    MemFuseError::Internal(format!(
                                     "Consolidation commit: failed to delete source doc {:?}: {}",
                                     src_id, e
-                                )))?;
+                                ))
+                                })?;
                         }
                         Err(e) => {
                             return Err(MemFuseError::Serialization(format!(
