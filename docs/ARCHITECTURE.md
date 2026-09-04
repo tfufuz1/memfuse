@@ -19,7 +19,7 @@ Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — che
           memfuse-ollama —  (deps: memfuse-core)
           memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
-Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-ollama)
+Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
 ```
 
