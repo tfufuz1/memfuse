@@ -90,8 +90,6 @@ impl StorageEngine for MockStorage {
 
 #[tokio::test]
 async fn test_concurrent_checkpoint_creation_same_name() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(MockStorage::new());
     let manager = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test").unwrap());
 
@@ -129,8 +127,6 @@ async fn test_concurrent_checkpoint_creation_same_name() {
 
 #[tokio::test]
 async fn test_concurrent_drop_checkpoints() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(MockStorage::new());
     let manager = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test").unwrap());
 
