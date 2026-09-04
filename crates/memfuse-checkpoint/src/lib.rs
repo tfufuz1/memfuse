@@ -672,8 +672,7 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
-    pub fn with_orphan_state(mut self, orphan_state: Arc<Mutex<OrphanState>>) -> Self {
-        self.orphan_state = Some(orphan_state);
+    pub fn with_orphan_state(self, _orphan_state: Arc<Mutex<OrphanState>>) -> Self {
         self
     }
 
