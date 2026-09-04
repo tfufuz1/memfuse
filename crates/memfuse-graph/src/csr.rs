@@ -863,7 +863,7 @@ impl CsrGraph {
             }
         }
         // 2. Pending edges
-        if let Some(pending) = pending {
+        if let Some(pending) = inner.pending_edges.get(&start_idx) {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
