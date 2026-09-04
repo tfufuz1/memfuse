@@ -1,6 +1,8 @@
-#![allow(clippy::await_holding_lock)]
+#![allow(clippy::await_holding_lock, deprecated)]
 
-use memfuse_checkpoint::{CheckpointGuard, PersistentCheckpointStore};
+use memfuse_checkpoint::{
+    CheckpointGuard, PersistentCheckpointStore,
+};
 use memfuse_core::{MemFuseError, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};

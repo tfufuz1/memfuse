@@ -4,9 +4,9 @@
 // STAND: TS:2026-09-04T13:30:00Z
 
 #[cfg(any(test, feature = "test-utils"))]
-use crate::api::OllamaApi;
-#[cfg(any(test, feature = "test-utils"))]
 use async_trait::async_trait;
+#[cfg(any(test, feature = "test-utils"))]
+use crate::api::OllamaApi;
 #[cfg(any(test, feature = "test-utils"))]
 use memfuse_core::Result;
 

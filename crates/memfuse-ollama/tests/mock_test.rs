@@ -21,7 +21,10 @@ async fn test_importance_scoring_with_mock() {
 
 #[tokio::test]
 async fn test_embed_batch_with_mock() {
-    let mock_client = MockOllamaClient::new(vec![0.25, 0.5, 0.75], "dummy chat response");
+    let mock_client = MockOllamaClient::new(
+        vec![0.25, 0.5, 0.75],
+        "dummy chat response",
+    );
 
     let texts: Vec<&str> = vec!["first chunk", "second chunk", "third chunk"];
     let embeddings = mock_client

@@ -84,6 +84,7 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
+
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
 async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> Result<()> {
