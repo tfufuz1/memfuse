@@ -209,11 +209,7 @@ pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
         tracing::error!(?e, "Failed to persist pinned seq_no orphans");
     }
     if let Err(e) = global_orphan_registry().register_orphan(orphan.seq_no) {
-        tracing::error!(
-            ?e,
-            seq_no = orphan.seq_no,
-            "Failed to register pinned seq_no in global orphan registry (ADR-058)"
-        );
+        tracing::error!(?e, "Failed to register orphan in global registry");
     }
 }
 
@@ -303,15 +299,10 @@ impl InstanceOrphanRegistry {
     pub fn register_orphan_sync(&self, orphan: PinnedSeqNoOrphan) {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
-            let seq_no = orphan.seq_no;
             lock.push(orphan);
             drop(lock);
             if let Err(e) = self.persist_sync() {
-                tracing::error!(
-                    ?e,
-                    seq_no = seq_no,
-                    "InstanceOrphanRegistry persist_sync failed for pinned seq_no (ADR-058)"
-                );
+                tracing::error!(?e, "Failed to persist orphan sync");
             }
         }
     }
@@ -319,16 +310,10 @@ impl InstanceOrphanRegistry {
     pub fn register_checkpoint_sync(&self, cp: StateCheckpoint) {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
-            let tx_id = cp.tx_id;
             lock.push(cp);
             drop(lock);
             if let Err(e) = self.persist_sync() {
-                tracing::error!(
-                    ?e,
-                    tx_id = ?tx_id,
-                    "CheckpointGuard orphan persist_sync failed — \
-                     checkpoint registered in-memory but not durable on disk (ADR-058)"
-                );
+                tracing::error!(?e, "Failed to persist checkpoint sync");
             }
         }
     }
@@ -337,8 +322,8 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, "Failed to persist orphan registry after draining pins");
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist drain orphan pins");
         }
         drained
     }
@@ -351,8 +336,8 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         lock.retain(|o| o.seq_no != seq_no);
         drop(lock);
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, seq_no = seq_no, "Failed to persist orphan registry after clearing pin");
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist clear orphan pin");
         }
     }
 
@@ -360,8 +345,8 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, "Failed to persist orphan registry after draining checkpoints");
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist drain orphaned checkpoints");
         }
         drained
     }
@@ -372,18 +357,18 @@ impl InstanceOrphanRegistry {
 
     pub fn clear_orphaned_checkpoint(&self, tx_id: TxId) {
         let mut lock = self.checkpoints.lock();
-        lock.retain(|o| o.tx_id != tx_id);
+        lock.retain(|cp| cp.tx_id != tx_id);
         drop(lock);
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, tx_id = ?tx_id, "Failed to persist orphan registry after clearing checkpoint");
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist clear orphaned checkpoint");
         }
     }
 
     pub fn clear_all(&self) {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
-        if let Err(err) = self.persist_sync() {
-            tracing::error!(?err, "Failed to persist orphan registry after clearing all");
+        if let Err(e) = self.persist_sync() {
+            tracing::error!(?e, "Failed to persist clear all orphans");
         }
     }
 }
@@ -474,7 +459,6 @@ pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
 /// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
 #[allow(deprecated)]
 pub fn orphaned_checkpoint_count() -> usize {
-    #[allow(deprecated)]
     get_orphaned_checkpoints().len()
 }
 
@@ -779,8 +763,7 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
             SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
             tracing::error!(
                 tx_id = ?cp.tx_id,
-                "CheckpointGuard dropped without explicit commit or rollback — \
-                 checkpoint registered in instance-scoped orphan registry for controlled recovery (ADR-053)."
+                "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
             );
             self.orphan_registry.register_checkpoint_sync(cp);
         }
@@ -2321,8 +2304,8 @@ mod tests {
     #[test]
     fn state_checkpoint_deserializes_legacy_json_without_namespace() {
         let legacy_json = r#"{"tx_id": 999, "timestamp_ms": 1700000000000}"#;
-        let deserialized: StateCheckpoint = serde_json::from_str(legacy_json)
-            .expect("Legacy JSON without namespace must deserialize");
+        let deserialized: StateCheckpoint =
+            serde_json::from_str(legacy_json).expect("Legacy JSON without namespace must deserialize");
 
         assert_eq!(deserialized.tx_id, TxId::new(999));
         assert_eq!(deserialized.timestamp_ms, 1700000000000);
@@ -2346,9 +2329,7 @@ mod tests {
         let orphans_b = store_b.get_orphaned_checkpoints();
 
         assert_eq!(orphans_a.len(), 2);
-        assert!(orphans_a
-            .iter()
-            .all(|cp| cp.namespace.as_deref() == Some("ns_a")));
+        assert!(orphans_a.iter().all(|cp| cp.namespace.as_deref() == Some("ns_a")));
         let tx_a: Vec<TxId> = orphans_a.iter().map(|cp| cp.tx_id).collect();
         assert!(tx_a.contains(&TxId::new(1001)));
         assert!(tx_a.contains(&TxId::new(1002)));
