@@ -193,7 +193,9 @@ impl RouterEngine {
                 .map(|p| {
                     let mut ep = p.clone();
                     if let Some(state) = cal.get(&p.name) {
-                        ep.min_relevance_score = state.calibrated_min_score;
+                        if state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 {
+                            ep.min_relevance_score = state.calibrated_min_score;
+                        }
                     }
                     ep
                 })
