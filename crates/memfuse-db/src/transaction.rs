@@ -226,7 +226,9 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         }
 
         for edge in edges {
-            GraphIndex::add_edge(&*self.collection.graph_index, self.tx_id, edge)
+            self.collection
+                .graph_index
+                .add_edge(self.tx_id, edge)
                 .await?;
         }
 
