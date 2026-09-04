@@ -1,8 +1,6 @@
 #![allow(clippy::await_holding_lock, deprecated)]
 
-use memfuse_checkpoint::{
-    CheckpointGuard, PersistentCheckpointStore,
-};
+use memfuse_checkpoint::{CheckpointGuard, PersistentCheckpointStore};
 use memfuse_core::{MemFuseError, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
@@ -111,7 +109,7 @@ impl StorageEngine for TrackingMockStorage {
 async fn test_guard_exit_path_a_normal_commit_drop() {
     let _lock = TEST_LOCK.lock();
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_a");
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_a").unwrap();
 
     let guard = store.create_guard(TxId::new(101)).unwrap();
     let cp = guard.commit().unwrap();
@@ -128,7 +126,7 @@ async fn test_guard_exit_path_a_normal_commit_drop() {
 async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
     let _lock = TEST_LOCK.lock();
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_b");
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_b").unwrap();
 
     {
         let _guard = store.create_guard(TxId::new(202)).unwrap();
@@ -154,7 +152,7 @@ async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
 async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
     let _lock = TEST_LOCK.lock();
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test_c"));
+    let store = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test_c").unwrap());
 
     let store_task = store.clone();
 
@@ -191,7 +189,7 @@ async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
 async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
     let _lock = TEST_LOCK.lock();
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_d");
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_d").unwrap();
 
     let guard = store.create_guard(TxId::new(404)).unwrap();
 
@@ -219,7 +217,7 @@ async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
 async fn test_guard_exit_path_e_nested_guards_lifo_resolution() {
     let _lock = TEST_LOCK.lock();
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_e");
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_e").unwrap();
 
     {
         let _outer_guard = store.create_guard(TxId::new(501)).unwrap();
@@ -274,7 +272,7 @@ async fn test_for_agent_step_e2e_cycle() {
 async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx() {
     let _lock = TEST_LOCK.lock();
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_barrier");
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_barrier").unwrap();
 
     // Session Alpha creates guard at TxId 100
     let guard_alpha = store.create_guard(TxId::new(100)).unwrap();
@@ -340,7 +338,7 @@ fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_star
     // Step 1: Drop guard outside active Tokio runtime
     let thread_handle = std::thread::spawn(|| {
         let storage = Arc::new(TrackingMockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "outside_tokio");
+        let store = PersistentCheckpointStore::new(storage, "outside_tokio").unwrap();
 
         let _guard = store.create_guard(TxId::new(888)).unwrap();
         // _guard drops here outside any Tokio runtime
@@ -360,7 +358,7 @@ fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_star
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         let storage = Arc::new(TrackingMockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "outside_tokio");
+        let store = PersistentCheckpointStore::new(storage.clone(), "outside_tokio").unwrap();
 
         // Execute startup recovery
         let recovered = store.recover_orphaned_checkpoints().await.unwrap();
