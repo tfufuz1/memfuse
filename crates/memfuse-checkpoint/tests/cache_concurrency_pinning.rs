@@ -100,8 +100,10 @@ impl StorageEngine for TrackingMockStorage {
 /// Test Cache Hit vs Cache Miss reloading from storage.
 #[tokio::test]
 async fn test_cache_hit_and_miss_reloading() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store1 = PersistentCheckpointStore::new(storage.clone(), "ns_cache");
+    let store1 = PersistentCheckpointStore::new(storage.clone(), "ns_cache").unwrap();
 
     // Create checkpoint via store1 (populates cache)
     store1
@@ -127,7 +129,7 @@ async fn test_cache_hit_and_miss_reloading() {
     );
 
     // Fresh store instance over same storage -> Cache Miss! Must reload from storage
-    let store2 = PersistentCheckpointStore::new(storage.clone(), "ns_cache");
+    let store2 = PersistentCheckpointStore::new(storage.clone(), "ns_cache").unwrap();
     let cp_miss = store2.get_checkpoint("cp_cache").await.unwrap().unwrap();
     assert_eq!(cp_miss.seq_no, 100);
     assert!(
@@ -149,8 +151,10 @@ async fn test_cache_hit_and_miss_reloading() {
 /// Test Concurrency: N writers creating checkpoints, M readers querying concurrently.
 #[tokio::test]
 async fn test_concurrent_stress_read_write() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = Arc::new(PersistentCheckpointStore::new(storage, "ns_stress"));
+    let store = Arc::new(PersistentCheckpointStore::new(storage, "ns_stress").unwrap());
 
     let num_writers = 20;
     let num_readers = 30;
@@ -211,8 +215,10 @@ async fn test_concurrent_stress_read_write() {
 /// Test GC & Pinning Lifecycle: verifying `pin_checkpoint` and `unpin_checkpoint` invariants.
 #[tokio::test]
 async fn test_pinning_and_gc_exclusion_lifecycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "ns_pin");
+    let store = PersistentCheckpointStore::new(storage.clone(), "ns_pin").unwrap();
 
     // 1. Create Checkpoint A (seq_no: 10)
     store
