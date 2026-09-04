@@ -202,12 +202,8 @@ impl<S: StorageEngine> MultiStepEngine<S> {
     }
 }
 
-/// Ollama-basierter QueryRewriter.
-/// Implementierung in `memfuse-ollama` – hier nur Stub-Trait.
-pub struct OllamaQueryRewriter {
-    // client: Arc<memfuse_ollama::OllamaClient>,
-    // model: String,
-}
+/// QueryRewriter Stub-Struktur.
+pub struct OllamaQueryRewriter;
 
 #[cfg(test)]
 mod tests {

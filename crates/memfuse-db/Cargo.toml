@@ -13,7 +13,6 @@ memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
 memfuse-graph = { workspace = true }
-memfuse-ollama = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
