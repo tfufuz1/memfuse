@@ -70,10 +70,6 @@ pub async fn score_importance(
     Ok(score)
 }
 
-// AI-TAG[ML-SCORING][MINOR] Uncalibrated fallback score assignment on LLM parse failure (APM-22/APM-23) (ID: AGT-OLLAMA-14f5b422) (TS: 2026-09-04T12:59:47Z) (SESSION: d97322aa)
-// BEFUND: Bei unlesbarer LLM-Antwort fällt parse_importance_score_response() stumm auf den Default-Wert ImportanceScore(0.5) zurück, ohne das Aufrufer-Layer über die fehlende Score-Konfidenz zu informieren.
-// RISIKO: Nicht auswertbare LLM-Scoring-Antworten werden fälschlicherweise als "mittlere Wichtigkeit (0.5)" klassifiziert, was zu unbemerkter Score-Drift führen kann.
-// EMPFEHLUNG: Zukünftig ein Result<ImportanceScore> zurückgeben oder ein Provenance/Confidence-Flag im Metadata-Record mitführen.
 /// Parses an ImportanceScore from raw LLM output, falling back cleanly to default (0.5) if unparseable.
 pub fn parse_importance_score_response(raw_response: &str) -> ImportanceScore {
     let Ok(re) = get_score_regex() else {

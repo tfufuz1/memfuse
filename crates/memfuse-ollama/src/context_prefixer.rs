@@ -96,10 +96,6 @@ impl ContextPrefixEngine {
         let escaped_doc = xml_escape(full_document);
         let escaped_chunk = xml_escape(chunk_content);
 
-        // AI-TAG[CORRECTNESS][MINOR] XML entity truncation order risk (ID: AGT-OLLAMA-7eed57ec) (TS: 2026-09-04T12:59:47Z) (SESSION: d97322aa)
-        // BEFUND: truncate_chars() wird nach xml_escape() aufgerufen. Wird der String an einer XML-Entity wie '&amp;' abgeschnitten, kann ein unvollständiges Ampersand entstehen.
-        // RISIKO: Unvollständige XML-Entities (z.B. '&am') in doc_excerpt können XML-Parser bei Downstream-Verarbeitung verwirren.
-        // EMPFEHLUNG: Zuerst truncate_chars() auf den unescapten Text anwenden und erst danach xml_escape() aufrufen.
         // Dokument kürzen um LLM-Kontextfenster nicht zu sprengen
         let doc_excerpt = truncate_chars(&escaped_doc, self.config.max_document_chars);
         let max_p = self.config.max_prefix_tokens * 4; // Chars-Approximation

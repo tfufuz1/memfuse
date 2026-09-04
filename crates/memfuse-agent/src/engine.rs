@@ -35,13 +35,16 @@ pub struct OrchestratorEngine {
 }
 
 impl OrchestratorEngine {
-    pub fn new(storage: Arc<LsmStorage>) -> Self {
-        let store = PersistentCheckpointStore::new(storage, "agent")
-            .unwrap_or_else(|e| panic!("Failed to initialize PersistentCheckpointStore: {e}"));
-        Self {
+    pub fn try_new(storage: Arc<LsmStorage>) -> Result<Self> {
+        let store = PersistentCheckpointStore::new(storage, "agent")?;
+        Ok(Self {
             tools: HashMap::new(),
             checkpoint_store: Arc::new(store),
-        }
+        })
+    }
+
+    pub fn new(storage: Arc<LsmStorage>) -> Self {
+        Self::try_new(storage).expect("Failed to initialize PersistentCheckpointStore for OrchestratorEngine")
     }
 
     /// Helper constructor creating OrchestratorEngine directly from MemFuse DB handle.
@@ -394,7 +397,7 @@ impl OrchestratorEngine {
                                 _ = shutdown.cancelled() => {
                                     return Ok(EventLoopExitReason::Shutdown);
                                 }
-                                _ = source.wait_until_ready() => {}
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
                             }
                         }
                     }

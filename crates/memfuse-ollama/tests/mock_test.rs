@@ -14,7 +14,7 @@ async fn test_importance_scoring_with_mock() {
 
     let score = score_importance(&mock_client, "llama3.2", "User prefers Rust over Python")
         .await
-        .expect("importance score evaluation should succeed");
+        .unwrap();
 
     assert_eq!(score.value(), 0.85);
 }
@@ -30,7 +30,7 @@ async fn test_embed_batch_with_mock() {
     let embeddings = mock_client
         .embed_batch("nomic-embed-text", &texts)
         .await
-        .expect("embed_batch should succeed");
+        .unwrap();
 
     assert_eq!(embeddings.len(), 3);
     assert_eq!(embeddings[0], vec![0.25, 0.5, 0.75]);

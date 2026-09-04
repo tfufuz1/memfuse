@@ -27,8 +27,11 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 
 rand = { workspace = true }
-lru = { workspace = true }
-tokio-util = { workspace = true, features = ["rt"] }
+lru = "0.16.3"
+
+
+uuid = { version = "1", features = ["v4"] }
+tokio-util = { version = "0.7.18", features = ["rt"] }
 
 
 [dev-dependencies]
