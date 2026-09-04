@@ -276,6 +276,14 @@ impl Ord for Candidate {
     }
 }
 
+struct RebuildGuard<'a>(&'a AtomicBool);
+
+impl<'a> Drop for RebuildGuard<'a> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 /// The HNSW (Hierarchical Navigable Small World) vector index.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
@@ -1681,20 +1689,33 @@ impl HnswIndexCore {
     }
 
     /// Rebuilds the HNSW index from scratch, removing all deleted nodes.
-    /// Restores optimal search performance and connectivity.
+    /// Restores optimal search performance and connectivity using a 2-phase lock protocol (ADR-061).
     pub async fn rebuild(&self) -> Result<()> {
-        let _write_lock = self.write_mutex.lock().await;
-
         if self.rebuilding.swap(true, Ordering::SeqCst) {
             tracing::debug!("HNSW rebuild already in progress, skipping");
             return Ok(());
         }
+        let _guard = RebuildGuard(&self.rebuilding);
 
-        tracing::info!("Starting HNSW index rebuild");
+        tracing::info!("Starting HNSW index rebuild (Phase 1)");
         let start_time = std::time::Instant::now();
 
-        // 1. Snapshot active nodes (RAM segment only)
-        let (active_nodes, config) = {
+        // Phase 1: Snapshot active nodes and build fresh index offline (without holding write_mutex)
+        let (new_index, snapshot_tx) = self.rebuild_phase1_snapshot_and_build()?;
+
+        tracing::info!("HNSW index rebuild Phase 1 completed, starting Phase 2 merge & swap");
+
+        // Phase 2: Lock write_mutex briefly, replay delta changes since snapshot_tx, and swap
+        self.rebuild_phase2_merge_and_swap(new_index, snapshot_tx).await?;
+
+        self.rebuild_count.fetch_add(1, Ordering::SeqCst);
+        tracing::info!("HNSW rebuild completed in {:?}", start_time.elapsed());
+        Ok(())
+    }
+
+    fn rebuild_phase1_snapshot_and_build(&self) -> Result<(HnswIndex, u64)> {
+        // 1. Snapshot active nodes (RAM segment only) up to snapshot_tx
+        let (active_nodes, config, snapshot_tx) = {
             let nodes = self.nodes.read();
             let mmap_count = self
                 .mmap_index
@@ -1703,14 +1724,15 @@ impl HnswIndexCore {
                 .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let deleted_nodes = self.deleted_nodes.read();
+            let snapshot_tx = self.last_tx_id.load(Ordering::SeqCst);
             let mut active = Vec::with_capacity(nodes.len());
             for (i, node) in nodes.iter().enumerate() {
                 let global_idx = mmap_count + i;
-                if !deleted_nodes.contains(global_idx as u64) {
+                if node.committed_tx <= snapshot_tx && !deleted_nodes.contains(global_idx as u64) {
                     active.push((node.doc_id, node.vector.clone(), node.committed_tx));
                 }
             }
-            (active, self.config.clone())
+            (active, self.config.clone(), snapshot_tx)
         };
 
         // 2. Build fresh index (this will be the NEW RAM segment)
@@ -1783,7 +1805,90 @@ impl HnswIndexCore {
             }
         }
 
-        // 4. Atomic swap
+        Ok((new_index, snapshot_tx))
+    }
+
+    async fn rebuild_phase2_merge_and_swap(
+        &self,
+        new_index: HnswIndex,
+        snapshot_tx: u64,
+    ) -> Result<()> {
+        let _write_lock = self.write_mutex.lock().await;
+
+        // 1. Fetch delta changes committed since snapshot_tx
+        let delta_changes = self.seq_log.read().changes_since(snapshot_tx);
+
+        // 2. Replay delta changes into new_index
+        for change in delta_changes {
+            match change {
+                memfuse_core::SeqLogChange::Insert { doc_id, seq } => {
+                    // Check if document is currently present in old index RAM segment
+                    let vector_opt = {
+                        let doc_map = self.doc_to_node.read();
+                        let mmap_count = self
+                            .mmap_index
+                            .read()
+                            .as_ref()
+                            .map(|m| m.header.node_count() as usize)
+                            .unwrap_or(0);
+                        if let Some(&global_idx) = doc_map.get(&doc_id.inner()) {
+                            if global_idx >= mmap_count {
+                                let ram_idx = global_idx - mmap_count;
+                                let nodes = self.nodes.read();
+                                nodes.get(ram_idx).map(|n| n.vector.clone())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some(vector) = vector_opt {
+                        let f32_vec = match vector {
+                            VectorData::F32(v) => v,
+                            VectorData::U8(v) => {
+                                let q_guard = self.quantizer.read();
+                                let q = q_guard.as_ref().ok_or_else(|| {
+                                    MemFuseError::Index(
+                                        "Quantizer missing during rebuild phase 2 delta replay"
+                                            .into(),
+                                    )
+                                })?;
+                                q.dequantize(&v)
+                            }
+                        };
+
+                        new_index.inner.do_insert(doc_id, &f32_vec)?;
+
+                        // Set committed_tx on newly inserted node in new_index
+                        let mmap_count = new_index
+                            .inner
+                            .mmap_index
+                            .read()
+                            .as_ref()
+                            .map(|m| m.header.node_count() as usize)
+                            .unwrap_or(0);
+                        if let Some(&global_idx) =
+                            new_index.inner.doc_to_node.read().get(&doc_id.inner())
+                        {
+                            if global_idx >= mmap_count {
+                                let ram_idx = global_idx - mmap_count;
+                                let mut nodes = new_index.inner.nodes.write();
+                                if let Some(node) = nodes.get_mut(ram_idx) {
+                                    node.committed_tx = seq;
+                                }
+                            }
+                        }
+                    }
+                }
+                memfuse_core::SeqLogChange::Delete { doc_id, .. } => {
+                    new_index.inner.do_delete(doc_id)?;
+                }
+            }
+        }
+
+        // 3. Atomic swap
         {
             let mut nodes = self.nodes.write();
             let mut doc_to_node = self.doc_to_node.write();
@@ -1796,6 +1901,11 @@ impl HnswIndexCore {
             let new_entry_point = *new_index.inner.entry_point.read();
             let new_ram_entry_point = *new_index.inner.ram_entry_point.read();
 
+            let new_quantizer = new_index.inner.quantizer.write().take();
+            if new_quantizer.is_some() {
+                *self.quantizer.write() = new_quantizer;
+            }
+
             *nodes = new_nodes;
             *doc_to_node = new_doc_to_node;
             *entry_point = new_entry_point;
@@ -1805,7 +1915,7 @@ impl HnswIndexCore {
                 Ordering::SeqCst,
             );
 
-            // Preserve mmap deletions, clear RAM deletions (since they are now in doc_to_node/nodes)
+            // Preserve mmap deletions, plus any deletions recorded in new_index
             let mmap_count = self
                 .mmap_index
                 .read()
@@ -1818,14 +1928,15 @@ impl HnswIndexCore {
                     new_deleted.insert(del_idx);
                 }
             }
+            for del_idx in new_index.inner.deleted_nodes.read().iter() {
+                new_deleted.insert(del_idx);
+            }
+
             *deleted_nodes = new_deleted;
             self.deleted_count
                 .store(deleted_nodes.len(), Ordering::SeqCst);
         }
 
-        self.rebuilding.store(false, Ordering::SeqCst);
-        self.rebuild_count.fetch_add(1, Ordering::SeqCst);
-        tracing::info!("HNSW rebuild completed in {:?}", start_time.elapsed());
         Ok(())
     }
 
@@ -3595,5 +3706,65 @@ mod tests {
         search_handle.await.unwrap(); // unwrap
 
         assert_eq!(index.rebuild_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_insert_during_rebuild() {
+        let config = HnswConfigBuilder::new(4)
+            .distance_metric(memfuse_core::DistanceMetric::Euclidean)
+            .rebuild_threshold(0.10)
+            .build()
+            .unwrap(); // unwrap #[cfg(test)]
+
+        let index = std::sync::Arc::new(HnswIndex::try_new(config).unwrap()); // unwrap #[cfg(test)]
+
+        // 1. Initial baseline insertion: docs 1..100
+        let tx1 = TxId::new(1);
+        for i in 1u64..=100 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap(); // unwrap #[cfg(test)]
+        }
+        index.commit(tx1).await.unwrap(); // unwrap #[cfg(test)]
+
+        // 2. Spawn concurrent insertion task while rebuild runs
+        let index_write = std::sync::Arc::clone(&index);
+        let write_handle = tokio::spawn(async move {
+            // Introduce a short yield to align execution during rebuild Phase 1
+            tokio::task::yield_now().await;
+
+            let tx2 = TxId::new(2);
+            for i in 101u64..=150 {
+                let v = vec![i as f32, 0.0, 0.0, 0.0];
+                index_write
+                    .insert(tx2, DocId::new(i), &v)
+                    .await
+                    .unwrap(); // unwrap #[cfg(test)]
+            }
+            index_write.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
+
+            let tx3 = TxId::new(3);
+            index_write.delete(tx3, DocId::new(1)).await.unwrap(); // unwrap #[cfg(test)]
+            index_write.commit(tx3).await.unwrap(); // unwrap #[cfg(test)]
+        });
+
+        // 3. Trigger rebuild concurrently
+        index.rebuild().await.unwrap(); // unwrap #[cfg(test)]
+        write_handle.await.unwrap(); // unwrap #[cfg(test)]
+
+        // 4. Assert correctness after rebuild
+        assert_eq!(index.rebuild_count(), 1);
+
+        // Doc 1 was deleted during concurrent write
+        let query_doc1 = vec![1.0, 0.0, 0.0, 0.0];
+        let res_doc1 = index.search(&query_doc1, 10).await.unwrap(); // unwrap #[cfg(test)]
+        assert!(!res_doc1.iter().any(|d| d.doc_id == DocId::new(1)));
+
+        // Doc 105 was inserted during rebuild Phase 1 & committed
+        let query_doc105 = vec![105.0, 0.0, 0.0, 0.0];
+        let res_doc105 = index.search(&query_doc105, 10).await.unwrap(); // unwrap #[cfg(test)]
+        assert!(res_doc105.iter().any(|d| d.doc_id == DocId::new(105)));
+
+        // Total active docs in index should be 149 (100 - 1 deleted + 50 newly inserted)
+        assert_eq!(index.len().await, 149);
     }
 }
