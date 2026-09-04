@@ -2022,7 +2022,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_results_have_provenance_is_some() {
         let (db, _tmp) = test_db(4).await;
-        let col = db.collection("search_prov_test").await.expect("collection");
+        let col = db.collection("search_prov_test").await.expect("collection"); // expect
 
         col.insert(
             "doc-1",
@@ -2030,18 +2030,18 @@ mod tests {
             Some(json!({"text": "rust search provenance test"})),
         )
         .await
-        .expect("insert");
+        .expect("insert"); // expect
 
         let vec_results = col
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
             .await
-            .expect("vector search");
+            .expect("vector search"); // expect
         assert_eq!(vec_results.len(), 1);
         assert!(
             vec_results[0].provenance.is_some(),
             "Vector search results must contain provenance record"
         );
-        let prov = vec_results[0].provenance.as_ref().expect("provenance");
+        let prov = vec_results[0].provenance.as_ref().expect("provenance"); // expect
         assert_eq!(prov.source_collection.as_deref(), Some("search_prov_test"));
         assert_eq!(prov.index_type.as_deref(), Some("hnsw"));
 
@@ -2053,7 +2053,7 @@ mod tests {
             .k(1)
             .execute()
             .await
-            .expect("text search");
+            .expect("text search"); // expect
         assert_eq!(text_results.len(), 1);
         assert!(
             text_results[0].provenance.is_some(),
