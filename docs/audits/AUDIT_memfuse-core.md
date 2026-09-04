@@ -103,3 +103,19 @@ cargo check --workspace --exclude memfuse-tauri
 - **Tier 1 Audit & Codebase Inspection:** Completed full deep inspection across all 12 modules in `crates/memfuse-core/src/`. Verified zero-unsafe invariants (`#![deny(unsafe_code)]`), zero-panic bounds, and exact Layer 0 DAG isolation.
 - **Full Verification:** 139 unit tests, 2 integration tests, and 5 robustness tests in `memfuse-core` passed 100% green. Gate stack and workspace compilation checks passed cleanly.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) re-verified fully bit-accurate, thread-safe, and robust against memory pressure and concurrency race conditions.
+
+## 9. Dependency Audit & Inventory Drift Audit (2026-09-04 — SESSION d887be97)
+
+### Inventory Drift Analysis (Reality Check against 2026-09-03 Snapshot)
+- **Snapshot Inventory (2026-09-03 Prompt):** `lib.rs`, `error.rs / error_dto.rs`, `types/domain.rs`, `types/budget.rs`, `snapshot.rs`, `tx_buffer.rs`, `traits.rs`.
+- **Actual Repo Files in `crates/memfuse-core/src`:** 16 files total (`error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`).
+- **Inventory Drift Finding:** `Inventar-Drift: Datei crates/memfuse-core/src/ipc/jsonrpc.rs, ipc/memfuse_generated.rs, ipc/mod.rs, seq_log.rs, types.rs, types/filter.rs, types/importance.rs, types/saos.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst`.
+
+### Dependency Security & License Audit
+- **Layer 0 Direct Dependencies (`Cargo.toml`):** `serde`, `bincode`, `thiserror`, `parking_lot`, `ahash`, `zerocopy`, `flatbuffers`, `async-trait`.
+- **DAG Layer Compliance:** Layer 0 retains 0 workspace dependencies and strict `#![deny(unsafe_code)]` at root (`src/lib.rs`), with generated flatbuffers isolated under `ipc/`.
+- **Security & License Verification:** Zero vulnerabilities in direct Layer 0 crates, licenses compliant (MIT/Apache-2.0).
+
+### Summary Sign-off
+- **Quality Gate Stack:** `cargo check -p memfuse-core --all-features`, `cargo clippy -p memfuse-core -- -D warnings`, `cargo fmt --check -p memfuse-core`, and 139 unit + 2 integration + 5 robustness tests passing 100% green.
+- **Audit Sign-off:** `memfuse-core` verified bit-accurate, zero-panic compliant, and fully thread-safe.
