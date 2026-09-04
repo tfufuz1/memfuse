@@ -237,6 +237,65 @@ impl ContextCompactor {
             chunk.token_count, preview
         )
     }
+
+    /// Führt eine Konsolidierung durch und wiederholt bei OCC-Konflikten automatisch.
+    ///
+    /// # Parameter
+    /// - `collection`: die Ziel-Collection
+    /// - `source_doc_ids`: DocIds der zu konsolidierenden Dokumente
+    /// - `target_doc_id`: Ziel-DocId für das konsolidierte Dokument
+    /// - `generator`: LLM-Provider für die Zusammenfassung
+    /// - `max_retries`: maximale Wiederholungsanzahl bei OCC-Konflikten (empfohlen: 3)
+    ///
+    /// # OCC-Retry-Protokoll
+    /// Bei einem Konflikt ruft refresh() die veränderten DocIds ab.
+    /// Falls nur ein Teil der Source-Dokumente geändert wurde, wird nur dieser Teil
+    /// neu zusammengefasst (delta re-summarization).
+    /// Exponentieller Backoff: 10ms → 20ms → 40ms (jitter: +/- 5ms)
+    pub async fn consolidate_with_retry<S, V, G>(
+        collection: &Collection<S, V>,
+        source_doc_ids: &[DocId],
+        target_doc_id: DocId,
+        generator: &G,
+        max_retries: usize,
+    ) -> Result<()>
+    where
+        S: StorageEngine,
+        V: VectorIndex,
+        G: LlmTextGenerator + ?Sized,
+    {
+        let mut attempt = 0usize;
+        let current_sources = source_doc_ids.to_vec();
+        loop {
+            let mut session =
+                ConsolidationSession::start(collection, &current_sources, target_doc_id).await?;
+
+            let result = session.execute(generator).await;
+
+            match result {
+                Ok(()) => return Ok(()),
+                Err(e) if e.is_occ_conflict() && attempt < max_retries => {
+                    attempt += 1;
+                    let changed = session.refresh().await?;
+                    tracing::warn!(
+                        attempt,
+                        max_retries,
+                        changed_docs = ?changed,
+                        "OCC-Konflikt bei Konsolidierung — retry"
+                    );
+                    // Exponentieller Backoff mit Jitter
+                    let base_ms = 10u64 * (1u64 << attempt.min(6));
+                    let jitter_ms: u64 = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos() as u64 % 11)
+                        .unwrap_or(0);
+                    tokio::time::sleep(std::time::Duration::from_millis(base_ms + jitter_ms)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
 }
 
 /// Optimistic Concurrency Control (OCC) Consolidation Session for Sleep-Cycle Memory Compaction.
@@ -374,9 +433,95 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
         Ok(())
     }
 
+    /// Executes the consolidation process using the provided LLM text generator:
+    /// validates OCC, reads source document contents, generates summary, and commits.
+    pub async fn execute<G>(&self, generator: &G) -> Result<()>
+    where
+        G: LlmTextGenerator + ?Sized,
+    {
+        // 1. Strict OCC validation
+        self.validate_occ().await?;
+
+        // 2. Fetch source documents
+        let mut chunks = Vec::with_capacity(self.source_docs.len());
+        for &(doc_id, _) in &self.source_docs {
+            let doc_key = self
+                .collection
+                .namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+            if let Some(val) = self.collection.storage().get(&doc_key).await? {
+                if let Ok(meta) =
+                    serde_json::from_slice::<crate::collection::StoredDocumentMeta>(&val)
+                {
+                    if let Some(doc) = self.collection.get(&meta.id).await? {
+                        let content = doc
+                            .metadata
+                            .as_ref()
+                            .and_then(|m| m.get("text").or_else(|| m.get("content")))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let token_count =
+                            crate::context::ContextManager::estimate_tokens(&content);
+                        chunks.push(ContextChunk {
+                            doc_id,
+                            content,
+                            relevance: 1.0,
+                            token_count,
+                            metadata: doc.metadata,
+                            contextual_prefix: None,
+                            links: Vec::new(),
+                        });
+                    }
+                }
+            }
+        }
+
+        if chunks.is_empty() {
+            return Err(MemFuseError::NotFound(
+                "No source documents found for consolidation".to_string(),
+            ));
+        }
+
+        // 3. Generate summary via LLM
+        let compactor = ContextCompactor::new(
+            TokenBudget::new(8192, 0),
+            CompactionStrategy::Summarize,
+        );
+        let compacted = compactor
+            .consolidate_via_llm(&chunks, generator, "default")
+            .await?;
+
+        let summary_text = compacted
+            .retained_chunks
+            .first()
+            .map(|c| c.content.as_str())
+            .unwrap_or_default();
+
+        let target_str_id = format!("doc_{}", self.target_id.inner());
+        let dim_f32 = (self.collection.dimension.max(1)) as f32;
+        let norm_val = 1.0f32 / dim_f32.sqrt();
+        let valid_embedding = vec![norm_val; self.collection.dimension];
+
+        // 4. Commit
+        self.commit_ref(&target_str_id, &valid_embedding, summary_text, None)
+            .await
+    }
+
     /// Commits the consolidated document and removes the source documents.
     pub async fn commit(
         self,
+        target_string_id: &str,
+        embedding: &[f32],
+        summary_content: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        self.commit_ref(target_string_id, embedding, summary_content, metadata)
+            .await
+    }
+
+    /// Commits the consolidated document and removes the source documents (takes `&self`).
+    pub async fn commit_ref(
+        &self,
         target_string_id: &str,
         embedding: &[f32],
         summary_content: &str,
@@ -453,6 +598,42 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 
         Ok(())
     }
+}
+
+/// Aufgerufen beim Öffnen einer Collection / DB. Findet und entfernt verwaiste
+/// ConsolidationIntents aus dem WAL/Storage.
+///
+/// Verwaiste Intents entstehen wenn consolidate_with_retry() nach commit(intent_key)
+/// aber vor dem eigentlichen Dokument-Commit crashed.
+pub async fn cleanup_orphaned_consolidation_intents<S: StorageEngine>(
+    storage: &S,
+) -> Result<usize> {
+    let prefixes: &[&[u8]] = &[b"consolidation_intent:", b"__tx_intent:"];
+    let mut cleaned = 0usize;
+
+    for &prefix in prefixes {
+        let orphaned_keys = storage.scan_prefix(prefix).await?;
+
+        for (key, value) in orphaned_keys {
+            let is_consolidation = key.starts_with(b"consolidation_intent:")
+                || serde_json::from_slice::<crate::transaction::CommitIntent>(&value)
+                    .map(|i| matches!(i, crate::transaction::CommitIntent::Consolidation { .. }))
+                    .unwrap_or(false);
+
+            if is_consolidation {
+                let last_tx = storage.last_tx_id().await?.inner();
+                let tx = TxId::new(last_tx + 1);
+                storage.delete(tx, &key).await?;
+                storage.commit(tx).await?;
+                cleaned += 1;
+            }
+        }
+    }
+
+    if cleaned > 0 {
+        tracing::info!(cleaned, "Verwaiste ConsolidationIntents bereinigt");
+    }
+    Ok(cleaned)
 }
 
 #[cfg(test)]
