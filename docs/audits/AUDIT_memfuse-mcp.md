@@ -188,6 +188,33 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
 
 ---
 
+## 13. Session Audit Log (2026-09-04 / Session: ea436a42)
+
+**Datum**: 2026-09-04
+**Session**: ea436a42
+**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
+
+### Durchgeführte Aktionen:
+1. **Schritt 0 — Inventar-Realitätsabgleich**:
+   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 6 Dateien: `bin/memfuse-mcp-server.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
+   - **Befund**: `Inventar-Drift: Datei crates/memfuse-mcp/src/tests.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst`.
+2. **Dependency- & DAG-Audit (Modus A & ADR-010)**:
+   - Alle direkten Abhängigkeiten in `Cargo.toml` geprüft (workspace/direct crates).
+   - Lizenzierung der Workspace-Dependencies bestätigt (`Apache-2.0 OR MIT`).
+   - `cargo audit` ausgeführt (alle bekannten RUSTSEC-Warnungen betreffen GTK/unmaintained crates aus optionalen Tauri-Pfaden, keine Sicherheitslücken in MCP Core).
+   - `just dag-check` PASSED: `memfuse-mcp` (Layer 4) verletzt keine DAG-Constraints.
+3. **Protokoll-, Sicherheits- & DoS-Verifikation**:
+   - `read_line_bounded` verifiziert: Stdio DoS-Schutz erzwingt `MAX_RPC_BYTES` (16 MB) zeilenweise ohne unbegrenzte Speicherallokation.
+   - `McpSandbox` verifiziert: Strikte Opt-In Sandbox-Policy (`allow_db_writes` standardmäßig `false`, per `MEMFUSE_MCP_ALLOW_WRITE` aktivierbar), Methodennamen-Längenprüfung (max 256 Chars) und capacity limit für volatile results (1.000 Items).
+   - `PromptInjectionGuard` verifiziert: Prompt-Injection-Erkennung / Quarantäne-Modi und Untrusted Provenance Marking in `memfuse_search` und `memfuse_get`.
+4. **Workspace- & Gate-Verifikation**:
+   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
+   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
+   - `cargo fmt --check -p memfuse-mcp` -> OK
+   - `cargo test -p memfuse-mcp --all-features` -> 34 unit tests passed, 25 integration tests passed
+
+---
+
 ## 12. Session Audit Log (2026-09-02 / Session: 4e4bb530)
 
 **Datum**: 2026-09-02
