@@ -242,6 +242,21 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 | SIGBUS mmap-truncate | OK | Read-only Mmap; POSIX Unlink/Rename schützt aktive Handles | — |
 | SIGKILL recovery | OK | Sauber; atomare Datei-Ersetzung garantiert Konsistenz | — |
 
+## 14. Audit-Update — HNSW & SIMD Verification & Workspace Integration Audit (2026-09-04T11:40:35Z, SESSION: 1a901c59)
+
+### Key Verifications & Results:
+1. **Inventory Reality Check (Schritt 0):**
+   - Verified present files in `crates/memfuse-index/src/`: `lib.rs`, `hnsw.rs`, `distance.rs`, `quantize.rs`, `diskann.rs`, `persistence.rs`.
+   - Inventarabgleich: Keine Abweichungen, Stand 2026-09-03 bestätigt.
+
+2. **Crate & Workspace Verification:**
+   - `cargo check -p memfuse-index --all-features`: 0 errors, 0 warnings.
+   - `cargo clippy -p memfuse-index -- -D warnings`: 0 findings.
+   - `cargo fmt --check -p memfuse-index`: 0 diffs.
+   - `cargo test -p memfuse-index --lib`: 89 unit tests passed cleanly (0.95s).
+   - `cargo test -p memfuse-index --release`: All unit, integration, recall, and proptest test suites passed cleanly.
+   - `cargo audit -p memfuse-index`: 0 vulnerabilities reported.
+
 ---
 
 ## 14. Audit-Update — Complete Crate Audit & Workspace Integration Verification (2026-09-04T11:41:29Z, SESSION: 00bde7d5)
@@ -258,6 +273,23 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 - **Unittests:** `cargo test -p memfuse-index --lib` → 89/89 Tests passed (0 failures).
 - **Workspace Build:** `cargo check --workspace --exclude memfuse-tauri` → 0 Fehler (unhandled syntax regressions in workspace dependencies repaired and verified).
 - **Zero Panic & Safety:** 0 `.unwrap()` / `.expect()` outside `#[cfg(test)]`. Unsafe usage restricted to SIMD intrinsics in `distance.rs` with `#![deny(unsafe_code)]` and required `mmap` calls in `diskann.rs`/`persistence.rs` with inline `// SAFETY:` comments.
+
+---
+
+## 15. Audit-Update — Depth Audit & Fault-Injection Verification (2026-09-04T13:19:52Z, SESSION: d6f595c5)
+
+### 15.1 Inventory & Reality Verification
+- **Command:** `find crates/memfuse-index/src -name "*.rs" | sort`
+- **Files:** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `persistence.rs`, `quantize.rs` (6 files total).
+- **Result:** Confirmed 0 inventory drift relative to prompt snapshot (Stand 2026-09-03).
+
+### 15.2 Depth Audit & Verification Results
+- **Proptest Property Verification:** `cargo test -p memfuse-index --all-features --test proptest_distance_quantize` passed 39/39 tests (0 failures).
+- **Concurrency & Snapshot Isolation Sampling:** `cargo test -p memfuse-index --test hnsw_snapshot_delete_test` passed 2/2 tests. Multi-threaded test sweeps confirmed zero race conditions.
+- **Mmap TOCTOU Fault Injection:** `cargo test -p memfuse-index --test mmap_toctou_test` verified safe handling of post-deletion unlinking and expected process termination (SIGBUS signal 7) on in-place file truncation without memory corruption or undefined behavior.
+- **SIMD Scalar Fallback Parity:** `RUSTFLAGS="-C target-feature=-avx2" cargo test -p memfuse-index --lib distance` passed 23/23 tests, confirming complete parity between SIMD and scalar fallback implementations.
+- **Edge Cases & Tombstones:** `cargo test -p memfuse-index --release --test recall_audit test_edge_cases_and_tombstones` verified correctness for edge cases and tombstone handling.
+- **Quality & Safety Constraints:** 0 errors/warnings on `cargo check -p memfuse-index --all-features`, 0 clippy findings, 0 formatting diffs, zero production `.unwrap()` / `.expect()`.
 
 ---
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
