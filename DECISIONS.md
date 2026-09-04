@@ -807,6 +807,14 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-057: Instance-Scoped PinGuard Drop Registration
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: `PinGuard` führt im `Drop`-Handler die Registrierung unvollständiger unpins im instanz-spezifischen `InstanceOrphanRegistry` durch.
+*   **Begründung**: Ergänzt ADR-052 und ADR-053 zur Vermeidung globaler Singletons im Checkpoint-Subsystem.
+
+---
+
 ## ADR-058: Error-Logging-Pattern für synchrones Orphan-State Persistieren in Checkpoint
 *   **Datum**: 2026-09-04
 *   **Status**: ✅ Final
