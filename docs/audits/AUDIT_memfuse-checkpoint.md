@@ -158,7 +158,7 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
   - `cargo llvm-cov -p memfuse-checkpoint --all-features` → 82.43% Line Coverage
   - Unsafe Code Check → PASSED (`#![forbid(unsafe_code)]` strikt eingehalten)
 - **Befund (Befund-ID: AGT-CHECKPOINT-41f541e2):**
-  - **Kategorie:** `AI-TAG[CODE][MAJOR]`
+  - **Kategorie:** `AI-TAG[CODE][CRITICAL]`
   - **Fundstelle:** `crates/memfuse-checkpoint/src/lib.rs:675`
   - **BEFUND:** `CheckpointGuard::with_orphan_state` versucht das nicht existierende Feld `self.orphan_state` zu setzen (`E0609`).
   - **RISIKO:** Kompilierfehler im Crate.

@@ -81,3 +81,36 @@ The current audit verified:
    - Added `test_empty_collection_name_and_query_validation` testing `MemFuseValueError` raising behavior on empty collection names and empty hybrid search queries.
 3. **`crates/memfuse-py/tests/test_bindings.py` & `crates/memfuse-py/AGENTS.md`**:
    - Annotated `test_open_and_close` and `test_hybrid_search` with `ANCHOR[TEST:PY-001]` and `ANCHOR[TEST:PY-002]` tags updating review status to `IN-PROGRESS (REVIEW-PASS 1/2)`.
+
+---
+
+## Tiefen-Audit & Tier 1 FFI Domain Audit 2026-09-04
+
+**Datum/Zeit:** 2026-09-04T13:38:02Z
+**Session:** `0415c0ba`
+**Crate:** `memfuse-py` (Layer 3 — Python PyO3 Bindings)
+**Rolle:** Senior Rust FFI-Engineer — PyO3, GIL, Zero-Panic-Boundary
+
+### Executive Summary & Scope
+
+A comprehensive Tier 1 and FFI domain audit was conducted on `memfuse-py` (`crates/memfuse-py/src/lib.rs`). Inventory check confirmed exact alignment with single-file layout (`lib.rs`).
+
+Key Verifications Completed:
+1. **Zero-Panic-Boundary (APM-9)**: Verified `run_blocking_ffi` traps all core Rust panics via `std::panic::catch_unwind(std::panic::AssertUnwindSafe(...))` and converts them to structured Python `PyRuntimeError` exceptions, preventing Python interpreter crashes across FFI.
+2. **GIL Release & Concurrency**: Verified `py.allow_threads` releases the Python GIL during blocking async Tokio calls, ensuring non-blocking Python thread execution under high concurrency.
+3. **Sub-Interpreter Isolation Guard**: Verified `check_subinterpreter_guard` inspects `_xxsubinterpreters` / `_interpreters` to deterministically reject imports in CPython sub-interpreters (interpreter ID != 0) with `PyImportError`, preventing multi-interpreter state corruption.
+4. **Boundary Validation & Sanitization**: Verified strict input validation functions (`validate_id`, `validate_collection_name`, `validate_db_path`, `validate_query_text`, `validate_batch_size`, `validate_vector`, `validate_id_obj`) rejecting null bytes, empty strings, oversized IDs (>1024 chars), oversized batch sizes (>10,000), negative integer IDs, and NaN/Inf vector floats.
+5. **FlatBuffer IPC Response Serialization (APM-34)**: Verified `search_fb` and `hybrid_search_fb` assemble search results into FlatBuffers IPC payloads using `#![forbid(unsafe_code)]` compliant `PyBytes` copying, eliminating use-after-free and dangling pointer risks over FFI.
+6. **Error Mapping Completeness (APM-35)**: Verified `memfuse_err` maps all `MemFuseError` variants via `MemFuseErrorDto` into specific Python exception types (`PyKeyError`, `PyValueError`, `PyPermissionError`, `MemFuseIOError`, `MemFuseIndexError`, `MemFuseCryptoError`, etc.) while dynamically populating `kind`, `message`, and `details` attributes.
+7. **Refutation/Status of Prior Findings**: Finding `AGT-PY-ff475c8e` (testing helper panic invocation) was re-verified at `crates/memfuse-py/src/lib.rs:1431` and confirmed fully resolved (`RESOLVED`). No open findings exist in `memfuse-py`.
+
+### Audit Findings Table (Session `0415c0ba`, TS: 2026-09-04T13:38:02Z)
+
+| ID | Kategorie | Severity | Datei | Zeile | Beschreibung | Status |
+|---|---|---|---|---|---|---|
+| `AGT-PY-ff475c8e` | BUG | MAJOR | `crates/memfuse-py/src/lib.rs` | 1431 | `_trigger_panic_for_test` FFI panic invocation | RESOLVED |
+
+### Tier 1 & FFI Concurrency Sampling
+- **Concurrency Stress Test**: 5 consecutive runs of `cargo test -p memfuse-py --lib --all-features -- --test-threads=8` executed with 0 failures and 0 panics.
+- **Python Integration Tests**: Executed `maturin develop --release` + `pytest` suite across 7 test files (`test_bindings.py`, `test_errors.py`, `test_gil_concurrency.py`, `test_mcp_real.py`, `test_panic_isolation.py`, `test_recovery.py`, `test_subinterpreter.py`), 100% passing.
+- **Sub-Interpreter Guard Verification**: Confirmed deterministic `PyImportError` raising when imported inside sub-interpreters.
