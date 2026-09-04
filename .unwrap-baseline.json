@@ -973,6 +973,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "097abfd2c79baa6b"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "0a071211aafa9a80"
   },
   {
@@ -1105,6 +1109,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "87c4d8dfb52ffa5c"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "8b1dc6b1b9c7b6a8"
   },
   {
@@ -1157,6 +1165,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "cbe7a8c9580db3a8"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "ce897345e2c772f9"
   },
   {
@@ -1182,10 +1194,6 @@
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "e5ec6a7cfc6a4fa2"
-  },
-  {
-    "file": "crates/memfuse-checkpoint/src/lib.rs",
-    "hash": "e73a7fa845312586"
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
@@ -1409,6 +1417,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
+    "hash": "0acd8a845e48a799"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
     "hash": "0b001549c885a44f"
   },
   {
@@ -1425,7 +1437,7 @@
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
-    "hash": "2e358a515858a597"
+    "hash": "2aea0ad7708fa2ac"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
@@ -1481,11 +1493,11 @@
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
-    "hash": "7d0326360b251ec0"
+    "hash": "76b7cbe22402f38e"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
-    "hash": "828f25afa613d2ba"
+    "hash": "7d0326360b251ec0"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
@@ -1505,7 +1517,7 @@
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
-    "hash": "b62bd4695af0c64e"
+    "hash": "b6982dc0bed761c1"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
@@ -1526,6 +1538,10 @@
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
     "hash": "ce7706b6c4efa0a4"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
+    "hash": "d58e5aa65a97a5f3"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/time_travel_correctness.rs",
