@@ -7,7 +7,21 @@ on:
   pull_request:
 
 jobs:
+  dag-integrity:
+    name: DAG Integrity Check
+    runs-on: ubuntu-latest
+    needs: []
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run xtask check-dag
+        run: cargo xtask check-dag
+
   verify-dag:
+    name: Legacy Detailed DAG Inspection
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

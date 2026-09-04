@@ -3,7 +3,7 @@
 // INVARIANTEN: Einhaltung der DAG Layer-1 Grenzen (keine Aufwärts-Imports); Zero-Panic Invariante.
 // NICHT-OFFENSICHTLICH: Hardware-Dispatch wählt zur Laufzeit die optimalen SIMD intrinsics (AVX-512 > AVX2 > Skalar).
 // HOTSPOTS: lib.rs (Modul-Deklarationen)
-// STAND: TS:2026-09-04T11:41:54Z (SESSION: 9c384478)
+// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
 
 //! MemFuse Index — HNSW vector index with SIMD distance computation.
 // INVARIANT: Vector Engine (Triebwerk — Layer 1).
@@ -32,3 +32,6 @@ pub use hnsw::{HnswConfig, HnswIndex, RebuildStatus};
 pub use memfuse_graph::CsrGraph;
 pub use persistence::{HnswHeader, MmapIndex};
 pub use quantize::ScalarQuantizer;
+
+// REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:AGT-INDEX-AUDIT-001) (TS: 2026-09-04T11:40:35Z) (SESSION: 1a901c59) PRÜFER-KONTEXT: FRESH
+// REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:AGT-INDEX-AUDIT-001) (TS: 2026-09-04T15:28:21Z) (SESSION: 5f69ac44) PRÜFER-KONTEXT: FRESH

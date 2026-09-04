@@ -103,6 +103,7 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     anchor_entities: Option<Vec<EntityId>>,
     same_community_as: Option<EntityId>,
     memory_type_filter: Option<Vec<MemoryType>>,
+    include_superseded: bool,
     include_provenance: bool,
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
@@ -124,6 +125,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             anchor_entities: None,
             same_community_as: None,
             memory_type_filter: None,
+            include_superseded: false,
             include_provenance: false,
             filter_fn: None,
             #[cfg(feature = "reranking")]
@@ -222,6 +224,12 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets whether to include superseded documents (Post-RRF Supersedes Displacement, ADR-038).
+    pub fn include_superseded(mut self, include: bool) -> Self {
+        self.include_superseded = include;
+        self
+    }
+
     /// Alias for `.memory_type_filter()`.
     pub fn memory_types(self, types: impl IntoIterator<Item = MemoryType>) -> Self {
         self.memory_type_filter(types)
@@ -246,6 +254,10 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    // AI-TAG[SEARCH][MAJOR] QueryBuilder ignores include_superseded from query_config and bypasses hybrid_search_with_query (ID: AGT-DB-2f1b6962) (TS: 2026-09-04T12:59:04Z) (SESSION: d01ee970)
+    // BEFUND: query_config() ignores query.include_superseded, and execute() delegates to hybrid_search_with_strategy() when filter is None, bypassing Post-RRF Supersedes Displacement.
+    // RISIKO: Queries executed via QueryBuilder when filter is None fail to displace superseded Zettelkasten memory links.
+    // EMPFEHLUNG: Add include_superseded field to QueryBuilder, populate it in query_config(), and construct HybridQuery in execute().
     /// Configures builder options from an existing `HybridQuery` struct.
     pub fn query_config(mut self, query: &memfuse_core::HybridQuery) -> Self {
         if let Some(ref text) = query.text_query {
@@ -264,6 +276,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self.filter = query.filter.clone();
         self.same_community_as = query.same_community_as;
         self.memory_type_filter = query.memory_type_filter.clone();
+        self.include_superseded = query.include_superseded;
         self.include_provenance = query.include_provenance;
         self.k = Some(query.k);
         self
@@ -285,71 +298,33 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             k
         };
 
-        let text_str = self.text.as_deref().unwrap_or("");
-        let empty_vec = Vec::new();
-        let vector_slice = self.vector.as_deref().unwrap_or(&empty_vec);
-
-        let anchors = self.anchor_entities.as_deref();
-        let weights = self.weights.as_ref();
-        let graph_strat = self.strategy.as_ref().map(|s| s.to_graph_strategy());
+        let hybrid_query = memfuse_core::HybridQuery {
+            text_query: self.text.clone(),
+            vector_query: self.vector.clone(),
+            graph_start_node: self
+                .anchor_entities
+                .as_ref()
+                .and_then(|a| a.first())
+                .map(|e| e.to_string()),
+            graph_strategy: self
+                .strategy
+                .as_ref()
+                .map(|s| s.to_graph_strategy())
+                .unwrap_or_default(),
+            fusion_weights: self.weights.unwrap_or_default(),
+            filter: self.filter.clone(),
+            memory_type_filter: self.memory_type_filter.clone(),
+            same_community_as: self.same_community_as,
+            include_superseded: self.include_superseded,
+            include_provenance: self.include_provenance,
+            k: fetch_k,
+        };
 
         #[allow(deprecated)]
-        let mut results = if self.filter.is_some() || self.memory_type_filter.is_some() {
-            let hybrid_query = memfuse_core::HybridQuery {
-                text_query: self.text.clone(),
-                vector_query: self.vector.clone(),
-                graph_start_node: self
-                    .anchor_entities
-                    .as_ref()
-                    .and_then(|a| a.first())
-                    .map(|e| e.to_string()),
-                graph_strategy: self
-                    .strategy
-                    .as_ref()
-                    .map(|s| s.to_graph_strategy())
-                    .unwrap_or_default(),
-                fusion_weights: self.weights.unwrap_or_default(),
-                filter: self.filter.clone(),
-                memory_type_filter: self.memory_type_filter.clone(),
-                same_community_as: self.same_community_as,
-                include_superseded: false,
-                include_provenance: self.include_provenance,
-                k: fetch_k,
-            };
-            self.collection
-                .hybrid_search_with_query(&hybrid_query)
-                .await?
-        } else if let Some(seq) = self.seq {
-            if text_str.is_empty() && anchors.is_none() {
-                self.collection
-                    .search_filtered_at(vector_slice, fetch_k, self.filter_fn.as_deref(), seq)
-                    .await?
-            } else {
-                self.collection
-                    .hybrid_search_with_strategy(
-                        text_str,
-                        vector_slice,
-                        fetch_k,
-                        anchors,
-                        weights,
-                        graph_strat.as_ref(),
-                        self.same_community_as,
-                    )
-                    .await?
-            }
-        } else {
-            self.collection
-                .hybrid_search_with_strategy(
-                    text_str,
-                    vector_slice,
-                    fetch_k,
-                    anchors,
-                    weights,
-                    graph_strat.as_ref(),
-                    self.same_community_as,
-                )
-                .await?
-        };
+        let mut results = self
+            .collection
+            .hybrid_search_with_query(&hybrid_query)
+            .await?;
 
         if let Some(ref filter_expr) = self.filter {
             results.retain(|res| {

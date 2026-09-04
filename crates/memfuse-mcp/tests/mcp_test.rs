@@ -31,7 +31,10 @@ impl memfuse_core::EmbeddingProvider for MockEmbedder {
         "mock"
     }
 
-    async fn embed(&self, _text: &str) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
         Ok(vec![0.1f32; self.dimension])
     }
 
