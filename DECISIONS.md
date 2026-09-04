@@ -810,7 +810,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 ## ADR-057: Lücken-Dokumentation (Umnummerierung / Ausgelassen)
 *   **Datum**: 2026-09-04
 *   **Status**: ✅ Final
-*   **Entscheidung**: Die Nummer ADR-057 wurde im Zuge paralleler Audit-Sessions ausgelassen und ist nicht vergeben.
+*   **Entscheidung**: Die Nummer ADR-057 wurde im Zuge paralleler Audit-Sessions ausgelassen und ist nicht vergeben. (Anmerkung: ADR-048 in `docs/decisions/` wurde als ADR-059 neu nummeriert und in `DECISIONS.md` integriert).
 
 ---
 
@@ -824,22 +824,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-060: Regression-Fix: FLUSH_COUNTER → instanzgebundenes AtomicU64-Feld
-*   **Datum**: 2026-09-04
+## ADR-059: Python FFI Panic Isolation (ehemals docs/decisions/ADR-048)
+*   **Datum**: 2026-09-03
 *   **Status**: ✅ Final
-*   **Entscheidung**: Der globale static AtomicU64 `FLUSH_COUNTER` in `crates/memfuse-store/src/lsm.rs` wird entfernt und durch ein instanzgebundenes `flush_counter: AtomicU64`-Feld in `LsmStorage` ersetzt. Beim Instanziieren in `LsmStorage::new()` wird `flush_counter` auf `max_wal_id + 1` initialisiert.
-*   **Alternativen**:
-    - Beibehalten des globalen statischen Zählers: Verworfen, da bei mehreren parallelen `LsmStorage`-Instanzen im selben Prozess WAL-Dateinamen prozessweit hochgezählt werden und nach Restarts Kollisionen entstehen.
-*   **Begründung**: Beseitigt Prozessweiter-Zustand, stellt Isolation paralleler `LsmStorage`-Instanzen sicher und verhindert Namenskollisionen bei WAL-Dateien.
+*   **Entscheidung**: Alle `panic!()`-Aufrufe in `memfuse-py` außerhalb von `#[cfg(test)]` werden durch `Err(PyErr)` ersetzt.
+*   **Begründung**: Ein Rust-Panic über die PyO3 FFI-Grenze hinweg führt zum Absturz von CPython. `catch_unwind` ist kein Ersatz für korrekte Fehlerbehandlung an Aufrufstellen.
 
 ---
 
-## Vorlage für neue ADRs
-```markdown
-## ADR-NNN: <Titel>
-*   **Datum**: YYYY-MM-DD
-*   **Status**: 🟡 Proposed / ✅ Final / ❌ Superseded by ADR-XXX
-*   **Entscheidung**: <Was wird entschieden?>
-*   **Alternativen**: <Welche Alternativen wurden erwogen?>
-*   **Begründung**: <Warum genau diese Lösung?>
-```
+## ADR-060: ADR-Governance — Konsolidierung auf DECISIONS.md als Einzel-Quelle
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: `docs/decisions/` wird aufgelöst. `DECISIONS.md` im Root-Verzeichnis ist die einzige kanonische Quelle für Architecture Decision Records (ADRs).
+*   **Begründung**: Einhaltung des MECE-Prinzips aus `CONSTITUTION.md` ("Jede Information lebt an genau EINEM Ort"). Das Dual-System (`DECISIONS.md` vs. `docs/decisions/`) erzeugte Nummernkollisionen und Verwirrung. Das xtask-Tooling kennt und prüft primär `DECISIONS.md`.
