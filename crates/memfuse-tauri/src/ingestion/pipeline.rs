@@ -233,7 +233,8 @@ impl IngestionPipeline {
                             );
 
                         if !extracted_entities.is_empty() {
-                            let graph = collection.graph_index();
+                            let graph_arc = collection.graph_index();
+                            let graph: &dyn GraphIndex = graph_arc.as_ref();
                             let tx = collection.allocate_tx()?;
 
                             for entity_id in &extracted_entities {

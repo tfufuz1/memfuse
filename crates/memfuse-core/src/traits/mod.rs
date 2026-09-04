@@ -20,6 +20,10 @@ use crate::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+/// Trait and mock definitions for text embedding providers and LLMs.
+pub mod embedding;
+pub use embedding::*;
+
 /// Abstract contract for generating consistent checkpoints.
 #[async_trait]
 pub trait Checkpoint: Send + Sync + 'static {
