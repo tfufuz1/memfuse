@@ -310,3 +310,47 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
 - `cargo test -p memfuse-store --all-features`: **PASSED** (110 tests passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+
+---
+
+## 19. Storage Engine Deep Verification, Inventory Realitätsabgleich & Proptest Fix (TS: 2026-09-04T15:23:25Z / SESSION: f5a6e1e2)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Audit Timestamp**: `2026-09-04T15:23:25Z`
+- **Session Hash**: `f5a6e1e2`
+
+### Inventory Alignment & Drift Verification
+- **Prompter Snapshot Date**: 2026-09-03
+- **Prompt Inventory**: `lib.rs`, `wal.rs`, `memtable.rs`, `sstable.rs`, `compaction.rs`, `lsm.rs`, `checkpoint.rs`
+- **Actual Repo Files**:
+  - `crates/memfuse-store/src/checkpoint.rs`
+  - `crates/memfuse-store/src/compaction.rs`
+  - `crates/memfuse-store/src/lib.rs`
+  - `crates/memfuse-store/src/lsm.rs`
+  - `crates/memfuse-store/src/memtable.rs`
+  - `crates/memfuse-store/src/mmap.rs`
+  - `crates/memfuse-store/src/sstable.rs`
+  - `crates/memfuse-store/src/util.rs`
+  - `crates/memfuse-store/src/wal.rs`
+- **Befund (Inventar-Drift)**: `Inventar-Drift: Datei crates/memfuse-store/src/mmap.rs und crates/memfuse-store/src/util.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst`. Both files were read, audited, and verified.
+
+### Fixed Findings & Invariants
+1. **LsmStorage `flush_counter` Replay State Preservation**:
+   - **Befund**: In `LsmStorage::new()`, `flush_counter` was initialized to `AtomicU64::new(0)`. When reopening an existing database directory containing flushed `wal-N.log` files (e.g. `wal-1.log`), new flushes would create `wal-0.log`, creating out-of-order WAL filename sequencing (`wal-0.log` < `wal-1.log`). On subsequent restart replay, operations in `wal-0.log` would be replayed prior to `wal-1.log`, leading to state loss / stale overwrites.
+   - **Fix**: Upgraded `LsmStorage::new()` to track `max_wal_id` when scanning existing WAL files (`wal-N.log`) and initialize `flush_counter` to `AtomicU64::new(max_wal_id.map_or(0, |id| id + 1))`. This preserves instance-level isolation for clean initial directories while ensuring monotonic WAL sequence numbers on reopened directories.
+   - **Verification**: `test_flush_counter_instance_isolation` and `prop_model_based_lsm_simulation` both pass cleanly.
+
+### Static Analysis & Invariant Compliance Matrix
+1. **fsync & Directory Sync Discipline (APM-1)**: Re-verified atomic creation pipeline (`tmp` -> `sync_all` -> `rename` -> `fsync_parent_dir`) across WAL, SSTable, and Compaction operations in `util.rs`, `wal.rs`, `sstable.rs`, and `lsm.rs`.
+2. **MVCC Single-Load Rule**: Verified `last_committed_tx` is loaded exactly once at read entrypoints (`get_at_seq`, `scan_prefix_at`) in `lsm.rs`.
+3. **Zero Production Unwraps / Expects**: Confirmed 0 non-test `.unwrap()` and `.expect()` calls in `crates/memfuse-store/src/`.
+4. **Clean Tags**: Zero unresolved `AI-TAG` or open `ANCHOR` tags in `crates/memfuse-store/src/`.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --all-features`: **PASSED** (114 unit/integration tests + benchmarks passed cleanly)
+- `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
