@@ -2834,6 +2834,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "memfuse-core",
+ "memfuse-ollama",
  "proptest",
  "quick-xml",
  "rand 0.8.8",
@@ -2899,6 +2900,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
  "windows-sys 0.61.2",
 ]
 

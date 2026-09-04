@@ -103,7 +103,7 @@ fn bench_checkpoint_operations(c: &mut Criterion) {
             &size_kb,
             |b, _| {
                 let storage = Arc::new(BenchStorage::new());
-                let store = PersistentCheckpointStore::new(storage, "bench").unwrap();
+                let store = PersistentCheckpointStore::new(storage, "bench");
                 let mut counter = 0u64;
 
                 b.to_async(&rt).iter(|| {
@@ -131,7 +131,7 @@ fn bench_checkpoint_operations(c: &mut Criterion) {
     let mut group_cache = c.benchmark_group("checkpoint_cache_latency");
 
     let storage_hit = Arc::new(BenchStorage::new());
-    let store_hit = PersistentCheckpointStore::new(storage_hit, "bench_cache").unwrap();
+    let store_hit = PersistentCheckpointStore::new(storage_hit, "bench_cache");
     rt.block_on(async {
         store_hit
             .create_checkpoint(
@@ -178,7 +178,7 @@ fn bench_checkpoint_operations(c: &mut Criterion) {
 
     let mut group_rollback = c.benchmark_group("checkpoint_rollback");
     let storage_rb = Arc::new(BenchStorage::new());
-    let store_rb = PersistentCheckpointStore::new(storage_rb, "bench_rb").unwrap();
+    let store_rb = PersistentCheckpointStore::new(storage_rb, "bench_rb");
     rt.block_on(async {
         store_rb
             .create_checkpoint(

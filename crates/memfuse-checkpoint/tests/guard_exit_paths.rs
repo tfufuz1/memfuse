@@ -1,4 +1,4 @@
-#![allow(clippy::await_holding_lock, deprecated)]
+#![allow(clippy::await_holding_lock)]
 
 use memfuse_checkpoint::{CheckpointGuard, PersistentCheckpointStore};
 use memfuse_core::{MemFuseError, Result, StorageEngine, StorageStats, TxId};
@@ -108,10 +108,8 @@ impl StorageEngine for TrackingMockStorage {
 #[tokio::test]
 async fn test_guard_exit_path_a_normal_commit_drop() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_a").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_a");
 
     let guard = store.create_guard(TxId::new(101)).unwrap();
     let cp = guard.commit().unwrap();
@@ -127,10 +125,8 @@ async fn test_guard_exit_path_a_normal_commit_drop() {
 #[tokio::test]
 async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_b").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_b");
 
     {
         let _guard = store.create_guard(TxId::new(202)).unwrap();
@@ -155,10 +151,8 @@ async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
 #[tokio::test]
 async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test_c").unwrap());
+    let store = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test_c"));
 
     let store_task = store.clone();
 
@@ -194,10 +188,8 @@ async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
 #[tokio::test]
 async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_d").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_d");
 
     let guard = store.create_guard(TxId::new(404)).unwrap();
 
@@ -224,10 +216,8 @@ async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
 #[tokio::test]
 async fn test_guard_exit_path_e_nested_guards_lifo_resolution() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_e").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_e");
 
     {
         let _outer_guard = store.create_guard(TxId::new(501)).unwrap();
@@ -248,8 +238,6 @@ async fn test_guard_exit_path_e_nested_guards_lifo_resolution() {
 #[tokio::test]
 async fn test_for_agent_step_e2e_cycle() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
 
     // 1. Begin agent step
@@ -283,10 +271,8 @@ async fn test_for_agent_step_e2e_cycle() {
 #[tokio::test]
 async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(TrackingMockStorage::new());
-    let store = PersistentCheckpointStore::new(storage.clone(), "test_barrier").unwrap();
+    let store = PersistentCheckpointStore::new(storage.clone(), "test_barrier");
 
     // Session Alpha creates guard at TxId 100
     let guard_alpha = store.create_guard(TxId::new(100)).unwrap();
@@ -343,15 +329,16 @@ async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx(
 #[test]
 fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_startup() {
     let _lock = TEST_LOCK.lock();
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
 
-    let orphan_file = tmp.path().join("outside_tokio_orphaned_checkpoints.json");
+    let orphan_file = std::path::PathBuf::from("outside_tokio_orphaned_checkpoints.json");
+    if orphan_file.exists() {
+        let _ = std::fs::remove_file(&orphan_file);
+    }
 
     // Step 1: Drop guard outside active Tokio runtime
     let thread_handle = std::thread::spawn(|| {
         let storage = Arc::new(TrackingMockStorage::new());
-        let store = PersistentCheckpointStore::new(storage, "outside_tokio").unwrap();
+        let store = PersistentCheckpointStore::new(storage, "outside_tokio");
 
         let _guard = store.create_guard(TxId::new(888)).unwrap();
         // _guard drops here outside any Tokio runtime
@@ -371,7 +358,7 @@ fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_star
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         let storage = Arc::new(TrackingMockStorage::new());
-        let store = PersistentCheckpointStore::new(storage.clone(), "outside_tokio").unwrap();
+        let store = PersistentCheckpointStore::new(storage.clone(), "outside_tokio");
 
         // Execute startup recovery
         let recovered = store.recover_orphaned_checkpoints().await.unwrap();
