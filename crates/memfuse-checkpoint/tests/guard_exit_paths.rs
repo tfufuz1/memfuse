@@ -1,7 +1,8 @@
 #![allow(clippy::await_holding_lock, deprecated)]
 
 use memfuse_checkpoint::{
-    CheckpointGuard, PersistentCheckpointStore,
+    clear_all_orphaned_checkpoints, orphaned_checkpoint_count, CheckpointGuard,
+    PersistentCheckpointStore,
 };
 use memfuse_core::{MemFuseError, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
@@ -110,6 +111,7 @@ impl StorageEngine for TrackingMockStorage {
 #[tokio::test]
 async fn test_guard_exit_path_a_normal_commit_drop() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
     let store = PersistentCheckpointStore::new(storage.clone(), "test_a");
 
@@ -127,6 +129,7 @@ async fn test_guard_exit_path_a_normal_commit_drop() {
 #[tokio::test]
 async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
     let store = PersistentCheckpointStore::new(storage.clone(), "test_b");
 
@@ -135,7 +138,7 @@ async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
         // Scope ends without calling .commit()
     }
 
-    assert_eq!(store.get_orphaned_checkpoints().len(), 1);
+    assert_eq!(orphaned_checkpoint_count(), 1);
 
     // Perform controlled startup recovery
     let recovered = store.recover_orphaned_checkpoints().await.unwrap();
@@ -153,6 +156,7 @@ async fn test_guard_exit_path_b_uncommitted_drop_triggers_rollback() {
 #[tokio::test]
 async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
     let store = Arc::new(PersistentCheckpointStore::new(storage.clone(), "test_c"));
 
@@ -172,7 +176,7 @@ async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
         "JoinError must represent a panic"
     );
 
-    assert_eq!(store.get_orphaned_checkpoints().len(), 1);
+    assert_eq!(orphaned_checkpoint_count(), 1);
 
     // Controlled startup recovery executes the rollback for orphaned checkpoint
     let recovered = store.recover_orphaned_checkpoints().await.unwrap();
@@ -190,6 +194,7 @@ async fn test_guard_exit_path_c_panic_unwind_triggers_rollback() {
 #[tokio::test]
 async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
     let store = PersistentCheckpointStore::new(storage.clone(), "test_d");
 
@@ -211,13 +216,14 @@ async fn test_guard_exit_path_d_explicit_rollback_and_drop_idempotent() {
         1,
         "Drop after explicit rollback must be idempotent and not issue duplicate rollback"
     );
-    assert_eq!(store.get_orphaned_checkpoints().len(), 0);
+    assert_eq!(orphaned_checkpoint_count(), 0);
 }
 
 /// Scenario E: Nested Guards — Guard inside another Guard scope — test LIFO resolution during controlled recovery.
 #[tokio::test]
 async fn test_guard_exit_path_e_nested_guards_lifo_resolution() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
     let store = PersistentCheckpointStore::new(storage.clone(), "test_e");
 
@@ -230,7 +236,7 @@ async fn test_guard_exit_path_e_nested_guards_lifo_resolution() {
         // Outer guard drops second
     }
 
-    assert_eq!(store.get_orphaned_checkpoints().len(), 2);
+    assert_eq!(orphaned_checkpoint_count(), 2);
 
     let recovered = store.recover_orphaned_checkpoints().await.unwrap();
     assert_eq!(recovered, vec![TxId::new(502), TxId::new(501)]);
@@ -240,6 +246,7 @@ async fn test_guard_exit_path_e_nested_guards_lifo_resolution() {
 #[tokio::test]
 async fn test_for_agent_step_e2e_cycle() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
 
     // 1. Begin agent step
@@ -273,6 +280,7 @@ async fn test_for_agent_step_e2e_cycle() {
 #[tokio::test]
 async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
     let storage = Arc::new(TrackingMockStorage::new());
     let store = PersistentCheckpointStore::new(storage.clone(), "test_barrier");
 
@@ -294,7 +302,7 @@ async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx(
     drop(guard_alpha);
 
     // Verify orphaned checkpoint registered
-    assert_eq!(store.get_orphaned_checkpoints().len(), 1);
+    assert_eq!(orphaned_checkpoint_count(), 1);
 
     // Attempt controlled recovery:
     // Because last_tx is 200 (> 100), the serialization barrier prevents rolling back to TxId 100!
@@ -331,11 +339,13 @@ async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx(
 #[test]
 fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_startup() {
     let _lock = TEST_LOCK.lock();
+    clear_all_orphaned_checkpoints();
 
-    let orphan_file = std::path::PathBuf::from("outside_tokio_orphaned_checkpoints.json");
-    if orphan_file.exists() {
-        let _ = std::fs::remove_file(&orphan_file);
-    }
+    let temp_dir = tempfile::tempdir().unwrap();
+    let orphan_file = temp_dir.path().join("orphaned_test.json");
+
+    // Set custom orphan path env var
+    std::env::set_var("MEMFUSE_ORPHAN_PATH", &orphan_file);
 
     // Step 1: Drop guard outside active Tokio runtime
     let thread_handle = std::thread::spawn(|| {
@@ -374,7 +384,6 @@ fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_star
         assert_eq!(rolled_back, vec![TxId::new(888)]);
     });
 
-    if orphan_file.exists() {
-        let _ = std::fs::remove_file(&orphan_file);
-    }
+    // Cleanup env
+    std::env::remove_var("MEMFUSE_ORPHAN_PATH");
 }
