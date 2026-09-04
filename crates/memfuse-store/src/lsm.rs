@@ -84,6 +84,9 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
+/// Global atomic counter for generating unique WAL log file names across flushes.
+static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
 async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> Result<()> {
@@ -1064,25 +1067,43 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     async fn flush(&self) -> Result<()> {
-        let mut state = self.state.write().await;
-        if state.memtable.is_empty() {
-            return Ok(());
-        }
+        // ── Phase 0: Schnellcheck (Read-Lock, kein I/O) ──────────────────────
+        {
+            let state = self.state.read().await;
+            if state.memtable.is_empty() {
+                return Ok(());
+            }
+        } // read lock freigegeben
 
-        static FLUSH_COUNTER: AtomicU64 = AtomicU64::new(0);
+        // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
         let flush_id = FLUSH_COUNTER.fetch_add(1, Ordering::SeqCst);
         let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
+        // WAL wird HIER erstellt — kein Lock gehalten
         let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
 
-        let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
-        let old_wal = std::mem::replace(&mut state.wal, new_wal);
-        state.immutable_memtables.push(old_memtable.clone());
+        // ── Phase 2: Atomarer In-Memory-Swap (Write-Lock, nur Pointer-Ops) ───
+        let (old_memtable, old_wal_path) = {
+            let mut state = self.state.write().await;
+            if state.memtable.is_empty() {
+                // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
+                // WAL-Datei aufräumen (best-effort)
+                drop(state);
+                let _ = tokio::fs::remove_file(
+                    &self.config.path.join(format!("wal-{}.log", flush_id)),
+                )
+                .await;
+                return Ok(());
+            }
+            let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
+            let old_wal = std::mem::replace(&mut state.wal, new_wal);
+            state.immutable_memtables.push(old_memtable.clone());
 
-        // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
-        // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
-        let old_wal_path = old_wal.path().to_path_buf();
-        drop(old_wal);
-        drop(state);
+            // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
+            // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
+            let old_wal_path = old_wal.path().to_path_buf();
+            drop(old_wal);
+            (old_memtable, old_wal_path)
+        }; // write lock freigegeben
 
         let sst_path = {
             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -2790,6 +2811,52 @@ mod tests {
         assert_eq!(storage.get(b"key2").await.unwrap(), None); // unwrap
         assert_eq!(storage.get(b"key3").await.unwrap(), Some(b"val3".to_vec()));
         // unwrap
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_get_and_flush_latency() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+
+        // Seed storage with data in memtable
+        for i in 0..100 {
+            let tx = TxId::new(i + 1);
+            let k = format!("key-{}", i);
+            let v = format!("val-{}", i);
+            storage.put(tx, k.as_bytes(), v.as_bytes()).await.unwrap();
+            storage.commit(tx).await.unwrap();
+        }
+
+        // Spawn 4 concurrent read tasks that call get() repeatedly
+        let mut handles = Vec::new();
+        for task_idx in 0..4 {
+            let storage_clone = Arc::clone(&storage);
+            let handle = tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                let key = format!("key-{}", task_idx * 10);
+                for _ in 0..50 {
+                    let req_start = std::time::Instant::now();
+                    let val = storage_clone.get(key.as_bytes()).await.unwrap();
+                    let elapsed = req_start.elapsed();
+                    assert!(val.is_some());
+                    assert!(
+                        elapsed < std::time::Duration::from_millis(5),
+                        "get() took {:?}, exceeding 5 ms latency threshold under concurrent flush",
+                        elapsed
+                    );
+                    tokio::time::sleep(std::time::Duration::from_micros(100)).await;
+                }
+                start.elapsed()
+            });
+            handles.push(handle);
+        }
+
+        // Trigger flush concurrently
+        storage.flush().await.unwrap();
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
     }
 
     #[tokio::test]

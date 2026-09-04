@@ -1,6 +1,6 @@
 # AUDIT REPORT: `memfuse-router`
 
-**Datum:** 2026-09-02 (Aktualisiert: 2026-09-03)
+**Datum:** 2026-09-02 (Aktualisiert: 2026-09-04)
 **Auditor:** Senior Rust Routing-Engineer
 **Crate:** `crates/memfuse-router` · Layer 3 (SLM-Routing Engine)
 **Ziel-Repository:** MemFuse (`https://github.com/tfufuz1/memfuse`)
@@ -61,20 +61,21 @@ TOTAL                             288                 5    98.26%          23   
 
 ---
 
-## 5. Session Log & Verification (2026-09-03)
-- **Dispatch Stdin Race Condition Fix**: `dispatch_to_slm` in `crates/memfuse-router/src/dispatch.rs` was hardened so `stdin.write_all` and `stdin.flush` I/O errors return descriptive `MemFuseError::Internal` errors matching dispatch error handling invariants.
-- **Verification**: All 36 unit/integration tests in `memfuse-router` pass reliably (`cargo test -p memfuse-router --all-features`). Zero clippy warnings, zero formatting diffs, zero unsafe blocks.
+## 5. Session Log & Verification (2026-09-04)
+- **Compilation & Warmup Threshold Fix**: Resolved compilation errors in `router.rs` by implementing `ProfileScoring` and `score_profile()`. Replaced deprecated `hybrid_search_with_strategy` with `collection.query()`. Unified conformal calibration warmup window total threshold using `CALIBRATION_WARMUP_SAMPLES` constant (30 samples) across `select_profile_cascade`, `ConfidenceMetrics`, and unit tests, resolving `AGT-ROUTER-2db4f208`.
+- **NaN-Safety & Test Expansion**: Enforced non-finite `query_embedding` validation and expanded test suite from 42 to 48 tests covering ConformalCalibrator defaults, empty MCP endpoints, non-finite query vector rejection, and profile reset utilities.
+- **Verification**: All 48 unit/integration tests in `memfuse-router` pass reliably (`cargo test -p memfuse-router --all-features`). Zero clippy warnings, zero formatting diffs, zero unsafe blocks. Workspace check `cargo check --workspace --exclude memfuse-tauri` succeeds cleanly.
 
 ---
 
-## 6. Audit Findings & Chaos Engineering Report (2026-09-03)
+## 6. Audit Findings & Chaos Engineering Report (2026-09-04)
 
 ### Audit Findings
 
 | ID | Severity | Category | File & Location | Description | Status |
 |---|---|---|---|---|---|
-| `AGT-ROUTER-2db4f208` | MAJOR | LOGIC | `src/router.rs:298` | Calibration warmup window total threshold in `select_profile_cascade` requires `window_total >= 50`, while `test_calibrated_threshold_convergence` expected calibration after 15 calls. | OPEN |
-| `AGT-ROUTER-19a753f1` | MINOR | SMELL | `src/tests.rs:1510` | `test_calibrated_threshold_convergence` asserts calibration after 15 iterations, mismatching the engine's 50-sample requirement. | OPEN |
+| `AGT-ROUTER-2db4f208` | MAJOR | LOGIC | `src/router.rs:298` | Calibration warmup window total threshold in `select_profile_cascade` unified using `CALIBRATION_WARMUP_SAMPLES` (30 samples) across engine and tests. | RESOLVED |
+| `AGT-ROUTER-19a753f1` | MINOR | SMELL | `src/tests.rs:1510` | `test_calibrated_threshold_convergence` iteration count aligned with 30-sample threshold requirement (55 calls). | RESOLVED |
 
 ### Chaos Engineering Report
 
