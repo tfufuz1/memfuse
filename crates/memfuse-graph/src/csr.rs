@@ -854,7 +854,10 @@ impl CsrGraph {
             for edge_idx in inner.offsets[start_idx]..inner.offsets[start_idx + 1] {
                 let neighbor_idx = inner.targets[edge_idx];
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         push_if_new(id);
@@ -867,7 +870,10 @@ impl CsrGraph {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(start_idx, neighbor_idx))
-                    && inner.entities.get(neighbor_idx).is_some_and(|e: &Option<Entity>| e.is_some())
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e: &Option<Entity>| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         push_if_new(id);

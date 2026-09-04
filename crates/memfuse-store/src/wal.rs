@@ -64,10 +64,8 @@ pub enum WalVersion {
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
 pub(crate) const LEGACY_INTEGRITY_KEY: [u8; 32] = [
-    0xDE, 0xAD, 0xC0, 0xDE, 0x4D, 0x46, 0x57, 0x31,
-    0x00, 0xFF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
-    0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
-    0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    0xDE, 0xAD, 0xC0, 0xDE, 0x4D, 0x46, 0x57, 0x31, 0x00, 0xFF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
+    0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
 ];
 
 /// A single entry in the Write-Ahead Log.
@@ -528,10 +526,14 @@ impl Wal {
 
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
-            let (entries, version) = wal.replay_with_size_and_version(metadata.len(), min_wal_version).await?;
+            let (entries, version) = wal
+                .replay_with_size_and_version(metadata.len(), min_wal_version)
+                .await?;
             if version != WalVersion::V3 {
                 if version == WalVersion::V1 {
-                    tracing::warn!("V1 WAL replayed. Immediately rewriting as V3 to close integrity gap.");
+                    tracing::warn!(
+                        "V1 WAL replayed. Immediately rewriting as V3 to close integrity gap."
+                    );
                 } else {
                     tracing::info!(
                         "WAL {:?} format detected at {:?}. Will be rewritten as V3 after successful replay.",
@@ -1050,7 +1052,9 @@ impl Wal {
     }
 
     async fn replay_with_size(&self, file_size: u64) -> Result<Vec<(u64, WalEntry, u64)>> {
-        let (entries, _) = self.replay_with_size_and_version(file_size, WalVersion::V1).await?;
+        let (entries, _) = self
+            .replay_with_size_and_version(file_size, WalVersion::V1)
+            .await?;
         Ok(entries)
     }
 
