@@ -824,6 +824,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-059: last_tx_id Return-Type Unifikation (Regression-Fix)
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: Rückgabetyp von `last_tx_id()` in allen drei Index-Traits (`VectorIndex`, `TextIndex`, `GraphIndex`) in `memfuse-core::traits` wird einheitlich auf `Result<TxId>` (bzw. `crate::Result<crate::types::TxId>`) re-unifiziert, identisch zu `StorageEngine::last_tx_id()`.
+*   **Alternativen**:
+    - Beibehaltung von `Result<u64>` für Index-Traits: Verworfen, da dies Typsicherheit aufhebt und manuelle `.inner()`-Konvertierungen an Aufrufstellen erzwingt.
+*   **Begründung**: Beseitigt eine durch Merge-Konflikt entstandene Regression (Commit f972e7bc) und stellt durchgehende Typsicherheit mit dem stark typisierten `TxId`-Domain-Typ über alle Workspace-Crates sicher.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>
