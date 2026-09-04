@@ -712,8 +712,10 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
-    // AI-TAG[CODE][CRITICAL] RESOLVED: AGT-CHECKPOINT-41f541e2 (TS: 2026-09-04T14:15:00Z) (SESSION: a437b68b)
-    // Removed broken dead method with_orphan_state referencing non-existent field orphan_state.
+    pub fn with_orphan_state(mut self, orphan_state: Arc<Mutex<OrphanState>>) -> Self {
+        self.orphan_state = Some(orphan_state);
+        self
+    }
 
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {

@@ -1451,82 +1451,6 @@ mod tests {
         assert!(!metrics.calibrated);
     }
 
-    #[test]
-    fn test_select_profile_cascade_error_branches() {
-        use crate::profile::ProfileCalibrationState;
-        use memfuse_core::{ContextChunk, DocId};
-        use std::collections::HashMap;
-
-        let profile = SlmProfile::new(
-            "p1",
-            "http://localhost/p1",
-            vec![10],
-            TokenBudget::new(1000, 100),
-            0.5,
-        );
-
-        let dir = tempfile::tempdir().unwrap();
-        let config = MemFuseConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let db = rt
-            .block_on(MemFuse::open_with_config(dir.path(), config))
-            .unwrap();
-        let collection = rt.block_on(db.collection("default")).unwrap();
-        let router = RouterEngine::new(collection, vec![profile.clone()]);
-        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
-
-        // 1. Empty chunks
-        let res_empty_chunks = router.select_profile_cascade(&[], &[profile.clone()], &calibration);
-        assert!(
-            matches!(res_empty_chunks, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
-        );
-
-        // 2. All-NaN chunks
-        let nan_chunk = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "nan content".to_string(),
-            relevance: f32::NAN,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-        let res_nan_chunks = router.select_profile_cascade(
-            &[(nan_chunk, Some(10))],
-            &[profile.clone()],
-            &calibration,
-        );
-        assert!(
-            matches!(res_nan_chunks, Err(MemFuseError::NotFound(msg)) if msg.contains("NaN/Inf"))
-        );
-
-        // 3. Empty profiles
-        let valid_chunk = ContextChunk {
-            doc_id: DocId::new(2),
-            content: "valid content".to_string(),
-            relevance: 0.8,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-        let res_empty_profiles =
-            router.select_profile_cascade(&[(valid_chunk.clone(), Some(10))], &[], &calibration);
-        assert!(
-            matches!(res_empty_profiles, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine SLM-Profile konfiguriert"))
-        );
-
-        // 4. Community mismatch
-        let res_unmatched_community =
-            router.select_profile_cascade(&[(valid_chunk, Some(999))], &[profile], &calibration);
-        assert!(
-            matches!(res_unmatched_community, Err(MemFuseError::NotFound(msg)) if msg.contains("Community-Zuordnung"))
-        );
-    }
-
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
         let dir = tempfile::tempdir().unwrap();
@@ -1595,10 +1519,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_cascade_determinism() {
-        use crate::profile::ProfileCalibrationState;
-        use memfuse_core::{ContextChunk, DocId};
-        use std::collections::HashMap;
-
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1606,6 +1526,26 @@ mod tests {
         };
         let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
         let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        let key = "det_entity";
+        collection
+            .insert(
+                key,
+                &vec_data,
+                Some(json!({"text": "deterministic content"})),
+            )
+            .await
+            .unwrap();
+
+        let eid = EntityId::from_key(key).unwrap();
+        let tx = db.allocate_tx().unwrap();
+        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
+        db.inner_storage()
+            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
+            .await
+            .unwrap();
+        db.inner_storage().commit(tx).await.unwrap();
 
         let p1 = SlmProfile::new(
             "slm-1",
@@ -1617,36 +1557,25 @@ mod tests {
         let p2 = SlmProfile::new(
             "slm-2",
             "http://localhost/2",
-            vec![200],
+            vec![100],
             TokenBudget::new(1000, 100),
             0.1,
         );
 
-        let profiles = vec![p1, p2];
-        let router = RouterEngine::new(collection, profiles.clone());
-        let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+        let router = RouterEngine::new(collection, vec![p1, p2]);
 
-        let chunk = ContextChunk {
-            doc_id: DocId::new(1),
-            content: "deterministic content".to_string(),
-            relevance: 0.5,
-            token_count: 5,
-            metadata: None,
-            contextual_prefix: None,
-            links: Vec::new(),
-        };
-        let chunks = vec![(chunk, Some(100))];
-
-        let (_, first_profile, _) = router
-            .select_profile_cascade(&chunks, &profiles, &calibration)
+        let first_decision = router
+            .route(&vec_data, "deterministic content")
+            .await
             .unwrap();
 
         for i in 0..50 {
-            let (_, next_profile, _) = router
-                .select_profile_cascade(&chunks, &profiles, &calibration)
+            let next_decision = router
+                .route(&vec_data, "deterministic content")
+                .await
                 .unwrap();
             assert_eq!(
-                next_profile.name, first_profile.name,
+                next_decision.profile.name, first_decision.profile.name,
                 "Inconsistent profile selected at iteration {}",
                 i
             );

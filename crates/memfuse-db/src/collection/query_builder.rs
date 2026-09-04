@@ -104,7 +104,6 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     same_community_as: Option<EntityId>,
     memory_type_filter: Option<Vec<MemoryType>>,
     include_provenance: bool,
-    include_superseded: bool,
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
@@ -126,7 +125,6 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             same_community_as: None,
             memory_type_filter: None,
             include_provenance: false,
-            include_superseded: false,
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
@@ -224,12 +222,6 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
-    /// Sets whether to include superseded documents (Post-RRF Supersedes Displacement, ADR-038).
-    pub fn include_superseded(mut self, include: bool) -> Self {
-        self.include_superseded = include;
-        self
-    }
-
     /// Alias for `.memory_type_filter()`.
     pub fn memory_types(self, types: impl IntoIterator<Item = MemoryType>) -> Self {
         self.memory_type_filter(types)
@@ -273,7 +265,6 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self.same_community_as = query.same_community_as;
         self.memory_type_filter = query.memory_type_filter.clone();
         self.include_provenance = query.include_provenance;
-        self.include_superseded = query.include_superseded;
         self.k = Some(query.k);
         self
     }
@@ -303,10 +294,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         let graph_strat = self.strategy.as_ref().map(|s| s.to_graph_strategy());
 
         #[allow(deprecated)]
-        let mut results = if self.filter.is_some()
-            || self.memory_type_filter.is_some()
-            || !self.include_superseded
-        {
+        let mut results = if self.filter.is_some() || self.memory_type_filter.is_some() {
             let hybrid_query = memfuse_core::HybridQuery {
                 text_query: self.text.clone(),
                 vector_query: self.vector.clone(),
@@ -324,7 +312,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 filter: self.filter.clone(),
                 memory_type_filter: self.memory_type_filter.clone(),
                 same_community_as: self.same_community_as,
-                include_superseded: self.include_superseded,
+                include_superseded: false,
                 include_provenance: self.include_provenance,
                 k: fetch_k,
             };
