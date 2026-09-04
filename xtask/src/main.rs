@@ -813,6 +813,34 @@ pub fn check_crate_agents(crates: &[CrateInfo], root_dir: &Path) -> bool {
     !failed
 }
 
+pub fn check_no_orphan_adr_files(root_dir: &Path) -> bool {
+    let decisions_dir = root_dir.join("docs/decisions");
+    if !decisions_dir.exists() {
+        return true;
+    }
+
+    let md_files: Vec<_> = match fs::read_dir(&decisions_dir) {
+        Ok(dir) => dir
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".md"))
+            .filter(|e| !e.file_name().to_string_lossy().starts_with("README"))
+            .collect(),
+        Err(_) => return true,
+    };
+
+    if !md_files.is_empty() {
+        eprintln!(
+            "❌ docs/decisions/ enthält {} ADR-Files außerhalb des kanonischen DECISIONS.md:",
+            md_files.len()
+        );
+        for f in &md_files {
+            eprintln!("   - {}", f.file_name().to_string_lossy());
+        }
+        return false;
+    }
+    true
+}
+
 pub fn check_adr_consistency(decisions: &str) -> bool {
     let mut failed = false;
 
@@ -998,6 +1026,11 @@ pub fn run_check_consistency() -> bool {
     let decisions_path = root_dir.join("DECISIONS.md");
     let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
     if !check_adr_consistency(&decisions) {
+        failed = true;
+    }
+
+    // (e) Orphan ADR files check
+    if !check_no_orphan_adr_files(&root_dir) {
         failed = true;
     }
 
@@ -1872,6 +1905,24 @@ mod tests {
             is_resolved: false,
         });
         assert!(run_check_review_coverage(&tags_diff_sessions));
+    }
+
+    #[test]
+    fn test_check_no_orphan_adr_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let decisions_dir = temp_dir.path().join("docs/decisions");
+
+        // Non-existent directory returns true
+        assert!(check_no_orphan_adr_files(temp_dir.path()));
+
+        // Directory with README.md returns true
+        fs::create_dir_all(&decisions_dir).unwrap();
+        fs::write(decisions_dir.join("README.md"), "# Archived").unwrap();
+        assert!(check_no_orphan_adr_files(temp_dir.path()));
+
+        // Directory with an ADR file returns false
+        fs::write(decisions_dir.join("ADR-048-test.md"), "test").unwrap();
+        assert!(!check_no_orphan_adr_files(temp_dir.path()));
     }
 
     #[test]
