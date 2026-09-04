@@ -37,6 +37,8 @@ pub struct RoutingDecision {
     pub confidence: Option<ConfidenceMetrics>,
 }
 
+pub const CALIBRATION_WARMUP_WINDOW: u64 = 10;
+
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
