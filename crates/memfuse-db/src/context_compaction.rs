@@ -14,9 +14,9 @@
 
 use crate::collection::Collection;
 use memfuse_core::{
-    ContextChunk, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine, TokenBudget, TxId,
-    VectorIndex,
+    ContextChunk, DocId, MemFuseError, Result, StorageEngine, TokenBudget, TxId, VectorIndex,
 };
+use memfuse_ollama::OllamaClient;
 
 /// Strategie für Context Compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,7 +148,7 @@ impl ContextCompactor {
     pub async fn consolidate_via_llm(
         &self,
         chunks: &[ContextChunk],
-        llm: &(impl LlmTextGenerator + ?Sized),
+        ollama: &OllamaClient,
     ) -> Result<CompactedContext> {
         if chunks.is_empty() {
             return Ok(CompactedContext {
@@ -177,7 +177,8 @@ impl ContextCompactor {
             prompt_content
         );
 
-        let summary_text = llm.generate(&prompt).await?;
+        let model = &ollama.config().model;
+        let summary_text = ollama.generate_text(model, &prompt).await?;
 
         let estimated_tokens = crate::context::ContextManager::estimate_tokens(&summary_text);
 
@@ -572,17 +573,6 @@ mod tests {
         assert_eq!(result.tokens_used, 15); // combined_token_count, not raw token_count
     }
 
-    struct UnreachableLlmGenerator;
-    #[async_trait::async_trait]
-    impl LlmTextGenerator for UnreachableLlmGenerator {
-        async fn generate(&self, _prompt: &str) -> Result<String> {
-            Err(MemFuseError::Io(std::io::Error::new(
-                std::io::ErrorKind::ConnectionRefused,
-                "Unreachable LLM generator",
-            )))
-        }
-    }
-
     #[tokio::test]
     async fn test_consolidate_via_llm_error_propagation_on_unreachable_client() {
         let budget = TokenBudget::new(100, 0);
@@ -593,14 +583,15 @@ mod tests {
             },
         );
 
-        let dead_llm = UnreachableLlmGenerator;
+        // Client pointing to an unreachable / closed port
+        let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         let chunks = vec![
             make_chunk(101, "First chunk content", 0.9, false),
             make_chunk(102, "Second chunk content", 0.8, false),
         ];
 
-        let res = compactor.consolidate_via_llm(&chunks, &dead_llm).await;
+        let res = compactor.consolidate_via_llm(&chunks, &dead_client).await;
         // Must return an Error and NOT fall back silently to StatusToken inside compaction.rs
         assert!(res.is_err());
     }
@@ -609,10 +600,10 @@ mod tests {
     async fn test_consolidate_via_llm_provenance_and_empty() {
         let budget = TokenBudget::new(100, 0);
         let compactor = ContextCompactor::new(budget, CompactionStrategy::Summarize);
-        let dead_llm = UnreachableLlmGenerator;
+        let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
         // Empty chunks slice test
-        let empty_res = compactor.consolidate_via_llm(&[], &dead_llm).await;
+        let empty_res = compactor.consolidate_via_llm(&[], &dead_client).await;
         assert!(empty_res.is_ok());
         let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
         assert!(empty_ctx.retained_chunks.is_empty());

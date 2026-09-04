@@ -9,17 +9,17 @@ MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche Works
 Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
 Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
-          memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
-Layer 2:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
+Layer 2:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)
 Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-store)
+          memfuse-embed —  (deps: memfuse-core)
           memfuse-ollama —  (deps: memfuse-core)
           memfuse-py — Python bindings for MemFuse using PyO3 (deps: memfuse-core, memfuse-db)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
-Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
+Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-ollama)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
 ```
 

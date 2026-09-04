@@ -78,16 +78,12 @@ impl EmbeddingProvider for OllamaEmbedder {
     }
 
     async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
-        let vec = self
-            .client
-            .embed(&self.model, text)
-            .await
-            .map_err(|e| match e {
-                MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
-                    EmbeddingError::Unavailable(msg)
-                }
-                other => EmbeddingError::ComputationFailed(other.to_string()),
-            })?;
+        let vec = self.client.embed(&self.model, text).await.map_err(|e| match e {
+            MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                EmbeddingError::Unavailable(msg)
+            }
+            other => EmbeddingError::ComputationFailed(other.to_string()),
+        })?;
 
         if let Some(expected_dim) = self.expected_dimension {
             if vec.len() != expected_dim {
@@ -106,24 +102,17 @@ impl EmbeddingProvider for OllamaEmbedder {
         self.expected_dimension.unwrap_or(0)
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[&str],
-    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
+    async fn embed_batch(&self, texts: &[&str]) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
-        let output = self
-            .client
-            .embed_batch(&self.model, texts)
-            .await
-            .map_err(|e| match e {
-                MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
-                    EmbeddingError::Unavailable(msg)
-                }
-                other => EmbeddingError::ComputationFailed(other.to_string()),
-            })?;
+        let output = self.client.embed_batch(&self.model, texts).await.map_err(|e| match e {
+            MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                EmbeddingError::Unavailable(msg)
+            }
+            other => EmbeddingError::ComputationFailed(other.to_string()),
+        })?;
 
         if let Some(expected_dim) = self.expected_dimension {
             for vec in &output {

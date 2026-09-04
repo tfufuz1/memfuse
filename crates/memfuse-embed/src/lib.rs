@@ -34,11 +34,14 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "onnx")]
 pub mod reranker;
+#[cfg(feature = "onnx")]
 pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
 
-/// Maximum allowed batch size for text embedding queries to prevent unbounded resource exhaustion.
-pub const MAX_EMBED_BATCH_SIZE: usize = 10_000;
+/// Conservative default. Override via `TextEmbedderConfig::max_batch_size`.
+/// At 1536D × 512 × f32 = ~3 MB input tensor; safe within 128 MB memory budgets.
+pub const MAX_EMBED_BATCH_SIZE: usize = 512;
 
 /// Configuration settings for the text embedder.
 #[cfg(feature = "onnx")]
@@ -50,6 +53,8 @@ pub struct TextEmbedderConfig {
     pub pool_size: usize,
     /// Expected output embedding dimension (optional).
     pub expected_dim: Option<usize>,
+    /// Maximum batch size for embed_batch(). Default: MAX_EMBED_BATCH_SIZE (512).
+    pub max_batch_size: usize,
 }
 
 #[cfg(feature = "onnx")]
@@ -59,6 +64,7 @@ impl Default for TextEmbedderConfig {
             max_sequence_length: 512,
             pool_size: 2,
             expected_dim: None,
+            max_batch_size: MAX_EMBED_BATCH_SIZE,
         }
     }
 }
@@ -85,6 +91,7 @@ pub struct TextEmbedder {
     /// Expected output embedding dimension.
     expected_dim: Option<usize>,
 }
+
 
 #[cfg(feature = "onnx")]
 #[async_trait]
@@ -121,10 +128,7 @@ impl EmbeddingProvider for TextEmbedder {
         self.expected_dim.unwrap_or(0)
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[&str],
-    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
+    async fn embed_batch(&self, texts: &[&str]) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
         let limit = self.config.max_batch_size;
         if texts.len() > limit {
             return Err(EmbeddingError::Unavailable(format!(
@@ -138,9 +142,9 @@ impl EmbeddingProvider for TextEmbedder {
         for text in texts {
             let text_owned = text.to_string();
             let embedder = self.clone();
-            handles.push(tokio::spawn(
-                async move { embedder.embed(&text_owned).await },
-            ));
+            handles.push(tokio::spawn(async move {
+                embedder.embed(&text_owned).await
+            }));
         }
 
         let mut results = Vec::with_capacity(texts.len());
@@ -434,6 +438,7 @@ mod tests {
         let cfg = TextEmbedderConfig::default();
         assert_eq!(cfg.max_sequence_length, 512);
         assert_eq!(cfg.pool_size, 2);
+        assert_eq!(cfg.max_batch_size, MAX_EMBED_BATCH_SIZE);
     }
 
     #[cfg(feature = "onnx")]

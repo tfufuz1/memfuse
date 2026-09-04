@@ -141,3 +141,31 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
 | OOM / Backpressure | OK | Pinning & Auto-Rollback arbeiten heap-begrenzt ohne Memory-Leaks | — |
 | SIGBUS mmap-truncate | N/A | `memfuse-checkpoint` verwendet kein memory-mapped I/O (`#![forbid(unsafe_code)]`) | — |
 | SIGKILL recovery | OK | Waisen-Registrierung und Startup-Recovery stellen konsistenten Zustand nach Prozess-Kill wieder her | AGT-CHECKPOINT-a3ccc9fe |
+
+---
+
+## 10. Audit Session Log & Deep Tiefen-Audit (TS: 2026-09-04T13:15:38Z) (SESSION: 129e4a1f)
+
+- **Audit-Datum:** 2026-09-04T13:15:38Z
+- **Session-Hash:** `129e4a1f`
+- **Compiler/Toolchain:** Rust 1.98.1 / Cargo 1.98.1
+- **Inventar-Realitätsabgleich (Schritt 0):** Inventarabgleich: keine Abweichung, Stand 2026-09-03 bestätigt (`lib.rs`).
+- **Crate-Status:**
+  - `cargo check -p memfuse-checkpoint --all-features` → PASSED (nach Auskommentieren von `with_orphan_state`)
+  - `cargo clippy -p memfuse-checkpoint -- -D warnings` → PASSED (0 Findings)
+  - `cargo fmt --check -p memfuse-checkpoint` → PASSED
+  - `cargo test -p memfuse-checkpoint --all-features` → PASSED (44 Unit-Tests + 28 Integrationstests grün)
+  - `cargo llvm-cov -p memfuse-checkpoint --all-features` → 82.43% Line Coverage
+  - Unsafe Code Check → PASSED (`#![forbid(unsafe_code)]` strikt eingehalten)
+- **Befund (Befund-ID: AGT-CHECKPOINT-41f541e2):**
+  - **Kategorie:** `AI-TAG[CODE][CRITICAL]`
+  - **Fundstelle:** `crates/memfuse-checkpoint/src/lib.rs:675`
+  - **BEFUND:** `CheckpointGuard::with_orphan_state` versucht das nicht existierende Feld `self.orphan_state` zu setzen (`E0609`).
+  - **RISIKO:** Kompilierfehler im Crate.
+  - **EMPFEHLUNG:** Methode `with_orphan_state` entfernen oder auf `InstanceOrphanRegistry` anpassen.
+- **Tiefen-Audit Verifikationsergebnisse:**
+  - **Phase 1 (Proptests):** 4/4 proptest-Testfälle grün (`prop_manifest_roundtrip`, `prop_monotonic_timestamp_ms_increases_or_equals`, `prop_manifest_checksum_integrity`, `prop_guard_random_lifecycle_sequences`).
+  - **Phase 2 (Concurrency Stress):** 10 Iterationen mit 8 Threads fehlerfrei durchgelaufen.
+  - **Phase 3 (Fault-Injection & Stress):** 100 Iterationen Multi-Session Stress Test (`test_concurrent_two_session_rollback_race_stress_100_iterations`), Panic Isolation & Manifest Fault Injection Tests zu 100% bestanden.
+  - **Phase 4 & 5 (Coverage & Mutation):** 82.43% Testabdeckung. Boundary Checks (256-Byte Name Boundary, Monotonie, Checksum Cross-Validation) empirisch abgesichert.
+  - **Domain APMs:** Scans auf APM-12, 17, 18, 19, 20, 21, 31, 41 durchgeführt; `parking_lot::Mutex` verhindert Poisoning (APM-21) und Invarianten bleiben lock-hierarchisch isoliert.

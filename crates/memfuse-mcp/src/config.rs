@@ -89,9 +89,8 @@ pub fn create_embedding_provider(
             let _ = onnx_model_path;
             Err(MemFuseError::CapabilityUnsupported {
                 capability: "onnx".to_string(),
-                reason:
-                    "ONNX support is disabled in this build. Recompile with feature flag 'onnx'."
-                        .to_string(),
+                reason: "ONNX support is disabled in this build. Recompile with feature flag 'onnx'."
+                    .to_string(),
             })
         }
         "mock" => {

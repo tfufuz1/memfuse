@@ -1,7 +1,7 @@
 # Audit Report: `memfuse-graph` (CSR Graph Engine, PPR, BFS & Session-DAG)
 
-**Date:** 2026-09-04T15:24:40Z
-**Session:** 6afab51d
+**Date:** 2026-09-03T19:36:56Z
+**Session:** cbd68961
 **Auditor:** Senior Rust Graph-Algorithmen-Ingenieur (Jules)
 **Layer:** Layer 1 (CSR-Wissensgraph + Session-DAG)
 
@@ -51,3 +51,15 @@ All 84 unit tests, proptest suites, and benchmark integration tests pass cleanly
 | OOM / Backpressure | OK | Traversal capped by `MAX_VISITED_NODES` (100,000), PPR iterations capped at 1000, DAG strings capped at 10 MB | — |
 | SIGBUS mmap-truncate | N/A | `memfuse-graph` strictly enforces `#![forbid(unsafe_code)]` and does not use `mmap` | — |
 | SIGKILL recovery | OK | Uncommitted state is lost, committed state is consistently loaded from underlying `StorageEngine` snapshots | — |
+
+---
+
+## 5. Follow-Up Audit & Verification (2026-09-04)
+
+**Date:** 2026-09-04T11:41:54Z
+**Session:** 9c9c08c8
+**Auditor:** Senior Rust Graph-Algorithmen-Ingenieur (Jules)
+
+- **Scope Verification:** Resolved `pending` scope resolution in `CsrGraph::neighbors()` by retrieving `inner.pending_edges.get(&start_idx)`.
+- **Quality Gates:** All 85 unit tests, proptest suites, and benchmark tests pass cleanly (`cargo test -p memfuse-graph --all-features`).
+- **Context Freshness:** `.jules/JULES_CONTEXT.md` timestamp updated to 2026-09-04 (`check-jules-context-freshness` PASSED).
