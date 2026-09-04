@@ -32,8 +32,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Type alias for sequence numbers managed as pinned checkpoint identifiers.
-pub type PinId = u64;
+/// Newtype wrapper for sequence numbers managed as pinned checkpoint identifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(transparent)]
+pub struct PinId(pub u64);
+
+impl PinId {
+    pub fn new(v: u64) -> Self {
+        Self(v)
+    }
+
+    pub fn inner(self) -> u64 {
+        self.0
+    }
+}
 
 static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static SKIPPED_ROLLBACKS: AtomicU64 = AtomicU64::new(0);
@@ -139,8 +151,8 @@ impl OrphanRegistry {
         let mut recovered = Vec::new();
 
         for pin_id in orphans {
-            if let Err(e) = storage.unpin_checkpoint(pin_id).await {
-                tracing::warn!(pin_id = pin_id, error = %e, "Failed to unpin orphaned pin during recovery");
+            if let Err(e) = storage.unpin_checkpoint(pin_id.inner()).await {
+                tracing::warn!(pin_id = pin_id.inner(), error = %e, "Failed to unpin orphaned pin during recovery");
             } else {
                 recovered.push(pin_id);
             }
@@ -208,7 +220,7 @@ pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
     if let Err(e) = persist_pinned_seq_no_orphans_sync(&lock) {
         tracing::error!(?e, "Failed to persist pinned seq_no orphans");
     }
-    if let Err(e) = global_orphan_registry().register_orphan(orphan.seq_no) {
+    if let Err(e) = global_orphan_registry().register_orphan(PinId::new(orphan.seq_no)) {
         tracing::error!(
             ?e,
             seq_no = orphan.seq_no,
@@ -672,10 +684,6 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
-    pub fn with_orphan_state(mut self, orphan_state: Arc<Mutex<OrphanState>>) -> Self {
-        self.orphan_state = Some(orphan_state);
-        self
-    }
 
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {
@@ -1319,7 +1327,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             if let Err(e) = self.storage.unpin_checkpoint(orphan.seq_no).await {
                 tracing::warn!(pin_id = orphan.seq_no, error = %e, "Failed to unpin orphaned pin during recovery");
             } else {
-                recovered.push(orphan.seq_no);
+                recovered.push(PinId::new(orphan.seq_no));
                 self.orphan_registry.clear_orphan_pin(orphan.seq_no);
             }
         }
