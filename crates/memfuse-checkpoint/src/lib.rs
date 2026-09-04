@@ -32,8 +32,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Type alias for sequence numbers managed as pinned checkpoint identifiers.
-pub type PinId = u64;
+/// Newtype wrapper for sequence numbers managed as pinned checkpoint identifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(transparent)]
+pub struct PinId(pub u64);
+
+impl PinId {
+    pub fn new(v: u64) -> Self {
+        Self(v)
+    }
+
+    pub fn inner(self) -> u64 {
+        self.0
+    }
+}
 
 /// Orphaned gepinnte Sequenznummer — wird beim Recovery verarbeitet.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1148,7 +1160,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             if let Err(e) = self.storage.unpin_checkpoint(orphan.seq_no).await {
                 tracing::warn!(pin_id = orphan.seq_no, error = %e, "Failed to unpin orphaned pin during recovery");
             } else {
-                recovered.push(orphan.seq_no);
+                recovered.push(PinId::new(orphan.seq_no));
                 self.orphan_registry.clear_orphan_pin(orphan.seq_no);
             }
         }
