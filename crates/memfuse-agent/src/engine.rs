@@ -36,14 +36,9 @@ pub struct OrchestratorEngine {
 
 impl OrchestratorEngine {
     pub fn new(storage: Arc<LsmStorage>) -> Self {
-        let store = PersistentCheckpointStore::new(storage, "agent")
-            .unwrap_or_else(|e| panic!("Failed to initialize PersistentCheckpointStore: {e}"));
         Self {
             tools: HashMap::new(),
-            checkpoint_store: Arc::new(
-                PersistentCheckpointStore::new(storage, "agent")
-                    .expect("Failed to initialize PersistentCheckpointStore for agent"),
-            ),
+            checkpoint_store: Arc::new(PersistentCheckpointStore::new(storage, "agent")),
         }
     }
 
@@ -397,7 +392,7 @@ impl OrchestratorEngine {
                                 _ = shutdown.cancelled() => {
                                     return Ok(EventLoopExitReason::Shutdown);
                                 }
-                                _ = source.wait_until_ready() => {}
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
                             }
                         }
                     }
@@ -432,7 +427,8 @@ impl OrchestratorEngine {
             error: None,
         };
 
-        crate::audit::AuditLog::append_to(&ctx.state_collection, &entry).await
+        let audit_log = crate::audit::AuditLog::new(Arc::clone(&ctx.state_collection));
+        audit_log.append(&entry).await
     }
 
     async fn audit_log_failure(&self, ctx: &AgentContext, error_message: &str) -> Result<()> {
@@ -445,7 +441,8 @@ impl OrchestratorEngine {
             error: Some(error_message.to_string()),
         };
 
-        crate::audit::AuditLog::append_to(&ctx.state_collection, &entry).await
+        let audit_log = crate::audit::AuditLog::new(Arc::clone(&ctx.state_collection));
+        audit_log.append(&entry).await
     }
 
     async fn persist_final_state(&self, ctx: &AgentContext) -> Result<()> {
