@@ -53,13 +53,13 @@ async fn test_hybrid_search_includes_graph_signal() {
         .await
         .expect("add target entity");
 
-    GraphIndex::add_edge(
-        graph.as_ref(),
-        tx,
-        Edge::new(anchor_eid, target_eid, "references").with_weight(1.0),
-    )
-    .await
-    .expect("add edge");
+    graph
+        .add_edge(
+            tx,
+            Edge::new(anchor_eid, target_eid, "references").with_weight(1.0),
+        )
+        .await
+        .expect("add edge");
 
     graph.commit(tx).await.expect("commit graph tx");
 
