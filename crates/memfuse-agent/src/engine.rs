@@ -160,6 +160,16 @@ impl OrchestratorEngine {
                         )))
                     };
 
+                    if let Some((router, decision_id)) = ctx.pending_routing_decision.take() {
+                        let outcome = match &result_res {
+                            Ok(_) => memfuse_router::RoutingOutcome::Success,
+                            Err(err) => memfuse_router::RoutingOutcome::Rejected {
+                                reason: Some(err.to_string()),
+                            },
+                        };
+                        router.record_outcome(decision_id, outcome);
+                    }
+
                     let result = match result_res {
                         Ok(res) => {
                             // Reconcile reserved budget with actual tokens consumed
