@@ -26,7 +26,7 @@ tokio-util = { version = "0.7.18", features = ["rt"] }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 proptest = "1.4"
 memfuse-index = { workspace = true, features = ["experimental-diskann"] }
 
@@ -51,6 +51,11 @@ harness = false
 [[bench]]
 name = "rrf_scale_bench"
 path = "../../benches/rrf_scale_bench.rs"
+harness = false
+
+[[bench]]
+name = "competitive_bench"
+path = "../../benches/competitive_bench.rs"
 harness = false
 
 [[example]]
