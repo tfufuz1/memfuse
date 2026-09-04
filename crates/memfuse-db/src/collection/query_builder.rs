@@ -246,6 +246,10 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    // AI-TAG[SEARCH][MAJOR] QueryBuilder ignores include_superseded from query_config and bypasses hybrid_search_with_query (ID: AGT-DB-2f1b6962) (TS: 2026-09-04T12:59:04Z) (SESSION: d01ee970)
+    // BEFUND: query_config() ignores query.include_superseded, and execute() delegates to hybrid_search_with_strategy() when filter is None, bypassing Post-RRF Supersedes Displacement.
+    // RISIKO: Queries executed via QueryBuilder when filter is None fail to displace superseded Zettelkasten memory links.
+    // EMPFEHLUNG: Add include_superseded field to QueryBuilder, populate it in query_config(), and construct HybridQuery in execute().
     /// Configures builder options from an existing `HybridQuery` struct.
     pub fn query_config(mut self, query: &memfuse_core::HybridQuery) -> Self {
         if let Some(ref text) = query.text_query {
