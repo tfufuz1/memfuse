@@ -31,7 +31,7 @@ pub struct ConfidenceMetrics {
     pub selection_margin: f32,
 }
 
-/// Result of a routing operation containing the selected profile and prepared context.
+/// Result of a routing operation containing the selected profile, prepared context, confidence, and decision ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingDecision {
     /// The target SLM profile selected for the query.
@@ -168,6 +168,42 @@ impl RouterEngine {
         }
     }
 
+    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
+    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
+    /// mit einem echten Ground-Truth-Signal.
+    ///
+    /// Gibt `true` zurück wenn die Decision gefunden und verarbeitet wurde,
+    /// `false` wenn die DecisionId unbekannt ist (z.B. nach Restart).
+    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
+        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
+            Some(name) => name,
+            None => {
+                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
+                return false;
+            }
+        };
+
+        let non_conformity = outcome.non_conformity_score();
+
+        let mut cal = self.calibration.write();
+        if let Some(state) = cal.get_mut(&profile_name) {
+            state.recalibrate_conformal(non_conformity);
+            tracing::debug!(
+                profile = %profile_name,
+                ?outcome,
+                non_conformity,
+                "Router outcome recorded"
+            );
+        }
+        true
+    }
+
+    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
+    /// Sollte in normaler Laufzeit nahe 0 bleiben.
+    pub fn pending_decision_count(&self) -> usize {
+        self.pending_decisions.read().len()
+    }
+
     /// Routes a query with embedding and text to the best matching SLM profile.
     #[allow(deprecated)]
     pub async fn route(
@@ -223,7 +259,7 @@ impl RouterEngine {
             }
         }
 
-        // 3. Perform profile selection, scoring, calibration updates, and confidence metric generation
+        // 3. Perform profile selection, scoring, calibration tracking, and confidence metric generation
         // atomically within a single write lock acquisition on calibration state.
         let (selected_profile, confidence_metrics) = {
             let mut cal = self.calibration.write();
@@ -288,6 +324,11 @@ impl RouterEngine {
 
             (selected_profile, metrics)
         }; // Write lock released
+
+        let decision_id = DecisionId::new();
+        self.pending_decisions
+            .write()
+            .insert(decision_id, selected_profile.name.clone());
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();

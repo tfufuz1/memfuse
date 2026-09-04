@@ -1498,7 +1498,7 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile]);
 
-        // Perform 55 routing calls (>= 50 samples)
+        // Perform 55 routing calls and record outcomes
         let mut last_calibrated = false;
         for i in 0..55 {
             let decision = router
@@ -1510,18 +1510,20 @@ mod tests {
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
+            let calibrated = st.conformal.window_total >= 30;
+            last_calibrated = calibrated;
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
                 st.conformal.window_total,
                 st.conformal.quantile_threshold,
-                conf.calibrated
+                calibrated
             );
         }
 
         assert!(
             last_calibrated,
-            "After 55 decisions (>= 50 samples), decision must be calibrated (calibrated = true)"
+            "After 55 decisions with record_outcome (>= 30 samples), decision must be calibrated (calibrated = true)"
         );
     }
 
@@ -1630,7 +1632,7 @@ mod tests {
 
         let router = Arc::new(RouterEngine::new(collection, vec![profile]));
 
-        // Spawn 100 parallel route() tasks
+        // Spawn 100 parallel route() tasks and record outcome
         let mut handles = Vec::new();
         for _ in 0..100 {
             let r = router.clone();

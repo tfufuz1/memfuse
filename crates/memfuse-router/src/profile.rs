@@ -85,7 +85,7 @@ impl SlmProfile {
 ///   q_{t+1} = q_t + gamma * (alpha - I(s_t > q_t))
 ///
 /// This guarantees that the empirical error rate converges to `alpha`
-/// regardless of the distribution shift in local SLM confidence scores.
+/// regardless of the distribution shift in local SLM confidence scores when ground-truth outcomes are recorded.
 ///
 /// # Invariants
 /// - INV-ROUTER-1: `quantile_threshold` is always in `[0.0, 1.0]`.
