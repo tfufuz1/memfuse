@@ -144,6 +144,15 @@ pub enum MemFuseError {
     #[error("Timeout exceeded in sandbox: {0}")]
     SandboxTimeout(String),
 
+    /// General operation execution timeout breach.
+    #[error("Operation timed out: {operation} (limit: {timeout_ms}ms)")]
+    Timeout {
+        /// Identifier of the timed out operation.
+        operation: String,
+        /// Configured timeout limit in milliseconds.
+        timeout_ms: u64,
+    },
+
     // ═══ Infrastructure ═══
     /// Data serialization or deserialization error.
     #[error("Serialization error: {0}")]
