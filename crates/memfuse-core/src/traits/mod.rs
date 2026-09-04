@@ -359,6 +359,13 @@ pub trait TextEmbeddingEngine: Send + Sync + 'static {
     }
 }
 
+/// Abstract contract for LLM text generation (summarization, importance evaluation, query expansion).
+#[async_trait]
+pub trait LlmTextGenerator: Send + Sync + 'static {
+    /// Generates text for a given prompt using an LLM.
+    async fn generate(&self, prompt: &str) -> Result<String>;
+}
+
 /// Statistics for a text index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextIndexStats {
