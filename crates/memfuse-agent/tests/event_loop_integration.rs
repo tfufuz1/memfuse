@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use memfuse_agent::event_source::{
-    BackgroundEvent, EventSource, PollingDocumentEventSource, VecEventSource,
+    BackgroundEvent, EphemeralEventSource, EventSource, PollingDocumentEventSource, VecEventSource,
 };
 use memfuse_agent::step::StepResult;
 use memfuse_agent::{AgentContext, EventLoopExitReason, NodeType, OrchestratorEngine, StateGraph};
@@ -245,6 +245,77 @@ impl EventSource for CustomStreamSource {
     fn is_exhausted(&self) -> bool {
         self.idx >= self.stream.len()
     }
+}
+
+#[tokio::test]
+async fn test_event_loop_no_busy_wait() {
+    let (engine, db, _tmp) = setup_test_environment().await;
+
+    let mut graph = StateGraph::new();
+    graph
+        .try_add_node("start", "Start node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node(
+            "task",
+            "Process event",
+            NodeType::Task,
+            Some("telemetry_tool"),
+        )
+        .unwrap();
+    graph
+        .try_add_node("end", "Finish step", NodeType::End, None)
+        .unwrap();
+
+    graph.try_add_edge("start", "task", None, 1).unwrap();
+    graph.try_add_edge("task", "end", None, 1).unwrap();
+
+    let state_col = db.collection("agent-state").await.expect("state col");
+    let budget = TokenBudget::new(1000, 0);
+    let mut ctx =
+        AgentContext::try_new("task-no-busy-wait", "start", db.clone(), state_col, budget).unwrap();
+
+    let (mut source, producer) = EphemeralEventSource::new();
+    let shutdown = CancellationToken::new();
+
+    let poll_count_handle = source.poll_count_handle();
+
+    let producer_task = tokio::spawn(async move {
+        for i in 1..=10 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let event = BackgroundEvent::try_new(
+                json!({"type": "metric", "seq": i}),
+                "sensor_stream",
+                i as u64,
+            )
+            .unwrap();
+            producer.push(event);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        producer.close();
+    });
+
+    let start_time = std::time::Instant::now();
+
+    let exit_reason = engine
+        .run_event_loop(&mut ctx, &graph, &mut source, shutdown)
+        .await
+        .expect("run event loop");
+
+    let elapsed = start_time.elapsed();
+    producer_task.await.expect("producer task finish");
+
+    assert_eq!(exit_reason, EventLoopExitReason::SourceExhausted);
+    assert_eq!(ctx.events.len(), 10);
+
+    let total_polls = poll_count_handle.load(std::sync::atomic::Ordering::SeqCst);
+    let idle_time_secs = elapsed.as_secs_f64();
+
+    let wakeups_per_sec = total_polls as f64 / idle_time_secs;
+    assert!(
+        total_polls <= 25,
+        "Expected total polls <= 25 for 10 events over ~1s, got {total_polls} (rate: {wakeups_per_sec:.2} polls/sec)"
+    );
 }
 
 #[tokio::test]
