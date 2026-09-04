@@ -75,9 +75,8 @@ impl<S: StorageEngine> AuditLog<S> {
         Self { collection }
     }
 
-    /// Appends an immutable audit entry directly via LSM storage without HNSW vector index participation (AC-3).
-    /// Enforces append-only immutability: returns `MemFuseError::Conflict` if an entry for the step already exists.
-    pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
+    /// Appends an immutable audit entry directly to a collection without needing an [`AuditLog`] wrapper.
+    pub async fn append_to(collection: &Collection<S>, entry: &AuditEntry) -> Result<()> {
         validate_task_id(&entry.task_id)?;
         validate_node_id(&entry.node_id)?;
         validate_audit_payload_and_error(&entry.payload, entry.error.as_deref())?;
@@ -86,7 +85,13 @@ impl<S: StorageEngine> AuditLog<S> {
         let payload = serde_json::to_value(entry)
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?;
 
-        self.collection.put_kv_if_absent(&audit_id, &payload).await
+        collection.put_kv_if_absent(&audit_id, &payload).await
+    }
+
+    /// Appends an immutable audit entry directly via LSM storage without HNSW vector index participation (AC-3).
+    /// Enforces append-only immutability: returns `MemFuseError::Conflict` if an entry for the step already exists.
+    pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
+        Self::append_to(&self.collection, entry).await
     }
 
     /// Replays all audit entries for a given task via scan_prefix.

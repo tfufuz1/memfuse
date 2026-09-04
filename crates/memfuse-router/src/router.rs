@@ -193,7 +193,9 @@ impl RouterEngine {
                 .map(|p| {
                     let mut ep = p.clone();
                     if let Some(state) = cal.get(&p.name) {
-                        ep.min_relevance_score = state.calibrated_min_score;
+                        if state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 {
+                            ep.min_relevance_score = state.calibrated_min_score;
+                        }
                     }
                     ep
                 })
@@ -243,20 +245,8 @@ impl RouterEngine {
                     quantile_threshold: state.conformal.quantile_threshold,
                     non_conformity_score: non_conformity,
                     selection_margin: confidence_ratio as f32,
-                };
-            }
-
-            // 4. Construct ConfidenceMetrics from updated lock state
-            let metrics = cal
-                .get(&selected_profile.name)
-                .map(|state| ConfidenceMetrics {
-                    score_lower: None, // Uncalibrated without ground truth
-                    score_upper: None,
-                    calibrated: state.conformal.window_total > 30,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                    non_conformity_score: non_conformity,
-                    selection_margin: confidence_ratio as f32,
-                });
+                }
+            });
 
             (selected_profile, metrics)
         }; // Write lock released
@@ -388,7 +378,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)
