@@ -1479,7 +1479,8 @@ mod tests {
         let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
 
         // 1. Empty chunks
-        let res_empty_chunks = router.select_profile_cascade(&[], &[profile.clone()], &calibration);
+        let res_empty_chunks =
+            router.select_profile_cascade(&[], std::slice::from_ref(&profile), &calibration);
         assert!(
             matches!(res_empty_chunks, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine gültigen Chunks"))
         );
@@ -1496,7 +1497,7 @@ mod tests {
         };
         let res_nan_chunks = router.select_profile_cascade(
             &[(nan_chunk, Some(10))],
-            &[profile.clone()],
+            std::slice::from_ref(&profile),
             &calibration,
         );
         assert!(

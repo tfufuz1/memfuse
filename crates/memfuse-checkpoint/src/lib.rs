@@ -61,7 +61,6 @@ pub struct PinnedSeqNoOrphan {
 #[allow(deprecated)]
 pub fn register_pinned_seq_no_orphan(_orphan: PinnedSeqNoOrphan) {}
 
-
 /// Instance-scoped orphan state for checkpoints and pinned sequence numbers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct OrphanState {
@@ -804,9 +803,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| {
-                    MemFuseError::Internal(format!("Failed to create Tokio runtime: {e}"))
-                }) {
+                .map_err(|e| MemFuseError::Internal(format!("Failed to create Tokio runtime: {e}")))
+            {
                 Ok(rt) => rt.block_on(Self::open(storage_clone, ns_clone)),
                 Err(e) => Err(e),
             }
@@ -1481,8 +1479,7 @@ mod tests {
     #[tokio::test]
     async fn test_orphan_recovery_on_startup() {
         let storage = Arc::new(MockStorage::new());
-        let store =
-            PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery");
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery");
         let seq_no = 67890;
 
         // Pin checkpoint and register orphan directly on store
@@ -1619,8 +1616,7 @@ mod tests {
                     .build()
                     .expect("Failed to build Tokio runtime for panic test");
 
-                let store =
-                    Arc::new(PersistentCheckpointStore::new(storage, "test_panic"));
+                let store = Arc::new(PersistentCheckpointStore::new(storage, "test_panic"));
                 let store_clone = Arc::clone(&store);
 
                 let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1661,8 +1657,7 @@ mod tests {
     #[tokio::test]
     async fn checkpoint_guard_rollback_on_drop() {
         let storage = Arc::new(MockStorage::new());
-        let store =
-            PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop");
+        let store = PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop");
         store.clear_all_orphaned_checkpoints();
 
         {
@@ -2201,8 +2196,8 @@ mod tests {
     #[test]
     fn state_checkpoint_deserializes_legacy_json_without_namespace() {
         let legacy_json = r#"{"tx_id": 999, "timestamp_ms": 1700000000000}"#;
-        let deserialized: StateCheckpoint =
-            serde_json::from_str(legacy_json).expect("Legacy JSON without namespace must deserialize");
+        let deserialized: StateCheckpoint = serde_json::from_str(legacy_json)
+            .expect("Legacy JSON without namespace must deserialize");
 
         assert_eq!(deserialized.tx_id, TxId::new(999));
         assert_eq!(deserialized.timestamp_ms, 1700000000000);
@@ -2226,7 +2221,9 @@ mod tests {
         let orphans_b = store_b.get_orphaned_checkpoints();
 
         assert_eq!(orphans_a.len(), 2);
-        assert!(orphans_a.iter().all(|cp| cp.namespace.as_deref() == Some("ns_a")));
+        assert!(orphans_a
+            .iter()
+            .all(|cp| cp.namespace.as_deref() == Some("ns_a")));
         let tx_a: Vec<TxId> = orphans_a.iter().map(|cp| cp.tx_id).collect();
         assert!(tx_a.contains(&TxId::new(1001)));
         assert!(tx_a.contains(&TxId::new(1002)));

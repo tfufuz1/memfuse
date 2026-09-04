@@ -141,6 +141,7 @@ impl RouterEngine {
         }
 
         // 1. Perform hybrid search with standard fusion weights
+        #[allow(deprecated)]
         let search_results = self
             .collection
             .hybrid_search_with_strategy(query_text, query_embedding, 10, None, None, None, None)
@@ -180,7 +181,7 @@ impl RouterEngine {
                 .map(|p| {
                     let mut ep = p.clone();
                     if let Some(state) = cal.get(&p.name) {
-                        if state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 {
+                        if state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW {
                             ep.min_relevance_score = state.calibrated_min_score;
                         }
                     }

@@ -321,7 +321,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         };
 
         #[allow(deprecated)]
-        let mut results = self.collection
+        let mut results = self
+            .collection
             .hybrid_search_with_query(&hybrid_query)
             .await?;
 
