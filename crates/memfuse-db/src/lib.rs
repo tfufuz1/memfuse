@@ -83,7 +83,8 @@ pub mod context;
 pub mod context_compaction;
 
 pub use context_compaction::{
-    CompactedContext, CompactionStrategy, ConsolidationSession, ContextCompactor, StatusToken,
+    cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
+    ConsolidationSession, ContextCompactor, StatusToken,
 };
 
 #[cfg(feature = "sandbox")]
@@ -350,6 +351,11 @@ impl MemFuse {
 
         // Initialize already existing collections from storage
         db.initialize_collections().await?;
+
+        // Cleanup orphaned consolidation intents on startup
+        let cleaned_intents =
+            context_compaction::cleanup_orphaned_consolidation_intents(db.storage.as_ref()).await?;
+        tracing::debug!(cleaned_intents, "Orphaned consolidation cleanup on startup");
 
         // Repair-on-Open: resolve pending transaction intents and re-sync indices
         db.repair_on_open().await?;
