@@ -215,3 +215,22 @@ Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Domain-APM-Auditses
 
 4. **Multi-Session Review Pass:**
    - `ANCHOR[TEST:TXT-001]` in `crates/memfuse-text/src/morphology.rs` wurde mit einem weiteren `REVIEW-PASS` aus Session `eede4c84` (`TS: 2026-09-04T12:58:41Z`) bestätigt.
+
+---
+
+## Re-Audit Snapshot & Session Summary (`2026-09-04T15:25:01Z`)
+
+Im Rahmen der Qualitätssicherungs- und Tiefenaudit-Verifikationssession (Session `73f912a8`) wurde das Crate `memfuse-text` erneut verifiziert:
+
+1. **Inventory Reality Check & Gate-Stack Verification:**
+   - `find crates/memfuse-text/src -name "*.rs"` $\rightarrow$ Exact 5 source files (`lib.rs`, `bm25.rs`, `inverted.rs`, `tokenizer.rs`, `morphology.rs`), 0 inventory drift.
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **77 passed, 0 failed** (alle Unit- & Integrationstests grün)
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
+
+2. **Domain Invariants & Anti-Patterns:**
+   - **APM-7 (UTF-8 Slicing Safety):** `GermanCompoundSplitter` and `GermanMorphTokenizer` use safe char boundary checks and property-tested UTF-8 boundary truncations.
+   - **APM-14 (Tie-Breaker Determinism):** Deterministic secondary sorting on `DocId` in `InvertedIndex::search_bm25_at`.
+   - **APM-16 (Score Clamping):** $10^{-6}$ floor for terms with $df > N/2$ prevents negative IDF or NaN/Inf scores.
