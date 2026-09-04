@@ -863,6 +863,7 @@ impl CsrGraph {
             }
         }
         // 2. Pending edges
+        let pending = inner.pending_edges.get(&start_idx);
         if let Some(pending) = pending {
             for edge in pending {
                 let neighbor_idx = edge.target;
