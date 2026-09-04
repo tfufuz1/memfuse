@@ -90,6 +90,8 @@ impl StorageEngine for MockPersistentStorage {
 /// Verifies that the next allocated TxId is strictly greater than all previously allocated TxIds.
 #[tokio::test]
 async fn test_txid_monotonicity_across_process_restart() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(MockPersistentStorage::new());
 
     let mut allocated_txs = Vec::new();
@@ -141,6 +143,8 @@ async fn test_txid_monotonicity_across_process_restart() {
 /// Verifies that the highest existing TxId is reconstructed and next allocated TxId is strictly greater.
 #[tokio::test]
 async fn test_crash_recovery_reconstructs_highest_txid_when_meta_missing_or_corrupt() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(MockPersistentStorage::new());
 
     // 1. Manually populate storage with existing checkpoints (simulating pre-crash store)
@@ -215,6 +219,8 @@ async fn test_crash_recovery_reconstructs_highest_txid_when_meta_missing_or_corr
 /// Verifies that PersistentCheckpointStore::open returns a hard error MemFuseError::Internal.
 #[tokio::test]
 async fn test_txid_regression_collision_check_returns_hard_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(MockPersistentStorage::new());
 
     // Insert a checkpoint with raw counter = 50
