@@ -32,7 +32,13 @@ async fn test_concurrent_lock_safety_no_deadlock() -> Result<()> {
                 let res = col.get(&id).await.unwrap();
                 assert!(res.is_some());
 
-                let search_res = col.query().embedding(&embedding).k(2).execute().await.unwrap();
+                let search_res = col
+                    .query()
+                    .embedding(&embedding)
+                    .k(2)
+                    .execute()
+                    .await
+                    .unwrap();
                 assert!(!search_res.is_empty());
             });
             handles.push(handle);

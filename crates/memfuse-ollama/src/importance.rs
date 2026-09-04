@@ -107,10 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_score_importance_mock_success() {
-        let client = MockOllamaClient::new(
-            vec![],
-            " Based on evaluation: 0.85 (High importance)",
-        );
+        let client = MockOllamaClient::new(vec![], " Based on evaluation: 0.85 (High importance)");
         let score = score_importance(&client, "llama3.2", "User prefers dark mode.")
             .await
             .unwrap(); // unwrap

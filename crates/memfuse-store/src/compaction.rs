@@ -1373,7 +1373,7 @@ mod tests {
                     max_memory_bytes: Some(1024 * 1024),
                 },
                 encryption_passphrase: None,
-            min_wal_version: crate::wal::WalVersion::V2,
+                min_wal_version: crate::wal::WalVersion::V2,
             };
 
             let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect
