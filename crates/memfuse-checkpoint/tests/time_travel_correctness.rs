@@ -284,6 +284,8 @@ impl StorageEngine for NamespaceStorageEngine {
 /// Verifies byte-exact checksum equality between initial State A and restored State A.
 #[tokio::test]
 async fn test_time_travel_sequence_byte_exact_recovery() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(VersionedMockStorage::new());
     let store = PersistentCheckpointStore::new(storage.clone(), "ns_tt").unwrap();
 
@@ -366,6 +368,8 @@ async fn test_time_travel_sequence_byte_exact_recovery() {
 /// Verifies complete state isolation, byte-exact checksum recovery, and zero cross-session checkpoint leakage.
 #[tokio::test]
 async fn test_concurrent_two_session_time_travel_isolation() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
     // Agent Session Alpha (Namespace: ns_alpha, Collection: col_alpha)
@@ -534,6 +538,8 @@ async fn test_concurrent_two_session_time_travel_isolation() {
 /// guard unwinding, and time-travel restorations across two independent agent sessions.
 #[tokio::test]
 async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
     let iterations = 100;
@@ -670,6 +676,8 @@ async fn test_concurrent_two_session_rollback_race_stress_100_iterations() {
 /// while Session Beta concurrently commits its CheckpointGuard.
 #[tokio::test]
 async fn test_concurrent_raii_guard_unwind_isolation() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
     let storage_alpha = Arc::new(NamespaceStorageEngine::new(
@@ -739,6 +747,8 @@ async fn test_concurrent_raii_guard_unwind_isolation() {
 /// Verifies sequence number pinning and unpinning lifecycle isolation across concurrent sessions.
 #[tokio::test]
 async fn test_concurrent_pinning_lifecycle_isolation() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let shared_storage = Arc::new(VersionedMockStorage::new());
 
     let storage_alpha = Arc::new(NamespaceStorageEngine::new(
