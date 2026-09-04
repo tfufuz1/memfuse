@@ -682,7 +682,7 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         }
     }
 
-    // AI-TAG[CODE][CRITICAL] Broken method referencing non-existent field orphan_state (ID: AGT-CHECKPOINT-41f541e2) (TS: 2026-09-04T13:15:38Z) (SESSION: 129e4a1f)
+    // AI-TAG[CODE][MAJOR] Broken method referencing non-existent field orphan_state (ID: AGT-CHECKPOINT-41f541e2) (TS: 2026-09-04T13:15:38Z) (SESSION: 129e4a1f)
     // BEFUND: with_orphan_state attempts to set self.orphan_state, but CheckpointGuard uses orphan_registry: Arc<InstanceOrphanRegistry>.
     // RISIKO: Crate fails to compile (cargo check error E0609).
     // EMPFEHLUNG: Remove this dead method or update it to use InstanceOrphanRegistry.
