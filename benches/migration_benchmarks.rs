@@ -46,7 +46,7 @@ fn bench_agent_state_checkpoint(c: &mut Criterion) {
     let tmp = TempDir::new().unwrap(); // unwrap allowed
     let db = rt.block_on(MemFuse::open(tmp.path())).unwrap(); // unwrap allowed
     let storage = db.inner_storage();
-    let manager = PersistentCheckpointStore::new(storage, "test");
+    let manager = PersistentCheckpointStore::new(storage, "test").unwrap(); // unwrap allowed
 
     c.bench_function("checkpoint_latency", |b| {
         b.to_async(&rt).iter(|| async {
