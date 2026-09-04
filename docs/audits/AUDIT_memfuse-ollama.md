@@ -138,15 +138,6 @@ No unresolved critical or blocking bugs were identified during this audit. Minor
 
 - **Importance Scoring Regex Edge Case Hardening (`score_importance`)**: Verified regex matching and float parsing across multiple LLM response formats. Added unit test `test_score_importance_regex_parsing_edge_cases` in `crates/memfuse-ollama/src/importance.rs`.
 
-## 14. Audit Update & Deep Verification: 2026-09-04
-
-- **Inventory Check**: Verified 6 files (`lib.rs`, `client.rs`, `context_prefixer.rs`, `embedding.rs`, `importance.rs`, `model_info.rs`). No inventory drift detected against active workspace.
-- **Property-Based & Fault-Injection Tests**: Verified 4 proptests (`prop_xml_escape_*`, `prop_score_importance_*`) and prompt injection evasion matrix against static denylist bypasses.
-- **Concurrency & Resilience**: Verified 10 iterations of 8-thread test suite execution with 0 race conditions or deadlocks.
-- **Domain APM Findings (ml-scoring)**:
-  - `AGT-OLLAMA-7eed57ec` (MINOR): In `context_prefixer.rs`, `truncate_chars` called post-`xml_escape` carries a risk of slicing escaped XML entities if truncation falls inside an escaped sequence (e.g., `&am`).
-  - `AGT-OLLAMA-14f5b422` (MINOR): In `importance.rs`, unparseable LLM output falls back quietly to `ImportanceScore(0.5)` without surfacing score confidence/provenance (APM-22/APM-23).
-
 ---
 
 ## 11. Appendix: Mock Server Configuration & Test Logs
