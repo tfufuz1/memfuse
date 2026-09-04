@@ -209,7 +209,11 @@ pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
         tracing::error!(?e, "Failed to persist pinned seq_no orphans");
     }
     if let Err(e) = global_orphan_registry().register_orphan(orphan.seq_no) {
-        tracing::error!(?e, "Failed to register orphan pin in global orphan registry");
+        tracing::error!(
+            ?e,
+            seq_no = orphan.seq_no,
+            "Failed to register pinned seq_no in global orphan registry (ADR-058)"
+        );
     }
 }
 
@@ -299,10 +303,15 @@ impl InstanceOrphanRegistry {
     pub fn register_orphan_sync(&self, orphan: PinnedSeqNoOrphan) {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
+            let seq_no = orphan.seq_no;
             lock.push(orphan);
             drop(lock);
             if let Err(e) = self.persist_sync() {
-                tracing::error!(?e, "Failed to persist orphan pin state");
+                tracing::error!(
+                    ?e,
+                    seq_no = seq_no,
+                    "InstanceOrphanRegistry persist_sync failed for pinned seq_no (ADR-058)"
+                );
             }
         }
     }
@@ -310,10 +319,16 @@ impl InstanceOrphanRegistry {
     pub fn register_checkpoint_sync(&self, cp: StateCheckpoint) {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
+            let tx_id = cp.tx_id;
             lock.push(cp);
             drop(lock);
             if let Err(e) = self.persist_sync() {
-                tracing::error!(?e, "Failed to persist orphaned checkpoint state");
+                tracing::error!(
+                    ?e,
+                    tx_id = ?tx_id,
+                    "CheckpointGuard orphan persist_sync failed — \
+                     checkpoint registered in-memory but not durable on disk (ADR-058)"
+                );
             }
         }
     }
@@ -322,8 +337,8 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        if let Err(e) = self.persist_sync() {
-            tracing::error!(?e, "Failed to persist orphan pins state after drain");
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after draining pins");
         }
         drained
     }
@@ -336,8 +351,8 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         lock.retain(|o| o.seq_no != seq_no);
         drop(lock);
-        if let Err(e) = self.persist_sync() {
-            tracing::error!(?e, seq_no = seq_no, "Failed to persist orphan pin state after clear");
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, seq_no = seq_no, "Failed to persist orphan registry after clearing pin");
         }
     }
 
@@ -345,8 +360,8 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         let drained = std::mem::take(&mut *lock);
         drop(lock);
-        if let Err(e) = self.persist_sync() {
-            tracing::error!(?e, "Failed to persist orphaned checkpoints state after drain");
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after draining checkpoints");
         }
         drained
     }
@@ -359,16 +374,16 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         lock.retain(|o| o.tx_id != tx_id);
         drop(lock);
-        if let Err(e) = self.persist_sync() {
-            tracing::error!(?e, tx_id = ?tx_id, "Failed to persist orphaned checkpoint state after clear");
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, tx_id = ?tx_id, "Failed to persist orphan registry after clearing checkpoint");
         }
     }
 
     pub fn clear_all(&self) {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
-        if let Err(e) = self.persist_sync() {
-            tracing::error!(?e, "Failed to persist orphan state after clear_all");
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after clearing all");
         }
     }
 }
@@ -763,7 +778,8 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
             SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
             tracing::error!(
                 tx_id = ?cp.tx_id,
-                "CheckpointGuard dropped without explicit commit or rollback. Checkpoint marked as orphaned for controlled recovery."
+                "CheckpointGuard dropped without explicit commit or rollback — \
+                 checkpoint registered in instance-scoped orphan registry for controlled recovery (ADR-053)."
             );
             self.orphan_registry.register_checkpoint_sync(cp);
         }
