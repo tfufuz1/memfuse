@@ -824,6 +824,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-060: Regression-Fix: FLUSH_COUNTER → instanzgebundenes AtomicU64-Feld
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: Der globale static AtomicU64 `FLUSH_COUNTER` in `crates/memfuse-store/src/lsm.rs` wird entfernt und durch ein instanzgebundenes `flush_counter: AtomicU64`-Feld in `LsmStorage` ersetzt. Beim Instanziieren in `LsmStorage::new()` wird `flush_counter` auf `max_wal_id + 1` initialisiert.
+*   **Alternativen**:
+    - Beibehalten des globalen statischen Zählers: Verworfen, da bei mehreren parallelen `LsmStorage`-Instanzen im selben Prozess WAL-Dateinamen prozessweit hochgezählt werden und nach Restarts Kollisionen entstehen.
+*   **Begründung**: Beseitigt Prozessweiter-Zustand, stellt Isolation paralleler `LsmStorage`-Instanzen sicher und verhindert Namenskollisionen bei WAL-Dateien.
+
+---
+
 ## Vorlage für neue ADRs
 ```markdown
 ## ADR-NNN: <Titel>
