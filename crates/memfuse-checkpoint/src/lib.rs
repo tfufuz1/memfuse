@@ -151,7 +151,12 @@ impl InstanceOrphanRegistry {
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
             lock.push(orphan);
             drop(lock);
-            let _ = self.persist_sync();
+            if let Err(err) = self.persist_sync() {
+                tracing::error!(
+                    ?err,
+                    "Failed to persist orphan registry after registering orphan pin"
+                );
+            }
         }
     }
 
@@ -160,7 +165,12 @@ impl InstanceOrphanRegistry {
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
             lock.push(cp);
             drop(lock);
-            let _ = self.persist_sync();
+            if let Err(err) = self.persist_sync() {
+                tracing::error!(
+                    ?err,
+                    "Failed to persist orphan registry after registering checkpoint"
+                );
+            }
         }
     }
 
@@ -215,13 +225,17 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         lock.retain(|o| o.tx_id != tx_id);
         drop(lock);
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, tx_id = ?tx_id, "Failed to persist orphan registry after clearing orphaned checkpoint");
+        }
     }
 
     pub fn clear_all(&self) {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
-        let _ = self.persist_sync();
+        if let Err(err) = self.persist_sync() {
+            tracing::error!(?err, "Failed to persist orphan registry after clearing all");
+        }
     }
 }
 
