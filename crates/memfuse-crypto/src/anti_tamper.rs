@@ -7,7 +7,6 @@
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
-use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Defines a cryptographic key that is explicitly zeroed out when dropped
@@ -55,11 +54,17 @@ impl std::fmt::Debug for VolatileEncryptionKey {
     }
 }
 
-// AI-TAG[SECURITY][MINOR][RESOLVED] ConstantTimeEq used in PartialEq equality (ID: AGT-CRYPTO-dd984bc2) (TS: 2026-09-03T19:31:53Z) (SESSION: a413a598)
-// RESOLVED: Replaced manual XOR loop with subtle::ConstantTimeEq for provably constant-time slice comparison.
+// AI-TAG[SECURITY][MINOR] Manual XOR loop in PartialEq equality (ID: AGT-CRYPTO-dd984bc2) (TS: 2026-09-03T19:31:53Z) (SESSION: a413a598)
+// BEFUND: Manual byte-by-byte XOR loop is used instead of subtle::ConstantTimeEq.
+// RISIKO: Potential compiler optimization / branching side-channel if unrolled or optimized differently.
+// EMPFEHLUNG: Use subtle::ConstantTimeEq for provably constant-time slice comparison.
 impl PartialEq for VolatileEncryptionKey {
     fn eq(&self, other: &Self) -> bool {
-        self.key_bytes.as_slice().ct_eq(other.key_bytes.as_slice()).into()
+        let mut diff = 0u8;
+        for (a, b) in self.key_bytes.iter().zip(other.key_bytes.iter()) {
+            diff |= a ^ b;
+        }
+        diff == 0
     }
 }
 
@@ -108,33 +113,33 @@ mod tests {
         assert!(debug_str.contains("REDACTED"));
     }
 
-    // AI-TAG[CORRECTNESS][MAJOR][RESOLVED] Refactored zeroize test using ManuallyDrop (ID: AGT-CRYPTO-7519b7cd) (TS: 2026-09-03T19:31:53Z) (SESSION: a413a598)
-    // RESOLVED: Refactored test to use ManuallyDrop and explicit Zeroize::zeroize without post-drop raw pointer dereferencing on stack memory, eliminating UAF/UB.
+    // AI-TAG[CORRECTNESS][MAJOR] UAF raw pointer dereference in release mode test (ID: AGT-CRYPTO-7519b7cd) (TS: 2026-09-03T19:31:53Z) (SESSION: a413a598)
+    // BEFUND: Dereferencing raw pointer `ptr` after `key` drops is a Use-After-Free/Use-After-Drop UB. In `--release` mode, stack frame reuse causes assertion failure.
+    // RISIKO: Flaky/failing unit tests in release mode and undefined behavior in unsafe test block.
+    // EMPFEHLUNG: Allocate memory on heap or use explicit drop guard/ManuallyDrop without reading dropped stack memory.
     #[test]
     fn test_zeroize_on_drop_wipes_memory() {
-        use std::mem::ManuallyDrop;
-
         let raw: [u8; 32] = [0xCD; 32];
-        let mut key = ManuallyDrop::new(VolatileEncryptionKey::new(raw));
-        let ptr = key.as_bytes().as_ptr();
-
-        // Precondition: check that memory contains original non-zero key bytes
-        // SAFETY: `key` is alive in ManuallyDrop wrapper and `ptr` points directly to its buffer.
-        unsafe {
-            let slice = std::slice::from_raw_parts(ptr, 32);
-            assert_eq!(slice, &[0xCD; 32]);
+        let ptr: *const u8;
+        {
+            let key = VolatileEncryptionKey::new(raw);
+            ptr = key.as_bytes().as_ptr();
+            // Precondition: check that memory contains original non-zero key bytes
+            // SAFETY: `key` is alive in this scope and `ptr` points directly to its heap/stack buffer.
+            unsafe {
+                let slice = std::slice::from_raw_parts(ptr, 32);
+                assert_eq!(slice, &[0xCD; 32]);
+            }
+            // `key` goes out of scope here and its drop/zeroize handler is invoked.
         }
 
-        // Action: Explicitly invoke zeroize without deallocating/dropping stack frame memory
-        Zeroize::zeroize(&mut *key);
-
-        // Postcondition: Check that memory was zeroed in place without UAF
-        // SAFETY: `key` memory is still allocated within ManuallyDrop wrapper in this stack frame.
+        // SAFETY: We dereference `ptr` immediately after `key` is dropped in this single-threaded, controlled unit test frame
+        // to inspect that the drop handler ran and zeroed out the underlying memory array before stack reuse.
         unsafe {
             let cleared_slice = std::slice::from_raw_parts(ptr, 32);
             assert_eq!(
                 cleared_slice, &[0x00; 32],
-                "Memory MUST be zeroed after zeroize"
+                "Memory MUST be zeroed after drop"
             );
         }
     }

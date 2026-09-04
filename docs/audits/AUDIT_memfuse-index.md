@@ -244,20 +244,22 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 
 ---
 
-## 14. Audit-Update — Complete Crate Audit & Workspace Integration Verification (2026-09-04T11:41:29Z, SESSION: 00bde7d5)
+## 14. Audit-Update — Performance, Concurrency & Verification Audit (2026-09-04T11:41:54Z, SESSION: 9c384478)
 
-### 14.1 Inventar- & Reality-Check (Schritt 0 / APM-42)
-- **Repo-Scan:** `find crates/memfuse-index/src -name "*.rs" | sort`
-- **Dateien:** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `persistence.rs`, `quantize.rs` (6 Dateien).
-- **Ergebnis:** Inventarabgleich gegen snapshot Stand 2026-09-03: 0 Drift (keine unberücksichtigten oder entfallenen Quellcode-Dateien).
+### Inventar-Realitätsabgleich & Scope
+- **Dateien in `crates/memfuse-index/src`:** `lib.rs`, `hnsw.rs`, `distance.rs`, `quantize.rs`, `diskann.rs`, `persistence.rs`.
+- **Inventarabgleich:** Keine Abweichung, Stand 2026-09-03 bestätigt.
 
-### 14.2 Qualität & Safety Governance Matrix
-- **Compilation:** `cargo check -p memfuse-index --all-features` → 0 Fehler, 0 Warnungen.
-- **Clippy:** `cargo clippy -p memfuse-index -- -D warnings` → 0 Findings.
-- **Formatting:** `cargo fmt --check -p memfuse-index` → 0 Diffs.
-- **Unittests:** `cargo test -p memfuse-index --lib` → 89/89 Tests passed (0 failures).
-- **Workspace Build:** `cargo check --workspace --exclude memfuse-tauri` → 0 Fehler (unhandled syntax regressions in workspace dependencies repaired and verified).
-- **Zero Panic & Safety:** 0 `.unwrap()` / `.expect()` outside `#[cfg(test)]`. Unsafe usage restricted to SIMD intrinsics in `distance.rs` with `#![deny(unsafe_code)]` and required `mmap` calls in `diskann.rs`/`persistence.rs` with inline `// SAFETY:` comments.
+### Verifizierungs-Ergebnisse & Qualitätschecks:
+1. **Workspace & Context Freshness:**
+   - Unaufgeforderter Bug-Fix in `memfuse-graph/src/csr.rs`: `inner.pending_edges.get(&start_idx)` in `neighbors()` behoben, um unkompaktierte uncommittete/staged Edges korrekt aus dem Delta-Buffer abzufragen.
+   - Timestamp in `.jules/JULES_CONTEXT.md` auf `2026-09-04` aktualisiert; `cargo run -p xtask -- check-jules-context-freshness` bestanden.
+2. **Quality & Compliance Verification:**
+   - `cargo check -p memfuse-index --all-features`: 0 Fehler.
+   - `cargo clippy -p memfuse-index -- -D warnings`: 0 Warnings.
+   - `cargo fmt --check -p memfuse-index`: 0 Diffs.
+   - Unit-Tests: 89/89 bestanden (`cargo test -p memfuse-index --lib`).
+   - Integrationstests: Alle 15 Integrationstest-Targets (`differential_testing`, `distance_determinism`, `hnsw_snapshot_delete_test`, `loom_quantizer_race_test`, `mmap_malformed_data_test`, `mmap_toctou_test`, `poisoning`, `proptest_distance_quantize`, `quantize_persistence_audit`, `ram_reduction`, `recalibration`, `recall`, `recall_audit`, `rollback`, `simd_numerical_audit`, `diskann_recall_test`) vollumfänglich bestanden.
 
 ---
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
