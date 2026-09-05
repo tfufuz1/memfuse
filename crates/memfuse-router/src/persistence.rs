@@ -19,8 +19,7 @@ where
     V: VectorIndex,
 {
     let value = serde_json::to_value(state)?;
-    // put_kv (not put_kv_if_absent) is used here because this is an explicitly
-    // overwritable snapshot of calibration stats, not an append-only log.
+    // put_kv (not put_kv_if_absent) — calibration is an overwritable snapshot.
     collection.put_kv(CALIBRATION_STATE_KV_KEY, &value).await
 }
 

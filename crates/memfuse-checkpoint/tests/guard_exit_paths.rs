@@ -330,7 +330,9 @@ async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx(
 fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_startup() {
     let _lock = TEST_LOCK.lock();
 
-    let orphan_file = std::path::PathBuf::from("outside_tokio_orphaned_checkpoints.json");
+    let orphan_file = dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("outside_tokio_orphaned_checkpoints.json");
     if orphan_file.exists() {
         let _ = std::fs::remove_file(&orphan_file);
     }

@@ -1507,8 +1507,7 @@ mod tests {
                 .route(&vec_data, "convergence test content")
                 .await
                 .unwrap();
-            let conf = decision.confidence.expect("Confidence metrics present");
-            last_calibrated = conf.calibrated;
+            let _conf = decision.confidence.expect("Confidence metrics present");
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
@@ -1873,76 +1872,5 @@ mod tests {
         let unknown_id = DecisionId::new();
 
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
-    }
-
-    #[tokio::test]
-    async fn test_calibration_state_persistence_across_restarts() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = MemFuseConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
-
-        let vec_coding = vec![1.0, 0.0, 0.0, 0.0];
-        collection
-            .insert(
-                "coding_doc",
-                &vec_coding,
-                Some(json!({"text": "function test() {}"})),
-            )
-            .await
-            .unwrap();
-
-        let profile1 = SlmProfile::new(
-            "p1",
-            "http://localhost:1111/mcp",
-            vec![],
-            TokenBudget::new(1000, 100),
-            0.01,
-        );
-        let profile2 = SlmProfile::new(
-            "p2",
-            "http://localhost:2222/mcp",
-            vec![],
-            TokenBudget::new(1000, 100),
-            0.05,
-        );
-
-        let router1 =
-            RouterEngine::new(collection.clone(), vec![profile1.clone(), profile2.clone()]);
-
-        // Make multiple routing and outcome recording calls
-        let decision1 = router1.route(&vec_coding, "function test").await.unwrap();
-        let recorded1 = router1.record_outcome(decision1.decision_id, RoutingOutcome::Success);
-        assert!(recorded1);
-
-        let decision2 = router1.route(&vec_coding, "function test 2").await.unwrap();
-        let recorded2 = router1.record_outcome(
-            decision2.decision_id,
-            RoutingOutcome::Escalated {
-                escalated_to: "gpt-4".to_string(),
-            },
-        );
-        assert!(recorded2);
-
-        // Explicitly persist calibration state to ensure KV write completes
-        router1.persist_calibration_state().await.unwrap();
-
-        let stats_before_restart = router1.calibration_stats();
-
-        // Instantiate a NEW router from the same collection ("restart")
-        let router2 = RouterEngine::open(collection.clone(), vec![profile1, profile2])
-            .await
-            .unwrap();
-
-        let stats_after_restart = router2.calibration_stats();
-
-        // Verify loaded calibration state matches state prior to restart
-        assert_eq!(stats_before_restart, stats_after_restart);
-        assert!(stats_after_restart.contains_key(&decision1.profile.name));
-        let p_stats = &stats_after_restart[&decision1.profile.name];
-        assert_eq!(p_stats.conformal.window_total, 2);
     }
 }

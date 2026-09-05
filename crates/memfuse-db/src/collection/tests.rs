@@ -658,6 +658,7 @@ async fn test_doc_id_collision_rejected() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_collection_next_tx_sequence() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -692,9 +693,9 @@ async fn test_collection_next_tx_sequence() {
         memfuse_text::Language::English,
     );
 
-    let tx1 = col.allocate_tx().unwrap(); // unwrap allowed
-    let tx2 = col.allocate_tx().unwrap(); // unwrap allowed
-    let tx3 = col.allocate_tx().unwrap(); // unwrap allowed
+    let tx1 = col.next_tx().unwrap(); // unwrap allowed
+    let tx2 = col.next_tx().unwrap(); // unwrap allowed
+    let tx3 = col.next_tx().unwrap(); // unwrap allowed
 
     assert_eq!(tx1.inner(), 1);
     assert_eq!(tx2.inner(), 2);

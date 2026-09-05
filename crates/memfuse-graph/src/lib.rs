@@ -33,4 +33,4 @@ pub mod session_dag;
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 pub use csr::CsrGraph;
 pub use ppr::PprContext;
-pub use session_dag::{AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree};
+pub use session_dag::{AgentStateNode, DagEdge, NodeIdx, SessionBranchTree};
