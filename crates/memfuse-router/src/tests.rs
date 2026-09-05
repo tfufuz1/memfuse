@@ -1328,6 +1328,7 @@ mod tests {
     #[test]
     fn test_cascade_hit() {
         use crate::profile::ProfileCalibrationState;
+        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1392,12 +1393,13 @@ mod tests {
 
         assert_eq!(selected.name, "mid-slm");
         assert_eq!(idx, 0); // profile_mid was at original index 0
-        assert!(!metrics.calibrated); // window_total <= 10
+        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
     }
 
     #[test]
     fn test_cascade_fallthrough() {
         use crate::profile::ProfileCalibrationState;
+        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1457,11 +1459,13 @@ mod tests {
 
         assert_eq!(selected.name, "low-slm");
         assert_eq!(idx, 2);
-        assert!(!metrics.calibrated);
+        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
     }
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
+        use crate::router::ConfidenceMetrics;
+
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1564,14 +1568,14 @@ mod tests {
             "http://localhost/1",
             vec![100],
             TokenBudget::new(1000, 100),
-            0.1,
+            0.0,
         );
         let p2 = SlmProfile::new(
             "slm-2",
             "http://localhost/2",
             vec![100],
             TokenBudget::new(1000, 100),
-            0.1,
+            0.0,
         );
 
         let router = RouterEngine::new(collection, vec![p1, p2]);
@@ -1782,6 +1786,49 @@ mod tests {
         assert!(
             matches!(res, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Empty MCP endpoint"))
         );
+    }
+
+    #[test]
+    fn test_confidence_metrics_serde() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::router::ConfidenceMetrics;
+
+        let uncal = ConfidenceMetrics::Uncalibrated {
+            non_conformity_score: 0.2,
+            selection_margin: 1.5,
+            quantile_threshold: 0.5,
+        };
+
+        let json_uncal = serde_json::to_string(&uncal)?;
+        let val_uncal: serde_json::Value = serde_json::from_str(&json_uncal)?;
+        assert_eq!(val_uncal["type"], "uncalibrated");
+        assert_eq!(val_uncal["non_conformity_score"], 0.2);
+        assert_eq!(val_uncal["selection_margin"], 1.5);
+        assert_eq!(val_uncal["quantile_threshold"], 0.5);
+
+        let deserialized_uncal: ConfidenceMetrics = serde_json::from_str(&json_uncal)?;
+        assert_eq!(deserialized_uncal, uncal);
+
+        let cal = ConfidenceMetrics::Calibrated {
+            score_lower: 0.4,
+            score_upper: 0.8,
+            quantile_threshold: 0.6,
+            non_conformity_score: 0.1,
+            selection_margin: 2.0,
+        };
+
+        let json_cal = serde_json::to_string(&cal)?;
+        let val_cal: serde_json::Value = serde_json::from_str(&json_cal)?;
+        assert_eq!(val_cal["type"], "calibrated");
+        assert_eq!(val_cal["score_lower"], 0.4);
+        assert_eq!(val_cal["score_upper"], 0.8);
+        assert_eq!(val_cal["quantile_threshold"], 0.6);
+        assert_eq!(val_cal["non_conformity_score"], 0.1);
+        assert_eq!(val_cal["selection_margin"], 2.0);
+
+        let deserialized_cal: ConfidenceMetrics = serde_json::from_str(&json_cal)?;
+        assert_eq!(deserialized_cal, cal);
+
+        Ok(())
     }
 
     #[test]
