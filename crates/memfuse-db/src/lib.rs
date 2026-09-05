@@ -280,10 +280,6 @@ pub struct MemFuse {
         tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
-    /// Optional Raft handle for cluster replication.
-    #[cfg(feature = "cluster")]
-    #[allow(dead_code)]
-    raft: tokio::sync::OnceCell<()>,
     /// Global text embedder for default collection.
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
@@ -355,8 +351,6 @@ impl MemFuse {
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
             cancel_token,
             task_tracker,
-            #[cfg(feature = "cluster")]
-            raft: tokio::sync::OnceCell::new(),
             embedder: parking_lot::RwLock::new(None),
         };
 
