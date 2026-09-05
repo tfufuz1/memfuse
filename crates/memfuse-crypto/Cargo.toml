@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "Encryption at Rest utilities for MemFuse"
 
 [dependencies]
-memfuse-core = { workspace = true }
+thiserror = { workspace = true }
 sha2 = "0.10"
 hmac = "0.12"
 aes-gcm-siv = "0.11"

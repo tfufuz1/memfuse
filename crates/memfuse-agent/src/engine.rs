@@ -658,15 +658,12 @@ impl OrchestratorEngine {
 
         matching.sort_by_key(|e| std::cmp::Reverse(e.priority));
 
-        matching
-            .first()
-            .map(|e| e.to.to_string())
-            .ok_or_else(|| {
-                MemFuseError::Internal(format!(
-                    "Decision Node {} has no matching edge for current context",
-                    node.id
-                ))
-            })
+        matching.first().map(|e| e.to.to_string()).ok_or_else(|| {
+            MemFuseError::Internal(format!(
+                "Decision Node {} has no matching edge for current context",
+                node.id
+            ))
+        })
     }
 }
 
@@ -720,9 +717,10 @@ fn get_context_value<'a>(
         "step_count" => Some(std::borrow::Cow::Owned(serde_json::Value::Number(
             ctx.step_count.into(),
         ))),
-        "status" => Some(std::borrow::Cow::Owned(serde_json::Value::String(
-            format!("{:?}", ctx.status),
-        ))),
+        "status" => Some(std::borrow::Cow::Owned(serde_json::Value::String(format!(
+            "{:?}",
+            ctx.status
+        )))),
         _ => None,
     }
 }
@@ -771,7 +769,10 @@ pub fn evaluate_condition_expr(expr: &str, ctx: &AgentContext) -> bool {
     if let Some(key_part) = trimmed.strip_suffix(" exists") {
         let key = key_part.trim();
         if key.is_empty() {
-            tracing::warn!("Condition expression missing key before 'exists': '{}'", expr);
+            tracing::warn!(
+                "Condition expression missing key before 'exists': '{}'",
+                expr
+            );
             return false;
         }
         if let Some(v) = get_context_value(key, ctx) {
@@ -828,10 +829,20 @@ mod tests {
             distance_metric: DistanceMetric::Cosine,
             ..Default::default()
         };
-        let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await.expect("open db"));
+        let db = Arc::new(
+            MemFuse::open_with_config(tmp.path(), config)
+                .await
+                .expect("open db"),
+        );
         let state_col = db.collection("test-state").await.expect("collection");
-        let ctx = AgentContext::try_new("test-task-1", "start", db, state_col, TokenBudget::new(1000, 0))
-            .expect("agent context");
+        let ctx = AgentContext::try_new(
+            "test-task-1",
+            "start",
+            db,
+            state_col,
+            TokenBudget::new(1000, 0),
+        )
+        .expect("agent context");
         (ctx, tmp)
     }
 

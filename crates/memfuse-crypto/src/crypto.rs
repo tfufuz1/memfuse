@@ -32,12 +32,12 @@
 #![forbid(unsafe_code)]
 
 use crate::anti_tamper::VolatileEncryptionKey;
+use crate::error::{CryptoError, Result};
 use aes_gcm_siv::{
     aead::{Aead, KeyInit},
     Aes256GcmSiv, Nonce,
 };
 use hkdf::Hkdf;
-use memfuse_core::{MemFuseError, Result};
 use rand::RngCore;
 use sha2::Sha256;
 
@@ -60,17 +60,17 @@ impl KeyManager {
     /// Creates a new KeyManager by deriving a key from a passphrase.
     pub fn try_new(passphrase: &str, salt: &[u8]) -> Result<Self> {
         if passphrase.is_empty() {
-            return Err(MemFuseError::InvalidInput(
+            return Err(CryptoError::InvalidInput(
                 "Passphrase cannot be empty".to_string(),
             ));
         }
         if salt.is_empty() {
-            return Err(MemFuseError::InvalidInput(
+            return Err(CryptoError::InvalidInput(
                 "Salt cannot be empty".to_string(),
             ));
         }
         if salt.len() > 10_000 {
-            return Err(MemFuseError::InvalidInput(format!(
+            return Err(CryptoError::InvalidInput(format!(
                 "Salt length {} exceeds maximum allowed bound of 10000 bytes",
                 salt.len()
             )));
@@ -78,7 +78,7 @@ impl KeyManager {
         let hk = Hkdf::<Sha256>::new(Some(salt), passphrase.as_bytes());
         let mut key_raw = [0u8; 32];
         hk.expand(b"memfuse-aes-256-gcm-key", &mut key_raw)
-            .map_err(|e| MemFuseError::Crypto(format!("HKDF expansion failed: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("HKDF expansion failed: {}", e)))?;
 
         let mut nonce_prefix = [0u8; 4];
         rand::rngs::OsRng.fill_bytes(&mut nonce_prefix);
@@ -101,12 +101,12 @@ impl KeyManager {
     /// This prevents nonce-reuse when multiple files use the same master key.
     pub fn derive_file_key(&self, file_id: &[u8]) -> Result<Self> {
         if file_id.is_empty() {
-            return Err(MemFuseError::InvalidInput(
+            return Err(CryptoError::InvalidInput(
                 "file_id cannot be empty".to_string(),
             ));
         }
         if file_id.len() > 10_000 {
-            return Err(MemFuseError::InvalidInput(format!(
+            return Err(CryptoError::InvalidInput(format!(
                 "file_id length {} exceeds maximum allowed bound of 10000 bytes",
                 file_id.len()
             )));
@@ -114,7 +114,7 @@ impl KeyManager {
         // Since self.key is already derived via HKDF in try_new, it is a high-entropy PRK.
         // We use HKDF-Expand with a domain-separating prefix to derive a per-file key.
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
-            .map_err(|_| MemFuseError::Crypto("Invalid PRK length".to_string()))?;
+            .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
 
         let mut sub_key = [0u8; 32];
         let mut info = Vec::with_capacity(b"memfuse-file-key-v1:".len() + file_id.len());
@@ -122,7 +122,7 @@ impl KeyManager {
         info.extend_from_slice(file_id);
 
         hk.expand(&info, &mut sub_key)
-            .map_err(|e| MemFuseError::Crypto(format!("HKDF sub-key expansion failed: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("HKDF sub-key expansion failed: {}", e)))?;
 
         let mut nonce_prefix = [0u8; 4];
         rand::rngs::OsRng.fill_bytes(&mut nonce_prefix);
@@ -136,10 +136,10 @@ impl KeyManager {
     /// Derives an integrity key for HMAC-SHA256.
     pub fn integrity_key(&self) -> Result<[u8; 32]> {
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
-            .map_err(|_| MemFuseError::Crypto("Invalid PRK length".to_string()))?;
+            .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
         let mut key = [0u8; 32];
         hk.expand(b"memfuse-hmac-sha256-key", &mut key)
-            .map_err(|e| MemFuseError::Crypto(format!("HKDF integrity expansion failed: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("HKDF integrity expansion failed: {}", e)))?;
         Ok(key)
     }
 
@@ -156,11 +156,11 @@ impl KeyManager {
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes[4..12]);
 
         let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
-            .map_err(|e| MemFuseError::Crypto(format!("Crypto error: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("Crypto error: {}", e)))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, data)
-            .map_err(|e| MemFuseError::Crypto(format!("Encryption failed: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("Encryption failed: {}", e)))?;
 
         Ok((ciphertext, nonce_bytes))
     }
@@ -168,11 +168,11 @@ impl KeyManager {
     /// Decrypts a block of data using a full 12-byte nonce.
     pub fn decrypt_auto_nonce(&self, ciphertext: &[u8], nonce_bytes: &[u8; 12]) -> Result<Vec<u8>> {
         let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
-            .map_err(|e| MemFuseError::Crypto(format!("Crypto error: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("Crypto error: {}", e)))?;
         let nonce = Nonce::from_slice(nonce_bytes);
         cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|e| MemFuseError::Crypto(format!("Decryption failed: {}", e)))
+            .map_err(|e| CryptoError::Crypto(format!("Decryption failed: {}", e)))
     }
 
     /// Emergency Trigger: Explicitly wipes the key from memory.
@@ -383,27 +383,27 @@ mod tests {
     #[test]
     fn test_try_new_empty_passphrase() {
         let res = KeyManager::try_new("", b"salt");
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
     fn test_try_new_empty_salt() {
         let res = KeyManager::try_new("pass", b"");
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
     fn test_try_new_oversized_salt() {
         let salt = vec![0u8; 10_001];
         let res = KeyManager::try_new("pass", &salt);
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
     fn test_derive_file_key_empty_id() {
         let km = KeyManager::try_new("pass", b"salt").expect("km"); // expect
         let res = km.derive_file_key(b"");
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -411,7 +411,7 @@ mod tests {
         let km = KeyManager::try_new("pass", b"salt").expect("km"); // expect
         let file_id = vec![0u8; 10_001];
         let res = km.derive_file_key(&file_id);
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn test_try_new_random_salt_empty_passphrase() {
         let res = KeyManager::try_new_random_salt("");
-        assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -444,7 +444,7 @@ mod tests {
         let nonce = [0u8; 12];
         let short_ciphertext = [0u8; 10]; // AES-GCM-SIV tag is 16 bytes
         let res = km.decrypt_auto_nonce(&short_ciphertext, &nonce);
-        assert!(matches!(res, Err(MemFuseError::Crypto(_))));
+        assert!(matches!(res, Err(CryptoError::Crypto(_))));
     }
 
     #[test]

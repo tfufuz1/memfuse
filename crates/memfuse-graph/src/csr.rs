@@ -2252,10 +2252,7 @@ mod tests {
         let (txs1, ent1, edge1) = run_sequence().await;
         let (txs2, ent2, edge2) = run_sequence().await;
 
-        assert_eq!(
-            txs1,
-            vec![TxId(1), TxId(2), TxId(3), TxId(4), TxId(5)]
-        );
+        assert_eq!(txs1, vec![TxId(1), TxId(2), TxId(3), TxId(4), TxId(5)]);
         assert_eq!(
             txs1, txs2,
             "TxId sequence must be deterministically identical across runs"

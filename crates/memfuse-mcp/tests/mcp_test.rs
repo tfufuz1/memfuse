@@ -31,7 +31,10 @@ impl memfuse_core::EmbeddingProvider for MockEmbedder {
         "mock"
     }
 
-    async fn embed(&self, _text: &str) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
         Ok(vec![0.1f32; self.dimension])
     }
 
@@ -961,14 +964,23 @@ async fn test_max_rpc_bytes_overflow_and_line_draining_stdio() {
     // Construct oversized message (MAX_RPC_BYTES + 1024 bytes)
     // MAX_RPC_BYTES = 4 MB = 4_194_304 bytes.
     let padding = "a".repeat(4 * 1024 * 1024 + 1024);
-    let oversized_req = format!("{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"padding\":\"{}\"}}\n", padding);
+    let oversized_req = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"padding\":\"{}\"}}\n",
+        padding
+    );
 
     // Followed by valid request
     let valid_req = "{\"jsonrpc\":\"2.0\",\"id\":777,\"method\":\"ping\",\"params\":{}}\n";
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    stdin.write_all(oversized_req.as_bytes()).await.expect("write oversized req");
-    stdin.write_all(valid_req.as_bytes()).await.expect("write valid req");
+    stdin
+        .write_all(oversized_req.as_bytes())
+        .await
+        .expect("write oversized req");
+    stdin
+        .write_all(valid_req.as_bytes())
+        .await
+        .expect("write valid req");
     stdin.flush().await.expect("flush stdin");
 
     let mut lines = BufReader::new(stdout).lines();

@@ -4,7 +4,6 @@
 // NICHT-OFFENSICHTLICH: Verifies subtle::ConstantTimeEq usage in IntegrityVerifier via code inspection / behavioral tests.
 // STAND: TS:2026-08-30T19:45:00Z (SESSION: 20260830)
 
-use memfuse_core::TxId;
 use memfuse_crypto::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
 
 fn create_valid_entry(
@@ -15,11 +14,11 @@ fn create_valid_entry(
     k: &[u8],
     v: &[u8],
 ) -> WalEntrySnapshot {
-    let tx_id = TxId::new(seq_no);
+    let tx_id = seq_no;
     let mut hmac = WalHmac::new(key).expect("WalHmac new");
     hmac.update(&prev_hmac);
     hmac.update(&seq_no.to_le_bytes());
-    hmac.update(&tx_id.inner().to_le_bytes());
+    hmac.update(&tx_id.to_le_bytes());
     if op_type == 0 {
         hmac.update(&[0u8]);
         hmac.update(&(k.len() as u32).to_le_bytes());

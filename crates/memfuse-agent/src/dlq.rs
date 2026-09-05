@@ -30,8 +30,8 @@ impl DeadLetterQueue {
             "dlq:{}:{}:{}:{}",
             letter.session_id, letter.failed_at_secs, letter.node_id, letter.attempt
         );
-        let value = serde_json::to_vec(letter)
-            .map_err(|e| MemFuseError::Serialization(e.to_string()))?;
+        let value =
+            serde_json::to_vec(letter).map_err(|e| MemFuseError::Serialization(e.to_string()))?;
 
         let tx = self.allocate_tx().await?;
         if let Err(e) = self.storage.put(tx, key.as_bytes(), &value).await {
