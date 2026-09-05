@@ -9,6 +9,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 
 pub mod crud;
+pub mod kv_lock;
 pub mod maintenance;
 pub mod query_builder;
 pub mod relate;
@@ -234,6 +235,7 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) dimension: usize,
     pub(super) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     pub(super) insert_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(super) kv_locks: Arc<kv_lock::KvKeyLocks>,
 }
 
 impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
@@ -249,6 +251,7 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             dimension: self.dimension,
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
             insert_lock: self.insert_lock.clone(),
+            kv_locks: self.kv_locks.clone(),
         }
     }
 }
@@ -313,6 +316,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             dimension,
             embedder: parking_lot::RwLock::new(None),
             insert_lock: Arc::new(tokio::sync::Mutex::new(())),
+            kv_locks: Arc::new(kv_lock::KvKeyLocks::new()),
         }
     }
 
