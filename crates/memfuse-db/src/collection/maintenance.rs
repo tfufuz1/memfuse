@@ -77,21 +77,19 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 );
 
                 for doc_id in doc_ids {
-                    let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                    if let Some(val) = self.storage.get(&doc_key).await? {
-                        let stored_meta = serde_json::from_slice::<StoredDocumentMeta>(&val).ok();
+                    let user_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 0);
+                    if let Some(val) = self.storage.get(&user_key).await? {
+                        let stored_doc = serde_json::from_slice::<super::StoredDocument>(&val).ok();
 
-                        if let Some(meta) = stored_meta {
+                        if let Some(doc) = stored_doc {
                             if !indexed_ids.contains(&doc_id) {
-                                if let Some(vector) = self.index.get_vector_by_doc_id(doc_id) {
-                                    self.index.insert(recovery_tx, doc_id, &vector).await?;
-                                    repair_count += 1;
-                                    recovered_any = true;
-                                }
+                                self.index.insert(recovery_tx, doc_id, &doc.embedding).await?;
+                                repair_count += 1;
+                                recovered_any = true;
                             }
 
                             if has_text {
-                                if let Some(text) = extract_text(&meta.metadata) {
+                                if let Some(text) = extract_text(&doc.metadata) {
                                     self.text_index
                                         .upsert_document(recovery_tx, doc_id, &text)
                                         .await?;
@@ -100,14 +98,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                             }
 
                             if has_graph {
-                                if let Ok(eid) = EntityId::from_key(&meta.id) {
+                                if let Ok(eid) = EntityId::from_key(&doc.id) {
                                     let entity =
-                                        memfuse_core::Entity::new(eid, &meta.id, "Document");
+                                        memfuse_core::Entity::new(eid, &doc.id, "Document");
                                     if let Err(e) =
                                         self.graph_index.add_entity(recovery_tx, entity).await
                                     {
                                         tracing::warn!(
-                                            doc_id = %meta.id,
+                                            doc_id = %doc.id,
                                             error = %e,
                                             "Konnte Entity bei Graph-Integritäts-Wiederherstellung nicht hinzufügen"
                                         );
@@ -150,7 +148,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 continue;
             }
 
-            let stored: StoredDocumentMeta = match serde_json::from_slice(&value) {
+            let stored: super::StoredDocument = match serde_json::from_slice(&value) {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::debug!(
@@ -376,7 +374,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 "Document not found: {doc_id}"
             )));
         };
-        let mut stored: StoredDocumentMeta = serde_json::from_slice(&data)?;
+        let mut stored_meta: StoredDocumentMeta = serde_json::from_slice(&data)?;
 
         let text = extract_text(&stored_meta.metadata).unwrap_or_else(|| stored_meta.id.clone());
 
