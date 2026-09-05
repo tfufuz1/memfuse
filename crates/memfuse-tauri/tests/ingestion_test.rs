@@ -251,12 +251,10 @@ async fn test_reimport_identical_content_is_skipped() {
 
     assert_eq!(second_report.chunks_created, 0);
     assert!(second_report.skipped_as_duplicate);
-    assert!(
-        second_report
-            .errors
-            .iter()
-            .any(|e| e.contains("Re-Import übersprungen"))
-    );
+    assert!(second_report
+        .errors
+        .iter()
+        .any(|e| e.contains("Re-Import übersprungen")));
 
     let results = collection
         .query()

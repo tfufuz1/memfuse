@@ -157,7 +157,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
         let fallback_tx = self.allocate_tx()?;
-        let mut fallback_any = false;
+        let fallback_any = false;
         let mut fallback_text = false;
 
         for (namespaced_key, value) in docs {

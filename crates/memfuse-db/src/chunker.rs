@@ -151,34 +151,33 @@ impl MarkdownChunker {
                 let mut current_p_lines = Vec::new();
                 let mut current_p_tokens = 0;
 
-                let push_paragraph_section =
-                    |lines: Vec<String>, target: &mut Vec<RawSection>| {
-                        let p_content = lines.join("\n");
-                        let actual_tokens = ContextManager::estimate_tokens(&p_content);
-                        if actual_tokens > hard_limit {
-                            // Fallback for oversized paragraphs/sections: split into sliding token windows with overlap
-                            let windows =
-                                chunk_text_with_overlap(&p_content, window_chars, overlap_chars);
-                            for w in windows {
-                                let w_tokens = ContextManager::estimate_tokens(w);
-                                target.push(RawSection {
-                                    lines: vec![w.to_string()],
-                                    breadcrumb: sec.breadcrumb.clone(),
-                                    heading_level: sec.heading_level,
-                                    source_line: sec.source_line,
-                                    tokens: w_tokens,
-                                });
-                            }
-                        } else {
+                let push_paragraph_section = |lines: Vec<String>, target: &mut Vec<RawSection>| {
+                    let p_content = lines.join("\n");
+                    let actual_tokens = ContextManager::estimate_tokens(&p_content);
+                    if actual_tokens > hard_limit {
+                        // Fallback for oversized paragraphs/sections: split into sliding token windows with overlap
+                        let windows =
+                            chunk_text_with_overlap(&p_content, window_chars, overlap_chars);
+                        for w in windows {
+                            let w_tokens = ContextManager::estimate_tokens(w);
                             target.push(RawSection {
-                                lines,
+                                lines: vec![w.to_string()],
                                 breadcrumb: sec.breadcrumb.clone(),
                                 heading_level: sec.heading_level,
                                 source_line: sec.source_line,
-                                tokens: actual_tokens,
+                                tokens: w_tokens,
                             });
                         }
-                    };
+                    } else {
+                        target.push(RawSection {
+                            lines,
+                            breadcrumb: sec.breadcrumb.clone(),
+                            heading_level: sec.heading_level,
+                            source_line: sec.source_line,
+                            tokens: actual_tokens,
+                        });
+                    }
+                };
 
                 for p in paragraphs {
                     let p_tokens = ContextManager::estimate_tokens(p);
@@ -267,11 +266,7 @@ fn parts_first(_line: &str, h_level: u8) -> String {
 
 /// Splits a text string into overlapping chunks of at most `window_chars` Unicode characters (code points),
 /// safely respecting UTF-8 character boundaries using `str::char_indices()`.
-pub fn chunk_text_with_overlap(
-    text: &str,
-    window_chars: usize,
-    overlap_chars: usize,
-) -> Vec<&str> {
+pub fn chunk_text_with_overlap(text: &str, window_chars: usize, overlap_chars: usize) -> Vec<&str> {
     if text.is_empty() || window_chars == 0 {
         return Vec::new();
     }
@@ -603,12 +598,33 @@ mod tests {
             let w2 = windows[i + 1];
             let suffix_w1 = &w1[w1.len() - overlap_chars..];
             let prefix_w2 = &w2[..overlap_chars];
-            assert_eq!(suffix_w1, prefix_w2, "Windows {} and {} do not overlap correctly", i, i + 1);
+            assert_eq!(
+                suffix_w1,
+                prefix_w2,
+                "Windows {} and {} do not overlap correctly",
+                i,
+                i + 1
+            );
         }
 
         // Verify first window starts at index 0 and last window finishes at text end
-        assert_eq!(windows.first().unwrap().chars().take(3).collect::<String>(), "ABC");
-        assert_eq!(windows.last().unwrap().chars().rev().take(3).collect::<String>().chars().rev().collect::<String>(), "789");
+        assert_eq!(
+            windows.first().unwrap().chars().take(3).collect::<String>(),
+            "ABC"
+        );
+        assert_eq!(
+            windows
+                .last()
+                .unwrap()
+                .chars()
+                .rev()
+                .take(3)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>(),
+            "789"
+        );
     }
 
     #[test]

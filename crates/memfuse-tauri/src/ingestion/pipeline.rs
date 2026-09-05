@@ -354,10 +354,7 @@ impl IngestionPipeline {
         }
 
         if created > 0 {
-            if let Err(e) = collection
-                .put_kv(&kv_key, &serde_json::json!(true))
-                .await
-            {
+            if let Err(e) = collection.put_kv(&kv_key, &serde_json::json!(true)).await {
                 tracing::warn!("Failed to store content hash in KV store: {e}");
             }
         }

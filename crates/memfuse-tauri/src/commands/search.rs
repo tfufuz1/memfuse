@@ -212,7 +212,10 @@ mod tests {
                 .and_then(|s| s.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
-            provenance: search_results[0].provenance.as_ref().map(ProvenanceDto::from),
+            provenance: search_results[0]
+                .provenance
+                .as_ref()
+                .map(ProvenanceDto::from),
         };
 
         assert_eq!(dto.id, "doc-1");
@@ -270,13 +273,21 @@ mod tests {
                 .and_then(|s| s.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
-            provenance: search_results[0].provenance.as_ref().map(ProvenanceDto::from),
+            provenance: search_results[0]
+                .provenance
+                .as_ref()
+                .map(ProvenanceDto::from),
         };
 
-        assert!(dto.provenance.is_some(), "SearchResultDto.provenance must be Some");
+        assert!(
+            dto.provenance.is_some(),
+            "SearchResultDto.provenance must be Some"
+        );
         let prov = dto.provenance.as_ref().unwrap();
         assert!(
-            prov.vector_distance.is_some() || prov.bm25_score.is_some() || !prov.signal_ranks.is_empty(),
+            prov.vector_distance.is_some()
+                || prov.bm25_score.is_some()
+                || !prov.signal_ranks.is_empty(),
             "SearchResultDto.provenance must contain at least one non-None signal field"
         );
         Ok(())

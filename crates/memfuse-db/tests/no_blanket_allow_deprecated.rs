@@ -5,8 +5,8 @@
 
 #[test]
 fn test_no_blanket_allow_deprecated_in_lib_rs() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| "crates/memfuse-db".to_string());
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| "crates/memfuse-db".to_string());
     let lib_path = std::path::Path::new(&manifest_dir).join("src/lib.rs");
 
     let source = std::fs::read_to_string(&lib_path)

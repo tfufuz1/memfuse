@@ -57,8 +57,7 @@ pub enum WalVersion {
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
 const LEGACY_KEY_OBFUSCATION_MASK: u8 = 0x5A;
-const LEGACY_INTEGRITY_KEY_OBFUSCATED: [u8; 32] =
-    *b"7?7</)?w34.?=(3.#w1?#w,kZZZZZZZZ";
+const LEGACY_INTEGRITY_KEY_OBFUSCATED: [u8; 32] = *b"7?7</)?w34.?=(3.#w1?#w,kZZZZZZZZ";
 
 pub(crate) const fn legacy_integrity_key() -> [u8; 32] {
     let mut out = [0u8; 32];
@@ -550,7 +549,9 @@ impl Wal {
                 if copy_res.is_err() || rewrite_res.is_err() {
                     if config.min_wal_version > WalVersion::V1 || version < config.min_wal_version {
                         let err_msg = match (copy_res, rewrite_res) {
-                            (Err(e), _) => format!("Failed to create backup copy {:?}: {}", bak_path, e),
+                            (Err(e), _) => {
+                                format!("Failed to create backup copy {:?}: {}", bak_path, e)
+                            }
                             (_, Err(e)) => format!("Failed to rewrite WAL as V3: {}", e),
                             (Ok(_), Ok(_)) => unreachable!(),
                         };
@@ -558,8 +559,8 @@ impl Wal {
                             "Configuration error: WAL version {:?} is below min_wal_version {:?} and migration failed: {}",
                             version, config.min_wal_version, err_msg
                         )));
-                    } else if let Err(e) = rewrite_res {
-                        return Err(e);
+                    } else {
+                        rewrite_res?;
                     }
                 }
             } else if let Some((_, last_entry, _)) = entries.last() {
@@ -1311,7 +1312,8 @@ impl Wal {
 
                     if let Err(e) = verify_res {
                         if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
-                        let mut legacy_verifier = IntegrityVerifier::new(&legacy_integrity_key());
+                            let mut legacy_verifier =
+                                IntegrityVerifier::new(&legacy_integrity_key());
                             let legacy_res =
                                 match version {
                                     WalVersion::V3 => legacy_verifier
@@ -2914,7 +2916,8 @@ mod tests {
                 key: b"mig_key".to_vec(),
                 value: b"mig_val".to_vec(),
             };
-            let entry = WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("v1 entry"); // expect
+            let entry =
+                WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("v1 entry"); // expect
 
             let mut v1_bytes = Vec::new();
             // V1 WAL file has no MFW3 or MFW2 header prefix
@@ -2935,7 +2938,10 @@ mod tests {
         .expect("open and auto-migrate v1 wal"); // expect
 
         // Verify that backup file exists
-        assert!(bak_path.exists(), "Backup file .v1.bak must exist after migration");
+        assert!(
+            bak_path.exists(),
+            "Backup file .v1.bak must exist after migration"
+        );
 
         // Verify replayed entries
         let entries = wal.replay().await.expect("replay migrated wal"); // expect
@@ -2950,6 +2956,10 @@ mod tests {
 
         // Read the actual WAL file from disk and verify it now has the V3 header
         let raw_disk_bytes = fs::read(&wal_path).await.expect("read wal_path"); // expect
-        assert_eq!(&raw_disk_bytes[0..4], &WAL_V3_HEADER, "Migrated file must start with WAL_V3_HEADER");
+        assert_eq!(
+            &raw_disk_bytes[0..4],
+            &WAL_V3_HEADER,
+            "Migrated file must start with WAL_V3_HEADER"
+        );
     }
 }
