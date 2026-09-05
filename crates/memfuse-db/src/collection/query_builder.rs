@@ -254,10 +254,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
-    /// Configures builder options from an existing `HybridQuery` struct, including
-    /// `include_superseded` (Post-RRF Supersedes Displacement is correctly applied in
-    /// `Collection::hybrid_search_with_query()`; see AGT-DB-2f1b6962 for the historical
-    /// bug report — resolved).
+    /// Configures builder options from an existing `HybridQuery` struct.
     pub fn query_config(mut self, query: &memfuse_core::HybridQuery) -> Self {
         if let Some(ref text) = query.text_query {
             self.text = Some(text.clone());

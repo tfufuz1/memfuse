@@ -1475,7 +1475,10 @@ pub fn run_check_dag() -> bool {
     let violations = check_dag_layer_violations(&crates);
 
     // Bekannte, dokumentierte Ausnahmen (müssen in DECISIONS.md mit DAG-NNN Tracking stehen)
-    let known_exceptions: &[(&str, &str)] = &[("memfuse-core", "memfuse-crypto")];
+    let known_exceptions: &[(&str, &str)] = &[
+        // DAG-002: memfuse-checkpoint hängt von memfuse-store ab (Layer 1→1, Peer-Dep, dokumentiert)
+        // Wenn der Verstoß echter Layer-Verstoß wäre, würde er hier stehen
+    ];
 
     let mut untracked = Vec::new();
     for v in &violations {

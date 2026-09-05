@@ -213,3 +213,98 @@ async fn test_ingestion_creates_graph_entities() {
         "Extracted entity should exist in graph and have connections"
     );
 }
+
+#[tokio::test]
+async fn test_reimport_identical_content_is_skipped() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db.collection("duplicate-test").await.expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("invoice.md");
+    let content = "# Invoice\nAmount: 100 EUR\nCustomer: ACME";
+    std::fs::write(&doc_path, content).expect("write invoice");
+
+    let first_report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("first ingest");
+
+    assert!(first_report.chunks_created > 0);
+    assert!(!first_report.skipped_as_duplicate);
+
+    let second_report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("second ingest");
+
+    assert_eq!(second_report.chunks_created, 0);
+    assert!(second_report.skipped_as_duplicate);
+    assert!(second_report
+        .errors
+        .iter()
+        .any(|e| e.contains("Re-Import übersprungen")));
+
+    let results = collection
+        .query()
+        .embedding([0.1, 0.1, 0.1, 0.1])
+        .k(10)
+        .execute()
+        .await
+        .expect("search");
+
+    assert_eq!(results.len(), first_report.chunks_created);
+}
+
+#[tokio::test]
+async fn test_reimport_modified_content_is_not_skipped() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db.collection("modified-test").await.expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("invoice.md");
+    let initial_content = "# Invoice v1\nAmount: 100 EUR\nCustomer: ACME";
+    std::fs::write(&doc_path, initial_content).expect("write invoice v1");
+
+    let first_report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("first ingest");
+
+    assert!(first_report.chunks_created > 0);
+    assert!(!first_report.skipped_as_duplicate);
+
+    let modified_content = "# Invoice v2\nAmount: 150 EUR\nCustomer: ACME";
+    std::fs::write(&doc_path, modified_content).expect("write invoice v2");
+
+    let second_report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("second ingest");
+
+    assert!(second_report.chunks_created > 0);
+    assert!(!second_report.skipped_as_duplicate);
+}
