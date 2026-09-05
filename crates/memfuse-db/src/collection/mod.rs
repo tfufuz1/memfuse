@@ -9,7 +9,6 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 
 pub mod crud;
-pub(super) mod kv_lock;
 pub mod maintenance;
 pub mod query_builder;
 pub mod relate;
@@ -30,11 +29,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-/// Leichtgewichtige Metadaten (für user_key und doc_key) — KEIN Embedding in LSM.
-/// Wird für DocId-basierte Hydration nach HNSW/BM25-Suche verwendet.
-///
-/// Hinweises zu Bestandsdaten: Ältere LSM-Einträge können noch ein `embedding`-Feld
-/// im JSON enthalten, welches beim Deserialisieren von `StoredDocumentMeta` ignoriert wird.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct StoredDocument {
     pub id: String,
@@ -42,6 +36,8 @@ pub(crate) struct StoredDocument {
     pub metadata: Option<serde_json::Value>,
 }
 
+/// Leichtgewichtige Metadaten (für doc_key, key_type=1) — KEIN Embedding.
+/// Wird für DocId-basierte Hydration nach HNSW/BM25-Suche verwendet.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct StoredDocumentMeta {
     pub id: String,
@@ -238,7 +234,6 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) dimension: usize,
     pub(super) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     pub(super) insert_lock: Arc<tokio::sync::Mutex<()>>,
-    pub(super) kv_locks: kv_lock::KvKeyLocks,
 }
 
 impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
@@ -254,7 +249,6 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             dimension: self.dimension,
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
             insert_lock: self.insert_lock.clone(),
-            kv_locks: kv_lock::KvKeyLocks::new(),
         }
     }
 }
@@ -319,7 +313,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             dimension,
             embedder: parking_lot::RwLock::new(None),
             insert_lock: Arc::new(tokio::sync::Mutex::new(())),
-            kv_locks: kv_lock::KvKeyLocks::new(),
         }
     }
 
@@ -439,23 +432,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 continue;
             }
 
-            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&v) {
-                if let (Some(id_str), Some(emb_arr)) = (
-                    val.get("id").and_then(|i| i.as_str()),
-                    val.get("embedding").and_then(|e| e.as_array()),
-                ) {
-                    let emb: Vec<f32> = emb_arr
-                        .iter()
-                        .filter_map(|x| x.as_f64().map(|f| f as f32))
-                        .collect();
-                    if !emb.is_empty() {
-                        if let Ok(doc_id) = DocId::from_key(id_str) {
-                            if let Err(e) = self.index.insert(tx, doc_id, &emb).await {
-                                tracing::warn!(doc_id = ?doc_id, error = %e, "Konnte Dokument bei load_index nicht in Index einfügen");
-                            }
-                        }
-                    }
-                }
+            let stored: StoredDocument = match serde_json::from_slice(&v) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            let doc_id = DocId::from_key(&stored.id)?;
+            if let Err(e) = self.index.insert(tx, doc_id, &stored.embedding).await {
+                tracing::warn!(doc_id = ?doc_id, error = %e, "Konnte Dokument bei load_index nicht in Index einfügen");
             }
         }
         self.index.commit(tx).await?;
@@ -479,14 +462,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let tx = self.allocate_tx()?;
 
         for (k, v) in entries {
-            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&v) {
-                if val.get("embedding").is_some() {
-                    if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&v) {
-                        if let Ok(meta_data) = serde_json::to_vec(&meta) {
-                            self.storage.put(tx, &k, &meta_data).await?;
-                            migrated_count += 1;
-                        }
-                    }
+            // Try parsing as full document first (which indicates it needs migration)
+            if let Ok(full) = serde_json::from_slice::<StoredDocument>(&v) {
+                let meta_only = StoredDocumentMeta::from(&full);
+                if let Ok(meta_data) = serde_json::to_vec(&meta_only) {
+                    self.storage.put(tx, &k, &meta_data).await?;
+                    migrated_count += 1;
                 }
             }
         }

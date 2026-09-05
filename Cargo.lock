@@ -2747,7 +2747,6 @@ dependencies = [
 name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "async-trait",
  "criterion",
  "memfuse-checkpoint",
@@ -2856,6 +2855,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "memfuse-core",
+ "memfuse-embed",
  "proptest",
  "quick-xml",
  "rand 0.8.8",
@@ -2930,6 +2930,7 @@ name = "memfuse-tauri"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "docx-rs",
  "futures-util",
  "mailparse",
