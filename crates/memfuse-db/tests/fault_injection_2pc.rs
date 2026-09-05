@@ -217,7 +217,7 @@ impl VectorIndex for FaultyVectorIndex {
         self.inner.rollback_to_tx(tx_id).await
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
+    async fn last_tx_id(&self) -> Result<TxId> {
         self.inner.last_tx_id().await
     }
 
