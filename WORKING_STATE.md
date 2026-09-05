@@ -19,16 +19,16 @@ Ergebnis: **1 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9041 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9083 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7184 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11873 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 13622 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 13734 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19290 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 5398 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-db` | 2 | 19380 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3172 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 3299 | 🟢 Clean |  |
@@ -39,7 +39,7 @@ Ergebnis: **1 offene Tags**
 ## DAG-Topologie
 
 ```
-Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
+Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
 Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-crypto — Encryption at Rest utilities for MemFuse
           memfuse-embed —  (deps: memfuse-core)
