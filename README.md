@@ -79,6 +79,12 @@ Contextual Ingestion → 4-Signal Hybrid Index → Multi-Step Retrieval → Cros
             Alles lokal. Nichts verlässt den Rechner.
 ```
 
+### Grounding & Quellenattribuierung (RAG Grounding)
+
+RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** auf Basis der im `<context>`-Block bereitgestellten Informationen zu formulieren und Fakten mit Quellenangaben im Format `[Dateiname]` oder `[Dateiname, Abschnitt]` zu belegen. Wenn eine Information nicht im Kontext enthalten ist, antwortet das Modell mit der festen Fallback-Phrase: *"Diese Information ist in den importierten Dokumenten nicht enthalten."*
+
+> ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
+
 ## Workspace Crates (15 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)

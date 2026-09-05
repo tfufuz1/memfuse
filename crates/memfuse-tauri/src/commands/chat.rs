@@ -86,14 +86,16 @@ pub async fn chat_with_rag(
 
     // Nutzt den bestehenden ContextManager aus memfuse-db
     let context_manager = memfuse_db::context::ContextManager::default();
-    let context = context_manager
+    let context_window = context_manager
         .prepare_context(chunks)
         .map_err(|e| MemFuseErrorDto::from(&e))?;
+
+    let context_str = format_context_with_sources(&context_window);
 
     let bridge = OllamaBridge::localhost();
     let app_clone = app.clone();
     let full_response = bridge
-        .chat_with_rag_streaming(&model, &message, &context.to_string(), move |token| {
+        .chat_with_rag_streaming(&model, &message, &context_str, move |token| {
             if let Err(e) = app_clone.emit("chat-token", token) {
                 tracing::debug!("Chat token emit failed (client disconnected?): {}", e);
             }
@@ -105,6 +107,42 @@ pub async fn chat_with_rag(
         answer: full_response,
         sources,
     })
+}
+
+/// Formats a `ContextWindow` into a single string where each chunk is prefixed
+/// with a visible source marker `[Quelle: ...]`.
+pub fn format_context_with_sources(context_window: &memfuse_core::ContextWindow) -> String {
+    context_window
+        .chunks
+        .iter()
+        .map(|chunk| {
+            let source_str = chunk
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("source"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("Unknown");
+
+            let file_name = std::path::Path::new(source_str)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(source_str);
+
+            let section = chunk
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("section").or_else(|| m.get("breadcrumb")))
+                .and_then(|s| s.as_str());
+
+            let source_label = match section {
+                Some(sec) if !sec.trim().is_empty() => format!("{file_name}, {sec}"),
+                _ => file_name.to_string(),
+            };
+
+            format!("[Quelle: {source_label}]\n{}", chunk.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[tauri::command]
@@ -159,5 +197,45 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_format_context_with_sources() {
+        use memfuse_core::{ContextChunk, ContextWindow, DocId};
+
+        let chunk1 = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "Inhalt der ersten Datei.".to_string(),
+            relevance: 0.9,
+            token_count: 5,
+            metadata: Some(serde_json::json!({
+                "source": "/docs/rechnung_2026_03.pdf"
+            })),
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let chunk2 = ContextChunk {
+            doc_id: DocId::new(2),
+            content: "Inhalt der zweiten Datei.".to_string(),
+            relevance: 0.8,
+            token_count: 5,
+            metadata: Some(serde_json::json!({
+                "source": "handbuch.pdf",
+                "section": "Kapitel 3"
+            })),
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+
+        let window = ContextWindow {
+            chunks: vec![chunk1, chunk2],
+            total_tokens: 10,
+            truncated: false,
+        };
+
+        let formatted = format_context_with_sources(&window);
+        let expected = "[Quelle: rechnung_2026_03.pdf]\nInhalt der ersten Datei.\n\n[Quelle: handbuch.pdf, Kapitel 3]\nInhalt der zweiten Datei.";
+        assert_eq!(formatted, expected);
     }
 }
