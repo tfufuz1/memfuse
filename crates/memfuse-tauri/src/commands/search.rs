@@ -13,6 +13,13 @@ pub struct SearchResultDto {
     pub source: String,
 }
 
+#[derive(Serialize)]
+pub struct MultiStepSearchResultDto {
+    pub results: Vec<SearchResultDto>,
+    pub rounds_executed: usize,
+    pub sub_queries: Vec<String>,
+}
+
 const MAX_QUERY_LEN: usize = 65_536; // 64 KiB
 
 #[tauri::command]
@@ -76,6 +83,80 @@ pub async fn hybrid_search(
                 .to_string(),
         })
         .collect())
+}
+
+#[tauri::command]
+pub async fn multi_step_search(
+    state: State<'_, AppState>,
+    query: String,
+    collection_name: String,
+    k: usize,
+    max_rounds: Option<usize>,
+) -> Result<MultiStepSearchResultDto, MemFuseErrorDto> {
+    if query.len() > MAX_QUERY_LEN {
+        return Err(MemFuseErrorDto::new("InvalidInput", "Query too long"));
+    }
+    validate_collection_name(&collection_name)?;
+    let db = {
+        let db_guard = state.db.read();
+        db_guard.as_ref().cloned().ok_or_else(|| {
+            MemFuseErrorDto::new(
+                "NotFound",
+                "No database is open. Please open or create a database first.",
+            )
+        })?
+    };
+    let collection = db
+        .collection(&collection_name)
+        .await
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
+
+    let embedder = OllamaBridge::localhost();
+    let query_vector = embedder
+        .embed(&query)
+        .await
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
+
+    let rounds = max_rounds.unwrap_or(3).clamp(1, 5);
+    let config = memfuse_db::MultiStepConfig {
+        max_rounds: rounds,
+        ..Default::default()
+    };
+    let engine = memfuse_db::MultiStepEngine::new(collection, config);
+
+    let multi_res = engine
+        .search(&query, &query_vector, k, Some(&embedder))
+        .await
+        .map_err(|e| MemFuseErrorDto::from(&e))?;
+
+    let results = multi_res
+        .results
+        .into_iter()
+        .map(|r| SearchResultDto {
+            id: r.id.clone(),
+            score: r.score,
+            text_preview: r
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("text"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.chars().take(200).collect())
+                .unwrap_or_default(),
+            source: r
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("source"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+        })
+        .collect();
+
+    Ok(MultiStepSearchResultDto {
+        results,
+        rounds_executed: multi_res.rounds_executed,
+        sub_queries: multi_res.sub_queries,
+    })
 }
 
 #[cfg(test)]

@@ -153,6 +153,24 @@ impl RouterEngine {
         }
     }
 
+    /// Records the actual execution outcome of a routing decision and updates conformal calibration.
+    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
+        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
+            Some(name) => name,
+            None => return false,
+        };
+
+        let non_conformity = outcome.non_conformity_score();
+
+        let mut cal = self.calibration.write();
+        if let Some(state) = cal.get_mut(&profile_name) {
+            state.recalibrate_conformal(non_conformity);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Setzt Kalibrierungsstatistik für alle Profile zurück.
     pub fn reset_all_calibration(&self) {
         for state in self.calibration.write().values_mut() {
