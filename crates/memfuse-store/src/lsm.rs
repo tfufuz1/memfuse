@@ -1209,6 +1209,109 @@ impl StorageEngine for LsmStorage {
         self.scan_prefix_at(prefix, u64::MAX).await
     }
 
+    async fn scan_prefix_bounded(
+        &self,
+        prefix: &[u8],
+        limit: usize,
+        cursor: Option<&[u8]>,
+    ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)> {
+        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+        let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
+            std::collections::BTreeMap::new();
+        let state = self.state.read().await;
+        let sstables = self.sstables.read().await;
+
+        // Collect from SSTables
+        for sst in sstables.iter() {
+            let first = sst.first_key();
+            let last = sst.last_key();
+            if !first.is_empty() && !last.is_empty() {
+                if prefix > last.as_ref() {
+                    continue;
+                }
+                let mut prefix_end = prefix.to_vec();
+                if let Some(last_byte) = prefix_end.last_mut() {
+                    if let Some(next_byte) = last_byte.checked_add(1) {
+                        *last_byte = next_byte;
+                        if first.as_ref() >= prefix_end.as_slice() {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            let entries = sst.scan_prefix(prefix).await?;
+            for (k, v, seq, tx) in entries {
+                if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                    let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v, seq);
+                    }
+                }
+            }
+        }
+
+        // Collect from immutable memtables
+        for mt in &state.immutable_memtables {
+            for (k, v, seq, tx) in mt.iter() {
+                if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                    let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v.clone(), seq);
+                    }
+                }
+            }
+        }
+
+        // Collect from active memtable
+        for (k, v, seq, tx) in state.memtable.iter() {
+            if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
+                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                    *entry = (v.clone(), seq);
+                }
+            }
+        }
+
+        let range_bound = if let Some(cur) = cursor {
+            std::ops::Bound::Excluded(Bytes::copy_from_slice(cur))
+        } else {
+            std::ops::Bound::Unbounded
+        };
+
+        let mut results = Vec::new();
+        let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
+
+        while let Some((k, (v, seq))) = iter.next() {
+            if (seq & TOMBSTONE_BIT) == 0 {
+                results.push((k.to_vec(), v.to_vec()));
+                if results.len() == limit {
+                    break;
+                }
+            }
+        }
+
+        let next_cursor = if results.len() == limit {
+            // Check if there are remaining valid entries in the iterator
+            let mut has_more = false;
+            for (_k, (_v, seq)) in iter {
+                if (seq & TOMBSTONE_BIT) == 0 {
+                    has_more = true;
+                    break;
+                }
+            }
+            if has_more {
+                results.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok((results, next_cursor))
+    }
+
     async fn scan_prefix_at(&self, prefix: &[u8], seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         // INVARIANT (Task C - Single snapshot boundary):
         // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
@@ -2345,6 +2448,51 @@ mod tests {
         // get_at_seq(key, 3) -> Some("b")
         let val_seq3 = storage.get_at_seq(key, 3).await.unwrap(); // unwrap #[cfg(test)]
         assert_eq!(val_seq3, Some(b"b".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_bounded_pagination() {
+        let (storage, _tmp) = test_storage().await;
+        let tx = TxId::new(1);
+
+        // Populate 25 items: pfx:00..pfx:24
+        for i in 0..25 {
+            let key = format!("pfx:{:02}", i);
+            let val = format!("val:{:02}", i);
+            storage.put(tx, key.as_bytes(), val.as_bytes()).await.unwrap();
+        }
+        storage.commit(tx).await.unwrap();
+
+        // 1st call: limit 10, cursor None -> 10 items + Some(cursor)
+        let (p1, cur1) = storage.scan_prefix_bounded(b"pfx:", 10, None).await.unwrap();
+        assert_eq!(p1.len(), 10);
+        assert_eq!(p1[0].0, b"pfx:00");
+        assert_eq!(p1[9].0, b"pfx:09");
+        assert!(cur1.is_some());
+        let cur1_val = cur1.unwrap();
+        assert_eq!(cur1_val, b"pfx:09");
+
+        // 2nd call: limit 10, cursor cur1 -> next 10 items + Some(cursor)
+        let (p2, cur2) = storage
+            .scan_prefix_bounded(b"pfx:", 10, Some(&cur1_val))
+            .await
+            .unwrap();
+        assert_eq!(p2.len(), 10);
+        assert_eq!(p2[0].0, b"pfx:10");
+        assert_eq!(p2[9].0, b"pfx:19");
+        assert!(cur2.is_some());
+        let cur2_val = cur2.unwrap();
+        assert_eq!(cur2_val, b"pfx:19");
+
+        // 3rd call: limit 10, cursor cur2 -> remaining 5 items + None
+        let (p3, cur3) = storage
+            .scan_prefix_bounded(b"pfx:", 10, Some(&cur2_val))
+            .await
+            .unwrap();
+        assert_eq!(p3.len(), 5);
+        assert_eq!(p3[0].0, b"pfx:20");
+        assert_eq!(p3[4].0, b"pfx:24");
+        assert!(cur3.is_none());
     }
 
     #[tokio::test]
