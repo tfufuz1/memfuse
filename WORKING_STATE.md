@@ -31,7 +31,7 @@ Ergebnis: **1 offene Tags**
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3172 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 3299 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 3258 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 4418 | 🟢 Clean |  |
 
