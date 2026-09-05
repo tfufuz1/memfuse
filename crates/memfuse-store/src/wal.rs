@@ -2402,7 +2402,10 @@ mod tests {
         let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key"); // expect
 
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
-        let integrity_key = sub_km.integrity_key().expect("integrity key"); // expect
+        let integrity_key = sub_km
+            .integrity_key()
+            .map_err(MemFuseError::from)
+            .expect("integrity key"); // expect
 
         let op1 = WalOp::Put {
             tx_id: TxId::new(10),
