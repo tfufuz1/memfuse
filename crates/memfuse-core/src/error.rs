@@ -144,6 +144,15 @@ pub enum MemFuseError {
     #[error("Timeout exceeded in sandbox: {0}")]
     SandboxTimeout(String),
 
+    /// General operation execution timeout breach.
+    #[error("Operation timed out: {operation} (limit: {timeout_ms}ms)")]
+    Timeout {
+        /// Identifier of the timed out operation.
+        operation: String,
+        /// Configured timeout limit in milliseconds.
+        timeout_ms: u64,
+    },
+
     // ═══ Infrastructure ═══
     /// Data serialization or deserialization error.
     #[error("Serialization error: {0}")]
@@ -217,6 +226,11 @@ impl MemFuseError {
             path: path.into(),
             block_id,
         }
+    }
+
+    /// Returns `true` if this error represents an optimistic concurrency control (OCC) conflict or stale read.
+    pub fn is_occ_conflict(&self) -> bool {
+        matches!(self, Self::StaleRead(_) | Self::Conflict(_))
     }
 }
 
@@ -764,5 +778,16 @@ mod tests {
         assert_eq!(dto.kind, "CustomKind");
         assert_eq!(dto.message, "Custom message");
         assert_eq!(dto.details.expect("details present")["trace_id"], "12345"); // expect
+    }
+
+    #[test]
+    fn test_is_occ_conflict() {
+        let stale = MemFuseError::StaleRead("OCC conflict".into());
+        let conflict = MemFuseError::Conflict("Key conflict".into());
+        let not_found = MemFuseError::NotFound("Key not found".into());
+
+        assert!(stale.is_occ_conflict());
+        assert!(conflict.is_occ_conflict());
+        assert!(!not_found.is_occ_conflict());
     }
 }

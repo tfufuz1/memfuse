@@ -1,5 +1,6 @@
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
+use crate::outcome::{DecisionId, RoutingOutcome};
 use crate::profile::{ProfileCalibrationState, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
@@ -20,7 +21,7 @@ pub struct ConfidenceMetrics {
     pub score_lower: Option<f32>,
     /// Upper bound of the confidence interval (None when not calibrated).
     pub score_upper: Option<f32>,
-    /// Whether the score was calibrated via conformal prediction.
+    /// Whether the score was calibrated via outcome-driven conformal calibration.
     pub calibrated: bool,
     /// Current conformal quantile threshold used for this decision.
     pub quantile_threshold: f32,
@@ -30,7 +31,7 @@ pub struct ConfidenceMetrics {
     pub selection_margin: f32,
 }
 
-/// Result of a routing operation containing the selected profile and prepared context.
+/// Result of a routing operation containing the selected profile, prepared context, confidence, and decision ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingDecision {
     /// The target SLM profile selected for the query.
@@ -39,6 +40,8 @@ pub struct RoutingDecision {
     pub context: ContextWindow,
     /// Calibrated confidence metrics for auditing and cascade control.
     pub confidence: Option<ConfidenceMetrics>,
+    /// Eindeutige ID dieser Routing-Entscheidung.
+    pub decision_id: DecisionId,
 }
 
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
@@ -46,6 +49,7 @@ pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
     profiles: RwLock<Vec<SlmProfile>>,
     pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
+    pending_decisions: RwLock<HashMap<DecisionId, String>>,
 }
 
 impl RouterEngine {
@@ -64,6 +68,7 @@ impl RouterEngine {
             collection,
             profiles: RwLock::new(profiles),
             calibration: RwLock::new(calibration),
+            pending_decisions: RwLock::new(HashMap::new()),
         }
     }
 
@@ -120,11 +125,83 @@ impl RouterEngine {
         }
     }
 
+    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
+    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
+    /// mit einem echten Ground-Truth-Signal.
+    ///
+    /// Gibt true zurück wenn die Decision gefunden und verarbeitet wurde,
+    /// false wenn die DecisionId unbekannt ist (z.B. nach Restart).
+    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
+        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
+            Some(name) => name,
+            None => {
+                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
+                return false;
+            }
+        };
+
+        let non_conformity = outcome.non_conformity_score();
+
+        let mut cal = self.calibration.write();
+        if let Some(state) = cal.get_mut(&profile_name) {
+            state.recalibrate_conformal(non_conformity);
+            tracing::debug!(
+                profile = %profile_name,
+                ?outcome,
+                non_conformity,
+                "Router outcome recorded"
+            );
+        }
+        true
+    }
+
+    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
+    /// Sollte in normaler Laufzeit nahe 0 bleiben.
+    pub fn pending_decision_count(&self) -> usize {
+        self.pending_decisions.read().len()
+    }
+
     /// Setzt Kalibrierungsstatistik für alle Profile zurück.
     pub fn reset_all_calibration(&self) {
         for state in self.calibration.write().values_mut() {
             state.reset();
         }
+    }
+
+    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
+    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
+    /// mit einem echten Ground-Truth-Signal.
+    ///
+    /// Gibt `true` zurück wenn die Decision gefunden und verarbeitet wurde,
+    /// `false` wenn die DecisionId unbekannt ist (z.B. nach Restart).
+    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
+        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
+            Some(name) => name,
+            None => {
+                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
+                return false;
+            }
+        };
+
+        let non_conformity = outcome.non_conformity_score();
+
+        let mut cal = self.calibration.write();
+        if let Some(state) = cal.get_mut(&profile_name) {
+            state.recalibrate_conformal(non_conformity);
+            tracing::debug!(
+                profile = %profile_name,
+                ?outcome,
+                non_conformity,
+                "Router outcome recorded"
+            );
+        }
+        true
+    }
+
+    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
+    /// Sollte in normaler Laufzeit nahe 0 bleiben.
+    pub fn pending_decision_count(&self) -> usize {
+        self.pending_decisions.read().len()
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
@@ -182,7 +259,7 @@ impl RouterEngine {
             }
         }
 
-        // 3. Perform profile selection, scoring, calibration updates, and confidence metric generation
+        // 3. Perform profile selection, scoring, calibration tracking, and confidence metric generation
         // atomically within a single write lock acquisition on calibration state.
         let (selected_profile, confidence_metrics) = {
             let mut cal = self.calibration.write();
@@ -226,7 +303,6 @@ impl RouterEngine {
             if let Some(state) = cal.get_mut(&selected_profile.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
-                state.recalibrate_conformal(non_conformity);
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
@@ -249,16 +325,27 @@ impl RouterEngine {
             (selected_profile, metrics)
         }; // Write lock released
 
+        let decision_id = DecisionId::new();
+        self.pending_decisions
+            .write()
+            .insert(decision_id, selected_profile.name.clone());
+
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
         context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
 
+        let decision_id = DecisionId::new();
+        self.pending_decisions
+            .write()
+            .insert(decision_id, selected_profile.name.clone());
+
         Ok(RoutingDecision {
             profile: selected_profile,
             context: context_window,
             confidence: confidence_metrics,
+            decision_id,
         })
     }
 
@@ -376,7 +463,7 @@ impl RouterEngine {
                 ));
             }
         };
-        let fallback_score = compute_profile_score(fallback_profile, chunks);
+        let _fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let q_threshold = state
             .map(|st| st.conformal.quantile_threshold)

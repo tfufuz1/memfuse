@@ -810,7 +810,7 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 ## ADR-057: Lücken-Dokumentation (Umnummerierung / Ausgelassen)
 *   **Datum**: 2026-09-04
 *   **Status**: ✅ Final
-*   **Entscheidung**: Die Nummer ADR-057 wurde im Zuge paralleler Audit-Sessions ausgelassen und ist nicht vergeben.
+*   **Entscheidung**: Die Nummer ADR-057 wurde im Zuge paralleler Audit-Sessions ausgelassen und ist nicht vergeben. (Anmerkung: ADR-048 in `docs/decisions/` wurde als ADR-059 neu nummeriert und in `DECISIONS.md` integriert).
 
 ---
 
@@ -824,22 +824,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-059: last_tx_id Return-Type Unifikation (Regression-Fix)
-*   **Datum**: 2026-09-04
+## ADR-059: Python FFI Panic Isolation (ehemals docs/decisions/ADR-048)
+*   **Datum**: 2026-09-03
 *   **Status**: ✅ Final
-*   **Entscheidung**: Rückgabetyp von `last_tx_id()` in allen drei Index-Traits (`VectorIndex`, `TextIndex`, `GraphIndex`) in `memfuse-core::traits` wird einheitlich auf `Result<TxId>` (bzw. `crate::Result<crate::types::TxId>`) re-unifiziert, identisch zu `StorageEngine::last_tx_id()`.
-*   **Alternativen**:
-    - Beibehaltung von `Result<u64>` für Index-Traits: Verworfen, da dies Typsicherheit aufhebt und manuelle `.inner()`-Konvertierungen an Aufrufstellen erzwingt.
-*   **Begründung**: Beseitigt eine durch Merge-Konflikt entstandene Regression (Commit f972e7bc) und stellt durchgehende Typsicherheit mit dem stark typisierten `TxId`-Domain-Typ über alle Workspace-Crates sicher.
+*   **Entscheidung**: Alle `panic!()`-Aufrufe in `memfuse-py` außerhalb von `#[cfg(test)]` werden durch `Err(PyErr)` ersetzt.
+*   **Begründung**: Ein Rust-Panic über die PyO3 FFI-Grenze hinweg führt zum Absturz von CPython. `catch_unwind` ist kein Ersatz für korrekte Fehlerbehandlung an Aufrufstellen.
 
 ---
 
-## Vorlage für neue ADRs
-```markdown
-## ADR-NNN: <Titel>
-*   **Datum**: YYYY-MM-DD
-*   **Status**: 🟡 Proposed / ✅ Final / ❌ Superseded by ADR-XXX
-*   **Entscheidung**: <Was wird entschieden?>
-*   **Alternativen**: <Welche Alternativen wurden erwogen?>
-*   **Begründung**: <Warum genau diese Lösung?>
-```
+## ADR-060: ADR-Governance — Konsolidierung auf DECISIONS.md als Einzel-Quelle
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: `docs/decisions/` wird aufgelöst. `DECISIONS.md` im Root-Verzeichnis ist die einzige kanonische Quelle für Architecture Decision Records (ADRs).
+*   **Begründung**: Einhaltung des MECE-Prinzips aus `CONSTITUTION.md` ("Jede Information lebt an genau EINEM Ort"). Das Dual-System (`DECISIONS.md` vs. `docs/decisions/`) erzeugte Nummernkollisionen und Verwirrung. Das xtask-Tooling kennt und prüft primär `DECISIONS.md`.
