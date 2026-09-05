@@ -48,7 +48,7 @@ pub struct RoutingDecision {
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
     profiles: RwLock<Vec<SlmProfile>>,
-    pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
+    pub(crate) calibration: Arc<RwLock<HashMap<String, ProfileCalibrationState>>>,
     pending_decisions: RwLock<HashMap<DecisionId, String>>,
 }
 
@@ -64,12 +64,45 @@ impl RouterEngine {
                 )
             })
             .collect();
-        Self {
-            collection,
+        let calibration_arc = Arc::new(RwLock::new(calibration));
+        let router = Self {
+            collection: collection.clone(),
             profiles: RwLock::new(profiles),
-            calibration: RwLock::new(calibration),
+            calibration: calibration_arc.clone(),
             pending_decisions: RwLock::new(HashMap::new()),
+        };
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let col = collection;
+            let cal = calibration_arc;
+            handle.spawn(async move {
+                match crate::persistence::load_calibration_state(&col).await {
+                    Ok(saved) => {
+                        if !saved.is_empty() {
+                            let mut cal_guard = cal.write();
+                            for (name, loaded_state) in saved {
+                                cal_guard.insert(name, loaded_state);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "Failed to load router calibration state on start");
+                    }
+                }
+            });
         }
+
+        router
+    }
+
+    /// Asynchronously creates a `RouterEngine` and restores calibration state from storage.
+    pub async fn open(
+        collection: Arc<Collection<LsmStorage>>,
+        profiles: Vec<SlmProfile>,
+    ) -> Result<Self> {
+        let router = Self::try_new(collection, profiles)?;
+        router.load_calibration_state().await?;
+        Ok(router)
     }
 
     /// Validates all profiles and creates a new `RouterEngine` instance.
@@ -81,6 +114,24 @@ impl RouterEngine {
             p.validate()?;
         }
         Ok(Self::new(collection, profiles))
+    }
+
+    /// Loads persisted calibration state from storage into this router engine.
+    pub async fn load_calibration_state(&self) -> Result<()> {
+        let saved = crate::persistence::load_calibration_state(&self.collection).await?;
+        if !saved.is_empty() {
+            let mut cal = self.calibration.write();
+            for (name, loaded_state) in saved {
+                cal.insert(name, loaded_state);
+            }
+        }
+        Ok(())
+    }
+
+    /// Explicitly persists current calibration state to storage.
+    pub async fn persist_calibration_state(&self) -> Result<()> {
+        let snapshot = self.calibration.read().clone();
+        crate::persistence::persist_calibration_state(&self.collection, &snapshot).await
     }
 
     /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
@@ -135,23 +186,41 @@ impl RouterEngine {
         let profile_name = match self.pending_decisions.write().remove(&decision_id) {
             Some(name) => name,
             None => {
-                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
+                tracing::warn!(
+                    ?decision_id,
+                    "record_outcome: unbekannte DecisionId ignoriert"
+                );
                 return false;
             }
         };
 
         let non_conformity = outcome.non_conformity_score();
 
-        let mut cal = self.calibration.write();
-        if let Some(state) = cal.get_mut(&profile_name) {
-            state.recalibrate_conformal(non_conformity);
-            tracing::debug!(
-                profile = %profile_name,
-                ?outcome,
-                non_conformity,
-                "Router outcome recorded"
-            );
+        let state_snapshot = {
+            let mut cal = self.calibration.write();
+            if let Some(state) = cal.get_mut(&profile_name) {
+                state.recalibrate_conformal(non_conformity);
+                tracing::debug!(
+                    profile = %profile_name,
+                    ?outcome,
+                    non_conformity,
+                    "Router outcome recorded"
+                );
+            }
+            cal.clone()
+        };
+
+        let collection = self.collection.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if let Err(err) =
+                    crate::persistence::persist_calibration_state(&collection, &state_snapshot).await
+                {
+                    tracing::error!(?err, "Failed to persist router calibration state");
+                }
+            });
         }
+
         true
     }
 
@@ -166,42 +235,6 @@ impl RouterEngine {
         for state in self.calibration.write().values_mut() {
             state.reset();
         }
-    }
-
-    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
-    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
-    /// mit einem echten Ground-Truth-Signal.
-    ///
-    /// Gibt `true` zurück wenn die Decision gefunden und verarbeitet wurde,
-    /// `false` wenn die DecisionId unbekannt ist (z.B. nach Restart).
-    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
-        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
-            Some(name) => name,
-            None => {
-                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
-                return false;
-            }
-        };
-
-        let non_conformity = outcome.non_conformity_score();
-
-        let mut cal = self.calibration.write();
-        if let Some(state) = cal.get_mut(&profile_name) {
-            state.recalibrate_conformal(non_conformity);
-            tracing::debug!(
-                profile = %profile_name,
-                ?outcome,
-                non_conformity,
-                "Router outcome recorded"
-            );
-        }
-        true
-    }
-
-    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
-    /// Sollte in normaler Laufzeit nahe 0 bleiben.
-    pub fn pending_decision_count(&self) -> usize {
-        self.pending_decisions.read().len()
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
