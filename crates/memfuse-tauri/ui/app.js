@@ -411,6 +411,50 @@ async function runDirectSearch() {
 
                 card.appendChild(meta);
                 card.appendChild(body);
+
+                if (r.provenance) {
+                    const details = document.createElement('details');
+                    details.style.cssText = 'margin-top: 0.4rem; font-size: 0.8rem; opacity: 0.8;';
+                    const summary = document.createElement('summary');
+                    summary.style.cursor = 'pointer';
+                    summary.textContent = 'Warum dieses Ergebnis?';
+                    details.appendChild(summary);
+
+                    const provBody = document.createElement('div');
+                    provBody.style.cssText = 'margin-top: 0.3rem; padding-left: 0.5rem; border-left: 2px solid #555;';
+
+                    if (r.provenance.signal_ranks && Object.keys(r.provenance.signal_ranks).length > 0) {
+                        const ranksDiv = document.createElement('div');
+                        const rankParts = Object.entries(r.provenance.signal_ranks)
+                            .map(([sig, rank]) => `${sig}: #${rank}`);
+                        ranksDiv.textContent = `Signal Ranks: ${rankParts.join(', ')}`;
+                        provBody.appendChild(ranksDiv);
+                    }
+
+                    const scores = [];
+                    if (r.provenance.vector_distance !== undefined && r.provenance.vector_distance !== null) {
+                        scores.push(`Vector Dist: ${Number(r.provenance.vector_distance).toFixed(4)}`);
+                    }
+                    if (r.provenance.bm25_score !== undefined && r.provenance.bm25_score !== null) {
+                        scores.push(`BM25: ${Number(r.provenance.bm25_score).toFixed(4)}`);
+                    }
+                    if (r.provenance.graph_score !== undefined && r.provenance.graph_score !== null) {
+                        scores.push(`Graph: ${Number(r.provenance.graph_score).toFixed(4)}`);
+                    }
+                    if (r.provenance.rerank_score !== undefined && r.provenance.rerank_score !== null) {
+                        scores.push(`Rerank: ${Number(r.provenance.rerank_score).toFixed(4)}`);
+                    }
+
+                    if (scores.length > 0) {
+                        const scoresDiv = document.createElement('div');
+                        scoresDiv.textContent = `Scores: ${scores.join(' | ')}`;
+                        provBody.appendChild(scoresDiv);
+                    }
+
+                    details.appendChild(provBody);
+                    card.appendChild(details);
+                }
+
                 resultsEl.appendChild(card);
             }
         }
