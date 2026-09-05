@@ -1507,8 +1507,7 @@ mod tests {
                 .route(&vec_data, "convergence test content")
                 .await
                 .unwrap();
-            let conf = decision.confidence.expect("Confidence metrics present");
-            last_calibrated = conf.calibrated;
+            let _conf = decision.confidence.expect("Confidence metrics present");
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
