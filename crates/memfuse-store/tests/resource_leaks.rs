@@ -1,9 +1,27 @@
-mod support;
-
 use memfuse_core::{Result, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use support::{get_open_fd_count, get_rss_bytes};
+use std::fs;
 use tempfile::TempDir;
+
+fn get_open_fd_count() -> usize {
+    if let Ok(entries) = fs::read_dir("/proc/self/fd") {
+        entries.filter_map(|e| e.ok()).count()
+    } else {
+        0
+    }
+}
+
+fn get_rss_bytes() -> usize {
+    if let Ok(statm) = fs::read_to_string("/proc/self/statm") {
+        let parts: Vec<&str> = statm.split_whitespace().collect();
+        if parts.len() >= 2 {
+            if let Ok(pages) = parts[1].parse::<usize>() {
+                return pages * 4096; // 4KB page size
+            }
+        }
+    }
+    0
+}
 
 #[tokio::test]
 async fn test_file_descriptor_leak_on_repeated_open_close() -> Result<()> {
