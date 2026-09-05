@@ -5,7 +5,6 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
-#![allow(deprecated)]
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! ## Concurrency & Lock Hierarchy
@@ -83,7 +82,8 @@ pub mod context;
 pub mod context_compaction;
 
 pub use context_compaction::{
-    CompactedContext, CompactionStrategy, ConsolidationSession, ContextCompactor, StatusToken,
+    cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
+    ConsolidationSession, ContextCompactor, StatusToken,
 };
 
 #[cfg(feature = "sandbox")]
@@ -158,6 +158,21 @@ pub struct ProvenanceRecord {
     pub signal_contributions: std::collections::HashMap<String, SignalContribution>,
 }
 
+impl ProvenanceRecord {
+    /// Ergänzt einen Herkunftsnachweis für synthetisierte / konsolidierte Dokumente.
+    pub fn synthesized_from(source_doc_ids: &[DocId]) -> Self {
+        let mut signal_ranks = std::collections::HashMap::new();
+        for (idx, id) in source_doc_ids.iter().enumerate() {
+            signal_ranks.insert(id.0.to_string(), (idx + 1) as u32);
+        }
+        ProvenanceRecord {
+            index_type: Some("consolidated".to_string()),
+            signal_ranks,
+            ..Default::default()
+        }
+    }
+}
+
 /// Detailed contribution of a single signal to the final RRF score.
 ///
 /// Enables 4-signal attribution auditing: "Why did the agent remember fact X?"
@@ -225,12 +240,9 @@ pub struct MemFuseConfig {
 
 impl Default for MemFuseConfig {
     fn default() -> Self {
-        // Dimension passt zum Standard-Embed-Modell (nomic-embed-text = 768)
-        let default_model = memfuse_ollama::DEFAULT_EMBED_MODEL;
-        let dimension = memfuse_ollama::model_info::known_dimension(default_model).unwrap_or(768); // sicherer Fallback = nomic-embed-text
-
+        // Standard-Dimension = 768 (nomic-embed-text Fallback)
         Self {
-            dimension,
+            dimension: 768,
             max_elements: 1_000_000,
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
@@ -268,10 +280,6 @@ pub struct MemFuse {
         tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
-    /// Optional Raft handle for cluster replication.
-    #[cfg(feature = "cluster")]
-    #[allow(dead_code)]
-    raft: tokio::sync::OnceCell<()>,
     /// Global text embedder for default collection.
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
@@ -343,13 +351,16 @@ impl MemFuse {
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
             cancel_token,
             task_tracker,
-            #[cfg(feature = "cluster")]
-            raft: tokio::sync::OnceCell::new(),
             embedder: parking_lot::RwLock::new(None),
         };
 
         // Initialize already existing collections from storage
         db.initialize_collections().await?;
+
+        // Cleanup orphaned consolidation intents on startup
+        let cleaned_intents =
+            context_compaction::cleanup_orphaned_consolidation_intents(db.storage.as_ref()).await?;
+        tracing::debug!(cleaned_intents, "Orphaned consolidation cleanup on startup");
 
         // Repair-on-Open: resolve pending transaction intents and re-sync indices
         db.repair_on_open().await?;
@@ -2002,6 +2013,48 @@ mod tests {
                 result.score
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_search_results_have_provenance_is_some() {
+        let (db, _tmp) = test_db(4).await;
+        let col = db.collection("search_prov_test").await.expect("collection");
+
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust search provenance test"})),
+        )
+        .await
+        .expect("insert");
+
+        let vec_results = col
+            .search(&[1.0, 0.0, 0.0, 0.0], 1)
+            .await
+            .expect("vector search");
+        assert_eq!(vec_results.len(), 1);
+        assert!(
+            vec_results[0].provenance.is_some(),
+            "Vector search results must contain provenance record"
+        );
+        let prov = vec_results[0].provenance.as_ref().expect("provenance");
+        assert_eq!(prov.source_collection.as_deref(), Some("search_prov_test"));
+        assert_eq!(prov.index_type.as_deref(), Some("hnsw"));
+
+        let text_results = col
+            .query()
+            .text("rust search")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .include_provenance(true)
+            .k(1)
+            .execute()
+            .await
+            .expect("text search");
+        assert_eq!(text_results.len(), 1);
+        assert!(
+            text_results[0].provenance.is_some(),
+            "Text search results must contain provenance record"
+        );
     }
 }
 

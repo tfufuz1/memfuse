@@ -4,6 +4,14 @@ use std::collections::HashSet;
 /// Extrahiert einfache Entitäten aus Dokumenttext via Musterheuristiken.
 /// Bewusst regelbasiert (keine ML-Abhängigkeit) für Nachvollziehbarkeit
 /// und Zero-Setup-Betrieb.
+///
+/// # Extraktionsverhalten
+/// - Erkennt aufeinanderfolgende großgeschriebene Wörter als Mehrwortphrasen (z.B. "Müller GmbH", "Max Mustermann", "Abteilung Finanzen").
+/// - Erfordert Phrasenlänge >= 2 Wörter ODER ein erkanntes Unternehmenssuffix (z.B. "GmbH", "AG", "KG", "GbR", "OHG", "e.V.").
+///
+/// # Bekannte Einschränkungen (Known Limitations)
+/// - Einwort-Eigennamen ohne Unternehmenssuffix (z.B. Städte- oder Ländernamen wie "Berlin", "Deutschland", "Paris")
+///   werden derzeit NICHT als Entitäten extrahiert, da sie weder eine Mehrwortfolge bilden noch in der Suffix-Liste stehen.
 pub struct SimpleEntityExtractor;
 
 impl SimpleEntityExtractor {

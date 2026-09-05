@@ -16,11 +16,12 @@ memfuse-db         = { workspace = true }
 memfuse-graph      = { workspace = true }
 memfuse-checkpoint = { workspace = true }
 memfuse-store      = { workspace = true }
+memfuse-router     = { workspace = true }
 serde              = { workspace = true, features = ["derive"] }
 serde_json         = { workspace = true }
 tracing            = { workspace = true }
 tokio              = { workspace = true, features = ["full"] }
-tokio-util         = { workspace = true, features = ["rt"] }
+tokio-util         = { version = "0.7.18", features = ["rt"] }
 async-trait        = { workspace = true }
 
 [dev-dependencies]

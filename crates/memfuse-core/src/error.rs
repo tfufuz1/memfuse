@@ -144,6 +144,15 @@ pub enum MemFuseError {
     #[error("Timeout exceeded in sandbox: {0}")]
     SandboxTimeout(String),
 
+    /// General operation execution timeout breach.
+    #[error("Operation timed out: {operation} (limit: {timeout_ms}ms)")]
+    Timeout {
+        /// Identifier of the timed out operation.
+        operation: String,
+        /// Configured timeout limit in milliseconds.
+        timeout_ms: u64,
+    },
+
     // ═══ Infrastructure ═══
     /// Data serialization or deserialization error.
     #[error("Serialization error: {0}")]
@@ -218,11 +227,28 @@ impl MemFuseError {
             block_id,
         }
     }
+
+    /// Returns `true` if this error represents an optimistic concurrency control (OCC) conflict or stale read.
+    pub fn is_occ_conflict(&self) -> bool {
+        matches!(self, Self::StaleRead(_) | Self::Conflict(_))
+    }
 }
 
 impl From<std::array::TryFromSliceError> for MemFuseError {
     fn from(e: std::array::TryFromSliceError) -> Self {
         Self::ParseError(e.to_string())
+    }
+}
+
+impl From<memfuse_crypto::CryptoError> for MemFuseError {
+    fn from(e: memfuse_crypto::CryptoError) -> Self {
+        match e {
+            memfuse_crypto::CryptoError::WalCorruption { offset, reason } => {
+                Self::WalCorruption { offset, reason }
+            }
+            memfuse_crypto::CryptoError::InvalidInput(msg) => Self::InvalidInput(msg),
+            other => Self::Crypto(other.to_string()),
+        }
     }
 }
 
@@ -317,6 +343,36 @@ mod tests {
             }
             _ => panic!("Expected ParseError, got {:?}", parse_err),
         }
+    }
+
+    #[test]
+    fn test_from_crypto_error() {
+        let crypto_err = memfuse_crypto::CryptoError::WalCorruption {
+            offset: 42,
+            reason: "bad hmac".to_string(),
+        };
+        let mf_err: MemFuseError = crypto_err.into();
+        assert!(matches!(
+            mf_err,
+            MemFuseError::WalCorruption {
+                offset: 42,
+                ref reason
+            } if reason == "bad hmac"
+        ));
+
+        let invalid_input = memfuse_crypto::CryptoError::InvalidInput("bad key".to_string());
+        let mf_err_inv: MemFuseError = invalid_input.into();
+        assert!(matches!(
+            mf_err_inv,
+            MemFuseError::InvalidInput(ref msg) if msg == "bad key"
+        ));
+
+        let gen_crypto = memfuse_crypto::CryptoError::Encryption("failed".to_string());
+        let mf_err_gen: MemFuseError = gen_crypto.into();
+        assert!(matches!(
+            mf_err_gen,
+            MemFuseError::Crypto(ref msg) if msg.contains("encryption failed")
+        ));
     }
 
     #[test]
@@ -764,5 +820,16 @@ mod tests {
         assert_eq!(dto.kind, "CustomKind");
         assert_eq!(dto.message, "Custom message");
         assert_eq!(dto.details.expect("details present")["trace_id"], "12345"); // expect
+    }
+
+    #[test]
+    fn test_is_occ_conflict() {
+        let stale = MemFuseError::StaleRead("OCC conflict".into());
+        let conflict = MemFuseError::Conflict("Key conflict".into());
+        let not_found = MemFuseError::NotFound("Key not found".into());
+
+        assert!(stale.is_occ_conflict());
+        assert!(conflict.is_occ_conflict());
+        assert!(!not_found.is_occ_conflict());
     }
 }

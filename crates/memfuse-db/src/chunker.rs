@@ -14,6 +14,9 @@ use crate::context::ContextManager;
 use memfuse_core::{ContextChunk, DocId};
 use serde_json::json;
 
+/// Approximate character count per token (BPE ratio consistent with `ContextManager::estimate_tokens`).
+const CHARS_PER_TOKEN: usize = 4;
+
 /// Configuration for the Markdown chunker.
 pub struct ChunkerConfig {
     /// Maximum tokens per chunk (soft limit, hard limit is this * 1.2).
@@ -137,6 +140,9 @@ impl MarkdownChunker {
 
         // Enforce hard limits by splitting large sections
         let mut limited_sections = Vec::new();
+        let window_chars = hard_limit * CHARS_PER_TOKEN;
+        let overlap_chars = window_chars / 5; // ~20% overlap
+
         for sec in raw_sections {
             if sec.tokens > hard_limit {
                 // Approximate paragraph splitting
@@ -144,6 +150,34 @@ impl MarkdownChunker {
                 let paragraphs: Vec<&str> = content.split("\n\n").collect();
                 let mut current_p_lines = Vec::new();
                 let mut current_p_tokens = 0;
+
+                let push_paragraph_section = |lines: Vec<String>, target: &mut Vec<RawSection>| {
+                    let p_content = lines.join("\n");
+                    let actual_tokens = ContextManager::estimate_tokens(&p_content);
+                    if actual_tokens > hard_limit {
+                        // Fallback for oversized paragraphs/sections: split into sliding token windows with overlap
+                        let windows =
+                            chunk_text_with_overlap(&p_content, window_chars, overlap_chars);
+                        for w in windows {
+                            let w_tokens = ContextManager::estimate_tokens(w);
+                            target.push(RawSection {
+                                lines: vec![w.to_string()],
+                                breadcrumb: sec.breadcrumb.clone(),
+                                heading_level: sec.heading_level,
+                                source_line: sec.source_line,
+                                tokens: w_tokens,
+                            });
+                        }
+                    } else {
+                        target.push(RawSection {
+                            lines,
+                            breadcrumb: sec.breadcrumb.clone(),
+                            heading_level: sec.heading_level,
+                            source_line: sec.source_line,
+                            tokens: actual_tokens,
+                        });
+                    }
+                };
 
                 for p in paragraphs {
                     let p_tokens = ContextManager::estimate_tokens(p);
@@ -155,13 +189,8 @@ impl MarkdownChunker {
                     };
 
                     if current_p_tokens + p_tokens > hard_limit && !current_p_lines.is_empty() {
-                        limited_sections.push(RawSection {
-                            lines: std::mem::take(&mut current_p_lines),
-                            breadcrumb: sec.breadcrumb.clone(),
-                            heading_level: sec.heading_level,
-                            source_line: sec.source_line, // Just keep parent source line for chunks
-                            tokens: current_p_tokens,
-                        });
+                        let lines = std::mem::take(&mut current_p_lines);
+                        push_paragraph_section(lines, &mut limited_sections);
                         current_p_tokens = 0;
                         current_p_lines.push(p.to_string());
                         current_p_tokens += p_tokens;
@@ -171,13 +200,8 @@ impl MarkdownChunker {
                     }
                 }
                 if !current_p_lines.is_empty() {
-                    limited_sections.push(RawSection {
-                        lines: current_p_lines,
-                        breadcrumb: sec.breadcrumb.clone(),
-                        heading_level: sec.heading_level,
-                        source_line: sec.source_line,
-                        tokens: current_p_tokens,
-                    });
+                    let lines = std::mem::take(&mut current_p_lines);
+                    push_paragraph_section(lines, &mut limited_sections);
                 }
             } else {
                 limited_sections.push(sec);
@@ -238,6 +262,43 @@ fn parts_first(_line: &str, h_level: u8) -> String {
         s.push('#');
     }
     s
+}
+
+/// Splits a text string into overlapping chunks of at most `window_chars` Unicode characters (code points),
+/// safely respecting UTF-8 character boundaries using `str::char_indices()`.
+pub fn chunk_text_with_overlap(text: &str, window_chars: usize, overlap_chars: usize) -> Vec<&str> {
+    if text.is_empty() || window_chars == 0 {
+        return Vec::new();
+    }
+
+    let indices: Vec<usize> = text
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .chain(std::iter::once(text.len()))
+        .collect();
+
+    let total_chars = indices.len() - 1;
+    let overlap = overlap_chars.min(window_chars.saturating_sub(1));
+    let step = window_chars.saturating_sub(overlap).max(1);
+
+    let mut chunks = Vec::new();
+    let mut start_char = 0;
+
+    while start_char < total_chars {
+        let end_char = (start_char + window_chars).min(total_chars);
+        let start_byte = indices[start_char];
+        let end_byte = indices[end_char];
+
+        chunks.push(&text[start_byte..end_byte]);
+
+        if end_char == total_chars {
+            break;
+        }
+
+        start_char += step;
+    }
+
+    chunks
 }
 
 /// Splits a text string into chunks of at most `chunk_size` Unicode characters (code points),
@@ -492,5 +553,89 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         let meta = chunks[0].metadata.as_ref().unwrap(); // unwrap
         assert_eq!(meta["breadcrumb"], "# Level 1");
+    }
+
+    #[test]
+    fn chunker_handles_headingless_single_paragraph_document() {
+        // Construct continuous plaintext of ~3000 words without '#' headings or '\n\n' breaks
+        let line = "This is a continuous sentence representing extracted PDF text with single line breaks.\n";
+        let text = line.repeat(250); // ~2500 words, >> hard_limit tokens
+        assert!(!text.contains("#"));
+        assert!(!text.contains("\n\n"));
+
+        let chunker = MarkdownChunker::with_defaults();
+        let hard_limit = (chunker.config.max_tokens as f64 * 1.2) as usize;
+        let chunks = chunker.chunk(DocId::new(100), &text);
+
+        assert!(
+            chunks.len() > 1,
+            "Document should be split into multiple chunks, got {}",
+            chunks.len()
+        );
+
+        for chunk in &chunks {
+            assert!(
+                chunk.token_count <= hard_limit,
+                "Chunk token count {} exceeds hard limit {}",
+                chunk.token_count,
+                hard_limit
+            );
+        }
+    }
+
+    #[test]
+    fn chunk_text_with_overlap_produces_overlapping_windows() {
+        let text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; // 36 chars
+        let window_chars = 10;
+        let overlap_chars = 3;
+
+        let windows = chunk_text_with_overlap(text, window_chars, overlap_chars);
+        assert!(!windows.is_empty());
+
+        // Check overlap between consecutive windows
+        for i in 0..windows.len() - 1 {
+            let w1 = windows[i];
+            let w2 = windows[i + 1];
+            let suffix_w1 = &w1[w1.len() - overlap_chars..];
+            let prefix_w2 = &w2[..overlap_chars];
+            assert_eq!(
+                suffix_w1,
+                prefix_w2,
+                "Windows {} and {} do not overlap correctly",
+                i,
+                i + 1
+            );
+        }
+
+        // Verify first window starts at index 0 and last window finishes at text end
+        assert_eq!(
+            windows.first().unwrap().chars().take(3).collect::<String>(),
+            "ABC"
+        );
+        assert_eq!(
+            windows
+                .last()
+                .unwrap()
+                .chars()
+                .rev()
+                .take(3)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>(),
+            "789"
+        );
+    }
+
+    #[test]
+    fn chunk_text_with_overlap_respects_utf8_boundaries() {
+        let text = "Äpfel, Öle, Übermut und Straße sind wunderschön!! ".repeat(5);
+        let windows = chunk_text_with_overlap(&text, 25, 5);
+        assert!(!windows.is_empty());
+
+        for window in &windows {
+            assert!(std::str::from_utf8(window.as_bytes()).is_ok());
+            assert!(window.chars().count() <= 25);
+        }
     }
 }

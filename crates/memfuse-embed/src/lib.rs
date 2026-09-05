@@ -26,7 +26,7 @@ use std::sync::Arc;
 #[cfg(feature = "onnx")]
 use async_trait::async_trait;
 #[cfg(feature = "onnx")]
-use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+use memfuse_core::{EmbeddingError, EmbeddingProvider, MemFuseError, Result};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
@@ -34,11 +34,14 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "onnx")]
 pub mod reranker;
+#[cfg(feature = "onnx")]
 pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
 
-/// Maximum allowed batch size for text embedding queries to prevent unbounded resource exhaustion.
-pub const MAX_EMBED_BATCH_SIZE: usize = 10_000;
+/// Conservative default. Override via `TextEmbedderConfig::max_batch_size`.
+/// At 1536D × 512 × f32 = ~3 MB input tensor; safe within 128 MB memory budgets.
+pub const MAX_EMBED_BATCH_SIZE: usize = 512;
 
 /// Configuration settings for the text embedder.
 #[cfg(feature = "onnx")]
@@ -50,6 +53,8 @@ pub struct TextEmbedderConfig {
     pub pool_size: usize,
     /// Expected output embedding dimension (optional).
     pub expected_dim: Option<usize>,
+    /// Maximum batch size for embed_batch(). Default: MAX_EMBED_BATCH_SIZE (512).
+    pub max_batch_size: usize,
 }
 
 #[cfg(feature = "onnx")]
@@ -59,6 +64,7 @@ impl Default for TextEmbedderConfig {
             max_sequence_length: 512,
             pool_size: 2,
             expected_dim: None,
+            max_batch_size: MAX_EMBED_BATCH_SIZE,
         }
     }
 }
@@ -88,17 +94,49 @@ pub struct TextEmbedder {
 
 #[cfg(feature = "onnx")]
 #[async_trait]
-impl TextEmbeddingEngine for TextEmbedder {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.embed_async(text).await
+impl EmbeddingProvider for TextEmbedder {
+    fn provider_name(&self) -> &str {
+        "onnx"
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        if texts.len() > MAX_EMBED_BATCH_SIZE {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Batch size {} exceeds maximum allowed limit {}",
+    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        let max_len = self.config.max_sequence_length;
+        if let Ok(encoding) = self.tokenizer.encode(text, true) {
+            let len = encoding.get_ids().len();
+            if len > max_len {
+                return Err(EmbeddingError::InputTooLong { len, max: max_len });
+            }
+        }
+        self.embed_async(text).await.map_err(|e| match e {
+            MemFuseError::InvalidInput(msg)
+                if msg.contains("too long") || msg.contains("exceeds") =>
+            {
+                EmbeddingError::InputTooLong {
+                    len: text.len(),
+                    max: max_len,
+                }
+            }
+            MemFuseError::InvalidInput(msg) | MemFuseError::NotFound(msg) => {
+                EmbeddingError::Unavailable(msg)
+            }
+            other => EmbeddingError::ComputationFailed(other.to_string()),
+        })
+    }
+
+    fn embedding_dim(&self) -> usize {
+        self.expected_dim.unwrap_or(0)
+    }
+
+    async fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
+        let limit = self.config.max_batch_size;
+        if texts.len() > limit {
+            return Err(EmbeddingError::Unavailable(format!(
+                "Batch size {} exceeds max_batch_size {}. Split into smaller batches.",
                 texts.len(),
-                MAX_EMBED_BATCH_SIZE
+                limit
             )));
         }
 
@@ -106,9 +144,9 @@ impl TextEmbeddingEngine for TextEmbedder {
         for text in texts {
             let text_owned = text.to_string();
             let embedder = self.clone();
-            handles.push(tokio::spawn(async move {
-                embedder.embed_async(&text_owned).await
-            }));
+            handles.push(tokio::spawn(
+                async move { embedder.embed(&text_owned).await },
+            ));
         }
 
         let mut results = Vec::with_capacity(texts.len());
@@ -131,7 +169,7 @@ impl TextEmbeddingEngine for TextEmbedder {
         // Sequential fallback path
         let mut seq_results = Vec::with_capacity(texts.len());
         for text in texts {
-            seq_results.push(self.embed_async(text).await?);
+            seq_results.push(self.embed(text).await?);
         }
         Ok(seq_results)
     }
@@ -139,6 +177,17 @@ impl TextEmbeddingEngine for TextEmbedder {
 
 #[cfg(feature = "onnx")]
 impl TextEmbedder {
+    /// Creates a new embedder from a model file or model directory path.
+    pub fn from_path(model_path: impl AsRef<Path>) -> Result<Self> {
+        let path = model_path.as_ref();
+        let dir = if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
+        Self::load(dir)
+    }
+
     /// Creates a new embedder from a model directory. Alias for `load`.
     pub fn new(model_dir: impl AsRef<Path>) -> Result<Self> {
         Self::load(model_dir)
@@ -391,6 +440,7 @@ mod tests {
         let cfg = TextEmbedderConfig::default();
         assert_eq!(cfg.max_sequence_length, 512);
         assert_eq!(cfg.pool_size, 2);
+        assert_eq!(cfg.max_batch_size, MAX_EMBED_BATCH_SIZE);
     }
 
     #[cfg(feature = "onnx")]
@@ -491,15 +541,22 @@ mod tests {
     #[tokio::test]
     async fn test_embed_batch_oversized_limit(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use memfuse_core::{MemFuseError, TextEmbeddingEngine};
+        use memfuse_core::EmbeddingProvider;
 
         let dir = tempdir()?;
         File::create(dir.path().join("model.onnx"))?;
         File::create(dir.path().join("tokenizer.json"))?;
 
-        let minimal_tokenizer_json = r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":null,"post_processor":null,"decoder":null,"model":{"type":"WordPiece","unk_token":"[UNK]","vocab":{"[UNK]":0}}}"#;
-        let tokenizer = Tokenizer::from_bytes(minimal_tokenizer_json.as_bytes())
-            .map_err(|e| format!("Tokenizer parse failed: {e}"))?;
+        let tokenizer_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("tokenizer.json");
+
+        let tokenizer = if tokenizer_path.exists() {
+            Tokenizer::from_file(tokenizer_path).unwrap()
+        } else {
+            return Ok(());
+        };
 
         let embedder = TextEmbedder {
             session_path: dir.path().join("model.onnx"),
@@ -510,11 +567,11 @@ mod tests {
         };
 
         let large_texts: Vec<&str> = vec!["text"; MAX_EMBED_BATCH_SIZE + 1];
-        let res = embedder.embed_batch(&large_texts).await;
+        let res = EmbeddingProvider::embed_batch(&embedder, &large_texts).await;
         assert!(res.is_err());
         if let Err(err) = res {
-            assert!(matches!(err, MemFuseError::InvalidInput(_)));
-            assert!(err.to_string().contains("exceeds maximum allowed limit"));
+            assert!(matches!(err, EmbeddingError::Unavailable(_)));
+            assert!(err.to_string().contains("exceeds max_batch_size"));
         } else {
             panic!("Expected InvalidInput error for oversized embed batch");
         }

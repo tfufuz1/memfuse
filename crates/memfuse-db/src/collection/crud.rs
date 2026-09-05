@@ -4,6 +4,9 @@
 // NICHT-OFFENSICHTLICH: check_doc_id_collision wird strikt innerhalb des insert_lock ausgeführt.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
+#[path = "kv_lock.rs"]
+mod kv_lock;
+
 use super::{
     ensure_importance_metadata, extract_text, Collection, StoredDocument, StoredDocumentMeta,
 };
@@ -202,6 +205,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
+        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let data = serde_json::to_vec(value)?;
@@ -215,9 +219,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv_if_absent(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
+        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         if self.storage.get(&user_key).await?.is_some() {
+            self.storage.rollback(tx).await.ok();
             return Err(memfuse_core::MemFuseError::Conflict(format!(
                 "Key '{}' already exists in collection KV store",
                 id
@@ -952,29 +958,45 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             self.namespaced_key(prefix.as_bytes(), 0)
         };
 
-        let kvs = self.storage.scan_prefix(&real_prefix).await?;
+        let mut results = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
 
-        let mut results = Vec::with_capacity(kvs.len());
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            // We should ideally strip the prefix to return the user-facing key
-            // but for simplicity and compatibility with existing tests we keep it as is or strip carefully
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
+        loop {
+            let (batch, next_cursor) = self
+                .storage
+                .scan_prefix_bounded(&real_prefix, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
+                break;
+            }
+
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
                     key_str
-                }
-            };
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
 
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
+                if let Ok(val) = serde_json::from_slice(&v) {
+                    results.push((user_key, val));
+                }
+            }
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
             }
         }
+
         Ok(results)
     }
 
@@ -1045,5 +1067,52 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             }
         }
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use tokio::task::JoinSet;
+
+    #[tokio::test]
+    async fn test_concurrent_put_kv_if_absent_race() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let collection = Arc::new(db.collection("test_race").await.unwrap());
+
+        let mut set = JoinSet::new();
+        let key = "shared_race_key";
+
+        for i in 0..50 {
+            let col = collection.clone();
+            let val = serde_json::json!({ "task_id": i });
+            set.spawn(async move { col.put_kv_if_absent(key, &val).await });
+        }
+
+        let mut ok_count = 0;
+        let mut conflict_count = 0;
+
+        while let Some(res) = set.join_next().await {
+            match res.unwrap() {
+                Ok(_) => ok_count += 1,
+                Err(memfuse_core::MemFuseError::Conflict(_)) => conflict_count += 1,
+                Err(other) => panic!("Unexpected error: {:?}", other),
+            }
+        }
+
+        assert_eq!(ok_count, 1, "Exactly one task must succeed");
+        assert_eq!(
+            conflict_count, 49,
+            "49 tasks must fail with MemFuseError::Conflict"
+        );
     }
 }
