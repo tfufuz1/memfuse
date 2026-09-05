@@ -1,0 +1,26 @@
+name: Prune Stale Remote Branches
+
+on:
+  schedule:
+    # Läuft jeden Tag um 02:00 Uhr nachts UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Ermöglicht den manuellen Start über das GitHub-Webinterface
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run prune script
+        run: |
+          # Führt das Skript im schreibenden Modus aus (z.B. mit --apply, falls standardmäßig Dry-Run)
+          bash scripts/prune_remote_branches.sh --apply
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

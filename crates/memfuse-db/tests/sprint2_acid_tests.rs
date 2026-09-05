@@ -319,7 +319,8 @@ async fn test_2pc_recovery_after_crash() {
             .await
             .expect("insert d2");
 
-        db.close().await.expect("close db");
+        // DB-Drop = flush
+        drop(db);
     }
 
     // 2. Phase: DB neu öffnen — Repair muss automatisch während load_index() laufen

@@ -14,7 +14,7 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 ## Warum MemFuse Brain?
 
 - **Air-Gapped by Design** — keine Cloud, keine Telemetrie, kein API-Key nötig
-- **Zero-IT-Setup** — ein Installer, fertig. Kein Docker, kein Server, kein Admin
+- **Lokal & Backend-flexibel** — läuft vollständig auf Ihrem Rechner; erfordert aktuell Ollama als LLM-/Embedding-Backend (separat zu installieren, siehe Installation unten); eine ONNX-basierte Embedding-Alternative (`memfuse-embed`) ist im Code bereits vorhanden.
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
 - **Contextual Retrieval** — Automatisches Anreichern zerschnittener Chunks durch ein
