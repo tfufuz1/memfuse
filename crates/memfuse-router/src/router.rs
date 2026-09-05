@@ -171,45 +171,6 @@ impl RouterEngine {
         }
     }
 
-    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
-    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
-    /// mit einem echten Ground-Truth-Signal.
-    ///
-    /// Gibt `true` zurück wenn die Decision gefunden und verarbeitet wurde,
-    /// `false` wenn die DecisionId unbekannt ist (z.B. nach Restart).
-    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
-        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
-            Some(name) => name,
-            None => {
-                tracing::warn!(
-                    ?decision_id,
-                    "record_outcome: unbekannte DecisionId ignoriert"
-                );
-                return false;
-            }
-        };
-
-        let non_conformity = outcome.non_conformity_score();
-
-        let mut cal = self.calibration.write();
-        if let Some(state) = cal.get_mut(&profile_name) {
-            state.recalibrate_conformal(non_conformity);
-            tracing::debug!(
-                profile = %profile_name,
-                ?outcome,
-                non_conformity,
-                "Router outcome recorded"
-            );
-        }
-        true
-    }
-
-    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
-    /// Sollte in normaler Laufzeit nahe 0 bleiben.
-    pub fn pending_decision_count(&self) -> usize {
-        self.pending_decisions.read().len()
-    }
-
     /// Routes a query with embedding and text to the best matching SLM profile.
     #[allow(deprecated)]
     pub async fn route(
