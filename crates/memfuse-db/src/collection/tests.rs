@@ -5,6 +5,135 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 #[tokio::test]
+async fn test_collection_scan_prefix_batches_via_mock_storage() {
+    use async_trait::async_trait;
+    use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
+    use memfuse_graph::csr::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    struct BoundedScanMockStorage {
+        bounded_call_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl StorageEngine for BoundedScanMockStorage {
+        async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
+            Ok(None)
+        }
+        async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+            Ok(None)
+        }
+        async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
+            Ok(())
+        }
+        async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
+            Ok(())
+        }
+        async fn commit(&self, _: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn rollback(&self, _: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn flush(&self) -> Result<()> {
+            Ok(())
+        }
+        async fn stats(&self) -> Result<StorageStats> {
+            Ok(StorageStats {
+                num_segments: 0,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
+        }
+        async fn last_seq_no(&self) -> Result<u64> {
+            Ok(0)
+        }
+        async fn last_tx_id(&self) -> Result<TxId> {
+            Ok(TxId(0))
+        }
+        async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            panic!("scan_prefix should not be called directly when batching!");
+        }
+        async fn scan_prefix_bounded(
+            &self,
+            _prefix: &[u8],
+            limit: usize,
+            cursor: Option<&[u8]>,
+        ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)> {
+            self.bounded_call_count.fetch_add(1, Ordering::SeqCst);
+            let start = if let Some(cur) = cursor {
+                let s = String::from_utf8_lossy(cur);
+                let idx: usize = s["item_".len()..].parse().unwrap();
+                idx + 1
+            } else {
+                0
+            };
+
+            let total_items = 5000;
+            let end = (start + limit).min(total_items);
+
+            let val_bytes = serde_json::to_vec(&serde_json::json!({"test": "data"})).unwrap();
+            let mut batch = Vec::new();
+            for i in start..end {
+                let k = format!("item_{:05}", i).into_bytes();
+                batch.push((k, val_bytes.clone()));
+            }
+
+            let next_cursor = if end < total_items {
+                batch.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
+
+            Ok((batch, next_cursor))
+        }
+        async fn scan(
+            &self,
+            _: std::ops::Bound<&[u8]>,
+            _: std::ops::Bound<&[u8]>,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            Ok(vec![])
+        }
+    }
+
+    let mock_storage = Arc::new(BoundedScanMockStorage {
+        bounded_call_count: AtomicUsize::new(0),
+    });
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        mock_storage.clone(),
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(std::sync::atomic::AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let items = col.scan_prefix("item_").await.unwrap();
+    assert_eq!(items.len(), 5000);
+    // With 5000 items and BATCH_SIZE = 1000, scan_prefix_bounded should be called 5 times
+    assert_eq!(mock_storage.bounded_call_count.load(Ordering::SeqCst), 5);
+}
+
+#[tokio::test]
 async fn test_insert_with_ttl_and_reap_expired_documents() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
