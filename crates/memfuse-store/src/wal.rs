@@ -368,10 +368,10 @@ impl WalEntry {
 pub struct WalConfig {
     pub key_manager: Option<Arc<KeyManager>>,
     pub allow_legacy_integrity_key_fallback: bool,
-    /// Minimum allowed WAL version for replay. WAL files with a version below
-    /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
-    ///
-    /// Default: `WalVersion::V1` for backward compatibility. Production deployments SHOULD set `WalVersion::V3`.
+    /// Minimum WAL version accepted on open. Default: `WalVersion::V2`.
+    /// V1 (no HMAC) is never accepted by default — set explicitly only for one-time
+    /// legacy migration from pre-HMAC databases (set back to V2 after migration).
+    /// For new deployments, setting `WalVersion::V3` is recommended.
     pub min_wal_version: WalVersion,
 }
 
@@ -380,7 +380,7 @@ impl Default for WalConfig {
         Self {
             key_manager: None,
             allow_legacy_integrity_key_fallback: false,
-            min_wal_version: WalVersion::V1,
+            min_wal_version: WalVersion::V2,
         }
     }
 }
@@ -454,7 +454,7 @@ impl Wal {
             WalConfig {
                 key_manager,
                 allow_legacy_integrity_key_fallback: false,
-                min_wal_version: WalVersion::V1,
+                min_wal_version: WalVersion::V2,
             },
         )
         .await
@@ -1608,6 +1608,16 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
     use tokio::fs;
+
+    #[test]
+    fn test_default_min_wal_version_is_not_v1() {
+        let cfg = WalConfig::default();
+        assert!(
+            cfg.min_wal_version >= WalVersion::V2,
+            "Default min_wal_version must be at least V2 (HMAC required). \
+             V1 (no HMAC) must never be the default."
+        );
+    }
 
     #[test]
     fn test_wal_entry_serialization_roundtrip() {
