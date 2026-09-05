@@ -14,9 +14,9 @@
 // INVARIANT: Trait-Contracts sind das API-Rückgrat des Workspace.
 // REGEL: Neue Methoden MÜSSEN Default-Impl haben (backward compat).
 
-use ahash::AHashMap;
 use crate::types::*;
 use crate::Result;
+use ahash::AHashMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 

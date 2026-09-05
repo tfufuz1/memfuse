@@ -209,7 +209,10 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                 message: msg.clone(),
                 details: None,
             },
-            MemFuseError::Timeout { operation, timeout_ms } => Self {
+            MemFuseError::Timeout {
+                operation,
+                timeout_ms,
+            } => Self {
                 kind: "Timeout".to_string(),
                 message: err.to_string(),
                 details: Some(serde_json::json!({

@@ -20,6 +20,8 @@
 
 pub mod anti_tamper;
 pub mod crypto;
+pub mod error;
 pub mod wal_crypto;
 
 pub use crypto::KeyManager as CryptoKey;
+pub use error::{CryptoError, Result};

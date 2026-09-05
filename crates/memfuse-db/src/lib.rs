@@ -5,7 +5,6 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
-#![allow(deprecated)]
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! ## Concurrency & Lock Hierarchy
@@ -797,7 +796,6 @@ impl MemFuse {
     }
 
     /// Performs semantic k-NN search over stored embeddings.
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
         self.default_col()
@@ -831,7 +829,6 @@ impl MemFuse {
     }
 
     /// Performs semantic search with an advanced metadata filter expression (`FilterExpr`).
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_with_filter_expr(
         &self,
@@ -876,7 +873,6 @@ impl MemFuse {
     }
 
     /// Performs text search via the default collection.
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn search_text(&self, text: &str, k: usize) -> Result<Vec<SearchResult>> {
         self.default_col()
@@ -905,7 +901,6 @@ impl MemFuse {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal.
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities))]
     pub async fn hybrid_search(
         &self,
@@ -924,7 +919,6 @@ impl MemFuse {
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
     #[cfg(feature = "reranking")]
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, reranker, anchor_entities))]
     pub async fn hybrid_search_reranked(
         &self,
@@ -946,7 +940,6 @@ impl MemFuse {
     }
 
     /// Performs hybrid search with custom signal fusion weights.
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights))]
     pub async fn hybrid_search_with_weights(
         &self,
@@ -968,7 +961,6 @@ impl MemFuse {
     }
 
     /// Performs hybrid search with custom signal fusion weights and graph traversal strategy.
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, anchor_entities, weights, strategy))]
     pub async fn hybrid_search_with_strategy(
         &self,
@@ -994,7 +986,6 @@ impl MemFuse {
     }
 
     /// Performs hybrid search using a `HybridQuery` configuration object.
-    #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query))]
     pub async fn hybrid_search_with_query(
         &self,
@@ -1183,7 +1174,6 @@ impl SandboxBridge for MemFuse {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     // expect #[cfg(test)]
     // unwrap #[cfg(test)]
@@ -1518,7 +1508,13 @@ mod tests {
         let col_a = db.collection("alpha").await.unwrap(); // unwrap
         let col_b = db.collection("beta").await.unwrap(); // unwrap
         col_a.insert("doc1", &vec, None).await.unwrap(); // unwrap
-        let results = col_b.search(&vec, 10).await.unwrap(); // unwrap
+        let results = col_b
+            .query()
+            .embedding(&vec)
+            .k(10)
+            .execute()
+            .await
+            .unwrap(); // unwrap
         assert!(
             results.is_empty(),
             "Collection B must not see Collection A's data"
@@ -1547,7 +1543,10 @@ mod tests {
         assert_eq!(res_b.metadata.expect("test")["val"], "b"); // expect
 
         let search_a = col_a
-            .search(&[1.0, 0.0, 0.0, 0.0], 1)
+            .query()
+            .embedding(&[1.0, 0.0, 0.0, 0.0])
+            .k(1)
+            .execute()
             .await
             .expect("search a"); // expect
         assert_eq!(search_a.len(), 1);
@@ -1713,7 +1712,13 @@ mod tests {
             db.storage.commit(tx).await.expect("commit"); // expect
 
             // Verify it's NOT in HNSW yet (search should fail to find it)
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
+            let results = col
+                .query()
+                .embedding(&[1.0, 0.0, 0.0, 0.0])
+                .k(1)
+                .execute()
+                .await
+                .expect("search"); // expect
             assert!(results.is_empty(), "Should not be in HNSW yet");
 
             db.close().await.expect("close"); // expect
@@ -1727,7 +1732,13 @@ mod tests {
             let col = db.collection("recovery-test").await.expect("col"); // expect
 
             // Verify it IS now in HNSW
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
+            let results = col
+                .query()
+                .embedding(&[1.0, 0.0, 0.0, 0.0])
+                .k(1)
+                .execute()
+                .await
+                .expect("search"); // expect
             assert_eq!(results.len(), 1, "Should be repaired and found in HNSW");
             assert_eq!(results[0].id, "recovered-doc");
 
@@ -1809,7 +1820,13 @@ mod tests {
                 .expect("open 2 (repair idempotent)"); // expect
             let col = db.collection("idempotent-test").await.expect("col"); // expect
 
-            let results = col.search(&[1.0, 0.0, 0.0, 0.0], 1).await.expect("search"); // expect
+            let results = col
+                .query()
+                .embedding(&[1.0, 0.0, 0.0, 0.0])
+                .k(1)
+                .execute()
+                .await
+                .expect("search"); // expect
             assert_eq!(results.len(), 1);
             assert_eq!(results[0].id, "already-indexed-doc");
         }
@@ -2035,6 +2052,7 @@ mod tests {
         .await
         .expect("insert");
 
+        #[allow(deprecated)]
         let vec_results = col
             .search(&[1.0, 0.0, 0.0, 0.0], 1)
             .await
