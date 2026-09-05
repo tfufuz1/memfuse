@@ -82,14 +82,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         let stored_meta = serde_json::from_slice::<StoredDocumentMeta>(&val).ok();
 
                         if let Some(meta) = stored_meta {
-                            if !indexed_ids.contains(&doc_id) {
-                                if let Some(vector) = self.index.get_vector_by_doc_id(doc_id) {
-                                    self.index.insert(recovery_tx, doc_id, &vector).await?;
-                                    repair_count += 1;
-                                    recovered_any = true;
-                                }
-                            }
-
                             if has_text {
                                 if let Some(text) = extract_text(&meta.metadata) {
                                     self.text_index
@@ -150,7 +142,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 continue;
             }
 
-            let stored: StoredDocumentMeta = match serde_json::from_slice(&value) {
+            let val: serde_json::Value = match serde_json::from_slice(&value) {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::debug!(
@@ -162,17 +154,29 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 }
             };
 
-            let doc_id = DocId::from_key(&stored.id)?;
+            let id_str = match val.get("id").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let doc_id = DocId::from_key(id_str)?;
             if !indexed_ids.contains(&doc_id) {
-                self.index
-                    .insert(fallback_tx, doc_id, &stored.embedding)
-                    .await?;
-                repair_count += 1;
-                fallback_any = true;
+                if let Some(emb_arr) = val.get("embedding").and_then(|e| e.as_array()) {
+                    let emb: Vec<f32> = emb_arr
+                        .iter()
+                        .filter_map(|x| x.as_f64().map(|f| f as f32))
+                        .collect();
+                    if !emb.is_empty() {
+                        self.index.insert(fallback_tx, doc_id, &emb).await?;
+                        repair_count += 1;
+                        fallback_any = true;
+                    }
+                }
             }
 
+            let metadata = val.get("metadata").cloned();
             // Ensure text index coverage
-            if let Some(text) = extract_text(&stored.metadata) {
+            if let Some(text) = extract_text(&metadata) {
                 if let Ok(bm25_res) = self.text_index.search_bm25(&text, 1, None).await {
                     if !bm25_res.iter().any(|(id, _)| *id == doc_id) {
                         self.text_index
@@ -376,7 +380,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 "Document not found: {doc_id}"
             )));
         };
-        let mut stored: StoredDocumentMeta = serde_json::from_slice(&data)?;
+        let mut stored_meta: StoredDocumentMeta = serde_json::from_slice(&data)?;
 
         let text = extract_text(&stored_meta.metadata).unwrap_or_else(|| stored_meta.id.clone());
 

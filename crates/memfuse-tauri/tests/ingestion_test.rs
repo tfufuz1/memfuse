@@ -213,3 +213,83 @@ async fn test_ingestion_creates_graph_entities() {
         "Extracted entity should exist in graph and have connections"
     );
 }
+
+#[tokio::test]
+async fn test_reimport_identical_content_is_skipped() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config).await?;
+    let collection = db.collection("duplicate-test").await?;
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("invoice.md");
+    let content = "# Invoice\nAmount: 100 EUR\nCustomer: ACME";
+    std::fs::write(&doc_path, content)?;
+
+    let first_report = pipeline.ingest_file(&doc_path, &collection).await?;
+
+    assert!(first_report.chunks_created > 0);
+    assert!(!first_report.skipped_as_duplicate);
+
+    let second_report = pipeline.ingest_file(&doc_path, &collection).await?;
+
+    assert_eq!(second_report.chunks_created, 0);
+    assert!(second_report.skipped_as_duplicate);
+    assert!(
+        second_report
+            .errors
+            .iter()
+            .any(|e| e.contains("Re-Import übersprungen"))
+    );
+
+    let results = collection
+        .query()
+        .embedding([0.1, 0.1, 0.1, 0.1])
+        .k(10)
+        .execute()
+        .await?;
+
+    assert_eq!(results.len(), first_report.chunks_created);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_reimport_modified_content_is_not_skipped() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config).await?;
+    let collection = db.collection("modified-test").await?;
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("invoice.md");
+    let initial_content = "# Invoice v1\nAmount: 100 EUR\nCustomer: ACME";
+    std::fs::write(&doc_path, initial_content)?;
+
+    let first_report = pipeline.ingest_file(&doc_path, &collection).await?;
+
+    assert!(first_report.chunks_created > 0);
+    assert!(!first_report.skipped_as_duplicate);
+
+    let modified_content = "# Invoice v2\nAmount: 150 EUR\nCustomer: ACME";
+    std::fs::write(&doc_path, modified_content)?;
+
+    let second_report = pipeline.ingest_file(&doc_path, &collection).await?;
+
+    assert!(second_report.chunks_created > 0);
+    assert!(!second_report.skipped_as_duplicate);
+    Ok(())
+}

@@ -2930,6 +2930,7 @@ name = "memfuse-tauri"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "blake3",
  "docx-rs",
  "futures-util",
  "mailparse",
