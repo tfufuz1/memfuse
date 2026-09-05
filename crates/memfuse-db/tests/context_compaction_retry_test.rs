@@ -1,7 +1,9 @@
+use memfuse_core::{DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine};
+use memfuse_db::{
+    cleanup_orphaned_consolidation_intents, ContextCompactor, MemFuse, MemFuseConfig,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use memfuse_core::{DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine};
-use memfuse_db::{cleanup_orphaned_consolidation_intents, ContextCompactor, MemFuse, MemFuseConfig};
 
 struct MockLlmGenerator {
     call_count: Arc<AtomicUsize>,
@@ -85,8 +87,14 @@ async fn test_consolidate_with_retry_succeeds_on_first_attempt() -> Result<()> {
     ContextCompactor::consolidate_with_retry(&col, &[d1, d2], target_id, &llm, 3).await?;
 
     assert_eq!(llm.call_count.load(Ordering::SeqCst), 1);
-    assert!(col.get("src_1").await?.is_none(), "Source 1 must be deleted on successful consolidation");
-    assert!(col.get("src_2").await?.is_none(), "Source 2 must be deleted on successful consolidation");
+    assert!(
+        col.get("src_1").await?.is_none(),
+        "Source 1 must be deleted on successful consolidation"
+    );
+    assert!(
+        col.get("src_2").await?.is_none(),
+        "Source 2 must be deleted on successful consolidation"
+    );
 
     Ok(())
 }
@@ -160,7 +168,14 @@ async fn test_consolidate_with_retry_fails_after_max_retries() -> Result<()> {
         call_count: call_count.clone(),
     };
 
-    let res = ContextCompactor::consolidate_with_retry(&col, &[d1, d2], target_id, &always_mutating_llm, 2).await;
+    let res = ContextCompactor::consolidate_with_retry(
+        &col,
+        &[d1, d2],
+        target_id,
+        &always_mutating_llm,
+        2,
+    )
+    .await;
 
     assert!(res.is_err(), "Must return error after max_retries reached");
     assert!(matches!(res.unwrap_err(), MemFuseError::StaleRead(_)));

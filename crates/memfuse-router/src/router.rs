@@ -135,7 +135,10 @@ impl RouterEngine {
         let profile_name = match self.pending_decisions.write().remove(&decision_id) {
             Some(name) => name,
             None => {
-                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
+                tracing::warn!(
+                    ?decision_id,
+                    "record_outcome: unbekannte DecisionId ignoriert"
+                );
                 return false;
             }
         };
@@ -178,7 +181,10 @@ impl RouterEngine {
         let profile_name = match self.pending_decisions.write().remove(&decision_id) {
             Some(name) => name,
             None => {
-                tracing::warn!(?decision_id, "record_outcome: unbekannte DecisionId ignoriert");
+                tracing::warn!(
+                    ?decision_id,
+                    "record_outcome: unbekannte DecisionId ignoriert"
+                );
                 return false;
             }
         };

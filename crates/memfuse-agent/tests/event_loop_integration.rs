@@ -310,13 +310,18 @@ async fn test_notify_push_event_source_wait_for_event() {
     let (engine, db, _tmp) = setup_test_environment().await;
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start node", NodeType::Start, None).unwrap();
-    graph.try_add_node("end", "End node", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node("end", "End node", NodeType::End, None)
+        .unwrap();
     graph.try_add_edge("start", "end", None, 1).unwrap();
 
     let state_col = db.collection("agent-state").await.expect("state col");
     let budget = TokenBudget::new(1000, 0);
-    let mut ctx = AgentContext::try_new("task-notify-1", "start", db.clone(), state_col, budget).unwrap();
+    let mut ctx =
+        AgentContext::try_new("task-notify-1", "start", db.clone(), state_col, budget).unwrap();
 
     let notify = Arc::new(tokio::sync::Notify::new());
     let mut source = NotifyEventSource {

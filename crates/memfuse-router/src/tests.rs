@@ -3,7 +3,9 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use crate::{dispatch_to_slm, DecisionId, RouterEngine, RoutingDecision, RoutingOutcome, SlmProfile};
+    use crate::{
+        dispatch_to_slm, DecisionId, RouterEngine, RoutingDecision, RoutingOutcome, SlmProfile,
+    };
     use memfuse_core::{EntityId, MemFuseError, StorageEngine, TokenBudget};
     use memfuse_db::{MemFuse, MemFuseConfig};
     use serde_json::json;
@@ -1843,7 +1845,8 @@ mod tests {
 
         let cal_after = router.calibration_stats();
         assert!(
-            cal_after["default"].conformal.window_total > cal_before["default"].conformal.window_total,
+            cal_after["default"].conformal.window_total
+                > cal_before["default"].conformal.window_total,
             "window_total should increase after record_outcome"
         );
     }

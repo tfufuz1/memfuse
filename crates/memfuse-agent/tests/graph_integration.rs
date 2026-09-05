@@ -62,24 +62,44 @@ async fn test_decision_node_condition_branching() {
     let engine = memfuse_agent::OrchestratorEngine::new(storage);
 
     let mut graph = StateGraph::new();
-    graph.try_add_node("start", "Start node", NodeType::Start, None).unwrap();
-    graph.try_add_node("decision", "Branch decision", NodeType::Decision, None).unwrap();
-    graph.try_add_node("high_prio_path", "High Prio Path", NodeType::End, None).unwrap();
-    graph.try_add_node("low_prio_path", "Low Prio Path", NodeType::End, None).unwrap();
+    graph
+        .try_add_node("start", "Start node", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node("decision", "Branch decision", NodeType::Decision, None)
+        .unwrap();
+    graph
+        .try_add_node("high_prio_path", "High Prio Path", NodeType::End, None)
+        .unwrap();
+    graph
+        .try_add_node("low_prio_path", "Low Prio Path", NodeType::End, None)
+        .unwrap();
 
     graph.try_add_edge("start", "decision", None, 1).unwrap();
 
     // Edge A: High priority (10), condition requires "flag == false"
-    graph.try_add_edge("decision", "high_prio_path", Some("flag == false"), 10).unwrap();
+    graph
+        .try_add_edge("decision", "high_prio_path", Some("flag == false"), 10)
+        .unwrap();
     // Edge B: Low priority (1), condition requires "flag == true"
-    graph.try_add_edge("decision", "low_prio_path", Some("flag == true"), 1).unwrap();
+    graph
+        .try_add_edge("decision", "low_prio_path", Some("flag == true"), 1)
+        .unwrap();
 
     let state_col = db.collection("agent-state").await.expect("state col");
     let budget = memfuse_core::TokenBudget::new(1000, 0);
-    let mut ctx = memfuse_agent::AgentContext::try_new("task-decision-1", "start", db.clone(), state_col, budget).unwrap();
+    let mut ctx = memfuse_agent::AgentContext::try_new(
+        "task-decision-1",
+        "start",
+        db.clone(),
+        state_col,
+        budget,
+    )
+    .unwrap();
 
     // Set memory flag to true
-    ctx.memory.insert("flag".to_string(), serde_json::json!(true));
+    ctx.memory
+        .insert("flag".to_string(), serde_json::json!(true));
 
     engine.run(&mut ctx, &graph).await.expect("run engine");
 

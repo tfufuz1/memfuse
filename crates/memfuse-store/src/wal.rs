@@ -756,7 +756,7 @@ impl Wal {
             #[cfg(windows)]
             if let Err(e) = set_restrictive_file_acl(&tmp_path) {
                 let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err(e);
+                return Err(e.into());
             }
 
             // Atomically link tmp_path to key_path. Fails if key_path already exists (O_EXCL semantics).
@@ -989,7 +989,7 @@ impl Wal {
 
     fn get_integrity_key(&self) -> Result<[u8; 32]> {
         if let Some(km) = &self.key_manager {
-            km.integrity_key()
+            km.integrity_key().map_err(Into::into)
         } else if let Some(key) = self.fallback_integrity_key {
             Ok(key)
         } else {
@@ -1237,7 +1237,7 @@ impl Wal {
                     };
 
                     let snapshot = WalEntrySnapshot {
-                        tx_id: entry.tx_id(),
+                        tx_id: entry.tx_id().inner(),
                         seq_no: entry.seq_no,
                         op_type,
                         key,
@@ -1276,10 +1276,10 @@ impl Wal {
                                 verifier = legacy_verifier;
                                 using_legacy_key = true;
                             } else {
-                                return Err(e);
+                                return Err(e.into());
                             }
                         } else {
-                            return Err(e);
+                            return Err(e.into());
                         }
                     }
 
@@ -1347,7 +1347,7 @@ impl Wal {
                 };
 
                 let snapshot = WalEntrySnapshot {
-                    tx_id: entry.tx_id(),
+                    tx_id: entry.tx_id().inner(),
                     seq_no: entry.seq_no,
                     op_type,
                     key,
@@ -1387,10 +1387,10 @@ impl Wal {
                             verifier = legacy_verifier;
                             using_legacy_key = true;
                         } else {
-                            return Err(e);
+                            return Err(e.into());
                         }
                     } else {
-                        return Err(e);
+                        return Err(e.into());
                     }
                 }
 
@@ -2346,7 +2346,10 @@ mod tests {
         let sub_km = km.derive_file_key(&uuid_bytes).expect("derive file key"); // expect
 
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
-        let integrity_key = sub_km.integrity_key().expect("integrity key"); // expect
+        let integrity_key = sub_km
+            .integrity_key()
+            .map_err(Into::into)
+            .expect("integrity key"); // expect
 
         let op1 = WalOp::Put {
             tx_id: TxId::new(10),

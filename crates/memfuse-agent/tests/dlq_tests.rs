@@ -1,6 +1,5 @@
 use memfuse_agent::{
-    AgentContext, AgentTool, DeadLetterReason, NodeType, OrchestratorEngine, StateGraph,
-    StepResult,
+    AgentContext, AgentTool, DeadLetterReason, NodeType, OrchestratorEngine, StateGraph, StepResult,
 };
 use memfuse_core::{MemFuseError, Result, TokenBudget};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -70,14 +69,20 @@ async fn test_tool_timeout_creates_dead_letter() -> Result<()> {
         DeadLetterReason::Timeout { timeout_ms } => {
             assert_eq!(*timeout_ms, 50);
         }
-        _ => panic!("Expected DeadLetterReason::Timeout, got {:?}", letter.failure_reason),
+        _ => panic!(
+            "Expected DeadLetterReason::Timeout, got {:?}",
+            letter.failure_reason
+        ),
     }
 
     let drained = dlq.drain().await?;
     assert_eq!(drained.len(), letters.len());
 
     let list_after_drain = dlq.list().await?;
-    assert!(list_after_drain.is_empty(), "DLQ should be empty after drain");
+    assert!(
+        list_after_drain.is_empty(),
+        "DLQ should be empty after drain"
+    );
 
     Ok(())
 }
@@ -141,7 +146,10 @@ async fn test_tool_retry_succeeds_on_second_attempt() -> Result<()> {
 
     let dlq = engine.dead_letter_queue.as_ref().unwrap();
     let letters = dlq.list().await?;
-    assert!(letters.is_empty(), "DLQ should be empty when workflow succeeds after retry");
+    assert!(
+        letters.is_empty(),
+        "DLQ should be empty when workflow succeeds after retry"
+    );
 
     Ok(())
 }

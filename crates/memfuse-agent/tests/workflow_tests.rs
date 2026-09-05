@@ -552,6 +552,13 @@ async fn test_audit_log_field_reused_across_steps() {
     // Verify all 5 steps were executed and audit trail captured all steps
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 4); // 4 task nodes called tool
     let audit_log = AuditLog::new(state_col);
-    let entries = audit_log.replay_task("task-reuse-test").await.expect("replay");
-    assert_eq!(entries.len(), 5, "Audit log should contain entries for all 5 executed steps");
+    let entries = audit_log
+        .replay_task("task-reuse-test")
+        .await
+        .expect("replay");
+    assert_eq!(
+        entries.len(),
+        5,
+        "Audit log should contain entries for all 5 executed steps"
+    );
 }

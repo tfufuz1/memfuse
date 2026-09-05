@@ -383,8 +383,7 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             "memfuse-store" | "memfuse-index" | "memfuse-text" | "memfuse-crypto"
             | "memfuse-graph" | "memfuse-checkpoint" | "memfuse-embed" => 1,
             "memfuse-db" => 2,
-            "memfuse-py" | "memfuse-ollama" | "memfuse-agent"
-            | "memfuse-router" => 3,
+            "memfuse-py" | "memfuse-ollama" | "memfuse-agent" | "memfuse-router" => 3,
             "memfuse-mcp" | "memfuse-tauri" => 4,
             _ => 99,
         };
@@ -488,8 +487,12 @@ fn generate_invariants_table_section(crates: &[CrateInfo]) -> String {
     out.push_str("|---|---|---|\n");
     out.push_str("| **Souveränität** (Zero-C-Deps im Core) | ✅ Erfüllt | Core-Schichten laufen in Pure Rust. Ollama übernimmt LLM/Embeddings via HTTP. |\n");
     out.push_str("| **Zero-Panic** | 🟢 Vollständig | Alle offenen `.expect()`-Stellen im Prod-Code wurden umgestellt. |\n");
-    out.push_str("| **Determinismus** (SIMD) | ✅ Erfüllt | Cross-Check SIMD vs. Skalar via Proptest. |\n");
-    out.push_str("| **WAL-Crash-Consistency** | ✅ Erfüllt | Fault-Injection im WAL, HMAC-Chaining. |\n");
+    out.push_str(
+        "| **Determinismus** (SIMD) | ✅ Erfüllt | Cross-Check SIMD vs. Skalar via Proptest. |\n",
+    );
+    out.push_str(
+        "| **WAL-Crash-Consistency** | ✅ Erfüllt | Fault-Injection im WAL, HMAC-Chaining. |\n",
+    );
     out.push_str("| **Graph-Persistenz** | ✅ Erfüllt | Persistierung im LSM-Tree unter den Präfixen `__graph:entity:` und `__graph:edge:`. |\n");
     out.push_str(&format!(
         "| **DAG Integrity** | {} | Unidirektionale Schichten-Abhängigkeiten von Layer 0 bis Layer 4. |\n",
@@ -717,8 +720,16 @@ pub fn run_sync_docs(check_only: bool) -> bool {
         }
 
         let check_files = [
-            ("docs/ARCHITECTURE.md", "DAG_TOPOLOGY", dag_topology_content.clone()),
-            ("docs/ARCHITECTURE.md", "INVARIANTS_TABLE", invariants_content.clone()),
+            (
+                "docs/ARCHITECTURE.md",
+                "DAG_TOPOLOGY",
+                dag_topology_content.clone(),
+            ),
+            (
+                "docs/ARCHITECTURE.md",
+                "INVARIANTS_TABLE",
+                invariants_content.clone(),
+            ),
             (
                 "docs/SOURCE_OF_TRUTH.md",
                 "CRATE_INVENTORY",
@@ -1437,10 +1448,8 @@ pub struct DagViolation {
 /// Prüft für jeden CrateInfo, ob seine `dependencies` keine Crates aus
 /// einer höheren Layer referenzieren. Gibt Liste aller Verstöße zurück.
 pub fn check_dag_layer_violations(crates: &[CrateInfo]) -> Vec<DagViolation> {
-    let layer_map: std::collections::HashMap<&str, u8> = crates
-        .iter()
-        .map(|c| (c.name.as_str(), c.layer))
-        .collect();
+    let layer_map: std::collections::HashMap<&str, u8> =
+        crates.iter().map(|c| (c.name.as_str(), c.layer)).collect();
 
     let mut violations = Vec::new();
     for c in crates {
@@ -2317,17 +2326,13 @@ mod tests {
 
     #[test]
     fn test_run_check_dag_known_and_unknown_handling() {
-        let violations = vec![
-            DagViolation {
-                from_crate: "memfuse-db".to_string(),
-                from_layer: 2,
-                to_crate: "memfuse-ollama".to_string(),
-                to_layer: 3,
-            },
-        ];
-        let known_exceptions: &[(&str, &str)] = &[
-            ("memfuse-db", "memfuse-ollama"),
-        ];
+        let violations = vec![DagViolation {
+            from_crate: "memfuse-db".to_string(),
+            from_layer: 2,
+            to_crate: "memfuse-ollama".to_string(),
+            to_layer: 3,
+        }];
+        let known_exceptions: &[(&str, &str)] = &[("memfuse-db", "memfuse-ollama")];
 
         let mut untracked = Vec::new();
         for v in &violations {

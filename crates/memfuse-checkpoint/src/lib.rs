@@ -125,7 +125,11 @@ impl OrphanRegistry {
 
     /// Retrieves all currently registered orphaned pin sequence numbers.
     pub fn get_orphans(&self) -> Vec<PinId> {
-        self.inner.get_orphan_pins().into_iter().map(|o| o.seq_no).collect()
+        self.inner
+            .get_orphan_pins()
+            .into_iter()
+            .map(|o| o.seq_no)
+            .collect()
     }
 
     /// Synchronously clears memory and disk records.
@@ -400,7 +404,9 @@ pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> 
 )]
 #[allow(deprecated)]
 pub fn clear_orphaned_checkpoint(tx_id: TxId) {
-    global_orphan_registry().inner.clear_orphaned_checkpoint(tx_id);
+    global_orphan_registry()
+        .inner
+        .clear_orphaned_checkpoint(tx_id);
 }
 
 /// Clears all registered orphaned checkpoints.
@@ -444,7 +450,6 @@ fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
     }
     Ok(())
 }
-
 
 /// AI-TAG\[PANIC-SAFETY\]\[CRITICAL\] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074)
 /// Fault-Injection-Tests in
@@ -611,7 +616,13 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         orphan_registry: Arc<InstanceOrphanRegistry>,
     ) -> Self {
         let skipped_rollbacks = Arc::new(AtomicU64::new(0));
-        Self::with_registry_and_counter(checkpoint, storage, namespace, orphan_registry, skipped_rollbacks)
+        Self::with_registry_and_counter(
+            checkpoint,
+            storage,
+            namespace,
+            orphan_registry,
+            skipped_rollbacks,
+        )
     }
 
     pub fn with_registry_and_counter(

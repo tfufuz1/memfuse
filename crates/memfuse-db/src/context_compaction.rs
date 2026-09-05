@@ -460,8 +460,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        let token_count =
-                            crate::context::ContextManager::estimate_tokens(&content);
+                        let token_count = crate::context::ContextManager::estimate_tokens(&content);
                         chunks.push(ContextChunk {
                             doc_id,
                             content,
@@ -483,10 +482,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
         }
 
         // 3. Generate summary via LLM
-        let compactor = ContextCompactor::new(
-            TokenBudget::new(8192, 0),
-            CompactionStrategy::Summarize,
-        );
+        let compactor =
+            ContextCompactor::new(TokenBudget::new(8192, 0), CompactionStrategy::Summarize);
         let compacted = compactor
             .consolidate_via_llm(&chunks, generator, "default")
             .await?;

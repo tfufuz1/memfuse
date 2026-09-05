@@ -92,7 +92,6 @@ pub struct TextEmbedder {
     expected_dim: Option<usize>,
 }
 
-
 #[cfg(feature = "onnx")]
 #[async_trait]
 impl EmbeddingProvider for TextEmbedder {
@@ -128,7 +127,10 @@ impl EmbeddingProvider for TextEmbedder {
         self.expected_dim.unwrap_or(0)
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
+    async fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
         let limit = self.config.max_batch_size;
         if texts.len() > limit {
             return Err(EmbeddingError::Unavailable(format!(
@@ -142,9 +144,9 @@ impl EmbeddingProvider for TextEmbedder {
         for text in texts {
             let text_owned = text.to_string();
             let embedder = self.clone();
-            handles.push(tokio::spawn(async move {
-                embedder.embed(&text_owned).await
-            }));
+            handles.push(tokio::spawn(
+                async move { embedder.embed(&text_owned).await },
+            ));
         }
 
         let mut results = Vec::with_capacity(texts.len());

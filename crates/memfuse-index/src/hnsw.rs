@@ -1706,7 +1706,8 @@ impl HnswIndexCore {
         tracing::info!("HNSW index rebuild Phase 1 completed, starting Phase 2 merge & swap");
 
         // Phase 2: Lock write_mutex briefly, replay delta changes since snapshot_tx, and swap
-        self.rebuild_phase2_merge_and_swap(new_index, snapshot_tx).await?;
+        self.rebuild_phase2_merge_and_swap(new_index, snapshot_tx)
+            .await?;
 
         self.rebuild_count.fetch_add(1, Ordering::SeqCst);
         tracing::info!("HNSW rebuild completed in {:?}", start_time.elapsed());
@@ -3735,10 +3736,7 @@ mod tests {
             let tx2 = TxId::new(2);
             for i in 101u64..=150 {
                 let v = vec![i as f32, 0.0, 0.0, 0.0];
-                index_write
-                    .insert(tx2, DocId::new(i), &v)
-                    .await
-                    .unwrap(); // unwrap #[cfg(test)]
+                index_write.insert(tx2, DocId::new(i), &v).await.unwrap(); // unwrap #[cfg(test)]
             }
             index_write.commit(tx2).await.unwrap(); // unwrap #[cfg(test)]
 

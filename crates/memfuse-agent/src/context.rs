@@ -89,8 +89,10 @@ pub struct AgentContext {
     /// History of attached background telemetry events.
     pub events: VecDeque<crate::event_source::BackgroundEvent>,
     /// Offene Routing-Entscheidung, deren Ergebnis nach Tool-Ausführung zurückgemeldet werden soll.
-    pub pending_routing_decision:
-        Option<(Arc<memfuse_router::RouterEngine>, memfuse_router::DecisionId)>,
+    pub pending_routing_decision: Option<(
+        Arc<memfuse_router::RouterEngine>,
+        memfuse_router::DecisionId,
+    )>,
 }
 
 impl AgentContext {
