@@ -29,6 +29,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct StoredDocument {
+    pub id: String,
+    pub embedding: Vec<f32>,
+    pub metadata: Option<serde_json::Value>,
+}
+
 /// Leichtgewichtige Metadaten (für user_key und doc_key) — KEIN Embedding in LSM.
 /// Wird für DocId-basierte Hydration nach HNSW/BM25-Suche verwendet.
 ///
@@ -38,6 +45,15 @@ use std::sync::Arc;
 pub(crate) struct StoredDocumentMeta {
     pub id: String,
     pub metadata: Option<serde_json::Value>,
+}
+
+impl From<&StoredDocument> for StoredDocumentMeta {
+    fn from(doc: &StoredDocument) -> Self {
+        Self {
+            id: doc.id.clone(),
+            metadata: doc.metadata.clone(),
+        }
+    }
 }
 
 /// Parses an LLM response string into an f32 importance score in `[0.0, 1.0]`.
