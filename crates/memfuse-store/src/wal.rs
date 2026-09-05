@@ -1043,7 +1043,7 @@ impl Wal {
 
     fn get_integrity_key(&self) -> Result<[u8; 32]> {
         if let Some(km) = &self.key_manager {
-            km.integrity_key().map_err(Into::into)
+            km.integrity_key().map_err(MemFuseError::from)
         } else if let Some(key) = self.fallback_integrity_key {
             Ok(key)
         } else {
@@ -2402,7 +2402,7 @@ mod tests {
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
         let integrity_key = sub_km
             .integrity_key()
-            .map_err(Into::into)
+            .map_err(MemFuseError::from)
             .expect("integrity key"); // expect
 
         let op1 = WalOp::Put {

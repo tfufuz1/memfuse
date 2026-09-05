@@ -13045,6 +13045,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "c98a7b261daa28c4"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "c9a37343be6f0098"
   },
   {
@@ -13250,6 +13254,30 @@
   {
     "file": "crates/memfuse-store/tests/amplification_benchmark.rs",
     "hash": "e21a01f44fa37393"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "3f5ed148aca65548"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "48c7d5892e7cef44"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "9f0737131fbfaa28"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "ac7a4b360fd35e96"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "e8265a0e28407f5a"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "fbab130b7756addb"
   },
   {
     "file": "crates/memfuse-store/tests/compaction_correctness_and_pinning.rs",

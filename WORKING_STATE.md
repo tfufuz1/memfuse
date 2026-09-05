@@ -19,7 +19,7 @@ Ergebnis: **1 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9043 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9083 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2435 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
@@ -39,7 +39,7 @@ Ergebnis: **1 offene Tags**
 ## DAG-Topologie
 
 ```
-Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
+Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
 Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
           memfuse-embed —  (deps: memfuse-core)
