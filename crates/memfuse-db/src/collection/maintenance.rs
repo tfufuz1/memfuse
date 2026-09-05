@@ -183,13 +183,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
 
             let doc_id = DocId::from_key(&stored.id)?;
-            if !indexed_ids.contains(&doc_id) {
-                self.index
-                    .insert(fallback_tx, doc_id, &stored.embedding)
-                    .await?;
-                repair_count += 1;
-                fallback_any = true;
-            }
 
             // Ensure text index coverage
             if let Some(text) = extract_text(&stored.metadata) {
