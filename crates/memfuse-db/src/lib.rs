@@ -1583,12 +1583,15 @@ mod tests {
             let db = MemFuse::open_with_config(&path, config)
                 .await
                 .expect("open 2"); // expect
+            assert_eq!(db.len().await.expect("len"), 100); // expect
             for i in 0..100 {
                 let id = format!("doc-{}", i);
                 let doc = db.get(&id).await.expect("get").expect("exists"); // expect
                 assert_eq!(doc.id, id);
                 assert_eq!(doc.metadata.expect("valid")["idx"], i); // expect
             }
+            let results = db.search(&[0.5, 0.5, 0.0, 0.0], 10).await.expect("search"); // expect
+            assert_eq!(results.len(), 10);
         }
     }
 

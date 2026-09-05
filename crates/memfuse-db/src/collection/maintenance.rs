@@ -83,17 +83,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                         if let Some(meta) = stored_meta {
                             if !indexed_ids.contains(&doc_id) {
-                                let user_key = self.namespaced_key(meta.id.as_bytes(), 0);
-                                if let Ok(Some(user_val)) = self.storage.get(&user_key).await {
-                                    if let Ok(stored_doc) =
-                                        serde_json::from_slice::<super::StoredDocument>(&user_val)
-                                    {
-                                        self.index
-                                            .insert(recovery_tx, doc_id, &stored_doc.embedding)
-                                            .await?;
-                                        repair_count += 1;
-                                        recovered_any = true;
-                                    }
+                                if let Some(vector) = self.index.get_vector_by_doc_id(doc_id) {
+                                    self.index.insert(recovery_tx, doc_id, &vector).await?;
+                                    repair_count += 1;
+                                    recovered_any = true;
                                 }
                             }
 
@@ -157,7 +150,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 continue;
             }
 
-            let stored: super::StoredDocument = match serde_json::from_slice(&value) {
+            let stored: StoredDocumentMeta = match serde_json::from_slice(&value) {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::debug!(
@@ -385,7 +378,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
         let mut stored: StoredDocumentMeta = serde_json::from_slice(&data)?;
 
-        let text = extract_text(&stored.metadata).unwrap_or_else(|| stored.id.clone());
+        let text = extract_text(&stored_meta.metadata).unwrap_or_else(|| stored_meta.id.clone());
 
         let prompt = format!(
             "Bewerte die langfristige Wichtigkeit dieser Information für einen KI-Agenten \
@@ -406,11 +399,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let doc_id_typed = DocId::from_key(doc_id)?;
         let doc_key = self.namespaced_key(&doc_id_typed.inner().to_le_bytes(), 1);
 
-        let meta_obj = match stored.metadata {
+        let meta_obj = match stored_meta.metadata {
             Some(serde_json::Value::Object(ref mut map)) => map,
             _ => {
-                stored.metadata = Some(serde_json::json!({}));
-                match stored.metadata {
+                stored_meta.metadata = Some(serde_json::json!({}));
+                match stored_meta.metadata {
                     Some(serde_json::Value::Object(ref mut map)) => map,
                     _ => {
                         return Err(MemFuseError::Serialization(
@@ -446,7 +439,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             meta_obj.insert("importance".to_string(), val);
         }
 
-        let doc_bytes = serde_json::to_vec(&stored)?;
+        let doc_bytes = serde_json::to_vec(&stored_meta)?;
 
         let _guard = self.insert_lock.lock().await;
         self.storage.put(tx, &user_key, &doc_bytes).await?;
