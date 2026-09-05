@@ -533,6 +533,10 @@
   },
   {
     "file": "crates/memfuse-agent/tests/event_loop_integration.rs",
+    "hash": "6bb8c69595e506e4"
+  },
+  {
+    "file": "crates/memfuse-agent/tests/event_loop_integration.rs",
     "hash": "6f449ff9e2d00697"
   },
   {
@@ -606,6 +610,10 @@
   {
     "file": "crates/memfuse-agent/tests/event_loop_integration.rs",
     "hash": "efa328bd095dffe6"
+  },
+  {
+    "file": "crates/memfuse-agent/tests/event_loop_integration.rs",
+    "hash": "f59bc8e87344cd92"
   },
   {
     "file": "crates/memfuse-agent/tests/event_loop_integration.rs",
@@ -10313,6 +10321,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "3127e1806ff7e90b"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "346716adaa2b2e4b"
   },
   {
@@ -10438,10 +10450,6 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "98a9344b44ae8f3f"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "a02aafa71660434c"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -13340,6 +13348,30 @@
     "hash": "e9a799f2947eab7c"
   },
   {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "56b6bbd3c6b6df01"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "9eaabdaf6fbff3a9"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "b7e27217df9f2c6a"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "c5d3177bc811ac5d"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "dcea1a314b87b098"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_power_cut.rs",
+    "hash": "f879820af1663bc8"
+  },
+  {
     "file": "crates/memfuse-store/tests/compaction_correctness_and_pinning.rs",
     "hash": "94f132f15420cbce"
   },
@@ -14505,6 +14537,10 @@
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "5a39f5ba63888f5d"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "613cc3542749b676"
   },
   {
@@ -14550,6 +14586,10 @@
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "96e329cb3bb6d346"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "9f92ba858b51c635"
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",

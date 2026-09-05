@@ -1,63 +1,26 @@
-//! Chaos writer example binary for fault-injection testing.
-//! Writes monotonically increasing keys and random payloads into `LsmStorage`,
-//! logging ground truth synchronously (with fsync) prior to staging and committing transactions.
-// FILE-CONTEXT
-// STAND: 2026-09-02T00:00:00Z
-// ZWECK: Fault-Injection & Chaos Testing Subprozess für PowerCut / SIGKILL Simulation
-// INVARIANTEN: Ground Truth fsync vor put/commit; Keine unwrap/expect/unsafe
-// SIEHE AUCH: rules/chaos_testing.md, AGENTS.md §5
+// FILE-CONTEXT: Helper process for chaos testing simulating mid-transaction process kills. (TS: 2026-09-05) (SESSION: chaos_power_cut)
+//! Helper worker binary for `chaos_power_cut` test.
+//!
+//! Writes sequential key-value entries to `LsmStorage` while logging transaction lifecycle
+//! states (`START` / `COMMITTED`) to an external ground-truth file for crash recovery verification.
 
-#![forbid(unsafe_code)]
-
-use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
+use memfuse_core::{MemFuseError, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use rand::Rng;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
-/// Inter-commit delay allowing external test orchestrator to terminate process during active window.
-const INTER_COMMIT_DELAY: Duration = Duration::from_millis(10);
-
-/// Length of random payload bytes generated for each written entry.
-const PAYLOAD_SIZE_BYTES: usize = 64;
-
-fn write_ground_truth(
-    path: &Path,
-    counter: u64,
-    key: &str,
-    val: &[u8],
-) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| MemFuseError::Storage(format!("Failed to open ground truth log file {:?}: {}", path, e)))?;
-
-    let val_hex: String = val.iter().map(|b| format!("{:02x}", b)).collect();
-    let line = format!("{}:{}:{}\n", counter, key, val_hex);
-
-    file.write_all(line.as_bytes())
-        .map_err(|e| MemFuseError::Storage(format!("Failed to write ground truth entry: {}", e)))?;
-
-    file.sync_all()
-        .map_err(|e| MemFuseError::Storage(format!("Failed to fsync ground truth log: {}", e)))?;
-
-    Ok(())
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
-        return Err(MemFuseError::InvalidInput(
-            "Usage: chaos_writer <storage_dir> <n_writes> <ground_truth_log_path>".into(),
-        ));
+        eprintln!("Usage: chaos_writer <storage_dir> <n_writes> <ground_truth_log_path>");
+        std::process::exit(1);
     }
 
     let storage_dir = PathBuf::from(&args[1]);
-    let n_writes: u64 = args[2].parse().map_err(|e| {
+    let n_writes: usize = args[2].parse().map_err(|e| {
         MemFuseError::InvalidInput(format!("Invalid n_writes argument '{}': {}", args[2], e))
     })?;
     let ground_truth_log_path = PathBuf::from(&args[3]);
@@ -68,21 +31,35 @@ async fn main() -> Result<()> {
     };
 
     let storage = LsmStorage::new(config).await?;
-    let mut rng = rand::thread_rng();
+
+    let mut log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&ground_truth_log_path)?;
 
     for i in 1..=n_writes {
-        let key = format!("key_{:010}", i);
-        let mut payload = vec![0u8; PAYLOAD_SIZE_BYTES];
-        rng.fill(&mut payload[..]);
+        let key_str = format!("key-{:06}", i);
+        let val_str = format!("val-{:06}-{}", i, rand::random::<u64>());
 
-        // VOR jedem put/commit-Aufruf: Ground truth synchron mit fsync schreiben
-        write_ground_truth(&ground_truth_log_path, i, &key, &payload)?;
+        // 1. Log START to external ground-truth file
+        writeln!(log_file, "START {} {} {}", i, key_str, val_str)?;
+        log_file.flush()?;
+        log_file.sync_all()?;
 
-        let tx_id = TxId::new(i);
-        storage.put(tx_id, key.as_bytes(), &payload).await?;
-        storage.commit(tx_id).await?;
+        // 2. Perform LSM storage put and commit
+        let tx = TxId::new(i as u64);
+        storage
+            .put(tx, key_str.as_bytes(), val_str.as_bytes())
+            .await?;
+        storage.commit(tx).await?;
 
-        tokio::time::sleep(INTER_COMMIT_DELAY).await;
+        // 3. Log COMMITTED to external ground-truth file
+        writeln!(log_file, "COMMITTED {} {} {}", i, key_str, val_str)?;
+        log_file.flush()?;
+        log_file.sync_all()?;
+
+        // Short sleep window to allow process kill injection
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     Ok(())

@@ -379,8 +379,8 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
         dependencies.dedup();
 
         let layer = match name.as_str() {
-            "memfuse-core" => 0,
-            "memfuse-store" | "memfuse-index" | "memfuse-text" | "memfuse-crypto"
+            "memfuse-core" | "memfuse-crypto" => 0,
+            "memfuse-store" | "memfuse-index" | "memfuse-text"
             | "memfuse-graph" | "memfuse-checkpoint" | "memfuse-embed" => 1,
             "memfuse-db" => 2,
             "memfuse-py" | "memfuse-ollama" | "memfuse-agent" | "memfuse-router" => 3,

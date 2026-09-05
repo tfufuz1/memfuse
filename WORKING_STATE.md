@@ -8,8 +8,12 @@
 
 Stand letzter Prüfung: 2026-09-05
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **2 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-ollama/src/context_prefixer.rs` | 97 | `AGT-OLLAMA-7eed57ec` | `CORRECTNESS` | `MINOR` | `2026-09-04T12:59:47Z` | // AI-TAG[CORRECTNESS][MINOR] XML entity truncation order risk (ID: AGT-OLLAMA-7eed57ec) (TS: 2026-09-04T12:59:47Z) (SESSION: d97322aa) |
+| `crates/memfuse-ollama/src/importance.rs` | 71 | `AGT-OLLAMA-14f5b422` | `ML-SCORING` | `MINOR` | `2026-09-04T12:59:47Z` | // AI-TAG[ML-SCORING][MINOR] Uncalibrated fallback score assignment on LLM parse failure (APM-22/APM-23) (ID: AGT-OLLAMA-14f5b422) (TS: 2026-09-04T12:59:47Z) (SESSION: d97322aa) |
 
 
 ## Crate-Inventar & Status
@@ -17,28 +21,28 @@ Ergebnis: **0 offene Tags**
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 9083 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-crypto` | 0 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7184 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11873 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 13931 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 14176 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19623 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 2 | 19622 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3341 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 3260 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 4767 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 4939 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
 
 ```
 Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
-Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-crypto — Encryption at Rest utilities for MemFuse
+Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)

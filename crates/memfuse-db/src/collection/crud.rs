@@ -958,29 +958,45 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             self.namespaced_key(prefix.as_bytes(), 0)
         };
 
-        let kvs = self.storage.scan_prefix(&real_prefix).await?;
+        let mut results = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
 
-        let mut results = Vec::with_capacity(kvs.len());
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            // We should ideally strip the prefix to return the user-facing key
-            // but for simplicity and compatibility with existing tests we keep it as is or strip carefully
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
+        loop {
+            let (batch, next_cursor) = self
+                .storage
+                .scan_prefix_bounded(&real_prefix, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
+                break;
+            }
+
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
                     key_str
-                }
-            };
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
 
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
+                if let Ok(val) = serde_json::from_slice(&v) {
+                    results.push((user_key, val));
+                }
+            }
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
             }
         }
+
         Ok(results)
     }
 
