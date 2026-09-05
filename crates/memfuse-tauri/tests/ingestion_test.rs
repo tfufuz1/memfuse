@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use memfuse_core::{GraphIndex, Result, TextEmbeddingEngine};
 use memfuse_db::{MemFuse, MemFuseConfig};
-use memfuse_tauri_lib::ingestion::IngestionPipeline;
+use memfuse_tauri_lib::ingestion::{IngestionPipeline, MAX_COOCCURRENCE_ENTITIES_PER_CHUNK};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -212,4 +212,116 @@ async fn test_ingestion_creates_graph_entities() {
         !traversal.is_empty(),
         "Extracted entity should exist in graph and have connections"
     );
+}
+
+#[tokio::test]
+async fn test_cooccurrence_edges_capped_for_large_entity_count() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db
+        .collection("cap-edges-test")
+        .await
+        .expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder);
+
+    let doc_path = tmp.path().join("many_entities.md");
+    let content = r#"
+    Partner Alpha Corp AG, Beta Corp AG, Gamma Corp AG, Delta Corp AG,
+    Epsilon Corp AG, Zeta Corp AG, Eta Corp AG, Theta Corp AG, Iota Corp AG,
+    Kappa Corp AG, Lambda Corp AG, Mu Corp AG, Nu Corp AG, Xi Corp AG, Omicron Corp AG
+    haben eine Vereinbarung getroffen.
+    "#;
+    std::fs::write(&doc_path, content).expect("write md");
+
+    let report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("ingest_file");
+
+    assert!(report.chunks_created > 0);
+    assert!(report.errors.is_empty());
+
+    let graph = collection.graph_index();
+    let total_edges = graph.stats().await.expect("graph stats").num_edges;
+
+    let max_cooccurrence_directional_edges = MAX_COOCCURRENCE_ENTITIES_PER_CHUNK
+        * (MAX_COOCCURRENCE_ENTITIES_PER_CHUNK - 1);
+
+    // Total edges = cooccurrence_edges (capped at MAX_COOCCURRENCE * (MAX_COOCCURRENCE - 1)) + contains_edges + mentioned_in_edges
+    // For 15 entities, contains + mentioned_in = 30 edges.
+    // Uncapped cooccurrence would be 15 * 14 = 210 edges (+ 30 = 240 total).
+    // Capped cooccurrence (12 * 11 = 132 edges) + 30 = 162 total edges.
+    assert!(
+        total_edges <= max_cooccurrence_directional_edges + (2 * 15),
+        "Total edges ({total_edges}) exceeds capped bound ({})",
+        max_cooccurrence_directional_edges + (2 * 15)
+    );
+}
+
+#[tokio::test]
+async fn test_ingestion_with_entity_extraction_disabled_skips_graph_writes() {
+    let tmp = TempDir::new().expect("temp dir");
+    let db_path = tmp.path().join("db");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(&db_path, config)
+        .await
+        .expect("open db");
+
+    let collection = db
+        .collection("disabled-graph-test")
+        .await
+        .expect("collection");
+
+    let embedder = Arc::new(DummyEmbedder { dim: 4 });
+    let pipeline = IngestionPipeline::new(embedder).with_extract_entities(false);
+
+    let doc_path = tmp.path().join("anfrage_disabled.md");
+    let content = "Kunde Müller GmbH hat eine Anfrage gestellt.";
+    std::fs::write(&doc_path, content).expect("write md");
+
+    let report = pipeline
+        .ingest_file(&doc_path, &collection)
+        .await
+        .expect("ingest_file");
+
+    assert!(report.chunks_created > 0);
+    assert!(report.errors.is_empty());
+
+    let graph = collection.graph_index();
+    let extracted_term_id = memfuse_core::EntityId::from("Kunde Müller GmbH");
+    assert!(
+        !graph.entity_exists(extracted_term_id),
+        "Extracted term entity should NOT exist in graph when entity extraction is disabled"
+    );
+    assert_eq!(
+        graph.stats().await.expect("stats").num_edges,
+        0,
+        "Graph index should contain 0 edges when entity extraction is disabled"
+    );
+
+    let results = collection
+        .query()
+        .text("Anfrage")
+        .embedding([0.1, 0.1, 0.1, 0.1])
+        .k(5)
+        .execute()
+        .await
+        .expect("search");
+
+    assert!(!results.is_empty(), "Search should still return vector/text results");
 }

@@ -331,22 +331,27 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
         }
 
+        let stored_doc = super::StoredDocument {
+            id: id.to_string(),
+            embedding: embedding.to_vec(),
+            metadata: metadata.clone(),
+        };
+        let doc_bytes = serde_json::to_vec(&stored_doc)?;
+
         let meta = StoredDocumentMeta {
             id: id.to_string(),
             metadata: metadata.clone(),
         };
+        let meta_bytes = serde_json::to_vec(&meta)?;
 
-        // user_key (key_type=0) and doc_key (key_type=1) hold light metadata without embedding vector.
-        // Vector index (HNSW) is the single source of truth for vector embeddings.
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
         let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
         let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
 
-        let meta_data = serde_json::to_vec(&meta)?;
-        self.storage.put(tx, &user_key, &meta_data).await?;
-        self.storage.put(tx, &doc_key, &meta_data).await?;
+        self.storage.put(tx, &user_key, &meta_bytes).await?;
+        self.storage.put(tx, &doc_key, &doc_bytes).await?;
 
         // Record for compensating transaction with pre-write values
         db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
@@ -636,14 +641,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
         }
 
+        let stored_doc = super::StoredDocument {
+            id: id.to_string(),
+            embedding: embedding.to_vec(),
+            metadata: metadata.clone(),
+        };
+        let doc_bytes = serde_json::to_vec(&stored_doc)?;
+
         let meta = StoredDocumentMeta {
             id: id.to_string(),
             metadata: metadata.clone(),
         };
-        let meta_data = serde_json::to_vec(&meta)?;
+        let meta_bytes = serde_json::to_vec(&meta)?;
 
-        self.storage.put(tx, &user_key, &meta_data).await?;
-        self.storage.put(tx, &doc_key, &meta_data).await?;
+        self.storage.put(tx, &user_key, &meta_bytes).await?;
+        self.storage.put(tx, &doc_key, &doc_bytes).await?;
 
         db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
 

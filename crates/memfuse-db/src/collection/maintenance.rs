@@ -79,41 +79,47 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 for doc_id in doc_ids {
                     let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
                     if let Some(val) = self.storage.get(&doc_key).await? {
-                        let stored_meta = serde_json::from_slice::<StoredDocumentMeta>(&val).ok();
+                        let meta_opt = serde_json::from_slice::<StoredDocumentMeta>(&val).ok();
+                        let id_str = if let Some(ref meta) = meta_opt {
+                            meta.id.clone()
+                        } else if let Ok(doc) = serde_json::from_slice::<super::StoredDocument>(&val) {
+                            doc.id
+                        } else {
+                            continue;
+                        };
+                        let metadata = meta_opt.as_ref().and_then(|m| m.metadata.clone());
 
-                        if let Some(meta) = stored_meta {
-                            if !indexed_ids.contains(&doc_id) {
-                                if let Some(vector) = self.index.get_vector_by_doc_id(doc_id) {
-                                    self.index.insert(recovery_tx, doc_id, &vector).await?;
+                        if !indexed_ids.contains(&doc_id) {
+                            let user_key = self.namespaced_key(id_str.as_bytes(), 0);
+                            let user_val_opt = self.storage.get(&user_key).await?;
+                            let val_to_check = user_val_opt.as_ref().unwrap_or(&val);
+                            if let Ok(user_doc) = serde_json::from_slice::<super::StoredDocument>(val_to_check) {
+                                if !user_doc.embedding.is_empty() {
+                                    self.index
+                                        .insert(recovery_tx, doc_id, &user_doc.embedding)
+                                        .await?;
                                     repair_count += 1;
                                     recovered_any = true;
                                 }
                             }
+                        }
 
-                            if has_text {
-                                if let Some(text) = extract_text(&meta.metadata) {
-                                    self.text_index
-                                        .upsert_document(recovery_tx, doc_id, &text)
-                                        .await?;
-                                    recovered_text = true;
-                                }
+                        if has_text {
+                            if let Some(text) = extract_text(&metadata) {
+                                self.text_index
+                                    .upsert_document(recovery_tx, doc_id, &text)
+                                    .await?;
+                                recovered_text = true;
                             }
+                        }
 
-                            if has_graph {
-                                if let Ok(eid) = EntityId::from_key(&meta.id) {
-                                    let entity =
-                                        memfuse_core::Entity::new(eid, &meta.id, "Document");
-                                    if let Err(e) =
-                                        self.graph_index.add_entity(recovery_tx, entity).await
-                                    {
-                                        tracing::warn!(
-                                            doc_id = %meta.id,
-                                            error = %e,
-                                            "Konnte Entity bei Graph-Integritäts-Wiederherstellung nicht hinzufügen"
-                                        );
-                                    } else {
-                                        recovered_graph = true;
-                                    }
+                        if has_graph {
+                            if let Ok(eid) = EntityId::from_key(&id_str) {
+                                let entity = memfuse_core::Entity::new(eid, &id_str, "Document");
+                                if let Err(e) = self.graph_index.add_entity(recovery_tx, entity).await {
+                                    tracing::warn!(doc_id = %id_str, error = %e, "Konnte Entity bei Graph-Integritäts-Wiederherstellung nicht hinzufügen");
+                                } else {
+                                    recovered_graph = true;
                                 }
                             }
                         }
@@ -135,6 +141,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             self.graph_index.commit(recovery_tx).await?;
         }
 
+        // Re-read active indexed_ids after intent recovery before running fallback scan
+        let indexed_ids: std::collections::HashSet<DocId> =
+            self.index.all_doc_ids().await?.into_iter().collect();
+
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
         let fallback_tx = self.allocate_tx()?;
         let mut fallback_any = false;
@@ -150,7 +160,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 continue;
             }
 
-            let stored: StoredDocumentMeta = match serde_json::from_slice(&value) {
+            let stored: super::StoredDocument = match serde_json::from_slice(&value) {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::debug!(
@@ -378,7 +388,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
         let mut stored: StoredDocumentMeta = serde_json::from_slice(&data)?;
 
-        let text = extract_text(&stored_meta.metadata).unwrap_or_else(|| stored_meta.id.clone());
+        let text = extract_text(&stored.metadata).unwrap_or_else(|| stored.id.clone());
 
         let prompt = format!(
             "Bewerte die langfristige Wichtigkeit dieser Information für einen KI-Agenten \
@@ -399,11 +409,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let doc_id_typed = DocId::from_key(doc_id)?;
         let doc_key = self.namespaced_key(&doc_id_typed.inner().to_le_bytes(), 1);
 
-        let meta_obj = match stored_meta.metadata {
+        let meta_obj = match stored.metadata {
             Some(serde_json::Value::Object(ref mut map)) => map,
             _ => {
-                stored_meta.metadata = Some(serde_json::json!({}));
-                match stored_meta.metadata {
+                stored.metadata = Some(serde_json::json!({}));
+                match stored.metadata {
                     Some(serde_json::Value::Object(ref mut map)) => map,
                     _ => {
                         return Err(MemFuseError::Serialization(
@@ -439,7 +449,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             meta_obj.insert("importance".to_string(), val);
         }
 
-        let doc_bytes = serde_json::to_vec(&stored_meta)?;
+        let doc_bytes = serde_json::to_vec(&stored)?;
 
         let _guard = self.insert_lock.lock().await;
         self.storage.put(tx, &user_key, &doc_bytes).await?;

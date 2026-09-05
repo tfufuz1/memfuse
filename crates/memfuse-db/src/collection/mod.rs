@@ -422,37 +422,22 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Performs a range scan of documents in the collection.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn load_index(&self) -> Result<()> {
-        // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z)
-        // because doc_keys (key_type=1) no longer contain embeddings (ID: AGT-DB-002).
         let scan_prefix = if self.name == "default" {
-            b"".to_vec()
+            b"__docid:".to_vec()
         } else {
             let mut p = self.prefix.clone();
-            p.push(0); // key_type=0
+            p.push(1); // key_type=1 for doc_id mapping
             p
         };
 
         let entries = self.storage.scan_prefix(&scan_prefix).await?;
         let tx = self.allocate_tx()?;
-        for (k, v) in entries {
-            if self.name == "default" && k.starts_with(b"__") {
-                continue;
-            }
-
-            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&v) {
-                if let (Some(id_str), Some(emb_arr)) = (
-                    val.get("id").and_then(|i| i.as_str()),
-                    val.get("embedding").and_then(|e| e.as_array()),
-                ) {
-                    let emb: Vec<f32> = emb_arr
-                        .iter()
-                        .filter_map(|x| x.as_f64().map(|f| f as f32))
-                        .collect();
-                    if !emb.is_empty() {
-                        if let Ok(doc_id) = DocId::from_key(id_str) {
-                            if let Err(e) = self.index.insert(tx, doc_id, &emb).await {
-                                tracing::warn!(doc_id = ?doc_id, error = %e, "Konnte Dokument bei load_index nicht in Index einfügen");
-                            }
+        for (_k, v) in entries {
+            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&v) {
+                if !stored.embedding.is_empty() {
+                    if let Ok(doc_id) = DocId::from_key(&stored.id) {
+                        if let Err(e) = self.index.insert(tx, doc_id, &stored.embedding).await {
+                            tracing::warn!(doc_id = ?doc_id, error = %e, "Konnte Dokument bei load_index nicht in Index einfügen");
                         }
                     }
                 }
