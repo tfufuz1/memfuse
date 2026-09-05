@@ -91,6 +91,7 @@ mod tests {
         let router = RouterEngine::new(
             collection.clone(),
             vec![coding_profile.clone(), docs_profile.clone()],
+            None,
         );
 
         // Query coding
@@ -141,7 +142,7 @@ mod tests {
             0.99, // unreachable score threshold
         );
 
-        let router = RouterEngine::new(collection.clone(), vec![strict_profile]);
+        let router = RouterEngine::new(collection.clone(), vec![strict_profile], None);
 
         let result = router.route(&[0.1, 0.1, 0.1, 0.1], "search").await;
         assert!(result.is_err());
@@ -246,7 +247,7 @@ mod tests {
             0.01,
         );
 
-        let router = Arc::new(RouterEngine::new(collection, vec![profile_v1]));
+        let router = Arc::new(RouterEngine::new(collection, vec![profile_v1], None));
 
         // Spawn 20 reader tasks continuously calling route()
         let mut handles = Vec::new();
@@ -333,7 +334,7 @@ mod tests {
             ),
         ];
 
-        let router = RouterEngine::new(collection, initial_profiles);
+        let router = RouterEngine::new(collection, initial_profiles, None);
 
         // Pre-reload decision: deterministic tie-breaking picks profile-a (lower index 0)
         let d1 = router.route(&vec_data, "test content").await.unwrap(); // unwrap
@@ -628,7 +629,7 @@ mod tests {
         let db = MemFuse::open_with_config(dir.path(), config).await.unwrap(); // unwrap
         let collection = db.collection("default").await.unwrap(); // unwrap
 
-        let router = RouterEngine::new(collection, vec![]);
+        let router = RouterEngine::new(collection, vec![], None);
         let err = router.route(&[1.0, 0.0, 0.0, 0.0], "test").await;
         assert!(
             matches!(err, Err(MemFuseError::NotFound(msg)) if msg.contains("Keine SLM-Profile"))
@@ -652,7 +653,7 @@ mod tests {
             TokenBudget::new(1000, 100),
             0.01,
         );
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
 
         let err = router.route(&[1.0, 0.0, 0.0, 0.0], "test").await;
         assert!(
@@ -688,7 +689,7 @@ mod tests {
             0.0,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let result = router.route(&[1.0, 0.0, 0.0, 0.0], "plain doc").await;
         // Unparseable entity ID results in comm_id = None, which fails community matching for profile
         assert!(matches!(result, Err(MemFuseError::NotFound(_))));
@@ -731,7 +732,7 @@ mod tests {
             0.0, // Low min threshold to guarantee selection
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let res = router.route(&[1.0, 0.0, 0.0, 0.0], "rust code").await;
         assert!(res.is_ok());
     }
@@ -932,7 +933,7 @@ mod tests {
             })
             .collect();
 
-        let router = RouterEngine::try_new(collection, profiles_50).unwrap(); // unwrap
+        let router = RouterEngine::try_new(collection, profiles_50, None).unwrap(); // unwrap
         let decision = router.route(&vec_data, "sample text").await.unwrap(); // unwrap
         assert_eq!(decision.profile.name, "profile-0");
 
@@ -999,7 +1000,7 @@ mod tests {
             TokenBudget::new(100, 10),
             0.1,
         );
-        let router = RouterEngine::new(collection, vec![profile.clone()]);
+        let router = RouterEngine::new(collection, vec![profile.clone()], None);
         let profiles = router.profiles();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name, "p-acc");
@@ -1112,10 +1113,11 @@ mod tests {
         let res_try_new = RouterEngine::try_new(
             collection.clone(),
             vec![valid_profile.clone(), invalid_profile.clone()],
+            None,
         );
         assert!(matches!(res_try_new, Err(MemFuseError::InvalidInput(_))));
 
-        let router = RouterEngine::new(collection, vec![valid_profile.clone()]);
+        let router = RouterEngine::new(collection, vec![valid_profile.clone()], None);
         let res_try_update = router.try_update_profiles(vec![valid_profile, invalid_profile]);
         assert!(matches!(res_try_update, Err(MemFuseError::InvalidInput(_))));
     }
@@ -1278,7 +1280,7 @@ mod tests {
             0.0,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let res = router.route(&[1.0, 0.0, 0.0, 0.0], "sample text").await;
         assert!(matches!(res, Err(MemFuseError::NotFound(_))));
     }
@@ -1319,7 +1321,7 @@ mod tests {
             0.0,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let res = router.route(&[1.0, 0.0, 0.0, 0.0], "valid content").await;
         assert!(res.is_ok());
         Ok(())
@@ -1328,6 +1330,7 @@ mod tests {
     #[test]
     fn test_cascade_hit() {
         use crate::profile::ProfileCalibrationState;
+        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1370,7 +1373,7 @@ mod tests {
             .unwrap();
         let collection = rt.block_on(db.collection("default")).unwrap();
 
-        let router = RouterEngine::new(collection, profiles.clone());
+        let router = RouterEngine::new(collection, profiles.clone(), None);
         let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
 
         // Chunk score: 0.5 (with community 1 match: 0.5 * 1.2 = 0.6)
@@ -1392,12 +1395,13 @@ mod tests {
 
         assert_eq!(selected.name, "mid-slm");
         assert_eq!(idx, 0); // profile_mid was at original index 0
-        assert!(!metrics.calibrated); // window_total <= 10
+        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
     }
 
     #[test]
     fn test_cascade_fallthrough() {
         use crate::profile::ProfileCalibrationState;
+        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1436,7 +1440,7 @@ mod tests {
             .unwrap();
         let collection = rt.block_on(db.collection("default")).unwrap();
 
-        let router = RouterEngine::new(collection, profiles.clone());
+        let router = RouterEngine::new(collection, profiles.clone(), None);
         let calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
 
         // Chunk score = 0.1 (0.1 * 1.2 = 0.12) < low threshold (0.5) -> falls through to last profile
@@ -1457,11 +1461,13 @@ mod tests {
 
         assert_eq!(selected.name, "low-slm");
         assert_eq!(idx, 2);
-        assert!(!metrics.calibrated);
+        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
     }
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
+        use crate::router::ConfidenceMetrics;
+
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1481,7 +1487,7 @@ mod tests {
             .await
             .unwrap();
 
-        let eid = EntityId::from_key(key).unwrap();
+        let eid = EntityId::from_doc_id(memfuse_core::DocId::new(1));
         let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
@@ -1493,12 +1499,12 @@ mod tests {
         let profile = SlmProfile::new(
             "conv-slm",
             "http://localhost:9999/mcp",
-            vec![100],
+            vec![],
             TokenBudget::new(1000, 100),
             0.001,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
 
         // Perform 55 routing calls and record outcomes
         let mut last_calibrated = false;
@@ -1507,7 +1513,8 @@ mod tests {
                 .route(&vec_data, "convergence test content")
                 .await
                 .unwrap();
-            let _conf = decision.confidence.expect("Confidence metrics present");
+            let conf = decision.confidence.expect("Confidence metrics present");
+            last_calibrated = conf.calibrated;
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
@@ -1549,7 +1556,7 @@ mod tests {
             .await
             .unwrap();
 
-        let eid = EntityId::from_key(key).unwrap();
+        let eid = EntityId::from_doc_id(memfuse_core::DocId::new(1));
         let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
@@ -1561,19 +1568,19 @@ mod tests {
         let p1 = SlmProfile::new(
             "slm-1",
             "http://localhost/1",
-            vec![100],
+            vec![],
             TokenBudget::new(1000, 100),
-            0.1,
+            0.0,
         );
         let p2 = SlmProfile::new(
             "slm-2",
             "http://localhost/2",
-            vec![100],
+            vec![],
             TokenBudget::new(1000, 100),
-            0.1,
+            0.0,
         );
 
-        let router = RouterEngine::new(collection, vec![p1, p2]);
+        let router = RouterEngine::new(collection, vec![p1, p2], None);
 
         let first_decision = router
             .route(&vec_data, "deterministic content")
@@ -1614,7 +1621,7 @@ mod tests {
             .await
             .unwrap();
 
-        let eid = EntityId::from_key(key).unwrap();
+        let eid = EntityId::from_doc_id(memfuse_core::DocId::new(1));
         let tx = db.allocate_tx().unwrap();
         let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
         db.inner_storage()
@@ -1626,12 +1633,12 @@ mod tests {
         let profile = SlmProfile::new(
             "parallel-conv-slm",
             "http://localhost:9999/mcp",
-            vec![100],
+            vec![],
             TokenBudget::new(1000, 100),
             0.5,
         );
 
-        let router = Arc::new(RouterEngine::new(collection, vec![profile]));
+        let router = Arc::new(RouterEngine::new(collection, vec![profile], None));
 
         // Spawn 100 parallel route() tasks and record outcome
         let mut handles = Vec::new();
@@ -1714,7 +1721,7 @@ mod tests {
         let p1 = SlmProfile::new("p1", "http://ep1", vec![1], TokenBudget::default(), 0.1);
         let p2 = SlmProfile::new("p2", "http://ep2", vec![2], TokenBudget::default(), 0.2);
 
-        let router = RouterEngine::new(collection, vec![p1, p2]);
+        let router = RouterEngine::new(collection, vec![p1, p2], None);
         {
             let cal = router.calibration_stats();
             assert_eq!(cal["p1"].times_selected, 0);
@@ -1750,7 +1757,7 @@ mod tests {
         let collection = db.collection("default").await.unwrap();
 
         let p = SlmProfile::new("p", "http://ep", vec![1], TokenBudget::default(), 0.1);
-        let router = RouterEngine::new(collection, vec![p]);
+        let router = RouterEngine::new(collection, vec![p], None);
 
         let res_nan = router.route(&[f32::NAN, 0.0, 0.0, 0.0], "query").await;
         assert!(
@@ -1781,6 +1788,49 @@ mod tests {
         assert!(
             matches!(res, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Empty MCP endpoint"))
         );
+    }
+
+    #[test]
+    fn test_confidence_metrics_serde() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::router::ConfidenceMetrics;
+
+        let uncal = ConfidenceMetrics::Uncalibrated {
+            non_conformity_score: 0.2,
+            selection_margin: 1.5,
+            quantile_threshold: 0.5,
+        };
+
+        let json_uncal = serde_json::to_string(&uncal)?;
+        let val_uncal: serde_json::Value = serde_json::from_str(&json_uncal)?;
+        assert_eq!(val_uncal["type"], "uncalibrated");
+        assert_eq!(val_uncal["non_conformity_score"], 0.2);
+        assert_eq!(val_uncal["selection_margin"], 1.5);
+        assert_eq!(val_uncal["quantile_threshold"], 0.5);
+
+        let deserialized_uncal: ConfidenceMetrics = serde_json::from_str(&json_uncal)?;
+        assert_eq!(deserialized_uncal, uncal);
+
+        let cal = ConfidenceMetrics::Calibrated {
+            score_lower: 0.4,
+            score_upper: 0.8,
+            quantile_threshold: 0.6,
+            non_conformity_score: 0.1,
+            selection_margin: 2.0,
+        };
+
+        let json_cal = serde_json::to_string(&cal)?;
+        let val_cal: serde_json::Value = serde_json::from_str(&json_cal)?;
+        assert_eq!(val_cal["type"], "calibrated");
+        assert_eq!(val_cal["score_lower"], 0.4);
+        assert_eq!(val_cal["score_upper"], 0.8);
+        assert_eq!(val_cal["quantile_threshold"], 0.6);
+        assert_eq!(val_cal["non_conformity_score"], 0.1);
+        assert_eq!(val_cal["selection_margin"], 2.0);
+
+        let deserialized_cal: ConfidenceMetrics = serde_json::from_str(&json_cal)?;
+        assert_eq!(deserialized_cal, cal);
+
+        Ok(())
     }
 
     #[test]

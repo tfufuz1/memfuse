@@ -70,7 +70,8 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
                 if target == wal_path {
                     if let Ok(fd_num) = entry.file_name().to_string_lossy().parse::<i32>() {
                         use std::os::unix::ffi::OsStrExt;
-                        let path_c = std::ffi::CString::new(wal_path.as_os_str().as_bytes()).unwrap();
+                        let path_c =
+                            std::ffi::CString::new(wal_path.as_os_str().as_bytes()).unwrap();
                         unsafe {
                             let ro_fd = open(path_c.as_ptr(), 0); // O_RDONLY = 0
                             if ro_fd >= 0 {
@@ -118,7 +119,9 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
             );
         }
         Ok(()) => {
-            panic!("Mutation survival check: commit() MUST NOT succeed when WAL file is read-only!");
+            panic!(
+                "Mutation survival check: commit() MUST NOT succeed when WAL file is read-only!"
+            );
         }
     }
 
@@ -132,7 +135,8 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
                 if target == wal_path {
                     if let Ok(fd_num) = entry.file_name().to_string_lossy().parse::<i32>() {
                         use std::os::unix::ffi::OsStrExt;
-                        let path_c = std::ffi::CString::new(wal_path.as_os_str().as_bytes()).unwrap();
+                        let path_c =
+                            std::ffi::CString::new(wal_path.as_os_str().as_bytes()).unwrap();
                         unsafe {
                             let rw_fd = open(path_c.as_ptr(), 2 | 1024); // O_RDWR | O_APPEND
                             if rw_fd >= 0 {

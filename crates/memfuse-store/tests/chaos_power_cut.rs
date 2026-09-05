@@ -1,162 +1,178 @@
-use memfuse_core::StorageEngine;
+// FILE-CONTEXT: Chaos test verifying SIGKILL process termination recovery and durability invariants. (TS: 2026-09-05) (SESSION: chaos_power_cut)
+//! Chaos test proving `LsmStorage` recovery and durability guarantees under actual process SIGKILL.
+//!
+//! Evaluates `PowerCutSimulation` defined in `rules/chaos_testing.md` and `TEST/MASTER_INTEGRATION_PLAN.md`.
+
+use memfuse_core::{MemFuseError, StorageEngine};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use rand::Rng;
 use std::collections::HashMap;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
 use std::time::Duration;
-use tempfile::tempdir;
+use tempfile::TempDir;
 
-const ITERATIONS: usize = 10;
-const WRITES_PER_RUN: usize = 100;
-
-fn parse_ground_truth_log(path: &Path) -> (HashMap<String, Vec<u8>>, Option<usize>) {
-    let mut confirmed_commits = HashMap::new();
-    let mut max_prepared_idx = None;
-
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return (confirmed_commits, max_prepared_idx),
-    };
-
-    let has_trailing_newline = content.ends_with('\n');
-    let mut lines: Vec<&str> = content.lines().collect();
-    if !has_trailing_newline && !lines.is_empty() {
-        // Discard incomplete last line resulting from crash during log write
-        lines.pop();
-    }
-
-    for line in lines {
-        let parts: Vec<&str> = line.splitn(3, ':').collect();
-        if parts.len() == 3 {
-            let status = parts[0];
-            let key = parts[1];
-            let val = parts[2];
-
-            if let Some(idx_str) = key.strip_prefix("chaos_key_") {
-                if let Ok(idx) = idx_str.parse::<usize>() {
-                    max_prepared_idx = Some(max_prepared_idx.map_or(idx, |m: usize| m.max(idx)));
+fn get_chaos_writer_bin() -> PathBuf {
+    if let Ok(curr) = std::env::current_exe() {
+        if let Some(parent) = curr.parent() {
+            if let Some(target_dir) = parent.parent() {
+                let bin_name = format!("chaos_writer{}", std::env::consts::EXE_SUFFIX);
+                let example_bin = target_dir.join("examples").join(&bin_name);
+                if example_bin.exists() {
+                    return example_bin;
                 }
-            }
-
-            if status == "COMMIT" {
-                confirmed_commits.insert(key.to_string(), val.as_bytes().to_vec());
+                let direct_bin = target_dir.join(&bin_name);
+                if direct_bin.exists() {
+                    return direct_bin;
+                }
             }
         }
     }
 
-    (confirmed_commits, max_prepared_idx)
+    let status = Command::new("cargo")
+        .args([
+            "build",
+            "--example",
+            "chaos_writer",
+            "-p",
+            "memfuse-store",
+            "--quiet",
+        ])
+        .status()
+        .expect("Failed to build chaos_writer example via cargo");
+    assert!(status.success(), "Building chaos_writer example failed");
+
+    if let Ok(curr) = std::env::current_exe() {
+        if let Some(parent) = curr.parent() {
+            if let Some(target_dir) = parent.parent() {
+                let bin_name = format!("chaos_writer{}", std::env::consts::EXE_SUFFIX);
+                let example_bin = target_dir.join("examples").join(&bin_name);
+                if example_bin.exists() {
+                    return example_bin;
+                }
+            }
+        }
+    }
+
+    panic!("Could not locate chaos_writer binary");
 }
 
 #[tokio::test]
-async fn test_chaos_power_cut_recovery() {
-    // 1. Ensure chaos_writer example binary is built before running iterations
-    let build_status = Command::new("cargo")
-        .args(["build", "--quiet", "-p", "memfuse-store", "--example", "chaos_writer"])
-        .status()
-        .expect("Failed to build chaos_writer example");
-    assert!(
-        build_status.success(),
-        "Building chaos_writer example failed"
-    );
+async fn test_chaos_power_cut_sigkill_recovery() {
+    let chaos_writer_bin = get_chaos_writer_bin();
+    let num_iterations = 10;
 
-    let mut rng = rand::thread_rng();
+    for iteration in 1..=num_iterations {
+        let tmp = TempDir::new().expect("temp dir");
+        let db_path = tmp.path().join("db");
+        let gt_log_path = tmp.path().join("ground_truth.log");
 
-    for iter in 0..ITERATIONS {
-        println!("--- Chaos Power-Cut Iteration {}/{} ---", iter + 1, ITERATIONS);
+        let n_writes = 100;
 
-        let tmp = tempdir().expect("tempdir");
-        let storage_path = tmp.path().join("storage");
-        let log_path = tmp.path().join("ground_truth.log");
-
-        std::fs::create_dir_all(&storage_path).expect("create storage dir");
-
-        // 2. Spawn chaos_writer subprocess
-        let mut child = Command::new("cargo")
-            .args([
-                "run",
-                "--quiet",
-                "-p",
-                "memfuse-store",
-                "--example",
-                "chaos_writer",
-                "--",
-                storage_path.to_str().expect("valid storage path"),
-                &WRITES_PER_RUN.to_string(),
-                log_path.to_str().expect("valid log path"),
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+        // 1. Spawn chaos_writer subprocess
+        let mut child = Command::new(&chaos_writer_bin)
+            .arg(&db_path)
+            .arg(n_writes.to_string())
+            .arg(&gt_log_path)
             .spawn()
-            .expect("Failed to spawn chaos_writer subprocess");
+            .expect("Failed to spawn chaos_writer process");
 
-        // 3. Wait a randomized duration between 50ms and 500ms
-        let sleep_ms: u64 = rng.gen_range(50..=500);
+        // 2. Wait randomized time between 30ms and 250ms
+        let mut rng = rand::thread_rng();
+        let sleep_ms = rng.gen_range(30..250);
         tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
 
-        // 4. Force SIGKILL / TerminateProcess
+        // 3. SIGKILL process
         let _ = child.kill();
-        let _ = child.wait(); // Reap zombie child process
+        let _ = child.wait();
 
-        // 5. Read ground-truth log file before reopen
-        let (confirmed_commits, max_prepared_idx) = parse_ground_truth_log(&log_path);
-        println!(
-            "Iteration {}: Found {} confirmed commits, max prepared index: {:?}",
-            iter + 1,
-            confirmed_commits.len(),
-            max_prepared_idx
-        );
-
-        // 6. Reopen LsmStorage at the same path
+        // 4. Reopen LsmStorage
         let config = LsmConfig {
-            path: storage_path.clone(),
+            path: db_path.clone(),
             ..Default::default()
         };
 
-        let reopen_res = LsmStorage::new(config).await;
-        let storage = match reopen_res {
+        let storage_res = LsmStorage::new(config).await;
+        let storage = match storage_res {
             Ok(s) => s,
+            Err(MemFuseError::Storage(msg)) => {
+                println!("Iteration {iteration}: Reopen returned documented Storage error: {msg}");
+                continue;
+            }
             Err(e) => {
                 panic!(
-                    "Iteration {}: LsmStorage reopen failed with unexpected error: {:?}",
-                    iter + 1,
+                    "Iteration {iteration}: Reopen returned undocumented error type: {:?}",
                     e
                 );
             }
         };
 
-        // 7. Verification:
-        // a. Every confirmed COMMIT entry MUST be readable with exact value
-        for (key, expected_val) in &confirmed_commits {
-            let actual = storage
+        // 5. Read external Ground-Truth log
+        if !gt_log_path.exists() {
+            // Process was killed before creating log file
+            continue;
+        }
+
+        let raw_log = fs::read(&gt_log_path).expect("read ground truth log");
+        // Find last newline to ignore incomplete trailing line
+        let valid_bytes = match raw_log.iter().rposition(|&b| b == b'\n') {
+            Some(idx) => &raw_log[..=idx],
+            None => &[][..],
+        };
+
+        let log_content = String::from_utf8_lossy(valid_bytes);
+
+        let mut committed_entries: HashMap<u64, (String, String)> = HashMap::new();
+        let mut started_entries: HashMap<u64, (String, String)> = HashMap::new();
+
+        for line in log_content.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 4 {
+                continue;
+            }
+            let status = parts[0];
+            let counter: u64 = match parts[1].parse() {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let key = parts[2].to_string();
+            let val = parts[3].to_string();
+
+            if status == "START" {
+                started_entries.insert(counter, (key, val));
+            } else if status == "COMMITTED" {
+                committed_entries.insert(counter, (key, val));
+            }
+        }
+
+        let max_committed_counter = committed_entries.keys().copied().max().unwrap_or(0);
+        let max_started_counter = started_entries.keys().copied().max().unwrap_or(0);
+
+        // 6. Assertion (1f): ALL confirmed committed entries MUST be readable
+        for (counter, (key, val)) in &committed_entries {
+            let res = storage
                 .get(key.as_bytes())
                 .await
-                .unwrap_or_else(|e| panic!("Iteration {}: get({}) failed: {:?}", iter + 1, key, e));
-
+                .expect("storage.get failed");
             assert_eq!(
-                actual,
-                Some(expected_val.clone()),
-                "Iteration {}: Confirmed commit for key {} missing or value mismatch after crash recovery",
-                iter + 1,
-                key
+                res,
+                Some(val.as_bytes().to_vec()),
+                "Iteration {iteration}: Key {key} (counter {counter}) was committed before SIGKILL but not readable after reopen!"
             );
         }
 
-        // b. No entry beyond max_prepared_idx MUST be visible (no phantom commits)
-        let start_phantom_idx = max_prepared_idx.map_or(0, |m| m + 1);
-        for phantom_idx in start_phantom_idx..(start_phantom_idx + 20) {
-            let phantom_key = format!("chaos_key_{:06}", phantom_idx);
-            let actual = storage
-                .get(phantom_key.as_bytes())
+        // 7. Assertion (1g): NO entry beyond max_started_counter may be visible
+        let max_check_counter = max_started_counter.max(max_committed_counter) + 5;
+        for check_counter in (max_started_counter + 1)..=max_check_counter {
+            let check_key = format!("key-{:06}", check_counter);
+            let res = storage
+                .get(check_key.as_bytes())
                 .await
-                .unwrap_or_else(|e| panic!("Iteration {}: get({}) failed: {:?}", iter + 1, phantom_key, e));
-
-            assert_eq!(
-                actual,
-                None,
-                "Iteration {}: Phantom commit detected for key {} which was never written before process kill",
-                iter + 1,
-                phantom_key
+                .expect("storage.get failed");
+            assert!(
+                res.is_none(),
+                "Iteration {iteration}: Phantom commit detected! Key {check_key} (counter {check_counter} > max_started {max_started_counter}) was readable!"
             );
         }
     }

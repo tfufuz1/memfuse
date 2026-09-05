@@ -66,12 +66,15 @@ impl Default for CompactionConfig {
 ///
 /// This is the same `LsmState` from `lsm.rs`, but we define the compaction
 /// interface in terms of what we need: the SSTable list and the data path.
+use std::sync::atomic::AtomicU64;
+
 pub struct CompactionEngine {
     config: CompactionConfig,
     snapshot_registry: Arc<SnapshotRegistry>,
     block_cache: Arc<BlockCache>,
     key_manager: Option<Arc<KeyManager>>,
     budget: Arc<memfuse_core::ResourceTracker>,
+    compaction_counter: AtomicU64,
 }
 
 impl CompactionEngine {
@@ -89,6 +92,7 @@ impl CompactionEngine {
             block_cache,
             key_manager,
             budget,
+            compaction_counter: AtomicU64::new(0),
         }
     }
 
@@ -134,7 +138,7 @@ impl CompactionEngine {
 
         // 3. Perform the merge (no lock held — this is the expensive part)
         let min_snapshot_seq = self.snapshot_registry.min_active_seqno();
-        let output_path = Self::generate_sst_path(data_path)?;
+        let output_path = self.generate_sst_path(data_path)?;
         self.merge_sstables(
             &input_ssts,
             &output_path,
@@ -425,13 +429,12 @@ impl CompactionEngine {
     }
 
     /// Generates a unique SSTable file path using microsecond timestamp.
-    fn generate_sst_path(data_path: &std::path::Path) -> Result<PathBuf> {
-        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    fn generate_sst_path(&self, data_path: &std::path::Path) -> Result<PathBuf> {
         let id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| memfuse_core::MemFuseError::Storage(format!("System clock error: {}", e)))?
             .as_micros();
-        let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let count = self.compaction_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000)))
     }
 
@@ -1048,8 +1051,19 @@ mod tests {
     #[test]
     fn test_generate_sst_path_uniqueness() {
         let tmp = TempDir::new().expect("temp dir"); // expect
-        let path1 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 1"); // expect
-        let path2 = CompactionEngine::generate_sst_path(tmp.path()).expect("path 2"); // expect
+        let engine = CompactionEngine::new(
+            CompactionConfig::default(),
+            Arc::new(SnapshotRegistry::new()),
+            create_block_cache(1),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
+        let path1 = engine.generate_sst_path(tmp.path()).expect("path 1"); // expect
+        let path2 = engine.generate_sst_path(tmp.path()).expect("path 2"); // expect
         assert_ne!(
             path1, path2,
             "Rapid sequential calls must produce distinct SSTable paths"

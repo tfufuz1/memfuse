@@ -1,70 +1,65 @@
-use memfuse_core::{Result as MemResult, StorageEngine, TxId};
+// FILE-CONTEXT: Helper process for chaos testing simulating mid-transaction process kills. (TS: 2026-09-05) (SESSION: chaos_power_cut)
+//! Helper worker binary for `chaos_power_cut` test.
+//!
+//! Writes sequential key-value entries to `LsmStorage` while logging transaction lifecycle
+//! states (`START` / `COMMITTED`) to an external ground-truth file for crash recovery verification.
+
+use memfuse_core::{MemFuseError, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use tokio::time::{sleep, Duration};
-
-const SLEEP_BETWEEN_WRITES_MS: u64 = 10;
+use std::time::Duration;
 
 #[tokio::main]
-async fn main() -> MemResult<()> {
-    let args: Vec<String> = env::args().collect();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
         eprintln!("Usage: chaos_writer <storage_dir> <n_writes> <ground_truth_log_path>");
         std::process::exit(1);
     }
 
     let storage_dir = PathBuf::from(&args[1]);
-    let n_writes: usize = match args[2].parse() {
-        Ok(val) => val,
-        Err(e) => return Err(memfuse_core::MemFuseError::invalid_input(format!("Invalid n_writes: {e}"))),
-    };
+    let n_writes: usize = args[2].parse().map_err(|e| {
+        MemFuseError::InvalidInput(format!("Invalid n_writes argument '{}': {}", args[2], e))
+    })?;
     let ground_truth_log_path = PathBuf::from(&args[3]);
 
     let config = LsmConfig {
         path: storage_dir,
         ..Default::default()
     };
+
     let storage = LsmStorage::new(config).await?;
 
     let mut log_file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&ground_truth_log_path)
-        .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Failed to open log file: {e}")))?;
+        .open(&ground_truth_log_path)?;
 
-    for i in 0..n_writes {
-        let tx_id = TxId::new((i + 1) as u64);
-        let key = format!("chaos_key_{:06}", i);
-        let val = format!("val_{:06}_{}", i, rand::random::<u64>());
+    for i in 1..=n_writes {
+        let key_str = format!("key-{:06}", i);
+        let val_str = format!("val-{:06}-{}", i, rand::random::<u64>());
 
-        // Log PREPARE before write
-        writeln!(log_file, "PREPARE:{}:{}", key, val)
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Log write failed: {e}")))?;
-        log_file
-            .flush()
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Log flush failed: {e}")))?;
-        log_file
-            .sync_all()
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Log fsync failed: {e}")))?;
+        // 1. Log START to external ground-truth file
+        writeln!(log_file, "START {} {} {}", i, key_str, val_str)?;
+        log_file.flush()?;
+        log_file.sync_all()?;
 
-        // Write and commit to LsmStorage
-        storage.put(tx_id, key.as_bytes(), val.as_bytes()).await?;
-        storage.commit(tx_id).await?;
+        // 2. Perform LSM storage put and commit
+        let tx = TxId::new(i as u64);
+        storage
+            .put(tx, key_str.as_bytes(), val_str.as_bytes())
+            .await?;
+        storage.commit(tx).await?;
 
-        // Log COMMIT after successful commit
-        writeln!(log_file, "COMMIT:{}:{}", key, val)
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Log write failed: {e}")))?;
-        log_file
-            .flush()
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Log flush failed: {e}")))?;
-        log_file
-            .sync_all()
-            .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Log fsync failed: {e}")))?;
+        // 3. Log COMMITTED to external ground-truth file
+        writeln!(log_file, "COMMITTED {} {} {}", i, key_str, val_str)?;
+        log_file.flush()?;
+        log_file.sync_all()?;
 
-        sleep(Duration::from_millis(SLEEP_BETWEEN_WRITES_MS)).await;
+        // Short sleep window to allow process kill injection
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     Ok(())
