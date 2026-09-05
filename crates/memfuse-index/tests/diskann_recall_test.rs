@@ -2,6 +2,8 @@
 //! Verifies that DiskANN achieves Recall@10 >= 0.95 on synthetic dataset.
 //! Ground-truth top-10 neighbors are computed via an independent brute-force reference implementation.
 
+#![cfg(feature = "experimental-diskann")]
+
 use memfuse_core::{DistanceMetric, DocId, VectorIndex};
 use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
 use rand::Rng;
