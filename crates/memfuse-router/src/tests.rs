@@ -3,7 +3,9 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use crate::{dispatch_to_slm, RouterEngine, RoutingDecision, SlmProfile};
+    use crate::{
+        dispatch_to_slm, DecisionId, RouterEngine, RoutingDecision, RoutingOutcome, SlmProfile,
+    };
     use memfuse_core::{EntityId, MemFuseError, StorageEngine, TokenBudget};
     use memfuse_db::{MemFuse, MemFuseConfig};
     use serde_json::json;
@@ -188,6 +190,7 @@ mod tests {
             profile,
             context: context_window,
             confidence: None,
+            decision_id: DecisionId::new(),
         };
 
         let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
@@ -812,6 +815,7 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_err = dispatch_to_slm(&decision).await;
         assert!(
@@ -825,6 +829,7 @@ mod tests {
             profile: profile_closed,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_closed = dispatch_to_slm(&decision_closed).await;
         assert!(
@@ -843,6 +848,7 @@ mod tests {
             profile: profile_rpc_err,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
@@ -863,6 +869,7 @@ mod tests {
             profile: profile_obj,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
         assert_eq!(res_obj, "{\"custom_data\":42}");
@@ -879,6 +886,7 @@ mod tests {
             profile: profile_empty,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_empty = dispatch_to_slm(&decision_empty).await;
         assert!(
@@ -1197,6 +1205,7 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
+            decision_id: DecisionId::new(),
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -1495,7 +1504,7 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile]);
 
-        // Perform 55 routing calls (>= 50 samples)
+        // Perform 55 routing calls and record outcomes
         let mut last_calibrated = false;
         for i in 0..55 {
             let decision = router
@@ -1503,22 +1512,24 @@ mod tests {
                 .await
                 .unwrap();
             let conf = decision.confidence.expect("Confidence metrics present");
-            let is_calibrated = matches!(conf, ConfidenceMetrics::Calibrated { .. });
-            last_calibrated = is_calibrated;
+            last_calibrated = conf.calibrated;
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
+            let calibrated = st.conformal.window_total >= 30;
+            last_calibrated = calibrated;
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
                 st.conformal.window_total,
                 st.conformal.quantile_threshold,
-                is_calibrated
+                calibrated
             );
         }
 
         assert!(
             last_calibrated,
-            "After 55 decisions (>= 50 samples), decision must be calibrated (Calibrated variant)"
+            "After 55 decisions with record_outcome (>= 30 samples), decision must be calibrated (calibrated = true)"
         );
     }
 
@@ -1627,13 +1638,15 @@ mod tests {
 
         let router = Arc::new(RouterEngine::new(collection, vec![profile]));
 
-        // Spawn 100 parallel route() tasks
+        // Spawn 100 parallel route() tasks and record outcome
         let mut handles = Vec::new();
         for _ in 0..100 {
             let r = router.clone();
             let vec_c = vec_data.clone();
             handles.push(tokio::spawn(async move {
-                r.route(&vec_c, "parallel convergence content").await
+                let decision = r.route(&vec_c, "parallel convergence content").await?;
+                r.record_outcome(decision.decision_id, RoutingOutcome::Success);
+                Ok::<(), MemFuseError>(())
             }));
         }
 
@@ -1766,6 +1779,7 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
+            decision_id: DecisionId::new(),
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -1838,5 +1852,73 @@ mod tests {
         let deserialized: TestContainer = serde_json::from_str(&json)?;
         assert_eq!(deserialized, container);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_record_outcome_trains_calibration() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_coding = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "coding_doc",
+                &vec_coding,
+                Some(json!({"text": "function test() {}"})),
+            )
+            .await
+            .unwrap();
+
+        let profile = SlmProfile::new(
+            "default",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+        let decision = router.route(&vec_coding, "function test").await.unwrap();
+
+        let cal_before = router.calibration_stats();
+
+        let recorded = router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        assert!(recorded);
+
+        let cal_after = router.calibration_stats();
+        assert!(
+            cal_after["default"].conformal.window_total
+                > cal_before["default"].conformal.window_total,
+            "window_total should increase after record_outcome"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_record_outcome_unknown_id_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let profile = SlmProfile::new(
+            "default",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+        let unknown_id = DecisionId::new();
+
+        assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
     }
 }

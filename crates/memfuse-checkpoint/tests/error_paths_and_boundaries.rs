@@ -100,8 +100,6 @@ impl StorageEngine for FaultyMockStorage {
 /// Test Storage Write Failure: returns `Err(MemFuseError::Storage)`, no panic, seq_no unpinned.
 #[tokio::test]
 async fn test_storage_put_failure_handling() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(FaultyMockStorage::new(true, false));
     let store = PersistentCheckpointStore::new(storage.clone(), "ns_err").unwrap();
 
@@ -128,8 +126,6 @@ async fn test_storage_put_failure_handling() {
 /// Test Storage Commit Failure: returns `Err(MemFuseError::Storage)`, no panic, seq_no unpinned.
 #[tokio::test]
 async fn test_storage_commit_failure_handling() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(FaultyMockStorage::new(false, true));
     let store = PersistentCheckpointStore::new(storage.clone(), "ns_err").unwrap();
 
@@ -156,8 +152,6 @@ async fn test_storage_commit_failure_handling() {
 /// Test Restore Nonexistent Checkpoint Name: returns `MemFuseError::CheckpointNotFound`.
 #[tokio::test]
 async fn test_restore_nonexistent_checkpoint_returns_not_found() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(FaultyMockStorage::new(false, false));
     let store = PersistentCheckpointStore::new(storage, "ns_err").unwrap();
 
@@ -171,8 +165,6 @@ async fn test_restore_nonexistent_checkpoint_returns_not_found() {
 /// Test Boundary Validation: empty name, whitespace name, empty collection_id, oversized name (>256 chars).
 #[tokio::test]
 async fn test_identifier_input_boundary_validation() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
     let storage = Arc::new(FaultyMockStorage::new(false, false));
     let store = PersistentCheckpointStore::new(storage, "ns_err").unwrap();
 

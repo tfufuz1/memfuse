@@ -3,7 +3,6 @@
 // INVARIANTEN: Roundtrip invariant: decrypt(encrypt(pt)) == pt. Authenticity invariant: 1-bit ciphertext flip must fail decryption.
 // STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
-use memfuse_core::TxId;
 use memfuse_crypto::wal_crypto::{EncryptedWal, IntegrityVerifier, WalEntrySnapshot, WalHmac};
 use memfuse_crypto::CryptoKey;
 use proptest::prelude::*;
@@ -54,12 +53,12 @@ proptest! {
         val_bytes in proptest::collection::vec(any::<u8>(), 0..500),
     ) {
         let integrity_key = b"proptest-integrity-key-32-bytes";
-        let tx_id = TxId::new(seq_no);
+        let tx_id = seq_no;
 
         let mut hmac = WalHmac::new(integrity_key).unwrap();
         hmac.update(&[0u8; 32]);
         hmac.update(&seq_no.to_le_bytes());
-        hmac.update(&tx_id.inner().to_le_bytes());
+        hmac.update(&tx_id.to_le_bytes());
         hmac.update(&[0u8]); // Put
         hmac.update(&(key_bytes.len() as u32).to_le_bytes());
         hmac.update(&key_bytes);

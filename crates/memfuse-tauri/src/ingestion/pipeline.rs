@@ -9,16 +9,23 @@ use std::sync::Arc;
 /// Maximum allowed file size for ingestion (100 MB).
 pub const MAX_INGEST_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
 
+/// Maximum number of entities per chunk considered for pairwise co-occurrence edges,
+/// to bound edge creation at O(k^2) instead of unbounded O(n^2).
+pub const MAX_COOCCURRENCE_ENTITIES_PER_CHUNK: usize = 12;
+
 /// Ergebnis eines Ingestion-Vorgangs.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct IngestReport {
     pub file_path: String,
     pub chunks_created: usize,
     pub errors: Vec<String>,
+    #[serde(default)]
+    pub skipped_as_duplicate: bool,
 }
 
 pub struct IngestionPipeline {
     embedder: Arc<dyn TextEmbeddingEngine>,
+    extract_entities: bool,
 }
 
 /// Extrahiert reinen Text aus übergebenen Datei-Bytes basierend auf der Dateiendung.
@@ -83,7 +90,23 @@ pub fn ingest_bytes(bytes: &[u8], filename_or_ext: &str) -> Result<Vec<String>> 
 
 impl IngestionPipeline {
     pub fn new(embedder: Arc<dyn TextEmbeddingEngine>) -> Self {
-        Self { embedder }
+        Self {
+            embedder,
+            extract_entities: true,
+        }
+    }
+
+    pub fn with_extract_entities(mut self, extract_entities: bool) -> Self {
+        self.extract_entities = extract_entities;
+        self
+    }
+
+    pub fn set_extract_entities(&mut self, extract_entities: bool) {
+        self.extract_entities = extract_entities;
+    }
+
+    pub fn extract_entities(&self) -> bool {
+        self.extract_entities
     }
 
     /// Liest eine Datei, erkennt das Format anhand der Endung, chunked den
@@ -125,18 +148,21 @@ impl IngestionPipeline {
                         path_buf
                     ))
                 })?;
-                extract_text_from_bytes(&bytes, &extension)
+                let content_hash = blake3::hash(&bytes).to_hex().to_string();
+                let text = extract_text_from_bytes(&bytes, &extension)?;
+                Ok::<(String, String), MemFuseError>((content_hash, text))
             })
         })
         .await;
 
-        let raw_text = match extract_res {
-            Ok(Ok(Ok(text))) => text,
+        let (content_hash, raw_text) = match extract_res {
+            Ok(Ok(Ok(res))) => res,
             Ok(Ok(Err(e))) => {
                 return Ok(IngestReport {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec![e.to_string()],
+                    skipped_as_duplicate: false,
                 });
             }
             Ok(Err(_panic_payload)) => {
@@ -144,6 +170,7 @@ impl IngestionPipeline {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec!["Extraction panicked on malformed file".to_string()],
+                    skipped_as_duplicate: false,
                 });
             }
             Err(join_err) => {
@@ -151,9 +178,23 @@ impl IngestionPipeline {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec![format!("Extraction task failed: {join_err:?}")],
+                    skipped_as_duplicate: false,
                 });
             }
         };
+
+        let kv_key = format!("doc_hash:{content_hash}");
+        if collection.get_kv(&kv_key).await?.is_some() {
+            return Ok(IngestReport {
+                file_path: path.display().to_string(),
+                chunks_created: 0,
+                errors: vec![
+                    "Datei wurde bereits importiert (identischer Inhalt erkannt), Re-Import übersprungen."
+                        .to_string(),
+                ],
+                skipped_as_duplicate: true,
+            });
+        }
 
         let file_name = path
             .file_name()
@@ -167,6 +208,7 @@ impl IngestionPipeline {
                 file_path: path.display().to_string(),
                 chunks_created: 0,
                 errors: Vec::new(),
+                skipped_as_duplicate: false,
             });
         }
 
@@ -219,6 +261,10 @@ impl IngestionPipeline {
                             "source".to_string(),
                             serde_json::Value::String(path.display().to_string()),
                         );
+                        obj.insert(
+                            "content_hash".to_string(),
+                            serde_json::Value::String(content_hash.clone()),
+                        );
                     }
 
                     if let Err(e) = collection.insert(&doc_id, &embedding, Some(metadata)).await {
@@ -226,99 +272,113 @@ impl IngestionPipeline {
                     } else {
                         created += 1;
 
-                        // Extrahiere Entitäten aus dem Chunk-Text
-                        let extracted_entities =
-                            crate::ingestion::entities::SimpleEntityExtractor::extract(
-                                &raw_content,
-                            );
-
-                        if !extracted_entities.is_empty() {
-                            let graph = collection.graph_index();
-                            let tx = collection.allocate_tx()?;
-
-                            for entity_id in &extracted_entities {
-                                let entity =
-                                    Entity::new(*entity_id, "ExtractedTerm", "ExtractedTerm");
-                                if let Err(e) = graph.add_entity(tx, entity).await {
-                                    tracing::warn!(
-                                        "Entity-Insert fehlgeschlagen für {:?}: {e}",
-                                        entity_id
-                                    );
-                                }
-                            }
-
-                            for i in 0..extracted_entities.len() {
-                                for j in (i + 1)..extracted_entities.len() {
-                                    if let Err(e) = graph
-                                        .add_edge(
-                                            tx,
-                                            Edge::new(
-                                                extracted_entities[i],
-                                                extracted_entities[j],
-                                                "co_occurrence",
-                                            )
-                                            .with_weight(0.5),
-                                        )
-                                        .await
-                                    {
-                                        tracing::warn!(
-                                            "Edge-Insert (co_occurrence ->) fehlgeschlagen: {e}"
-                                        );
-                                    }
-                                    if let Err(e) = graph
-                                        .add_edge(
-                                            tx,
-                                            Edge::new(
-                                                extracted_entities[j],
-                                                extracted_entities[i],
-                                                "co_occurrence",
-                                            )
-                                            .with_weight(0.5),
-                                        )
-                                        .await
-                                    {
-                                        tracing::warn!(
-                                            "Edge-Insert (co_occurrence <-) fehlgeschlagen: {e}"
-                                        );
-                                    }
-                                }
-                            }
-
-                            let doc_entity_id = EntityId::from(doc_id.as_str());
-                            let doc_entity = Entity::new(doc_entity_id, doc_id.clone(), "Document");
-                            if let Err(e) = graph.add_entity(tx, doc_entity).await {
-                                tracing::warn!(
-                                    "Doc Entity-Insert fehlgeschlagen für {doc_id}: {e}"
+                        if self.extract_entities {
+                            // Extrahiere Entitäten aus dem Chunk-Text
+                            let extracted_entities =
+                                crate::ingestion::entities::SimpleEntityExtractor::extract(
+                                    &raw_content,
                                 );
-                            }
 
-                            for term_id in &extracted_entities {
-                                if let Err(e) = graph
-                                    .add_edge(
-                                        tx,
-                                        Edge::new(doc_entity_id, *term_id, "contains")
-                                            .with_weight(0.8),
-                                    )
-                                    .await
-                                {
-                                    tracing::warn!("Edge-Insert (contains) fehlgeschlagen: {e}");
+                            if !extracted_entities.is_empty() {
+                                let graph_arc = collection.graph_index();
+                                let graph: &dyn GraphIndex = graph_arc.as_ref();
+                                let tx = collection.allocate_tx()?;
+
+                                for entity_id in &extracted_entities {
+                                    let entity =
+                                        Entity::new(*entity_id, "ExtractedTerm", "ExtractedTerm");
+                                    if let Err(e) = graph.add_entity(tx, entity).await {
+                                        tracing::warn!(
+                                            "Entity-Insert fehlgeschlagen für {:?}: {e}",
+                                            entity_id
+                                        );
+                                    }
                                 }
-                                if let Err(e) = graph
-                                    .add_edge(
-                                        tx,
-                                        Edge::new(*term_id, doc_entity_id, "mentioned_in")
-                                            .with_weight(0.8),
-                                    )
-                                    .await
+
+                                let cooccurrence_entities = if extracted_entities.len()
+                                    > MAX_COOCCURRENCE_ENTITIES_PER_CHUNK
                                 {
+                                    &extracted_entities[..MAX_COOCCURRENCE_ENTITIES_PER_CHUNK]
+                                } else {
+                                    &extracted_entities[..]
+                                };
+
+                                for i in 0..cooccurrence_entities.len() {
+                                    for j in (i + 1)..cooccurrence_entities.len() {
+                                        if let Err(e) = graph
+                                            .add_edge(
+                                                tx,
+                                                Edge::new(
+                                                    cooccurrence_entities[i],
+                                                    cooccurrence_entities[j],
+                                                    "co_occurrence",
+                                                )
+                                                .with_weight(0.5),
+                                            )
+                                            .await
+                                        {
+                                            tracing::warn!(
+                                                "Edge-Insert (co_occurrence ->) fehlgeschlagen: {e}"
+                                            );
+                                        }
+                                        if let Err(e) = graph
+                                            .add_edge(
+                                                tx,
+                                                Edge::new(
+                                                    cooccurrence_entities[j],
+                                                    cooccurrence_entities[i],
+                                                    "co_occurrence",
+                                                )
+                                                .with_weight(0.5),
+                                            )
+                                            .await
+                                        {
+                                            tracing::warn!(
+                                                "Edge-Insert (co_occurrence <-) fehlgeschlagen: {e}"
+                                            );
+                                        }
+                                    }
+                                }
+
+                                let doc_entity_id = EntityId::from(doc_id.as_str());
+                                let doc_entity =
+                                    Entity::new(doc_entity_id, doc_id.clone(), "Document");
+                                if let Err(e) = graph.add_entity(tx, doc_entity).await {
                                     tracing::warn!(
-                                        "Edge-Insert (mentioned_in) fehlgeschlagen: {e}"
+                                        "Doc Entity-Insert fehlgeschlagen für {doc_id}: {e}"
                                     );
                                 }
-                            }
 
-                            if let Err(e) = graph.commit(tx).await {
-                                tracing::warn!("Graph tx commit failed: {e}");
+                                for term_id in &extracted_entities {
+                                    if let Err(e) = graph
+                                        .add_edge(
+                                            tx,
+                                            Edge::new(doc_entity_id, *term_id, "contains")
+                                                .with_weight(0.8),
+                                        )
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "Edge-Insert (contains) fehlgeschlagen: {e}"
+                                        );
+                                    }
+                                    if let Err(e) = graph
+                                        .add_edge(
+                                            tx,
+                                            Edge::new(*term_id, doc_entity_id, "mentioned_in")
+                                                .with_weight(0.8),
+                                        )
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "Edge-Insert (mentioned_in) fehlgeschlagen: {e}"
+                                        );
+                                    }
+                                }
+
+                                if let Err(e) = graph.commit(tx).await {
+                                    tracing::warn!("Graph tx commit failed: {e}");
+                                }
                             }
                         }
                     }
@@ -327,10 +387,17 @@ impl IngestionPipeline {
             }
         }
 
+        if created > 0 {
+            if let Err(e) = collection.put_kv(&kv_key, &serde_json::json!(true)).await {
+                tracing::warn!("Failed to store content hash in KV store: {e}");
+            }
+        }
+
         Ok(IngestReport {
             file_path: path.display().to_string(),
             chunks_created: created,
             errors,
+            skipped_as_duplicate: false,
         })
     }
 
@@ -361,6 +428,7 @@ impl IngestionPipeline {
                         file_path: entry.path().display().to_string(),
                         chunks_created: 0,
                         errors: vec![e.to_string()],
+                        skipped_as_duplicate: false,
                     },
                 };
                 reports.push(report);

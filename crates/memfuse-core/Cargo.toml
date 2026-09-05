@@ -6,7 +6,12 @@ license.workspace = true
 rust-version.workspace = true
 description = "Core types, traits, and error handling for MemFuse"
 
+[features]
+test-utils = []
+
 [dependencies]
+# Standalone crypto error mapping
+memfuse-crypto = { workspace = true }
 # Standard error derive macro for MemFuseError.
 thiserror = { workspace = true }
 # Bincode serialization error support.

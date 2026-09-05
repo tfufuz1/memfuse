@@ -72,13 +72,15 @@
 
 pub mod audit;
 pub mod context;
+pub mod dlq;
 pub mod engine;
 pub mod event_source;
 pub mod graph;
 pub mod step;
 
 pub use context::{AgentContext, AgentStatus};
+pub use dlq::DeadLetterQueue;
 pub use engine::{EventLoopExitReason, OrchestratorEngine};
 pub use event_source::{BackgroundEvent, EventSource, PollingDocumentEventSource, VecEventSource};
 pub use graph::{AgentNode, NodeType, StateGraph, WorkflowEdge};
-pub use step::{AgentTool, StepResult};
+pub use step::{AgentTool, DeadLetterReason, StepDeadLetter, StepResult};

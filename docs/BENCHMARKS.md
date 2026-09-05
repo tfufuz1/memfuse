@@ -39,3 +39,19 @@ Verifizierte Messung gegen synthetische Ground Truth (20 Themen-Cluster × 50 Do
 2. **Kein Real-World-Corpus**: Die Dokumente und Vektoren wurden deterministisch synthetisiert (Cluster-Phasenvektoren + Gaussian-Noise, vordefinierte Keyword-Familien). Real-World-Textkorpora (z.B. MS MARCO, BEIR) weisen abweichende Sparsity- und Cluster-Eigenschaften auf.
 3. **Keine echten Neural Model Embeddings**: Es wurden keine Embeddings durch ein lokales ONNX/Ollama-Modell während des Benchmarks berechnet (Embedding-Generierungszeit ist excluded).
 4. **Vollständiger In-Memory HNSW-Graph**: Bei 1M+ Chunks überschreitet der RAM-Bedarf von `HnswIndex` die physische RAM-Grenze typischer Developer-VMs (7.8 GiB). Dies unterstreicht die Notwendigkeit künftiger Vamana/DiskANN- und SQ8-Quantisierungsarchitekturen gemäß v2-Spezifikation R3/R6.
+
+---
+
+## §4 — Competitive Comparison
+
+> Measurements taken on: Linux x86_64, Intel(R) Xeon(R) Processor @ 2.30GHz (4 CPU cores), 7.8 GiB RAM (Jules Sandbox VM)
+> MemFuse version: bd51c6f599e50682516393d2bdc8eb3a717197e1
+> Date: 2026-09-03
+
+| Operation | MemFuse | Mem0 | Zep | MemOS |
+|---|---|---|---|---|
+| Write throughput (docs/s) | ~117.3 docs/s (batch insert ~1,438.9 docs/s) | not publicly available | not publicly available | not publicly available |
+| Hybrid search p50 (ms) | 29.91 ms | not publicly available | not publicly available | not publicly available |
+| Hybrid search p99 (ms) | 30.45 ms | not publicly available | not publicly available | not publicly available |
+
+Sources for any competitor numbers must be cited with URL and access date.

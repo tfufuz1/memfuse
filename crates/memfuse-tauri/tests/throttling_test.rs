@@ -31,6 +31,7 @@ fn test_large_folder_ingestion_throttling_20k_files() {
             file_path: format!("/mock/path/file_{i}.txt"),
             chunks_created: CHUNKS_PER_FILE,
             errors: vec![],
+            skipped_as_duplicate: false,
         });
     }
 
@@ -96,6 +97,7 @@ fn test_small_folder_ingestion_timely_feedback() {
             file_path: format!("/small/folder/doc_{i}.md"),
             chunks_created: 2,
             errors: vec![],
+            skipped_as_duplicate: false,
         });
     }
 
@@ -145,6 +147,7 @@ fn test_configurable_interval_and_batch_size() {
             file_path: format!("/config_test/item_{i}.txt"),
             chunks_created: 1,
             errors: vec![],
+            skipped_as_duplicate: false,
         });
     }
 
@@ -189,6 +192,7 @@ fn test_throttling_time_interval_trigger() {
         file_path: "/test/file1.txt".into(),
         chunks_created: 1,
         errors: vec![],
+        skipped_as_duplicate: false,
     });
 
     // Sleep to exceed 10ms interval
@@ -198,6 +202,7 @@ fn test_throttling_time_interval_trigger() {
         file_path: "/test/file2.txt".into(),
         chunks_created: 1,
         errors: vec![],
+        skipped_as_duplicate: false,
     });
 
     throttler.finish();

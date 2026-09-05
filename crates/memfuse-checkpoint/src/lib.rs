@@ -35,14 +35,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Type alias for sequence numbers managed as pinned checkpoint identifiers.
 pub type PinId = u64;
 
-static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
-static SKIPPED_ROLLBACKS: AtomicU64 = AtomicU64::new(0);
-#[deprecated(
-    since = "0.1.0",
-    note = "Use InstanceOrphanRegistry instead. Global statics are deprecated per ADR-053."
-)]
-static ORPHANED_CHECKPOINTS: Mutex<Vec<StateCheckpoint>> = Mutex::new(Vec::new());
-
 #[deprecated(
     since = "0.1.0",
     note = "Use InstanceOrphanRegistry instead. Global statics are deprecated per ADR-053."
@@ -50,41 +42,48 @@ static ORPHANED_CHECKPOINTS: Mutex<Vec<StateCheckpoint>> = Mutex::new(Vec::new()
 #[allow(deprecated)]
 pub static ORPHAN_REGISTRY: std::sync::OnceLock<OrphanRegistry> = std::sync::OnceLock::new();
 
+fn warn_deprecated_global_orphan_path() {
+    static WARN_ONCE: std::sync::Once = std::sync::Once::new();
+    WARN_ONCE.call_once(|| {
+        tracing::warn!(
+            "Deprecated global OrphanRegistry path used — migrate to InstanceOrphanRegistry (ADR-053)"
+        );
+    });
+}
+
 #[deprecated(
     since = "0.1.0",
     note = "Use InstanceOrphanRegistry instead. Global functions are not safe in multi-instance environments."
 )]
 #[allow(deprecated)]
 pub fn global_orphan_registry() -> &'static OrphanRegistry {
+    warn_deprecated_global_orphan_path();
     ORPHAN_REGISTRY.get_or_init(OrphanRegistry::default)
 }
 
-fn orphan_pin_file_path() -> std::path::PathBuf {
-    std::env::var("MEMFUSE_ORPHAN_PIN_PATH")
-        .map(|val| {
-            let p = std::path::PathBuf::from(val);
-            if p.is_dir() {
-                p.join("memfuse_orphaned_pins.json")
-            } else {
-                p
-            }
-        })
-        .unwrap_or_else(|_| std::path::PathBuf::from("memfuse_orphaned_pins.json"))
+/// Returns the default directory for orphan state files when no environment variable is set.
+///
+/// # Security & Persistence Notice
+/// Uses `dirs::data_local_dir()`. If unavailable, this falls back to [`std::env::temp_dir()`].
+/// [`std::env::temp_dir()`] is NOT a permanent storage location and may be cleared by the OS.
+/// For production deployments, `MEMFUSE_ORPHAN_PIN_PATH` and `MEMFUSE_ORPHAN_PATH` MUST be explicitly configured.
+fn default_data_dir() -> std::path::PathBuf {
+    dirs::data_local_dir().unwrap_or_else(std::env::temp_dir)
 }
 
-fn resolve_orphan_path_for_namespace(ns: &str) -> std::path::PathBuf {
-    let filename = format!("{ns}_orphaned_checkpoints.json");
-    if let Ok(val) =
-        std::env::var("MEMFUSE_ORPHAN_PIN_PATH").or_else(|_| std::env::var("MEMFUSE_ORPHAN_PATH"))
-    {
-        let p = std::path::PathBuf::from(val);
-        if p.is_dir() {
-            return p.join(filename);
-        } else {
-            return p;
-        }
+#[cfg(test)]
+fn monotonic_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn orphan_pin_file_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("MEMFUSE_ORPHAN_PIN_PATH") {
+        return std::path::PathBuf::from(p);
     }
-    std::path::PathBuf::from(filename)
+    default_data_dir().join("memfuse_orphaned_pins.json")
 }
 
 /// Durable append-only registry for orphaned sequence pins (ADR-052).
@@ -93,8 +92,7 @@ fn resolve_orphan_path_for_namespace(ns: &str) -> std::path::PathBuf {
     note = "Use InstanceOrphanRegistry instead. Global OrphanRegistry is deprecated per ADR-053."
 )]
 pub struct OrphanRegistry {
-    orphans: Mutex<Vec<PinId>>,
-    file_path: std::path::PathBuf,
+    inner: InstanceOrphanRegistry,
 }
 
 #[allow(deprecated)]
@@ -107,49 +105,36 @@ impl Default for OrphanRegistry {
 #[allow(deprecated)]
 impl OrphanRegistry {
     pub fn new(file_path: impl Into<std::path::PathBuf>) -> Self {
-        let path = file_path.into();
-        let loaded = Self::load_file_sync(&path);
         Self {
-            orphans: Mutex::new(loaded),
-            file_path: path,
+            inner: InstanceOrphanRegistry::new(file_path),
         }
-    }
-
-    fn load_file_sync(path: &std::path::Path) -> Vec<PinId> {
-        if let Ok(data) = std::fs::read(path) {
-            if let Ok(list) = serde_json::from_slice::<Vec<PinId>>(&data) {
-                return list;
-            }
-        }
-        Vec::new()
-    }
-
-    fn persist_sync(&self, list: &[PinId]) -> std::io::Result<()> {
-        let data = serde_json::to_vec_pretty(list)?;
-        std::fs::write(&self.file_path, data)
     }
 
     /// Synchronously registers an orphaned sequence pin and persists to disk.
     pub fn register_orphan(&self, pin_id: PinId) -> std::io::Result<()> {
-        let mut lock = self.orphans.lock();
-        if !lock.contains(&pin_id) {
-            lock.push(pin_id);
-        }
-        self.persist_sync(&lock)
+        let wall_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.inner.register_orphan_sync(PinnedSeqNoOrphan {
+            seq_no: pin_id,
+            timestamp_ms: wall_ms,
+        });
+        Ok(())
     }
 
     /// Retrieves all currently registered orphaned pin sequence numbers.
     pub fn get_orphans(&self) -> Vec<PinId> {
-        self.orphans.lock().clone()
+        self.inner
+            .get_orphan_pins()
+            .into_iter()
+            .map(|o| o.seq_no)
+            .collect()
     }
 
     /// Synchronously clears memory and disk records.
     pub fn clear_all(&self) {
-        let mut lock = self.orphans.lock();
-        lock.clear();
-        if let Err(err) = self.persist_sync(&lock) {
-            tracing::warn!(?err, "Failed to persist cleared orphan registry");
-        }
+        self.inner.clear_all();
     }
 
     /// Recovers all registered orphaned pins by unpinning them in storage and cleaning the registry.
@@ -165,14 +150,7 @@ impl OrphanRegistry {
                 tracing::warn!(pin_id = pin_id, error = %e, "Failed to unpin orphaned pin during recovery");
             } else {
                 recovered.push(pin_id);
-            }
-        }
-
-        if !recovered.is_empty() {
-            let mut lock = self.orphans.lock();
-            lock.retain(|p| !recovered.contains(p));
-            if let Err(err) = self.persist_sync(&lock) {
-                tracing::warn!(?err, "Failed to persist orphan pin registry after recovery");
+                self.inner.clear_orphan_pin(pin_id);
             }
         }
 
@@ -181,33 +159,10 @@ impl OrphanRegistry {
 }
 
 fn orphan_file_path() -> std::path::PathBuf {
-    std::env::var("MEMFUSE_ORPHAN_PIN_PATH")
-        .or_else(|_| std::env::var("MEMFUSE_ORPHAN_PATH"))
-        .map(|val| {
-            let p = std::path::PathBuf::from(val);
-            if p.is_dir() {
-                p.join("memfuse_orphaned_checkpoints.json")
-            } else {
-                p
-            }
-        })
-        .unwrap_or_else(|_| std::path::PathBuf::from("memfuse_orphaned_checkpoints.json"))
-}
-
-fn persist_orphaned_checkpoints_sync(list: &[StateCheckpoint]) -> std::io::Result<()> {
-    let path = orphan_file_path();
-    let data = serde_json::to_vec_pretty(list)?;
-    std::fs::write(path, data)
-}
-
-fn load_orphaned_checkpoints_file_sync() -> Vec<StateCheckpoint> {
-    let path = orphan_file_path();
-    if let Ok(data) = std::fs::read(path) {
-        if let Ok(list) = serde_json::from_slice::<Vec<StateCheckpoint>>(&data) {
-            return list;
-        }
+    if let Ok(p) = std::env::var("MEMFUSE_ORPHAN_PATH") {
+        return std::path::PathBuf::from(p);
     }
-    Vec::new()
+    default_data_dir().join("memfuse_orphaned_checkpoints.json")
 }
 
 /// Orphaned gepinnte Sequenznummer — wird beim Recovery verarbeitet.
@@ -217,27 +172,12 @@ pub struct PinnedSeqNoOrphan {
     pub timestamp_ms: u64,
 }
 
-static ORPHANED_PIN_SEQ_NOS: Mutex<Vec<PinnedSeqNoOrphan>> = Mutex::new(Vec::new());
-
-fn persist_pinned_seq_no_orphans_sync(list: &[PinnedSeqNoOrphan]) -> std::io::Result<()> {
-    let path = orphan_pin_file_path();
-    let data = serde_json::to_vec_pretty(list)?;
-    std::fs::write(path, data)
-}
-
 #[deprecated(
     since = "0.1.0",
     note = "Use PersistentCheckpointStore::register_pinned_seq_no_orphan instead. Global functions are not safe in multi-instance environments."
 )]
 #[allow(deprecated)]
 pub fn register_pinned_seq_no_orphan(orphan: PinnedSeqNoOrphan) {
-    let mut lock = ORPHANED_PIN_SEQ_NOS.lock();
-    if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
-        lock.push(orphan.clone());
-    }
-    if let Err(e) = persist_pinned_seq_no_orphans_sync(&lock) {
-        tracing::error!(?e, "Failed to persist pinned seq_no orphans");
-    }
     if let Err(e) = global_orphan_registry().register_orphan(orphan.seq_no) {
         tracing::error!(
             ?e,
@@ -435,13 +375,7 @@ impl InstanceOrphanRegistry {
 )]
 #[allow(deprecated)]
 pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    if !lock.iter().any(|existing| existing.tx_id == cp.tx_id) {
-        lock.push(cp);
-    }
-    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
-    }
+    global_orphan_registry().inner.register_checkpoint_sync(cp);
 }
 
 /// Retrieves all active registered orphaned checkpoints.
@@ -451,14 +385,7 @@ pub fn register_orphaned_checkpoint(cp: StateCheckpoint) {
 )]
 #[allow(deprecated)]
 pub fn get_orphaned_checkpoints() -> Vec<StateCheckpoint> {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    if lock.is_empty() {
-        let loaded = load_orphaned_checkpoints_file_sync();
-        if !loaded.is_empty() {
-            *lock = loaded;
-        }
-    }
-    lock.clone()
+    global_orphan_registry().inner.get_orphaned_checkpoints()
 }
 
 /// Retrieves orphaned checkpoints registered for a specific namespace.
@@ -477,11 +404,9 @@ pub fn get_orphaned_checkpoints_for_namespace(ns: &str) -> Vec<StateCheckpoint> 
 )]
 #[allow(deprecated)]
 pub fn clear_orphaned_checkpoint(tx_id: TxId) {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    lock.retain(|cp| cp.tx_id != tx_id);
-    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
-    }
+    global_orphan_registry()
+        .inner
+        .clear_orphaned_checkpoint(tx_id);
 }
 
 /// Clears all registered orphaned checkpoints.
@@ -491,11 +416,7 @@ pub fn clear_orphaned_checkpoint(tx_id: TxId) {
 )]
 #[allow(deprecated)]
 pub fn clear_all_orphaned_checkpoints() {
-    let mut lock = ORPHANED_CHECKPOINTS.lock();
-    lock.clear();
-    if let Err(err) = persist_orphaned_checkpoints_sync(&lock) {
-        tracing::warn!(?err, "Failed to persist orphaned checkpoints");
-    }
+    global_orphan_registry().inner.clear_all();
 }
 
 /// Retained for backward compatibility. No background tasks are spawned during drop.
@@ -504,11 +425,6 @@ pub async fn await_pending_rollbacks() {}
 /// Retained for backward compatibility. Always returns 0 as background task spawning is removed.
 pub fn pending_rollback_count() -> usize {
     0
-}
-
-/// Liefert die Gesamtzahl der uncommitted CheckpointGuards, die ohne expliziten Commit/Rollback gedroppt wurden.
-pub fn checkpoint_guard_skipped_rollback_count() -> u64 {
-    SKIPPED_ROLLBACKS.load(Ordering::Relaxed)
 }
 
 /// Liefert die Anzahl der aktuell registrierten verwaisten ("orphaned") Checkpoints.
@@ -535,18 +451,7 @@ fn validate_identifier(field_name: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn monotonic_timestamp_ms() -> u64 {
-    let wall_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    // Ensure monotonic: max(wall_clock, last_seen)
-    CHECKPOINT_COUNTER
-        .fetch_max(wall_ms, Ordering::SeqCst)
-        .max(wall_ms)
-}
-
-/// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074)
+/// AI-TAG\[PANIC-SAFETY\]\[CRITICAL\] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074)
 /// Fault-Injection-Tests in
 /// tests/manifest_fault_injection.rs beweisen atomare Schreib-Semantik
 /// und Tamper-Erkennung via Blake3-Checksum.
@@ -633,9 +538,13 @@ impl<S: memfuse_core::StorageEngine> PinGuard<S> {
 impl<S: memfuse_core::StorageEngine> Drop for PinGuard<S> {
     fn drop(&mut self) {
         if let Some(seq_no) = self.seq_no.take() {
+            let wall_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
             let orphan = PinnedSeqNoOrphan {
                 seq_no,
-                timestamp_ms: monotonic_timestamp_ms(),
+                timestamp_ms: wall_ms,
             };
             self.orphan_registry.register_orphan_sync(orphan);
             tracing::warn!(
@@ -688,14 +597,16 @@ pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
     storage: Arc<S>,
     namespace: String,
     orphan_registry: Arc<InstanceOrphanRegistry>,
+    skipped_rollbacks: Arc<AtomicU64>,
 }
 
 impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
     pub fn new(checkpoint: StateCheckpoint, storage: Arc<S>, namespace: impl Into<String>) -> Self {
         let ns = namespace.into();
-        let orphan_path = resolve_orphan_path_for_namespace(&ns);
+        let orphan_path = std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
         let registry = Arc::new(InstanceOrphanRegistry::new(orphan_path));
-        Self::with_registry(checkpoint, storage, ns, registry)
+        let skipped_rollbacks = Arc::new(AtomicU64::new(0));
+        Self::with_registry_and_counter(checkpoint, storage, ns, registry, skipped_rollbacks)
     }
 
     pub fn with_registry(
@@ -704,19 +615,41 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         namespace: impl Into<String>,
         orphan_registry: Arc<InstanceOrphanRegistry>,
     ) -> Self {
+        let skipped_rollbacks = Arc::new(AtomicU64::new(0));
+        Self::with_registry_and_counter(
+            checkpoint,
+            storage,
+            namespace,
+            orphan_registry,
+            skipped_rollbacks,
+        )
+    }
+
+    pub fn with_registry_and_counter(
+        checkpoint: StateCheckpoint,
+        storage: Arc<S>,
+        namespace: impl Into<String>,
+        orphan_registry: Arc<InstanceOrphanRegistry>,
+        skipped_rollbacks: Arc<AtomicU64>,
+    ) -> Self {
         Self {
             checkpoint: Some(checkpoint),
             storage,
             namespace: namespace.into(),
             orphan_registry,
+            skipped_rollbacks,
         }
     }
 
     /// Erstellt einen neuen CheckpointGuard für einen Agenten-Schritt.
     pub async fn for_agent_step(storage: Arc<S>, tx: TxId) -> Result<Self> {
+        let wall_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         let cp = StateCheckpoint {
             tx_id: tx,
-            timestamp_ms: monotonic_timestamp_ms(),
+            timestamp_ms: wall_ms,
             namespace: Some("agent_step".to_string()),
         };
         Ok(Self::new(cp, storage, "agent_step"))
@@ -727,9 +660,13 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
         tx: TxId,
         orphan_registry: Arc<InstanceOrphanRegistry>,
     ) -> Result<Self> {
+        let wall_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         let cp = StateCheckpoint {
             tx_id: tx,
-            timestamp_ms: monotonic_timestamp_ms(),
+            timestamp_ms: wall_ms,
             namespace: Some("agent_step".to_string()),
         };
         Ok(Self::with_registry(
@@ -821,7 +758,7 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
     fn drop(&mut self) {
         if let Some(mut cp) = self.checkpoint.take() {
             cp.namespace = Some(self.namespace.clone());
-            SKIPPED_ROLLBACKS.fetch_add(1, Ordering::SeqCst);
+            self.skipped_rollbacks.fetch_add(1, Ordering::SeqCst);
             tracing::error!(
                 tx_id = ?cp.tx_id,
                 "CheckpointGuard dropped without explicit commit or rollback — \
@@ -890,6 +827,10 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
     hwm_lock: tokio::sync::Mutex<()>,
     /// Instanz-spezifischer Orphan Registry
     orphan_registry: Arc<InstanceOrphanRegistry>,
+    /// Instanz-spezifischer Checkpoint Counter für monotone Zeitstempel
+    checkpoint_counter: Arc<AtomicU64>,
+    /// Instanz-spezifischer Zähler für verpasste Rollbacks
+    skipped_rollbacks: Arc<AtomicU64>,
 }
 
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
@@ -955,7 +896,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
 
-        let orphan_path = resolve_orphan_path_for_namespace(&namespace);
+        let orphan_path =
+            std::path::PathBuf::from(format!("{namespace}_orphaned_checkpoints.json"));
         let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
 
         // 5. Recover orphaned sequence pins on startup (ADR-052)
@@ -968,6 +910,9 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             }
         }
 
+        let checkpoint_counter = Arc::new(AtomicU64::new(0));
+        let skipped_rollbacks = Arc::new(AtomicU64::new(0));
+
         Ok(Self {
             storage,
             checkpoints: RwLock::new(HashMap::new()),
@@ -978,6 +923,8 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             allocated_hwm: AtomicU64::new(initial_hwm),
             hwm_lock: tokio::sync::Mutex::new(()),
             orphan_registry,
+            checkpoint_counter,
+            skipped_rollbacks,
         })
     }
 
@@ -1056,21 +1003,44 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         self.allocate_tx().await
     }
 
+    pub fn skipped_rollback_count(&self) -> u64 {
+        self.skipped_rollbacks.load(Ordering::Relaxed)
+    }
+
+    pub fn checkpoint_guard_skipped_rollback_count(&self) -> u64 {
+        self.skipped_rollback_count()
+    }
+
+    pub fn checkpoint_counter(&self) -> u64 {
+        self.checkpoint_counter.load(Ordering::Relaxed)
+    }
+
+    pub fn monotonic_timestamp_ms(&self) -> u64 {
+        let wall_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.checkpoint_counter
+            .fetch_max(wall_ms, Ordering::SeqCst)
+            .max(wall_ms)
+    }
+
     /// Creates an ephemeral transactional checkpoint RAII guard.
     /// If the returned guard is dropped without calling `.commit()`, the underlying storage
     /// is automatically rolled back to `tx_id`.
     pub fn create_guard(&self, tx_id: TxId) -> Result<CheckpointGuard<S>> {
-        let timestamp_ms = monotonic_timestamp_ms();
+        let timestamp_ms = self.monotonic_timestamp_ms();
         let cp = StateCheckpoint {
             tx_id,
             timestamp_ms,
             namespace: Some(self.namespace.clone()),
         };
-        Ok(CheckpointGuard::with_registry(
+        Ok(CheckpointGuard::with_registry_and_counter(
             cp,
             Arc::clone(&self.storage),
             &self.namespace,
             Arc::clone(&self.orphan_registry),
+            Arc::clone(&self.skipped_rollbacks),
         ))
     }
 
@@ -1092,7 +1062,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             seq_no,
             tx_id,
             metadata,
-            created_at: monotonic_timestamp_ms(),
+            created_at: self.monotonic_timestamp_ms(),
         };
 
         let _guard = self.write_lock.lock().await;
@@ -1478,8 +1448,6 @@ mod tests {
     use parking_lot::Mutex;
     use std::collections::HashSet;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
     struct MockStorage {
         data: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
         pinned: Mutex<HashSet<u64>>,
@@ -1572,9 +1540,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_and_load() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "test").unwrap();
         let meta = store
@@ -1587,9 +1552,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_name_uniqueness() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
         store
@@ -1609,9 +1571,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_checkpoint_creation_rollback_on_failure() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let cp_key = b"test:checkpoint:fail_cp";
         *storage.fail_on_put.lock() = Some(cp_key.to_vec());
@@ -1630,9 +1589,6 @@ mod tests {
     // RESOLVED: AGT-CHECKPOINT-a3ccc9fe — Instance-scoped InstanceOrphanRegistry replaces process-global singleton, eliminating parallel unit test race conditions (TS: 2026-09-03T20:10:00Z) (SESSION: 2c814094)
     #[test]
     fn test_orphan_registry_persists_across_drop() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let registry = Arc::new(InstanceOrphanRegistry::new(""));
         let storage = Arc::new(MockStorage::new());
         let seq_no = 12345;
@@ -1663,9 +1619,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_orphan_recovery_on_startup() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store =
             PersistentCheckpointStore::new(storage.clone(), "test_orphan_recovery").unwrap();
@@ -1697,9 +1650,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_instance_orphan_isolation() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage1 = Arc::new(MockStorage::new());
         let store_a = PersistentCheckpointStore::new(storage1, "ns_inst_a").unwrap();
 
@@ -1727,9 +1677,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_pin_guard_unpins_checkpoint_on_storage_write_failure() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test_pinguard").unwrap();
 
@@ -1764,9 +1711,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_pin_before_unpin_invariant_on_failure() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
 
@@ -1804,9 +1748,6 @@ mod tests {
 
     #[test]
     fn test_panic_unwind_triggers_orphan_registration_and_recovery() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
 
         let (store, panic_result) = std::thread::spawn({
@@ -1858,9 +1799,6 @@ mod tests {
 
     #[tokio::test]
     async fn checkpoint_guard_rollback_on_drop() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         #[allow(deprecated)]
         clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
@@ -1882,9 +1820,6 @@ mod tests {
 
     #[tokio::test]
     async fn checkpoint_guard_commit_prevents_rollback() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test").unwrap();
 
@@ -1897,6 +1832,18 @@ mod tests {
             storage.rolled_back_tx.lock().is_empty(),
             "Committed guard should not perform rollback"
         );
+    }
+
+    #[test]
+    fn test_deprecated_global_orphan_path_warns() {
+        #[allow(deprecated)]
+        {
+            register_pinned_seq_no_orphan(PinnedSeqNoOrphan {
+                seq_no: 99999,
+                timestamp_ms: 1000,
+            });
+            let _orphans = get_orphaned_checkpoints();
+        }
     }
 
     #[test]
@@ -2032,15 +1979,16 @@ mod tests {
             let storage = Arc::new(MockStorage::new());
             let store = PersistentCheckpointStore::new(storage, "test").unwrap();
 
-            let initial_skipped = checkpoint_guard_skipped_rollback_count();
+            let initial_skipped = store.skipped_rollback_count();
 
             {
                 let _guard = store.create_guard(TxId::new(999)).unwrap(); // unwrap
                 // _guard drops here at end of inner scope
             }
 
-            assert!(
-                checkpoint_guard_skipped_rollback_count() >= initial_skipped + 1,
+            assert_eq!(
+                store.skipped_rollback_count(),
+                initial_skipped + 1,
                 "Skipped rollback counter must increment when guard is dropped outside Tokio runtime"
             );
         })
@@ -2050,9 +1998,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_rollback_tracking_and_await() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         #[allow(deprecated)]
         clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
@@ -2422,9 +2367,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_orphaned_checkpoints_for_namespace() {
-        let _env_guard = ENV_LOCK.lock();
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("MEMFUSE_ORPHAN_PIN_PATH", tmp.path());
         let storage = Arc::new(MockStorage::new());
         let store_a = PersistentCheckpointStore::new(storage.clone(), "ns_a").unwrap();
         let store_b = PersistentCheckpointStore::new(storage.clone(), "ns_b").unwrap();
@@ -2529,6 +2471,7 @@ mod tests {
             storage: dummy_storage,
             namespace: "test".to_string(),
             orphan_registry: Arc::new(InstanceOrphanRegistry::new("")),
+            skipped_rollbacks: Arc::new(AtomicU64::new(0)),
         };
         assert!(matches!(
             consumed_guard.checkpoint(),
@@ -2540,6 +2483,7 @@ mod tests {
             storage: Arc::new(MockStorage::new()),
             namespace: "test".to_string(),
             orphan_registry: Arc::new(InstanceOrphanRegistry::new("")),
+            skipped_rollbacks: Arc::new(AtomicU64::new(0)),
         };
         assert!(matches!(
             consumed_guard2.commit(),
@@ -2551,6 +2495,7 @@ mod tests {
             storage: Arc::new(MockStorage::new()),
             namespace: "test".to_string(),
             orphan_registry: Arc::new(InstanceOrphanRegistry::new("")),
+            skipped_rollbacks: Arc::new(AtomicU64::new(0)),
         };
         let res = consumed_guard3.rollback().await;
         assert!(matches!(res, Err(MemFuseError::Internal(_))));

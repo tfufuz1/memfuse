@@ -14,7 +14,7 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 ## Warum MemFuse Brain?
 
 - **Air-Gapped by Design** — keine Cloud, keine Telemetrie, kein API-Key nötig
-- **Zero-IT-Setup** — ein Installer, fertig. Kein Docker, kein Server, kein Admin
+- **Lokal & Backend-flexibel** — läuft vollständig auf Ihrem Rechner; erfordert aktuell Ollama als LLM-/Embedding-Backend (separat zu installieren, siehe Installation unten); eine ONNX-basierte Embedding-Alternative (`memfuse-embed`) ist im Code bereits vorhanden.
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
 - **Contextual Retrieval** — Automatisches Anreichern zerschnittener Chunks durch ein
@@ -78,6 +78,12 @@ Contextual Ingestion → 4-Signal Hybrid Index → Multi-Step Retrieval → Cros
 └───────────────────────────────────────────────────────────┘
             Alles lokal. Nichts verlässt den Rechner.
 ```
+
+### Grounding & Quellenattribuierung (RAG Grounding)
+
+RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** auf Basis der im `<context>`-Block bereitgestellten Informationen zu formulieren und Fakten mit Quellenangaben im Format `[Dateiname]` oder `[Dateiname, Abschnitt]` zu belegen. Wenn eine Information nicht im Kontext enthalten ist, antwortet das Modell mit der festen Fallback-Phrase: *"Diese Information ist in den importierten Dokumenten nicht enthalten."*
+
+> ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
 ## Workspace Crates (15 Active Crates)
 

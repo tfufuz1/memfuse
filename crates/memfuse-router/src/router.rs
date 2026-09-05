@@ -1,5 +1,6 @@
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
+use crate::outcome::{DecisionId, RoutingOutcome};
 use crate::profile::{ProfileCalibrationState, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
@@ -14,26 +15,23 @@ use std::sync::Arc;
 const CALIBRATION_WARMUP_WINDOW: u32 = 30;
 
 /// Calibrated confidence metrics for a routing decision.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ConfidenceMetrics {
-    /// Router decision was made without conformal calibration (insufficient history).
-    Uncalibrated {
-        non_conformity_score: f32,
-        selection_margin: f32,
-        quantile_threshold: f32,
-    },
-    /// Router decision was made with conformal prediction calibration.
-    Calibrated {
-        score_lower: f32,
-        score_upper: f32,
-        quantile_threshold: f32,
-        non_conformity_score: f32,
-        selection_margin: f32,
-    },
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfidenceMetrics {
+    /// Lower bound of the confidence interval (None when not calibrated).
+    pub score_lower: Option<f32>,
+    /// Upper bound of the confidence interval (None when not calibrated).
+    pub score_upper: Option<f32>,
+    /// Whether the score was calibrated via outcome-driven conformal calibration.
+    pub calibrated: bool,
+    /// Current conformal quantile threshold used for this decision.
+    pub quantile_threshold: f32,
+    /// Non-conformity score of the decision.
+    pub non_conformity_score: f32,
+    /// Margin/ratio between best and second best score.
+    pub selection_margin: f32,
 }
 
-/// Result of a routing operation containing the selected profile and prepared context.
+/// Result of a routing operation containing the selected profile, prepared context, confidence, and decision ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingDecision {
     /// The target SLM profile selected for the query.
@@ -42,6 +40,8 @@ pub struct RoutingDecision {
     pub context: ContextWindow,
     /// Calibrated confidence metrics for auditing and cascade control.
     pub confidence: Option<ConfidenceMetrics>,
+    /// Eindeutige ID dieser Routing-Entscheidung.
+    pub decision_id: DecisionId,
 }
 
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
@@ -49,6 +49,7 @@ pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
     profiles: RwLock<Vec<SlmProfile>>,
     pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
+    pending_decisions: RwLock<HashMap<DecisionId, String>>,
 }
 
 impl RouterEngine {
@@ -67,6 +68,7 @@ impl RouterEngine {
             collection,
             profiles: RwLock::new(profiles),
             calibration: RwLock::new(calibration),
+            pending_decisions: RwLock::new(HashMap::new()),
         }
     }
 
@@ -121,6 +123,45 @@ impl RouterEngine {
         if let Some(state) = self.calibration.write().get_mut(profile_name) {
             state.reset();
         }
+    }
+
+    /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
+    /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
+    /// mit einem echten Ground-Truth-Signal.
+    ///
+    /// Gibt true zurück wenn die Decision gefunden und verarbeitet wurde,
+    /// false wenn die DecisionId unbekannt ist (z.B. nach Restart).
+    pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
+        let profile_name = match self.pending_decisions.write().remove(&decision_id) {
+            Some(name) => name,
+            None => {
+                tracing::warn!(
+                    ?decision_id,
+                    "record_outcome: unbekannte DecisionId ignoriert"
+                );
+                return false;
+            }
+        };
+
+        let non_conformity = outcome.non_conformity_score();
+
+        let mut cal = self.calibration.write();
+        if let Some(state) = cal.get_mut(&profile_name) {
+            state.recalibrate_conformal(non_conformity);
+            tracing::debug!(
+                profile = %profile_name,
+                ?outcome,
+                non_conformity,
+                "Router outcome recorded"
+            );
+        }
+        true
+    }
+
+    /// Anzahl offener (noch nicht mit record_outcome() abgeschlossener) Decisions.
+    /// Sollte in normaler Laufzeit nahe 0 bleiben.
+    pub fn pending_decision_count(&self) -> usize {
+        self.pending_decisions.read().len()
     }
 
     /// Setzt Kalibrierungsstatistik für alle Profile zurück.
@@ -185,7 +226,7 @@ impl RouterEngine {
             }
         }
 
-        // 3. Perform profile selection, scoring, calibration updates, and confidence metric generation
+        // 3. Perform profile selection, scoring, calibration tracking, and confidence metric generation
         // atomically within a single write lock acquisition on calibration state.
         let (selected_profile, confidence_metrics) = {
             let mut cal = self.calibration.write();
@@ -229,31 +270,32 @@ impl RouterEngine {
             if let Some(state) = cal.get_mut(&selected_profile.name) {
                 state.times_selected += 1;
                 state.cumulative_confidence += confidence_ratio;
-                state.recalibrate_conformal(non_conformity);
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
             let metrics = cal.get(&selected_profile.name).map(|state| {
                 let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
-                if calibrated {
-                    ConfidenceMetrics::Calibrated {
-                        score_lower: best_score * (1.0 - state.conformal.alpha),
-                        score_upper: best_score * (1.0 + state.conformal.alpha),
-                        quantile_threshold: state.conformal.quantile_threshold,
-                        non_conformity_score: non_conformity,
-                        selection_margin: confidence_ratio as f32,
-                    }
-                } else {
-                    ConfidenceMetrics::Uncalibrated {
-                        non_conformity_score: non_conformity,
-                        selection_margin: confidence_ratio as f32,
-                        quantile_threshold: state.conformal.quantile_threshold,
-                    }
+                ConfidenceMetrics {
+                    score_lower: if calibrated {
+                        Some(best_score * (1.0 - state.conformal.alpha))
+                    } else {
+                        None
+                    },
+                    score_upper: None,
+                    calibrated,
+                    quantile_threshold: state.conformal.quantile_threshold,
+                    non_conformity_score: non_conformity,
+                    selection_margin: confidence_ratio as f32,
                 }
             });
 
             (selected_profile, metrics)
         }; // Write lock released
+
+        let decision_id = DecisionId::new();
+        self.pending_decisions
+            .write()
+            .insert(decision_id, selected_profile.name.clone());
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
@@ -261,10 +303,16 @@ impl RouterEngine {
         context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
 
+        let decision_id = DecisionId::new();
+        self.pending_decisions
+            .write()
+            .insert(decision_id, selected_profile.name.clone());
+
         Ok(RoutingDecision {
             profile: selected_profile,
             context: context_window,
             confidence: confidence_metrics,
+            decision_id,
         })
     }
 
