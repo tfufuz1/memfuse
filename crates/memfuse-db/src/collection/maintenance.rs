@@ -83,10 +83,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                         if let Some(meta) = stored_meta {
                             if !indexed_ids.contains(&doc_id) {
-                                if let Some(vector) = self.index.get_vector_by_doc_id(doc_id) {
-                                    self.index.insert(recovery_tx, doc_id, &vector).await?;
-                                    repair_count += 1;
-                                    recovered_any = true;
+                                let user_key = self.namespaced_key(meta.id.as_bytes(), 0);
+                                if let Some(u_val) = self.storage.get(&user_key).await? {
+                                    if let Ok(user_doc) = serde_json::from_slice::<super::StoredDocument>(&u_val) {
+                                        self.index.insert(recovery_tx, doc_id, &user_doc.embedding).await?;
+                                        repair_count += 1;
+                                        recovered_any = true;
+                                    }
                                 }
                             }
 
@@ -164,11 +167,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
             let doc_id = DocId::from_key(&stored.id)?;
             if !indexed_ids.contains(&doc_id) {
-                self.index
-                    .insert(fallback_tx, doc_id, &stored.embedding)
-                    .await?;
-                repair_count += 1;
-                fallback_any = true;
+                if let Ok(user_doc) = serde_json::from_slice::<super::StoredDocument>(&value) {
+                    if !user_doc.embedding.is_empty() {
+                        self.index
+                            .insert(fallback_tx, doc_id, &user_doc.embedding)
+                            .await?;
+                        repair_count += 1;
+                        fallback_any = true;
+                    }
+                }
             }
 
             // Ensure text index coverage
@@ -376,7 +383,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 "Document not found: {doc_id}"
             )));
         };
-        let mut stored: StoredDocumentMeta = serde_json::from_slice(&data)?;
+        let mut stored_meta: StoredDocumentMeta = serde_json::from_slice(&data)?;
 
         let text = extract_text(&stored_meta.metadata).unwrap_or_else(|| stored_meta.id.clone());
 

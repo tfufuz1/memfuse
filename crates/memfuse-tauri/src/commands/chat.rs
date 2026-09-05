@@ -74,6 +74,7 @@ pub async fn chat_with_rag(
                 .and_then(|s| s.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
+            provenance: r.provenance.as_ref().map(crate::commands::search::ProvenanceDto::from),
         })
         .collect();
 

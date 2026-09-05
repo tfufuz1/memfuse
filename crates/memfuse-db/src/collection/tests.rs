@@ -2472,7 +2472,7 @@ async fn test_kv_lock_different_collections_no_contention() {
 
 #[tokio::test]
 async fn test_user_key_storage_omits_embedding_field() -> memfuse_core::Result<()> {
-    use memfuse_core::StorageEngine;
+    use memfuse_core::{DocId, StorageEngine};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
     use memfuse_store::{LsmConfig, LsmStorage};
@@ -2512,16 +2512,17 @@ async fn test_user_key_storage_omits_embedding_field() -> memfuse_core::Result<(
 
     col.insert(doc_id_str, &embedding, Some(metadata)).await?;
 
-    let user_key = col.namespaced_key(doc_id_str.as_bytes(), 0);
+    let doc_id = DocId::from_key(doc_id_str)?;
+    let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
     let raw_bytes = storage
-        .get(&user_key)
+        .get(&doc_key)
         .await?
-        .expect("user_key must exist in storage");
+        .expect("doc_key must exist in storage");
     let json_val: serde_json::Value = serde_json::from_slice(&raw_bytes).unwrap(); // unwrap allowed (AGENT:04)
 
     assert!(
         json_val.get("embedding").is_none(),
-        "user_key JSON must NOT contain an 'embedding' field"
+        "doc_key JSON must NOT contain an 'embedding' field"
     );
     assert_eq!(
         json_val.get("id").and_then(|v| v.as_str()),
@@ -2647,12 +2648,13 @@ async fn test_storage_size_reduction_without_redundant_embedding() -> memfuse_co
     // Insert via new implementation
     col.insert(doc_id_str, &embedding, Some(metadata)).await?;
 
-    let user_key = col.namespaced_key(doc_id_str.as_bytes(), 0);
-    let new_bytes = storage.get(&user_key).await?.expect("user_key must exist");
+    let doc_id = memfuse_core::DocId::from_key(doc_id_str)?;
+    let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+    let new_bytes = storage.get(&doc_key).await?.expect("doc_key must exist");
 
     assert!(
         new_bytes.len() < legacy_bytes.len() / 4,
-        "Serialized user_key byte size ({}) must be significantly smaller than legacy format size ({})",
+        "Serialized doc_key byte size ({}) must be significantly smaller than legacy format size ({})",
         new_bytes.len(),
         legacy_bytes.len()
     );
