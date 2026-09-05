@@ -8,8 +8,12 @@
 
 Stand letzter Prüfung: 2026-09-05
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **2 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-ollama/src/context_prefixer.rs` | 97 | `AGT-OLLAMA-7eed57ec` | `CORRECTNESS` | `MINOR` | `2026-09-04T12:59:47Z` | // AI-TAG[CORRECTNESS][MINOR] XML entity truncation order risk (ID: AGT-OLLAMA-7eed57ec) (TS: 2026-09-04T12:59:47Z) (SESSION: d97322aa) |
+| `crates/memfuse-ollama/src/importance.rs` | 71 | `AGT-OLLAMA-14f5b422` | `ML-SCORING` | `MINOR` | `2026-09-04T12:59:47Z` | // AI-TAG[ML-SCORING][MINOR] Uncalibrated fallback score assignment on LLM parse failure (APM-22/APM-23) (ID: AGT-OLLAMA-14f5b422) (TS: 2026-09-04T12:59:47Z) (SESSION: d97322aa) |
 
 
 ## Crate-Inventar & Status
