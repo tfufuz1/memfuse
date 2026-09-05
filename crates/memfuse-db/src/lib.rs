@@ -285,7 +285,6 @@ pub struct MemFuse {
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
 
-
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
 // get_at_snapshot() below.
 impl MemFuse {

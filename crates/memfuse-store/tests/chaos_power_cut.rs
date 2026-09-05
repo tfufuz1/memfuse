@@ -52,7 +52,14 @@ fn parse_ground_truth_log(path: &Path) -> (HashMap<String, Vec<u8>>, Option<usiz
 async fn test_chaos_power_cut_recovery() {
     // 1. Ensure chaos_writer example binary is built before running iterations
     let build_status = Command::new("cargo")
-        .args(["build", "--quiet", "-p", "memfuse-store", "--example", "chaos_writer"])
+        .args([
+            "build",
+            "--quiet",
+            "-p",
+            "memfuse-store",
+            "--example",
+            "chaos_writer",
+        ])
         .status()
         .expect("Failed to build chaos_writer example");
     assert!(
@@ -63,7 +70,11 @@ async fn test_chaos_power_cut_recovery() {
     let mut rng = rand::thread_rng();
 
     for iter in 0..ITERATIONS {
-        println!("--- Chaos Power-Cut Iteration {}/{} ---", iter + 1, ITERATIONS);
+        println!(
+            "--- Chaos Power-Cut Iteration {}/{} ---",
+            iter + 1,
+            ITERATIONS
+        );
 
         let tmp = tempdir().expect("tempdir");
         let storage_path = tmp.path().join("storage");
@@ -149,7 +160,14 @@ async fn test_chaos_power_cut_recovery() {
             let actual = storage
                 .get(phantom_key.as_bytes())
                 .await
-                .unwrap_or_else(|e| panic!("Iteration {}: get({}) failed: {:?}", iter + 1, phantom_key, e));
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Iteration {}: get({}) failed: {:?}",
+                        iter + 1,
+                        phantom_key,
+                        e
+                    )
+                });
 
             assert_eq!(
                 actual,

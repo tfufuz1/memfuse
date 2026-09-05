@@ -855,9 +855,9 @@ impl HnswIndex {
         writer
             .flush()
             .map_err(|e| MemFuseError::Storage(e.to_string()))?;
-        let mut file = writer.into_inner().map_err(|_| {
-            MemFuseError::Storage("Failed to retrieve file from BufWriter".into())
-        })?;
+        let mut file = writer
+            .into_inner()
+            .map_err(|_| MemFuseError::Storage("Failed to retrieve file from BufWriter".into()))?;
 
         // 5. Final Updates
         file.seek(std::io::SeekFrom::Start(0))

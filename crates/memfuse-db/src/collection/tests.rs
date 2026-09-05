@@ -2402,6 +2402,85 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
 }
 
 #[tokio::test]
+async fn test_query_builder_query_config_include_superseded_displacement(
+) -> memfuse_core::Result<()> {
+    use memfuse_core::{DocId, HybridQuery};
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap(); // unwrap
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(), // unwrap
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    col.insert(
+        "old_doc",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "outdated information"})),
+    )
+    .await?;
+
+    col.insert(
+        "new_doc",
+        &[0.95, 0.05, 0.0, 0.0],
+        Some(serde_json::json!({"text": "updated information"})),
+    )
+    .await?;
+
+    col.link_memories(
+        DocId::from_key("new_doc")?,
+        DocId::from_key("old_doc")?,
+        memfuse_core::types::domain::LinkRelation::Supersedes,
+    )
+    .await?;
+
+    let hybrid_query = HybridQuery::builder()
+        .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
+        .with_include_superseded(false)
+        .with_k(10)
+        .build()
+        .unwrap(); // unwrap
+
+    let results = col.query().query_config(&hybrid_query).execute().await?;
+
+    assert!(
+        !results.iter().any(|r| r.id == "old_doc"),
+        "old_doc must be displaced when executed via QueryBuilder with include_superseded=false"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "new_doc"),
+        "new_doc must be included in results"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_kv_lock_different_collections_no_contention() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -2462,7 +2541,8 @@ async fn test_kv_lock_different_collections_no_contention() {
     // Lock key "user:1" in Collection B while _guard_a is held.
     // Must complete immediately without blocking/contention because col_b has independent locks.
     let lock_b_future = col_b.kv_locks.lock_for(target_key);
-    let guard_b_res = tokio::time::timeout(std::time::Duration::from_millis(500), lock_b_future).await;
+    let guard_b_res =
+        tokio::time::timeout(std::time::Duration::from_millis(500), lock_b_future).await;
 
     assert!(
         guard_b_res.is_ok(),
@@ -2580,7 +2660,11 @@ async fn test_get_and_vector_retrieval_from_index_transparent() -> memfuse_core:
     let doc = doc_opt.unwrap(); // unwrap allowed (AGENT:04)
     assert_eq!(doc.id, doc_id_str);
     assert_eq!(
-        doc.metadata.as_ref().unwrap().get("text").and_then(|v| v.as_str()),
+        doc.metadata
+            .as_ref()
+            .unwrap()
+            .get("text")
+            .and_then(|v| v.as_str()),
         Some("Transparent Vector Hydration")
     ); // unwrap allowed (AGENT:04)
 

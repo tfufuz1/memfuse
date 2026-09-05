@@ -19,7 +19,11 @@ async fn main() -> MemResult<()> {
     let storage_dir = PathBuf::from(&args[1]);
     let n_writes: usize = match args[2].parse() {
         Ok(val) => val,
-        Err(e) => return Err(memfuse_core::MemFuseError::invalid_input(format!("Invalid n_writes: {e}"))),
+        Err(e) => {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Invalid n_writes: {e}"
+            )))
+        }
     };
     let ground_truth_log_path = PathBuf::from(&args[3]);
 
@@ -33,7 +37,9 @@ async fn main() -> MemResult<()> {
         .create(true)
         .append(true)
         .open(&ground_truth_log_path)
-        .map_err(|e| memfuse_core::MemFuseError::Storage(format!("Failed to open log file: {e}")))?;
+        .map_err(|e| {
+            memfuse_core::MemFuseError::Storage(format!("Failed to open log file: {e}"))
+        })?;
 
     for i in 0..n_writes {
         let tx_id = TxId::new((i + 1) as u64);

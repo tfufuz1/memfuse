@@ -4,9 +4,7 @@
 // NICHT-OFFENSICHTLICH: check_doc_id_collision wird strikt innerhalb des insert_lock ausgeführt.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-use super::{
-    ensure_importance_metadata, extract_text, Collection, StoredDocumentMeta,
-};
+use super::{ensure_importance_metadata, extract_text, Collection, StoredDocumentMeta};
 use memfuse_core::{
     DocId, EntityId, Result, StorageEngine, TxId, VectorIndex, EXPIRY_METADATA_KEY,
 };
