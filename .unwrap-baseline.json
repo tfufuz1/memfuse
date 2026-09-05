@@ -12625,6 +12625,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "20a9befe572738da"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "226318967764ee41"
   },
   {
