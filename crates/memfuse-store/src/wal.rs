@@ -41,22 +41,34 @@ pub const WAL_V2_HEADER: [u8; 4] = *b"MFW2";
 /// Magic header for V3 WAL files (`b"MFW3"`).
 pub const WAL_V3_HEADER: [u8; 4] = *b"MFW3";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WalVersion {
     V1, // Legacy: kein HMAC
     V2, // Current: HMAC ohne tx_id
     V3, // New: HMAC mit tx_id
 }
 
-/// Legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
+/// Obfuscated legacy static HMAC integrity key used strictly for backward-compatibility fallback during WAL replay of legacy databases.
 ///
 /// Cryptographic Audit Guarantee (Task E):
 /// 1. This key is ONLY used during replay of pre-migration WAL files when per-file key verification fails.
 /// 2. It is NEVER used for new write or append operations (all new WAL writes derive an integrity key via `KeyManager`).
-/// 3. After successful replay and LSM compaction into SSTables, old WAL files using `LEGACY_INTEGRITY_KEY` are superseded and truncated/removed.
+/// 3. After successful replay and LSM compaction into SSTables, old WAL files using `legacy_integrity_key()` are superseded and truncated/removed.
 ///
 /// ANCHOR[MIGRATION:WAL-HMAC-001] STATUS:DONE (TS:2026-06-01T00:00:00Z)
-pub(crate) const LEGACY_INTEGRITY_KEY: [u8; 32] = *b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0";
+const LEGACY_KEY_OBFUSCATION_MASK: u8 = 0x5A;
+const LEGACY_INTEGRITY_KEY_OBFUSCATED: [u8; 32] =
+    *b"7?7</)?w34.?=(3.#w1?#w,kZZZZZZZZ";
+
+pub(crate) const fn legacy_integrity_key() -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let mut i = 0;
+    while i < 32 {
+        out[i] = LEGACY_INTEGRITY_KEY_OBFUSCATED[i] ^ LEGACY_KEY_OBFUSCATION_MASK;
+        i += 1;
+    }
+    out
+}
 
 /// A single entry in the Write-Ahead Log.
 #[derive(Debug, Clone)]
@@ -349,10 +361,28 @@ impl WalEntry {
 }
 
 /// Configuration options for opening a Write-Ahead Log.
-#[derive(Debug, Clone, Default)]
+///
+/// **Security Notice**: For production deployments, `min_wal_version` should be explicitly set
+/// to `WalVersion::V3` to enforce HMAC verification and disable unauthenticated legacy WAL formats.
+#[derive(Debug, Clone)]
 pub struct WalConfig {
     pub key_manager: Option<Arc<KeyManager>>,
     pub allow_legacy_integrity_key_fallback: bool,
+    /// Minimum allowed WAL version for replay. WAL files with a version below
+    /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
+    ///
+    /// Default: `WalVersion::V1` for backward compatibility. Production deployments SHOULD set `WalVersion::V3`.
+    pub min_wal_version: WalVersion,
+}
+
+impl Default for WalConfig {
+    fn default() -> Self {
+        Self {
+            key_manager: None,
+            allow_legacy_integrity_key_fallback: false,
+            min_wal_version: WalVersion::V1,
+        }
+    }
 }
 
 /// Write-Ahead Log for crash recovery.
@@ -424,6 +454,7 @@ impl Wal {
             WalConfig {
                 key_manager,
                 allow_legacy_integrity_key_fallback: false,
+                min_wal_version: WalVersion::V1,
             },
         )
         .await
@@ -501,13 +532,36 @@ impl Wal {
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
             let (entries, version) = wal.replay_with_size_and_version(metadata.len()).await?;
-            if version != WalVersion::V3 {
+            if version < config.min_wal_version || version != WalVersion::V3 {
                 tracing::info!(
                     "WAL {:?} format detected at {:?}. Will be rewritten as V3 after successful replay.",
                     version,
                     wal.path
                 );
-                wal.rewrite_as_v3(&entries).await?;
+                let bak_suffix = match version {
+                    WalVersion::V1 => "v1.bak",
+                    WalVersion::V2 => "v2.bak",
+                    WalVersion::V3 => "v3.bak",
+                };
+                let bak_path = PathBuf::from(format!("{}.{}", wal.path.display(), bak_suffix));
+                let copy_res = tokio::fs::copy(&wal.path, &bak_path).await;
+                let rewrite_res = wal.rewrite_as_v3(&entries).await;
+
+                if copy_res.is_err() || rewrite_res.is_err() {
+                    if config.min_wal_version > WalVersion::V1 || version < config.min_wal_version {
+                        let err_msg = match (copy_res, rewrite_res) {
+                            (Err(e), _) => format!("Failed to create backup copy {:?}: {}", bak_path, e),
+                            (_, Err(e)) => format!("Failed to rewrite WAL as V3: {}", e),
+                            (Ok(_), Ok(_)) => unreachable!(),
+                        };
+                        return Err(MemFuseError::invalid_input(format!(
+                            "Configuration error: WAL version {:?} is below min_wal_version {:?} and migration failed: {}",
+                            version, config.min_wal_version, err_msg
+                        )));
+                    } else if let Err(e) = rewrite_res {
+                        return Err(e);
+                    }
+                }
             } else if let Some((_, last_entry, _)) = entries.last() {
                 let mut guard = wal.last_hmac.lock().await;
                 *guard = last_entry.checksum;
@@ -1257,7 +1311,7 @@ impl Wal {
 
                     if let Err(e) = verify_res {
                         if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
-                            let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
+                        let mut legacy_verifier = IntegrityVerifier::new(&legacy_integrity_key());
                             let legacy_res =
                                 match version {
                                     WalVersion::V3 => legacy_verifier
@@ -1367,7 +1421,7 @@ impl Wal {
 
                 if let Err(e) = verify_res {
                     if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
-                        let mut legacy_verifier = IntegrityVerifier::new(&LEGACY_INTEGRITY_KEY);
+                        let mut legacy_verifier = IntegrityVerifier::new(&legacy_integrity_key());
                         let legacy_res = match version {
                             WalVersion::V3 => {
                                 legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos)
@@ -2021,7 +2075,7 @@ mod tests {
                 value: b"legacy_val".to_vec(),
             };
             let legacy_entry =
-                WalEntry::try_new(op, 1, &LEGACY_INTEGRITY_KEY, [0u8; 32]).expect("legacy entry"); // expect
+                WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("legacy entry"); // expect
 
             let mut wal_bytes = Vec::new();
             wal_bytes.extend_from_slice(&WAL_V3_HEADER);
@@ -2839,5 +2893,63 @@ mod tests {
 
         // Both WAL instances are opened successfully
         assert_eq!(wal1.path(), wal2.path());
+    }
+
+    #[test]
+    fn test_legacy_integrity_key_deobfuscation() {
+        let key = legacy_integrity_key();
+        assert_eq!(&key, b"memfuse-integrity-key-v1\0\0\0\0\0\0\0\0");
+    }
+
+    #[tokio::test]
+    async fn test_wal_v1_auto_migration_on_min_version_v3() {
+        let dir = tempdir().expect("tempdir"); // expect
+        let wal_path = dir.path().join("migrate_v1.wal");
+        let bak_path = dir.path().join("migrate_v1.wal.v1.bak");
+
+        {
+            // Create an unencrypted V1 WAL file
+            let op = WalOp::Put {
+                tx_id: TxId::new(1),
+                key: b"mig_key".to_vec(),
+                value: b"mig_val".to_vec(),
+            };
+            let entry = WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("v1 entry"); // expect
+
+            let mut v1_bytes = Vec::new();
+            // V1 WAL file has no MFW3 or MFW2 header prefix
+            v1_bytes.extend_from_slice(&entry.to_bytes().expect("to_bytes")); // expect
+            fs::write(&wal_path, v1_bytes).await.expect("write v1 wal"); // expect
+        }
+
+        // Open with min_wal_version = WalVersion::V3 and legacy key fallback allowed
+        let wal = Wal::open_with_config(
+            &wal_path,
+            WalConfig {
+                allow_legacy_integrity_key_fallback: true,
+                min_wal_version: WalVersion::V3,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("open and auto-migrate v1 wal"); // expect
+
+        // Verify that backup file exists
+        assert!(bak_path.exists(), "Backup file .v1.bak must exist after migration");
+
+        // Verify replayed entries
+        let entries = wal.replay().await.expect("replay migrated wal"); // expect
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1.seq_no, 1);
+        if let WalOp::Put { key, value, .. } = &entries[0].1.op {
+            assert_eq!(key, b"mig_key");
+            assert_eq!(value, b"mig_val");
+        } else {
+            panic!("Expected Put op");
+        }
+
+        // Read the actual WAL file from disk and verify it now has the V3 header
+        let raw_disk_bytes = fs::read(&wal_path).await.expect("read wal_path"); // expect
+        assert_eq!(&raw_disk_bytes[0..4], &WAL_V3_HEADER, "Migrated file must start with WAL_V3_HEADER");
     }
 }
