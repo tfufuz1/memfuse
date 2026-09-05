@@ -42,8 +42,8 @@ pub async fn ingest_file(
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = Arc::new(OllamaBridge::localhost());
-    let pipeline = IngestionPipeline::new(embedder)
-        .with_extract_entities(extract_entities.unwrap_or(true));
+    let pipeline =
+        IngestionPipeline::new(embedder).with_extract_entities(extract_entities.unwrap_or(true));
 
     let path = std::path::Path::new(&file_path);
     let canonical_path =
@@ -97,8 +97,8 @@ pub async fn ingest_folder(
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = Arc::new(OllamaBridge::localhost());
-    let pipeline = IngestionPipeline::new(embedder)
-        .with_extract_entities(extract_entities.unwrap_or(true));
+    let pipeline =
+        IngestionPipeline::new(embedder).with_extract_entities(extract_entities.unwrap_or(true));
 
     let folder = std::path::Path::new(&folder_path);
     let canonical_folder =
