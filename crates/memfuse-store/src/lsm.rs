@@ -223,6 +223,7 @@ pub struct LsmStorage {
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
     flush_counter: AtomicU64,
+    segment_counter: AtomicU64,
 }
 
 impl LsmStorage {
@@ -455,6 +456,7 @@ impl LsmStorage {
             cancel_token,
             task_tracker,
             flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
+            segment_counter: AtomicU64::new(0),
         })
     }
 
@@ -556,8 +558,7 @@ impl LsmStorage {
             }
 
             if !surviving_entries.is_empty() {
-                static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+                let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
                 let seq = self.next_seq_no.load(Ordering::Relaxed);
                 let new_sst_path =
                     self.config
@@ -1107,8 +1108,7 @@ impl StorageEngine for LsmStorage {
         }; // write lock freigegeben
 
         let sst_path = {
-            static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
             let seq = self.next_seq_no.load(Ordering::Relaxed);
             self.config
                 .path
@@ -3038,26 +3038,84 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flush_counter_is_instance_scoped() {
-        // Zwei unabhängige Stores dürfen sich den Counter NICHT teilen
-        let dir1 = tempfile::tempdir().unwrap();
-        let dir2 = tempfile::tempdir().unwrap();
-        let s1 = LsmStorage::new(LsmConfig {
-            path: dir1.path().to_path_buf(),
+    async fn test_two_instances_independent_flush_counters() {
+        let tmp1 = TempDir::new().unwrap();
+        let tmp2 = TempDir::new().unwrap();
+
+        let storage1 = LsmStorage::new(LsmConfig {
+            path: tmp1.path().to_path_buf(),
             ..Default::default()
         })
         .await
         .unwrap();
-        let s2 = LsmStorage::new(LsmConfig {
-            path: dir2.path().to_path_buf(),
+
+        let storage2 = LsmStorage::new(LsmConfig {
+            path: tmp2.path().to_path_buf(),
             ..Default::default()
         })
         .await
         .unwrap();
-        // Initial flush_counter von s1 und s2 sind unabhängig (beide bei 0 oder max_wal+1)
-        // Kein geteilter Zustand möglich wenn Feld instanzgebunden ist.
-        // Test verifiziert dass s1 und s2 kompilieren/initialisieren ohne panic
-        let _ = s1;
-        let _ = s2;
+
+        let tx1 = TxId::new(1);
+        storage1.put(tx1, b"key1", b"val1").await.unwrap();
+        storage1.commit(tx1).await.unwrap();
+        storage1.force_flush().await.unwrap();
+
+        let tx2 = TxId::new(1);
+        storage2.put(tx2, b"key2", b"val2").await.unwrap();
+        storage2.commit(tx2).await.unwrap();
+        storage2.force_flush().await.unwrap();
+
+        // Check instance flush counters
+        assert_eq!(storage1.flush_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(storage2.flush_counter.load(Ordering::Relaxed), 1);
+
+        // Confirm both generated wal-0.log in their separate directories without cross-contamination
+        assert!(tmp1.path().join("wal-0.log").exists());
+        assert!(tmp2.path().join("wal-0.log").exists());
+    }
+
+    #[tokio::test]
+    async fn test_parallel_flush_counter_no_race() {
+        let tmp1 = TempDir::new().unwrap();
+        let tmp2 = TempDir::new().unwrap();
+
+        let storage1 = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: tmp1.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+
+        let storage2 = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: tmp2.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+
+        let tx1 = TxId::new(1);
+        storage1.put(tx1, b"key1", b"val1").await.unwrap();
+        storage1.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(1);
+        storage2.put(tx2, b"key2", b"val2").await.unwrap();
+        storage2.commit(tx2).await.unwrap();
+
+        let s1 = Arc::clone(&storage1);
+        let s2 = Arc::clone(&storage2);
+
+        let (res1, res2) = tokio::join!(s1.force_flush(), s2.force_flush());
+        res1.unwrap();
+        res2.unwrap();
+
+        assert_eq!(storage1.flush_counter.load(Ordering::Relaxed), 1);
+        assert_eq!(storage2.flush_counter.load(Ordering::Relaxed), 1);
+        assert!(tmp1.path().join("wal-0.log").exists());
+        assert!(tmp2.path().join("wal-0.log").exists());
     }
 }
