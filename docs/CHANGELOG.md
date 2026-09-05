@@ -4,6 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
 | `TS:2026-09-03T00:00:00Z` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
