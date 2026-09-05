@@ -2402,7 +2402,6 @@ mod tests {
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
         let integrity_key = sub_km
             .integrity_key()
-            .map_err(Into::into)
             .expect("integrity key"); // expect
 
         let op1 = WalOp::Put {
