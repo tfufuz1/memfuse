@@ -12569,10 +12569,6 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
-    "hash": "104694f3a9ecb8d5"
-  },
-  {
-    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "1129aed3d33acbd6"
   },
   {
@@ -13045,6 +13041,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "c98a7b261daa28c4"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "c9a37343be6f0098"
   },
   {
@@ -13252,40 +13252,36 @@
     "hash": "e21a01f44fa37393"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "43d65683dcce66f3"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "03848a6faed88bf9"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "44c876b4250a41d9"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "35b7eaa0de589109"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "5b78fc27fbc3cae6"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "469e5edbe5f76665"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "5bebf6baeb4c4e25"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "508b540ec8eb25f9"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "809a07c56d3c187a"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "557ea5aa190d3212"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "8367d57f98f6c378"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "68113eb4e97a6099"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "9263e00240569d58"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "b5887b9735c71fdb"
   },
   {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "9b291019498c7628"
-  },
-  {
-    "file": "crates/memfuse-store/tests/chaos_memory_pressure.rs",
-    "hash": "9b778dd9c6f30fac"
+    "file": "crates/memfuse-store/tests/chaos_task_massacre.rs",
+    "hash": "c70d191fb0e3c399"
   },
   {
     "file": "crates/memfuse-store/tests/compaction_correctness_and_pinning.rs",
