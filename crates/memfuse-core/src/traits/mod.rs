@@ -320,7 +320,7 @@ pub trait VectorIndex: Send + Sync + 'static {
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<u64>;
+    async fn last_tx_id(&self) -> Result<TxId>;
 
     /// Returns the number of vectors in the index.
     async fn len(&self) -> usize;
@@ -420,7 +420,7 @@ pub trait TextIndex: Send + Sync + 'static {
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<u64>;
+    async fn last_tx_id(&self) -> Result<TxId>;
 
     /// Returns the number of documents in the index.
     async fn len(&self) -> usize;
@@ -637,7 +637,7 @@ pub trait GraphIndex: Send + Sync + 'static {
     async fn rollback_to_tx(&self, tx_id: crate::types::TxId) -> crate::Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> crate::Result<u64>;
+    async fn last_tx_id(&self) -> crate::Result<crate::types::TxId>;
 
     /// Returns the number of entities in the index.
     async fn len(&self) -> usize;
@@ -782,8 +782,8 @@ mod capability_coverage {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -858,8 +858,8 @@ mod capability_coverage {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -932,8 +932,8 @@ mod capability_coverage {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -1263,8 +1263,8 @@ mod tests {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 self.0.load(std::sync::atomic::Ordering::SeqCst)
@@ -1334,8 +1334,8 @@ mod tests {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -1395,8 +1395,8 @@ mod tests {
             async fn rollback_to_tx(&self, _: crate::types::TxId) -> crate::Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> crate::Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> crate::Result<crate::types::TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0

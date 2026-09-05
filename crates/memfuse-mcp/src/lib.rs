@@ -28,8 +28,8 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-/// Maximum allowed single JSON-RPC message size via stdio (16 MB).
-pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum allowed single JSON-RPC message size via stdio (4 MB).
+pub const MAX_RPC_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum allowed search query length in bytes (64 KB).
 pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
@@ -58,17 +58,19 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
         if raw_bytes.len() + used > max_bytes {
             reader.consume(used);
             // Drain remaining line from reader to avoid leaving unconsumed bytes
-            loop {
-                let avail = reader.fill_buf().await?;
-                if avail.is_empty() {
-                    break;
-                }
-                if let Some(pos) = avail.iter().position(|&b| b == b'\n') {
-                    reader.consume(pos + 1);
-                    break;
-                } else {
-                    let len = avail.len();
-                    reader.consume(len);
+            if !done {
+                loop {
+                    let avail = reader.fill_buf().await?;
+                    if avail.is_empty() {
+                        break;
+                    }
+                    if let Some(pos) = avail.iter().position(|&b| b == b'\n') {
+                        reader.consume(pos + 1);
+                        break;
+                    } else {
+                        let len = avail.len();
+                        reader.consume(len);
+                    }
                 }
             }
             return Err(std::io::Error::new(

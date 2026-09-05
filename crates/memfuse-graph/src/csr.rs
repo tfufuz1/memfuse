@@ -1629,8 +1629,8 @@ impl GraphIndex for CsrGraph {
         Ok(())
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
-        Ok(self.last_tx_id.load(Ordering::SeqCst))
+    async fn last_tx_id(&self) -> Result<TxId> {
+        Ok(TxId::new(self.last_tx_id.load(Ordering::SeqCst)))
     }
 
     async fn len(&self) -> usize {
@@ -2252,7 +2252,10 @@ mod tests {
         let (txs1, ent1, edge1) = run_sequence().await;
         let (txs2, ent2, edge2) = run_sequence().await;
 
-        assert_eq!(txs1, vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            txs1,
+            vec![TxId(1), TxId(2), TxId(3), TxId(4), TxId(5)]
+        );
         assert_eq!(
             txs1, txs2,
             "TxId sequence must be deterministically identical across runs"
@@ -2756,7 +2759,7 @@ mod tests {
     #[tokio::test]
     async fn test_last_tx_id_tracking() {
         let graph = CsrGraph::new();
-        assert_eq!(graph.last_tx_id().await.unwrap(), 0); // unwrap
+        assert_eq!(graph.last_tx_id().await.unwrap(), TxId(0)); // unwrap
 
         let tx1 = TxId::new(5);
         graph
@@ -2767,7 +2770,7 @@ mod tests {
 
         assert_eq!(
             graph.last_tx_id().await.unwrap(), // unwrap
-            5,
+            TxId(5),
             "last_tx_id should be updated to 5 after committing Tx 5"
         );
 
@@ -2780,7 +2783,7 @@ mod tests {
 
         assert_eq!(
             graph.last_tx_id().await.unwrap(), // unwrap
-            12,
+            TxId(12),
             "last_tx_id should be updated to 12 after committing Tx 12"
         );
     }

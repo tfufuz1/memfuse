@@ -2376,8 +2376,8 @@ impl VectorIndex for HnswIndex {
         Ok(())
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
-        Ok(self.inner.last_tx_id.load(Ordering::SeqCst))
+    async fn last_tx_id(&self) -> Result<TxId> {
+        Ok(TxId::new(self.inner.last_tx_id.load(Ordering::SeqCst)))
     }
 
     async fn all_doc_ids(&self) -> Result<Vec<DocId>> {

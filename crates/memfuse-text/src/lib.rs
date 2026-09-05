@@ -63,7 +63,7 @@ impl<S: memfuse_core::StorageEngine> TextIndex for Bm25Scorer<S> {
         self.index.rollback_to_tx(tx_id).await
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
+    async fn last_tx_id(&self) -> Result<TxId> {
         self.index.last_tx_id().await
     }
 
@@ -205,7 +205,7 @@ mod tests {
 
         let stats = scorer.stats().await?;
         assert_eq!(stats.num_documents, 1);
-        assert_eq!(scorer.last_tx_id().await?, 1);
+        assert_eq!(scorer.last_tx_id().await?, TxId(1));
 
         scorer.delete(tx, doc_id).await?;
         scorer.commit(tx).await?;
