@@ -87,7 +87,7 @@ async fn run_scenario_task_massacre(
     }
 
     // Force flush to ensure state persistence
-    let _ = storage.force_flush().await;
+    storage.force_flush().await?;
 
     // Verify ground truth state against storage
     let gt = ground_truth.lock().await;
@@ -217,7 +217,9 @@ async fn run_scenario_bit_flip_injection(
                 let flip_offset = rng.gen_range(12..bytes.len());
                 let bit_idx = rng.gen_range(0..8);
                 bytes[flip_offset] ^= 1 << bit_idx;
-                let _ = tokio::fs::write(target_path, bytes).await;
+                if let Err(e) = tokio::fs::write(target_path, bytes).await {
+                    tracing::warn!("Failed to write corrupted bytes during bitflip chaos test: {e}");
+                }
             }
         }
     }
