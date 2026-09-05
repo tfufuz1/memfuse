@@ -9,7 +9,7 @@
 //! **Empfohlener Einstiegspunkt**: [`Collection::query()`] liefert einen [`HybridQueryBuilder`](crate::HybridQueryBuilder)
 //! als Fluent-API für Vektor-, Text-, Graph- und Hybrid-Suchen. Die direkten `search_*`-Methoden sind deprecated.
 
-use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
+use super::{extract_effective_importance, Collection, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
 use memfuse_core::{
@@ -175,8 +175,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             total_sampled += 1;
             let doc_metadata = if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(v) {
                 meta.metadata
-            } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(v) {
-                full.metadata
             } else {
                 None
             };
@@ -218,8 +216,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             let (id, doc_metadata) =
                 if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&v) {
                     (meta.id, meta.metadata)
-                } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&v) {
-                    (full.id, full.metadata)
                 } else {
                     continue;
                 };
@@ -331,8 +327,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 let (id, metadata) =
                     if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
                         (meta.id, meta.metadata)
-                    } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
-                        (full.id, full.metadata)
                     } else {
                         tracing::warn!(doc_id = ?sd.doc_id, "Could not deserialize doc_key");
                         skipped_tombstones += 1;
@@ -385,8 +379,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 let (id, metadata) =
                     if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
                         (meta.id, meta.metadata)
-                    } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
-                        (full.id, full.metadata)
                     } else {
                         tracing::warn!(doc_id = ?doc_id, "Could not deserialize doc_key");
                         skipped_tombstones += 1;
