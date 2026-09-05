@@ -5,7 +5,6 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
-#![allow(deprecated)]
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! ## Concurrency & Lock Hierarchy
