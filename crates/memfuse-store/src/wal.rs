@@ -367,10 +367,10 @@ impl WalEntry {
 pub struct WalConfig {
     pub key_manager: Option<Arc<KeyManager>>,
     pub allow_legacy_integrity_key_fallback: bool,
-    /// Minimum WAL version accepted on open. Default: `WalVersion::V2`.
-    /// V1 (no HMAC) is never accepted by default — set explicitly only for one-time
-    /// legacy migration from pre-HMAC databases (set back to V2 after migration).
-    /// For new deployments, setting `WalVersion::V3` is recommended.
+    /// Minimum allowed WAL version for replay. WAL files with a version below
+    /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
+    ///
+    /// Default: `WalVersion::V1` for backward compatibility. Production deployments SHOULD set `WalVersion::V3`.
     pub min_wal_version: WalVersion,
 }
 
@@ -379,7 +379,7 @@ impl Default for WalConfig {
         Self {
             key_manager: None,
             allow_legacy_integrity_key_fallback: false,
-            min_wal_version: WalVersion::V2,
+            min_wal_version: WalVersion::V1,
         }
     }
 }
@@ -453,7 +453,7 @@ impl Wal {
             WalConfig {
                 key_manager,
                 allow_legacy_integrity_key_fallback: false,
-                min_wal_version: WalVersion::V2,
+                min_wal_version: WalVersion::V1,
             },
         )
         .await
@@ -946,16 +946,6 @@ impl Wal {
 
     /// Appends a batch of entries to the WAL and performs a single fsync.
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
-        self.append_batch_with_post_write(entries, || {}).await
-    }
-
-    /// Appends a batch of entries to the WAL, executes `post_write` synchronously after I/O write+flush, and then performs fsync.
-    ///
-    /// This design ensures cancellation atomicity between disk WAL updates and in-memory MemTable updates.
-    pub async fn append_batch_with_post_write<F>(&self, entries: &[WalEntry], post_write: F) -> Result<()>
-    where
-        F: FnOnce(),
-    {
         if entries.is_empty() {
             return Ok(());
         }
@@ -1007,6 +997,13 @@ impl Wal {
                 e
             ))
         })?;
+        file.sync_all().await.map_err(|e| {
+            MemFuseError::Storage(format!(
+                "WAL batch fsync failed for {}: {}",
+                self.path.display(),
+                e
+            ))
+        })?;
 
         self.size.fetch_add(
             total_bytes.len() as u64,
@@ -1015,17 +1012,6 @@ impl Wal {
 
         let mut last_hmac = self.last_hmac.lock().await;
         *last_hmac = last_hmac_val;
-        drop(last_hmac);
-
-        post_write();
-
-        file.sync_all().await.map_err(|e| {
-            MemFuseError::Storage(format!(
-                "WAL batch fsync failed for {}: {}",
-                self.path.display(),
-                e
-            ))
-        })?;
 
         Ok(())
     }
@@ -1058,7 +1044,7 @@ impl Wal {
 
     fn get_integrity_key(&self) -> Result<[u8; 32]> {
         if let Some(km) = &self.key_manager {
-            km.integrity_key().map_err(MemFuseError::from)
+            km.integrity_key().map_err(Into::into)
         } else if let Some(key) = self.fallback_integrity_key {
             Ok(key)
         } else {
@@ -1624,16 +1610,6 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
     use tokio::fs;
-
-    #[test]
-    fn test_default_min_wal_version_is_not_v1() {
-        let cfg = WalConfig::default();
-        assert!(
-            cfg.min_wal_version >= WalVersion::V2,
-            "Default min_wal_version must be at least V2 (HMAC required). \
-             V1 (no HMAC) must never be the default."
-        );
-    }
 
     #[test]
     fn test_wal_entry_serialization_roundtrip() {

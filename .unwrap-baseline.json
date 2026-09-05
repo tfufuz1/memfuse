@@ -10333,11 +10333,19 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "288442fe625a2a8c"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "289bb33fef9ca138"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "2d94c492a83160fd"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "2daa9b63205d877e"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10461,10 +10469,6 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "814766dacbad69a1"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "85aa17db29f31462"
   },
   {
@@ -10554,10 +10558,6 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "eb999b1a090b233a"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ecfddf64a81d1a72"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -12645,7 +12645,7 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
-    "hash": "11f2ecf59991e13f"
+    "hash": "141eb989e2218e14"
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
@@ -12726,6 +12726,10 @@
   {
     "file": "crates/memfuse-store/src/wal.rs",
     "hash": "2b1d94120ca6255c"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "2bc9e276e425daaa"
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
@@ -12953,6 +12957,10 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
+    "hash": "79004199cc2f2e65"
+  },
+  {
+    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "791651647d7898f0"
   },
   {
@@ -13097,10 +13105,6 @@
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
-    "hash": "bf79b0a185af8ed2"
-  },
-  {
-    "file": "crates/memfuse-store/src/wal.rs",
     "hash": "bf8b30e09c7d701d"
   },
   {
@@ -13122,10 +13126,6 @@
   {
     "file": "crates/memfuse-store/src/wal.rs",
     "hash": "c9a37343be6f0098"
-  },
-  {
-    "file": "crates/memfuse-store/src/wal.rs",
-    "hash": "caf6bcd208d8eae7"
   },
   {
     "file": "crates/memfuse-store/src/wal.rs",
