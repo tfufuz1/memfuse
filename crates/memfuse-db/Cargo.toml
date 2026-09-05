@@ -33,7 +33,6 @@ memfuse-index = { workspace = true, features = ["experimental-diskann"] }
 default = []
 bench = []
 sandbox = []
-cluster = []
 experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 
