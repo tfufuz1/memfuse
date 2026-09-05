@@ -954,43 +954,9 @@ impl StorageEngine for LsmStorage {
             }
         }
 
-        // --- PHASE 2: Group Commit to WAL & MemTable ---
+        // --- PHASE 2: Group Commit to WAL ---
         let wal_entries = state.wal.prepare_batch(wal_ops).await?;
-        let append_res = state
-            .wal
-            .append_batch_with_post_write(&wal_entries, || {
-                // Synchronously update last_committed_tx and MemTable immediately after disk write+flush,
-                // but before async fsync. This prevents async task cancellation during fsync from causing
-                // WAL vs. MemTable divergence.
-                if tx_id.inner() < TxId::INTERNAL_BASE {
-                    let mut current = self.last_committed_tx.load(Ordering::Acquire);
-                    while tx_id.inner() > current {
-                        match self.last_committed_tx.compare_exchange_weak(
-                            current,
-                            tx_id.inner(),
-                            Ordering::SeqCst,
-                            Ordering::Relaxed,
-                        ) {
-                            Ok(_) => break,
-                            Err(actual) => current = actual,
-                        }
-                    }
-                }
-
-                for (key, value, seq) in &mem_updates {
-                    let entry_size = key.len() + value.len() + 8;
-                    let _ = self.budget.consume_memory(entry_size as u64);
-                    state.memtable.put(
-                        Bytes::from(key.clone()),
-                        Bytes::from(value.clone()),
-                        *seq,
-                        tx_id.inner(),
-                    );
-                }
-            })
-            .await;
-
-        if let Err(e) = append_res {
+        if let Err(e) = state.wal.append_batch(&wal_entries).await {
             // FATAL I/O ERROR: Physical Rollback to last committed transaction state
             drop(state);
             let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
@@ -1004,6 +970,43 @@ impl StorageEngine for LsmStorage {
                 "Commit failed (at WAL append), WAL rollback executed: {}",
                 e
             )));
+        }
+
+        // INVARIANT (Task D - Commit Ordering):
+        // 1. WAL append must succeed FIRST (done in PHASE 2).
+        // 2. last_committed_tx.store() must happen AFTER successful WAL append (done here before/during MemTable write).
+        // 3. MemTable write happens AFTER WAL append succeeds.
+        if tx_id.inner() < TxId::INTERNAL_BASE {
+            let mut current = self.last_committed_tx.load(Ordering::Acquire);
+            while tx_id.inner() > current {
+                match self.last_committed_tx.compare_exchange_weak(
+                    current,
+                    tx_id.inner(),
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(actual) => current = actual,
+                }
+            }
+            if tx_id.inner() <= current && tx_id.inner() != 0 {
+                // Already superseded
+            } else if tx_id.inner() == 0 {
+                tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
+            }
+        }
+
+        // --- PHASE 3: Apply to MemTable ---
+        for (key, value, seq) in mem_updates {
+            let entry_size = key.len() + value.len() + 8;
+            if let Err(e) = self.budget.consume_memory(entry_size as u64) {
+                tracing::warn!("Memory budget tracking warning during commit: {e}");
+            }
+            state
+                .memtable
+                .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
         }
 
         // Check if flush is needed
