@@ -3245,7 +3245,19 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/crud.rs",
+    "hash": "2d935cc3d23b4075"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/crud.rs",
+    "hash": "4c27f41462f9fc38"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/crud.rs",
     "hash": "4cb0d1c9a9a1b639"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/crud.rs",
+    "hash": "660fbb5f23cc27c4"
   },
   {
     "file": "crates/memfuse-db/src/collection/crud.rs",
@@ -3257,7 +3269,15 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/crud.rs",
+    "hash": "b72c0f9b96a8c45f"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/crud.rs",
     "hash": "c3d9278b3b72cd41"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/crud.rs",
+    "hash": "dc37826421a69097"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
