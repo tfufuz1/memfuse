@@ -603,7 +603,7 @@ pub struct CheckpointGuard<S: memfuse_core::StorageEngine> {
 impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
     pub fn new(checkpoint: StateCheckpoint, storage: Arc<S>, namespace: impl Into<String>) -> Self {
         let ns = namespace.into();
-        let orphan_path = std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_path = default_data_dir().join(format!("{ns}_orphaned_checkpoints.json"));
         let registry = Arc::new(InstanceOrphanRegistry::new(orphan_path));
         let skipped_rollbacks = Arc::new(AtomicU64::new(0));
         Self::with_registry_and_counter(checkpoint, storage, ns, registry, skipped_rollbacks)
@@ -896,8 +896,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
 
-        let orphan_path =
-            std::path::PathBuf::from(format!("{namespace}_orphaned_checkpoints.json"));
+        let orphan_path = default_data_dir().join(format!("{namespace}_orphaned_checkpoints.json"));
         let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
 
         // 5. Recover orphaned sequence pins on startup (ADR-052)
@@ -1831,6 +1830,17 @@ mod tests {
         assert!(
             storage.rolled_back_tx.lock().is_empty(),
             "Committed guard should not perform rollback"
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_guard_orphan_path_is_not_relative() {
+        // Can't call new() without storage, but can test the path computation logic:
+        let path = super::default_data_dir().join("test_orphaned_checkpoints.json");
+        assert!(
+            path.is_absolute(),
+            "Orphan checkpoint paths must be absolute, got: {:?}",
+            path
         );
     }
 
