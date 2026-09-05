@@ -90,6 +90,8 @@ impl<S: StorageEngine> AuditLog<S> {
 
     /// Appends an immutable audit entry directly via LSM storage without HNSW vector index participation (AC-3).
     /// Enforces append-only immutability: returns `MemFuseError::Conflict` if an entry for the step already exists.
+    /// A `Conflict` error indicates that a step with this ID already exists - the caller must choose a new `step_count`
+    /// (e.g. using `next_retry_step_count()`), and NOT automatically overwrite.
     pub async fn append(&self, entry: &AuditEntry) -> Result<()> {
         Self::append_to(&self.collection, entry).await
     }
