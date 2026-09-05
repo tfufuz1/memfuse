@@ -21,7 +21,7 @@ Ergebnis: **1 offene Tags**
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 9083 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-crypto` | 1 | 2435 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7184 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11873 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
@@ -41,7 +41,7 @@ Ergebnis: **1 offene Tags**
 ```
 Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
 Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
-          memfuse-crypto — Encryption at Rest utilities for MemFuse
+          memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
           memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
