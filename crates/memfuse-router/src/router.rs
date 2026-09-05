@@ -54,8 +54,12 @@ pub struct RouterEngine {
 
 impl RouterEngine {
     /// Creates a new `RouterEngine` instance.
-    pub fn new(collection: Arc<Collection<LsmStorage>>, profiles: Vec<SlmProfile>) -> Self {
-        let calibration: HashMap<String, ProfileCalibrationState> = profiles
+    pub fn new(
+        collection: Arc<Collection<LsmStorage>>,
+        profiles: Vec<SlmProfile>,
+        calibration_store_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        let mut calibration: HashMap<String, ProfileCalibrationState> = profiles
             .iter()
             .map(|p| {
                 (
@@ -64,6 +68,23 @@ impl RouterEngine {
                 )
             })
             .collect();
+
+        if let Some(ref path) = calibration_store_path {
+            if let Ok(bytes) = std::fs::read(path) {
+                if let Ok(persisted) =
+                    serde_json::from_slice::<HashMap<String, ProfileCalibrationState>>(&bytes)
+                {
+                    // Merge persisted state into defaults (persisted wins for known profiles)
+                    for (name, state) in persisted {
+                        if calibration.contains_key(&name) {
+                            calibration.insert(name, state);
+                        }
+                        // Unknown profiles (removed from config) are silently dropped
+                    }
+                }
+            }
+        }
+
         Self {
             collection,
             profiles: RwLock::new(profiles),
@@ -76,11 +97,12 @@ impl RouterEngine {
     pub fn try_new(
         collection: Arc<Collection<LsmStorage>>,
         profiles: Vec<SlmProfile>,
+        calibration_store_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
         for p in &profiles {
             p.validate()?;
         }
-        Ok(Self::new(collection, profiles))
+        Ok(Self::new(collection, profiles, calibration_store_path))
     }
 
     /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
@@ -622,7 +644,7 @@ mod tests {
             0.8,
         );
 
-        let router = RouterEngine::new(collection, vec![profile1, profile2]);
+        let router = RouterEngine::new(collection, vec![profile1, profile2], None);
         let stats = router.calibration_stats();
         assert_eq!(stats.len(), 2);
         assert_eq!(stats["p1"].times_selected, 0);
@@ -665,7 +687,7 @@ mod tests {
             0.5,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         {
             let mut cal = router.calibration.write();
             if let Some(state) = cal.get_mut("p1") {
