@@ -5,7 +5,6 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
-#![allow(deprecated)]
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
 //!
 //! ## Concurrency & Lock Hierarchy
@@ -273,6 +272,7 @@ impl Default for MemFuseConfig {
 /// a simple, zero-boilerplate API on top of a LSM-Tree storage engine
 /// and HNSW vector index.
 pub struct MemFuse {
+    path: std::path::PathBuf,
     storage: Arc<LsmStorage>,
     next_tx: Arc<AtomicU64>,
     dimension: usize,
@@ -284,6 +284,7 @@ pub struct MemFuse {
     /// Global text embedder for default collection.
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
 }
+
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
 // get_at_snapshot() below.
@@ -345,6 +346,7 @@ impl MemFuse {
         let task_tracker = tokio_util::task::TaskTracker::new();
 
         let db = Self {
+            path: path.as_ref().to_path_buf(),
             storage,
             next_tx,
             dimension: config.dimension,
@@ -616,6 +618,11 @@ impl MemFuse {
         });
 
         Ok(col_arc)
+    }
+
+    /// Returns the database root path.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Allokiert eine eindeutige, atomar inkrementierte Transaction-ID.
