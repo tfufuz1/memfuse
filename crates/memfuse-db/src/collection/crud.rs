@@ -4,9 +4,6 @@
 // NICHT-OFFENSICHTLICH: check_doc_id_collision wird strikt innerhalb des insert_lock ausgeführt.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-#[path = "kv_lock.rs"]
-mod kv_lock;
-
 use super::{
     ensure_importance_metadata, extract_text, Collection, StoredDocument, StoredDocumentMeta,
 };
@@ -205,7 +202,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
-        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
+        let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let data = serde_json::to_vec(value)?;
@@ -219,7 +216,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv_if_absent(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
-        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
+        let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         if self.storage.get(&user_key).await?.is_some() {

@@ -2402,6 +2402,75 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
 }
 
 #[tokio::test]
+async fn test_kv_lock_different_collections_no_contention() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index_a = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let index_b = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+
+    let col_a = super::Collection::new(
+        "collection_a".to_string(),
+        storage.clone(),
+        index_a,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let col_b = super::Collection::new(
+        "collection_b".to_string(),
+        storage,
+        index_b,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let target_key = "user:1";
+
+    // Lock key "user:1" in Collection A
+    let _guard_a = col_a.kv_locks.lock_for(target_key).await;
+
+    // Lock key "user:1" in Collection B while _guard_a is held.
+    // Must complete immediately without blocking/contention because col_b has independent locks.
+    let lock_b_future = col_b.kv_locks.lock_for(target_key);
+    let guard_b_res = tokio::time::timeout(std::time::Duration::from_millis(500), lock_b_future).await;
+
+    assert!(
+        guard_b_res.is_ok(),
+        "Locking 'user:1' in collection B must not contend with Collection A"
+    );
+}
+
+#[tokio::test]
 async fn test_user_key_storage_omits_embedding_field() -> memfuse_core::Result<()> {
     use memfuse_core::StorageEngine;
     use memfuse_graph::CsrGraph;
