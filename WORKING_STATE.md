@@ -27,7 +27,7 @@ Ergebnis: **1 offene Tags**
 | `memfuse-index` | 1 | 11933 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 15034 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19580 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 2 | 19613 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3172 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
