@@ -4,6 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
 | `TS:2026-09-03T00:00:00Z` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
@@ -158,7 +159,6 @@
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/context_compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-27T00:00:00Z` | `crates/memfuse-agent/src/lib.rs` | `AI-TAG` | `AGT-AGENT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/crud.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
-| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/mod.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-003` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-004` | `-` | `RESOLVED` | `0` | // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z) |

@@ -54,8 +54,12 @@ pub struct RouterEngine {
 
 impl RouterEngine {
     /// Creates a new `RouterEngine` instance.
-    pub fn new(collection: Arc<Collection<LsmStorage>>, profiles: Vec<SlmProfile>) -> Self {
-        let calibration: HashMap<String, ProfileCalibrationState> = profiles
+    pub fn new(
+        collection: Arc<Collection<LsmStorage>>,
+        profiles: Vec<SlmProfile>,
+        calibration_store_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        let mut calibration: HashMap<String, ProfileCalibrationState> = profiles
             .iter()
             .map(|p| {
                 (
@@ -64,6 +68,23 @@ impl RouterEngine {
                 )
             })
             .collect();
+
+        if let Some(ref path) = calibration_store_path {
+            if let Ok(bytes) = std::fs::read(path) {
+                if let Ok(persisted) =
+                    serde_json::from_slice::<HashMap<String, ProfileCalibrationState>>(&bytes)
+                {
+                    // Merge persisted state into defaults (persisted wins for known profiles)
+                    for (name, state) in persisted {
+                        if calibration.contains_key(&name) {
+                            calibration.insert(name, state);
+                        }
+                        // Unknown profiles (removed from config) are silently dropped
+                    }
+                }
+            }
+        }
+
         Self {
             collection,
             profiles: RwLock::new(profiles),
@@ -76,11 +97,12 @@ impl RouterEngine {
     pub fn try_new(
         collection: Arc<Collection<LsmStorage>>,
         profiles: Vec<SlmProfile>,
+        calibration_store_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
         for p in &profiles {
             p.validate()?;
         }
-        Ok(Self::new(collection, profiles))
+        Ok(Self::new(collection, profiles, calibration_store_path))
     }
 
     /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
@@ -324,11 +346,11 @@ impl RouterEngine {
     ///    - Berechne Aggregat-Score der Chunks (existing logic)
     ///    - Hole ConformalCalibrator für dieses Profil aus self.calibration
     ///    - Prüfe: score >= calibrator.quantile_threshold (oder profile.min_relevance_score)
-    ///      JA: Dieses Profil nehmen, ConfidenceMetrics.calibrated = true
+    ///      JA: Dieses Profil nehmen, ConfidenceMetrics::Calibrated
     ///      NEIN: Weiter zum nächsten Profil (Kaskade)
     /// 3. Falls kein Profil den kalibrierten Schwellenwert erfüllt:
     ///    - Nehme das letzte (geringstes min_relevance_score) als sicheren Fallback
-    ///    - ConfidenceMetrics.calibrated = false, tracing::warn! ausgeben
+    ///    - ConfidenceMetrics::Uncalibrated, tracing::warn! ausgeben
     ///
     /// # Returns
     /// (profil_index, SlmProfile, ConfidenceMetrics)
@@ -409,13 +431,20 @@ impl RouterEngine {
                 let q_threshold = state
                     .map(|st| st.conformal.quantile_threshold)
                     .unwrap_or(profile.min_relevance_score);
-                let confidence = ConfidenceMetrics {
-                    score_lower: Some(score * 0.9),
-                    score_upper: Some(score * 1.1),
-                    calibrated: is_calibrated,
-                    quantile_threshold: q_threshold,
-                    non_conformity_score: 0.0,
-                    selection_margin: 1.0,
+                let confidence = if is_calibrated {
+                    ConfidenceMetrics::Calibrated {
+                        score_lower: score * 0.9,
+                        score_upper: score * 1.1,
+                        quantile_threshold: q_threshold,
+                        non_conformity_score: 0.0,
+                        selection_margin: 1.0,
+                    }
+                } else {
+                    ConfidenceMetrics::Uncalibrated {
+                        non_conformity_score: 0.0,
+                        selection_margin: 1.0,
+                        quantile_threshold: q_threshold,
+                    }
                 };
                 return Ok((orig_idx, profile.clone(), confidence));
             }
@@ -441,13 +470,10 @@ impl RouterEngine {
             "Kaskaden-Fallback: Kein Profil über Schwellenwert, nutze Profil mit niedrigstem min_relevance_score"
         );
 
-        let confidence = ConfidenceMetrics {
-            score_lower: None,
-            score_upper: None,
-            calibrated: false,
-            quantile_threshold: q_threshold,
+        let confidence = ConfidenceMetrics::Uncalibrated {
             non_conformity_score: 0.0,
             selection_margin: 1.0,
+            quantile_threshold: q_threshold,
         };
 
         Ok((fallback_idx, fallback_profile.clone(), confidence))
@@ -618,7 +644,7 @@ mod tests {
             0.8,
         );
 
-        let router = RouterEngine::new(collection, vec![profile1, profile2]);
+        let router = RouterEngine::new(collection, vec![profile1, profile2], None);
         let stats = router.calibration_stats();
         assert_eq!(stats.len(), 2);
         assert_eq!(stats["p1"].times_selected, 0);
@@ -661,7 +687,7 @@ mod tests {
             0.5,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         {
             let mut cal = router.calibration.write();
             if let Some(state) = cal.get_mut("p1") {

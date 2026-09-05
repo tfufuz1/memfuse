@@ -13,6 +13,7 @@ pub async fn ingest_file(
     state: State<'_, AppState>,
     file_path: String,
     collection_name: String,
+    extract_entities: Option<bool>,
 ) -> Result<IngestReport, MemFuseErrorDto> {
     validate_collection_name(&collection_name)?;
     let db = {
@@ -41,7 +42,8 @@ pub async fn ingest_file(
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = Arc::new(OllamaBridge::localhost());
-    let pipeline = IngestionPipeline::new(embedder);
+    let pipeline =
+        IngestionPipeline::new(embedder).with_extract_entities(extract_entities.unwrap_or(true));
 
     let path = std::path::Path::new(&file_path);
     let canonical_path =
@@ -66,6 +68,7 @@ pub async fn ingest_folder(
     state: State<'_, AppState>,
     folder_path: String,
     collection_name: String,
+    extract_entities: Option<bool>,
 ) -> Result<Vec<IngestReport>, MemFuseErrorDto> {
     validate_collection_name(&collection_name)?;
     let db = {
@@ -94,7 +97,8 @@ pub async fn ingest_folder(
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
     let embedder = Arc::new(OllamaBridge::localhost());
-    let pipeline = IngestionPipeline::new(embedder);
+    let pipeline =
+        IngestionPipeline::new(embedder).with_extract_entities(extract_entities.unwrap_or(true));
 
     let folder = std::path::Path::new(&folder_path);
     let canonical_folder =
