@@ -945,6 +945,16 @@ impl Wal {
 
     /// Appends a batch of entries to the WAL and performs a single fsync.
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
+        self.append_batch_with_post_write(entries, || {}).await
+    }
+
+    /// Appends a batch of entries to the WAL, executes `post_write` synchronously after I/O write+flush, and then performs fsync.
+    ///
+    /// This design ensures cancellation atomicity between disk WAL updates and in-memory MemTable updates.
+    pub async fn append_batch_with_post_write<F>(&self, entries: &[WalEntry], post_write: F) -> Result<()>
+    where
+        F: FnOnce(),
+    {
         if entries.is_empty() {
             return Ok(());
         }
@@ -996,13 +1006,6 @@ impl Wal {
                 e
             ))
         })?;
-        file.sync_all().await.map_err(|e| {
-            MemFuseError::Storage(format!(
-                "WAL batch fsync failed for {}: {}",
-                self.path.display(),
-                e
-            ))
-        })?;
 
         self.size.fetch_add(
             total_bytes.len() as u64,
@@ -1011,6 +1014,17 @@ impl Wal {
 
         let mut last_hmac = self.last_hmac.lock().await;
         *last_hmac = last_hmac_val;
+        drop(last_hmac);
+
+        post_write();
+
+        file.sync_all().await.map_err(|e| {
+            MemFuseError::Storage(format!(
+                "WAL batch fsync failed for {}: {}",
+                self.path.display(),
+                e
+            ))
+        })?;
 
         Ok(())
     }
@@ -1043,7 +1057,7 @@ impl Wal {
 
     fn get_integrity_key(&self) -> Result<[u8; 32]> {
         if let Some(km) = &self.key_manager {
-            km.integrity_key().map_err(Into::into)
+            km.integrity_key().map_err(MemFuseError::from)
         } else if let Some(key) = self.fallback_integrity_key {
             Ok(key)
         } else {
@@ -2402,7 +2416,7 @@ mod tests {
         // Manually construct an old V1 encrypted WAL file (no MFW2 header, each entry encrypted separately)
         let integrity_key = sub_km
             .integrity_key()
-            .map_err(Into::into)
+            .map_err(MemFuseError::from)
             .expect("integrity key"); // expect
 
         let op1 = WalOp::Put {
