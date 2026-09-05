@@ -4,11 +4,8 @@
 // NICHT-OFFENSICHTLICH: check_doc_id_collision wird strikt innerhalb des insert_lock ausgeführt.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-#[path = "kv_lock.rs"]
-mod kv_lock;
-
 use super::{
-    ensure_importance_metadata, extract_text, Collection, StoredDocument, StoredDocumentMeta,
+    ensure_importance_metadata, extract_text, Collection, StoredDocumentMeta,
 };
 use memfuse_core::{
     DocId, EntityId, Result, StorageEngine, TxId, VectorIndex, EXPIRY_METADATA_KEY,
@@ -205,7 +202,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
-        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
+        let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let data = serde_json::to_vec(value)?;
@@ -219,7 +216,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv_if_absent(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
-        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
+        let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         if self.storage.get(&user_key).await?.is_some() {
@@ -298,8 +295,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         if let Some(val) = self.storage.get(&doc_key).await? {
             let existing_id = if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&val) {
                 Some(meta.id)
-            } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&val) {
-                Some(full.id)
             } else {
                 None
             };
@@ -336,26 +331,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
         }
 
-        let stored = StoredDocument {
+        let meta = StoredDocumentMeta {
             id: id.to_string(),
-            embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        let meta_only = StoredDocumentMeta::from(&stored);
 
-        // user_key (key_type=0): Vollständiges Dokument (für get() und repair())
-        // Document serialization is unencrypted before being sent to storage.
-        // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
+        // user_key (key_type=0) and doc_key (key_type=1) hold light metadata without embedding vector.
+        // Vector index (HNSW) is the single source of truth for vector embeddings.
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
         let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
         let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
 
-        let data = serde_json::to_vec(&stored)?;
-        self.storage.put(tx, &user_key, &data).await?;
-
-        let meta_data = serde_json::to_vec(&meta_only)?;
+        let meta_data = serde_json::to_vec(&meta)?;
+        self.storage.put(tx, &user_key, &meta_data).await?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
         // Record for compensating transaction with pre-write values
@@ -571,10 +561,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         validate_doc_id(id)?;
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
-            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data) {
+            if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&data) {
                 return Ok(Some(crate::Document {
-                    id: stored.id,
-                    metadata: stored.metadata,
+                    id: meta.id,
+                    metadata: meta.metadata,
                 }));
             } else if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&data) {
                 return Ok(Some(crate::Document {
@@ -646,16 +636,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
         }
 
-        let stored = StoredDocument {
+        let meta = StoredDocumentMeta {
             id: id.to_string(),
-            embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        let meta_only = StoredDocumentMeta::from(&stored);
-        let data = serde_json::to_vec(&stored)?;
-        let meta_data = serde_json::to_vec(&meta_only)?;
+        let meta_data = serde_json::to_vec(&meta)?;
 
-        self.storage.put(tx, &user_key, &data).await?;
+        self.storage.put(tx, &user_key, &meta_data).await?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
         db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
@@ -844,35 +831,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         updated_links = true;
                     }
                 }
-            } else if let Ok(mut full) = serde_json::from_slice::<StoredDocument>(&bytes) {
-                doc_id_str = Some(full.id.clone());
-                let full_obj = full.metadata.get_or_insert_with(|| serde_json::json!({}));
-                if let Some(obj) = full_obj.as_object_mut() {
-                    let mut links: Vec<memfuse_core::types::domain::MemoryLink> = obj
-                        .get("links")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default();
-
-                    if !links
-                        .iter()
-                        .any(|l| l.target == to && l.relation == relation)
-                    {
-                        links.push(memfuse_core::types::domain::MemoryLink {
-                            target: to,
-                            relation,
-                            created_at_tx: tx,
-                        });
-
-                        let links_val = serde_json::to_value(links).map_err(|e| {
-                            memfuse_core::MemFuseError::Serialization(e.to_string())
-                        })?;
-                        obj.insert("links".to_string(), links_val);
-                        obj.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
-                        let updated_bytes = serde_json::to_vec(&full)?;
-                        self.storage.put(tx, &doc_key, &updated_bytes).await?;
-                        updated_links = true;
-                    }
-                }
             }
 
             // Also update user_key (key_type=0) if links were updated and string id is known
@@ -880,10 +838,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 if let Some(ref id_str) = doc_id_str {
                     let user_key = self.namespaced_key(id_str.as_bytes(), 0);
                     if let Some(user_bytes) = self.storage.get_at_seq(&user_key, u64::MAX).await? {
-                        if let Ok(mut full_doc) =
-                            serde_json::from_slice::<StoredDocument>(&user_bytes)
+                        if let Ok(mut meta_doc) =
+                            serde_json::from_slice::<StoredDocumentMeta>(&user_bytes)
                         {
-                            let doc_obj = full_doc
+                            let doc_obj = meta_doc
                                 .metadata
                                 .get_or_insert_with(|| serde_json::json!({}));
                             if let Some(obj) = doc_obj.as_object_mut() {
@@ -904,7 +862,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                                         memfuse_core::MemFuseError::Serialization(e.to_string())
                                     })?;
                                     obj.insert("links".to_string(), links_val);
-                                    let new_user_bytes = serde_json::to_vec(&full_doc)?;
+                                    let new_user_bytes = serde_json::to_vec(&meta_doc)?;
                                     self.storage.put(tx, &user_key, &new_user_bytes).await?;
                                 }
                             }
@@ -929,13 +887,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         if let Some(bytes) = self.storage.get_at_seq(&doc_key, u64::MAX).await? {
             if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&bytes) {
                 if let Some(obj) = meta.metadata.as_ref().and_then(|m| m.as_object()) {
-                    return Ok(obj
-                        .get("links")
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default());
-                }
-            } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&bytes) {
-                if let Some(obj) = full.metadata.as_ref().and_then(|m| m.as_object()) {
                     return Ok(obj
                         .get("links")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())

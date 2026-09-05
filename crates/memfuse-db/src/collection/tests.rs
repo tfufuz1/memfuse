@@ -2402,6 +2402,265 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
 }
 
 #[tokio::test]
+async fn test_kv_lock_different_collections_no_contention() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index_a = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let index_b = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+
+    let col_a = super::Collection::new(
+        "collection_a".to_string(),
+        storage.clone(),
+        index_a,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let col_b = super::Collection::new(
+        "collection_b".to_string(),
+        storage,
+        index_b,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let target_key = "user:1";
+
+    // Lock key "user:1" in Collection A
+    let _guard_a = col_a.kv_locks.lock_for(target_key).await;
+
+    // Lock key "user:1" in Collection B while _guard_a is held.
+    // Must complete immediately without blocking/contention because col_b has independent locks.
+    let lock_b_future = col_b.kv_locks.lock_for(target_key);
+    let guard_b_res = tokio::time::timeout(std::time::Duration::from_millis(500), lock_b_future).await;
+
+    assert!(
+        guard_b_res.is_ok(),
+        "Locking 'user:1' in collection B must not contend with Collection A"
+    );
+}
+
+#[tokio::test]
+async fn test_user_key_storage_omits_embedding_field() -> memfuse_core::Result<()> {
+    use memfuse_core::StorageEngine;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::{HnswConfig, HnswIndex};
+    use memfuse_store::{LsmConfig, LsmStorage};
+    use serde_json::json;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap(); // unwrap allowed (AGENT:04)
+    let storage = Arc::new(
+        LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap allowed (AGENT:04)
+    );
+
+    let hnsw_config = HnswConfig {
+        dimension: 128,
+        ..Default::default()
+    };
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap allowed (AGENT:04)
+    let col: super::Collection<LsmStorage, HnswIndex> = super::Collection::new(
+        "default".to_string(),
+        storage.clone(),
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        128,
+        memfuse_text::Language::English,
+    );
+
+    let doc_id_str = "doc_no_embedding";
+    let embedding = vec![0.1f32; 128];
+    let metadata = json!({"category": "test"});
+
+    col.insert(doc_id_str, &embedding, Some(metadata)).await?;
+
+    let user_key = col.namespaced_key(doc_id_str.as_bytes(), 0);
+    let raw_bytes = storage
+        .get(&user_key)
+        .await?
+        .expect("user_key must exist in storage");
+    let json_val: serde_json::Value = serde_json::from_slice(&raw_bytes).unwrap(); // unwrap allowed (AGENT:04)
+
+    assert!(
+        json_val.get("embedding").is_none(),
+        "user_key JSON must NOT contain an 'embedding' field"
+    );
+    assert_eq!(
+        json_val.get("id").and_then(|v| v.as_str()),
+        Some(doc_id_str)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_and_vector_retrieval_from_index_transparent() -> memfuse_core::Result<()> {
+    use memfuse_core::DocId;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::{HnswConfig, HnswIndex};
+    use memfuse_store::{LsmConfig, LsmStorage};
+    use serde_json::json;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap(); // unwrap allowed (AGENT:04)
+    let storage = Arc::new(
+        LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap allowed (AGENT:04)
+    );
+
+    let hnsw_config = HnswConfig {
+        dimension: 128,
+        ..Default::default()
+    };
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap allowed (AGENT:04)
+    let col: super::Collection<LsmStorage, HnswIndex> = super::Collection::new(
+        "default".to_string(),
+        storage.clone(),
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        128,
+        memfuse_text::Language::English,
+    );
+
+    let doc_id_str = "transparent_doc";
+    let embedding = vec![0.42f32; 128];
+    let metadata = json!({"text": "Transparent Vector Hydration"});
+
+    col.insert(doc_id_str, &embedding, Some(metadata.clone()))
+        .await?;
+
+    // Verify get() returns full document with ID and metadata
+    let doc_opt = col.get(doc_id_str).await?;
+    assert!(doc_opt.is_some(), "Document must be retrievable via get()");
+    let doc = doc_opt.unwrap(); // unwrap allowed (AGENT:04)
+    assert_eq!(doc.id, doc_id_str);
+    assert_eq!(
+        doc.metadata.as_ref().unwrap().get("text").and_then(|v| v.as_str()),
+        Some("Transparent Vector Hydration")
+    ); // unwrap allowed (AGENT:04)
+
+    // Verify vector is stored in and retrieved from index
+    let doc_id = DocId::from_key(doc_id_str)?;
+    let retrieved_vec = col.index.get_vector_by_doc_id(doc_id);
+    assert!(
+        retrieved_vec.is_some(),
+        "Vector must be retrievable from HNSW index by DocId"
+    );
+    assert_eq!(retrieved_vec.unwrap(), embedding); // unwrap allowed (AGENT:04)
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_storage_size_reduction_without_redundant_embedding() -> memfuse_core::Result<()> {
+    use memfuse_core::StorageEngine;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::{HnswConfig, HnswIndex};
+    use memfuse_store::{LsmConfig, LsmStorage};
+    use serde_json::json;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap(); // unwrap allowed (AGENT:04)
+    let storage = Arc::new(
+        LsmStorage::new(LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap allowed (AGENT:04)
+    );
+
+    let hnsw_config = HnswConfig {
+        dimension: 128,
+        ..Default::default()
+    };
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).unwrap()); // unwrap allowed (AGENT:04)
+    let col: super::Collection<LsmStorage, HnswIndex> = super::Collection::new(
+        "default".to_string(),
+        storage.clone(),
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        128,
+        memfuse_text::Language::English,
+    );
+
+    let doc_id_str = "size_test_doc";
+    let embedding = vec![0.1234567f32; 128];
+    let metadata = json!({"info": "size benchmark"});
+
+    // Simulate legacy JSON size containing redundant embedding
+    let legacy_json = json!({
+        "id": doc_id_str,
+        "embedding": embedding,
+        "metadata": metadata
+    });
+    let legacy_bytes = serde_json::to_vec(&legacy_json).unwrap(); // unwrap allowed (AGENT:04)
+
+    // Insert via new implementation
+    col.insert(doc_id_str, &embedding, Some(metadata)).await?;
+
+    let user_key = col.namespaced_key(doc_id_str.as_bytes(), 0);
+    let new_bytes = storage.get(&user_key).await?.expect("user_key must exist");
+
+    assert!(
+        new_bytes.len() < legacy_bytes.len() / 4,
+        "Serialized user_key byte size ({}) must be significantly smaller than legacy format size ({})",
+        new_bytes.len(),
+        legacy_bytes.len()
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_link_memories_cycle_prevention_for_all_relations() -> memfuse_core::Result<()> {
     use memfuse_core::DocId;
     use memfuse_graph::CsrGraph;

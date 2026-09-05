@@ -125,7 +125,6 @@ pub async fn dispatch_to_slm(decision: &RoutingDecision) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::outcome::DecisionId;
     use crate::profile::SlmProfile;
     use memfuse_core::{ContextChunk, ContextWindow, DocId, TokenBudget};
 
