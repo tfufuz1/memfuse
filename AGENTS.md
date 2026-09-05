@@ -102,4 +102,4 @@ Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
 | `.jules/SESSION_BOOTSTRAP.md` | Maschinenausführbare Session-Checkliste | Immer zu Beginn |
 | `.jules/COMMON_LLM_ERRORS.md` | Häufige LLM-Fehler und Korrekturen | Bei Unsicherheit über Korrektheit |
 | `.jules/JULES_CONTEXT.md` | Freshness automatisch geprüft via `xtask check-jules-context-freshness` (Gate 10) |
-| `rules/*.md` | Domain-specific rules (SIMD safety, WAL crypto, testing, etc.) |
+| `rules/*.md` | Domain-specific rules (SIMD safety, WAL crypto, testing, chaos testing, etc.) |

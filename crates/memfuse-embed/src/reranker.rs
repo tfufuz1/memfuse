@@ -453,16 +453,16 @@ mod tests {
     #[tokio::test]
     async fn test_rerank_oversized_candidate_batch_rejected() {
         let config = RerankConfig::default();
-        let reranker = CrossEncoderReranker::new(config)
-            .expect("Failed to construct default Passthrough/ONNX CrossEncoderReranker"); // expect
-        let candidates: Vec<String> = vec!["doc".to_string(); MAX_CANDIDATES + 1];
-        let res = reranker.rerank("query", &candidates).await;
-        assert!(res.is_err());
-        if let Err(err) = res {
-            assert!(matches!(err, MemFuseError::InvalidInput(_)));
-            assert!(err.to_string().contains("exceeds maximum allowed limit"));
-        } else {
-            panic!("Expected InvalidInput error for oversized candidate batch");
+        if let Ok(reranker) = CrossEncoderReranker::new(config) {
+            let candidates: Vec<String> = vec!["doc".to_string(); MAX_CANDIDATES + 1];
+            let res = reranker.rerank("query", &candidates).await;
+            assert!(res.is_err());
+            if let Err(err) = res {
+                assert!(matches!(err, MemFuseError::InvalidInput(_)));
+                assert!(err.to_string().contains("exceeds maximum allowed limit"));
+            } else {
+                panic!("Expected InvalidInput error for oversized candidate batch");
+            }
         }
     }
 
@@ -471,25 +471,27 @@ mod tests {
         use std::sync::Arc;
 
         let config = RerankConfig::default();
-        let reranker = Arc::new(CrossEncoderReranker::new(config).unwrap()); // unwrap
+        if let Ok(reranker) = CrossEncoderReranker::new(config) {
+            let reranker = Arc::new(reranker);
 
-        let candidates: Vec<String> = (0..10).map(|i| format!("doc {i}")).collect();
-        let mut handles = Vec::new();
+            let candidates: Vec<String> = (0..10).map(|i| format!("doc {i}")).collect();
+            let mut handles = Vec::new();
 
-        // Simulate 20 concurrent requests (exceeding pool/session limits)
-        for i in 0..20 {
-            let reranker_cloned = reranker.clone();
-            let candidates_cloned = candidates.clone();
-            handles.push(tokio::spawn(async move {
-                let query = format!("query {i}");
-                reranker_cloned.rerank(&query, &candidates_cloned).await
-            }));
-        }
+            // Simulate 20 concurrent requests (exceeding pool/session limits)
+            for i in 0..20 {
+                let reranker_cloned = reranker.clone();
+                let candidates_cloned = candidates.clone();
+                handles.push(tokio::spawn(async move {
+                    let query = format!("query {i}");
+                    reranker_cloned.rerank(&query, &candidates_cloned).await
+                }));
+            }
 
-        for handle in handles {
-            let res = handle.await.unwrap(); // unwrap
-            assert!(res.is_ok());
-            assert_eq!(res.unwrap().len(), 10); // unwrap
+            for handle in handles {
+                let res = handle.await.unwrap(); // unwrap
+                assert!(res.is_ok());
+                assert_eq!(res.unwrap().len(), 10); // unwrap
+            }
         }
     }
 

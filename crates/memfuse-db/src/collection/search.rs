@@ -338,12 +338,28 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         skipped_tombstones += 1;
                         continue;
                     };
+                let rank = (results.len() + 1) as u32;
+                let prov = crate::fusion::build_provenance(
+                    Some(sd.score),
+                    Some(rank),
+                    Some(1.0),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    60.0,
+                    Some(self.name.clone()),
+                    Some("hnsw".to_string()),
+                );
                 results.push(crate::SearchResult {
                     id,
                     score: sd.score,
                     metadata,
-                    matched_signals: vec![],
-                    provenance: None,
+                    matched_signals: vec!["vector".to_string()],
+                    provenance: Some(prov),
                 });
             } else {
                 skipped_tombstones += 1;
@@ -376,12 +392,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         skipped_tombstones += 1;
                         continue;
                     };
+                let prov = crate::ProvenanceRecord {
+                    source_collection: Some(self.name.clone()),
+                    ..Default::default()
+                };
                 results.push(crate::SearchResult {
                     id,
                     score,
                     metadata,
                     matched_signals: vec![],
-                    provenance: None,
+                    provenance: Some(prov),
                 });
             } else {
                 skipped_tombstones += 1;

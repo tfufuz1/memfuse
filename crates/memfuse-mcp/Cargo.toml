@@ -6,12 +6,15 @@ edition.workspace = true
 [features]
 default = []
 agent-workflows = ["memfuse-agent"]
+onnx = ["memfuse-embed", "memfuse-embed/onnx"]
+test-utils = ["memfuse-core/test-utils"]
 
 [dependencies]
 memfuse-db = { workspace = true }
 memfuse-core = { workspace = true }
 memfuse-crypto = { workspace = true }
 memfuse-ollama = { workspace = true }
+memfuse-embed = { workspace = true, optional = true }
 memfuse-agent = { workspace = true, optional = true }
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 rand = { workspace = true }
@@ -25,7 +28,7 @@ tracing-subscriber = { workspace = true }
 unicode-normalization = "0.1"
 # NO Axum — MCP transport is stdio only (ADR-010). Adding HTTP here is an architecture violation.
 # MCP stdio transport helpers (already transitively present via tokio)
-tokio-util = { workspace = true, features = ["codec"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 futures-util = "0.3"
 
 [dev-dependencies]

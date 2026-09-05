@@ -14,6 +14,35 @@ use crate::context::AgentContext;
 use memfuse_core::Result;
 use serde::{Deserialize, Serialize};
 
+/// Ein fehlgeschlagener Agent-Schritt der für spätere Analyse persistiert wird.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StepDeadLetter {
+    /// Session-ID des Agenten
+    pub session_id: String,
+    /// Node-ID des fehlgeschlagenen Schritts
+    pub node_id: String,
+    /// Ursache des Fehlers
+    pub failure_reason: DeadLetterReason,
+    /// Input der zum Fehler geführt hat
+    pub input: serde_json::Value,
+    /// Anzahl bisheriger Versuche (für Retry-Steuerung)
+    pub attempt: u32,
+    /// Zeitstempel des Fehlers (Unix-Sekunden)
+    pub failed_at_secs: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DeadLetterReason {
+    /// Tool hat nicht innerhalb des Timeouts geantwortet
+    Timeout { timeout_ms: u64 },
+    /// Budget erschöpft bevor der Schritt starten konnte
+    BudgetExhausted { available: usize, required: usize },
+    /// Tool hat einen nicht-retriable Fehler zurückgegeben
+    ToolError { message: String },
+    /// Maximale Retry-Anzahl für diesen Schritt erreicht
+    MaxRetriesExceeded { attempts: u32 },
+}
+
 /// The explicit result of an agent step execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepResult {
@@ -36,4 +65,20 @@ pub trait AgentTool: Send + Sync {
     }
 
     async fn execute(&self, ctx: &AgentContext, input: serde_json::Value) -> Result<StepResult>;
+
+    /// Maximale Ausführungszeit dieses Tools in Millisekunden.
+    /// Standard: 30 Sekunden. Überschreibe für langläufige Tools.
+    fn timeout_ms(&self) -> u64 {
+        30_000
+    }
+
+    /// Ob dieser Schritt bei Timeout/transientem Fehler wiederholbar ist.
+    fn is_retriable(&self) -> bool {
+        true
+    }
+
+    /// Maximale Anzahl Retries. Standard: 2 (d.h. insgesamt 3 Versuche).
+    fn max_retries(&self) -> u32 {
+        2
+    }
 }

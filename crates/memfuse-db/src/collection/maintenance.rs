@@ -6,8 +6,8 @@
 
 use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
 use memfuse_core::{
-    DocId, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
-    EXPIRY_METADATA_KEY,
+    DocId, EntityId, GraphIndex, LlmTextGenerator, MemFuseError, Result, StorageEngine, TextIndex,
+    TxId, VectorIndex, EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 use std::sync::atomic::Ordering;
@@ -157,7 +157,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         // 2. Fallback: Full scan for documents missing from index (FIND-DB-004: Parallel Batching)
         let fallback_tx = self.allocate_tx()?;
-        let mut fallback_any = false;
+        let fallback_any = false;
         let mut fallback_text = false;
 
         for (namespaced_key, value) in docs {
@@ -183,13 +183,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
 
             let doc_id = DocId::from_key(&stored.id)?;
-            if !indexed_ids.contains(&doc_id) {
-                self.index
-                    .insert(fallback_tx, doc_id, &stored.embedding)
-                    .await?;
-                repair_count += 1;
-                fallback_any = true;
-            }
 
             // Ensure text index coverage
             if let Some(text) = extract_text(&stored.metadata) {
@@ -387,7 +380,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn evaluate_importance_with_llm(
         &self,
         doc_id: &str,
-        ollama: &memfuse_ollama::OllamaClient,
+        generator: &(impl LlmTextGenerator + ?Sized),
+        _model: &str,
     ) -> Result<memfuse_core::ImportanceScore> {
         let user_key = self.namespaced_key(doc_id.as_bytes(), 0);
         let Some(data) = self.storage.get(&user_key).await? else {
@@ -407,8 +401,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             text.chars().take(500).collect::<String>()
         );
 
-        let model = &ollama.config().model;
-        let response = ollama.generate_text(model, &prompt).await.map_err(|e| {
+        let response = generator.generate(&prompt).await.map_err(|e| {
             memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
         })?;
 

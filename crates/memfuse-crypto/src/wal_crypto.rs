@@ -11,9 +11,8 @@
 
 #![forbid(unsafe_code)]
 
-use memfuse_core::{Result, TxId};
-
 use crate::crypto::KeyManager;
+use crate::error::{CryptoError, Result};
 
 /// Provides Key Management Strategy hooks.
 pub trait KmsProvider {
@@ -34,7 +33,7 @@ pub trait KmsProvider {
 /// to recover the original payload.
 ///
 /// # Errors
-/// Emits `MemFuseError::Crypto` if encryption/decryption fails, key derivation fails,
+/// Emits `CryptoError::Crypto` if encryption/decryption fails, key derivation fails,
 /// or if chunk length is less than 12 bytes during decryption.
 pub struct EncryptedWal {
     key_manager: KeyManager,
@@ -51,12 +50,12 @@ impl EncryptedWal {
     /// `file_id` (e.g., filename) is used to derive a unique sub-key for this stream.
     pub fn new(key_manager: KeyManager, file_id: &[u8]) -> Result<Self> {
         if file_id.is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
+            return Err(CryptoError::InvalidInput(
                 "file_id cannot be empty".to_string(),
             ));
         }
         if file_id.len() > 10_000 {
-            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+            return Err(CryptoError::InvalidInput(format!(
                 "file_id length {} exceeds maximum allowed bound of 10000 bytes",
                 file_id.len()
             )));
@@ -71,7 +70,7 @@ impl EncryptedWal {
     /// Prepends the 12-byte nonce to the encrypted ciphertext.
     pub fn encrypt_chunk(&self, payload: &[u8]) -> Result<Vec<u8>> {
         if payload.len() > MAX_CHUNK_SIZE {
-            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+            return Err(CryptoError::InvalidInput(format!(
                 "Payload size {} exceeds maximum permitted limit of {} bytes",
                 payload.len(),
                 MAX_CHUNK_SIZE
@@ -87,12 +86,12 @@ impl EncryptedWal {
     /// Decrypts the WAL chunk by extracting the prepended 12-byte nonce from the data.
     pub fn decrypt_chunk(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.len() < AES_GCM_SIV_NONCE_LEN {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
+            return Err(CryptoError::InvalidInput(
                 "Encrypted WAL chunk too short for 12-byte nonce".into(),
             ));
         }
         if data.len() > MAX_ENCRYPTED_CHUNK_SIZE {
-            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+            return Err(CryptoError::InvalidInput(format!(
                 "Encrypted chunk size {} exceeds maximum permitted limit of {} bytes",
                 data.len(),
                 MAX_ENCRYPTED_CHUNK_SIZE
@@ -120,7 +119,7 @@ use zeroize::{Zeroize, Zeroizing};
 /// previous chain links during WAL appends or verification.
 ///
 /// # Errors
-/// Emits `MemFuseError::Crypto` if key initialization fails.
+/// Emits `CryptoError::Crypto` if key initialization fails.
 pub struct WalHmac {
     mac: Hmac<Sha256>,
 }
@@ -128,18 +127,16 @@ pub struct WalHmac {
 impl WalHmac {
     pub fn new(integrity_key: &[u8]) -> Result<Self> {
         if integrity_key.is_empty() {
-            return Err(memfuse_core::MemFuseError::InvalidInput(
-                "Key cannot be empty".to_string(),
-            ));
+            return Err(CryptoError::InvalidInput("Key cannot be empty".to_string()));
         }
         if integrity_key.len() > 10_000 {
-            return Err(memfuse_core::MemFuseError::InvalidInput(format!(
+            return Err(CryptoError::InvalidInput(format!(
                 "integrity_key length {} exceeds maximum allowed bound of 10000 bytes",
                 integrity_key.len()
             )));
         }
         let mut mac = Hmac::<Sha256>::new_from_slice(integrity_key)
-            .map_err(|e| memfuse_core::MemFuseError::Crypto(format!("HMAC key error: {}", e)))?;
+            .map_err(|e| CryptoError::Crypto(format!("HMAC key error: {}", e)))?;
         mac.update(b"memfuse-wal-v1");
         Ok(Self { mac })
     }
@@ -163,7 +160,7 @@ impl WalHmac {
 /// Passed to `IntegrityVerifier::verify_and_update()` during WAL replay or recovery.
 #[derive(Debug, Clone)]
 pub struct WalEntrySnapshot {
-    pub tx_id: TxId,
+    pub tx_id: u64,
     pub seq_no: u64,
     pub op_type: u8, // 0: Put, 1: Delete
     pub key: Vec<u8>,
@@ -186,8 +183,8 @@ pub struct WalEntrySnapshot {
 /// sequentially for each deserialized WAL entry.
 ///
 /// # Errors
-/// Emits `MemFuseError::WalCorruption` immediately if `checksum` or `prev_hmac` does not match,
-/// or `MemFuseError::Crypto` if HMAC initialization fails.
+/// Emits `CryptoError::WalCorruption` immediately if `checksum` or `prev_hmac` does not match,
+/// or `CryptoError::Crypto` if HMAC initialization fails.
 #[derive(Zeroize)]
 #[zeroize(drop)]
 pub struct IntegrityVerifier {
@@ -209,7 +206,7 @@ impl IntegrityVerifier {
         mac.update(&self.last_hmac);
         mac.update(&entry.seq_no.to_le_bytes());
 
-        let tx_id_bytes = entry.tx_id.inner().to_le_bytes();
+        let tx_id_bytes = entry.tx_id.to_le_bytes();
         mac.update(&tx_id_bytes);
 
         if entry.op_type == 0 {
@@ -231,7 +228,7 @@ impl IntegrityVerifier {
         if computed.ct_eq(&entry.checksum).unwrap_u8() == 0
             || entry.prev_hmac.ct_eq(&self.last_hmac).unwrap_u8() == 0
         {
-            return Err(memfuse_core::MemFuseError::wal_corruption(
+            return Err(CryptoError::wal_corruption(
                 offset,
                 format!("HMAC mismatch for seq {}", entry.seq_no),
             ));
@@ -259,7 +256,7 @@ impl IntegrityVerifier {
         if computed.ct_eq(&entry.checksum).unwrap_u8() == 0
             || entry.prev_hmac.ct_eq(&self.last_hmac).unwrap_u8() == 0
         {
-            return Err(memfuse_core::MemFuseError::wal_corruption(
+            return Err(CryptoError::wal_corruption(
                 offset,
                 format!("HMAC mismatch for seq {}", entry.seq_no),
             ));
@@ -313,7 +310,7 @@ mod tests {
 
         // entry 3 (corrupt)
         let e3 = WalEntrySnapshot {
-            tx_id: TxId::new(3),
+            tx_id: 3,
             seq_no: 102,
             op_type: 1,
             key: b"k1".to_vec(),
@@ -322,7 +319,7 @@ mod tests {
             prev_hmac: checksum2,
         };
         let err = verifier.verify_and_update(&e3, 300).unwrap_err();
-        if let memfuse_core::MemFuseError::WalCorruption { offset, .. } = err {
+        if let CryptoError::WalCorruption { offset, .. } = err {
             assert_eq!(offset, 300);
         } else {
             panic!("Expected WalCorruption with offset");
@@ -380,11 +377,11 @@ mod tests {
         k: &[u8],
         v: &[u8],
     ) -> WalEntrySnapshot {
-        let tx_id = TxId::new(seq_no);
+        let tx_id = seq_no;
         let mut hmac = WalHmac::new(key).expect("hmac init"); // expect
         hmac.update(&prev_hmac);
         hmac.update(&seq_no.to_le_bytes());
-        hmac.update(&tx_id.inner().to_le_bytes());
+        hmac.update(&tx_id.to_le_bytes());
         if op_type == 0 {
             hmac.update(&[0u8]);
             hmac.update(&(k.len() as u32).to_le_bytes());
@@ -430,7 +427,7 @@ mod tests {
         let err = verifier
             .verify_and_update(&corrupted_entry, 100)
             .unwrap_err();
-        if let memfuse_core::MemFuseError::WalCorruption { offset, reason, .. } = err {
+        if let CryptoError::WalCorruption { offset, reason, .. } = err {
             assert_eq!(offset, 100);
             assert!(reason.contains("HMAC mismatch"));
         } else {
@@ -472,7 +469,7 @@ mod tests {
 
         // Skip entry 2 (removed entry) and attempt to verify entry 3 directly
         let err = verifier.verify_and_update(&e3, 30).unwrap_err();
-        if let memfuse_core::MemFuseError::WalCorruption { offset, reason, .. } = err {
+        if let CryptoError::WalCorruption { offset, reason, .. } = err {
             assert_eq!(offset, 30);
             assert!(reason.contains("HMAC mismatch"));
         } else {
@@ -484,20 +481,14 @@ mod tests {
     fn test_encrypted_wal_new_empty_id() {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let res = EncryptedWal::new(km, b"");
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
     fn test_wal_hmac_oversized_key() {
         let oversized_key = vec![0x55u8; 10_001];
         let res = WalHmac::new(&oversized_key);
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -522,10 +513,7 @@ mod tests {
         let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let payload = vec![0u8; MAX_CHUNK_SIZE + 1];
         let res = wal.encrypt_chunk(&payload);
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -533,10 +521,7 @@ mod tests {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let res = wal.decrypt_chunk(&[0u8; 11]);
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -545,19 +530,13 @@ mod tests {
         let wal = EncryptedWal::new(km, b"wal.log").expect("wal"); // expect
         let data = vec![0u8; MAX_ENCRYPTED_CHUNK_SIZE + 1];
         let res = wal.decrypt_chunk(&data);
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
     fn test_wal_hmac_empty_key() {
         let res = WalHmac::new(b"");
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -576,10 +555,7 @@ mod tests {
         let km = KeyManager::try_new("test-pass", b"salt1").expect("km"); // expect
         let oversized_id = vec![0x33u8; 10_001];
         let res = EncryptedWal::new(km, &oversized_id);
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
+        assert!(matches!(res, Err(CryptoError::InvalidInput(_))));
     }
 
     #[test]
@@ -611,7 +587,7 @@ mod tests {
         encrypted[0] ^= 0xFF; // Corrupt first byte of nonce
 
         let res = wal.decrypt_chunk(&encrypted);
-        assert!(matches!(res, Err(memfuse_core::MemFuseError::Crypto(_))));
+        assert!(matches!(res, Err(CryptoError::Crypto(_))));
     }
 
     #[test]
@@ -629,7 +605,7 @@ mod tests {
         let checksum = hmac.finalize();
 
         let v2_entry = WalEntrySnapshot {
-            tx_id: TxId::new(1),
+            tx_id: 1,
             seq_no: 1,
             op_type: 0,
             key: b"v2_key".to_vec(),
@@ -646,7 +622,7 @@ mod tests {
         tampered_v2.value = b"v2_tampered".to_vec();
         assert!(matches!(
             verifier.verify_and_update_v2(&tampered_v2, 20),
-            Err(memfuse_core::MemFuseError::WalCorruption { .. })
+            Err(CryptoError::WalCorruption { .. })
         ));
     }
 
@@ -656,7 +632,7 @@ mod tests {
         let mut verifier = IntegrityVerifier::new(key);
 
         let legacy_entry = WalEntrySnapshot {
-            tx_id: TxId::new(10),
+            tx_id: 10,
             seq_no: 10,
             op_type: 0,
             key: b"legacy_key".to_vec(),

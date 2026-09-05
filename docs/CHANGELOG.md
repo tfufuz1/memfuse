@@ -4,8 +4,10 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
+| `TS:2026-09-03T00:00:00Z` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
 | `TS:2026-09-02T23:19:10Z (SESSION: 088b4a44)` | `crates/memfuse-agent/src/step.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Step result structures and AgentTool trait definitions for orchestration. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
@@ -96,7 +98,7 @@
 | `2026-08-30T22:01:55Z` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `cf1f75c6` | `DONE` | `5` | // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6) |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische unified MemFuseError Enum für den gesamten Workspace. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error_dto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028). |
-| `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/traits.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0. |
+| `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/traits/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/types/domain.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, DistanceMetric, Edge, Entity). |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/checkpoint.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate-internes MVCC Snapshot-Pinning und TxId-skopierte Rollbacks. |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | STCS-Compaction-Engine (Size-Tiered Compaction Strategy) |
@@ -148,7 +150,7 @@
 | `2026-08-29T11:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `REVIEW-PASS` | `PERF:EVAL-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T11:00:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-29T10:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `REVIEW-PASS` | `PERF:EVAL-001` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: PERF:EVAL-001) (TS: 2026-08-29T10:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `3` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
-| `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `14348074` | `RESOLVED` | `0` | /// AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074) |
+| `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `14348074` | `RESOLVED` | `0` | /// AI-TAG\[PANIC-SAFETY\]\[CRITICAL\] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d) |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-db/src/fusion.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index |
@@ -157,7 +159,6 @@
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/context_compaction.rs` | `AI-TAG` | `AGT-DB-004` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR][RESOLVED] Async LLM-Summarization for context compaction (ID: AGT-DB-004) (TS:2026-08-28T00:00:00Z) |
 | `2026-08-27T00:00:00Z` | `crates/memfuse-agent/src/lib.rs` | `AI-TAG` | `AGT-AGENT-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-AGENT-001 — Re-extracted workflow engine crate requires integration verification. (TS:2026-08-27T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/crud.rs` | `AI-TAG` | `AGT-DB-001` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z) |
-| `2026-08-25T00:00:00Z` | `crates/memfuse-db/src/collection/mod.rs` | `AI-TAG` | `AGT-DB-002` | `-` | `RESOLVED` | `0` | // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-002 — load_index now scans user_keys (key_type=0) (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-001` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-001 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-003` | `-` | `RESOLVED` | `0` | // AI-TAG[DOC-DRIFT][MINOR] RESOLVED: AGT-INDEX-003 — Module documentation added (TS:2026-08-25T00:00:00Z) |
 | `2026-08-25T00:00:00Z` | `crates/memfuse-index/src/hnsw.rs` | `AI-TAG` | `AGT-INDEX-004` | `-` | `RESOLVED` | `0` | // AI-TAG[PANIC-SAFETY][CRITICAL] RESOLVED: AGT-INDEX-004 — IndexOp ist #[non_exhaustive]; neue Varianten (TS:2026-08-25T00:00:00Z) |
@@ -189,3 +190,4 @@
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
+| `` | `crates/memfuse-store/tests/chaos_dropped_write.rs` | `FILE-CONTEXT` | `-` | `283abf0f` | `-` | `-` |  |

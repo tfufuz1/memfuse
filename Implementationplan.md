@@ -1,8 +1,8 @@
 # MemFuse — Erweiterter Implementierungsplan: Algorithmen & Geschäftslogik
 
-> **Datum**: 2026-09-03  
-> **Basis**: Code-Analyse aller 15 Workspace-Crates, DECISIONS.md (47 ADRs), bestehender `Implementationplan.md`  
-> **Fokus**: Algorithmische Korrektheit, Architektur-Entscheidungen, Geschäftslogik-Perfektionierung  
+> **Datum**: 2026-09-03
+> **Basis**: Code-Analyse aller 15 Workspace-Crates, DECISIONS.md (47 ADRs), bestehender `Implementationplan.md`
+> **Fokus**: Algorithmische Korrektheit, Architektur-Entscheidungen, Geschäftslogik-Perfektionierung
 > **Letzte ADR**: ADR-047 · **Nächste freie ADR**: ADR-048
 
 ---
@@ -25,8 +25,8 @@ Dieser erweiterte Plan adressiert alle diese Punkte als kohärente Architektur-A
 
 ## Arbeitspaket 1: HNSW Lock-Free Read / Copy-on-Write Rebuild
 
-> **Betroffene Dateien**: [`hnsw.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-index/src/hnsw.rs)  
-> **Schwere**: CRITICAL — Latenz-Spikes im Produktionspfad  
+> **Betroffene Dateien**: [`hnsw.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-index/src/hnsw.rs)
+> **Schwere**: CRITICAL — Latenz-Spikes im Produktionspfad
 > **ADR**: ADR-048 (neu): "HNSW Copy-on-Write Rebuild"
 
 ### Ist-Zustand (verifiziert)
@@ -80,8 +80,8 @@ Phase 2 (kurzer Write-Lock für Atomic Swap + Delta-Merge):
 
 ## Arbeitspaket 2: Router-Kalibrierung — Duale Feedback-Loop-Eliminierung
 
-> **Betroffene Dateien**: [`router.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs), [`profile.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs)  
-> **Schwere**: MAJOR — Unkalibriertes Routing unter Verteilungsverschiebung  
+> **Betroffene Dateien**: [`router.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/router.rs), [`profile.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-router/src/profile.rs)
+> **Schwere**: MAJOR — Unkalibriertes Routing unter Verteilungsverschiebung
 > **ADR**: ADR-049 (neu): "Unified Conformal Calibration"
 
 ### Ist-Zustand (verifiziert)
@@ -129,8 +129,8 @@ Der Conformal Calibrator hat `gamma = 0.01` und `alpha = 0.05`. Bei nur wenigen 
 
 ## Arbeitspaket 3: Context Compaction — OCC Retry Protocol & Atomarität
 
-> **Betroffene Dateien**: [`context_compaction.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/context_compaction.rs)  
-> **Schwere**: MAJOR — Konsolidierungs-Failures sind unrecoverable  
+> **Betroffene Dateien**: [`context_compaction.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/context_compaction.rs)
+> **Schwere**: MAJOR — Konsolidierungs-Failures sind unrecoverable
 > **ADR**: ADR-050 (neu): "Consolidation Session Retry & Idempotency"
 
 ### Ist-Zustand
@@ -189,8 +189,8 @@ Die `validate_occ()` prüft ob Source-Docs unverändert sind. Aber zwischen Prü
 
 ## Arbeitspaket 4: DiskANN Production Lifecycle
 
-> **Betroffene Dateien**: `memfuse-index/src/diskann.rs`, `memfuse-db/src/collection/`  
-> **Schwere**: MAJOR — Feature existiert, ist aber nicht nutzbar  
+> **Betroffene Dateien**: `memfuse-index/src/diskann.rs`, `memfuse-db/src/collection/`
+> **Schwere**: MAJOR — Feature existiert, ist aber nicht nutzbar
 > **Basis**: ADR-013 (Experimental), ADR-037 (Collection Generalisierung — ✅ implementiert)
 
 ### Ist-Zustand
@@ -226,7 +226,7 @@ Die `VectorIndex::search()` Methode muss Ergebnisse aus beiden Indizes mergen.
 
 #### 4c: Mmap Warmup & Fault Tolerance
 
-DiskANN verwendet `unsafe { Mmap::map(...) }` (ADR-017). Bei SIGBUS (korrupte Datei, NFS-Disconnect) crasht der Prozess. 
+DiskANN verwendet `unsafe { Mmap::map(...) }` (ADR-017). Bei SIGBUS (korrupte Datei, NFS-Disconnect) crasht der Prozess.
 
 **Lösung**: `madvise(MADV_SEQUENTIAL)` beim Laden + Integrity-Check der Header-Magic-Bytes + Graceful Degradation zu HNSW-only bei Mmap-Fehler.
 
@@ -237,7 +237,7 @@ DiskANN verwendet `unsafe { Mmap::map(...) }` (ADR-017). Bei SIGBUS (korrupte Da
 
 ## Arbeitspaket 5: Agent-Orchestrator — Robustheit & Dead-Letter
 
-> **Betroffene Dateien**: [`engine.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/engine.rs), [`audit.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/audit.rs)  
+> **Betroffene Dateien**: [`engine.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/engine.rs), [`audit.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-agent/src/audit.rs)
 > **Schwere**: MAJOR — Fehlgeschlagene Steps erzeugen stumme Lücken im Audit-Trail
 
 ### Ist-Zustand
@@ -257,7 +257,7 @@ Wenn `tool.execute()` fehlschlägt, wird `ctx.status = AgentStatus::Failed` gese
 ```rust
 pub struct DeadLetter {
     pub step_id: String,
-    pub node_id: String, 
+    pub node_id: String,
     pub input: serde_json::Value,
     pub error: String,
     pub timestamp_tx: TxId,
@@ -282,7 +282,7 @@ Der `estimated_cost` (Zeile 114–126) wird **vor** der Ausführung reserviert. 
 
 ## Arbeitspaket 6: 4-Signal ProvenanceRecord — End-to-End Audit-Kette
 
-> **Betroffene Dateien**: [`search.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/collection/search.rs), [`fusion.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/fusion.rs)  
+> **Betroffene Dateien**: [`search.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/collection/search.rs), [`fusion.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/fusion.rs)
 > **Schwere**: Feature — Compliance-Requirement für Enterprise-Kunden
 
 ### Ist-Zustand
@@ -295,13 +295,13 @@ Der `estimated_cost` (Zeile 114–126) wird **vor** der Ausführung reserviert. 
 1. `build_provenance()` Hilfsfunktion in fusion.rs:
    fn build_provenance(
        vector_score: Option<f32>,
-       text_score: Option<f32>, 
+       text_score: Option<f32>,
        graph_score: Option<f32>,
        fused_score: f32,
    ) -> ProvenanceRecord
 
 2. In reciprocal_rank_fusion():
-   - Jeder Input-Kanal (vector_results, text_results, graph_results) 
+   - Jeder Input-Kanal (vector_results, text_results, graph_results)
      trägt seinen Kanal-Score am ScoredDocument
    - Nach RRF-Merge: ProvenanceRecord mit allen Kanal-Scores befüllen
 
@@ -322,7 +322,7 @@ Die `matched_signals: Vec<String>` in `SearchResult` ist **immer leer** (Zeile 3
 
 ## Arbeitspaket 7: Batch-Pfade auf Layer 2/3 durchziehen
 
-> **Betroffene Dateien**: `memfuse-db/src/collection/crud.rs`, `memfuse-agent/src/engine.rs`  
+> **Betroffene Dateien**: `memfuse-db/src/collection/crud.rs`, `memfuse-agent/src/engine.rs`
 > **Schwere**: Performance — bis zu 29× Throughput-Gain dokumentiert
 
 ### Ist-Zustand
@@ -343,7 +343,7 @@ Die `matched_signals: Vec<String>` in `SearchResult` ist **immer leer** (Zeile 3
 
 ## Arbeitspaket 8: Cluster-Stubs konsequent entfernen oder hinter Feature-Gate isolieren
 
-> **Betroffene Dateien**: [`lib.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/lib.rs#L1055-L1096)  
+> **Betroffene Dateien**: [`lib.rs`](file:///home/freddy/Projekte/memfuse/crates/memfuse-db/src/lib.rs#L1055-L1096)
 > **Schwere**: MEDIUM — Toter Code, API-Verwirrung
 
 ### Ist-Zustand (verifiziert)
@@ -374,14 +374,14 @@ graph TD
         AP2["AP-2: Router Calibration Fix"] --> |"Konfidenz konvergiert"| AP6["AP-6: Provenance"]
         AP3["AP-3: OCC Retry Protocol"] --> |"Consolidation stabil"| AP7
     end
-    
+
     subgraph "Phase 2: Feature Completion"
         AP5["AP-5: Agent Dead-Letter"] --> |"Keine Deps"| DONE5["✅"]
         AP6 --> |"Keine Deps"| DONE6["✅"]
         AP7 --> |"Keine Deps"| DONE7["✅"]
         AP8["AP-8: Cluster Cleanup"] --> |"Keine Deps"| DONE8["✅"]
     end
-    
+
     subgraph "Phase 3: Out-of-Core (Eigenständig)"
         AP4["AP-4: DiskANN Lifecycle"]
         AP4 --> |"Build Pipeline"| AP4B["4b: Hybrid Index"]

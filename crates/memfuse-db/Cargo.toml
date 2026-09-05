@@ -13,7 +13,6 @@ memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
 memfuse-graph = { workspace = true }
-memfuse-ollama = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
@@ -21,12 +20,12 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
-tokio-util = { workspace = true, features = ["rt"] }
+tokio-util = { version = "0.7.18", features = ["rt"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = { workspace = true }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 proptest = "1.4"
 memfuse-index = { workspace = true, features = ["experimental-diskann"] }
 
@@ -34,7 +33,6 @@ memfuse-index = { workspace = true, features = ["experimental-diskann"] }
 default = []
 bench = []
 sandbox = []
-cluster = []
 experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 
@@ -51,6 +49,11 @@ harness = false
 [[bench]]
 name = "rrf_scale_bench"
 path = "../../benches/rrf_scale_bench.rs"
+harness = false
+
+[[bench]]
+name = "competitive_bench"
+path = "../../benches/competitive_bench.rs"
 harness = false
 
 [[example]]

@@ -86,10 +86,12 @@ pub trait EventSource: Send + Sync {
         false
     }
 
-    /// Waits until an event may be available or source is exhausted.
-    /// Default: immediately ready (polling sources, backward-compatible).
-    async fn wait_until_ready(&mut self) {
-        // Default: no-op (source is always ready to poll)
+    /// Waits until a new event is likely available or the timeout expires.
+    /// Default implementation: short sleep fallback for polling-based sources.
+    /// Implementations with push notifications (e.g. `tokio::sync::Notify`) should override
+    /// this method to wait on signals instead of polling.
+    async fn wait_for_event(&self) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
 
@@ -193,10 +195,8 @@ impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
         Ok(None)
     }
 
-    async fn wait_until_ready(&mut self) {
-        if self.pending_events.is_empty() {
-            tokio::time::sleep(self.poll_interval).await;
-        }
+    async fn wait_for_event(&self) {
+        tokio::time::sleep(self.poll_interval).await;
     }
 }
 
@@ -229,120 +229,6 @@ impl EventSource for VecEventSource {
 
     fn is_exhausted(&self) -> bool {
         self.events.is_empty()
-    }
-}
-
-struct EphemeralState {
-    events: VecDeque<BackgroundEvent>,
-    closed: bool,
-}
-
-/// Producer handle for pushing events asynchronously to an `EphemeralEventSource`.
-#[derive(Clone)]
-pub struct EphemeralProducer {
-    state: Arc<std::sync::Mutex<EphemeralState>>,
-    notify: Arc<tokio::sync::Notify>,
-}
-
-impl EphemeralProducer {
-    pub fn push(&self, event: BackgroundEvent) {
-        let mut lock = match self.state.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        if lock.events.len() < MAX_EVENT_SOURCE_CAPACITY {
-            lock.events.push_back(event);
-            drop(lock);
-            self.notify.notify_one();
-        }
-    }
-
-    pub fn close(&self) {
-        let mut lock = match self.state.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        lock.closed = true;
-        drop(lock);
-        self.notify.notify_one();
-    }
-}
-
-/// Dynamic push-based event source yielding `None` when empty and waiting via backpressure notification.
-pub struct EphemeralEventSource {
-    state: Arc<std::sync::Mutex<EphemeralState>>,
-    notify: Arc<tokio::sync::Notify>,
-    poll_count: Arc<std::sync::atomic::AtomicUsize>,
-}
-
-impl EphemeralEventSource {
-    pub fn new() -> (Self, EphemeralProducer) {
-        let poll_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let state = Arc::new(std::sync::Mutex::new(EphemeralState {
-            events: VecDeque::new(),
-            closed: false,
-        }));
-        let notify = Arc::new(tokio::sync::Notify::new());
-
-        let source = Self {
-            state: Arc::clone(&state),
-            notify: Arc::clone(&notify),
-            poll_count,
-        };
-
-        let producer = EphemeralProducer { state, notify };
-
-        (source, producer)
-    }
-
-    pub fn poll_count(&self) -> usize {
-        self.poll_count.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    pub fn poll_count_handle(&self) -> Arc<std::sync::atomic::AtomicUsize> {
-        Arc::clone(&self.poll_count)
-    }
-}
-
-impl Default for EphemeralEventSource {
-    fn default() -> Self {
-        Self::new().0
-    }
-}
-
-#[async_trait]
-impl EventSource for EphemeralEventSource {
-    async fn next_event(&mut self) -> Result<Option<BackgroundEvent>> {
-        self.poll_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let mut lock = match self.state.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        Ok(lock.events.pop_front())
-    }
-
-    fn is_exhausted(&self) -> bool {
-        let lock = match self.state.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        lock.closed && lock.events.is_empty()
-    }
-
-    async fn wait_until_ready(&mut self) {
-        loop {
-            let (is_empty, is_closed) = {
-                let lock = match self.state.lock() {
-                    Ok(g) => g,
-                    Err(p) => p.into_inner(),
-                };
-                (lock.events.is_empty(), lock.closed)
-            };
-            if !is_empty || is_closed {
-                break;
-            }
-            self.notify.notified().await;
-        }
     }
 }
 

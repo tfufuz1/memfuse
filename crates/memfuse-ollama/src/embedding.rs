@@ -8,7 +8,7 @@
 use crate::client::{OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use crate::model_info::known_dimension;
 use async_trait::async_trait;
-use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+use memfuse_core::{EmbeddingError, EmbeddingProvider, MemFuseError};
 
 /// Implementation of `TextEmbeddingEngine` using Ollama's HTTP API.
 #[derive(Clone, Debug)]
@@ -72,12 +72,26 @@ impl OllamaEmbedder {
 }
 
 #[async_trait]
-impl TextEmbeddingEngine for OllamaEmbedder {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        let vec = self.client.embed(&self.model, text).await?;
+impl EmbeddingProvider for OllamaEmbedder {
+    fn provider_name(&self) -> &str {
+        "ollama"
+    }
+
+    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        let vec = self
+            .client
+            .embed(&self.model, text)
+            .await
+            .map_err(|e| match e {
+                MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                    EmbeddingError::Unavailable(msg)
+                }
+                other => EmbeddingError::ComputationFailed(other.to_string()),
+            })?;
+
         if let Some(expected_dim) = self.expected_dimension {
             if vec.len() != expected_dim {
-                return Err(MemFuseError::Index(format!(
+                return Err(EmbeddingError::ComputationFailed(format!(
                     "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
                     vec.len(),
                     expected_dim,
@@ -88,18 +102,33 @@ impl TextEmbeddingEngine for OllamaEmbedder {
         Ok(vec)
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    fn embedding_dim(&self) -> usize {
+        self.expected_dimension.unwrap_or(0)
+    }
+
+    async fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Nutze nativen Batch-Endpunkt (mit Fallback im Client)
-        let output = self.client.embed_batch(&self.model, texts).await?;
+        let output = self
+            .client
+            .embed_batch(&self.model, texts)
+            .await
+            .map_err(|e| match e {
+                MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                    EmbeddingError::Unavailable(msg)
+                }
+                other => EmbeddingError::ComputationFailed(other.to_string()),
+            })?;
 
         if let Some(expected_dim) = self.expected_dimension {
             for vec in &output {
                 if vec.len() != expected_dim {
-                    return Err(MemFuseError::Index(format!(
+                    return Err(EmbeddingError::ComputationFailed(format!(
                         "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
                         vec.len(),
                         expected_dim,
@@ -134,6 +163,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dimension_validation_mismatch_returns_index_error() {
+        use memfuse_core::TextEmbeddingEngine;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
         let addr = listener.local_addr().unwrap(); // unwrap
         let server_url = format!("http://{}", addr);
@@ -159,15 +189,15 @@ mod tests {
         let embedder =
             OllamaEmbedder::new(server_url, "nomic-embed-text").with_expected_dimension(768);
 
-        let result = embedder.embed("test text").await;
+        let result = TextEmbeddingEngine::embed(&embedder, "test text").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         match err {
-            MemFuseError::Index(msg) => {
+            MemFuseError::Internal(msg) => {
                 assert!(msg.contains("Ollama returned embedding of dimension 3 but expected 768"));
                 assert!(msg.contains("Model 'nomic-embed-text' may have changed"));
             }
-            _ => panic!("Expected MemFuseError::Index, got {:?}", err),
+            _ => panic!("Expected MemFuseError::Internal, got {:?}", err),
         }
     }
 }

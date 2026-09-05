@@ -1180,10 +1180,21 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     let vec = vec![1.0, 0.0, 0.0, 0.0];
     col.insert("doc_test", &vec, None).await.unwrap(); // unwrap
 
-    let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
+    struct DeadLlm;
+    #[async_trait::async_trait]
+    impl memfuse_core::LlmTextGenerator for DeadLlm {
+        async fn generate(&self, _prompt: &str) -> memfuse_core::Result<String> {
+            Err(memfuse_core::MemFuseError::Io(std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "Dead LLM",
+            )))
+        }
+    }
+
+    let dead_llm = DeadLlm;
 
     let res = col
-        .evaluate_importance_with_llm("doc_test", &dead_ollama)
+        .evaluate_importance_with_llm("doc_test", &dead_llm, "llama3.2")
         .await;
     assert!(res.is_err());
     assert!(matches!(
@@ -2385,6 +2396,85 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
     assert!(
         results.iter().any(|r| r.id == "doc3"),
         "doc3 must move up into top-2"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_query_builder_query_config_include_superseded_displacement(
+) -> memfuse_core::Result<()> {
+    use memfuse_core::{DocId, HybridQuery};
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap(); // unwrap
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(), // unwrap
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    col.insert(
+        "old_doc",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "outdated information"})),
+    )
+    .await?;
+
+    col.insert(
+        "new_doc",
+        &[0.95, 0.05, 0.0, 0.0],
+        Some(serde_json::json!({"text": "updated information"})),
+    )
+    .await?;
+
+    col.link_memories(
+        DocId::from_key("new_doc")?,
+        DocId::from_key("old_doc")?,
+        memfuse_core::types::domain::LinkRelation::Supersedes,
+    )
+    .await?;
+
+    let hybrid_query = HybridQuery::builder()
+        .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
+        .with_include_superseded(false)
+        .with_k(10)
+        .build()
+        .unwrap(); // unwrap
+
+    let results = col.query().query_config(&hybrid_query).execute().await?;
+
+    assert!(
+        !results.iter().any(|r| r.id == "old_doc"),
+        "old_doc must be displaced when executed via QueryBuilder with include_superseded=false"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "new_doc"),
+        "new_doc must be included in results"
     );
 
     Ok(())

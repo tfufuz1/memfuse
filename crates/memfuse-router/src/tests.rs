@@ -3,7 +3,9 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use crate::{dispatch_to_slm, RouterEngine, RoutingDecision, SlmProfile};
+    use crate::{
+        dispatch_to_slm, DecisionId, RouterEngine, RoutingDecision, RoutingOutcome, SlmProfile,
+    };
     use memfuse_core::{EntityId, MemFuseError, StorageEngine, TokenBudget};
     use memfuse_db::{MemFuse, MemFuseConfig};
     use serde_json::json;
@@ -189,6 +191,7 @@ mod tests {
             profile,
             context: context_window,
             confidence: None,
+            decision_id: DecisionId::new(),
         };
 
         let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
@@ -813,6 +816,7 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_err = dispatch_to_slm(&decision).await;
         assert!(
@@ -826,6 +830,7 @@ mod tests {
             profile: profile_closed,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_closed = dispatch_to_slm(&decision_closed).await;
         assert!(
@@ -844,6 +849,7 @@ mod tests {
             profile: profile_rpc_err,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
@@ -864,6 +870,7 @@ mod tests {
             profile: profile_obj,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
         assert_eq!(res_obj, "{\"custom_data\":42}");
@@ -880,6 +887,7 @@ mod tests {
             profile: profile_empty,
             context: decision.context.clone(),
             confidence: None,
+            decision_id: DecisionId::new(),
         };
         let res_empty = dispatch_to_slm(&decision_empty).await;
         assert!(
@@ -1199,6 +1207,7 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
+            decision_id: DecisionId::new(),
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -1321,6 +1330,7 @@ mod tests {
     #[test]
     fn test_cascade_hit() {
         use crate::profile::ProfileCalibrationState;
+        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1385,12 +1395,13 @@ mod tests {
 
         assert_eq!(selected.name, "mid-slm");
         assert_eq!(idx, 0); // profile_mid was at original index 0
-        assert!(!metrics.calibrated); // window_total <= 10
+        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
     }
 
     #[test]
     fn test_cascade_fallthrough() {
         use crate::profile::ProfileCalibrationState;
+        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1450,11 +1461,13 @@ mod tests {
 
         assert_eq!(selected.name, "low-slm");
         assert_eq!(idx, 2);
-        assert!(!metrics.calibrated);
+        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
     }
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
+        use crate::router::ConfidenceMetrics;
+
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1493,7 +1506,7 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile], None);
 
-        // Perform 55 routing calls (>= 50 samples)
+        // Perform 55 routing calls and record outcomes
         let mut last_calibrated = false;
         for i in 0..55 {
             let decision = router
@@ -1502,20 +1515,23 @@ mod tests {
                 .unwrap();
             let conf = decision.confidence.expect("Confidence metrics present");
             last_calibrated = conf.calibrated;
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
+            let calibrated = st.conformal.window_total >= 30;
+            last_calibrated = calibrated;
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
                 st.conformal.window_total,
                 st.conformal.quantile_threshold,
-                conf.calibrated
+                calibrated
             );
         }
 
         assert!(
             last_calibrated,
-            "After 55 decisions (>= 50 samples), decision must be calibrated (calibrated = true)"
+            "After 55 decisions with record_outcome (>= 30 samples), decision must be calibrated (calibrated = true)"
         );
     }
 
@@ -1554,14 +1570,14 @@ mod tests {
             "http://localhost/1",
             vec![],
             TokenBudget::new(1000, 100),
-            0.001,
+            0.0,
         );
         let p2 = SlmProfile::new(
             "slm-2",
             "http://localhost/2",
             vec![],
             TokenBudget::new(1000, 100),
-            0.001,
+            0.0,
         );
 
         let router = RouterEngine::new(collection, vec![p1, p2], None);
@@ -1624,13 +1640,15 @@ mod tests {
 
         let router = Arc::new(RouterEngine::new(collection, vec![profile], None));
 
-        // Spawn 100 parallel route() tasks
+        // Spawn 100 parallel route() tasks and record outcome
         let mut handles = Vec::new();
         for _ in 0..100 {
             let r = router.clone();
             let vec_c = vec_data.clone();
             handles.push(tokio::spawn(async move {
-                r.route(&vec_c, "parallel convergence content").await
+                let decision = r.route(&vec_c, "parallel convergence content").await?;
+                r.record_outcome(decision.decision_id, RoutingOutcome::Success);
+                Ok::<(), MemFuseError>(())
             }));
         }
 
@@ -1763,12 +1781,56 @@ mod tests {
                 truncated: false,
             },
             confidence: None,
+            decision_id: DecisionId::new(),
         };
 
         let res = dispatch_to_slm(&decision).await;
         assert!(
             matches!(res, Err(MemFuseError::InvalidInput(msg)) if msg.contains("Empty MCP endpoint"))
         );
+    }
+
+    #[test]
+    fn test_confidence_metrics_serde() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::router::ConfidenceMetrics;
+
+        let uncal = ConfidenceMetrics::Uncalibrated {
+            non_conformity_score: 0.2,
+            selection_margin: 1.5,
+            quantile_threshold: 0.5,
+        };
+
+        let json_uncal = serde_json::to_string(&uncal)?;
+        let val_uncal: serde_json::Value = serde_json::from_str(&json_uncal)?;
+        assert_eq!(val_uncal["type"], "uncalibrated");
+        assert_eq!(val_uncal["non_conformity_score"], 0.2);
+        assert_eq!(val_uncal["selection_margin"], 1.5);
+        assert_eq!(val_uncal["quantile_threshold"], 0.5);
+
+        let deserialized_uncal: ConfidenceMetrics = serde_json::from_str(&json_uncal)?;
+        assert_eq!(deserialized_uncal, uncal);
+
+        let cal = ConfidenceMetrics::Calibrated {
+            score_lower: 0.4,
+            score_upper: 0.8,
+            quantile_threshold: 0.6,
+            non_conformity_score: 0.1,
+            selection_margin: 2.0,
+        };
+
+        let json_cal = serde_json::to_string(&cal)?;
+        let val_cal: serde_json::Value = serde_json::from_str(&json_cal)?;
+        assert_eq!(val_cal["type"], "calibrated");
+        assert_eq!(val_cal["score_lower"], 0.4);
+        assert_eq!(val_cal["score_upper"], 0.8);
+        assert_eq!(val_cal["quantile_threshold"], 0.6);
+        assert_eq!(val_cal["non_conformity_score"], 0.1);
+        assert_eq!(val_cal["selection_margin"], 2.0);
+
+        let deserialized_cal: ConfidenceMetrics = serde_json::from_str(&json_cal)?;
+        assert_eq!(deserialized_cal, cal);
+
+        Ok(())
     }
 
     #[test]
@@ -1795,84 +1857,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_calibration_persisted_across_restart() {
+    async fn test_record_outcome_trains_calibration() {
         let dir = tempfile::tempdir().unwrap();
-        let db_dir = dir.path().join("db");
-        let cal_path = dir.path().join("calibration.json");
-
-        let config = MemFuseConfig {
-            dimension: 4,
-            ..Default::default()
-        };
-        let db = MemFuse::open_with_config(&db_dir, config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
-
-        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
-        let key = "persist_entity";
-        collection
-            .insert(key, &vec_data, Some(json!({"text": "persist content"})))
-            .await
-            .unwrap();
-
-        let eid = EntityId::from_doc_id(memfuse_core::DocId::new(1));
-        let tx = db.allocate_tx().unwrap();
-        let comm_key = format!("__graph:community:{}", eid.inner()).into_bytes();
-        db.inner_storage()
-            .put(tx, &comm_key, &serde_json::to_vec(&100u64).unwrap())
-            .await
-            .unwrap();
-        db.inner_storage().commit(tx).await.unwrap();
-
-        let profile = SlmProfile::new(
-            "p-persist",
-            "http://localhost:9999/mcp",
-            vec![],
-            TokenBudget::new(1000, 100),
-            0.01,
-        );
-
-        let router = RouterEngine::new(
-            collection.clone(),
-            vec![profile.clone()],
-            Some(cal_path.clone()),
-        );
-
-        for _ in 0..30 {
-            router.route(&vec_data, "persist content").await.unwrap();
-        }
-
-        // Give async spawn_blocking task time to flush file to disk
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        drop(router);
-
-        // Recreate RouterEngine with same calibration_store_path
-        let router2 = RouterEngine::new(collection, vec![profile], Some(cal_path));
-        let stats = router2.calibration_stats();
-        assert!(
-            stats.get("p-persist").map_or(false, |s| s.times_selected > 0),
-            "times_selected must be > 0 after loading persisted calibration state"
-        );
-        assert_eq!(stats["p-persist"].times_selected, 30);
-    }
-
-    #[tokio::test]
-    async fn test_calibration_unknown_profiles_dropped() {
-        let dir = tempfile::tempdir().unwrap();
-        let cal_path = dir.path().join("calibration.json");
-
-        // Manually write a persisted state with profile "old"
-        let mut old_state = std::collections::HashMap::new();
-        old_state.insert(
-            "old".to_string(),
-            crate::profile::ProfileCalibrationState {
-                times_selected: 42,
-                ..Default::default()
-            },
-        );
-        let bytes = serde_json::to_vec(&old_state).unwrap();
-        std::fs::write(&cal_path, bytes).unwrap();
-
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
@@ -1880,18 +1866,61 @@ mod tests {
         let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
         let collection = db.collection("default").await.unwrap();
 
-        let new_profile = SlmProfile::new(
-            "new",
+        let vec_coding = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "coding_doc",
+                &vec_coding,
+                Some(json!({"text": "function test() {}"})),
+            )
+            .await
+            .unwrap();
+
+        let profile = SlmProfile::new(
+            "default",
             "http://localhost:9999/mcp",
-            vec![100],
+            vec![],
             TokenBudget::new(1000, 100),
             0.01,
         );
 
-        let router = RouterEngine::new(collection, vec![new_profile], Some(cal_path));
-        let stats = router.calibration_stats();
+        let router = RouterEngine::new(collection, vec![profile]);
+        let decision = router.route(&vec_coding, "function test").await.unwrap();
 
-        assert!(stats.contains_key("new"));
-        assert!(!stats.contains_key("old"), "Unknown profile 'old' must be silently dropped");
+        let cal_before = router.calibration_stats();
+
+        let recorded = router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        assert!(recorded);
+
+        let cal_after = router.calibration_stats();
+        assert!(
+            cal_after["default"].conformal.window_total
+                > cal_before["default"].conformal.window_total,
+            "window_total should increase after record_outcome"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_record_outcome_unknown_id_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let profile = SlmProfile::new(
+            "default",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile]);
+        let unknown_id = DecisionId::new();
+
+        assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
     }
 }

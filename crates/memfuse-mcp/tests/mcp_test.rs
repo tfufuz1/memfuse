@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use memfuse_core::{Result, TextEmbeddingEngine};
 use memfuse_db::MemFuse;
 use memfuse_mcp::{
     protocol::JsonRpcRequest,
@@ -27,12 +26,26 @@ struct MockEmbedder {
 }
 
 #[async_trait]
-impl TextEmbeddingEngine for MockEmbedder {
-    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+impl memfuse_core::EmbeddingProvider for MockEmbedder {
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
         Ok(vec![0.1f32; self.dimension])
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    fn embedding_dim(&self) -> usize {
+        self.dimension
+    }
+
+    async fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> std::result::Result<Vec<Vec<f32>>, memfuse_core::EmbeddingError> {
         Ok(vec![vec![0.1f32; self.dimension]; texts.len()])
     }
 }
@@ -925,6 +938,86 @@ async fn test_stdio_transport_stability() {
     assert!(
         resp.get("result").is_some(),
         "Response must contain result field: {resp}"
+    );
+
+    drop(stdin);
+    let _ = child.wait().await;
+}
+
+#[tokio::test]
+async fn test_max_rpc_bytes_overflow_and_line_draining_stdio() {
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let bin_path = env!("CARGO_BIN_EXE_memfuse-mcp-server");
+
+    let mut child = tokio::process::Command::new(bin_path)
+        .arg("--db-path")
+        .arg(tmp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn memfuse-mcp-server binary");
+
+    let mut stdin = child.stdin.take().expect("stdin handle");
+    let stdout = child.stdout.take().expect("stdout handle");
+
+    // Construct oversized message (MAX_RPC_BYTES + 1024 bytes)
+    // MAX_RPC_BYTES = 4 MB = 4_194_304 bytes.
+    let padding = "a".repeat(4 * 1024 * 1024 + 1024);
+    let oversized_req = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"padding\":\"{}\"}}\n",
+        padding
+    );
+
+    // Followed by valid request
+    let valid_req = "{\"jsonrpc\":\"2.0\",\"id\":777,\"method\":\"ping\",\"params\":{}}\n";
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    stdin
+        .write_all(oversized_req.as_bytes())
+        .await
+        .expect("write oversized req");
+    stdin
+        .write_all(valid_req.as_bytes())
+        .await
+        .expect("write valid req");
+    stdin.flush().await.expect("flush stdin");
+
+    let mut lines = BufReader::new(stdout).lines();
+
+    // 1. Read first response: must be JSON-RPC error response -32700
+    let line1 = lines
+        .next_line()
+        .await
+        .expect("read response line 1")
+        .expect("response line 1 present");
+
+    let resp1: serde_json::Value = serde_json::from_str(&line1).expect("parse response 1 json");
+    assert_eq!(resp1["jsonrpc"], "2.0");
+    assert_eq!(resp1["error"]["code"], -32700);
+    let err_msg = resp1["error"]["message"].as_str().unwrap();
+    assert!(
+        err_msg.contains("Message size limit exceeded"),
+        "Expected limit exceeded error message, got: {err_msg}"
+    );
+
+    // 2. Read second response: must be successful ping response for id=777
+    let line2 = lines
+        .next_line()
+        .await
+        .expect("read response line 2")
+        .expect("response line 2 present");
+
+    let resp2: serde_json::Value = serde_json::from_str(&line2).expect("parse response 2 json");
+    assert_eq!(resp2["jsonrpc"], "2.0");
+    assert_eq!(resp2["id"], 777);
+    assert!(resp2.get("result").is_some());
+
+    // 3. Verify server is still alive
+    let try_wait = child.try_wait().expect("try wait child");
+    assert!(
+        try_wait.is_none(),
+        "Server process should remain alive after oversized message overflow"
     );
 
     drop(stdin);

@@ -16,8 +16,13 @@
 
 use crate::types::*;
 use crate::Result;
+use ahash::AHashMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+
+/// Trait and mock definitions for text embedding providers and LLMs.
+pub mod embedding;
+pub use embedding::*;
 
 /// Abstract contract for generating consistent checkpoints.
 #[async_trait]
@@ -315,7 +320,7 @@ pub trait VectorIndex: Send + Sync + 'static {
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<u64>;
+    async fn last_tx_id(&self) -> Result<TxId>;
 
     /// Returns the number of vectors in the index.
     async fn len(&self) -> usize;
@@ -352,6 +357,13 @@ pub trait TextEmbeddingEngine: Send + Sync + 'static {
         }
         Ok(results)
     }
+}
+
+/// Abstract contract for LLM text generation (summarization, importance evaluation, query expansion).
+#[async_trait]
+pub trait LlmTextGenerator: Send + Sync + 'static {
+    /// Generates text for a given prompt using an LLM.
+    async fn generate(&self, prompt: &str) -> Result<String>;
 }
 
 /// Statistics for a text index.
@@ -408,7 +420,7 @@ pub trait TextIndex: Send + Sync + 'static {
     async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<u64>;
+    async fn last_tx_id(&self) -> Result<TxId>;
 
     /// Returns the number of documents in the index.
     async fn len(&self) -> usize;
@@ -513,8 +525,7 @@ pub trait GraphIndex: Send + Sync + 'static {
         start_nodes: &[crate::types::EntityId],
         max_hops: usize,
     ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        let mut combined: std::collections::HashMap<crate::types::EntityId, f32> =
-            std::collections::HashMap::new();
+        let mut combined: AHashMap<crate::types::EntityId, f32> = AHashMap::default();
         for &start in start_nodes {
             let results = self.traverse(start, max_hops).await?;
             for (entity_id, score) in results {
@@ -626,7 +637,7 @@ pub trait GraphIndex: Send + Sync + 'static {
     async fn rollback_to_tx(&self, tx_id: crate::types::TxId) -> crate::Result<()>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> crate::Result<u64>;
+    async fn last_tx_id(&self) -> crate::Result<crate::types::TxId>;
 
     /// Returns the number of entities in the index.
     async fn len(&self) -> usize;
@@ -771,8 +782,8 @@ mod capability_coverage {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -847,8 +858,8 @@ mod capability_coverage {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -921,8 +932,8 @@ mod capability_coverage {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -1134,7 +1145,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_many_default_impl_deletes_all_keys() {
         struct MockStorage {
-            data: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>>,
+            data: std::sync::Arc<std::sync::Mutex<AHashMap<Vec<u8>, Vec<u8>>>>,
             delete_call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         }
 
@@ -1209,7 +1220,7 @@ mod tests {
             }
         }
 
-        let map = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let map = std::sync::Arc::new(std::sync::Mutex::new(AHashMap::default()));
         let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let store = MockStorage {
             data: map.clone(),
@@ -1252,8 +1263,8 @@ mod tests {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 self.0.load(std::sync::atomic::Ordering::SeqCst)
@@ -1323,8 +1334,8 @@ mod tests {
             async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> Result<TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0
@@ -1384,8 +1395,8 @@ mod tests {
             async fn rollback_to_tx(&self, _: crate::types::TxId) -> crate::Result<()> {
                 Ok(())
             }
-            async fn last_tx_id(&self) -> crate::Result<u64> {
-                Ok(0)
+            async fn last_tx_id(&self) -> crate::Result<crate::types::TxId> {
+                Ok(TxId(0))
             }
             async fn len(&self) -> usize {
                 0

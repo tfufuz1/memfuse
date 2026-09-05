@@ -209,6 +209,17 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                 message: msg.clone(),
                 details: None,
             },
+            MemFuseError::Timeout {
+                operation,
+                timeout_ms,
+            } => Self {
+                kind: "Timeout".to_string(),
+                message: err.to_string(),
+                details: Some(serde_json::json!({
+                    "operation": operation,
+                    "timeout_ms": timeout_ms,
+                })),
+            },
             MemFuseError::Serialization(msg) => Self {
                 kind: "Serialization".to_string(),
                 message: msg.clone(),
@@ -338,6 +349,13 @@ mod tests {
             (
                 MemFuseError::SandboxTimeout("test".into()),
                 "SandboxTimeout",
+            ),
+            (
+                MemFuseError::Timeout {
+                    operation: "tool:test".into(),
+                    timeout_ms: 50,
+                },
+                "Timeout",
             ),
             (MemFuseError::Serialization("test".into()), "Serialization"),
             (

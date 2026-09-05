@@ -290,7 +290,13 @@ async function refreshModels() {
 // ── Mode Handling & Chat/Search ──────────────────────────────────────────
 let currentMode = 'chat';
 document.querySelectorAll('input[name="mode"]').forEach(radio => {
-    radio.addEventListener('change', (e) => { currentMode = e.target.value; });
+    radio.addEventListener('change', (e) => {
+        currentMode = e.target.value;
+        const container = document.getElementById('multistep-container');
+        if (container) {
+            container.style.display = currentMode === 'search' ? 'inline-flex' : 'none';
+        }
+    });
 });
 
 let currentResponseEl = null;
@@ -376,27 +382,58 @@ async function runDirectSearch() {
     const query = input.value.trim();
     if (!query || !activeCollection) return;
 
+    const isMultiStep = document.getElementById('multistep-checkbox')?.checked;
+
     const searchMsgEl = document.createElement('p');
     const searchStrong = document.createElement('strong');
-    searchStrong.textContent = 'Suche: ';
+    searchStrong.textContent = isMultiStep ? 'Suche (Multi-Step): ' : 'Suche: ';
     searchMsgEl.appendChild(searchStrong);
     searchMsgEl.appendChild(document.createTextNode(query));
     chatLog.appendChild(searchMsgEl);
     input.value = '';
 
     try {
-        const results = await invoke('hybrid_search', {
-            query,
-            collectionName: activeCollection,
-            k: 8,
-        });
+        let results = [];
+        let roundsExecuted = 1;
+        let subQueries = [];
+
+        if (isMultiStep) {
+            const multiRes = await invoke('multi_step_search', {
+                query,
+                collectionName: activeCollection,
+                k: 8,
+                maxRounds: 3,
+            });
+            results = multiRes.results;
+            roundsExecuted = multiRes.rounds_executed;
+            subQueries = multiRes.sub_queries;
+        } else {
+            results = await invoke('hybrid_search', {
+                query,
+                collectionName: activeCollection,
+                k: 8,
+            });
+        }
 
         const resultsEl = document.createElement('div');
         resultsEl.style.cssText = 'margin: 0.5rem 0 1rem 0;';
+
+        if (isMultiStep) {
+            const auditInfo = document.createElement('div');
+            auditInfo.style.cssText = 'font-size: 0.8rem; opacity: 0.85; margin-bottom: 0.5rem; color: #4aa3df;';
+            let infoText = `🔄 Multi-Step Suche: ${roundsExecuted} Runde(n) ausgeführt.`;
+            if (subQueries && subQueries.length > 0) {
+                infoText += ` Teil-Queries: "${subQueries.join('", "')}"`;
+            }
+            auditInfo.textContent = infoText;
+            resultsEl.appendChild(auditInfo);
+        }
+
         if (results.length === 0) {
-            resultsEl.textContent = 'Keine Treffer gefunden.';
+            const noHitsEl = document.createElement('div');
+            noHitsEl.textContent = 'Keine Treffer gefunden.';
+            resultsEl.appendChild(noHitsEl);
         } else {
-            resultsEl.textContent = '';
             for (const r of results) {
                 const card = document.createElement('div');
                 card.style.cssText = 'border: 1px solid #ddd; border-radius: 6px; padding: 0.6rem; margin-bottom: 0.4rem;';
@@ -411,6 +448,50 @@ async function runDirectSearch() {
 
                 card.appendChild(meta);
                 card.appendChild(body);
+
+                if (r.provenance) {
+                    const details = document.createElement('details');
+                    details.style.cssText = 'margin-top: 0.4rem; font-size: 0.8rem; opacity: 0.8;';
+                    const summary = document.createElement('summary');
+                    summary.style.cursor = 'pointer';
+                    summary.textContent = 'Warum dieses Ergebnis?';
+                    details.appendChild(summary);
+
+                    const provBody = document.createElement('div');
+                    provBody.style.cssText = 'margin-top: 0.3rem; padding-left: 0.5rem; border-left: 2px solid #555;';
+
+                    if (r.provenance.signal_ranks && Object.keys(r.provenance.signal_ranks).length > 0) {
+                        const ranksDiv = document.createElement('div');
+                        const rankParts = Object.entries(r.provenance.signal_ranks)
+                            .map(([sig, rank]) => `${sig}: #${rank}`);
+                        ranksDiv.textContent = `Signal Ranks: ${rankParts.join(', ')}`;
+                        provBody.appendChild(ranksDiv);
+                    }
+
+                    const scores = [];
+                    if (r.provenance.vector_distance !== undefined && r.provenance.vector_distance !== null) {
+                        scores.push(`Vector Dist: ${Number(r.provenance.vector_distance).toFixed(4)}`);
+                    }
+                    if (r.provenance.bm25_score !== undefined && r.provenance.bm25_score !== null) {
+                        scores.push(`BM25: ${Number(r.provenance.bm25_score).toFixed(4)}`);
+                    }
+                    if (r.provenance.graph_score !== undefined && r.provenance.graph_score !== null) {
+                        scores.push(`Graph: ${Number(r.provenance.graph_score).toFixed(4)}`);
+                    }
+                    if (r.provenance.rerank_score !== undefined && r.provenance.rerank_score !== null) {
+                        scores.push(`Rerank: ${Number(r.provenance.rerank_score).toFixed(4)}`);
+                    }
+
+                    if (scores.length > 0) {
+                        const scoresDiv = document.createElement('div');
+                        scoresDiv.textContent = `Scores: ${scores.join(' | ')}`;
+                        provBody.appendChild(scoresDiv);
+                    }
+
+                    details.appendChild(provBody);
+                    card.appendChild(details);
+                }
+
                 resultsEl.appendChild(card);
             }
         }
