@@ -145,6 +145,11 @@ impl AgentContext {
         self.events.push_back(event);
     }
 
+    /// Returns the step count to be used for a recovery retry after a partial step failure.
+    pub fn next_retry_step_count(&self) -> u64 {
+        self.step_count + 1
+    }
+
     /// Integrates a background telemetry event with an explicit capacity check.
     pub fn try_attach_event(&mut self, event: crate::event_source::BackgroundEvent) -> Result<()> {
         if self.events.len() >= MAX_TELEMETRY_EVENTS {

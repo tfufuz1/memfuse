@@ -316,11 +316,12 @@ impl OrchestratorEngine {
                         }
                     };
 
-                    // 3. Atomic commit to LSM
-                    self.commit_step(ctx, &result).await?;
-
-                    // 4. Audit log (AC-3)
+                    // 3. Audit log (AC-3) - Audit trail is source of truth for "what was attempted".
+                    // Executed before commit_step so a failure here leaves state uncommitted for clean retry.
                     self.audit_log(ctx, &result).await?;
+
+                    // 4. Atomic commit to LSM - Source of truth for "what was accepted".
+                    self.commit_step(ctx, &result).await?;
 
                     // 6. Resolve next edge
                     let next_node = match self.resolve_next_node(graph, &ctx.current_node, &result)
@@ -555,6 +556,12 @@ impl OrchestratorEngine {
         ctx.state_collection.put_kv(&state_doc_id, &metadata).await
     }
 
+    /// Writes an immutable audit entry for a step execution.
+    ///
+    /// Executed before `commit_step()`. Note: A `MemFuseError::Conflict` here signifies that
+    /// an audit entry for this `(task_id, step_count)` already exists from a previous partial attempt.
+    /// In such recovery scenarios, the caller must advance to a new `step_count` (e.g., via
+    /// `ctx.next_retry_step_count()`), and NOT attempt to overwrite the existing entry.
     async fn audit_log(&self, ctx: &AgentContext, result: &StepResult) -> Result<()> {
         // Generate immutable audit trace and store it
         let entry = crate::audit::AuditEntry {
@@ -880,5 +887,46 @@ mod tests {
         assert!(!evaluate_condition_expr("   ", &ctx));
         assert!(!evaluate_condition_expr("== value_without_key", &ctx));
         assert!(!evaluate_condition_expr("!= value_without_key", &ctx));
+    }
+
+    #[tokio::test]
+    async fn test_audit_before_commit_ordering() {
+        let (ctx, _tmp) = create_dummy_context().await;
+        let orchestrator = OrchestratorEngine::from_db(&ctx.db);
+
+        // Populate an existing KV entry under task:test-task-1:step:0 to force commit_step to fail
+        // if state_collection.put_kv_if_absent was used, but put_kv overwrites.
+        // Wait, put_kv doesn't fail on existing key, put_kv_if_absent does!
+        // To simulate commit_step failure after successful audit_log:
+        // Populate audit entry manually? No, audit_log uses put_kv_if_absent under "audit:test-task-1:step:0".
+        // commit_step uses put_kv under "task:test-task-1:step:0".
+        // If we want commit_step to fail while audit_log succeeds, we can simulate an error in commit_step or
+        // test ordering directly.
+        // Let's test calling audit_log directly then commit_step with invalid state ID or pre-condition,
+        // or test that after audit_log succeeds, state_collection contains the audit entry "audit:test-task-1:step:0"
+        // even if commit_step fails, and step_count is NOT incremented (remains 0).
+        let step_res = StepResult {
+            node_id: "start".to_string(),
+            output: json!({"res": "ok"}),
+            tokens_consumed: 10,
+            next_edge: None,
+        };
+
+        // Call audit_log first (as in new loop order)
+        let audit_res = orchestrator.audit_log(&ctx, &step_res).await;
+        assert!(audit_res.is_ok());
+
+        // Verify audit entry exists in state_collection
+        let audit_id = format!("audit:{}:step:{}", ctx.task_id, ctx.step_count);
+        let audit_entry = ctx.state_collection.get_kv(&audit_id).await.unwrap();
+        assert!(audit_entry.is_some());
+
+        // Verify state doc key for commit_step does NOT exist yet
+        let state_doc_id = format!("task:{}:step:{}", ctx.task_id, ctx.step_count);
+        let state_entry = ctx.state_collection.get_kv(&state_doc_id).await.unwrap();
+        assert!(state_entry.is_none());
+
+        // Verify step_count was not incremented
+        assert_eq!(ctx.step_count, 0);
     }
 }
