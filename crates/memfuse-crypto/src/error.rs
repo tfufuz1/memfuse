@@ -1,6 +1,5 @@
 //! Error types for `memfuse-crypto`.
 
-use memfuse_core::MemFuseError;
 use thiserror::Error;
 
 /// Result type alias for cryptographic operations in `memfuse-crypto`.
@@ -46,18 +45,6 @@ impl CryptoError {
         Self::WalCorruption {
             offset,
             reason: reason.into(),
-        }
-    }
-}
-
-impl From<CryptoError> for MemFuseError {
-    fn from(e: CryptoError) -> Self {
-        match e {
-            CryptoError::WalCorruption { offset, reason } => {
-                Self::WalCorruption { offset, reason }
-            }
-            CryptoError::InvalidInput(msg) => Self::InvalidInput(msg),
-            other => Self::Crypto(other.to_string()),
         }
     }
 }

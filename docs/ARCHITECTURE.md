@@ -8,7 +8,7 @@ MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche Works
 ```
 Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
 Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
-          memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
+          memfuse-crypto — Encryption at Rest utilities for MemFuse
           memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
