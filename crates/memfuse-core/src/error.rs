@@ -240,6 +240,17 @@ impl From<std::array::TryFromSliceError> for MemFuseError {
     }
 }
 
+impl From<memfuse_crypto::CryptoError> for MemFuseError {
+    fn from(e: memfuse_crypto::CryptoError) -> Self {
+        match e {
+            memfuse_crypto::CryptoError::WalCorruption { offset, reason } => {
+                Self::WalCorruption { offset, reason }
+            }
+            memfuse_crypto::CryptoError::InvalidInput(msg) => Self::InvalidInput(msg),
+            other => Self::Crypto(other.to_string()),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -334,6 +345,35 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_from_crypto_error() {
+        let crypto_err = memfuse_crypto::CryptoError::WalCorruption {
+            offset: 42,
+            reason: "bad hmac".to_string(),
+        };
+        let mf_err: MemFuseError = crypto_err.into();
+        assert!(matches!(
+            mf_err,
+            MemFuseError::WalCorruption {
+                offset: 42,
+                ref reason
+            } if reason == "bad hmac"
+        ));
+
+        let invalid_input = memfuse_crypto::CryptoError::InvalidInput("bad key".to_string());
+        let mf_err_inv: MemFuseError = invalid_input.into();
+        assert!(matches!(
+            mf_err_inv,
+            MemFuseError::InvalidInput(ref msg) if msg == "bad key"
+        ));
+
+        let gen_crypto = memfuse_crypto::CryptoError::Encryption("failed".to_string());
+        let mf_err_gen: MemFuseError = gen_crypto.into();
+        assert!(matches!(
+            mf_err_gen,
+            MemFuseError::Crypto(ref msg) if msg.contains("encryption failed")
+        ));
+    }
 
     #[test]
     fn test_error_display_all_variants() {

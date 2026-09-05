@@ -336,21 +336,26 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
         }
 
-        let meta = StoredDocumentMeta {
+        let stored = StoredDocument {
             id: id.to_string(),
+            embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
+        let meta_only = StoredDocumentMeta::from(&stored);
 
-        // user_key (key_type=0) and doc_key (key_type=1) hold light metadata without embedding vector.
-        // Vector index (HNSW) is the single source of truth for vector embeddings.
+        // user_key (key_type=0): Vollständiges Dokument (für get() und repair())
+        // Document serialization is unencrypted before being sent to storage.
+        // If Encryption-at-Rest is enabled, it's encrypted in the storage layer (WP-3.2).
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let doc_key = self.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
 
         let old_user_val = self.storage.get_at_seq(&user_key, u64::MAX).await?;
         let old_doc_val = self.storage.get_at_seq(&doc_key, u64::MAX).await?;
 
-        let meta_data = serde_json::to_vec(&meta)?;
-        self.storage.put(tx, &user_key, &meta_data).await?;
+        let data = serde_json::to_vec(&stored)?;
+        self.storage.put(tx, &user_key, &data).await?;
+
+        let meta_data = serde_json::to_vec(&meta_only)?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
         // Record for compensating transaction with pre-write values
@@ -566,10 +571,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         validate_doc_id(id)?;
         let key = self.namespaced_key(id.as_bytes(), 0);
         if let Some(data) = self.storage.get_at_seq(&key, seq_no).await? {
-            if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&data) {
+            if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&data) {
                 return Ok(Some(crate::Document {
-                    id: meta.id,
-                    metadata: meta.metadata,
+                    id: stored.id,
+                    metadata: stored.metadata,
                 }));
             } else if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&data) {
                 return Ok(Some(crate::Document {
@@ -641,13 +646,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             map.insert("updated_at_tx".to_string(), serde_json::json!(tx.inner()));
         }
 
-        let meta = StoredDocumentMeta {
+        let stored = StoredDocument {
             id: id.to_string(),
+            embedding: embedding.to_vec(),
             metadata: metadata.clone(),
         };
-        let meta_data = serde_json::to_vec(&meta)?;
+        let meta_only = StoredDocumentMeta::from(&stored);
+        let data = serde_json::to_vec(&stored)?;
+        let meta_data = serde_json::to_vec(&meta_only)?;
 
-        self.storage.put(tx, &user_key, &meta_data).await?;
+        self.storage.put(tx, &user_key, &data).await?;
         self.storage.put(tx, &doc_key, &meta_data).await?;
 
         db_tx.record_keys_with_old_values(user_key, old_user_val, doc_key, old_doc_val, doc_id);
