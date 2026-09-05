@@ -378,7 +378,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
         let mut stored: StoredDocumentMeta = serde_json::from_slice(&data)?;
 
-        let text = extract_text(&stored.metadata).unwrap_or_else(|| stored.id.clone());
+        let text = extract_text(&stored_meta.metadata).unwrap_or_else(|| stored_meta.id.clone());
 
         let prompt = format!(
             "Bewerte die langfristige Wichtigkeit dieser Information für einen KI-Agenten \
@@ -399,11 +399,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let doc_id_typed = DocId::from_key(doc_id)?;
         let doc_key = self.namespaced_key(&doc_id_typed.inner().to_le_bytes(), 1);
 
-        let meta_obj = match stored.metadata {
+        let meta_obj = match stored_meta.metadata {
             Some(serde_json::Value::Object(ref mut map)) => map,
             _ => {
-                stored.metadata = Some(serde_json::json!({}));
-                match stored.metadata {
+                stored_meta.metadata = Some(serde_json::json!({}));
+                match stored_meta.metadata {
                     Some(serde_json::Value::Object(ref mut map)) => map,
                     _ => {
                         return Err(MemFuseError::Serialization(
@@ -439,12 +439,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             meta_obj.insert("importance".to_string(), val);
         }
 
-        let meta_only = StoredDocumentMeta::from(&stored);
-        let user_bytes = serde_json::to_vec(&stored)?;
-        let doc_bytes = serde_json::to_vec(&meta_only)?;
+        let doc_bytes = serde_json::to_vec(&stored_meta)?;
 
         let _guard = self.insert_lock.lock().await;
-        self.storage.put(tx, &user_key, &user_bytes).await?;
+        self.storage.put(tx, &user_key, &doc_bytes).await?;
         self.storage.put(tx, &doc_key, &doc_bytes).await?;
         self.storage.commit(tx).await?;
 

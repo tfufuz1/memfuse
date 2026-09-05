@@ -9,6 +9,7 @@
 // PREFIXING: Jeder Key im LSM bekommt das Prefix `__col:{name}:\x00`.
 
 pub mod crud;
+pub(super) mod kv_lock;
 pub mod maintenance;
 pub mod query_builder;
 pub mod relate;
@@ -35,9 +36,25 @@ use std::sync::Arc;
 /// Hinweises zu Bestandsdaten: Ältere LSM-Einträge können noch ein `embedding`-Feld
 /// im JSON enthalten, welches beim Deserialisieren von `StoredDocumentMeta` ignoriert wird.
 #[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct StoredDocument {
+    pub id: String,
+    pub embedding: Vec<f32>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct StoredDocumentMeta {
     pub id: String,
     pub metadata: Option<serde_json::Value>,
+}
+
+impl From<&StoredDocument> for StoredDocumentMeta {
+    fn from(doc: &StoredDocument) -> Self {
+        Self {
+            id: doc.id.clone(),
+            metadata: doc.metadata.clone(),
+        }
+    }
 }
 
 /// Parses an LLM response string into an f32 importance score in `[0.0, 1.0]`.
@@ -221,6 +238,7 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) dimension: usize,
     pub(super) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     pub(super) insert_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(super) kv_locks: kv_lock::KvKeyLocks,
 }
 
 impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
@@ -236,6 +254,7 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             dimension: self.dimension,
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
             insert_lock: self.insert_lock.clone(),
+            kv_locks: kv_lock::KvKeyLocks::new(),
         }
     }
 }
@@ -300,6 +319,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             dimension,
             embedder: parking_lot::RwLock::new(None),
             insert_lock: Arc::new(tokio::sync::Mutex::new(())),
+            kv_locks: kv_lock::KvKeyLocks::new(),
         }
     }
 
