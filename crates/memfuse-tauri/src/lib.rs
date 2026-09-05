@@ -44,6 +44,7 @@ pub fn run() {
             commands::ingest_file,
             commands::ingest_folder,
             commands::hybrid_search,
+            commands::multi_step_search,
             commands::chat_with_rag,
             commands::list_ollama_models,
             commands::run_regex_transform,
