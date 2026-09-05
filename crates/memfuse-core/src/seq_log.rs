@@ -24,6 +24,41 @@ pub struct SeqLogEntry {
     pub delete_seq: Option<u64>,
 }
 
+/// Represents a historical sequence log change (insert or delete) for delta replaying.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SeqLogChange {
+    /// A document insertion at a specific sequence number.
+    Insert {
+        /// Document ID.
+        doc_id: DocId,
+        /// Sequence number of the insert.
+        seq: u64,
+    },
+    /// A document deletion at a specific sequence number.
+    Delete {
+        /// Document ID.
+        doc_id: DocId,
+        /// Sequence number of the delete.
+        seq: u64,
+    },
+}
+
+impl SeqLogChange {
+    /// Returns the sequence number associated with this change.
+    pub fn seq(&self) -> u64 {
+        match self {
+            Self::Insert { seq, .. } | Self::Delete { seq, .. } => *seq,
+        }
+    }
+
+    /// Returns the document ID associated with this change.
+    pub fn doc_id(&self) -> DocId {
+        match self {
+            Self::Insert { doc_id, .. } | Self::Delete { doc_id, .. } => *doc_id,
+        }
+    }
+}
+
 /// Helper structure managing sequence log tracking and visibility filtering for index implementations.
 #[derive(Debug, Default, Clone)]
 pub struct SequenceLog {
@@ -104,6 +139,30 @@ impl SequenceLog {
     /// Returns true if the sequence log is empty.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// Returns all sequence log changes that occurred strictly after `snapshot_seq`,
+    /// ordered chronologically by sequence number.
+    pub fn changes_since(&self, snapshot_seq: u64) -> Vec<SeqLogChange> {
+        let mut changes = Vec::new();
+        for entry in &self.entries {
+            if entry.insert_seq > snapshot_seq {
+                changes.push(SeqLogChange::Insert {
+                    doc_id: entry.doc_id,
+                    seq: entry.insert_seq,
+                });
+            }
+            if let Some(del_seq) = entry.delete_seq {
+                if del_seq > snapshot_seq {
+                    changes.push(SeqLogChange::Delete {
+                        doc_id: entry.doc_id,
+                        seq: del_seq,
+                    });
+                }
+            }
+        }
+        changes.sort_by_key(|c| c.seq());
+        changes
     }
 }
 
@@ -210,5 +269,71 @@ mod tests {
         log.record_delete(doc1, 25); // Should not overwrite existing delete_seq if already deleted
         assert!(log.is_visible(doc1, 10));
         assert!(!log.is_visible(doc1, 15));
+    }
+
+    #[test]
+    fn test_sequence_log_changes_since() {
+        let mut log = SequenceLog::new();
+        let doc1 = DocId::from_key("doc1").expect("valid doc id");
+        let doc2 = DocId::from_key("doc2").expect("valid doc id");
+
+        log.record_insert(doc1, 10);
+        log.record_insert(doc2, 20);
+        log.record_delete(doc1, 30);
+        log.record_insert(doc1, 40);
+
+        let changes_0 = log.changes_since(0);
+        assert_eq!(
+            changes_0,
+            vec![
+                SeqLogChange::Insert {
+                    doc_id: doc1,
+                    seq: 10
+                },
+                SeqLogChange::Insert {
+                    doc_id: doc2,
+                    seq: 20
+                },
+                SeqLogChange::Delete {
+                    doc_id: doc1,
+                    seq: 30
+                },
+                SeqLogChange::Insert {
+                    doc_id: doc1,
+                    seq: 40
+                },
+            ]
+        );
+
+        let changes_15 = log.changes_since(15);
+        assert_eq!(
+            changes_15,
+            vec![
+                SeqLogChange::Insert {
+                    doc_id: doc2,
+                    seq: 20
+                },
+                SeqLogChange::Delete {
+                    doc_id: doc1,
+                    seq: 30
+                },
+                SeqLogChange::Insert {
+                    doc_id: doc1,
+                    seq: 40
+                },
+            ]
+        );
+
+        let changes_35 = log.changes_since(35);
+        assert_eq!(
+            changes_35,
+            vec![SeqLogChange::Insert {
+                doc_id: doc1,
+                seq: 40
+            }]
+        );
+
+        let changes_50 = log.changes_since(50);
+        assert!(changes_50.is_empty());
     }
 }

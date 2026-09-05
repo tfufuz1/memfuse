@@ -45,7 +45,7 @@ pub mod types;
 
 pub use error::{MemFuseError, Result};
 pub use error_dto::MemFuseErrorDto;
-pub use seq_log::{SeqLogEntry, SequenceLog};
+pub use seq_log::{SeqLogChange, SeqLogEntry, SequenceLog};
 pub use snapshot::{SnapshotGuard, SnapshotRegistry};
 pub use traits::*;
 pub use tx_buffer::{IndexOp, TxBuffer};
