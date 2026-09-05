@@ -19,6 +19,8 @@ pub struct IngestReport {
     pub file_path: String,
     pub chunks_created: usize,
     pub errors: Vec<String>,
+    #[serde(default)]
+    pub skipped_as_duplicate: bool,
 }
 
 pub struct IngestionPipeline {
@@ -146,18 +148,21 @@ impl IngestionPipeline {
                         path_buf
                     ))
                 })?;
-                extract_text_from_bytes(&bytes, &extension)
+                let content_hash = blake3::hash(&bytes).to_hex().to_string();
+                let text = extract_text_from_bytes(&bytes, &extension)?;
+                Ok::<(String, String), MemFuseError>((content_hash, text))
             })
         })
         .await;
 
-        let raw_text = match extract_res {
-            Ok(Ok(Ok(text))) => text,
+        let (content_hash, raw_text) = match extract_res {
+            Ok(Ok(Ok(res))) => res,
             Ok(Ok(Err(e))) => {
                 return Ok(IngestReport {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec![e.to_string()],
+                    skipped_as_duplicate: false,
                 });
             }
             Ok(Err(_panic_payload)) => {
@@ -165,6 +170,7 @@ impl IngestionPipeline {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec!["Extraction panicked on malformed file".to_string()],
+                    skipped_as_duplicate: false,
                 });
             }
             Err(join_err) => {
@@ -172,9 +178,23 @@ impl IngestionPipeline {
                     file_path: path.display().to_string(),
                     chunks_created: 0,
                     errors: vec![format!("Extraction task failed: {join_err:?}")],
+                    skipped_as_duplicate: false,
                 });
             }
         };
+
+        let kv_key = format!("doc_hash:{content_hash}");
+        if collection.get_kv(&kv_key).await?.is_some() {
+            return Ok(IngestReport {
+                file_path: path.display().to_string(),
+                chunks_created: 0,
+                errors: vec![
+                    "Datei wurde bereits importiert (identischer Inhalt erkannt), Re-Import übersprungen."
+                        .to_string(),
+                ],
+                skipped_as_duplicate: true,
+            });
+        }
 
         let file_name = path
             .file_name()
@@ -188,6 +208,7 @@ impl IngestionPipeline {
                 file_path: path.display().to_string(),
                 chunks_created: 0,
                 errors: Vec::new(),
+                skipped_as_duplicate: false,
             });
         }
 
@@ -239,6 +260,10 @@ impl IngestionPipeline {
                         obj.insert(
                             "source".to_string(),
                             serde_json::Value::String(path.display().to_string()),
+                        );
+                        obj.insert(
+                            "content_hash".to_string(),
+                            serde_json::Value::String(content_hash.clone()),
                         );
                     }
 
@@ -360,10 +385,17 @@ impl IngestionPipeline {
             }
         }
 
+        if created > 0 {
+            if let Err(e) = collection.put_kv(&kv_key, &serde_json::json!(true)).await {
+                tracing::warn!("Failed to store content hash in KV store: {e}");
+            }
+        }
+
         Ok(IngestReport {
             file_path: path.display().to_string(),
             chunks_created: created,
             errors,
+            skipped_as_duplicate: false,
         })
     }
 
@@ -394,6 +426,7 @@ impl IngestionPipeline {
                         file_path: entry.path().display().to_string(),
                         chunks_created: 0,
                         errors: vec![e.to_string()],
+                        skipped_as_duplicate: false,
                     },
                 };
                 reports.push(report);

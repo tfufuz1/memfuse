@@ -23,6 +23,8 @@
 #[allow(unsafe_code)]
 pub mod jsonrpc;
 #[allow(unsafe_code)]
+#[allow(missing_docs)]
+#[allow(clippy::all)]
 pub mod memfuse_generated;
 
 pub use jsonrpc::*;

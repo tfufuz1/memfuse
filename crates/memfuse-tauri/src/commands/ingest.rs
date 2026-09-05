@@ -135,6 +135,7 @@ pub async fn ingest_folder(
                     file_path: entry.path().display().to_string(),
                     chunks_created: 0,
                     errors: vec![e.to_string()],
+                    skipped_as_duplicate: false,
                 },
             };
             throttler.add_report(&report);
