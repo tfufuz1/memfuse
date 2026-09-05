@@ -282,3 +282,63 @@ async fn test_custom_event_source_extensibility() {
     assert_eq!(ctx.events.len(), 1);
     assert_eq!(ctx.events[0].source, "camera");
 }
+
+/// A push-based EventSource using tokio::sync::Notify for real signal backpressure.
+struct NotifyEventSource {
+    notify: Arc<tokio::sync::Notify>,
+    events: std::collections::VecDeque<BackgroundEvent>,
+    exhausted: bool,
+}
+
+#[async_trait]
+impl EventSource for NotifyEventSource {
+    async fn next_event(&mut self) -> memfuse_core::Result<Option<BackgroundEvent>> {
+        Ok(self.events.pop_front())
+    }
+
+    fn is_exhausted(&self) -> bool {
+        self.exhausted && self.events.is_empty()
+    }
+
+    async fn wait_for_event(&self) {
+        self.notify.notified().await;
+    }
+}
+
+#[tokio::test]
+async fn test_notify_push_event_source_wait_for_event() {
+    let (engine, db, _tmp) = setup_test_environment().await;
+
+    let mut graph = StateGraph::new();
+    graph.try_add_node("start", "Start node", NodeType::Start, None).unwrap();
+    graph.try_add_node("end", "End node", NodeType::End, None).unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
+
+    let state_col = db.collection("agent-state").await.expect("state col");
+    let budget = TokenBudget::new(1000, 0);
+    let mut ctx = AgentContext::try_new("task-notify-1", "start", db.clone(), state_col, budget).unwrap();
+
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let mut source = NotifyEventSource {
+        notify: notify.clone(),
+        events: std::collections::VecDeque::new(),
+        exhausted: false,
+    };
+
+    let shutdown = CancellationToken::new();
+    let shutdown_clone = shutdown.clone();
+
+    // Spawn task to signal notify after a short delay
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        shutdown_clone.cancel();
+        notify.notify_one();
+    });
+
+    let exit_reason = engine
+        .run_event_loop(&mut ctx, &graph, &mut source, shutdown)
+        .await
+        .expect("run event loop");
+
+    assert_eq!(exit_reason, EventLoopExitReason::Shutdown);
+}
