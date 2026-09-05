@@ -10505,10 +10505,6 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ecfddf64a81d1a72"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "ecff54360b1df174"
   },
   {
@@ -13305,15 +13301,7 @@
   },
   {
     "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
-    "hash": "8e8ca09654a58925"
-  },
-  {
-    "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
-    "hash": "9333aaaf619c1a12"
-  },
-  {
-    "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
-    "hash": "9889e5aef62ff07a"
+    "hash": "8d8da92a158c074f"
   },
   {
     "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
@@ -13321,7 +13309,11 @@
   },
   {
     "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
-    "hash": "ac72404aee8e6fd0"
+    "hash": "a7961d6295f6fdd4"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
+    "hash": "b4cfe13073466b19"
   },
   {
     "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
@@ -13329,15 +13321,15 @@
   },
   {
     "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
+    "hash": "bbedb379471e685c"
+  },
+  {
+    "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
     "hash": "cbaaba0255ec1cb4"
   },
   {
     "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
-    "hash": "e1b1797efcbe8d41"
-  },
-  {
-    "file": "crates/memfuse-store/tests/chaos_dropped_write.rs",
-    "hash": "e9a799f2947eab7c"
+    "hash": "e002c17266ddcd60"
   },
   {
     "file": "crates/memfuse-store/tests/compaction_correctness_and_pinning.rs",
