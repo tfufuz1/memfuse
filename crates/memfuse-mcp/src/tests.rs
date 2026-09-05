@@ -2,7 +2,6 @@
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::McpServer;
 use async_trait::async_trait;
-use memfuse_core::{Result, TextEmbeddingEngine};
 use memfuse_db::MemFuse;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -14,12 +13,26 @@ struct MockEmbedder {
 }
 
 #[async_trait]
-impl TextEmbeddingEngine for MockEmbedder {
-    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+impl memfuse_core::EmbeddingProvider for MockEmbedder {
+    fn provider_name(&self) -> &str {
+        "mock"
+    }
+
+    async fn embed(
+        &self,
+        _text: &str,
+    ) -> std::result::Result<Vec<f32>, memfuse_core::EmbeddingError> {
         Ok(vec![0.1f32; self.dimension])
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    fn embedding_dim(&self) -> usize {
+        self.dimension
+    }
+
+    async fn embed_batch(
+        &self,
+        texts: &[&str],
+    ) -> std::result::Result<Vec<Vec<f32>>, memfuse_core::EmbeddingError> {
         Ok(vec![vec![0.1f32; self.dimension]; texts.len()])
     }
 }
@@ -182,6 +195,8 @@ async fn test_read_line_bounded_enforces_limit() {
     use std::io::Cursor;
     use tokio::io::BufReader;
 
+    assert_eq!(MAX_RPC_BYTES, 4 * 1024 * 1024);
+
     // 1. Normal line within limit
     let data = "{\"jsonrpc\":\"2.0\",\"id\":1}\n";
     let mut reader = BufReader::new(Cursor::new(data));
@@ -190,8 +205,8 @@ async fn test_read_line_bounded_enforces_limit() {
     assert!(res.is_ok());
     assert_eq!(buf, data);
 
-    // 2. Line exceeding limit (e.g. 100 bytes when limit is 50)
-    let oversized = "A".repeat(100) + "\n";
+    // 2. Line exceeding limit (e.g. 100 bytes when limit is 50), followed by valid line
+    let oversized = "A".repeat(100) + "\n" + "{\"jsonrpc\":\"2.0\",\"id\":2}\n";
     let mut oversized_reader = BufReader::new(Cursor::new(oversized));
     let mut buf2 = String::new();
     let res_err = read_line_bounded(&mut oversized_reader, &mut buf2, 50).await;
@@ -199,6 +214,12 @@ async fn test_read_line_bounded_enforces_limit() {
     let err = res_err.unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     assert!(err.to_string().contains("limit exceeded"));
+
+    // 3. Verify line-draining: next call reads the second valid line
+    let mut buf3 = String::new();
+    let res_ok = read_line_bounded(&mut oversized_reader, &mut buf3, 50).await;
+    assert!(res_ok.is_ok());
+    assert_eq!(buf3, "{\"jsonrpc\":\"2.0\",\"id\":2}\n");
 }
 
 #[tokio::test]

@@ -637,8 +637,8 @@ impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
         self.storage.rollback_to_tx(tx_id).await
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
-        self.storage.last_tx_id().await.map(|tx| tx.inner())
+    async fn last_tx_id(&self) -> Result<TxId> {
+        self.storage.last_tx_id().await
     }
 
     async fn len(&self) -> usize {
@@ -717,7 +717,7 @@ impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
         self.inner.rollback_to_tx(tx_id).await
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
+    async fn last_tx_id(&self) -> Result<TxId> {
         self.inner.last_tx_id().await
     }
 
@@ -1665,7 +1665,7 @@ mod tests {
 
         morph_index.rollback(tx).await?;
         morph_index.rollback_to_tx(tx).await?;
-        assert_eq!(morph_index.last_tx_id().await?, 0);
+        assert_eq!(morph_index.last_tx_id().await?, TxId(0));
 
         Ok(())
     }

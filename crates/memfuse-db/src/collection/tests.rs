@@ -5,6 +5,135 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 #[tokio::test]
+async fn test_collection_scan_prefix_batches_via_mock_storage() {
+    use async_trait::async_trait;
+    use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
+    use memfuse_graph::csr::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    struct BoundedScanMockStorage {
+        bounded_call_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl StorageEngine for BoundedScanMockStorage {
+        async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
+            Ok(None)
+        }
+        async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
+            Ok(None)
+        }
+        async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
+            Ok(())
+        }
+        async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
+            Ok(())
+        }
+        async fn commit(&self, _: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn rollback(&self, _: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
+            Ok(())
+        }
+        async fn flush(&self) -> Result<()> {
+            Ok(())
+        }
+        async fn stats(&self) -> Result<StorageStats> {
+            Ok(StorageStats {
+                num_segments: 0,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
+        }
+        async fn last_seq_no(&self) -> Result<u64> {
+            Ok(0)
+        }
+        async fn last_tx_id(&self) -> Result<TxId> {
+            Ok(TxId(0))
+        }
+        async fn pin_checkpoint(&self, _: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
+            Ok(())
+        }
+        async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            panic!("scan_prefix should not be called directly when batching!");
+        }
+        async fn scan_prefix_bounded(
+            &self,
+            _prefix: &[u8],
+            limit: usize,
+            cursor: Option<&[u8]>,
+        ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)> {
+            self.bounded_call_count.fetch_add(1, Ordering::SeqCst);
+            let start = if let Some(cur) = cursor {
+                let s = String::from_utf8_lossy(cur);
+                let idx: usize = s["item_".len()..].parse().unwrap();
+                idx + 1
+            } else {
+                0
+            };
+
+            let total_items = 5000;
+            let end = (start + limit).min(total_items);
+
+            let val_bytes = serde_json::to_vec(&serde_json::json!({"test": "data"})).unwrap();
+            let mut batch = Vec::new();
+            for i in start..end {
+                let k = format!("item_{:05}", i).into_bytes();
+                batch.push((k, val_bytes.clone()));
+            }
+
+            let next_cursor = if end < total_items {
+                batch.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
+
+            Ok((batch, next_cursor))
+        }
+        async fn scan(
+            &self,
+            _: std::ops::Bound<&[u8]>,
+            _: std::ops::Bound<&[u8]>,
+        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+            Ok(vec![])
+        }
+    }
+
+    let mock_storage = Arc::new(BoundedScanMockStorage {
+        bounded_call_count: AtomicUsize::new(0),
+    });
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        mock_storage.clone(),
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(std::sync::atomic::AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let items = col.scan_prefix("item_").await.unwrap();
+    assert_eq!(items.len(), 5000);
+    // With 5000 items and BATCH_SIZE = 1000, scan_prefix_bounded should be called 5 times
+    assert_eq!(mock_storage.bounded_call_count.load(Ordering::SeqCst), 5);
+}
+
+#[tokio::test]
 async fn test_insert_with_ttl_and_reap_expired_documents() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -1180,10 +1309,21 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     let vec = vec![1.0, 0.0, 0.0, 0.0];
     col.insert("doc_test", &vec, None).await.unwrap(); // unwrap
 
-    let dead_ollama = memfuse_ollama::OllamaClient::new("http://127.0.0.1:1");
+    struct DeadLlm;
+    #[async_trait::async_trait]
+    impl memfuse_core::LlmTextGenerator for DeadLlm {
+        async fn generate(&self, _prompt: &str) -> memfuse_core::Result<String> {
+            Err(memfuse_core::MemFuseError::Io(std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "Dead LLM",
+            )))
+        }
+    }
+
+    let dead_llm = DeadLlm;
 
     let res = col
-        .evaluate_importance_with_llm("doc_test", &dead_ollama)
+        .evaluate_importance_with_llm("doc_test", &dead_llm, "llama3.2")
         .await;
     assert!(res.is_err());
     assert!(matches!(
@@ -2385,6 +2525,85 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
     assert!(
         results.iter().any(|r| r.id == "doc3"),
         "doc3 must move up into top-2"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_query_builder_query_config_include_superseded_displacement(
+) -> memfuse_core::Result<()> {
+    use memfuse_core::{DocId, HybridQuery};
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap(); // unwrap
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(), // unwrap
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    col.insert(
+        "old_doc",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(serde_json::json!({"text": "outdated information"})),
+    )
+    .await?;
+
+    col.insert(
+        "new_doc",
+        &[0.95, 0.05, 0.0, 0.0],
+        Some(serde_json::json!({"text": "updated information"})),
+    )
+    .await?;
+
+    col.link_memories(
+        DocId::from_key("new_doc")?,
+        DocId::from_key("old_doc")?,
+        memfuse_core::types::domain::LinkRelation::Supersedes,
+    )
+    .await?;
+
+    let hybrid_query = HybridQuery::builder()
+        .with_vector_query(vec![1.0, 0.0, 0.0, 0.0])
+        .with_include_superseded(false)
+        .with_k(10)
+        .build()
+        .unwrap(); // unwrap
+
+    let results = col.query().query_config(&hybrid_query).execute().await?;
+
+    assert!(
+        !results.iter().any(|r| r.id == "old_doc"),
+        "old_doc must be displaced when executed via QueryBuilder with include_superseded=false"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "new_doc"),
+        "new_doc must be included in results"
     );
 
     Ok(())

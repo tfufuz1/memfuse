@@ -1,1 +1,5 @@
-[]
+{
+  "checkpoints": [],
+  "pinned_seq_nos": [],
+  "persist_path": "memfuse_orphaned_pins.json"
+}

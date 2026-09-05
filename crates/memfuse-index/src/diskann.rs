@@ -1020,8 +1020,8 @@ impl VectorIndex for DiskAnnIndex {
         Ok(self.inner.doc_ids.read().clone())
     }
 
-    async fn last_tx_id(&self) -> Result<u64> {
-        Ok(0)
+    async fn last_tx_id(&self) -> Result<TxId> {
+        Ok(TxId(0))
     }
 
     async fn len(&self) -> usize {

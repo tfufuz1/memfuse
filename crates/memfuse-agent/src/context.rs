@@ -88,6 +88,11 @@ pub struct AgentContext {
     pub memory: HashMap<String, serde_json::Value>,
     /// History of attached background telemetry events.
     pub events: VecDeque<crate::event_source::BackgroundEvent>,
+    /// Offene Routing-Entscheidung, deren Ergebnis nach Tool-Ausführung zurückgemeldet werden soll.
+    pub pending_routing_decision: Option<(
+        Arc<memfuse_router::RouterEngine>,
+        memfuse_router::DecisionId,
+    )>,
 }
 
 impl AgentContext {
@@ -125,6 +130,7 @@ impl AgentContext {
             status: AgentStatus::Idle,
             memory: HashMap::new(),
             events: VecDeque::new(),
+            pending_routing_decision: None,
         })
     }
 
@@ -139,6 +145,11 @@ impl AgentContext {
             self.events.pop_front(); // Evict oldest event to cap memory usage
         }
         self.events.push_back(event);
+    }
+
+    /// Returns the step count to be used for a recovery retry after a partial step failure.
+    pub fn next_retry_step_count(&self) -> u64 {
+        self.step_count + 1
     }
 
     /// Integrates a background telemetry event with an explicit capacity check.

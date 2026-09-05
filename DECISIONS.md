@@ -807,6 +807,13 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-057: Lücken-Dokumentation (Umnummerierung / Ausgelassen)
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: Die Nummer ADR-057 wurde im Zuge paralleler Audit-Sessions ausgelassen und ist nicht vergeben. (Anmerkung: ADR-048 in `docs/decisions/` wurde als ADR-059 neu nummeriert und in `DECISIONS.md` integriert).
+
+---
+
 ## ADR-058: Error-Logging-Pattern für synchrones Orphan-State Persistieren in Checkpoint
 *   **Datum**: 2026-09-04
 *   **Status**: ✅ Final
@@ -817,12 +824,46 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## Vorlage für neue ADRs
-```markdown
-## ADR-NNN: <Titel>
-*   **Datum**: YYYY-MM-DD
-*   **Status**: 🟡 Proposed / ✅ Final / ❌ Superseded by ADR-XXX
-*   **Entscheidung**: <Was wird entschieden?>
-*   **Alternativen**: <Welche Alternativen wurden erwogen?>
-*   **Begründung**: <Warum genau diese Lösung?>
-```
+## ADR-059: Python FFI Panic Isolation (ehemals docs/decisions/ADR-048)
+*   **Datum**: 2026-09-03
+*   **Status**: ✅ Final
+*   **Entscheidung**: Alle `panic!()`-Aufrufe in `memfuse-py` außerhalb von `#[cfg(test)]` werden durch `Err(PyErr)` ersetzt.
+*   **Begründung**: Ein Rust-Panic über die PyO3 FFI-Grenze hinweg führt zum Absturz von CPython. `catch_unwind` ist kein Ersatz für korrekte Fehlerbehandlung an Aufrufstellen.
+
+---
+
+## ADR-060: ADR-Governance — Konsolidierung auf DECISIONS.md als Einzel-Quelle
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Entscheidung**: `docs/decisions/` wird aufgelöst. `DECISIONS.md` im Root-Verzeichnis ist die einzige kanonische Quelle für Architecture Decision Records (ADRs).
+*   **Begründung**: Einhaltung des MECE-Prinzips aus `CONSTITUTION.md` ("Jede Information lebt an genau EINEM Ort"). Das Dual-System (`DECISIONS.md` vs. `docs/decisions/`) erzeugte Nummernkollisionen und Verwirrung. Das xtask-Tooling kennt und prüft primär `DECISIONS.md`.
+
+---
+
+## ADR-061: 2-Phasen-Lock für HNSW Rebuild
+*   **Datum**: 2026-09-04
+*   **Status**: ✅ Final
+*   **Kontext**: `HnswIndex::rebuild()` hielt bisher `write_mutex` über die gesamte Rebuild-Dauer (Snapshot, Offline-Index-Aufbau, Quantizer-Retraining, Re-Insert aller aktiven Nodes, Atomic Swap). Bei großen Indices blockierte dies Schreiboperationen (`insert`, `delete`, `commit`) für mehrere Sekunden bis Minuten.
+*   **Entscheidung**: Umstellung von `rebuild()` auf ein 2-Phasen-Verfahren:
+    - **Phase 1 (lock-frei bzgl. `write_mutex`)**: Erfassen eines Snapshot-TxId Watermarks (`last_tx_id`), Snapshot der aktiven Nodes unter kurzen Read-Locks, Aufbau des neuen Index inkl. Quantizer-Retraining komplett offline. Ingest-Schreibzugriffe laufen ungestört auf dem alten Index weiter.
+    - **Phase 2 (kurzer exklusiver `write_mutex`-Scope)**: Erwerben des `write_mutex`, Ermittlung aller seit `snapshot_tx` getätigten Operationen via `SequenceLog::changes_since()`, Replay des Deltas auf den neuen Index und atomarer Swap der internen Datenstrukturen.
+*   **Verworfene Alternativen**:
+    - *Vollständig lock-freie Datenstruktur via `crossbeam-epoch`*: Verworfen, da dies ein komplettes Redesign der HNSW-Graphrepräsentation erfordern würde und mit hoher Komplexität verbunden ist.
+*   **Konsequenzen**: Phase 2 skaliert mit $O(\Delta)$ (Anzahl Ingest-Operationen während Phase 1) statt $O(N)$ (Gesamtzahl Dokumente). Schreiblatenz während Rebuild sinkt von Sekunden auf Millisekunden.
+
+---
+
+## ADR-062: Fault-Injection-Testsuite für WAL V3/MVCC (adaptiert aus chimeraDB SPEC-035)
+*   **Datum**: 2026-09-05
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    - Die Fault-Injection-Testsuite wird ausschließlich als Test-only Integrationstests (`tests/`) sowie ein Hilfsbinary (`examples/chaos_writer.rs`) in `crates/memfuse-store` umgesetzt.
+    - Es wird KEIN neues Workspace-Crate angelegt und KEINE Änderung an Quellcode unter `crates/memfuse-store/src/**` vorgenommen.
+- **Alternativen**:
+    - *Eigenes `chimera-chaos`-artiges Crate mit Produktions-Hooks (`FaultInjector::inject_sync`)*: Verworfen, da dies ASK-pflichtige API- und Hot-Path-Änderungen erfordert hätte, ohne dass dafür ein belegter Bedarf existierte.
+- **Explizit verworfene Szenarien**:
+    - `IOLatency` und `NetworkDegradation`: Verworfen, da MemFuse keine Netzwerkschicht besitzt (ADR-010: stdio-only JSON-RPC) und kein belegter Slow-Disk-Use-Case vorliegt, der Hooks im Hot-Path rechtfertigen würde.
+- **CI-Kadenz**:
+    - Einzelne Fault-Injection-Tests laufen als reguläre Integrationstests in `cargo test --workspace`.
+    - Die kombinierte Fault-Matrix (`chaos_matrix.rs`) läuft ausschließlich nightly, ist `#[ignore]`-gated und blockiert keine Pull Requests.
+*   **Begründung**: Bietet gezielte Abdeckung verbleibender Crash-Resilienz-Lücken (SSTable Bit-Flips, echte Process-Kills, Task-Abbrüche, Memory-Pressure) ohne Beeinträchtigung der Produktionscode-Topologie oder der PR-Laufzeiten.

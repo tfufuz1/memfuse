@@ -143,9 +143,12 @@
 
     <main id="main">
         <h2 id="active-collection-title">Kein Wissensbereich ausgewählt</h2>
-        <div style="margin-bottom: 0.5rem;">
+        <div style="margin-bottom: 0.5rem; display: flex; align-items: center; gap: 1rem;">
             <label><input type="radio" name="mode" value="chat" checked> 💬 Chat</label>
-            <label style="margin-left: 1rem;"><input type="radio" name="mode" value="search"> 🔍 Direktsuche</label>
+            <label><input type="radio" name="mode" value="search"> 🔍 Direktsuche</label>
+            <label id="multistep-container" style="display: none; opacity: 0.9; font-size: 0.9rem;">
+                <input type="checkbox" id="multistep-checkbox"> 🔄 Erweiterte Suche (Multi-Step Iterativ)
+            </label>
         </div>
         <div id="chat-log"></div>
         <div id="chat-input-row">

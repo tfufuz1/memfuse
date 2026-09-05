@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 parking_lot = { workspace = true }
 blake3 = { workspace = true }
 futures-executor = "0.3"
+dirs = "6.0.0"
 
 [dev-dependencies]
 memfuse-core = { workspace = true }
