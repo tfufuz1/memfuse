@@ -8,11 +8,8 @@
 
 Stand letzter Prüfung: 2026-09-05
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **0 offene Tags**
 
-| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
-|---|---|---|---|---|---|---|
-| `crates/memfuse-db/src/collection/query_builder.rs` | 257 | `AGT-DB-2f1b6962` | `SEARCH` | `MAJOR` | `2026-09-04T12:59:04Z` | // AI-TAG[SEARCH][MAJOR] QueryBuilder ignores include_superseded from query_config and bypasses hybrid_search_with_query (ID: AGT-DB-2f1b6962) (TS: 2026-09-04T12:59:04Z) (SESSION: d01ee970) |
 
 
 ## Crate-Inventar & Status
@@ -25,9 +22,9 @@ Ergebnis: **1 offene Tags**
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7184 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11933 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 15034 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 15064 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19580 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 2 | 19682 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3172 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
