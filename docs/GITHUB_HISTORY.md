@@ -18,6 +18,7 @@ MemFuse Brain ist ein eingebettetes, air-gapped kognitives Betriebssystem und ei
 | **Phase 3: MVCC Durability, 2PC Transactions & Sync-Docs** | 27.08.2026 – 28.08.2026 | Full 4-Index 2-Phase Commit (2PC) in `memfuse-db`, WAL V3 Format mit `tx_id` HMAC Binding, Bi-temporale Graph-Gültigkeitsachsen, `xtask sync-docs` Werkzeuge. |
 | **Phase 4: Robustness & Security Hardening Sprint** | 29.08.2026 – 30.08.2026 | Agent Event Loops, Memory Importance Decay, Zettelkasten Memory Links, Structured `MemFuseErrorDto`, Prompt Injection Guards in MCP, Zero-Copy LSM Scan, Write-Temp-Then-Rename für SSTables & DiskANN. |
 | **Phase 5: Governance, Quality & Round 2 Audit Pass** | 31.08.2026 – 01.09.2026 | Erweiterung von `xtask check-consistency` (README, AGENTS.md, ADR Checks), CI Review Coverage Gates, `memfuse-index` Code Quality Refactoring (#1150), Token Budget Race Audit & Tests (#1239). |
+| **Phase 6: Deep Tier 1 Audits, Architectural Decoupling & Storage/Index Hardening** | 02.09.2026 – 05.09.2026 | Entkopplung von `memfuse-crypto` und `memfuse-core`, 3-Phasen Lock-Free Async LSM Flush (`LsmStorage::flush`, ADR-059/060), WAL Crash-Safety & HMAC Chaining Fixes (KRIT-02–04, MED-05), Async CSR `add_edge` Lock Splitting, SIMD Trait Unification (`std::arch`, ADR-047), Persistente Router-Kalibrierung, Tier 1 Deep Audits für Layer 0, Store, Crypto, Graph & Index mit GO-Verdikt. |
 
 ---
 
@@ -219,6 +220,48 @@ Hier sind die präzisen Commits der Entwicklungshistorie (chronologisch von den 
 - `1d38f70` | **tfufuz1** (Co-authored-by **google-labs-jules[bot]**, **tfufuu**) | `Audit Report: memfuse-agent token budget race condition analysis (#1239)`
   *Audit-Bericht (`docs/audits/round2/AUDIT_memfuse-agent_budget-race.md`) und Integrationstest (`crates/memfuse-agent/tests/budget_race_test.rs`) zur Analyse der Sequenzschritt-Isolierung und Ermittlung von Nicht-Atomaren TokenBudget RMW Race Vectors in `memfuse-agent`.*
 
+### 2. September 2026
+- `881ec05` | **google-labs-jules[bot]** | `harden(crypto): complete REVIEW-PASS and verified zero-unsafe invariants`
+  *Abschluss der unabhängigen Review-Pässe für `memfuse-crypto` und Verifizierung der Zero-Unsafe-Invarianten in Produktionsmodulen.*
+- `963f93c` | **google-labs-jules[bot]** | `refactor(core): complete review pass for AGT-CORE-a3f29c1d`
+  *Abschluss der Code-Review-Verifikation für Core-Typen und Staging-Buffer in `memfuse-core`.*
+- `358e3b0` | **google-labs-jules[bot]** | `fix(checkpoint): resolve concurrent pinning race and complete TEST:CKPT-001`
+  *Behebung von Concurrent-Pinning-Races im Checkpoint-Manager und Validierung unter extremer Stressbelastung.*
+
+### 3. September 2026
+- `a413a59` | **google-labs-jules[bot]** | `refactor(crypto): resolve AGT-CRYPTO-dd984bc2 and AGT-CRYPTO-7519b7cd anti-tamper tags`
+  *Refactoring der Zeroize-Drop-Tests und Absicherung konstanter Zeitvergleiche in Anti-Tamper-Schutzmechanismen.*
+- `94a6a82` | **google-labs-jules[bot]** | `fix(py): resolve AGT-PY-ff475c8e run_blocking_ffi panic boundary`
+  *Sichere Fehlerbehandlung an der PyO3 FFI-Grenzschicht zur Verhinderung unbeabsichtigter Panics in CPython-Threads.*
+- `570a339` | **google-labs-jules[bot]** | `fix(router): resolve AGT-ROUTER-2db4f208 and persist conformal calibration state`
+  *Optimierung von Router-Lookup-Zeiten (O(1) HashSet) und Implementierung persistenter Konform-Kalibrierung über System-Neustarts.*
+- `8712461` | **google-labs-jules[bot]** | `refactor(text): complete multi-session REVIEW-PASS for German morphology (TEST:TXT-001)`
+  *Abschluss des Multi-Session-Reviews für deutsche Umlaut- und Zusammensetzungs-Morphologie.*
+- `6da6a1c` | **google-labs-jules[bot]** | `audit(embed): complete chaos engineering and feature-gate review pass`
+  *Abschluss des Fault-Tolerance-Audits im Cross-Encoder-Reranker-Modul unter Chaos-Engineering-Bedingungen.*
+
+### 4. September 2026
+- `d01ee97` | **google-labs-jules[bot]** | `fix(db): resolve AGT-DB-2f1b6962 query builder config propagation`
+  *Korrektur der Konfigurationsweiterleitung für verdrängte Erinnerungen (`include_superseded`) im `HybridQueryBuilder`.*
+- `3e5150c` | **google-labs-jules[bot]** | `audit(embed): complete REVIEW-PASS on CrossEncoderReranker passthrough fallback`
+  *Verifizierung der Fallback-Pfade und Kandidaten-Limits im Reranker.*
+- `9c38447` | **google-labs-jules[bot]** | `refactor(index): resolve AGT-INDEX-002 and stabilize SIMD distance intrinsics (ADR-047)`
+  *Stabilisierung der SIMD-Distanzberechnungen mit `std::arch` Intrinsics und Laufzeit-CPU-Feature-Erkennung; Dokumentations-Sync auf 0 offene Tags.*
+- `f31c5bc` | **google-labs-jules[bot]** | `audit(store): Tier 1 Deep Audit & Verification pass with GO verdict`
+  *Umfassende Verifizierung von `memfuse-store`: Fsync-Disziplin, Mmap-Prüfungen, Fault Injection, Amplification-Benchmarks und Eintragung in `AUDIT_memfuse-store.md`.*
+- `3e4e9b0` | **google-labs-jules[bot]** | `audit(core): Tier 1 Deep Audit & Verification pass with GO verdict`
+  *Umfassende Verifizierung von `memfuse-core`: 100% Pass-Rate bei 139 Unit-Tests, SnapshotRegistry GC Stress-Tests, TxId Boundary-Simulation und Eintragung in `AUDIT_memfuse-core.md`.*
+
+### 5. September 2026
+- `f6c2b43` | **google-labs-jules[bot]** | `fix(cargo): update default feature flags and remove dead cluster feature (#1545)`
+  *Bereinigung veralteter Feature-Flags und Entfernung nicht genutzter Cluster-Spezifikationen im Workspace Cargo.toml.*
+- `b8d910e` | **google-labs-jules[bot]** | `refactor(store,wal): implement 3-phase async LSM flush and WAL HMAC chaining fixes`
+  *3-Phasen entkoppelte LSM-Flushes ohne Read-Lock-Blockaden (ADR-059), Instanz-gebundene `flush_counter` (ADR-060) und atomic Sidecar WAL HMAC-Absicherung (KRIT-02–04).*
+- `a1098ef` | **google-labs-jules[bot]** | `refactor(graph): async CsrGraph add_edge lock-splitting`
+  *Entkopplung der Graph-Kompaktierung aus dem Schreib-Lock mittels zweiphasigem `add_edge` für minimale Lock-Latenz.*
+- `c7e2194` | **google-labs-jules[bot]** | `refactor(crypto,core): decouple memfuse-crypto architecture`
+  *Architektonische Entkopplung von `memfuse-crypto` und `memfuse-core`: Eigenständige `CryptoError` Hierarchie und sauberes Trait-Mapping.*
+
 ---
 
 ## 3. Subsystem- & Crate-Entwicklung (Layer 0 bis 4)
@@ -255,33 +298,35 @@ Das Repository ist als modularer Workspace aufgebaut. Die Historie spiegelt die 
 ```
 
 ### Layer 0: `memfuse-core`
-- Einführung des kanonischen `MemFuseError` und `MemFuseErrorDto` für FFI/IPC.
+- Architektonische Entkopplung von `memfuse-crypto` mit eigenständiger Fehlerkonvertierung (`From<CryptoError> for MemFuseError`).
+- Tier 1 Deep Audit Pass: 139 Unit-Tests, 0 Clippy/Fmt-Warnungen, TxId Boundary Range Verification, GC Race Verification.
+- Unifizierung aller `last_tx_id()` Rückgabetypen auf `Result<TxId>` über alle Index-Traits hinweg (ADR-059).
 - Modellierung von `FilterExpr` (Unified Metadata Filter DSL) und `MemoryType` (`Episodic`, `Semantic`, `Procedural`, `Working`).
 - Transaktionaler Staging-Puffer (`TxBuffer`) mit strikter Kapazitätsdeckelung (`max_ops_per_tx = 10_000`) zum Schutz vor OOM.
 
 ### Layer 1: Storage & Spezialisierte Indizes
-- **`memfuse-store`**: Implementierung des WAL V3 Formats mit HMAC-SHA256 Transaktionsbindung. Crash-sichere Compaction via `.sst.tmp` Schreiben und atomares Rename (ADR-044). AHash-basiertes Sharding für MemTables.
-- **`memfuse-index`**: HNSW Vektorindex mit SIMD-beschleunigten Metriken (Cosine, L2, Dot Product). DiskANN Out-of-Core Graphindex mit In-Memory Cache und POSIX Atomic Rename für Indexdateien. Skalare 8-Bit Quantisierung (SQ8).
+- **`memfuse-store`**: 3-Phasen `LsmStorage::flush()` zur Eliminierung von Read-Lock-Blockaden während Async-I/O (ADR-059). Instanz-gebundener `flush_counter: AtomicU64` zur Vermeidung von Dateinamens-Kollisionen bei parallelen Instanzen (ADR-060). Sechs kritische WAL-Crash-Safety-Fixes (atomic UUID sidecar creation, in-place HMAC update unter Lock, TOCTOU-Eliminierung via `create_new(true)`, V1 Replay V3 Manager Handshake). Tier 1 Deep Audit mit GO-Verdikt.
+- **`memfuse-index`**: Formales Schließen von `AGT-INDEX-002` (ADR-047). SIMD-Distanzberechnung via `std::arch` Intrinsics mit 100% Abdeckung durch Laufzeit-Feature-Erkennung (`is_x86_feature_detected!`, `is_aarch64_feature_detected!`) und sicheren Skalar-Fallbacks. Public API Refactoring für `ScalarQuantizer` und skalarer Distanzfunktionen.
 - **`memfuse-text`**: Invertierter Index für BM25 mit deutscher Morphologie (Umlaut-Normalisierung, Komposita-Zerlegung) und Tombstone-Update-Semantik.
-- **`memfuse-crypto`**: Authentifizierte AES-256-GCM-SIV Verschlüsselung, `OsRng` Nonce-Garantie, `Zeroize`-Disziplin für flüchtige Schlüssel und konstanter WAL-HMAC-Verifier.
-- **`memfuse-graph`**: CSR-Graph mit bi-temporalen Zeitachsen (Validitäts- und Transaktionszeit). Personalized PageRank (PPR) mit Power Iteration, Community Detection via Label Propagation und Pure-Rust `SessionBranchTree` für Konversations-Verzweigungen.
-- **`memfuse-checkpoint`**: RAII-basierter `CheckpointGuard` für atomare MVCC-Snapshots.
+- **`memfuse-crypto`**: Vollständige Entkopplung von `memfuse-core`. Eigenständige `CryptoError` Enum und Result-Alias. Härtung von `anti_tamper.rs` mit `ManuallyDrop` Zeroize-Tests und `ConstantTimeEq` Prüfungen. Tier 1 Deep Audit mit GO-Verdikt.
+- **`memfuse-graph`**: Asynchrones `CsrGraph::add_edge` mit 2-Phasen Lock-Splitting (Phase 1 In-Memory Lock, Phase 2 `compact_async().await` außerhalb des Locks). O(1) `neighbors()` Deduplizierung via `HashSet<EntityId>`. CSR-Graph mit bi-temporalen Zeitachsen (Validitäts- und Transaktionszeit).
+- **`memfuse-checkpoint`**: RAII-basierter `CheckpointGuard` für atomare MVCC-Snapshots. Härtung der Orphan-Pfad-Auflösung mit dynamischen Umgebungs-Variablen-Fallback.
 
 ### Layer 2: `memfuse-db`
 - Orchestrierung des **4-Signal-Hybrid-Retrieval** (HNSW + BM25 + CSR-Graph + Metadaten) via Reciprocal Rank Fusion (RRF).
 - **Full 2-Phase Commit (2PC)**: Atomares Transaktionsmanagement über alle 4 Indizes hinweg mit automatischer Kompensation bei Teilfehlern.
-- **Multi-Step Retrieval Engine**: Iteratives Query-Rewriting (OpenAI o-series Pattern) für komplexe Abfragen.
-- **Context Compaction & Reaper**: LLM-basierte Zusammenfassung und automatischer Expiry Reaper für TTL-abgelaufene Dokumente.
+- HNSW-Tombstone-Backfilling zur Verhinderung von Recall-Einbrüchen bei gelöschten Vektoren.
+- Konfigurationsweiterleitung für verdrängte Erinnerungen (`include_superseded`) im `HybridQueryBuilder`.
 
 ### Layer 3: FFI, Models & Agenten
-- **`memfuse-py`**: PyO3-Bindings mit automatischer GIL-Freigabe bei zeitintensiven Operationen und Konvertierung von `MemFuseErrorDto` in strukturierte Python-Exceptions.
-- **`memfuse-ollama`**: HTTP-Client mit Batch-Embedding-Unterstützung (`/api/embed`), Automatischer Fallback und Anthropic Contextual Retrieval Präfixerstellung.
+- **`memfuse-py`**: PyO3-Bindings mit automatischer GIL-Freigabe bei zeitintensiven Operationen, sicheren FFI-Panic-Schranken und Konvertierung von `MemFuseErrorDto` in strukturierte Python-Exceptions.
+- **`memfuse-ollama`**: Robustes XML Prompt-Parsing (`quick-xml`) ohne Panics bei fehlerhaften Tags, HTTP-Client mit Batch-Embedding-Unterstützung (`/api/embed`), Automatischer Fallback und Anthropic Contextual Retrieval Präfixerstellung.
 - **`memfuse-agent`**: Hintergrund-Workflow-Engine mit Event-Loop (`EventSource`), State Checkpointing, Token Budget Race Audits und speicherbeschränkten Event-Queues.
-- **`memfuse-embed`**: Optionaler in-process ONNX Session Pool für Cross-Encoder Reranking.
-- **`memfuse-router`**: SLM-basiertes Kontext-Routing zur dynamischen Modell-Auswahl.
+- **`memfuse-embed`**: In-process ONNX Session Pool für Cross-Encoder Reranking mit Chaos Engineering Verifikation.
+- **`memfuse-router`**: Conformal Calibration State Persistence via `Collection::put_kv` / `get_kv` und O(1) Routing-Lookup via `HashSet<u64>` für `domain_communities`.
 
 ### Layer 4: Schnittstellen & Desktop App
-- **`memfuse-mcp`**: Stdio JSON-RPC 2.0 MCP-Server für Claude Desktop und Agenten mit MCP-Sandbox (Zero-Trust Tool Isolation, Zeroize von sensitiven Outputs, Prompt-Injection Schutz).
+- **`memfuse-mcp`**: Stdio JSON-RPC 2.0 MCP-Server für Claude Desktop und Agenten mit MCP-Sandbox (Zero-Trust Tool Isolation, Zeroize von sensitiven Outputs, Prompt-Injection Schutz, Pufferdeckelung).
 - **`memfuse-tauri`**: Pure Desktop Shell für Windows, macOS und Linux mit HTML-Escaping (XSS-Schutz) und abgesicherter IPC-Ingestion.
 
 ---
@@ -290,8 +335,8 @@ Das Repository ist als modularer Workspace aufgebaut. Die Historie spiegelt die 
 
 Die Projekt-Historie zeichnet sich durch ein streng durchgesetztes Governance-System aus:
 
-1. **Architecture Decision Records (ADRs)**: Strikte Einhaltung von Vorgaben bezüglich MVCC Isolation (ADR-012/ADR-043), MCP Stdio-Kommunikation (ADR-010), Error Propagation via DTOs (ADR-028) und Governance System Hardening (ADR-029).
-2. **Inline Code Tags & Review Passes**: Verwendung von `ANCHOR[...]`, `AI-TAG[...]` und `REVIEW-PASS[...]` Annotationen mit ISO-8601 Zeitstempeln (`TS:2026-08-31T...`) und Session-Hashes.
+1. **Architecture Decision Records (ADRs)**: Strikte Einhaltung von Vorgaben bezüglich MVCC Isolation (ADR-012/ADR-043), MCP Stdio-Kommunikation (ADR-010), Error Propagation via DTOs (ADR-028), Governance System Hardening (ADR-029), SIMD Intrinsic Strategy (ADR-047), Non-Blocking Async LSM Flush (ADR-059) und Instance-Bound Flush Counter (ADR-060).
+2. **Inline Code Tags & Review Passes**: Verwendung von `ANCHOR[...]`, `AI-TAG[...]` und `REVIEW-PASS[...]` Annotationen mit ISO-8601 Zeitstempeln (`TS:2026-09-04T...`) und Session-Hashes.
 3. **Automatisierte CI Enforcement Gates**:
    - `cargo xtask check-consistency`: Überprüft Workspace-Crate-Anzahlen, `AGENTS.md` Abdeckung, ADR-Eindeutigkeit.
    - `cargo xtask sync-docs`: Verhindert Drift zwischen Quellcode-Annotationen und Dokumentationsdateien (`WORKING_STATE.md`, `ARCHITECTURE.md`).
@@ -302,7 +347,7 @@ Die Projekt-Historie zeichnet sich durch ein streng durchgesetztes Governance-Sy
 ## 5. Statistische Kennzahlen
 
 - **Aktive Workspace Crates**: 15 Crates (Layer 0 bis Layer 4)
-- **Commits insgesamt**: >215 Merges und Direkt-Commits
+- **Commits insgesamt**: >240 Merges und Direkt-Commits
 - **Verteilte Autoren**: `google-labs-jules[bot]`, `tfufuz1`, `tfufuu`
 - **Programmiersprache**: 100% Rust (mit Tauri UI HTML/JS Frontend & PyO3 Python-Interface)
 - **Sicherheit & Zero-Panic Policy**: Volle Beseitigung aller unkontrollierten `.unwrap()` Aufrufe in Produktivpfaden (abgesichert via `// unwrap allowed` mit nachgewiesenen Invarianten).
