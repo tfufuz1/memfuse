@@ -21,10 +21,10 @@ Ergebnis: **3 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9261 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9265 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-crypto` | 0 | 2425 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5653 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-embed` | 1 | 1435 | 🧊 Optional |  |
+| `memfuse-embed` | 1 | 1434 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7323 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11898 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 15284 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
@@ -32,10 +32,10 @@ Ergebnis: **3 offene Tags**
 | `memfuse-db` | 2 | 20430 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5538 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3351 | 🟢 Clean |  |
-| `memfuse-router` | 3 | 3388 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 3389 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3808 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 5744 | 🟢 Clean |  |
-| `memfuse-bench` | 5 | 578 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-bench` | 5 | 576 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 
 
 ## DAG-Topologie
