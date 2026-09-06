@@ -434,7 +434,9 @@ impl CompactionEngine {
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| memfuse_core::MemFuseError::Storage(format!("System clock error: {}", e)))?
             .as_micros();
-        let count = self.compaction_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let count = self
+            .compaction_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(data_path.join(format!("sst-compact-{:020}-{:04}.sst", id, count % 10000)))
     }
 
