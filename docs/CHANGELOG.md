@@ -4,10 +4,10 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-06T11:18:35Z (SESSION: 820afd9c)` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
 | `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
-| `TS:2026-09-03T00:00:00Z` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
 | `TS:2026-09-02T23:19:10Z (SESSION: 088b4a44)` | `crates/memfuse-agent/src/step.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Step result structures and AgentTool trait definitions for orchestration. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
@@ -59,6 +59,7 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-09-06T11:18:35Z` | `crates/memfuse-agent/src/dlq.rs` | `AI-TAG` | `AGT-AGENT-0399362d` | `820afd9c` | `RESOLVED` | `0` | // AI-TAG[INVENTORY-DRIFT][MINOR] RESOLVED: AGT-AGENT-0399362d — Documented dlq.rs inventory drift in audit report. (TS: 2026-09-06T11:18:35Z) (SESSION: 820afd9c) |
 | `2026-09-04T11:42:28Z` | `crates/memfuse-embed/src/reranker.rs` | `REVIEW-PASS` | `-` | `3e5150c8` | `PASS` | `-` | // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-04T11:42:28Z) (SESSION: 3e5150c8) PRÜFER-KONTEXT: FRESH - Verified CrossEncoderReranker passthrough fallback, candidate limit bounds, and zero-unsafe invariants. |
 | `2026-09-03T19:40:00Z` | `crates/memfuse-embed/src/lib.rs` | `REVIEW-PASS` | `-` | `6da6a1c8` | `PASS` | `-` | // REVIEW-PASS[2/2] STATUS:PASS (TS: 2026-09-03T19:40:00Z) (SESSION: 6da6a1c8) PRÜFER-KONTEXT: FRESH - Verified Chaos Engineering fault tolerance, hermetic feature gate, and zero-unsafe invariants. |
 | `2026-09-03T19:36:00Z` | `crates/memfuse-text/src/morphology.rs` | `REVIEW-PASS` | `TEST:TXT-001` | `87124619` | `PASS` | `4` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-03T19:36:00Z) (SESSION: 87124619) |
