@@ -1,5 +1,26 @@
 #[allow(dead_code)]
 fn chrono_or_today() -> String {
+    if let Ok(content) = fs::read_to_string("WORKING_STATE.md") {
+        let re = Regex::new(r"Stand:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+        if let Some(caps) = re.captures(&content) {
+            let existing_date = caps[1].to_string();
+            if let Ok(output) = std::process::Command::new("date")
+                .args(["-u", "+%Y-%m-%d"])
+                .output()
+            {
+                if output.status.success() {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !s.is_empty() {
+                        if existing_date >= s {
+                            return existing_date;
+                        }
+                        return s;
+                    }
+                }
+            }
+            return existing_date;
+        }
+    }
     if let Ok(output) = std::process::Command::new("date")
         .args(["-u", "+%Y-%m-%d"])
         .output()
@@ -7,11 +28,6 @@ fn chrono_or_today() -> String {
         if output.status.success() {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {
-                if let Ok(git_date) = get_git_file_last_modified("WORKING_STATE.md") {
-                    if git_date > s {
-                        return git_date;
-                    }
-                }
                 return s;
             }
         }

@@ -221,10 +221,8 @@ fn calculate_metrics(
 
         let mut hit_rank: Option<usize> = None;
         for (idx, doc_id) in retrieved.iter().enumerate() {
-            if targets.contains(doc_id.as_str()) {
-                if hit_rank.is_none() {
-                    hit_rank = Some(idx + 1);
-                }
+            if targets.contains(doc_id.as_str()) && hit_rank.is_none() {
+                hit_rank = Some(idx + 1);
             }
         }
 
