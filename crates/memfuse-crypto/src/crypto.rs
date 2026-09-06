@@ -486,6 +486,9 @@ mod tests {
     // REVIEW-PASS[5/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-02T08:16:22Z) (SESSION: 881ec05e)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified zero-panic, zero-unsafe, and 85/85 tests green in memfuse-crypto audit session.
+    // REVIEW-PASS[6/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-06T11:17:31Z) (SESSION: 8157a40e)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Re-verified zero-panic, zero-unsafe, and full Tier-1 audit pass in memfuse-crypto depth-audit session.
     #[test]
     fn test_befund_1_nonce_uniqueness_and_envelope_format() {
         let km = KeyManager::try_new("nonce-uniqueness-secret", b"salt-123456").expect("km");
