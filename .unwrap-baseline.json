@@ -5424,6 +5424,38 @@
     "hash": "b9bb1fb8ab8fefaa"
   },
   {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "1ff10e1b781f149e"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "2fe0545da295b0fb"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "37c9f2a6d3e9fe2d"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "5286570242dee324"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "5dbf92094a4db5e0"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "7956d3a2ab0e1078"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "f3f010f2c832c1c8"
+  },
+  {
+    "file": "crates/memfuse-db/tests/instance_orphan_registry_test.rs",
+    "hash": "f5320639b0dd19cd"
+  },
+  {
     "file": "crates/memfuse-db/tests/layer_bounds.rs",
     "hash": "0f9eec6ed61a22f2"
   },
@@ -10605,7 +10637,7 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ed82bd5f828c03b8"
+    "hash": "ecff54360b1df174"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
