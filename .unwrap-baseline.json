@@ -10297,6 +10297,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "0912c7996417710e"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "09e16194b81bcbce"
   },
   {
@@ -10310,6 +10314,10 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "0c42d86d7b29a047"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "1179720481695219"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10381,10 +10389,6 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "4bd8a08a697f6602"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "4e3db88e99c11786"
   },
   {
@@ -10449,6 +10453,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "6e5c4732354ac6ad"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "7207eb01b5af5681"
   },
   {
@@ -10458,10 +10466,6 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "7c8325147d9cdc62"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "814766dacbad69a1"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10481,7 +10485,15 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "974adb0ec5093dd8"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "98a9344b44ae8f3f"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "a02aafa71660434c"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10494,6 +10506,10 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "ab57b1b662ab1423"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "aef570b23c312680"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -10537,6 +10553,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "dbca9b19b16ddba3"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "e3c48ccefd8da47f"
   },
   {
@@ -10546,10 +10566,6 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "eb999b1a090b233a"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ecfddf64a81d1a72"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
