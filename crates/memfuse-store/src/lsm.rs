@@ -1316,7 +1316,7 @@ impl StorageEngine for LsmStorage {
         let mut results = Vec::new();
         let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
 
-        while let Some((k, (v, seq))) = iter.next() {
+        for (k, (v, seq)) in iter.by_ref() {
             if (seq & TOMBSTONE_BIT) == 0 {
                 results.push((k.to_vec(), v.to_vec()));
                 if results.len() == limit {
