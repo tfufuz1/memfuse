@@ -27,6 +27,7 @@ document.getElementById('open-db-btn').addEventListener('click', async () => {
         dbStatusEl.classList.add('connected');
         await refreshCollections();
         await refreshModels();
+        await refreshBranches();
     } catch (e) {
         const errMsg = typeof e === 'object' && e !== null && e.message ? `[${e.kind}] ${e.message}` : e;
         dbStatusEl.textContent = `❌ Fehler: ${errMsg}`;
@@ -353,7 +354,9 @@ async function sendMessage() {
             message,
             collectionName: activeCollection,
             model,
+            sessionId: currentSessionId,
         });
+        await refreshBranches();
 
         if (response.sources && response.sources.length > 0) {
             sourcesEl.textContent = '';
@@ -512,6 +515,129 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+// ── Session DAG Branching ────────────────────────────────────────────────
+let currentSessionId = 'default';
+const branchSelectEl = document.getElementById('branch-select');
+
+async function refreshBranches() {
+    if (!dbOpen) return;
+    try {
+        const branches = await invoke('list_branches', { sessionId: currentSessionId });
+        if (!branchSelectEl) return;
+        branchSelectEl.textContent = '';
+
+        if (!branches || branches.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Keine Session-Branches vorhanden';
+            branchSelectEl.appendChild(opt);
+            return;
+        }
+
+        let activeHeadId = null;
+        for (const b of branches) {
+            const opt = document.createElement('option');
+            opt.value = b.head_node_id;
+            opt.textContent = `${b.label} (Schritt ${b.head_node_id})${b.is_active ? ' [aktiv]' : ''}`;
+            if (b.is_active) {
+                opt.selected = true;
+                activeHeadId = b.head_node_id;
+            }
+            branchSelectEl.appendChild(opt);
+        }
+
+        if (activeHeadId) {
+            await loadAndRenderBranchHistory(activeHeadId);
+        }
+    } catch (e) {
+        if (branchSelectEl) {
+            branchSelectEl.textContent = '';
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Standard-Strang (neu)';
+            branchSelectEl.appendChild(opt);
+        }
+    }
+}
+
+if (branchSelectEl) {
+    branchSelectEl.addEventListener('change', async (e) => {
+        const selectedHeadId = e.target.value;
+        if (!selectedHeadId) return;
+
+        try {
+            await invoke('switch_branch', {
+                sessionId: currentSessionId,
+                branchId: selectedHeadId,
+            });
+            await loadAndRenderBranchHistory(selectedHeadId);
+            await refreshBranches();
+        } catch (err) {
+            const errMsg = typeof err === 'object' && err !== null && err.message ? `[${err.kind}] ${err.message}` : err;
+            alert(`Fehler beim Wechseln des Branches: ${errMsg}`);
+        }
+    });
+}
+
+async function loadAndRenderBranchHistory(branchId) {
+    try {
+        const history = await invoke('get_branch_history', {
+            sessionId: currentSessionId,
+            branchId: String(branchId),
+        });
+
+        chatLog.textContent = '';
+
+        for (const node of history) {
+            const userMsgEl = document.createElement('p');
+            const userStrong = document.createElement('strong');
+            userStrong.textContent = 'Sie: ';
+            userMsgEl.appendChild(userStrong);
+            userMsgEl.appendChild(document.createTextNode(node.prompt));
+            chatLog.appendChild(userMsgEl);
+
+            const assistMsgEl = document.createElement('p');
+            const assistStrong = document.createElement('strong');
+            assistStrong.textContent = 'Assistent: ';
+            assistMsgEl.appendChild(assistStrong);
+            assistMsgEl.appendChild(document.createTextNode(node.response));
+            chatLog.appendChild(assistMsgEl);
+
+            const branchBarEl = document.createElement('div');
+            branchBarEl.style.cssText = 'margin: 0.2rem 0 1rem 0; font-size: 0.8rem; opacity: 0.85;';
+
+            const branchBtn = document.createElement('button');
+            branchBtn.style.cssText = 'background: #1f4e3d; color: white; border: none; border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.75rem;';
+            branchBtn.textContent = `🌿 Neuer Branch ab Schritt ${node.step_id}`;
+
+            branchBtn.addEventListener('click', async () => {
+                const label = prompt(`Name für den neuen Branch ab Schritt ${node.step_id} (optional):`, `Branch ab Schritt ${node.step_id}`);
+                if (label === null) return;
+
+                try {
+                    const createdBranch = await invoke('create_branch', {
+                        sessionId: currentSessionId,
+                        fromNodeId: String(node.step_id),
+                        label: label || undefined,
+                    });
+                    await loadAndRenderBranchHistory(createdBranch.head_node_id);
+                    await refreshBranches();
+                } catch (err) {
+                    const errMsg = typeof err === 'object' && err !== null && err.message ? `[${err.kind}] ${err.message}` : err;
+                    alert(`Branch konnte nicht erstellt werden: ${errMsg}`);
+                }
+            });
+
+            branchBarEl.appendChild(branchBtn);
+            chatLog.appendChild(branchBarEl);
+        }
+
+        chatLog.scrollTop = chatLog.scrollHeight;
+    } catch (e) {
+        console.error('Historie konnte nicht geladen werden:', e);
+    }
 }
 
 // ── Onboarding-Flow ────────────────────────────────────────────────────
