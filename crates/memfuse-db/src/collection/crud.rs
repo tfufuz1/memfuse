@@ -219,15 +219,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
-        if self.storage.get(&user_key).await?.is_some() {
+        let data = serde_json::to_vec(value)?;
+        let written = self.storage.put_if_absent(tx, &user_key, &data).await?;
+        if !written {
             self.storage.rollback(tx).await.ok();
             return Err(memfuse_core::MemFuseError::Conflict(format!(
                 "Key '{}' already exists in collection KV store",
                 id
             )));
         }
-        let data = serde_json::to_vec(value)?;
-        self.storage.put(tx, &user_key, &data).await?;
         self.storage.commit(tx).await?;
         Ok(())
     }

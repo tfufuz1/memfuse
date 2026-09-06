@@ -827,6 +827,52 @@ impl StorageEngine for LsmStorage {
         })
     }
 
+    fn put_if_absent<'a>(
+        &'a self,
+        tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move {
+            validate_key(key)?;
+            validate_value(value)?;
+            self.apply_backpressure().await;
+            if !self.budget.has_memory_capacity() {
+                return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
+            }
+
+            let _commit_lock = self.commit_mutex.lock().await;
+
+            if let Some(is_insert) = self.tx_buffer.staged_status(key) {
+                if is_insert {
+                    return Ok(false);
+                }
+            }
+
+            let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
+            if self.get_at_seq(key, current_max_seq).await?.is_some() {
+                return Ok(false);
+            }
+
+            let doc_id = {
+                let hash = blake3::hash(key);
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&hash.as_bytes()[..8]);
+                DocId::new(u64::from_le_bytes(bytes))
+            };
+
+            self.tx_buffer.stage(
+                tx_id,
+                IndexOp::Insert {
+                    doc_id,
+                    data: (key.to_vec(), value.to_vec()),
+                },
+            )?;
+
+            Ok(true)
+        })
+    }
+
     fn delete_many<'a>(&'a self, tx_id: TxId, keys: Vec<Vec<u8>>) -> BoxFuture<'a, Result<u64>> {
         Box::pin(async move {
         if keys.len() > MAX_BATCH_SIZE {
@@ -3162,5 +3208,98 @@ mod tests {
         assert_eq!(storage2.flush_counter.load(Ordering::Relaxed), 1);
         assert!(tmp1.path().join("wal-0.log").exists());
         assert!(tmp2.path().join("wal-0.log").exists());
+    }
+
+    #[tokio::test]
+    async fn test_lsm_put_if_absent_parallel_two_tasks() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+        let key = b"cas_key_2tasks";
+
+        let s1 = Arc::clone(&storage);
+        let h1 = tokio::spawn(async move {
+            let tx = TxId::new(1);
+            let res = s1.put_if_absent(tx, key, b"val1").await;
+            if res.as_ref().copied().unwrap_or(false) {
+                let _ = s1.commit(tx).await;
+            }
+            res
+        });
+
+        let s2 = Arc::clone(&storage);
+        let h2 = tokio::spawn(async move {
+            let tx = TxId::new(2);
+            let res = s2.put_if_absent(tx, key, b"val2").await;
+            if res.as_ref().copied().unwrap_or(false) {
+                let _ = s2.commit(tx).await;
+            }
+            res
+        });
+
+        let r1 = h1.await.unwrap().unwrap();
+        let r2 = h2.await.unwrap().unwrap();
+
+        assert_ne!(
+            r1, r2,
+            "Exactly one task must succeed (true) and the other fail (false)"
+        );
+
+        let stored_val = storage.get(key).await.unwrap().expect("value must exist");
+        if r1 {
+            assert_eq!(stored_val, b"val1");
+        } else {
+            assert_eq!(stored_val, b"val2");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_lsm_put_if_absent_stress_200_tasks() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+        let key = b"cas_key_stress_200";
+
+        let mut set = tokio::task::JoinSet::new();
+
+        for i in 0..200u64 {
+            let s = Arc::clone(&storage);
+            let val = format!("val_{i}").into_bytes();
+            set.spawn(async move {
+                let tx = TxId::new(i + 1);
+                let res = s.put_if_absent(tx, key, &val).await;
+                if res.as_ref().copied().unwrap_or(false) {
+                    let _ = s.commit(tx).await;
+                }
+                (i, res)
+            });
+        }
+
+        let mut true_count = 0;
+        let mut false_count = 0;
+        let mut winning_task_id = None;
+
+        while let Some(res) = set.join_next().await {
+            let (task_id, result) = res.unwrap();
+            match result {
+                Ok(true) => {
+                    true_count += 1;
+                    winning_task_id = Some(task_id);
+                }
+                Ok(false) => {
+                    false_count += 1;
+                }
+                Err(e) => panic!("Unexpected error in task {task_id}: {e:?}"),
+            }
+        }
+
+        assert_eq!(true_count, 1, "Exactly 1 task must return Ok(true)");
+        assert_eq!(false_count, 199, "199 tasks must return Ok(false)");
+
+        let winner = winning_task_id.expect("winning task id");
+        let expected_val = format!("val_{winner}").into_bytes();
+        let stored_val = storage.get(key).await.unwrap().expect("value must exist");
+        assert_eq!(
+            stored_val, expected_val,
+            "Stored value must match winning task's value"
+        );
     }
 }
