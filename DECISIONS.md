@@ -867,3 +867,15 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Einzelne Fault-Injection-Tests laufen als reguläre Integrationstests in `cargo test --workspace`.
     - Die kombinierte Fault-Matrix (`chaos_matrix.rs`) läuft ausschließlich nightly, ist `#[ignore]`-gated und blockiert keine Pull Requests.
 *   **Begründung**: Bietet gezielte Abdeckung verbleibender Crash-Resilienz-Lücken (SSTable Bit-Flips, echte Process-Kills, Task-Abbrüche, Memory-Pressure) ohne Beeinträchtigung der Produktionscode-Topologie oder der PR-Laufzeiten.
+
+---
+
+## ADR-063: Configuration Shift Protection for Conformal Router Calibration (arXiv:2608.01460 & Prinzip P8)
+*   **Datum**: 2026-09-06
+*   **Status**: ✅ Final
+*   **Kontext**: Das Routing-Modul `memfuse-router` nutzt conformal prediction (Gibbs & Candès, 2021) zur Kalibrierung von Konfidenzgrenzen und Relevanzschwellenwerten. Wie in arXiv:2608.01460 ("Conformalized LLMs under Configuration Shift") belegt, kollabieren Konformitätsgarantien stillschweigend, sobald sich Ausführungsparameter (Temperatur, Prompt-Template, Quantisierung) des angesprochenen SLM verändern, ohne dass die Kalibrierungsstatistik zurückgesetzt wird. Gemäß Prinzip P8 ("Kalibrierungs-Integrität") darf das System in diesem Zustand keine Konfidenzmetriken mit `calibrated: true` produzieren.
+*   **Entscheidung**:
+    - **Fingerprint-Erweiterung**: `SlmProfile` wird um ein `ConfigFingerprint`-Feld erweitert (`prompt_template_hash: [u8; 32]`, quantisierte `temperature_bucket: u8`, `quantization: QuantizationLevel`).
+    - **Sofortige Invalidierung bei Shift**: Bei jeder Routing-Entscheidung, Profil-Update (`update_profiles`) und Ingestierung von Outcomes (`record_outcome`) wird der aktive `ConfigFingerprint` mit dem in `ProfileCalibrationState` erfassten `last_calibrated_fingerprint` verglichen. Bei Abweichung wird die gesamte Kalibrierungsstatistik des Profils unverzüglich zurückgesetzt (`state.reset()`).
+    - **Fail-Safe für Unbekannte Quantisierung**: Wenn `QuantizationLevel::Unknown` vorliegt (z. B. fehlende Ollama-Metadaten), liefert `is_calibrated()` stets `false` und es werden keine Kalibrierungsinformationen als verlässlich gewertet.
+*   **Konsequenzen**: Die Abdeckungsgarantien der Conformal Calibration bleiben auch unter dynamischen Modell- und Laufzeitkonfigurationsänderungen mathematisch strikt gewahrt.
