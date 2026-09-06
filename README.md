@@ -116,7 +116,10 @@ let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).awai
 
 ## MCP-Server (für Claude Desktop & andere MCP-Clients)
 
-Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`):
+Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`).
+
+> 📖 **Vollständige MCP-Dokumentation & Konfigurationsanweisung:**
+> Siehe [crates/memfuse-mcp/README.md](crates/memfuse-mcp/README.md) für Installation, Claude-Desktop-Konfiguration (`claude_desktop_config.json`), Schritt-für-Schritt Demo und Troubleshooting.
 
 ```bash
 # Standardmäßig im Read-Only-Modus (Schreibzugriff gesperrt):
