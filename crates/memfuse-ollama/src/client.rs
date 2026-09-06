@@ -1452,8 +1452,8 @@ mod tests {
         assert!(prompt.contains("[Quelle: &lt;Dateiname oder Chunk-Kennung&gt;]"));
 
         // Ordering check: instructions must appear BEFORE context
-        let instructions_pos = prompt.find("<instructions>").unwrap();
-        let context_pos = prompt.find("<context>").unwrap();
+        let instructions_pos = prompt.find("<instructions>").expect("instructions tag missing");
+        let context_pos = prompt.find("<context>").expect("context tag missing");
         assert!(instructions_pos < context_pos, "<instructions> block must come BEFORE <context> block");
 
         // Injection prevention check
