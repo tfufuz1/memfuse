@@ -108,7 +108,6 @@ impl std::fmt::Debug for TextEmbedder {
 }
 
 #[cfg(feature = "onnx")]
-#[async_trait]
 impl EmbeddingProvider for TextEmbedder {
     fn provider_name(&self) -> &str {
         "onnx"
