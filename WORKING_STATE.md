@@ -8,11 +8,8 @@
 
 Stand letzter Prüfung: 2026-09-06
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **0 offene Tags**
 
-| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
-|---|---|---|---|---|---|---|
-| `crates/memfuse-tauri/src/commands/search.rs` | 192 | `AGT-TAURI-96c44961` | `BLOCKER` | `BUG` | `2026-09-06T11:20:31Z` | // AI-TAG[BLOCKER][BUG] Missing `provenance` field in SearchResultDto struct initializer causes build failure in multi_step_search (ID: AGT-TAURI-96c44961) (TS: 2026-09-06T11:20:31Z) (SESSION: 96c44961) |
 
 
 ## Crate-Inventar & Status
@@ -33,7 +30,7 @@ Ergebnis: **1 offene Tags**
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 3335 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 5174 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 5169 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
