@@ -203,7 +203,45 @@ pub trait StorageEngine: Send + Sync + 'static {
     async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()>;
 
     /// Scans a range of keys with the given prefix.
+    ///
+    /// Für neue Call-Sites bevorzuge `scan_prefix_bounded` — lädt unbegrenzt und kann bei großen Prefixes das Speicherbudget sprengen.
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
+
+    /// Wie `scan_prefix`, aber mit hartem Limit auf die Anzahl zurückgegebener Einträge und
+    /// optionalem Cursor (letzter zurückgegebener Key aus dem vorherigen Aufruf) für Pagination.
+    /// Bevorzugt gegenüber `scan_prefix` für jeden neuen Call-Site, der potenziell große
+    /// Ergebnismengen erwarten muss.
+    async fn scan_prefix_bounded(
+        &self,
+        prefix: &[u8],
+        limit: usize,
+        cursor: Option<&[u8]>,
+    ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)> {
+        let all = self.scan_prefix(prefix).await?;
+        let mut results = Vec::new();
+        let mut skipping = cursor.is_some();
+
+        for (k, v) in all {
+            if skipping {
+                if k.as_slice() == cursor.unwrap() {
+                    skipping = false;
+                }
+                continue;
+            }
+            results.push((k, v));
+            if results.len() == limit {
+                break;
+            }
+        }
+
+        let next_cursor = if results.len() == limit {
+            results.last().map(|(k, _)| k.clone())
+        } else {
+            None
+        };
+
+        Ok((results, next_cursor))
+    }
 
     /// Scans keys with a prefix, returning only entries visible at or before `seq_no`.
     ///

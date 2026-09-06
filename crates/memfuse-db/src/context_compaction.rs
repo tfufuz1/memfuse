@@ -13,6 +13,7 @@
 //! to preserve the LLM context window.
 
 use crate::collection::Collection;
+use crate::ProvenanceRecord;
 use memfuse_core::{
     ContextChunk, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine, TokenBudget, TxId,
     VectorIndex,
@@ -189,6 +190,11 @@ impl ContextCompactor {
             "source_doc_count".to_string(),
             serde_json::Value::Number(chunks.len().into()),
         );
+
+        let prov = ProvenanceRecord::synthesized_from(&source_doc_ids);
+        if let Ok(prov_val) = serde_json::to_value(&prov) {
+            combined_metadata.insert("provenance".to_string(), prov_val);
+        }
 
         // Generate a distinct deterministic DocId from the combination of source doc_ids
         let synthesized_doc_id = {
@@ -800,6 +806,47 @@ mod tests {
         let empty_ctx = empty_res.unwrap(); // unwrap allowed (in test)
         assert!(empty_ctx.retained_chunks.is_empty());
         assert!(empty_ctx.source_doc_ids.is_empty());
+    }
+
+    struct MockLlmGenerator;
+    #[async_trait::async_trait]
+    impl LlmTextGenerator for MockLlmGenerator {
+        async fn generate(&self, _prompt: &str) -> Result<String> {
+            Ok("Zusammenfassung der 3 Quelldokumente".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_consolidate_via_llm_provenance_3_source_docs() {
+        let budget = TokenBudget::new(1000, 0);
+        let compactor = ContextCompactor::new(budget, CompactionStrategy::Summarize);
+        let mock_llm = MockLlmGenerator;
+
+        let chunks = vec![
+            make_chunk(10, "Erstes Quelldokument", 0.9, false),
+            make_chunk(20, "Zweites Quelldokument", 0.8, false),
+            make_chunk(30, "Drittes Quelldokument", 0.7, false),
+        ];
+
+        let compacted = compactor
+            .consolidate_via_llm(&chunks, &mock_llm, "mock-model")
+            .await
+            .expect("Consolidation should succeed");
+
+        assert_eq!(compacted.source_doc_ids.len(), 3);
+        assert_eq!(compacted.retained_chunks.len(), 1);
+
+        let chunk = &compacted.retained_chunks[0];
+        let meta = chunk.metadata.as_ref().expect("Metadata must be present");
+        let prov_val = meta.get("provenance").expect("Provenance must be present in metadata");
+        let prov: ProvenanceRecord =
+            serde_json::from_value(prov_val.clone()).expect("Valid ProvenanceRecord");
+
+        assert_eq!(prov.index_type.as_deref(), Some("consolidated"));
+        assert_eq!(prov.signal_ranks.len(), 3);
+        assert!(prov.signal_ranks.contains_key(&DocId::new(10).0.to_string()));
+        assert!(prov.signal_ranks.contains_key(&DocId::new(20).0.to_string()));
+        assert!(prov.signal_ranks.contains_key(&DocId::new(30).0.to_string()));
     }
 
     #[test]

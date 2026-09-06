@@ -4,9 +4,6 @@
 // NICHT-OFFENSICHTLICH: check_doc_id_collision wird strikt innerhalb des insert_lock ausgeführt.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-#[path = "kv_lock.rs"]
-mod kv_lock;
-
 use super::{
     ensure_importance_metadata, extract_text, Collection, StoredDocument, StoredDocumentMeta,
 };
@@ -205,7 +202,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
-        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
+        let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         let data = serde_json::to_vec(value)?;
@@ -219,7 +216,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put_kv_if_absent(&self, id: &str, value: &serde_json::Value) -> Result<()> {
         validate_doc_id(id)?;
-        let _guard = kv_lock::GLOBAL_KV_LOCKS.lock_for(id).await;
+        let _guard = self.kv_locks.lock_for(id).await;
         let tx = self.allocate_tx()?;
         let user_key = self.namespaced_key(id.as_bytes(), 0);
         if self.storage.get(&user_key).await?.is_some() {
@@ -958,29 +955,45 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             self.namespaced_key(prefix.as_bytes(), 0)
         };
 
-        let kvs = self.storage.scan_prefix(&real_prefix).await?;
+        let mut results = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
 
-        let mut results = Vec::with_capacity(kvs.len());
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            // We should ideally strip the prefix to return the user-facing key
-            // but for simplicity and compatibility with existing tests we keep it as is or strip carefully
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                // Strip the internal prefix: self.prefix (variable) + 1 byte (key_type)
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
+        loop {
+            let (batch, next_cursor) = self
+                .storage
+                .scan_prefix_bounded(&real_prefix, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
+                break;
+            }
+
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
                     key_str
-                }
-            };
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
 
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
+                if let Ok(val) = serde_json::from_slice(&v) {
+                    results.push((user_key, val));
+                }
+            }
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
             }
         }
+
         Ok(results)
     }
 
@@ -1098,5 +1111,51 @@ mod tests {
             conflict_count, 49,
             "49 tasks must fail with MemFuseError::Conflict"
         );
+    }
+
+    #[tokio::test]
+    async fn test_independent_collections_kv_lock_isolation() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let col_a = Arc::new(db.collection("col_a").await.unwrap());
+        let col_b = Arc::new(db.collection("col_b").await.unwrap());
+
+        let key = "shared_key_across_collections";
+
+        // Acquire lock on col_a's kv_locks for `key`
+        let guard_a = col_a.kv_locks.lock_for(key).await;
+
+        // Spawn put_kv_if_absent on col_b with the exact same key.
+        // If col_b shared a global lock pool with col_a, this call would block until guard_a is dropped.
+        let col_b_clone = col_b.clone();
+        let handle = tokio::spawn(async move {
+            col_b_clone
+                .put_kv_if_absent(key, &serde_json::json!({ "col": "b" }))
+                .await
+        });
+
+        // Yield or wait briefly to verify col_b operation completes concurrently without blocking.
+        let res = tokio::time::timeout(std::time::Duration::from_millis(500), handle).await;
+        assert!(
+            res.is_ok(),
+            "put_kv_if_absent on col_b timed out/blocked due to lock on col_a"
+        );
+        let put_res = res.unwrap().unwrap();
+        assert!(
+            put_res.is_ok(),
+            "put_kv_if_absent on col_b should succeed independently: {:?}",
+            put_res
+        );
+
+        drop(guard_a);
     }
 }

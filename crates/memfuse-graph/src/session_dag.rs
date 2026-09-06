@@ -11,10 +11,82 @@
 // SIEHE AUCH: DECISIONS.md ADR-004
 
 use memfuse_core::{MemFuseError, Result, StorageEngine, TxId};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Guard, der NUR erhalten werden kann, nachdem der `nodes`-Lock bereits gehalten wird.
+/// Erzwingt die Lock-Reihenfolge nodes -> edges/active_head zur Compile-Zeit: `edges()` und
+/// `active_head()` sind ausschließlich als Methoden AUF diesem Guard erreichbar, nicht direkt
+/// auf SessionBranchTree.
+///
+/// ```compile_fail
+/// use memfuse_graph::SessionBranchTree;
+/// let tree = SessionBranchTree::new("a".into(), "b".into());
+/// let _ = tree.edges.read(); // Field `edges` is private
+/// ```
+pub struct NodesGuard<'a> {
+    tree: &'a SessionBranchTree,
+    _nodes_guard: RwLockReadGuard<'a, HashMap<NodeIdx, AgentStateNode>>,
+}
+
+impl<'a> NodesGuard<'a> {
+    pub fn nodes(&self) -> &HashMap<NodeIdx, AgentStateNode> {
+        &self._nodes_guard
+    }
+
+    /// Erwirbt den edges-Lock. Kann NUR aufgerufen werden, wenn bereits ein NodesGuard existiert
+    /// -> Lock-Reihenfolge ist durch die Typsignatur erzwungen, nicht nur dokumentiert.
+    pub fn edges(&self) -> RwLockReadGuard<'_, Vec<DagEdge>> {
+        self.tree.edges.read()
+    }
+
+    pub fn edges_write(&self) -> RwLockWriteGuard<'_, Vec<DagEdge>> {
+        self.tree.edges.write()
+    }
+
+    pub fn active_head(&self) -> RwLockReadGuard<'_, NodeIdx> {
+        self.tree.active_head.read()
+    }
+
+    pub fn active_head_write(&self) -> RwLockWriteGuard<'_, NodeIdx> {
+        self.tree.active_head.write()
+    }
+}
+
+/// Exklusiver Schreib-Guard, der NUR erhalten werden kann, nachdem der `nodes`-Schreiblock bereits gehalten wird.
+/// Erzwingt die Lock-Reihenfolge nodes -> edges/active_head zur Compile-Zeit.
+pub struct NodesWriteGuard<'a> {
+    tree: &'a SessionBranchTree,
+    _nodes_guard: RwLockWriteGuard<'a, HashMap<NodeIdx, AgentStateNode>>,
+}
+
+impl<'a> NodesWriteGuard<'a> {
+    pub fn nodes(&self) -> &HashMap<NodeIdx, AgentStateNode> {
+        &self._nodes_guard
+    }
+
+    pub fn nodes_mut(&mut self) -> &mut HashMap<NodeIdx, AgentStateNode> {
+        &mut self._nodes_guard
+    }
+
+    pub fn edges(&self) -> RwLockReadGuard<'_, Vec<DagEdge>> {
+        self.tree.edges.read()
+    }
+
+    pub fn edges_write(&self) -> RwLockWriteGuard<'_, Vec<DagEdge>> {
+        self.tree.edges.write()
+    }
+
+    pub fn active_head(&self) -> RwLockReadGuard<'_, NodeIdx> {
+        self.tree.active_head.read()
+    }
+
+    pub fn active_head_write(&self) -> RwLockWriteGuard<'_, NodeIdx> {
+        self.tree.active_head.write()
+    }
+}
 
 /// Index of a node in the Session-DAG.
 pub type NodeIdx = u64;
@@ -82,6 +154,25 @@ impl SessionBranchTree {
         }
     }
 
+    /// Einziger öffentlicher Einstiegspunkt, um nodes zu lesen/sperren — ersetzt jeden direkten
+    /// Zugriff auf `self.nodes` von außerhalb des Moduls.
+    pub fn lock_nodes(&self) -> NodesGuard<'_> {
+        let guard = self.nodes.read();
+        NodesGuard {
+            tree: self,
+            _nodes_guard: guard,
+        }
+    }
+
+    /// Einziger öffentlicher Einstiegspunkt für exklusiven Schreibzugriff auf nodes.
+    pub fn lock_nodes_write(&self) -> NodesWriteGuard<'_> {
+        let guard = self.nodes.write();
+        NodesWriteGuard {
+            tree: self,
+            _nodes_guard: guard,
+        }
+    }
+
     /// Appends a step to the current active head node.
     pub fn append_step(
         &self,
@@ -91,7 +182,7 @@ impl SessionBranchTree {
         tool_outputs: Vec<String>,
         label: &str,
     ) -> Result<NodeIdx> {
-        let parent = *self.active_head.read();
+        let parent = self.active_head();
         let new_id = self.branch_from(
             parent,
             prompt,
@@ -101,7 +192,9 @@ impl SessionBranchTree {
             label,
         )?;
         // Update head for linear append (intended sequential behavior)
-        *self.active_head.write() = new_id;
+        let nodes = self.lock_nodes_write();
+        let mut head_guard = nodes.active_head_write();
+        *head_guard = new_id;
         Ok(new_id)
     }
 
@@ -124,7 +217,9 @@ impl SessionBranchTree {
             )));
         }
 
-        if !self.nodes.read().contains_key(&parent_node) {
+        let mut nodes = self.lock_nodes_write();
+
+        if !nodes.nodes().contains_key(&parent_node) {
             return Err(MemFuseError::InvalidInput(format!(
                 "SessionDAG: node {} nicht gefunden",
                 parent_node
@@ -144,8 +239,8 @@ impl SessionBranchTree {
             compacted: false,
         };
 
-        self.nodes.write().insert(new_id, node);
-        self.edges.write().push(DagEdge {
+        nodes.nodes_mut().insert(new_id, node);
+        nodes.edges_write().push(DagEdge {
             parent: parent_node,
             child: new_id,
             label: label.to_string(),
@@ -159,8 +254,10 @@ impl SessionBranchTree {
 
     /// Sets the active head to an existing node.
     pub fn set_active_head(&self, node_idx: NodeIdx) -> Result<()> {
-        if self.nodes.read().contains_key(&node_idx) {
-            *self.active_head.write() = node_idx;
+        let nodes = self.lock_nodes_write();
+        if nodes.nodes().contains_key(&node_idx) {
+            let mut head_guard = nodes.active_head_write();
+            *head_guard = node_idx;
             Ok(())
         } else {
             Err(MemFuseError::InvalidInput(format!(
@@ -172,9 +269,10 @@ impl SessionBranchTree {
 
     /// Reconstructs the linear conversation path from root to current active head.
     pub fn path_to_head(&self) -> Vec<AgentStateNode> {
-        let nodes = self.nodes.read();
-        let edges = self.edges.read();
-        let head = *self.active_head.read();
+        let nodes_guard = self.lock_nodes();
+        let nodes = nodes_guard.nodes();
+        let edges = nodes_guard.edges();
+        let head = *nodes_guard.active_head();
 
         let mut path = Vec::new();
         let mut current = head;
@@ -196,8 +294,9 @@ impl SessionBranchTree {
 
     /// Returns all direct children of a given node.
     pub fn children_of(&self, node_idx: NodeIdx) -> Vec<NodeIdx> {
-        self.edges
-            .read()
+        let nodes = self.lock_nodes();
+        let edges = nodes.edges();
+        edges
             .iter()
             .filter(|e| e.parent == node_idx)
             .map(|e| e.child)
@@ -206,17 +305,19 @@ impl SessionBranchTree {
 
     /// Returns the active head node index.
     pub fn active_head(&self) -> NodeIdx {
-        *self.active_head.read()
+        let nodes = self.lock_nodes();
+        let head = *nodes.active_head();
+        head
     }
 
     /// Returns the total number of nodes in the DAG.
     pub fn node_count(&self) -> usize {
-        self.nodes.read().len()
+        self.lock_nodes().nodes().len()
     }
 
     /// Retrieves a reference to a specific node by index if it exists.
     pub fn get_node(&self, node_idx: NodeIdx) -> Option<AgentStateNode> {
-        self.nodes.read().get(&node_idx).cloned()
+        self.lock_nodes().nodes().get(&node_idx).cloned()
     }
 
     /// Persists all nodes, edges, active head, and next_id of the Session-DAG to the storage engine under the given namespace prefix.
@@ -228,8 +329,9 @@ impl SessionBranchTree {
     ) -> Result<()> {
         let prefix = format!("__session_dag:{namespace}:");
 
-        let serialized_nodes: Vec<(Vec<u8>, Vec<u8>)> = {
-            let nodes = self.nodes.read();
+        let (serialized_nodes, edges_val, head) = {
+            let nodes_guard = self.lock_nodes();
+            let nodes = nodes_guard.nodes();
             let mut items = Vec::with_capacity(nodes.len());
             for (node_id, node) in nodes.iter() {
                 let key = format!("{prefix}node:{node_id}").into_bytes();
@@ -238,23 +340,23 @@ impl SessionBranchTree {
                 })?;
                 items.push((key, val));
             }
-            items
+
+            let edges = nodes_guard.edges();
+            let edges_val = bincode::serialize(&*edges).map_err(|e| {
+                MemFuseError::Serialization(format!("session dag edges serialize: {e}"))
+            })?;
+
+            let head = *nodes_guard.active_head();
+            (items, edges_val, head)
         };
 
         for (key, val) in serialized_nodes {
             storage.put(tx, &key, &val).await?;
         }
 
-        let edges_val = {
-            let edges = self.edges.read();
-            bincode::serialize(&*edges).map_err(|e| {
-                MemFuseError::Serialization(format!("session dag edges serialize: {e}"))
-            })?
-        };
         let edges_key = format!("{prefix}edges").into_bytes();
         storage.put(tx, &edges_key, &edges_val).await?;
 
-        let head = *self.active_head.read();
         let next_id = self.next_id.load(std::sync::atomic::Ordering::SeqCst);
         let meta = (head, next_id);
         let meta_key = format!("{prefix}meta").into_bytes();
@@ -316,6 +418,10 @@ impl SessionBranchTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // COMPILE-FAIL: darf nicht kompilieren
+    // Ein direkter Aufruf wie `dag.edges.read()` oder `dag.active_head.read()` von außerhalb oder ohne
+    // `lock_nodes()` scheitert an der Sichtbarkeit der Felder (private).
 
     #[test]
     fn test_dag_root_creation() {
