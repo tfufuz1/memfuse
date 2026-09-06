@@ -106,11 +106,13 @@ impl EmbeddingProvider for MockEmbedder {
         "mock"
     }
 
-    async fn embed(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        Ok(self
-            .fixed_output
-            .clone()
-            .unwrap_or_else(|| vec![0.1f32; self.dim]))
+    fn embed<'a>(&'a self, _text: &'a str) -> BoxFuture<'a, Result<Vec<f32>, EmbeddingError>> {
+        Box::pin(async move {
+            Ok(self
+                .fixed_output
+                .clone()
+                .unwrap_or_else(|| vec![0.1f32; self.dim]))
+        })
     }
 
     fn embedding_dim(&self) -> usize {

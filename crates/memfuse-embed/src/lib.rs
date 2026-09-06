@@ -34,10 +34,8 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "onnx")]
 pub mod reranker;
-#[cfg(feature = "onnx")]
-pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
+pub use reranker::{CrossEncoderReranker, PlattScaledSigmoid, RerankConfig, RerankResult};
 
 /// Counter tracking the number of ONNX session load operations (for test verification).
 #[cfg(feature = "onnx")]
@@ -108,7 +106,6 @@ impl std::fmt::Debug for TextEmbedder {
 }
 
 #[cfg(feature = "onnx")]
-#[async_trait]
 impl EmbeddingProvider for TextEmbedder {
     fn provider_name(&self) -> &str {
         "onnx"
