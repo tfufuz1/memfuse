@@ -1330,7 +1330,6 @@ mod tests {
     #[test]
     fn test_cascade_hit() {
         use crate::profile::ProfileCalibrationState;
-        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1395,13 +1394,12 @@ mod tests {
 
         assert_eq!(selected.name, "mid-slm");
         assert_eq!(idx, 0); // profile_mid was at original index 0
-        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
+        assert!(!metrics.calibrated);
     }
 
     #[test]
     fn test_cascade_fallthrough() {
         use crate::profile::ProfileCalibrationState;
-        use crate::router::ConfidenceMetrics;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
 
@@ -1461,13 +1459,11 @@ mod tests {
 
         assert_eq!(selected.name, "low-slm");
         assert_eq!(idx, 2);
-        assert!(matches!(metrics, ConfidenceMetrics::Uncalibrated { .. }));
+        assert!(!metrics.calibrated);
     }
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
-        use crate::router::ConfidenceMetrics;
-
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1513,19 +1509,16 @@ mod tests {
                 .route(&vec_data, "convergence test content")
                 .await
                 .unwrap();
-            let conf = decision.confidence.expect("Confidence metrics present");
-            last_calibrated = conf.calibrated;
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
-            let calibrated = st.conformal.window_total >= 30;
-            last_calibrated = calibrated;
+            last_calibrated = st.conformal.window_total >= 30;
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
                 st.conformal.window_total,
                 st.conformal.quantile_threshold,
-                calibrated
+                last_calibrated
             );
         }
 
@@ -1794,15 +1787,18 @@ mod tests {
     fn test_confidence_metrics_serde() -> Result<(), Box<dyn std::error::Error>> {
         use crate::router::ConfidenceMetrics;
 
-        let uncal = ConfidenceMetrics::Uncalibrated {
+        let uncal = ConfidenceMetrics {
+            score_lower: None,
+            score_upper: None,
+            calibrated: false,
+            quantile_threshold: 0.5,
             non_conformity_score: 0.2,
             selection_margin: 1.5,
-            quantile_threshold: 0.5,
         };
 
         let json_uncal = serde_json::to_string(&uncal)?;
         let val_uncal: serde_json::Value = serde_json::from_str(&json_uncal)?;
-        assert_eq!(val_uncal["type"], "uncalibrated");
+        assert_eq!(val_uncal["calibrated"], false);
         assert_eq!(val_uncal["non_conformity_score"], 0.2);
         assert_eq!(val_uncal["selection_margin"], 1.5);
         assert_eq!(val_uncal["quantile_threshold"], 0.5);
@@ -1810,9 +1806,10 @@ mod tests {
         let deserialized_uncal: ConfidenceMetrics = serde_json::from_str(&json_uncal)?;
         assert_eq!(deserialized_uncal, uncal);
 
-        let cal = ConfidenceMetrics::Calibrated {
-            score_lower: 0.4,
-            score_upper: 0.8,
+        let cal = ConfidenceMetrics {
+            score_lower: Some(0.4),
+            score_upper: Some(0.8),
+            calibrated: true,
             quantile_threshold: 0.6,
             non_conformity_score: 0.1,
             selection_margin: 2.0,
@@ -1820,7 +1817,7 @@ mod tests {
 
         let json_cal = serde_json::to_string(&cal)?;
         let val_cal: serde_json::Value = serde_json::from_str(&json_cal)?;
-        assert_eq!(val_cal["type"], "calibrated");
+        assert_eq!(val_cal["calibrated"], true);
         assert_eq!(val_cal["score_lower"], 0.4);
         assert_eq!(val_cal["score_upper"], 0.8);
         assert_eq!(val_cal["quantile_threshold"], 0.6);
@@ -1884,7 +1881,7 @@ mod tests {
             0.01,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let decision = router.route(&vec_coding, "function test").await.unwrap();
 
         let cal_before = router.calibration_stats();
@@ -1898,6 +1895,56 @@ mod tests {
                 > cal_before["default"].conformal.window_total,
             "window_total should increase after record_outcome"
         );
+    }
+
+    #[test]
+    fn test_decision_id_and_routing_outcome_methods() {
+        let default_id = DecisionId::default();
+        let new_id = DecisionId::new();
+        assert_ne!(default_id.inner(), new_id.inner());
+
+        let success = RoutingOutcome::Success;
+        let escalated = RoutingOutcome::Escalated {
+            escalated_to: "large-slm".to_string(),
+        };
+        let rejected = RoutingOutcome::Rejected {
+            reason: Some("incorrect answer".to_string()),
+        };
+
+        assert_eq!(success.non_conformity_score(), 0.0);
+        assert_eq!(escalated.non_conformity_score(), 0.7);
+        assert_eq!(rejected.non_conformity_score(), 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_router_engine_persisted_calibration_loading() {
+        let dir = tempfile::tempdir().unwrap();
+        let cal_path = dir.path().join("calibration.json");
+
+        let p1 = SlmProfile::new("p1", "http://ep1", vec![1], TokenBudget::default(), 0.5);
+
+        let mut initial_map = std::collections::HashMap::new();
+        let mut p1_state = crate::profile::ProfileCalibrationState::new(0.5);
+        p1_state.times_selected = 42;
+        initial_map.insert("p1".to_string(), p1_state);
+
+        std::fs::write(&cal_path, serde_json::to_vec(&initial_map).unwrap()).unwrap();
+
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path().join("db"), config)
+            .await
+            .unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let router = RouterEngine::new(collection, vec![p1], Some(cal_path));
+        let stats = router.calibration_stats();
+        assert_eq!(stats["p1"].times_selected, 42);
+
+        let count = router.pending_decision_count();
+        assert_eq!(count, 0);
     }
 
     #[tokio::test]
@@ -1918,7 +1965,7 @@ mod tests {
             0.01,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let unknown_id = DecisionId::new();
 
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
