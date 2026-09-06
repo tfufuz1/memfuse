@@ -32,7 +32,7 @@ jobs:
       - run: cargo clippy --locked --all-targets --workspace --exclude memfuse-tauri -- -D warnings
 
   feature-matrix:
-    name: Feature Matrix Checks (memfuse-embed)
+    name: Feature Matrix Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +42,8 @@ jobs:
         run: cargo check --locked -p memfuse-embed --no-default-features
       - name: Check memfuse-embed --all-features
         run: cargo check --locked -p memfuse-embed --all-features
+      - name: Check memfuse-db --features reranking
+        run: cargo check --locked -p memfuse-db --features reranking
 
   maturin-dry-run:
     name: PyPI Wheel Build Check (Maturin Dry-Run)

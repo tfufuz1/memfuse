@@ -3293,7 +3293,19 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "4c4cbbfb6181f208"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "4e5683193d4207d2"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "565da001a0760ee3"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "60725007c38f34c3"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
