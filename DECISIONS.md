@@ -870,12 +870,13 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-063: Configuration Shift Protection for Conformal Router Calibration (arXiv:2608.01460 & Prinzip P8)
+## ADR-063: Instance-scoped Orphan Registry Wiring
 *   **Datum**: 2026-09-06
 *   **Status**: ✅ Final
-*   **Kontext**: Das Routing-Modul `memfuse-router` nutzt conformal prediction (Gibbs & Candès, 2021) zur Kalibrierung von Konfidenzgrenzen und Relevanzschwellenwerten. Wie in arXiv:2608.01460 ("Conformalized LLMs under Configuration Shift") belegt, kollabieren Konformitätsgarantien stillschweigend, sobald sich Ausführungsparameter (Temperatur, Prompt-Template, Quantisierung) des angesprochenen SLM verändern, ohne dass die Kalibrierungsstatistik zurückgesetzt wird. Gemäß Prinzip P8 ("Kalibrierungs-Integrität") darf das System in diesem Zustand keine Konfidenzmetriken mit `calibrated: true` produzieren.
+*   **Kontext**: ADR-053 hat `InstanceOrphanRegistry` eingeführt, um den veralteten prozessweiten `ORPHAN_REGISTRY`-Singleton zu ersetzen. Allerdings gab es bisher keine Verdrahtung in `MemFuse`, wodurch Multi-Tenant-Szenarien (mehrere `MemFuse`-Instanzen im selben Prozess) physisch dieselbe Orphan-Pin-Datei nutzten und Pins anderer Instanzen überschreiben konnten.
 *   **Entscheidung**:
-    - **Fingerprint-Erweiterung**: `SlmProfile` wird um ein `ConfigFingerprint`-Feld erweitert (`prompt_template_hash: [u8; 32]`, quantisierte `temperature_bucket: u8`, `quantization: QuantizationLevel`).
-    - **Sofortige Invalidierung bei Shift**: Bei jeder Routing-Entscheidung, Profil-Update (`update_profiles`) und Ingestierung von Outcomes (`record_outcome`) wird der aktive `ConfigFingerprint` mit dem in `ProfileCalibrationState` erfassten `last_calibrated_fingerprint` verglichen. Bei Abweichung wird die gesamte Kalibrierungsstatistik des Profils unverzüglich zurückgesetzt (`state.reset()`).
-    - **Fail-Safe für Unbekannte Quantisierung**: Wenn `QuantizationLevel::Unknown` vorliegt (z. B. fehlende Ollama-Metadaten), liefert `is_calibrated()` stets `false` und es werden keine Kalibrierungsinformationen als verlässlich gewertet.
-*   **Konsequenzen**: Die Abdeckungsgarantien der Conformal Calibration bleiben auch unter dynamischen Modell- und Laufzeitkonfigurationsänderungen mathematisch strikt gewahrt.
+    - `MemFuseConfig` wird um ein optionales Feld `orphan_registry_path: Option<PathBuf>` erweitert. Standardmäßig (bei `None`) wird der Pfad instanzspezifisch aus dem Datenbank-Öffnungspfad als `<db_path>/.orphan_registry.json` abgeleitet.
+    - `MemFuse` instanziiert beim Öffnen eine instanzspezifische `InstanceOrphanRegistry` und stellt diese über die Methode `db.orphan_registry()` bereit.
+    - `PersistentCheckpointStore` stellt die Konstruktoren `open_with_orphan_registry` und `new_with_orphan_registry` bereit, um die direkte Übergabe einer instanzgebundenen Registry zu ermöglichen.
+    - Sämtliche Produktionscodepfade nutzen ausschließlich instanzgebundene Orphan-Registries. Der veraltete globale `ORPHAN_REGISTRY`-Singleton und `global_orphan_registry()` verbleiben ausschließlich für Legacy-Kompatibilitätstests.
+*   **Begründung**: Verhindert Daten- und Pin-Überschreibungen in Multi-Tenant-Szenarien und gewährleistet strikte physische Isolation der Orphan-State-Dateien pro Datenbank-Instanz.

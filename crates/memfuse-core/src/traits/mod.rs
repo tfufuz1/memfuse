@@ -215,6 +215,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Scans a range of keys with the given prefix.
     ///
     /// Für neue Call-Sites bevorzuge `scan_prefix_bounded` — lädt unbegrenzt und kann bei großen Prefixes das Speicherbudget sprengen.
+    #[allow(clippy::type_complexity)]
     fn scan_prefix<'a>(&'a self, prefix: &'a [u8])
         -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 
@@ -222,6 +223,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// optionalem Cursor (letzter zurückgegebener Key aus dem vorherigen Aufruf) für Pagination.
     /// Bevorzugt gegenüber `scan_prefix` für jeden neuen Call-Site, der potenziell große
     /// Ergebnismengen erwarten muss.
+    #[allow(clippy::type_complexity)]
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -265,6 +267,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"snapshot_read_at"` if snapshot-isolated prefix scan is not implemented.
     /// Tested via `capability_coverage` test module.
+    #[allow(clippy::type_complexity)]
     fn scan_prefix_at<'a>(
         &'a self,
         _prefix: &'a [u8],
@@ -279,6 +282,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     }
 
     /// Scans a range of keys between `start` and `end` bounds.
+    #[allow(clippy::type_complexity)]
     fn scan<'a>(
         &'a self,
         start: std::ops::Bound<&'a [u8]>,

@@ -311,12 +311,19 @@ impl RouterEngine {
             }
 
             // 4. Construct ConfidenceMetrics from updated lock state
-            let metrics = cal.get_mut(&selected_profile.name).map(|state| {
-                state.check_and_invalidate_fingerprint(&selected_profile.config_fingerprint);
-                let calibrated = state.is_calibrated(&selected_profile.config_fingerprint);
+            let metrics = cal.get(&selected_profile.name).map(|state| {
+                let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
                 ConfidenceMetrics {
-                    score_lower: if calibrated { Some(best_score * (1.0 - state.conformal.alpha)) } else { None },
-                    score_upper: if calibrated { Some(best_score * (1.0 + state.conformal.alpha)) } else { None },
+                    score_lower: if calibrated {
+                        Some(best_score * (1.0 - state.conformal.alpha))
+                    } else {
+                        None
+                    },
+                    score_upper: if calibrated {
+                        Some(best_score * (1.0 + state.conformal.alpha))
+                    } else {
+                        None
+                    },
                     calibrated,
                     quantile_threshold: state.conformal.quantile_threshold,
                     non_conformity_score: non_conformity,

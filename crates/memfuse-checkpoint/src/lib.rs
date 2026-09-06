@@ -835,6 +835,19 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Öffnet einen PersistentCheckpointStore asynchron mit Rekonstruktion und Monotonie-Garantie.
     pub async fn open(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
+        let ns = namespace.into();
+        let orphan_path =
+            std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
+        Self::open_with_orphan_registry(storage, ns, orphan_registry).await
+    }
+
+    /// Öffnet einen PersistentCheckpointStore mit einer spezifischen instanzgebundenen Orphan Registry.
+    pub async fn open_with_orphan_registry(
+        storage: Arc<S>,
+        namespace: impl Into<String>,
+        orphan_registry: Arc<InstanceOrphanRegistry>,
+    ) -> Result<Self> {
         let namespace = namespace.into();
 
         // 1. Scan store for highest existing TxId under namespace
@@ -895,10 +908,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
 
-        let orphan_path =
-            std::path::PathBuf::from(format!("{namespace}_orphaned_checkpoints.json"));
-        let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
-
         // 5. Recover orphaned sequence pins on startup (ADR-052)
         let orphans = orphan_registry.get_orphan_pins();
         for orphan in orphans {
@@ -929,19 +938,42 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
         let ns = namespace.into();
+        let orphan_path =
+            std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
+        Self::new_with_orphan_registry(storage, ns, orphan_registry)
+    }
+
+    pub fn new_with_orphan_registry(
+        storage: Arc<S>,
+        namespace: impl Into<String>,
+        orphan_registry: Arc<InstanceOrphanRegistry>,
+    ) -> Result<Self> {
+        let ns = namespace.into();
         let storage_clone = storage.clone();
         let ns_clone = ns.clone();
+        let orphan_reg_clone = orphan_registry.clone();
 
         let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
-                tokio::task::block_in_place(|| handle.block_on(Self::open(storage_clone, ns_clone)))
+                tokio::task::block_in_place(|| {
+                    handle.block_on(Self::open_with_orphan_registry(
+                        storage_clone,
+                        ns_clone,
+                        orphan_reg_clone,
+                    ))
+                })
             } else {
                 std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .map_err(|e| MemFuseError::Internal(e.to_string()))?;
-                    rt.block_on(Self::open(storage_clone, ns_clone))
+                    rt.block_on(Self::open_with_orphan_registry(
+                        storage_clone,
+                        ns_clone,
+                        orphan_reg_clone,
+                    ))
                 })
                 .join()
                 .map_err(|_| {
@@ -958,7 +990,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .map_err(|e| {
                     MemFuseError::Internal(format!("Failed to create Tokio runtime: {e}"))
                 })?;
-            rt.block_on(Self::open(storage_clone, ns_clone))
+            rt.block_on(Self::open_with_orphan_registry(
+                storage_clone,
+                ns_clone,
+                orphan_reg_clone,
+            ))
         };
 
         res.map_err(|e| {
