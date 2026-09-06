@@ -8,12 +8,15 @@
 
 Stand letzter Prüfung: 2026-09-06
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **2 offene Tags**
+Ergebnis: **5 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
 | `crates/memfuse-embed/src/lib.rs` | 259 | `AGT-EMBED-f07dcaf8` | `PERF` | `MAJOR` | `2026-09-06T11:19:00Z` | // AI-TAG[PERF][MAJOR] ONNX Session re-created per embed call (ID: AGT-EMBED-f07dcaf8) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
 | `crates/memfuse-embed/src/reranker.rs` | 314 | `AGT-EMBED-62093e61` | `ML-SCORING` | `MINOR` | `2026-09-06T11:19:00Z` | // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
+| `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
+| `crates/memfuse-ollama/src/importance.rs` | 39 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
+| `crates/memfuse-py/src/lib.rs` | 293 | `AGT-PY-d5d2be30` | `SECURITY` | `MAJOR` | `2026-09-06T11:19:12Z` | // AI-TAG[SECURITY][MAJOR] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286) |
 
 
 ## Crate-Inventar & Status
@@ -21,20 +24,20 @@ Ergebnis: **2 offene Tags**
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 9205 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-crypto` | 0 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-crypto` | 0 | 2425 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-embed` | 1 | 1336 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7292 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11900 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 15245 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19867 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-ollama` | 3 | 3341 | 🟢 Clean |  |
+| `memfuse-text` | 1 | 5163 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-db` | 2 | 19984 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-agent` | 3 | 5455 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-ollama` | 3 | 3349 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1504 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
-| `memfuse-router` | 3 | 3335 | 🟢 Clean |  |
+| `memfuse-router` | 3 | 3385 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 5170 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 5169 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
