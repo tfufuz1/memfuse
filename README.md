@@ -91,7 +91,7 @@ RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** au
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
 - **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
-- **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
+- **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
 - **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell)
 - **Layer 5**: `memfuse-bench` (Reproduzierbarer Benchmark-Harness für Retrieval-Genauigkeit)
 
