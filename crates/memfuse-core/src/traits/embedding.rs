@@ -128,38 +128,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mock_embedder_methods() {
+    async fn test_mock_embedder_methods() -> Result<(), Box<dyn std::error::Error>> {
         let embedder = MockEmbedder::new(4);
         assert_eq!(embedder.provider_name(), "mock");
         assert_eq!(embedder.embedding_dim(), 4);
 
-        let vec = EmbeddingProvider::embed(&embedder, "test").await.unwrap();
+        let vec = EmbeddingProvider::embed(&embedder, "test").await?;
         assert_eq!(vec, vec![0.0, 0.0, 0.0, 0.0]);
 
         let fixed = vec![1.0, 2.0, 3.0];
         let fixed_embedder = MockEmbedder::with_fixed_output(fixed.clone());
         assert_eq!(fixed_embedder.embedding_dim(), 3);
-        let res = EmbeddingProvider::embed(&fixed_embedder, "hello")
-            .await
-            .unwrap();
+        let res = EmbeddingProvider::embed(&fixed_embedder, "hello").await?;
         assert_eq!(res, fixed);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_embedding_provider_batch_and_blanket_trait() {
+    async fn test_embedding_provider_batch_and_blanket_trait(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let embedder = MockEmbedder::new(2);
-        let batch_res = EmbeddingProvider::embed_batch(&embedder, &["a", "b"])
-            .await
-            .unwrap();
+        let batch_res = EmbeddingProvider::embed_batch(&embedder, &["a", "b"]).await?;
         assert_eq!(batch_res.len(), 2);
         assert_eq!(batch_res[0], vec![0.0, 0.0]);
 
         // Test blanket impl of TextEmbeddingEngine for MockEmbedder
         let engine: &dyn TextEmbeddingEngine = &embedder;
-        let single = engine.embed("text").await.unwrap();
+        let single = engine.embed("text").await?;
         assert_eq!(single, vec![0.0, 0.0]);
 
-        let batch = engine.embed_batch(&["x", "y"]).await.unwrap();
+        let batch = engine.embed_batch(&["x", "y"]).await?;
         assert_eq!(batch.len(), 2);
+        Ok(())
     }
 }
