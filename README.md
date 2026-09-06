@@ -86,13 +86,14 @@ RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** au
 
 > ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
-## Workspace Crates (15 Active Crates)
+## Workspace Crates (16 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
 - **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
 - **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
 - **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell)
+- **Layer 5**: `memfuse-bench` (Reproduzierbarer Benchmark-Harness für Retrieval-Genauigkeit)
 
 ## Für Entwickler: Rust-Crates
 
@@ -188,7 +189,7 @@ MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LL
 | Session DAG | ✅ | ❌ | ❌ | ❌ |
 | Kein Docker | ✅ | ❌ | ❌ | ❌ |
 
-*\*Hinweis: Alle Positionierungsclaims und Fehlerreduktions-Prozentangaben (Anthropic Pattern) sind fremdreferenzierte Forschungswerte bzw. architektonisch begründet, empirisch an MemFuse selbst jedoch noch nicht validiert.*
+*\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Die zitierten Fehlerreduktions-Prozentangaben (49 % Anthropic Contextual Retrieval, 67 % kombiniert mit Cross-Encoder) entstammen der Fachliteratur (Anthropic 2024). MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes, reproduzierbares Benchmark-Harness bereit (Details und Methodik in [`benchmarks/README.md`](benchmarks/README.md)). Auf dem MemFuse-eigenen synthetischen Testkorpus wird die Auswirkung von Kontext-Präfixen und Reranking kontinuierlich gemessen (Recall@1 aktuell bis zu 100.0% auf ambigen Chunks).*
 
 ## Lizenz
 

@@ -385,6 +385,7 @@ pub fn get_workspace_crates() -> Vec<CrateInfo> {
             "memfuse-db" => 2,
             "memfuse-py" | "memfuse-ollama" | "memfuse-agent" | "memfuse-router" => 3,
             "memfuse-mcp" | "memfuse-tauri" => 4,
+            "memfuse-bench" => 5,
             _ => 99,
         };
 
