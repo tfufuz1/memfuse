@@ -41,21 +41,21 @@ Ergebnis: **3 offene Tags**
 ## DAG-Topologie
 
 ```
-Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
-          memfuse-crypto — Encryption at Rest utilities for MemFuse
-Layer 1:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
+Layer 0:  memfuse-crypto — Encryption at Rest utilities for MemFuse
+Layer 1:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
+Layer 2:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
-          memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
+          memfuse-ollama —  (deps: memfuse-core)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
-Layer 2:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
-Layer 3:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
-          memfuse-ollama —  (deps: memfuse-core)
-          memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
-Layer 4:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
-          memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
+Layer 3:  memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
+Layer 4:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
 Layer 5:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
+          memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
+          memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
+Layer 6:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
+Layer 7:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
 ```
 
 **Aktiver Workspace-Build**: 15 Workspace Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`).
