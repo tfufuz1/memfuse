@@ -243,3 +243,18 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
 - **Unit & Integration Suite:** 10/10 tests passed (`cargo test -p memfuse-embed`).
 - **Clippy & Formatting:** `cargo clippy -p memfuse-embed -- -D warnings` (clean) and `cargo fmt --check -p memfuse-embed` (clean).
 - **DAG Architecture Integrity:** `memfuse-embed` (Layer 3) strictly obeys DAG rules with imports restricted to Layer 0 (`memfuse-core`).
+
+## 14. Re-Verifikation & ML-Scoring Domain Audit (2026-09-06) (SESSION: 8efa6210)
+
+### 14.1 Step 0 Inventory Reality Check
+- Inventory check against 2026-09-03 snapshot: `lib.rs`, `reranker.rs`. Stand confirmed (0 drift).
+
+### 14.2 ML Domain APM Scans
+- **APM-22 (Score Confidence without Calibration):** Identified in `reranker.rs` (`AI-TAG[ML-SCORING][MINOR]` ID: `AGT-EMBED-62093e61`). Raw Cross-Encoder logits are mapped to $[0,1]$ via uncalibrated sigmoid $1 / (1 + e^{-x})$. Recommends temperature scaling / Platt calibration when combining across heterogeneous model backends.
+- **APM-23 (Static Distribution Assumption):** Rerank thresholding relies on relative rank ordering rather than fixed static score cutoffs, avoiding failure modes under query drift.
+- **APM-24 (Provenance Loss):** Candidate original indices are explicitly preserved in `RerankResult.original_index`, preventing provenance loss during sorting.
+
+### 14.3 Performance & Quality Findings
+- **PERF Finding:** `lib.rs` re-instantiates `ort::session::Session` from file inside `spawn_blocking` on every `embed_async` call (`AI-TAG[PERF][MAJOR]` ID: `AGT-EMBED-f07dcaf8`). Recommends refactoring `TextEmbedder` to hold shared session references similar to `OnnxReranker`.
+- **Review Pass:** Added `REVIEW-PASS[2/2]` in `reranker.rs` (SESSION: `8efa6210`).
+- **Verification Suite:** `cargo test -p memfuse-embed --all-features` (18/18 passed), `cargo clippy -p memfuse-embed --all-features -- -D warnings` (clean), `cargo fmt --check -p memfuse-embed` (clean), `cargo check --workspace --exclude memfuse-tauri` (clean).
