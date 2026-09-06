@@ -2688,6 +2688,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "memfuse-bench"
+version = "0.1.0"
+dependencies = [
+ "memfuse-core",
+ "memfuse-db",
+ "memfuse-embed",
+ "memfuse-graph",
+ "memfuse-index",
+ "memfuse-store",
+ "memfuse-text",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "memfuse-checkpoint"
 version = "0.1.0"
 dependencies = [

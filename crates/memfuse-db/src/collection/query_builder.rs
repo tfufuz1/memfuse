@@ -350,33 +350,35 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
 
         #[cfg(feature = "reranking")]
         if let Some(reranker) = self.reranker {
-            if !results.is_empty() && !text_str.is_empty() {
-                let candidate_texts: Vec<String> = results
-                    .iter()
-                    .map(|r| {
-                        r.metadata
-                            .as_ref()
-                            .and_then(|m| m.get("text").or_else(|| m.get("content")))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(&r.id)
-                            .to_string()
-                    })
-                    .collect();
+            if let Some(ref text_str) = self.text {
+                if !results.is_empty() && !text_str.is_empty() {
+                    let candidate_texts: Vec<String> = results
+                        .iter()
+                        .map(|r| {
+                            r.metadata
+                                .as_ref()
+                                .and_then(|m| m.get("text").or_else(|| m.get("content")))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&r.id)
+                                .to_string()
+                        })
+                        .collect();
 
-                if let Ok(ranked) = reranker.rerank(text_str, &candidate_texts).await {
-                    let mut reranked_results = Vec::with_capacity(k);
-                    for r in ranked.into_iter().take(k) {
-                        if let Some(mut result) = results.get(r.original_index).cloned() {
-                            if let Some(meta) = result.metadata.as_mut() {
-                                if let Some(obj) = meta.as_object_mut() {
-                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
+                    if let Ok(ranked) = reranker.rerank(text_str, &candidate_texts).await {
+                        let mut reranked_results = Vec::with_capacity(k);
+                        for r in ranked.into_iter().take(k) {
+                            if let Some(mut result) = results.get(r.original_index).cloned() {
+                                if let Some(meta) = result.metadata.as_mut() {
+                                    if let Some(obj) = meta.as_object_mut() {
+                                        obj.insert("ce_score".to_string(), serde_json::json!(r.score));
+                                    }
                                 }
+                                result.score = r.score;
+                                reranked_results.push(result);
                             }
-                            result.score = r.score;
-                            reranked_results.push(result);
                         }
+                        return Ok(reranked_results);
                     }
-                    return Ok(reranked_results);
                 }
             }
         }

@@ -371,6 +371,14 @@ pub struct CrossEncoderReranker {
 }
 
 impl CrossEncoderReranker {
+    /// Erstellt einen Passthrough-CrossEncoderReranker (für Benchmarks/Tests ohne ONNX-Modelldatei).
+    pub fn passthrough() -> Self {
+        Self {
+            _config: RerankConfig::default(),
+            backend: RerankerBackend::Passthrough,
+        }
+    }
+
     /// Erstellt einen neuen CrossEncoderReranker.
     pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
         #[cfg(feature = "onnx")]
