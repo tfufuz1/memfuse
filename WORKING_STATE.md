@@ -8,18 +8,22 @@
 
 Stand letzter Prüfung: 2026-09-06
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **2 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-embed/src/lib.rs` | 259 | `AGT-EMBED-f07dcaf8` | `PERF` | `MAJOR` | `2026-09-06T11:19:00Z` | // AI-TAG[PERF][MAJOR] ONNX Session re-created per embed call (ID: AGT-EMBED-f07dcaf8) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
+| `crates/memfuse-embed/src/reranker.rs` | 314 | `AGT-EMBED-62093e61` | `ML-SCORING` | `MINOR` | `2026-09-06T11:19:00Z` | // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9121 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9205 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-crypto` | 0 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
+| `memfuse-embed` | 1 | 1336 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7292 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11900 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 15245 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
