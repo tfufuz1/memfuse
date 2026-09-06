@@ -20,7 +20,7 @@ Ergebnis: **2 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9121 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9205 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-crypto` | 0 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-embed` | 1 | 1336 | 🧊 Optional |  |
