@@ -1,6 +1,6 @@
 # AUDIT REPORT: `memfuse-router`
 
-**Datum:** 2026-09-02 (Aktualisiert: 2026-09-04)
+**Datum:** 2026-09-02 (Aktualisiert: 2026-09-06)
 **Auditor:** Senior Rust Routing-Engineer
 **Crate:** `crates/memfuse-router` · Layer 3 (SLM-Routing Engine)
 **Ziel-Repository:** MemFuse (`https://github.com/tfufuz1/memfuse`)
@@ -61,10 +61,12 @@ TOTAL                             288                 5    98.26%          23   
 
 ---
 
-## 5. Session Log & Verification (2026-09-04)
-- **Compilation & Warmup Threshold Fix**: Resolved compilation errors in `router.rs` by implementing `ProfileScoring` and `score_profile()`. Replaced deprecated `hybrid_search_with_strategy` with `collection.query()`. Unified conformal calibration warmup window total threshold using `CALIBRATION_WARMUP_SAMPLES` constant (30 samples) across `select_profile_cascade`, `ConfidenceMetrics`, and unit tests, resolving `AGT-ROUTER-2db4f208`.
-- **NaN-Safety & Test Expansion**: Enforced non-finite `query_embedding` validation and expanded test suite from 42 to 48 tests covering ConformalCalibrator defaults, empty MCP endpoints, non-finite query vector rejection, and profile reset utilities.
-- **Verification**: All 48 unit/integration tests in `memfuse-router` pass reliably (`cargo test -p memfuse-router --all-features`). Zero clippy warnings, zero formatting diffs, zero unsafe blocks. Workspace check `cargo check --workspace --exclude memfuse-tauri` succeeds cleanly.
+## 5. Session Log & Verification (2026-09-06)
+- **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Documented inventory drift relative to prompt snapshot (Stand 2026-09-03).
+- **ConfidenceMetrics Enum-to-Struct Refactoring**: Fixed compilation failure where `ConfidenceMetrics` was referenced as an enum (`ConfidenceMetrics::Calibrated` / `ConfidenceMetrics::Uncalibrated`). Refactored `ConfidenceMetrics` instantiation in `router.rs` and struct assertions in `tests.rs`. Added `PartialEq` derive.
+- **Test Expansion & Concurrency Verification**: Expanded test suite from 48 to 53 tests covering `DecisionId`, `RoutingOutcome`, and persisted calibration state loading. Verified 10 multi-threaded concurrency runs (`--test-threads=8`).
+- **Coverage Metrics**: Achieved **96.30% region coverage** and **93.97% line coverage** across `memfuse-router` (`cargo llvm-cov -p memfuse-router --all-features`).
+- **Verification**: All 53 unit/integration tests in `memfuse-router` pass cleanly (`cargo test -p memfuse-router --all-features`). Zero clippy warnings, zero compiler warnings, zero unsafe blocks. Workspace check `cargo check --workspace --exclude memfuse-tauri` succeeds cleanly.
 
 ---
 
