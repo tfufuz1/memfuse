@@ -8,8 +8,11 @@
 
 Stand letzter Prüfung: 2026-09-06
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-py/src/lib.rs` | 293 | `AGT-PY-d5d2be30` | `SECURITY` | `MAJOR` | `2026-09-06T11:19:12Z` | // AI-TAG[SECURITY][MAJOR] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286) |
 
 
 ## Crate-Inventar & Status
@@ -27,7 +30,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-db` | 2 | 19859 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3341 | 🟢 Clean |  |
-| `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
+| `memfuse-py` | 3 | 1504 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 3335 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 5172 | 🟢 Clean |  |
