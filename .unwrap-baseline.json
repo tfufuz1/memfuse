@@ -6345,10 +6345,6 @@
   },
   {
     "file": "crates/memfuse-embed/src/lib.rs",
-    "hash": "774b92c171c4195b"
-  },
-  {
-    "file": "crates/memfuse-embed/src/lib.rs",
     "hash": "7ccd329ef3d773b6"
   },
   {
@@ -6378,6 +6374,34 @@
   {
     "file": "crates/memfuse-embed/src/reranker.rs",
     "hash": "dfbe17058352e298"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "030a6ebfb3493448"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "0480eb7d2d176112"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "08c90877d52564e5"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "237bfad620a6e5cd"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "2649ea2c61708ac4"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "47fe55872cf5efa5"
+  },
+  {
+    "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
+    "hash": "8fadfe5db0fe4e16"
   },
   {
     "file": "crates/memfuse-embed/tests/onnx_embedder_test.rs",
