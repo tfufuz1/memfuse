@@ -15,27 +15,20 @@ use std::sync::Arc;
 const CALIBRATION_WARMUP_WINDOW: u32 = 30;
 
 /// Calibrated confidence metrics for a routing decision.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ConfidenceMetrics {
-    Calibrated {
-        score_lower: f32,
-        score_upper: f32,
-        quantile_threshold: f32,
-        non_conformity_score: f32,
-        selection_margin: f32,
-    },
-    Uncalibrated {
-        non_conformity_score: f32,
-        selection_margin: f32,
-        quantile_threshold: f32,
-    },
-}
-
-impl ConfidenceMetrics {
-    pub fn is_calibrated(&self) -> bool {
-        matches!(self, ConfidenceMetrics::Calibrated { .. })
-    }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConfidenceMetrics {
+    /// Lower bound of the confidence interval (None when not calibrated).
+    pub score_lower: Option<f32>,
+    /// Upper bound of the confidence interval (None when not calibrated).
+    pub score_upper: Option<f32>,
+    /// Whether the score was calibrated via outcome-driven conformal calibration.
+    pub calibrated: bool,
+    /// Current conformal quantile threshold used for this decision.
+    pub quantile_threshold: f32,
+    /// Non-conformity score of the decision.
+    pub non_conformity_score: f32,
+    /// Margin/ratio between best and second best score.
+    pub selection_margin: f32,
 }
 
 /// Result of a routing operation containing the selected profile, prepared context, confidence, and decision ID.
@@ -441,20 +434,21 @@ impl RouterEngine {
                 let q_threshold = state
                     .map(|st| st.conformal.quantile_threshold)
                     .unwrap_or(profile.min_relevance_score);
-                let confidence = if is_calibrated {
-                    ConfidenceMetrics::Calibrated {
-                        score_lower: score * 0.9,
-                        score_upper: score * 1.1,
-                        quantile_threshold: q_threshold,
-                        non_conformity_score: 0.0,
-                        selection_margin: 1.0,
-                    }
-                } else {
-                    ConfidenceMetrics::Uncalibrated {
-                        non_conformity_score: 0.0,
-                        selection_margin: 1.0,
-                        quantile_threshold: q_threshold,
-                    }
+                let confidence = ConfidenceMetrics {
+                    score_lower: if is_calibrated {
+                        Some(score * 0.9)
+                    } else {
+                        None
+                    },
+                    score_upper: if is_calibrated {
+                        Some(score * 1.1)
+                    } else {
+                        None
+                    },
+                    calibrated: is_calibrated,
+                    quantile_threshold: q_threshold,
+                    non_conformity_score: 0.0,
+                    selection_margin: 1.0,
                 };
                 return Ok((orig_idx, profile.clone(), confidence));
             }
@@ -480,10 +474,13 @@ impl RouterEngine {
             "Kaskaden-Fallback: Kein Profil über Schwellenwert, nutze Profil mit niedrigstem min_relevance_score"
         );
 
-        let confidence = ConfidenceMetrics::Uncalibrated {
+        let confidence = ConfidenceMetrics {
+            score_lower: None,
+            score_upper: None,
+            calibrated: false,
+            quantile_threshold: q_threshold,
             non_conformity_score: 0.0,
             selection_margin: 1.0,
-            quantile_threshold: q_threshold,
         };
 
         Ok((fallback_idx, fallback_profile.clone(), confidence))

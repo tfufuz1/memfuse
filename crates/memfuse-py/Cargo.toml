@@ -1,9 +1,9 @@
 [package]
 name = "memfuse-py"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-rust-version.workspace = true
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.89"
 description = "Python bindings for MemFuse using PyO3"
 
 [lib]
@@ -23,11 +23,22 @@ tokio = { version = "1", features = ["full"] }
 # RECHTFERTIGUNG: Als High-Level Python-Bridge (Layer 3) benötigt memfuse-py Zugriff
 # auf die orchestrating Facade in memfuse-db. Dies ist eine beabsichtigte Ausnahme
 # vom Sovereign Core DAG, da Bindings per Definition an der Grenze zum Nutzer stehen.
-memfuse-core = { workspace = true }
-memfuse-db = { workspace = true }
-flatbuffers = { workspace = true }
-serde_json.workspace = true
+memfuse-core = { path = "../memfuse-core" }
+memfuse-db = { path = "../memfuse-db" }
+flatbuffers = "24.3"
+serde_json = "1"
 pythonize = "0.24"
 
 [features]
 default = []
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = true
+overflow-checks = true

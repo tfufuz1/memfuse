@@ -849,15 +849,23 @@ mod tests {
 
         let chunk = &compacted.retained_chunks[0];
         let meta = chunk.metadata.as_ref().expect("Metadata must be present");
-        let prov_val = meta.get("provenance").expect("Provenance must be present in metadata");
+        let prov_val = meta
+            .get("provenance")
+            .expect("Provenance must be present in metadata");
         let prov: ProvenanceRecord =
             serde_json::from_value(prov_val.clone()).expect("Valid ProvenanceRecord");
 
         assert_eq!(prov.index_type.as_deref(), Some("consolidated"));
         assert_eq!(prov.signal_ranks.len(), 3);
-        assert!(prov.signal_ranks.contains_key(&DocId::new(10).0.to_string()));
-        assert!(prov.signal_ranks.contains_key(&DocId::new(20).0.to_string()));
-        assert!(prov.signal_ranks.contains_key(&DocId::new(30).0.to_string()));
+        assert!(prov
+            .signal_ranks
+            .contains_key(&DocId::new(10).0.to_string()));
+        assert!(prov
+            .signal_ranks
+            .contains_key(&DocId::new(20).0.to_string()));
+        assert!(prov
+            .signal_ranks
+            .contains_key(&DocId::new(30).0.to_string()));
     }
 
     #[test]

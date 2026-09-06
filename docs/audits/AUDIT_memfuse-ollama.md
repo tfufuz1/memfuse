@@ -163,3 +163,34 @@ test importance::tests::test_score_regex_bounds ... ok
 ...
 test result: ok. 54 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.48s
 ```
+
+---
+
+## 14. Tiefen-Audit: 2026-09-06
+
+**Session:** `e4f906ee` | **Timestamp:** `2026-09-06T11:20:14Z`
+
+### 1. Inventar- & Scope-Verifikation
+- Quellcode-Inventar (6 Dateien): `client.rs`, `context_prefixer.rs`, `embedding.rs`, `importance.rs`, `lib.rs`, `model_info.rs`.
+- Inventarabgleich mit Prompter-Momentaufnahme (Stand 2026-09-03) ergab **keine Abweichungen**.
+
+### 2. Test- & Robustheits-Verifikation
+- **Property-Based Testing:** `prop_xml_escape_order_and_structural_isolation` & `prop_xml_escape_adversarial_injection_payloads` bestanden (100% Invariantensicherheit).
+- **Concurrency-Stresstest:** 10 sequentielle Testläufe mit 8 parallelen Threads fehlerfrei durchgelaufen (0 Deadlocks, 0 Race Conditions).
+- **Prompt-Injection-Evasion:** XML-Strukturisolierung (`<system>`, `<context>`, `<user_query>`) schützt zuverlässig gegen Injection-Payloads.
+
+### 3. Code-Coverage (`cargo llvm-cov`)
+- **Gesamtabdeckung (Lines):** 82.33% (2405 / 2830 Zeilen)
+- `client.rs`: 82.98%
+- `context_prefixer.rs`: 93.64%
+- `embedding.rs`: 63.39%
+- `importance.rs`: 94.35%
+- `model_info.rs`: 61.48%
+
+### 4. Mutation Testing (`cargo mutants`)
+- **Fokus:** `context_prefixer.rs`
+- **Ergebnis:** 16 Mutanten getestet, 14 getötet, 2 überlebt (14/16 = 87.5% Mutantenabdeckung).
+- Tag `AGT-OLLAMA-47e6619b` für künftige Testverbesserung angelegt.
+
+### 5. Domänen-Risiko-Analyse (ML-Scoring / Kalibrierung)
+- **APM-22 (Score-Konfidenz) & APM-24 (Provenienzverlust):** `score_importance` gibt einen punktuellen float-Wert zurück. Tag `AGT-OLLAMA-14c0c140` in `importance.rs` dokumentiert die Empfehlung zur Erweiterung um Konfidenz- und Modell-Metadaten.

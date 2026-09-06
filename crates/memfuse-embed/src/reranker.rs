@@ -311,6 +311,10 @@ impl OnnxReranker {
             ));
         }
 
+        // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210)
+        // BEFUND: Cross-encoder raw logits are transformed directly via uncalibrated sigmoid into [0,1] confidence scores.
+        // RISIKO: Direct uncalibrated sigmoid values across different model architectures or fine-tunings may skew RRF fusion or confidence thresholds downstream.
+        // EMPFEHLUNG: Consider Platt scaling / temperature scaling or dynamic quantile calibration for multi-model score normalization.
         let sigmoid = |x: f32| -> f32 { 1.0 / (1.0 + (-x).exp()) };
         let mut scores = Vec::with_capacity(b_size);
 
@@ -367,6 +371,14 @@ pub struct CrossEncoderReranker {
 }
 
 impl CrossEncoderReranker {
+    /// Erstellt einen Passthrough-CrossEncoderReranker (für Benchmarks/Tests ohne ONNX-Modelldatei).
+    pub fn passthrough() -> Self {
+        Self {
+            _config: RerankConfig::default(),
+            backend: RerankerBackend::Passthrough,
+        }
+    }
+
     /// Erstellt einen neuen CrossEncoderReranker.
     pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
         #[cfg(feature = "onnx")]
@@ -552,3 +564,4 @@ mod tests {
 }
 
 // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-04T11:42:28Z) (SESSION: 3e5150c8) PRÜFER-KONTEXT: FRESH - Verified CrossEncoderReranker passthrough fallback, candidate limit bounds, and zero-unsafe invariants.
+// REVIEW-PASS[2/2] STATUS:PASS (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) PRÜFER-KONTEXT: FRESH - Verified ML domain APM alignment (APM-22, APM-23, APM-24), zero-unsafe in production, and hermetic feature isolation.

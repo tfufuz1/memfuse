@@ -36,6 +36,10 @@ fn get_score_regex() -> Result<&'static Regex> {
 /// - Returns `MemFuseError::InvalidInput` if `chunk_text` is empty.
 /// - Returns `MemFuseError::Internal` if LLM response cannot be parsed as a float.
 /// - Returns `MemFuseError::Storage` / `MemFuseError::Io` on network or Ollama API errors.
+// AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee)
+// BEFUND: score_importance liefert ein punktuelles Rating (0.0 - 1.0) ohne Konfidenzintervall oder Modell-Provenienz.
+// RISIKO: Bei Modellwechsel oder unparsbaren Antworten (Fallback 0.5) gehen Drift-Signale und Modellzuordnungen verloren.
+// EMPFEHLUNG: Kalibrierungs-Metadaten und Modell-ID in der ImportanceScore-Rückgabe verankern.
 pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result<ImportanceScore> {
     if chunk_text.trim().is_empty() {
         return Err(MemFuseError::InvalidInput(

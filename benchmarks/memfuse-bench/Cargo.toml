@@ -1,0 +1,25 @@
+[package]
+name = "memfuse-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy"
+
+[dependencies]
+memfuse-core = { workspace = true }
+memfuse-store = { workspace = true }
+memfuse-index = { workspace = true }
+memfuse-text = { workspace = true }
+memfuse-graph = { workspace = true }
+memfuse-db = { workspace = true, features = ["reranking"] }
+memfuse-embed = { workspace = true, features = ["onnx"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []

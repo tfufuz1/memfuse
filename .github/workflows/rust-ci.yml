@@ -32,7 +32,7 @@ jobs:
       - run: cargo clippy --locked --all-targets --workspace --exclude memfuse-tauri -- -D warnings
 
   feature-matrix:
-    name: Feature Matrix Checks (memfuse-embed)
+    name: Feature Matrix Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +42,23 @@ jobs:
         run: cargo check --locked -p memfuse-embed --no-default-features
       - name: Check memfuse-embed --all-features
         run: cargo check --locked -p memfuse-embed --all-features
+      - name: Check memfuse-db --features reranking
+        run: cargo check --locked -p memfuse-db --features reranking
+
+  maturin-dry-run:
+    name: PyPI Wheel Build Check (Maturin Dry-Run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install maturin
+        run: pip install maturin
+      - name: Dry-run maturin build
+        run: maturin build --manifest-path crates/memfuse-py/Cargo.toml
 
   test:
     name: Test Suite (Triple-Run Flaky-Detection)
@@ -56,6 +73,17 @@ jobs:
         run: cargo test --locked --workspace --exclude memfuse-tauri
       - name: Run 3 (Flaky-Check Final)
         run: cargo test --locked --workspace --exclude memfuse-tauri
+
+  clippy-py:
+    name: Clippy (memfuse-py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --manifest-path crates/memfuse-py/Cargo.toml --all-targets -- -D warnings
 
   clippy-tauri-lib:
     name: Clippy (memfuse-tauri --lib)

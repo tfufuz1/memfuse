@@ -290,6 +290,9 @@ fn check_subinterpreter_guard(py: Python<'_>) -> PyResult<()> {
     Ok(())
 }
 
+// AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286)
+// BEFUND: Resolved by decoupling `crates/memfuse-py` into an independent workspace with its own `[profile.release]` setting `panic = "unwind"`.
+// BEHOBEN: `std::panic::catch_unwind` in `run_blocking_ffi` intercepts panics in release builds, converting them into catchable PyRuntimeError exceptions without aborting CPython via SIGABRT.
 /// Safely executes a blocking closure across FFI boundaries with thread state release
 /// and panic containment to guarantee no Rust panic propagates across FFI boundaries into Python.
 fn run_blocking_ffi<F, R>(py: Python<'_>, f: F) -> PyResult<R>

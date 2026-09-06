@@ -948,6 +948,130 @@ async fn test_stdio_transport_stability() {
 }
 
 #[tokio::test]
+async fn test_e2e_stdio_demo_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = tempfile::TempDir::new()?;
+    let bin_path = env!("CARGO_BIN_EXE_memfuse-mcp-server");
+
+    let mut child = tokio::process::Command::new(bin_path)
+        .arg("--db-path")
+        .arg(tmp.path())
+        .arg("--allow-write")
+        .arg("--provider")
+        .arg("mock")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Failed to capture stdin")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture stdout")?;
+    let mut reader = tokio::io::BufReader::new(stdout);
+
+    // 1. Send tools/list request (matching README demo step 2)
+    let req_list = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+    let mut line1 = String::new();
+    let mut bytes1 = serde_json::to_vec(&req_list)?;
+    bytes1.push(b'\n');
+    stdin.write_all(&bytes1).await?;
+    stdin.flush().await?;
+    reader.read_line(&mut line1).await?;
+
+    let resp_list: serde_json::Value = serde_json::from_str(&line1)?;
+    assert_eq!(resp_list["jsonrpc"], "2.0");
+    assert_eq!(resp_list["id"], 1);
+    let tools = resp_list["result"]["tools"]
+        .as_array()
+        .ok_or_else(|| "expected tools array")?;
+    let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+    assert!(tool_names.contains(&"memfuse_search"));
+    assert!(tool_names.contains(&"memfuse_insert"));
+    assert!(tool_names.contains(&"memfuse_get"));
+    assert!(tool_names.contains(&"memfuse_collections"));
+
+    // 2. Send memfuse_insert request (matching README demo step 3)
+    let req_insert = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "memfuse_insert",
+            "arguments": {
+                "id": "doc-firma-01",
+                "text": "Unsere Urlaubsregelung sieht 30 Tage Jahresurlaub vor. Urlaubsanträge müssen 2 Wochen im Voraus eingereicht werden.",
+                "collection": "hr_docs"
+            }
+        }
+    });
+    let mut line2 = String::new();
+    let mut bytes2 = serde_json::to_vec(&req_insert)?;
+    bytes2.push(b'\n');
+    stdin.write_all(&bytes2).await?;
+    stdin.flush().await?;
+    reader.read_line(&mut line2).await?;
+
+    let resp_insert: serde_json::Value = serde_json::from_str(&line2)?;
+    assert_eq!(resp_insert["jsonrpc"], "2.0");
+    assert_eq!(resp_insert["id"], 2);
+    let insert_text = resp_insert["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "expected insert text")?;
+    let insert_payload: serde_json::Value = serde_json::from_str(insert_text)?;
+    assert_eq!(insert_payload["ok"], true);
+    assert_eq!(insert_payload["id"], "doc-firma-01");
+    assert_eq!(insert_payload["collection"], "hr_docs");
+
+    // 3. Send memfuse_search request (matching README demo step 4)
+    let req_search = json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "memfuse_search",
+            "arguments": {
+                "query": "Wie viele Tage Urlaub stehen mir zu?",
+                "collection": "hr_docs",
+                "k": 1
+            }
+        }
+    });
+    let mut line3 = String::new();
+    let mut bytes3 = serde_json::to_vec(&req_search)?;
+    bytes3.push(b'\n');
+    stdin.write_all(&bytes3).await?;
+    stdin.flush().await?;
+    reader.read_line(&mut line3).await?;
+
+    let resp_search: serde_json::Value = serde_json::from_str(&line3)?;
+    assert_eq!(resp_search["jsonrpc"], "2.0");
+    assert_eq!(resp_search["id"], 3);
+    let search_text = resp_search["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "expected search text")?;
+    let search_results: serde_json::Value = serde_json::from_str(search_text)?;
+    let arr = search_results
+        .as_array()
+        .ok_or_else(|| "expected search results array")?;
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["id"], "doc-firma-01");
+    assert_eq!(arr[0]["content_provenance"], "retrieved_untrusted_data");
+
+    drop(stdin);
+    let _ = child.wait().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_max_rpc_bytes_overflow_and_line_draining_stdio() {
     let tmp = tempfile::TempDir::new().expect("temp dir");
     let bin_path = env!("CARGO_BIN_EXE_memfuse-mcp-server");
