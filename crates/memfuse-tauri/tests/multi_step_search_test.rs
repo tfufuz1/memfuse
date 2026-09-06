@@ -8,9 +8,7 @@
 //! for real-world agent queries is a follow-up evaluation task, not part of this integration test.
 
 use memfuse_core::Result;
-use memfuse_db::{
-    MultiStepConfig, MultiStepEngine, QueryRewriter, SearchResult,
-};
+use memfuse_db::{MultiStepConfig, MultiStepEngine, QueryRewriter, SearchResult};
 use std::sync::Arc;
 use tempfile::tempdir;
 
