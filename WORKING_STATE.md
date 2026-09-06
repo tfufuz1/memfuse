@@ -8,8 +8,12 @@
 
 Stand letzter Prüfung: 2026-09-06
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **2 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
+| `crates/memfuse-ollama/src/importance.rs` | 39 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 
 
 ## Crate-Inventar & Status
@@ -20,17 +24,17 @@ Ergebnis: **0 offene Tags**
 | `memfuse-crypto` | 0 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
-| `memfuse-graph` | 1 | 7290 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 7292 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11900 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 15237 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 15245 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19859 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 2 | 19867 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-ollama` | 3 | 3341 | 🟢 Clean |  |
+| `memfuse-ollama` | 3 | 3349 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 3335 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 5172 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 5170 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

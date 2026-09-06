@@ -96,6 +96,10 @@ impl ContextPrefixEngine {
 
         // Dokument kürzen um LLM-Kontextfenster nicht zu sprengen
         let doc_excerpt = truncate_chars(&escaped_doc, self.config.max_document_chars);
+        // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee)
+        // BEFUND: cargo-mutants identifiziert ungenügende Testabdeckung bei der char-Approximationsberechnung (* 4).
+        // RISIKO: Mutation von Multiplikation zu Addition bleibt in bestehenden Unit-Tests unbemerkt.
+        // EMPFEHLUNG: Gezielten Boundary-Test für max_prefix_tokens in context_prefixer tests ergänzen.
         let max_p = self.config.max_prefix_tokens * 4; // Chars-Approximation
 
         let prompt = format!(
