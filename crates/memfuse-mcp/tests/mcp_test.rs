@@ -945,8 +945,8 @@ async fn test_stdio_transport_stability() {
 }
 
 #[tokio::test]
-async fn test_e2e_stdio_demo_flow() {
-    let tmp = tempfile::TempDir::new().expect("temp dir");
+async fn test_e2e_stdio_demo_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = tempfile::TempDir::new()?;
     let bin_path = env!("CARGO_BIN_EXE_memfuse-mcp-server");
 
     let mut child = tokio::process::Command::new(bin_path)
@@ -958,11 +958,16 @@ async fn test_e2e_stdio_demo_flow() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("spawn memfuse-mcp-server binary");
+        .spawn()?;
 
-    let mut stdin = child.stdin.take().expect("stdin handle");
-    let stdout = child.stdout.take().expect("stdout handle");
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Failed to capture stdin")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture stdout")?;
     let mut reader = tokio::io::BufReader::new(stdout);
 
     // 1. Send tools/list request (matching README demo step 2)
@@ -973,16 +978,18 @@ async fn test_e2e_stdio_demo_flow() {
         "params": {}
     });
     let mut line1 = String::new();
-    let mut bytes1 = serde_json::to_vec(&req_list).unwrap();
+    let mut bytes1 = serde_json::to_vec(&req_list)?;
     bytes1.push(b'\n');
-    stdin.write_all(&bytes1).await.unwrap();
-    stdin.flush().await.unwrap();
-    reader.read_line(&mut line1).await.unwrap();
+    stdin.write_all(&bytes1).await?;
+    stdin.flush().await?;
+    reader.read_line(&mut line1).await?;
 
-    let resp_list: serde_json::Value = serde_json::from_str(&line1).expect("parse list resp");
+    let resp_list: serde_json::Value = serde_json::from_str(&line1)?;
     assert_eq!(resp_list["jsonrpc"], "2.0");
     assert_eq!(resp_list["id"], 1);
-    let tools = resp_list["result"]["tools"].as_array().expect("tools array");
+    let tools = resp_list["result"]["tools"]
+        .as_array()
+        .ok_or_else(|| "expected tools array")?;
     let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(tool_names.contains(&"memfuse_search"));
     assert!(tool_names.contains(&"memfuse_insert"));
@@ -1004,17 +1011,19 @@ async fn test_e2e_stdio_demo_flow() {
         }
     });
     let mut line2 = String::new();
-    let mut bytes2 = serde_json::to_vec(&req_insert).unwrap();
+    let mut bytes2 = serde_json::to_vec(&req_insert)?;
     bytes2.push(b'\n');
-    stdin.write_all(&bytes2).await.unwrap();
-    stdin.flush().await.unwrap();
-    reader.read_line(&mut line2).await.unwrap();
+    stdin.write_all(&bytes2).await?;
+    stdin.flush().await?;
+    reader.read_line(&mut line2).await?;
 
-    let resp_insert: serde_json::Value = serde_json::from_str(&line2).expect("parse insert resp");
+    let resp_insert: serde_json::Value = serde_json::from_str(&line2)?;
     assert_eq!(resp_insert["jsonrpc"], "2.0");
     assert_eq!(resp_insert["id"], 2);
-    let insert_text = resp_insert["result"]["content"][0]["text"].as_str().unwrap();
-    let insert_payload: serde_json::Value = serde_json::from_str(insert_text).unwrap();
+    let insert_text = resp_insert["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "expected insert text")?;
+    let insert_payload: serde_json::Value = serde_json::from_str(insert_text)?;
     assert_eq!(insert_payload["ok"], true);
     assert_eq!(insert_payload["id"], "doc-firma-01");
     assert_eq!(insert_payload["collection"], "hr_docs");
@@ -1034,24 +1043,29 @@ async fn test_e2e_stdio_demo_flow() {
         }
     });
     let mut line3 = String::new();
-    let mut bytes3 = serde_json::to_vec(&req_search).unwrap();
+    let mut bytes3 = serde_json::to_vec(&req_search)?;
     bytes3.push(b'\n');
-    stdin.write_all(&bytes3).await.unwrap();
-    stdin.flush().await.unwrap();
-    reader.read_line(&mut line3).await.unwrap();
+    stdin.write_all(&bytes3).await?;
+    stdin.flush().await?;
+    reader.read_line(&mut line3).await?;
 
-    let resp_search: serde_json::Value = serde_json::from_str(&line3).expect("parse search resp");
+    let resp_search: serde_json::Value = serde_json::from_str(&line3)?;
     assert_eq!(resp_search["jsonrpc"], "2.0");
     assert_eq!(resp_search["id"], 3);
-    let search_text = resp_search["result"]["content"][0]["text"].as_str().unwrap();
-    let search_results: serde_json::Value = serde_json::from_str(search_text).unwrap();
-    let arr = search_results.as_array().expect("search results array");
+    let search_text = resp_search["result"]["content"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "expected search text")?;
+    let search_results: serde_json::Value = serde_json::from_str(search_text)?;
+    let arr = search_results
+        .as_array()
+        .ok_or_else(|| "expected search results array")?;
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["id"], "doc-firma-01");
     assert_eq!(arr[0]["content_provenance"], "retrieved_untrusted_data");
 
     drop(stdin);
     let _ = child.wait().await;
+    Ok(())
 }
 
 #[tokio::test]
