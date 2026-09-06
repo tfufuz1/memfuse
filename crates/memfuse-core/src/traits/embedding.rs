@@ -109,3 +109,56 @@ impl EmbeddingProvider for MockEmbedder {
         self.dim
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::TextEmbeddingEngine;
+
+    #[tokio::test]
+    async fn test_embedding_error_display() {
+        let err1 = EmbeddingError::Unavailable("server down".into());
+        assert_eq!(err1.to_string(), "Provider unavailable: server down");
+
+        let err2 = EmbeddingError::ComputationFailed("OOM".into());
+        assert_eq!(err2.to_string(), "Embedding failed: OOM");
+
+        let err3 = EmbeddingError::InputTooLong { len: 100, max: 50 };
+        assert_eq!(err3.to_string(), "Input too long: 100 tokens, max 50");
+    }
+
+    #[tokio::test]
+    async fn test_mock_embedder_methods() -> Result<(), Box<dyn std::error::Error>> {
+        let embedder = MockEmbedder::new(4);
+        assert_eq!(embedder.provider_name(), "mock");
+        assert_eq!(embedder.embedding_dim(), 4);
+
+        let vec = EmbeddingProvider::embed(&embedder, "test").await?;
+        assert_eq!(vec, vec![0.0, 0.0, 0.0, 0.0]);
+
+        let fixed = vec![1.0, 2.0, 3.0];
+        let fixed_embedder = MockEmbedder::with_fixed_output(fixed.clone());
+        assert_eq!(fixed_embedder.embedding_dim(), 3);
+        let res = EmbeddingProvider::embed(&fixed_embedder, "hello").await?;
+        assert_eq!(res, fixed);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_embedding_provider_batch_and_blanket_trait(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let embedder = MockEmbedder::new(2);
+        let batch_res = EmbeddingProvider::embed_batch(&embedder, &["a", "b"]).await?;
+        assert_eq!(batch_res.len(), 2);
+        assert_eq!(batch_res[0], vec![0.0, 0.0]);
+
+        // Test blanket impl of TextEmbeddingEngine for MockEmbedder
+        let engine: &dyn TextEmbeddingEngine = &embedder;
+        let single = engine.embed("text").await?;
+        assert_eq!(single, vec![0.0, 0.0]);
+
+        let batch = engine.embed_batch(&["x", "y"]).await?;
+        assert_eq!(batch.len(), 2);
+        Ok(())
+    }
+}
