@@ -125,6 +125,30 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Stores a key-value pair as part of a transaction.
     fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>>;
 
+    /// Atomically writes `value` under `key` within the given transaction ONLY IF no value
+    /// currently exists for `key` (as observed within the same transaction's read view and uncommitted staged state).
+    ///
+    /// # Semantics & MVCC Guarantees
+    /// Checks key existence against the storage engine's current committed snapshot and any uncommitted
+    /// staged writes for `tx_id`. If the key exists and is non-tombstoned, no write is staged and `Ok(false)`
+    /// is returned. The transaction is NOT automatically rolled back by this call.
+    /// If the key does not exist (or is tombstoned), `value` is staged for `tx_id` and `Ok(true)` is returned.
+    fn put_if_absent<'a>(
+        &'a self,
+        tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move {
+            if self.get(key).await?.is_some() {
+                Ok(false)
+            } else {
+                self.put(tx_id, key, value).await?;
+                Ok(true)
+            }
+        })
+    }
+
     /// Stores multiple key-value pairs as part of a transaction.
     fn put_batch<'a>(
         &'a self,
