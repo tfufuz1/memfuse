@@ -11,8 +11,7 @@
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
 use crate::context::{validate_node_id, validate_task_id};
-use memfuse_core::{
-    Result, StorageEngine};
+use memfuse_core::{BoxFuture, Result, StorageEngine};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};

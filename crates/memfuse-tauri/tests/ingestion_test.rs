@@ -15,8 +15,10 @@ impl TextEmbeddingEngine for DummyEmbedder {
         })
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.1; self.dim]; texts.len()])
+    fn embed_batch<'a>(&'a self, texts: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<Vec<f32>>>> {
+        Box::pin(async move {
+            Ok(vec![vec![0.1; self.dim]; texts.len()])
+        })
     }
 }
 

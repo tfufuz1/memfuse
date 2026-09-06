@@ -43,20 +43,19 @@ impl OllamaBridge {
     }
 }
 
-#[async_trait::async_trait]
 impl memfuse_core::TextEmbeddingEngine for OllamaBridge {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.client.embed(&self.model, text).await
+    fn embed<'a>(&'a self, text: &'a str) -> memfuse_core::BoxFuture<'a, Result<Vec<f32>>> {
+        Box::pin(async move { self.client.embed(&self.model, text).await })
     }
 }
 
-#[async_trait::async_trait]
 impl memfuse_db::QueryRewriter for OllamaBridge {
-    async fn rewrite(
-        &self,
-        original_query: &str,
-        current_results: &[memfuse_db::SearchResult],
-    ) -> Result<Vec<String>> {
+    fn rewrite<'a>(
+        &'a self,
+        original_query: &'a str,
+        current_results: &'a [memfuse_db::SearchResult],
+    ) -> memfuse_core::BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
         let prompt = format!(
             "Die ursprüngliche Suchanfrage war: \"{}\".\n\
              Bisher wurden {} Ergebnisse gefunden, die möglicherweise unvollständig sind.\n\
@@ -85,5 +84,6 @@ impl memfuse_db::QueryRewriter for OllamaBridge {
             }
             Err(e) => Err(e),
         }
+        })
     }
 }

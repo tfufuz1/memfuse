@@ -547,14 +547,15 @@ mod tests {
         fail_on_even: bool,
     }
 
-    #[async_trait::async_trait]
     impl TextEmbeddingEngine for MockEmbedder {
-        async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-            if self.fail_on_even && text.contains("Even") {
-                Err(MemFuseError::Internal("Mock embedder failure".into()))
-            } else {
-                Ok(vec![0.1; 768])
-            }
+        fn embed<'a>(&'a self, text: &'a str) -> memfuse_core::BoxFuture<'a, Result<Vec<f32>>> {
+            Box::pin(async move {
+                if self.fail_on_even && text.contains("Even") {
+                    Err(MemFuseError::Internal("Mock embedder failure".into()))
+                } else {
+                    Ok(vec![0.1; 768])
+                }
+            })
         }
     }
 

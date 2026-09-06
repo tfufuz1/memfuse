@@ -9,21 +9,21 @@
 
 use memfuse_core::Result;
 use memfuse_db::{MultiStepConfig, MultiStepEngine, QueryRewriter, SearchResult};
-use std::sync::Arc;
 use tempfile::tempdir;
 
 struct DummyTestRewriter {
     sub_queries: Vec<String>,
 }
 
-#[async_trait::async_trait]
 impl QueryRewriter for DummyTestRewriter {
-    async fn rewrite(
-        &self,
-        _original_query: &str,
-        _current_results: &[SearchResult],
-    ) -> Result<Vec<String>> {
-        Ok(self.sub_queries.clone())
+    fn rewrite<'a>(
+        &'a self,
+        _original_query: &'a str,
+        _current_results: &'a [SearchResult],
+    ) -> memfuse_core::BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
+            Ok(self.sub_queries.clone())
+        })
     }
 }
 
