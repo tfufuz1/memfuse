@@ -102,7 +102,7 @@ impl EmbeddingProvider for MockEmbedder {
         Ok(self
             .fixed_output
             .clone()
-            .unwrap_or_else(|| vec![0.0f32; self.dim]))
+            .unwrap_or_else(|| vec![0.1f32; self.dim]))
     }
 
     fn embedding_dim(&self) -> usize {
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(embedder.embedding_dim(), 4);
 
         let vec = EmbeddingProvider::embed(&embedder, "test").await?;
-        assert_eq!(vec, vec![0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(vec, vec![0.1, 0.1, 0.1, 0.1]);
 
         let fixed = vec![1.0, 2.0, 3.0];
         let fixed_embedder = MockEmbedder::with_fixed_output(fixed.clone());
@@ -150,12 +150,12 @@ mod tests {
         let embedder = MockEmbedder::new(2);
         let batch_res = EmbeddingProvider::embed_batch(&embedder, &["a", "b"]).await?;
         assert_eq!(batch_res.len(), 2);
-        assert_eq!(batch_res[0], vec![0.0, 0.0]);
+        assert_eq!(batch_res[0], vec![0.1, 0.1]);
 
         // Test blanket impl of TextEmbeddingEngine for MockEmbedder
         let engine: &dyn TextEmbeddingEngine = &embedder;
         let single = engine.embed("text").await?;
-        assert_eq!(single, vec![0.0, 0.0]);
+        assert_eq!(single, vec![0.1, 0.1]);
 
         let batch = engine.embed_batch(&["x", "y"]).await?;
         assert_eq!(batch.len(), 2);
