@@ -14,7 +14,6 @@
 // OPTIMIERUNG: itoa::Buffer + Vec::with_capacity + doc_len_cache
 
 use crate::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
-use async_trait::async_trait;
 use memfuse_core::{
     DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TextIndex, TextIndexStats, TxId,
     MAX_SEARCH_K,
@@ -593,7 +592,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
     }
 }
 
-#[async_trait]
 impl<S: StorageEngine> TextIndex for InvertedIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         let results = self.search_bm25(query, k, None).await?;
@@ -687,7 +685,6 @@ impl<S: StorageEngine> BM25MorphIndex<S> {
     }
 }
 
-#[async_trait]
 impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
     async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>> {
         // Here we could apply the morphological tokenizer to the query tokens
@@ -732,6 +729,7 @@ impl<S: StorageEngine> TextIndex for BM25MorphIndex<S> {
 
 #[cfg(test)]
 mod tests {
+    use memfuse_core::BoxFuture;
     use super::Language;
 
     use super::*;
@@ -757,12 +755,15 @@ mod tests {
         }
     }
 
-    #[async_trait]
+
     impl StorageEngine for MockStorage {
-        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move {
             self.get_at_seq(key, u64::MAX).await
+            })
         }
-        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+        fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             let seq = self
                 .next_seq
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -777,8 +778,10 @@ mod tests {
                 .or_default()
                 .push(key.to_vec());
             Ok(())
+            })
         }
-        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+        fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             // Write a "tombstone" (empty value) with new sequence
             let seq = self
                 .next_seq
@@ -798,12 +801,16 @@ mod tests {
                 .or_default()
                 .push(key.to_vec());
             Ok(())
+            })
         }
-        async fn commit(&self, tx_id: TxId) -> Result<()> {
+        fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.staged.write().remove(&tx_id);
             Ok(())
+            })
         }
-        async fn rollback(&self, tx_id: TxId) -> Result<()> {
+        fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             let keys = self.staged.write().remove(&tx_id).unwrap_or_default();
             let mut store = self.store.write();
             for k in keys {
@@ -815,11 +822,15 @@ mod tests {
                 }
             }
             Ok(())
+            })
         }
-        async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+        fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             Ok(())
+            })
         }
-        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+        fn get_at_seq<'a>(&'a self, key: &'a [u8], seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move {
             let store = self.store.read();
             if let Some(versions) = store.get(key) {
                 // Find latest version <= seq
@@ -834,48 +845,66 @@ mod tests {
                 }
             }
             Ok(None)
+            })
         }
-        async fn last_seq_no(&self) -> Result<u64> {
+        fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+            Box::pin(async move {
             // Return latest generated seq
             Ok(self
                 .next_seq
                 .load(std::sync::atomic::Ordering::SeqCst)
                 .saturating_sub(1))
+            })
         }
-        async fn last_tx_id(&self) -> Result<TxId> {
+        fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+            Box::pin(async move {
             Ok(TxId::new(0))
+            })
         }
-        async fn flush(&self) -> Result<()> {
+        fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             Ok(())
+            })
         }
-        async fn stats(&self) -> Result<memfuse_core::StorageStats> {
+        fn stats<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::StorageStats>> {
+            Box::pin(async move {
             Ok(memfuse_core::StorageStats {
                 num_segments: 0,
                 total_size_bytes: 0,
                 memtable_size_bytes: 0,
             })
+            })
         }
-        async fn pin_checkpoint(&self, _id: u64) -> Result<()> {
+        fn pin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             Ok(())
+            })
         }
-        async fn unpin_checkpoint(&self, _id: u64) -> Result<()> {
+        fn unpin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             Ok(())
+            })
         }
-        async fn scan(
-            &self,
-            _start: std::ops::Bound<&[u8]>,
-            _end: std::ops::Bound<&[u8]>,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        fn scan<'a>(
+            &'a self,
+            _start: std::ops::Bound<&'a [u8]>,
+            _end: std::ops::Bound<&'a [u8]>,
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
             Ok(Vec::new())
+            })
         }
-        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
             self.scan_prefix_at(prefix, u64::MAX).await
+            })
         }
-        async fn scan_prefix_at(
-            &self,
-            prefix: &[u8],
+        fn scan_prefix_at<'a>(
+            &'a self,
+            prefix: &'a [u8],
             seq_no: u64,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
             let store = self.store.read();
             let mut results = Vec::new();
             for (k, versions) in store.iter() {
@@ -892,6 +921,7 @@ mod tests {
                 }
             }
             Ok(results)
+            })
         }
     }
 

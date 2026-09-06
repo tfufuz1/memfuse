@@ -1,7 +1,8 @@
-//! E2E integration tests for memfuse-agent.
-//!
-//! Validates the full stack: MemFuse DB → Collection → OrchestratorEngine → Graph walk.
+// E2E integration tests for memfuse-agent.
+//
+// Validates the full stack: MemFuse DB → Collection → OrchestratorEngine → Graph walk.
 
+use memfuse_core::BoxFuture;
 use memfuse_agent::step::StepResult;
 use memfuse_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
 use memfuse_core::TokenBudget;
@@ -13,22 +14,23 @@ use tempfile::TempDir;
 /// A trivial tool that echoes its input and consumes 5 tokens.
 struct EchoTool;
 
-#[async_trait::async_trait]
 impl memfuse_agent::AgentTool for EchoTool {
     fn name(&self) -> &str {
         "echo_tool"
     }
 
-    async fn execute(
-        &self,
-        _ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
         input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        Ok(StepResult {
-            node_id: "echo".to_string(),
-            output: json!({"echo": input}),
-            tokens_consumed: 5,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            Ok(StepResult {
+                node_id: "echo".to_string(),
+                output: json!({"echo": input}),
+                tokens_consumed: 5,
+                next_edge: None,
+            })
         })
     }
 }

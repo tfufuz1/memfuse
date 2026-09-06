@@ -5,7 +5,8 @@
 
 use memfuse_agent::step::{AgentTool, StepResult};
 use memfuse_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
-use memfuse_core::{Result, TokenBudget};
+use memfuse_core::{
+    BoxFuture, Result, TokenBudget};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -25,18 +26,23 @@ impl HeavyTokenTool {
     }
 }
 
-#[async_trait::async_trait]
 impl AgentTool for HeavyTokenTool {
     fn name(&self) -> &str {
         &self.name
     }
 
-    async fn execute(&self, _ctx: &AgentContext, _input: serde_json::Value) -> Result<StepResult> {
-        Ok(StepResult {
-            node_id: self.name.clone(),
-            output: serde_json::json!({"status": "done"}),
-            tokens_consumed: self.tokens,
-            next_edge: None,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
+        _input: serde_json::Value,
+    ) -> BoxFuture<'a, Result<StepResult>> {
+        Box::pin(async move {
+            Ok(StepResult {
+                node_id: self.name.clone(),
+                output: serde_json::json!({"status": "done"}),
+                tokens_consumed: self.tokens,
+                next_edge: None,
+            })
         })
     }
 }
@@ -109,8 +115,7 @@ async fn test_estimated_cost_pre_execution_check() -> Result<()> {
         executed: Arc<std::sync::atomic::AtomicBool>,
     }
 
-    #[async_trait::async_trait]
-    impl AgentTool for ExpensiveTool {
+        impl AgentTool for ExpensiveTool {
         fn name(&self) -> &str {
             "expensive_tool"
         }
@@ -119,18 +124,20 @@ async fn test_estimated_cost_pre_execution_check() -> Result<()> {
             100
         }
 
-        async fn execute(
-            &self,
-            _ctx: &AgentContext,
+        fn execute<'a>(
+            &'a self,
+            _ctx: &'a AgentContext,
             _input: serde_json::Value,
-        ) -> Result<StepResult> {
-            self.executed
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-            Ok(StepResult {
-                node_id: "expensive_tool".to_string(),
-                output: serde_json::json!({"status": "done"}),
-                tokens_consumed: 100,
-                next_edge: None,
+        ) -> BoxFuture<'a, Result<StepResult>> {
+            Box::pin(async move {
+                self.executed
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(StepResult {
+                    node_id: "expensive_tool".to_string(),
+                    output: serde_json::json!({"status": "done"}),
+                    tokens_consumed: 100,
+                    next_edge: None,
+                })
             })
         }
     }
@@ -166,7 +173,6 @@ struct SideEffectTool {
     side_effects: Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[async_trait::async_trait]
 impl AgentTool for SideEffectTool {
     fn name(&self) -> &str {
         "side_effect_tool"
@@ -176,16 +182,22 @@ impl AgentTool for SideEffectTool {
         self.cost
     }
 
-    async fn execute(&self, _ctx: &AgentContext, _input: serde_json::Value) -> Result<StepResult> {
-        // Execute side effect
-        tokio::task::yield_now().await;
-        self.side_effects
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(StepResult {
-            node_id: "side_effect_tool".to_string(),
-            output: serde_json::json!({"status": "done"}),
-            tokens_consumed: self.cost,
-            next_edge: None,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
+        _input: serde_json::Value,
+    ) -> BoxFuture<'a, Result<StepResult>> {
+        Box::pin(async move {
+            // Execute side effect
+            tokio::task::yield_now().await;
+            self.side_effects
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(StepResult {
+                node_id: "side_effect_tool".to_string(),
+                output: serde_json::json!({"status": "done"}),
+                tokens_consumed: self.cost,
+                next_edge: None,
+            })
         })
     }
 }

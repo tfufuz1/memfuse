@@ -20,7 +20,8 @@ pub mod tx;
 #[allow(deprecated)]
 mod tests;
 
-use memfuse_core::{DocId, Result, StorageEngine, TextEmbeddingEngine, TxId, VectorIndex};
+use memfuse_core::{
+    DocId, Result, StorageEngine, TextEmbeddingEngine, TxId, VectorIndex};
 use memfuse_graph::CsrGraph;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;

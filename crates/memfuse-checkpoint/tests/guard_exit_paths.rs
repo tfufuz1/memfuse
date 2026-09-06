@@ -1,7 +1,8 @@
 #![allow(clippy::await_holding_lock, deprecated)]
 
 use memfuse_checkpoint::{CheckpointGuard, PersistentCheckpointStore};
-use memfuse_core::{MemFuseError, Result, StorageEngine, StorageStats, TxId};
+use memfuse_core::{
+    BoxFuture, MemFuseError, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -26,82 +27,130 @@ impl TrackingMockStorage {
     }
 }
 
-#[async_trait::async_trait]
 impl StorageEngine for TrackingMockStorage {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         Ok(self.data.lock().get(key).cloned())
+
+        })
     }
-    async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+    fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.data.lock().insert(key.to_vec(), value.to_vec());
         let mut last = self.last_tx.lock();
         if tx_id > *last {
             *last = tx_id;
         }
         Ok(())
+
+        })
     }
-    async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
+    fn delete<'a>(&'a self, _tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.data.lock().remove(key);
         Ok(())
+
+        })
     }
-    async fn commit(&self, tx_id: TxId) -> Result<()> {
+    fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         let mut last = self.last_tx.lock();
         if tx_id > *last {
             *last = tx_id;
         }
         Ok(())
+
+        })
     }
-    async fn rollback(&self, _tx_id: TxId) -> Result<()> {
+    fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+
+        })
     }
-    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+    fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.rolled_back_txs.lock().push(tx_id);
         Ok(())
+
+        })
     }
-    async fn flush(&self) -> Result<()> {
+    fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+
+        })
     }
-    async fn stats(&self) -> Result<StorageStats> {
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+        Box::pin(async move {
         Ok(StorageStats {
             num_segments: 0,
             total_size_bytes: 0,
             memtable_size_bytes: 0,
         })
+
+        })
     }
-    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+    fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.pinned.lock().insert(seq_no);
         Ok(())
+
+        })
     }
-    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+    fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.pinned.lock().remove(&seq_no);
         Ok(())
+
+        })
     }
-    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+    fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         self.get(key).await
+
+        })
     }
-    async fn last_seq_no(&self) -> Result<u64> {
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
         Ok(0)
+
+        })
     }
-    async fn last_tx_id(&self) -> Result<TxId> {
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+        Box::pin(async move {
         Ok(*self.last_tx.lock())
+
+        })
     }
-    async fn scan(
-        &self,
-        _start: std::ops::Bound<&[u8]>,
-        _end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         Ok(Vec::new())
+
+        })
     }
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         let data = self.data.lock();
         Ok(data
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
+
+        })
     }
-    async fn scan_prefix_at(&self, prefix: &[u8], _seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix_at<'a>(&'a self, prefix: &'a [u8], _seq_no: u64) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         self.scan_prefix(prefix).await
+
+        })
     }
+
 }
 
 /// Scenario A: Normal Drop after explicit .commit() call — verify final state is persisted / no rollback triggered.

@@ -1,3 +1,4 @@
+use memfuse_core::BoxFuture;
 use memfuse_agent::{
     AgentContext, AgentTool, NodeType, OrchestratorEngine, StateGraph, StepResult,
 };
@@ -9,41 +10,43 @@ use tempfile::TempDir;
 
 struct FailingTool;
 
-#[async_trait::async_trait]
 impl AgentTool for FailingTool {
     fn name(&self) -> &str {
         "failing_tool"
     }
 
-    async fn execute(
-        &self,
-        _ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
         _input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        Err(memfuse_core::MemFuseError::Internal(
-            "Simulated failure".to_string(),
-        ))
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            Err(memfuse_core::MemFuseError::Internal(
+                "Simulated failure".to_string(),
+            ))
+        })
     }
 }
 
 struct SuccessTool;
 
-#[async_trait::async_trait]
 impl AgentTool for SuccessTool {
     fn name(&self) -> &str {
         "success_tool"
     }
 
-    async fn execute(
-        &self,
-        ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a AgentContext,
         _input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        Ok(StepResult {
-            node_id: ctx.current_node.clone(),
-            output: json!({"status": "success"}),
-            tokens_consumed: 1,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            Ok(StepResult {
+                node_id: ctx.current_node.clone(),
+                output: json!({"status": "success"}),
+                tokens_consumed: 1,
+                next_edge: None,
+            })
         })
     }
 }

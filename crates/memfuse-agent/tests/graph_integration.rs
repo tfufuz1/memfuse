@@ -1,3 +1,4 @@
+use memfuse_core::BoxFuture;
 use memfuse_agent::{NodeType, StateGraph};
 
 #[test]

@@ -1,4 +1,6 @@
-//! Comprehensive tests verifying boundary input validations and resource limits.
+// Comprehensive tests verifying boundary input validations and resource limits.
+
+use memfuse_core::BoxFuture;
 
 use memfuse_agent::context::{validate_node_id, validate_task_id};
 use memfuse_agent::{
@@ -13,22 +15,23 @@ struct DummyTool {
     name: String,
 }
 
-#[async_trait::async_trait]
 impl AgentTool for DummyTool {
     fn name(&self) -> &str {
         &self.name
     }
 
-    async fn execute(
-        &self,
-        _ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
         _input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        Ok(StepResult {
-            node_id: "test".to_string(),
-            output: serde_json::Value::Null,
-            tokens_consumed: 0,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            Ok(StepResult {
+                node_id: "test".to_string(),
+                output: serde_json::Value::Null,
+                tokens_consumed: 0,
+                next_edge: None,
+            })
         })
     }
 }

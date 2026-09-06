@@ -1,3 +1,4 @@
+use memfuse_core::BoxFuture;
 use memfuse_agent::context::{AgentContext, AgentStatus};
 use memfuse_agent::engine::OrchestratorEngine;
 use memfuse_agent::graph::{NodeType, StateGraph};

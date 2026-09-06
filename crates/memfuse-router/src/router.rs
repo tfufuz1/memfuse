@@ -297,17 +297,20 @@ impl RouterEngine {
             // 4. Construct ConfidenceMetrics from updated lock state
             let metrics = cal.get(&selected_profile.name).map(|state| {
                 let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
-                ConfidenceMetrics {
-                    score_lower: if calibrated {
-                        Some(best_score * (1.0 - state.conformal.alpha))
-                    } else {
-                        None
-                    },
-                    score_upper: None,
-                    calibrated,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                    non_conformity_score: non_conformity,
-                    selection_margin: confidence_ratio as f32,
+                if calibrated {
+                    ConfidenceMetrics::Calibrated {
+                        score_lower: best_score * (1.0 - state.conformal.alpha),
+                        score_upper: best_score * (1.0 + state.conformal.alpha),
+                        quantile_threshold: state.conformal.quantile_threshold,
+                        non_conformity_score: non_conformity,
+                        selection_margin: confidence_ratio as f32,
+                    }
+                } else {
+                    ConfidenceMetrics::Uncalibrated {
+                        non_conformity_score: non_conformity,
+                        selection_margin: confidence_ratio as f32,
+                        quantile_threshold: state.conformal.quantile_threshold,
+                    }
                 }
             });
 

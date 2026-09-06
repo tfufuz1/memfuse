@@ -10,8 +10,8 @@
 //! Provides `EventSource` trait and concrete implementations (`PollingDocumentEventSource`, `VecEventSource`).
 
 use crate::context::MAX_ID_LEN;
-use async_trait::async_trait;
-use memfuse_core::{MemFuseError, Result, StorageEngine};
+use memfuse_core::{
+    BoxFuture, MemFuseError, Result, StorageEngine};
 use memfuse_db::Collection;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -74,11 +74,10 @@ impl BackgroundEvent {
 }
 
 /// Dynamic event source delivering continuous background events.
-#[async_trait]
 pub trait EventSource: Send + Sync {
     /// Fetches the next available background event.
     /// Returns `Ok(Some(event))` when an event is ready, `Ok(None)` if no event is currently pending.
-    async fn next_event(&mut self) -> Result<Option<BackgroundEvent>>;
+    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, Result<Option<BackgroundEvent>>>;
 
     /// Indicates whether the event source is permanently exhausted.
     /// Always returns `false` for continuous/always-on producers.
@@ -90,8 +89,10 @@ pub trait EventSource: Send + Sync {
     /// Default implementation: short sleep fallback for polling-based sources.
     /// Implementations with push notifications (e.g. `tokio::sync::Notify`) should override
     /// this method to wait on signals instead of polling.
-    async fn wait_for_event(&self) {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+    fn wait_for_event<'a>(&'a self) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        })
     }
 }
 
@@ -137,66 +138,69 @@ impl<S: StorageEngine> PollingDocumentEventSource<S> {
     }
 }
 
-#[async_trait]
 impl<S: StorageEngine> EventSource for PollingDocumentEventSource<S> {
-    async fn next_event(&mut self) -> Result<Option<BackgroundEvent>> {
-        if let Some(event) = self.pending_events.pop_front() {
-            return Ok(Some(event));
-        }
-
-        let current_seq = self.collection.storage().last_seq_no().await?;
-
-        if current_seq > self.last_seen_seq {
-            let prefix = self.collection.user_key_prefix();
-            let current_entries = self
-                .collection
-                .storage()
-                .scan_prefix_at(&prefix, current_seq)
-                .await?;
-
-            let previous_entries: HashMap<Vec<u8>, Vec<u8>> = if self.last_seen_seq > 0 {
-                self.collection
-                    .storage()
-                    .scan_prefix_at(&prefix, self.last_seen_seq)
-                    .await?
-                    .into_iter()
-                    .collect()
-            } else {
-                HashMap::new()
-            };
-
-            for (key, val) in current_entries {
-                if previous_entries.get(&key) != Some(&val) {
-                    if self.pending_events.len() >= MAX_EVENT_SOURCE_CAPACITY {
-                        tracing::warn!("PollingDocumentEventSource: Pending events queue capacity limit ({}) reached, dropping remaining events", MAX_EVENT_SOURCE_CAPACITY);
-                        break;
-                    }
-                    let payload = serde_json::from_slice(&val).unwrap_or_else(|_| {
-                        serde_json::json!({
-                            "raw": String::from_utf8_lossy(&val),
-                            "key": String::from_utf8_lossy(&key)
-                        })
-                    });
-                    self.pending_events.push_back(BackgroundEvent {
-                        payload,
-                        source: format!("collection:{}", self.collection.name()),
-                        observed_at_seq: current_seq,
-                    });
-                }
-            }
-
-            self.last_seen_seq = current_seq;
-
+    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, Result<Option<BackgroundEvent>>> {
+        Box::pin(async move {
             if let Some(event) = self.pending_events.pop_front() {
                 return Ok(Some(event));
             }
-        }
 
-        Ok(None)
+            let current_seq = self.collection.storage().last_seq_no().await?;
+
+            if current_seq > self.last_seen_seq {
+                let prefix = self.collection.user_key_prefix();
+                let current_entries = self
+                    .collection
+                    .storage()
+                    .scan_prefix_at(&prefix, current_seq)
+                    .await?;
+
+                let previous_entries: HashMap<Vec<u8>, Vec<u8>> = if self.last_seen_seq > 0 {
+                    self.collection
+                        .storage()
+                        .scan_prefix_at(&prefix, self.last_seen_seq)
+                        .await?
+                        .into_iter()
+                        .collect()
+                } else {
+                    HashMap::new()
+                };
+
+                for (key, val) in current_entries {
+                    if previous_entries.get(&key) != Some(&val) {
+                        if self.pending_events.len() >= MAX_EVENT_SOURCE_CAPACITY {
+                            tracing::warn!("PollingDocumentEventSource: Pending events queue capacity limit ({}) reached, dropping remaining events", MAX_EVENT_SOURCE_CAPACITY);
+                            break;
+                        }
+                        let payload = serde_json::from_slice(&val).unwrap_or_else(|_| {
+                            serde_json::json!({
+                                "raw": String::from_utf8_lossy(&val),
+                                "key": String::from_utf8_lossy(&key)
+                            })
+                        });
+                        self.pending_events.push_back(BackgroundEvent {
+                            payload,
+                            source: format!("collection:{}", self.collection.name()),
+                            observed_at_seq: current_seq,
+                        });
+                    }
+                }
+
+                self.last_seen_seq = current_seq;
+
+                if let Some(event) = self.pending_events.pop_front() {
+                    return Ok(Some(event));
+                }
+            }
+
+            Ok(None)
+        })
     }
 
-    async fn wait_for_event(&self) {
-        tokio::time::sleep(self.poll_interval).await;
+    fn wait_for_event<'a>(&'a self) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            tokio::time::sleep(self.poll_interval).await;
+        })
     }
 }
 
@@ -221,10 +225,11 @@ impl VecEventSource {
     }
 }
 
-#[async_trait]
 impl EventSource for VecEventSource {
-    async fn next_event(&mut self) -> Result<Option<BackgroundEvent>> {
-        Ok(self.events.pop_front())
+    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, Result<Option<BackgroundEvent>>> {
+        Box::pin(async move {
+            Ok(self.events.pop_front())
+        })
     }
 
     fn is_exhausted(&self) -> bool {

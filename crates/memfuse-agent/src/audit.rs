@@ -11,7 +11,8 @@
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
 use crate::context::{validate_node_id, validate_task_id};
-use memfuse_core::{Result, StorageEngine};
+use memfuse_core::{
+    Result, StorageEngine};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -173,6 +174,7 @@ pub async fn migrate_legacy_audit_entries<S: StorageEngine, V: memfuse_core::Vec
 
 #[cfg(test)]
 mod tests {
+    use memfuse_core::BoxFuture;
     use super::*;
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
@@ -404,79 +406,105 @@ impl InMemoryStorageEngine {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-#[async_trait::async_trait]
 impl StorageEngine for InMemoryStorageEngine {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         let guard = self
             .data
             .lock()
             .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         Ok(guard.get(key).cloned())
+        })
     }
 
-    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+    fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         self.get(key).await
+        })
     }
 
-    async fn put(&self, _tx_id: memfuse_core::TxId, key: &[u8], value: &[u8]) -> Result<()> {
+    fn put<'a>(&'a self, _tx_id: memfuse_core::TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         let mut guard = self
             .data
             .lock()
             .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         guard.insert(key.to_vec(), value.to_vec());
         Ok(())
+        })
     }
 
-    async fn delete(&self, _tx_id: memfuse_core::TxId, key: &[u8]) -> Result<()> {
+    fn delete<'a>(&'a self, _tx_id: memfuse_core::TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         let mut guard = self
             .data
             .lock()
             .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
         guard.remove(key);
         Ok(())
+        })
     }
 
-    async fn commit(&self, _tx_id: memfuse_core::TxId) -> Result<()> {
+    fn commit<'a>(&'a self, _tx_id: memfuse_core::TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
 
-    async fn rollback(&self, _tx_id: memfuse_core::TxId) -> Result<()> {
+    fn rollback<'a>(&'a self, _tx_id: memfuse_core::TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
 
-    async fn rollback_to_tx(&self, _tx_id: memfuse_core::TxId) -> Result<()> {
+    fn rollback_to_tx<'a>(&'a self, _tx_id: memfuse_core::TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
 
-    async fn flush(&self) -> Result<()> {
+    fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
 
-    async fn stats(&self) -> Result<memfuse_core::StorageStats> {
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::StorageStats>> {
+        Box::pin(async move {
         Ok(memfuse_core::StorageStats {
             num_segments: 0,
             total_size_bytes: 0,
             memtable_size_bytes: 0,
         })
+        })
     }
 
-    async fn last_seq_no(&self) -> Result<u64> {
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
         Ok(0)
+        })
     }
 
-    async fn last_tx_id(&self) -> Result<memfuse_core::TxId> {
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::TxId>> {
+        Box::pin(async move {
         Ok(memfuse_core::TxId::new(0))
+        })
     }
 
-    async fn pin_checkpoint(&self, _seq_no: u64) -> Result<()> {
+    fn pin_checkpoint<'a>(&'a self, _seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
 
-    async fn unpin_checkpoint(&self, _seq_no: u64) -> Result<()> {
+    fn unpin_checkpoint<'a>(&'a self, _seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
 
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         let guard = self
             .data
             .lock()
@@ -487,13 +515,15 @@ impl StorageEngine for InMemoryStorageEngine {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         Ok(entries)
+        })
     }
 
-    async fn scan(
-        &self,
-        start: std::ops::Bound<&[u8]>,
-        end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         let guard = self
             .data
             .lock()
@@ -517,5 +547,6 @@ impl StorageEngine for InMemoryStorageEngine {
             .collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(entries)
+        })
     }
 }

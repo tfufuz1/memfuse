@@ -1,6 +1,6 @@
-//! Integration tests for continuous event loop and event sources.
+// Integration tests for continuous event loop and event sources.
 
-use async_trait::async_trait;
+use memfuse_core::BoxFuture;
 use memfuse_agent::event_source::{
     BackgroundEvent, EventSource, PollingDocumentEventSource, VecEventSource,
 };
@@ -17,27 +17,28 @@ use tokio_util::sync::CancellationToken;
 /// Tool that captures the current event and returns a result.
 struct TelemetryTool;
 
-#[async_trait]
 impl memfuse_agent::AgentTool for TelemetryTool {
     fn name(&self) -> &str {
         "telemetry_tool"
     }
 
-    async fn execute(
-        &self,
-        ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a AgentContext,
         _input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        let latest = ctx
-            .memory
-            .get("latest_event")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        Ok(StepResult {
-            node_id: "telemetry_step".to_string(),
-            output: json!({"processed_event": latest}),
-            tokens_consumed: 2,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            let latest = ctx
+                .memory
+                .get("latest_event")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            Ok(StepResult {
+                node_id: "telemetry_step".to_string(),
+                output: json!({"processed_event": latest}),
+                tokens_consumed: 2,
+                next_edge: None,
+            })
         })
     }
 }
@@ -230,16 +231,17 @@ struct CustomStreamSource {
     idx: usize,
 }
 
-#[async_trait]
 impl EventSource for CustomStreamSource {
-    async fn next_event(&mut self) -> memfuse_core::Result<Option<BackgroundEvent>> {
-        if self.idx < self.stream.len() {
-            let item = self.stream[self.idx].clone();
-            self.idx += 1;
-            Ok(Some(item))
-        } else {
-            Ok(None)
-        }
+    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, memfuse_core::Result<Option<BackgroundEvent>>> {
+        Box::pin(async move {
+            if self.idx < self.stream.len() {
+                let item = self.stream[self.idx].clone();
+                self.idx += 1;
+                Ok(Some(item))
+            } else {
+                Ok(None)
+            }
+        })
     }
 
     fn is_exhausted(&self) -> bool {
@@ -290,18 +292,21 @@ struct NotifyEventSource {
     exhausted: bool,
 }
 
-#[async_trait]
 impl EventSource for NotifyEventSource {
-    async fn next_event(&mut self) -> memfuse_core::Result<Option<BackgroundEvent>> {
-        Ok(self.events.pop_front())
+    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, memfuse_core::Result<Option<BackgroundEvent>>> {
+        Box::pin(async move {
+            Ok(self.events.pop_front())
+        })
     }
 
     fn is_exhausted(&self) -> bool {
         self.exhausted && self.events.is_empty()
     }
 
-    async fn wait_for_event(&self) {
-        self.notify.notified().await;
+    fn wait_for_event<'a>(&'a self) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            self.notify.notified().await;
+        })
     }
 }
 

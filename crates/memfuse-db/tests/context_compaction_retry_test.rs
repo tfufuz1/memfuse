@@ -1,4 +1,5 @@
-use memfuse_core::{DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine};
+use memfuse_core::{
+    BoxFuture, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine};
 use memfuse_db::{
     cleanup_orphaned_consolidation_intents, ContextCompactor, MemFuse, MemFuseConfig,
 };
@@ -17,11 +18,16 @@ impl MockLlmGenerator {
     }
 }
 
-#[async_trait::async_trait]
 impl LlmTextGenerator for MockLlmGenerator {
-    async fn generate(&self, _prompt: &str) -> Result<String> {
+    fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+
+        Box::pin(async move {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         Ok("Mock LLM summary of source documents".to_string())
+
+
+        })
+
     }
 }
 
@@ -32,23 +38,24 @@ struct MutatingLlmGenerator<S: StorageEngine, V: memfuse_core::VectorIndex> {
     call_count: Arc<AtomicUsize>,
 }
 
-#[async_trait::async_trait]
 impl<S: StorageEngine, V: memfuse_core::VectorIndex> LlmTextGenerator
     for MutatingLlmGenerator<S, V>
 {
-    async fn generate(&self, _prompt: &str) -> Result<String> {
-        let count = self.call_count.fetch_add(1, Ordering::SeqCst);
-        if count < self.fail_attempts {
-            // Mutate document to force OCC conflict
-            self.collection
-                .update(
-                    &self.doc_to_mutate,
-                    &[0.0, 1.0, 0.0, 0.0],
-                    Some(serde_json::json!({"text": format!("Mutated version {}", count)})),
-                )
-                .await?;
-        }
-        Ok("Summary after mutation".to_string())
+    fn generate<'a>(&'a self, _prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            let count = self.call_count.fetch_add(1, Ordering::SeqCst);
+            if count < self.fail_attempts {
+                // Mutate document to force OCC conflict
+                self.collection
+                    .update(
+                        &self.doc_to_mutate,
+                        &[0.0, 1.0, 0.0, 0.0],
+                        Some(serde_json::json!({"text": format!("Mutated version {}", count)})),
+                    )
+                    .await?;
+            }
+            Ok("Summary after mutation".to_string())
+        })
     }
 }
 

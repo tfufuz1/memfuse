@@ -17,21 +17,24 @@
 use crate::types::*;
 use crate::Result;
 use ahash::AHashMap;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
+
+/// Type alias for a pinned, heap-allocated `Future` that is `Send` and dyn-compatible.
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Trait and mock definitions for text embedding providers and LLMs.
 pub mod embedding;
 pub use embedding::*;
 
 /// Abstract contract for generating consistent checkpoints.
-#[async_trait]
 pub trait Checkpoint: Send + Sync + 'static {
     /// Takes a deterministic snapshot of the current state.
-    async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState>;
+    fn take_snapshot<'a>(&'a self, tx: TxId) -> BoxFuture<'a, Result<WorkflowState>>;
 
     /// Rolls the state back to the specified checkpoint.
-    async fn restore(&self, state: &WorkflowState) -> Result<()>;
+    fn restore<'a>(&'a self, state: &'a WorkflowState) -> BoxFuture<'a, Result<()>>;
 }
 
 /// Unified Checkpoint Coordinator Trait combining named, TxId+seq_no-scoped, persistent checkpoints.
@@ -43,29 +46,28 @@ pub trait Checkpoint: Send + Sync + 'static {
 ///
 /// # DECISION-REF
 /// ADR-011 — Consolidated Checkpoint Subsystem Architecture (resolving AGT-STORE-002).
-#[async_trait]
 pub trait CheckpointCoordinator: Send + Sync + 'static {
     /// Type representing checkpoint metadata.
     type Meta: Send + Sync;
 
     /// Creates and persists a new named checkpoint.
-    async fn create_named_checkpoint(
+    fn create_named_checkpoint(
         &self,
         name: &str,
         collection_id: &str,
         seq_no: u64,
         tx_id: TxId,
         metadata: serde_json::Value,
-    ) -> Result<Self::Meta>;
+    ) -> impl Future<Output = Result<Self::Meta>> + Send;
 
     /// Restores database state to a named checkpoint.
-    async fn restore_named_checkpoint(&self, name: &str) -> Result<Self::Meta>;
+    fn restore_named_checkpoint(&self, name: &str) -> impl Future<Output = Result<Self::Meta>> + Send;
 
     /// Deletes a checkpoint by name.
-    async fn drop_named_checkpoint(&self, name: &str) -> Result<()>;
+    fn drop_named_checkpoint(&self, name: &str) -> impl Future<Output = Result<()>> + Send;
 
     /// Lists all active checkpoints.
-    async fn list_named_checkpoints(&self) -> Result<Vec<Self::Meta>>;
+    fn list_named_checkpoints(&self) -> impl Future<Output = Result<Vec<Self::Meta>>> + Send;
 }
 
 /// Represents a point-in-time view of the database.
@@ -108,33 +110,37 @@ pub struct StorageStats {
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
 ///
 /// # Dyn-Kompatibilität
-/// Dieser Trait ist durch `#[async_trait]` vtable-kompatibel (dyn-safe).
-/// Alle `async fn`-Methoden werden zu `Pin<Box<dyn Future<...>>>` desugared.
+/// Dieser Trait ist durch explizite `BoxFuture`-Rückgabetypen vtable-kompatibel (dyn-safe).
 ///
 /// # Invarianten
 /// - Implementierungen DÜRFEN NICHT paniken (Zero-Panic Doctrine)
 /// - Alle Fehler werden über `crate::Result<T>` propagiert
-#[async_trait]
 pub trait StorageEngine: Send + Sync + 'static {
     /// Retrieves a value by key.
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>>;
 
     /// Retrieves a value by key at a specific sequence number (MVCC).
-    async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>>;
+    fn get_at_seq<'a>(&'a self, key: &'a [u8], seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>>;
 
     /// Stores a key-value pair as part of a transaction.
-    async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()>;
+    fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>>;
 
     /// Stores multiple key-value pairs as part of a transaction.
-    async fn put_batch(&self, tx_id: TxId, entries: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
-        for (key, value) in entries {
-            self.put(tx_id, key, value).await?;
-        }
-        Ok(())
+    fn put_batch<'a>(
+        &'a self,
+        tx_id: TxId,
+        entries: &'a [(Vec<u8>, Vec<u8>)],
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            for (key, value) in entries {
+                self.put(tx_id, key, value).await?;
+            }
+            Ok(())
+        })
     }
 
     /// Deletes a key as part of a transaction.
-    async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()>;
+    fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>>;
 
     /// Deletes multiple keys as a single logical batch operation.
     ///
@@ -143,13 +149,15 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Implementors handling large batches (e.g. from `delete_prefix()`)
     /// SHOULD override this with a true batch operation (single lock
     /// acquisition) to avoid per-key lock contention.
-    async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
-        let mut deleted = 0u64;
-        for key in keys {
-            self.delete(tx_id, &key).await?;
-            deleted += 1;
-        }
-        Ok(deleted)
+    fn delete_many<'a>(&'a self, tx_id: TxId, keys: Vec<Vec<u8>>) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
+            let mut deleted = 0u64;
+            for key in keys {
+                self.delete(tx_id, &key).await?;
+                deleted += 1;
+            }
+            Ok(deleted)
+        })
     }
 
     /// Deletes all key-value pairs whose key starts with `prefix` as part of a transaction.
@@ -159,88 +167,93 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Default implementation scans all matching keys, then delegates to [`delete_many`][Self::delete_many].
     /// Concrete implementors handling batch mutations should override `delete_many()` or `delete_prefix()`
     /// with a true batch operation to avoid per-key lock overhead.
-    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
-        let matching_keys: Vec<Vec<u8>> = self
-            .scan_prefix(prefix)
-            .await?
-            .into_iter()
-            .map(|(key, _)| key)
-            .collect();
-        self.delete_many(tx_id, matching_keys).await
+    fn delete_prefix<'a>(&'a self, tx_id: TxId, prefix: &'a [u8]) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
+            let matching_keys: Vec<Vec<u8>> = self
+                .scan_prefix(prefix)
+                .await?
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect();
+            self.delete_many(tx_id, matching_keys).await
+        })
     }
 
     /// Commits a transaction — makes writes visible.
-    async fn commit(&self, tx_id: TxId) -> Result<()>;
+    fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>>;
 
     /// Rolls back a transaction — discards staged uncommitted writes for the given ID.
     ///
     /// **Note**: `rollback()` only discards entries currently in the staging buffer.
     /// Once `commit()` has completed, `rollback()` on that `tx_id` is a no-op.
     /// Undoing a physically committed transaction requires a compensating transaction or `rollback_to_tx()`.
-    async fn rollback(&self, tx_id: TxId) -> Result<()>;
+    fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>>;
 
     /// Rolls back the entire storage state to a specific transaction ID.
     ///
     /// **Implementor contract**: MUST physically revert all state beyond `tx_id`.
-    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
+    fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>>;
 
     /// Flushes the memtable to disk.
-    async fn flush(&self) -> Result<()>;
+    fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>>;
 
     /// Returns storage statistics.
-    async fn stats(&self) -> Result<StorageStats>;
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>>;
 
     /// Returns the last sequence number committed to storage.
-    async fn last_seq_no(&self) -> Result<u64>;
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>>;
 
     /// Returns the last transaction ID committed to storage.
-    async fn last_tx_id(&self) -> Result<TxId>;
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>>;
 
     /// Pins a checkpoint for the given sequence number.
-    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()>;
+    fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>>;
 
     /// Unpins a checkpoint for the given sequence number.
-    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()>;
+    fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>>;
 
     /// Scans a range of keys with the given prefix.
     ///
     /// Für neue Call-Sites bevorzuge `scan_prefix_bounded` — lädt unbegrenzt und kann bei großen Prefixes das Speicherbudget sprengen.
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
+    fn scan_prefix<'a>(&'a self, prefix: &'a [u8])
+        -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 
     /// Wie `scan_prefix`, aber mit hartem Limit auf die Anzahl zurückgegebener Einträge und
     /// optionalem Cursor (letzter zurückgegebener Key aus dem vorherigen Aufruf) für Pagination.
     /// Bevorzugt gegenüber `scan_prefix` für jeden neuen Call-Site, der potenziell große
     /// Ergebnismengen erwarten muss.
-    async fn scan_prefix_bounded(
-        &self,
-        prefix: &[u8],
+    fn scan_prefix_bounded<'a>(
+        &'a self,
+        prefix: &'a [u8],
         limit: usize,
-        cursor: Option<&[u8]>,
-    ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)> {
-        let all = self.scan_prefix(prefix).await?;
-        let mut results = Vec::new();
-        let mut skipping = cursor.is_some();
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            let all = self.scan_prefix(prefix).await?;
+            let mut results = Vec::new();
+            let mut skipping = cursor.is_some();
 
-        for (k, v) in all {
-            if skipping {
-                if k.as_slice() == cursor.unwrap() {
-                    skipping = false;
+            for (k, v) in all {
+                if skipping {
+                    if k.as_slice() == cursor.unwrap() {
+                        skipping = false;
+                    }
+                    continue;
                 }
-                continue;
+                results.push((k, v));
+                if results.len() == limit {
+                    break;
+                }
             }
-            results.push((k, v));
-            if results.len() == limit {
-                break;
-            }
-        }
 
-        let next_cursor = if results.len() == limit {
-            results.last().map(|(k, _)| k.clone())
-        } else {
-            None
-        };
+            let next_cursor = if results.len() == limit {
+                results.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
 
-        Ok((results, next_cursor))
+            Ok((results, next_cursor))
+        })
     }
 
     /// Scans keys with a prefix, returning only entries visible at or before `seq_no`.
@@ -252,23 +265,25 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"snapshot_read_at"` if snapshot-isolated prefix scan is not implemented.
     /// Tested via `capability_coverage` test module.
-    async fn scan_prefix_at(
-        &self,
-        _prefix: &[u8],
+    fn scan_prefix_at<'a>(
+        &'a self,
+        _prefix: &'a [u8],
         _seq_no: u64,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "snapshot_read_at",
-            "Storage-level snapshot-isolated prefix scan (scan_prefix_at) is not supported by default — implementors must override this method to guarantee MVCC snapshot isolation.",
-        ))
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "snapshot_read_at",
+                "Storage-level snapshot-isolated prefix scan (scan_prefix_at) is not supported by default — implementors must override this method to guarantee MVCC snapshot isolation.",
+            ))
+        })
     }
 
     /// Scans a range of keys between `start` and `end` bounds.
-    async fn scan(
-        &self,
-        start: std::ops::Bound<&[u8]>,
-        end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
+    fn scan<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 }
 
 // INVARIANT: Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
@@ -277,27 +292,28 @@ pub trait StorageEngine: Send + Sync + 'static {
 /// Vector Index Trait — abstrahiert die HNSW-Vektorsuche.
 ///
 /// # Dyn-Kompatibilität
-/// Durch `#[async_trait]` vtable-kompatibel.
-#[async_trait]
+/// Verwendet native `async fn` (AFIT) für statischen Dispatch.
 pub trait VectorIndex: Send + Sync + 'static {
     /// Inserts a vector with an associated document ID.
-    async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()>;
+    fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> impl Future<Output = Result<()>> + Send;
 
     /// Returns all active (non-deleted) document IDs in the index.
-    async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
-        Ok(Vec::new())
+    fn all_doc_ids(&self) -> impl Future<Output = Result<Vec<DocId>>> + Send {
+        async { Ok(Vec::new()) }
     }
 
     /// Inserts multiple vectors with associated document IDs.
-    async fn insert_batch(&self, tx: TxId, vectors: &[(DocId, &[f32])]) -> Result<()> {
-        for (id, embedding) in vectors {
-            self.insert(tx, *id, embedding).await?;
+    fn insert_batch(&self, tx: TxId, vectors: &[(DocId, &[f32])]) -> impl Future<Output = Result<()>> + Send {
+        async move {
+            for (id, embedding) in vectors {
+                self.insert(tx, *id, embedding).await?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 
     /// Searches for the k nearest neighbors to a query vector.
-    async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>>;
+    fn search(&self, query: &[f32], k: usize) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send;
 
     /// Searches for the k nearest neighbors to a query vector at a specific sequence number.
     ///
@@ -305,16 +321,19 @@ pub trait VectorIndex: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"snapshot_read_at"` if snapshot-isolated vector search is not implemented.
     /// Tested via `capability_coverage` test module.
-    async fn search_at(
+    fn search_at(
         &self,
-        _query: &[f32],
-        _k: usize,
-        _seq_no: u64,
-    ) -> Result<Vec<ScoredDocument>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "snapshot_read_at",
-            "Vector search snapshot isolation (search_at) is not supported by default — tracked in ADR-024",
-        ))
+        query: &[f32],
+        k: usize,
+        seq_no: u64,
+    ) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send {
+        async move {
+            let _ = (query, k, seq_no);
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "snapshot_read_at",
+                "Vector search snapshot isolation (search_at) is not supported by default — tracked in ADR-024",
+            ))
+        }
     }
 
     /// Searches with an optional filter predicate.
@@ -330,46 +349,48 @@ pub trait VectorIndex: Send + Sync + 'static {
     ///
     /// # Note
     /// This default exists solely for backward compatibility.
-    async fn search_filtered(
+    fn search_filtered(
         &self,
         query: &[f32],
         k: usize,
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
-    ) -> Result<Vec<ScoredDocument>> {
-        if filter.is_some() {
-            return Err(crate::error::MemFuseError::capability_unsupported(
-                "vector_filtered_search",
-                "Filtered vector search is not supported by default for this vector engine",
-            ));
+    ) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send {
+        async move {
+            if filter.is_some() {
+                return Err(crate::error::MemFuseError::capability_unsupported(
+                    "vector_filtered_search",
+                    "Filtered vector search is not supported by default for this vector engine",
+                ));
+            }
+            self.search(query, k).await
         }
-        self.search(query, k).await
     }
 
     /// Deletes a vector by its document ID.
-    async fn delete(&self, tx: TxId, id: DocId) -> Result<()>;
+    fn delete(&self, tx: TxId, id: DocId) -> impl Future<Output = Result<()>> + Send;
 
     /// Commits a transaction.
-    async fn commit(&self, tx: TxId) -> Result<()>;
+    fn commit(&self, tx: TxId) -> impl Future<Output = Result<()>> + Send;
 
     /// Rolls back a transaction.
-    async fn rollback(&self, tx: TxId) -> Result<()>;
+    fn rollback(&self, tx: TxId) -> impl Future<Output = Result<()>> + Send;
 
     /// Rolls back the entire index state to a specific transaction ID.
-    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
+    fn rollback_to_tx(&self, tx_id: TxId) -> impl Future<Output = Result<()>> + Send;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<TxId>;
+    fn last_tx_id(&self) -> impl Future<Output = Result<TxId>> + Send;
 
     /// Returns the number of vectors in the index.
-    async fn len(&self) -> usize;
+    fn len(&self) -> impl Future<Output = usize> + Send;
 
     /// Returns true if the index is empty.
-    async fn is_empty(&self) -> bool {
-        self.len().await == 0
+    fn is_empty(&self) -> impl Future<Output = bool> + Send {
+        async { self.len().await == 0 }
     }
 
     /// Returns index statistics.
-    async fn stats(&self) -> Result<VectorIndexStats>;
+    fn stats(&self) -> impl Future<Output = Result<VectorIndexStats>> + Send;
 
     /// Returns true if the index requires a background rebuild (e.g. due to tombstone accumulation).
     fn is_rebuild_required(&self) -> bool {
@@ -381,27 +402,27 @@ pub trait VectorIndex: Send + Sync + 'static {
 }
 
 /// Text embedding engine trait.
-#[async_trait]
 pub trait TextEmbeddingEngine: Send + Sync + 'static {
     /// Generates an embedding for the given text.
-    async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+    fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>>;
 
     /// Generates embeddings for multiple texts.
     /// Default implementation executes sequential calls.
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let mut results = Vec::with_capacity(texts.len());
-        for text in texts {
-            results.push(self.embed(text).await?);
-        }
-        Ok(results)
+    fn embed_batch<'a>(&'a self, texts: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<Vec<f32>>>> {
+        Box::pin(async move {
+            let mut results = Vec::with_capacity(texts.len());
+            for text in texts {
+                results.push(self.embed(text).await?);
+            }
+            Ok(results)
+        })
     }
 }
 
 /// Abstract contract for LLM text generation (summarization, importance evaluation, query expansion).
-#[async_trait]
 pub trait LlmTextGenerator: Send + Sync + 'static {
     /// Generates text for a given prompt using an LLM.
-    async fn generate(&self, prompt: &str) -> Result<String>;
+    fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>>;
 }
 
 /// Statistics for a text index.
@@ -418,11 +439,10 @@ pub struct TextIndexStats {
 /// Text-Index Trait — abstrahiert BM25/Inverted-Index-Operationen.
 ///
 /// # Dyn-Kompatibilität
-/// Durch `#[async_trait]` vtable-kompatibel.
-#[async_trait]
+/// Verwendet native `async fn` (AFIT) für statischen Dispatch.
 pub trait TextIndex: Send + Sync + 'static {
     /// Searches for documents matching the query.
-    async fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>;
+    fn search(&self, query: &str, k: usize) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send;
 
     /// Searches for documents matching the query at a specific sequence number.
     ///
@@ -430,46 +450,49 @@ pub trait TextIndex: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"snapshot_read_at"` if snapshot-isolated text search is not implemented.
     /// Tested via `capability_coverage` test module.
-    async fn search_at(
+    fn search_at(
         &self,
-        _query: &str,
-        _k: usize,
-        _seq_no: u64,
-    ) -> Result<Vec<ScoredDocument>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "snapshot_read_at",
-            "Text search snapshot isolation (search_at) is not supported by default — tracked in ADR-024",
-        ))
+        query: &str,
+        k: usize,
+        seq_no: u64,
+    ) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send {
+        async move {
+            let _ = (query, k, seq_no);
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "snapshot_read_at",
+                "Text search snapshot isolation (search_at) is not supported by default — tracked in ADR-024",
+            ))
+        }
     }
 
     /// Inserts or updates a document in the index.
-    async fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()>;
+    fn insert(&self, tx: TxId, id: DocId, text: &str) -> impl Future<Output = Result<()>> + Send;
 
     /// Deletes a document from the index.
-    async fn delete(&self, tx: TxId, id: DocId) -> Result<()>;
+    fn delete(&self, tx: TxId, id: DocId) -> impl Future<Output = Result<()>> + Send;
 
     /// Commits a transaction.
-    async fn commit(&self, tx: TxId) -> Result<()>;
+    fn commit(&self, tx: TxId) -> impl Future<Output = Result<()>> + Send;
 
     /// Rolls back a transaction.
-    async fn rollback(&self, tx: TxId) -> Result<()>;
+    fn rollback(&self, tx: TxId) -> impl Future<Output = Result<()>> + Send;
 
     /// Rolls back the entire index state to a specific transaction ID.
-    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>;
+    fn rollback_to_tx(&self, tx_id: TxId) -> impl Future<Output = Result<()>> + Send;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> Result<TxId>;
+    fn last_tx_id(&self) -> impl Future<Output = Result<TxId>> + Send;
 
     /// Returns the number of documents in the index.
-    async fn len(&self) -> usize;
+    fn len(&self) -> impl Future<Output = usize> + Send;
 
     /// Returns true if the index is empty.
-    async fn is_empty(&self) -> bool {
-        self.len().await == 0
+    fn is_empty(&self) -> impl Future<Output = bool> + Send {
+        async { self.len().await == 0 }
     }
 
     /// Returns index statistics.
-    async fn stats(&self) -> Result<TextIndexStats>;
+    fn stats(&self) -> impl Future<Output = Result<TextIndexStats>> + Send;
 }
 
 // INVARIANT: Graph Engine Trait (Signal 3)
@@ -477,7 +500,7 @@ pub trait TextIndex: Send + Sync + 'static {
 /// Graph-Index Trait — CSR-basierte Entity-Relation-Traversal.
 ///
 /// # Dyn-Kompatibilität
-/// Durch `#[async_trait]` vtable-kompatibel.
+/// Dieser Trait ist durch explizite `BoxFuture`-Rückgabetypen vtable-kompatibel (dyn-safe).
 ///
 /// # TxId-Origin-Invariant (AGT-GRAPH-001)
 ///
@@ -511,71 +534,78 @@ pub trait TextIndex: Send + Sync + 'static {
 /// [`add_entity`]: GraphIndex::add_entity
 /// [`add_edge`]: GraphIndex::add_edge
 /// [`commit`]: GraphIndex::commit
-#[async_trait]
 pub trait GraphIndex: Send + Sync + 'static {
     /// Traverses the entity graph using BFS up to a maximum number of hops.
     /// Distributes traversing decay weights across related entities.
-    async fn traverse(
-        &self,
+    fn traverse<'a>(
+        &'a self,
         start_node: crate::types::EntityId,
         max_hops: usize,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>>;
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>>;
 
     /// Returns direct (1-hop) neighbor EntityIds for the given entity.
-    async fn neighbors(
-        &self,
+    fn neighbors<'a>(
+        &'a self,
         start_node: crate::types::EntityId,
-    ) -> crate::Result<Vec<crate::types::EntityId>> {
-        let results = self.traverse(start_node, 1).await?;
-        Ok(results.into_iter().map(|(id, _)| id).collect())
+    ) -> BoxFuture<'a, crate::Result<Vec<crate::types::EntityId>>> {
+        Box::pin(async move {
+            let results = self.traverse(start_node, 1).await?;
+            Ok(results.into_iter().map(|(id, _)| id).collect())
+        })
     }
 
     /// Removes an edge between two entities.
-    async fn remove_edge(
-        &self,
+    fn remove_edge<'a>(
+        &'a self,
         tx: crate::types::TxId,
         from: crate::types::EntityId,
         to: crate::types::EntityId,
-    ) -> crate::Result<()> {
-        let _ = (tx, from, to);
-        Ok(())
+    ) -> BoxFuture<'a, crate::Result<()>> {
+        Box::pin(async move {
+            let _ = (tx, from, to);
+            Ok(())
+        })
     }
 
     /// Adds a bidirectional edge between two entities.
-    async fn add_bidirectional(
-        &self,
+    fn add_bidirectional<'a>(
+        &'a self,
         tx: crate::types::TxId,
         from: crate::types::EntityId,
         to: crate::types::EntityId,
-        label: &str,
-    ) -> crate::Result<()> {
-        self.add_edge(tx, crate::types::Edge::new(from, to, label))
-            .await?;
-        self.add_edge(tx, crate::types::Edge::new(to, from, label))
-            .await?;
-        Ok(())
+        label: &'a str,
+    ) -> BoxFuture<'a, crate::Result<()>> {
+        Box::pin(async move {
+            self.add_edge(tx, crate::types::Edge::new(from, to, label))
+                .await?;
+            self.add_edge(tx, crate::types::Edge::new(to, from, label))
+                .await?;
+            Ok(())
+        })
     }
 
     /// Traverses the entity graph starting from multiple anchor entities up to max_hops.
     /// Aggregates decay weights (keeping max score per entity) across anchors.
-    async fn multi_traverse(
-        &self,
-        start_nodes: &[crate::types::EntityId],
+    fn multi_traverse<'a>(
+        &'a self,
+        start_nodes: &'a [crate::types::EntityId],
         max_hops: usize,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        let mut combined: AHashMap<crate::types::EntityId, f32> = AHashMap::default();
-        for &start in start_nodes {
-            let results = self.traverse(start, max_hops).await?;
-            for (entity_id, score) in results {
-                combined
-                    .entry(entity_id)
-                    .and_modify(|s| *s = s.max(score))
-                    .or_insert(score);
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+        Box::pin(async move {
+            let mut combined: AHashMap<crate::types::EntityId, f32> = AHashMap::default();
+            for &start in start_nodes {
+                let results = self.traverse(start, max_hops).await?;
+                for (entity_id, score) in results {
+                    combined
+                        .entry(entity_id)
+                        .and_modify(|s| *s = s.max(score))
+                        .or_insert(score);
+                }
             }
-        }
-        let mut results: Vec<(crate::types::EntityId, f32)> = combined.into_iter().collect();
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        Ok(results)
+            let mut results: Vec<(crate::types::EntityId, f32)> = combined.into_iter().collect();
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            Ok(results)
+        })
     }
 
     /// Traverses the entity graph using BFS up to a maximum number of hops at a specific sequence number.
@@ -584,16 +614,18 @@ pub trait GraphIndex: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"graph_traverse_at"` if snapshot-isolated graph traversal is not implemented.
     /// Tested via `capability_coverage` test module.
-    async fn traverse_at(
-        &self,
+    fn traverse_at<'a>(
+        &'a self,
         _start_node: crate::types::EntityId,
         _max_hops: usize,
         _seq_no: u64,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "graph_traverse_at",
-            "Graph traversal snapshot isolation (traverse_at) is not supported by default — tracked in ADR-024",
-        ))
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "graph_traverse_at",
+                "Graph traversal snapshot isolation (traverse_at) is not supported by default — tracked in ADR-024",
+            ))
+        })
     }
 
     /// Traverses the entity graph using BFS at a specific point in time (bi-temporal edge filtering).
@@ -602,16 +634,18 @@ pub trait GraphIndex: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"graph_traverse_at_time"` if bi-temporal graph traversal is not implemented.
     /// Tested via `capability_coverage` test module.
-    async fn traverse_at_time(
-        &self,
+    fn traverse_at_time<'a>(
+        &'a self,
         _start_node: crate::types::EntityId,
         _max_hops: usize,
         _as_of: crate::types::TxId,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "graph_traverse_at_time",
-            "Bi-temporal graph traversal (traverse_at_time) is not supported by default",
-        ))
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "graph_traverse_at_time",
+                "Bi-temporal graph traversal (traverse_at_time) is not supported by default",
+            ))
+        })
     }
 
     /// Traverses the entity graph using BFS with independent system time and business time constraints.
@@ -619,17 +653,19 @@ pub trait GraphIndex: Send + Sync + 'static {
     /// # Errors
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"graph_traverse_at_bitemporal"` if bitemporal graph traversal is not implemented.
-    async fn traverse_at_bitemporal(
-        &self,
+    fn traverse_at_bitemporal<'a>(
+        &'a self,
         _start_node: crate::types::EntityId,
         _max_hops: usize,
         _as_of_tx: crate::types::TxId,
         _as_of_business: Option<i64>,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "graph_traverse_at_bitemporal",
-            "Bi-temporal graph traversal (traverse_at_bitemporal) is not supported by default",
-        ))
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "graph_traverse_at_bitemporal",
+                "Bi-temporal graph traversal (traverse_at_bitemporal) is not supported by default",
+            ))
+        })
     }
 
     /// Calculates Personalized PageRank (PPR) starting from seed nodes.
@@ -643,50 +679,58 @@ pub trait GraphIndex: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"graph_ppr"` if Personalized PageRank is not supported by this implementation.
     /// Tested via `capability_coverage` test module.
-    async fn personalized_page_rank(
-        &self,
-        _seed_nodes: &[crate::types::EntityId],
-        _config: &crate::types::PprConfig,
-    ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-        Err(crate::error::MemFuseError::capability_unsupported(
-            "graph_ppr",
-            "Personalized PageRank (personalized_page_rank) is not supported by default for this GraphIndex implementation",
-        ))
+    fn personalized_page_rank<'a>(
+        &'a self,
+        _seed_nodes: &'a [crate::types::EntityId],
+        _config: &'a crate::types::PprConfig,
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "graph_ppr",
+                "Personalized PageRank (personalized_page_rank) is not supported by default for this GraphIndex implementation",
+            ))
+        })
     }
 
     /// Inserts or updates a node entity.
-    async fn add_entity(
-        &self,
+    fn add_entity<'a>(
+        &'a self,
         tx: crate::types::TxId,
         entity: crate::types::Entity,
-    ) -> crate::Result<()>;
+    ) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Inserts or updates an edge between two entities.
-    async fn add_edge(&self, tx: crate::types::TxId, edge: crate::types::Edge)
-        -> crate::Result<()>;
+    fn add_edge<'a>(
+        &'a self,
+        tx: crate::types::TxId,
+        edge: crate::types::Edge,
+    ) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Commits a transaction.
-    async fn commit(&self, tx: crate::types::TxId) -> crate::Result<()>;
+    fn commit<'a>(&'a self, tx: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Rolls back a transaction.
-    async fn rollback(&self, tx: crate::types::TxId) -> crate::Result<()>;
+    fn rollback<'a>(&'a self, tx: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Rolls back the entire graph state to a specific transaction ID.
-    async fn rollback_to_tx(&self, tx_id: crate::types::TxId) -> crate::Result<()>;
+    fn rollback_to_tx<'a>(
+        &'a self,
+        tx_id: crate::types::TxId,
+    ) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Returns the last transaction ID processed by the index.
-    async fn last_tx_id(&self) -> crate::Result<crate::types::TxId>;
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, crate::Result<crate::types::TxId>>;
 
     /// Returns the number of entities in the index.
-    async fn len(&self) -> usize;
+    fn len<'a>(&'a self) -> BoxFuture<'a, usize>;
 
     /// Returns true if the index is empty.
-    async fn is_empty(&self) -> bool {
-        self.len().await == 0
+    fn is_empty<'a>(&'a self) -> BoxFuture<'a, bool> {
+        Box::pin(async move { self.len().await == 0 })
     }
 
     /// Collects statistics for the Graph.
-    async fn stats(&self) -> crate::Result<GraphIndexStats>;
+    fn stats<'a>(&'a self) -> BoxFuture<'a, crate::Result<GraphIndexStats>>;
 }
 
 /// Statistics for the GraphIndex layer.
@@ -755,15 +799,14 @@ pub enum ConsolidationAction {
 /// Trait controlling active Memory Lifecycle management: Decay sweep and Consolidation planning.
 ///
 /// Decouples decision planning (`plan_consolidation`) from execution (`sweep`) for auditability.
-#[async_trait]
 pub trait MemoryLifecycleManager: Send + Sync {
     /// Performs a decay and TTL sweep.
     /// Returns a report summarizing deleted, retained, and skipped entries.
-    async fn sweep(&self, now_tx: TxId) -> Result<LifecycleSweepReport>;
+    fn sweep(&self, now_tx: TxId) -> impl Future<Output = Result<LifecycleSweepReport>> + Send;
 
     /// Plans consolidation of similar entries (Mem0 ADD/UPDATE/NOOP pattern).
     /// Returns an action plan without performing automatic execution.
-    async fn plan_consolidation(&self, candidates: &[DocId]) -> Result<Vec<ConsolidationAction>>;
+    fn plan_consolidation(&self, candidates: &[DocId]) -> impl Future<Output = Result<Vec<ConsolidationAction>>> + Send;
 }
 
 #[cfg(test)]
@@ -771,20 +814,14 @@ mod dyn_safety {
     use super::*;
 
     fn _assert_dyn_storage(_: Option<&dyn StorageEngine>) {}
-    fn _assert_dyn_vector(_: Option<&dyn VectorIndex>) {}
-    fn _assert_dyn_text(_: Option<&dyn TextIndex>) {}
     fn _assert_dyn_graph(_: Option<&dyn GraphIndex>) {}
     fn _assert_dyn_embedding(_: Option<&dyn TextEmbeddingEngine>) {}
-    fn _assert_dyn_lifecycle(_: Option<&dyn MemoryLifecycleManager>) {}
 
     #[test]
     fn test_dyn_safety_compiles() {
         _assert_dyn_storage(None);
-        _assert_dyn_vector(None);
-        _assert_dyn_text(None);
         _assert_dyn_graph(None);
         _assert_dyn_embedding(None);
-        _assert_dyn_lifecycle(None);
     }
 }
 
@@ -797,8 +834,7 @@ mod capability_coverage {
     #[tokio::test]
     async fn test_hnsw_search_at_capability() {
         struct VectorIndexPlaceholder;
-        #[async_trait]
-        impl VectorIndex for VectorIndexPlaceholder {
+                impl VectorIndex for VectorIndexPlaceholder {
             async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> {
                 Ok(())
             }
@@ -851,62 +887,63 @@ mod capability_coverage {
     #[tokio::test]
     async fn test_csr_graph_capability() {
         struct GraphIndexPlaceholder;
-        #[async_trait]
         impl GraphIndex for GraphIndexPlaceholder {
-            async fn traverse(&self, _: EntityId, _: usize) -> Result<Vec<(EntityId, f32)>> {
-                Ok(vec![])
+            fn traverse<'a>(&'a self, _: EntityId, _: usize) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
-            async fn traverse_at(
-                &self,
+            fn traverse_at<'a>(
+                &'a self,
                 _: EntityId,
                 _: usize,
                 _: u64,
-            ) -> Result<Vec<(EntityId, f32)>> {
-                Ok(vec![])
+            ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
-            async fn traverse_at_time(
-                &self,
+            fn traverse_at_time<'a>(
+                &'a self,
                 _: EntityId,
                 _: usize,
                 _: TxId,
-            ) -> Result<Vec<(EntityId, f32)>> {
-                Ok(vec![])
+            ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
-            async fn traverse_at_bitemporal(
-                &self,
+            fn traverse_at_bitemporal<'a>(
+                &'a self,
                 _: EntityId,
                 _: usize,
                 _: TxId,
                 _: Option<i64>,
-            ) -> Result<Vec<(EntityId, f32)>> {
-                Ok(vec![])
+            ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
-            async fn add_entity(&self, _: TxId, _: Entity) -> Result<()> {
-                Ok(())
+            fn add_entity<'a>(&'a self, _: TxId, _: Entity) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn add_edge(&self, _: TxId, _: Edge) -> Result<()> {
-                Ok(())
+            fn add_edge<'a>(&'a self, _: TxId, _: Edge) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn commit(&self, _: TxId) -> Result<()> {
-                Ok(())
+            fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn rollback(&self, _: TxId) -> Result<()> {
-                Ok(())
+            fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
-                Ok(())
+            fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn last_tx_id(&self) -> Result<TxId> {
-                Ok(TxId(0))
+            fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+                Box::pin(async move { Ok(TxId(0)) })
             }
-            async fn len(&self) -> usize {
-                0
+            fn len<'a>(&'a self) -> BoxFuture<'a, usize> {
+                Box::pin(async move { 0 })
             }
-            async fn stats(&self) -> Result<GraphIndexStats> {
-                Ok(GraphIndexStats {
-                    num_entities: 0,
-                    num_edges: 0,
-                    memory_usage_bytes: 0,
+            fn stats<'a>(&'a self) -> BoxFuture<'a, Result<GraphIndexStats>> {
+                Box::pin(async move {
+                    Ok(GraphIndexStats {
+                        num_entities: 0,
+                        num_edges: 0,
+                        memory_usage_bytes: 0,
+                    })
                 })
             }
         }
@@ -947,8 +984,7 @@ mod capability_coverage {
     #[tokio::test]
     async fn test_text_index_search_at_capability() {
         struct TextIndexPlaceholder;
-        #[async_trait]
-        impl TextIndex for TextIndexPlaceholder {
+                impl TextIndex for TextIndexPlaceholder {
             async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
                 Ok(vec![])
             }
@@ -997,60 +1033,61 @@ mod capability_coverage {
     #[tokio::test]
     async fn test_storage_scan_prefix_at_capability() {
         struct StorageEnginePlaceholder;
-        #[async_trait]
         impl StorageEngine for StorageEnginePlaceholder {
-            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
-                Ok(None)
+            fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
             }
-            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
-                Ok(None)
+            fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
             }
-            async fn put(&self, _: TxId, _: &[u8], _: &[u8]) -> Result<()> {
-                Ok(())
+            fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
-                Ok(())
+            fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn commit(&self, _: TxId) -> Result<()> {
-                Ok(())
+            fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn rollback(&self, _: TxId) -> Result<()> {
-                Ok(())
+            fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
-                Ok(())
+            fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn flush(&self) -> Result<()> {
-                Ok(())
+            fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn stats(&self) -> Result<StorageStats> {
-                Ok(StorageStats {
-                    num_segments: 0,
-                    total_size_bytes: 0,
-                    memtable_size_bytes: 0,
+            fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+                Box::pin(async move {
+                    Ok(StorageStats {
+                        num_segments: 0,
+                        total_size_bytes: 0,
+                        memtable_size_bytes: 0,
+                    })
                 })
             }
-            async fn last_seq_no(&self) -> Result<u64> {
-                Ok(0)
+            fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+                Box::pin(async move { Ok(0) })
             }
-            async fn last_tx_id(&self) -> Result<TxId> {
-                Ok(TxId(0))
+            fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+                Box::pin(async move { Ok(TxId(0)) })
             }
-            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
+            fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
+            fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
+            fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
-            async fn scan(
-                &self,
-                _: std::ops::Bound<&[u8]>,
-                _: std::ops::Bound<&[u8]>,
-            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
+            fn scan<'a>(
+                &'a self,
+                _: std::ops::Bound<&'a [u8]>,
+                _: std::ops::Bound<&'a [u8]>,
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
         }
 
@@ -1104,61 +1141,64 @@ mod tests {
         type KVPair = (Vec<u8>, Vec<u8>);
         type Log = std::sync::Arc<std::sync::Mutex<Vec<KVPair>>>;
         struct MockStorage(Log);
-        #[async_trait::async_trait]
         impl StorageEngine for MockStorage {
-            async fn get(&self, _: &[u8]) -> Result<Option<Vec<u8>>> {
-                Ok(None)
+            fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
             }
-            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
-                Ok(None)
+            fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
             }
-            async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-                self.0.lock().unwrap().push((key.to_vec(), value.to_vec())); // unwrap
-                Ok(())
-            }
-            async fn delete(&self, _: TxId, _: &[u8]) -> Result<()> {
-                Ok(())
-            }
-            async fn commit(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn flush(&self) -> Result<()> {
-                Ok(())
-            }
-            async fn stats(&self) -> Result<StorageStats> {
-                Ok(StorageStats {
-                    num_segments: 0,
-                    total_size_bytes: 0,
-                    memtable_size_bytes: 0,
+            fn put<'a>(&'a self, _: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move {
+                    self.0.lock().unwrap().push((key.to_vec(), value.to_vec()));
+                    Ok(())
                 })
             }
-            async fn last_seq_no(&self) -> Result<u64> {
-                Ok(0)
+            fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn last_tx_id(&self) -> Result<TxId> {
-                Ok(TxId(0))
+            fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
+            fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
+            fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn scan_prefix(&self, _: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
+            fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn scan(
-                &self,
-                _: std::ops::Bound<&[u8]>,
-                _: std::ops::Bound<&[u8]>,
-            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
+            fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+                Box::pin(async move {
+                    Ok(StorageStats {
+                        num_segments: 0,
+                        total_size_bytes: 0,
+                        memtable_size_bytes: 0,
+                    })
+                })
+            }
+            fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+                Box::pin(async move { Ok(0) })
+            }
+            fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+                Box::pin(async move { Ok(TxId(0)) })
+            }
+            fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move { Ok(vec![]) })
+            }
+            fn scan<'a>(
+                &'a self,
+                _: std::ops::Bound<&'a [u8]>,
+                _: std::ops::Bound<&'a [u8]>,
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
         }
 
@@ -1187,74 +1227,81 @@ mod tests {
             delete_call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         }
 
-        #[async_trait::async_trait]
         impl StorageEngine for MockStorage {
-            async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-                Ok(self.data.lock().unwrap().get(key).cloned()) // unwrap
+            fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(self.data.lock().unwrap().get(key).cloned()) })
             }
-            async fn get_at_seq(&self, _: &[u8], _: u64) -> Result<Option<Vec<u8>>> {
-                Ok(None)
+            fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
             }
-            async fn put(&self, _: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-                self.data
-                    .lock()
-                    .unwrap() // unwrap
-                    .insert(key.to_vec(), value.to_vec());
-                Ok(())
-            }
-            async fn delete(&self, _: TxId, key: &[u8]) -> Result<()> {
-                self.delete_call_count
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                self.data.lock().unwrap().remove(key); // unwrap
-                Ok(())
-            }
-            async fn commit(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn rollback_to_tx(&self, _: TxId) -> Result<()> {
-                Ok(())
-            }
-            async fn flush(&self) -> Result<()> {
-                Ok(())
-            }
-            async fn stats(&self) -> Result<StorageStats> {
-                Ok(StorageStats {
-                    num_segments: 0,
-                    total_size_bytes: 0,
-                    memtable_size_bytes: 0,
+            fn put<'a>(&'a self, _: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move {
+                    self.data
+                        .lock()
+                        .unwrap()
+                        .insert(key.to_vec(), value.to_vec());
+                    Ok(())
                 })
             }
-            async fn last_seq_no(&self) -> Result<u64> {
-                Ok(0)
+            fn delete<'a>(&'a self, _: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move {
+                    self.delete_call_count
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    self.data.lock().unwrap().remove(key);
+                    Ok(())
+                })
             }
-            async fn last_tx_id(&self) -> Result<TxId> {
-                Ok(TxId(0))
+            fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn pin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
+            fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn unpin_checkpoint(&self, _: u64) -> Result<()> {
-                Ok(())
+            fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                let map = self.data.lock().unwrap(); // unwrap
-                let mut res = Vec::new();
-                for (k, v) in map.iter() {
-                    if k.starts_with(prefix) {
-                        res.push((k.clone(), v.clone()));
+            fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+                Box::pin(async move {
+                    Ok(StorageStats {
+                        num_segments: 0,
+                        total_size_bytes: 0,
+                        memtable_size_bytes: 0,
+                    })
+                })
+            }
+            fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+                Box::pin(async move { Ok(0) })
+            }
+            fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+                Box::pin(async move { Ok(TxId(0)) })
+            }
+            fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move {
+                    let map = self.data.lock().unwrap();
+                    let mut res = Vec::new();
+                    for (k, v) in map.iter() {
+                        if k.starts_with(prefix) {
+                            res.push((k.clone(), v.clone()));
+                        }
                     }
-                }
-                Ok(res)
+                    Ok(res)
+                })
             }
-            async fn scan(
-                &self,
-                _: std::ops::Bound<&[u8]>,
-                _: std::ops::Bound<&[u8]>,
-            ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-                Ok(vec![])
+            fn scan<'a>(
+                &'a self,
+                _: std::ops::Bound<&'a [u8]>,
+                _: std::ops::Bound<&'a [u8]>,
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
         }
 
@@ -1280,8 +1327,7 @@ mod tests {
     #[tokio::test]
     async fn test_vector_index_defaults() {
         struct MockIndex(std::sync::atomic::AtomicUsize);
-        #[async_trait::async_trait]
-        impl VectorIndex for MockIndex {
+                impl VectorIndex for MockIndex {
             async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
@@ -1352,8 +1398,7 @@ mod tests {
     #[tokio::test]
     async fn test_text_index_defaults() {
         struct MockTextIndex;
-        #[async_trait::async_trait]
-        impl TextIndex for MockTextIndex {
+                impl TextIndex for MockTextIndex {
             async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
                 Ok(vec![])
             }
@@ -1401,49 +1446,50 @@ mod tests {
     #[tokio::test]
     async fn test_graph_index_defaults() {
         struct MockGraphIndex;
-        #[async_trait::async_trait]
         impl GraphIndex for MockGraphIndex {
-            async fn traverse(
-                &self,
+            fn traverse<'a>(
+                &'a self,
                 _: crate::types::EntityId,
                 _: usize,
-            ) -> crate::Result<Vec<(crate::types::EntityId, f32)>> {
-                Ok(vec![])
+            ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+                Box::pin(async move { Ok(vec![]) })
             }
-            async fn add_entity(
-                &self,
+            fn add_entity<'a>(
+                &'a self,
                 _: crate::types::TxId,
                 _: crate::types::Entity,
-            ) -> crate::Result<()> {
-                Ok(())
+            ) -> BoxFuture<'a, crate::Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn add_edge(
-                &self,
+            fn add_edge<'a>(
+                &'a self,
                 _: crate::types::TxId,
                 _: crate::types::Edge,
-            ) -> crate::Result<()> {
-                Ok(())
+            ) -> BoxFuture<'a, crate::Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn commit(&self, _: crate::types::TxId) -> crate::Result<()> {
-                Ok(())
+            fn commit<'a>(&'a self, _: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn rollback(&self, _: crate::types::TxId) -> crate::Result<()> {
-                Ok(())
+            fn rollback<'a>(&'a self, _: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn rollback_to_tx(&self, _: crate::types::TxId) -> crate::Result<()> {
-                Ok(())
+            fn rollback_to_tx<'a>(&'a self, _: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>> {
+                Box::pin(async move { Ok(()) })
             }
-            async fn last_tx_id(&self) -> crate::Result<crate::types::TxId> {
-                Ok(TxId(0))
+            fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, crate::Result<crate::types::TxId>> {
+                Box::pin(async move { Ok(TxId(0)) })
             }
-            async fn len(&self) -> usize {
-                0
+            fn len<'a>(&'a self) -> BoxFuture<'a, usize> {
+                Box::pin(async move { 0 })
             }
-            async fn stats(&self) -> crate::Result<GraphIndexStats> {
-                Ok(GraphIndexStats {
-                    num_entities: 0,
-                    num_edges: 0,
-                    memory_usage_bytes: 0,
+            fn stats<'a>(&'a self) -> BoxFuture<'a, crate::Result<GraphIndexStats>> {
+                Box::pin(async move {
+                    Ok(GraphIndexStats {
+                        num_entities: 0,
+                        num_edges: 0,
+                        memory_usage_bytes: 0,
+                    })
                 })
             }
         }

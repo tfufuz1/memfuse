@@ -139,17 +139,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
-name = "async-trait"
-version = "0.1.92"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.4",
-]
-
-[[package]]
 name = "atk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2651,7 +2640,6 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "memfuse-agent"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "memfuse-checkpoint",
  "memfuse-core",
  "memfuse-db",
@@ -2692,7 +2680,6 @@ dependencies = [
 name = "memfuse-checkpoint"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "blake3",
  "criterion",
  "dirs",
@@ -2712,7 +2699,6 @@ name = "memfuse-core"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "async-trait",
  "bincode",
  "blake3",
  "flatbuffers",
@@ -2748,7 +2734,6 @@ dependencies = [
 name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "criterion",
  "memfuse-checkpoint",
  "memfuse-core",
@@ -2771,7 +2756,6 @@ dependencies = [
 name = "memfuse-embed"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "memfuse-core",
  "ndarray 0.15.6",
  "ort",
@@ -2788,7 +2772,6 @@ name = "memfuse-graph"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "async-trait",
  "bincode",
  "memfuse-core",
  "memfuse-store",
@@ -2807,7 +2790,6 @@ name = "memfuse-index"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "async-trait",
  "bincode",
  "criterion",
  "memfuse-core",
@@ -2827,7 +2809,6 @@ dependencies = [
 name = "memfuse-mcp"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "futures-util",
  "memfuse-agent",
  "memfuse-core",
@@ -2853,7 +2834,6 @@ dependencies = [
 name = "memfuse-ollama"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "futures-util",
  "memfuse-core",
  "memfuse-embed",
@@ -2892,7 +2872,6 @@ dependencies = [
 name = "memfuse-store"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "blake3",
  "bytes",
  "crc32fast",
@@ -2916,7 +2895,6 @@ dependencies = [
 name = "memfuse-tauri"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "blake3",
  "docx-rs",
  "futures-util",
@@ -2948,7 +2926,6 @@ dependencies = [
 name = "memfuse-text"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bincode",
  "itoa",
  "memfuse-core",

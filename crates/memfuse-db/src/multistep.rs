@@ -8,7 +8,8 @@
 // Multi-Step Iterative Retrieval Engine (OpenAI o-series Pattern)
 
 use crate::{Collection, SearchResult};
-use memfuse_core::{Result, StorageEngine};
+use memfuse_core::{
+    BoxFuture, Result, StorageEngine};
 use std::sync::Arc;
 
 /// Konfiguration für Multi-Step Retrieval.
@@ -55,18 +56,17 @@ pub struct MultiStepEngine<S: StorageEngine> {
 }
 
 /// Trait für Query-Rewriting (LLM-agnostisch).
-#[async_trait::async_trait]
 pub trait QueryRewriter: Send + Sync {
     /// Generiert alternative Teil-Queries basierend auf bisherigen Ergebnissen.
     ///
     /// `original_query` – die ursprüngliche Anfrage
     /// `current_results` – bisherige Ergebnisse (leer bei erstem Aufruf)
     /// Gibt leeren Vec zurück wenn kein Rewriting nötig.
-    async fn rewrite(
-        &self,
-        original_query: &str,
-        current_results: &[SearchResult],
-    ) -> Result<Vec<String>>;
+    fn rewrite<'a>(
+        &'a self,
+        original_query: &'a str,
+        current_results: &'a [SearchResult],
+    ) -> BoxFuture<'a, Result<Vec<String>>>;
 }
 
 impl<S: StorageEngine> MultiStepEngine<S> {
@@ -218,19 +218,20 @@ mod tests {
         responses: std::sync::Mutex<Vec<Vec<String>>>,
     }
 
-    #[async_trait::async_trait]
-    impl QueryRewriter for DummyRewriter {
-        async fn rewrite(
-            &self,
-            _original_query: &str,
-            _current_results: &[SearchResult],
-        ) -> Result<Vec<String>> {
-            let mut guard = self.responses.lock().unwrap(); // unwrap
-            if !guard.is_empty() {
-                Ok(guard.remove(0))
-            } else {
-                Ok(vec![])
-            }
+        impl QueryRewriter for DummyRewriter {
+        fn rewrite<'a>(
+            &'a self,
+            _original_query: &'a str,
+            _current_results: &'a [SearchResult],
+        ) -> BoxFuture<'a, Result<Vec<String>>> {
+            Box::pin(async move {
+                let mut guard = self.responses.lock().unwrap(); // unwrap
+                if !guard.is_empty() {
+                    Ok(guard.remove(0))
+                } else {
+                    Ok(vec![])
+                }
+            })
         }
     }
 
@@ -385,16 +386,17 @@ mod tests {
 
     struct FailingRewriter;
 
-    #[async_trait::async_trait]
-    impl QueryRewriter for FailingRewriter {
-        async fn rewrite(
-            &self,
-            _original_query: &str,
-            _current_results: &[SearchResult],
-        ) -> Result<Vec<String>> {
-            Err(memfuse_core::MemFuseError::Internal(
-                "Rewriter error".into(),
-            ))
+        impl QueryRewriter for FailingRewriter {
+        fn rewrite<'a>(
+            &'a self,
+            _original_query: &'a str,
+            _current_results: &'a [SearchResult],
+        ) -> BoxFuture<'a, Result<Vec<String>>> {
+            Box::pin(async move {
+                Err(memfuse_core::MemFuseError::Internal(
+                    "Rewriter error".into(),
+                ))
+            })
         }
     }
 
