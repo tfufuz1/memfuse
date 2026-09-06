@@ -8,8 +8,11 @@
 
 Stand letzter Prüfung: 2026-09-06
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-tauri/src/commands/search.rs` | 192 | `AGT-TAURI-96c44961` | `BLOCKER` | `BUG` | `2026-09-06T11:20:31Z` | // AI-TAG[BLOCKER][BUG] Missing `provenance` field in SearchResultDto struct initializer causes build failure in multi_step_search (ID: AGT-TAURI-96c44961) (TS: 2026-09-06T11:20:31Z) (SESSION: 96c44961) |
 
 
 ## Crate-Inventar & Status
@@ -20,17 +23,17 @@ Ergebnis: **0 offene Tags**
 | `memfuse-crypto` | 0 | 2422 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5130 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-embed` | 1 | 1327 | 🧊 Optional |  |
-| `memfuse-graph` | 1 | 7290 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 7292 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11900 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 15237 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 1 | 15245 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5160 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 19859 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 2 | 19867 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5453 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-ollama` | 3 | 3341 | 🟢 Clean |  |
 | `memfuse-py` | 3 | 1500 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-router` | 3 | 3335 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3678 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 5172 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 5174 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

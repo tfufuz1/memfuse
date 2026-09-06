@@ -189,6 +189,10 @@ pub async fn multi_step_search(
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
+    // AI-TAG[BLOCKER][BUG] Missing `provenance` field in SearchResultDto struct initializer causes build failure in multi_step_search (ID: AGT-TAURI-96c44961) (TS: 2026-09-06T11:20:31Z) (SESSION: 96c44961)
+    // BEFUND: Upstream commit #1598 added `provenance: Option<ProvenanceDto>` to `SearchResultDto`, but `multi_step_search` constructor was not updated.
+    // RISIKO: Compilation failure (`cargo check -p memfuse-tauri` fails).
+    // EMPFEHLUNG: Add `provenance: r.provenance.as_ref().map(ProvenanceDto::from)` to SearchResultDto map in multi_step_search.
     let results = multi_res
         .results
         .into_iter()
