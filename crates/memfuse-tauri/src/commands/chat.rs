@@ -21,6 +21,7 @@ pub async fn chat_with_rag(
     message: String,
     collection_name: String,
     model: String,
+    session_id: Option<String>,
 ) -> Result<ChatResponse, MemFuseErrorDto> {
     if message.len() > MAX_QUERY_LEN {
         return Err(MemFuseErrorDto::new("InvalidInput", "Query too long"));
@@ -106,6 +107,34 @@ pub async fn chat_with_rag(
         })
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))?;
+
+    let sess_id = session_id
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "default".to_string());
+
+    let session = crate::commands::session_dag::get_or_create_session(
+        &state,
+        &sess_id,
+        &message,
+        &full_response,
+    )
+    .await?;
+
+    let is_root = session.node_count() == 1
+        && session.get_node(0).map_or(false, |n| n.prompt == message);
+
+    if !is_root {
+        session
+            .append_step(
+                message.clone(),
+                full_response.clone(),
+                None,
+                Vec::new(),
+                "main",
+            )
+            .map_err(|e| MemFuseErrorDto::from(&e))?;
+        crate::commands::session_dag::save_session_if_db_open(&state, &sess_id, &session).await?;
+    }
 
     Ok(ChatResponse {
         answer: full_response,

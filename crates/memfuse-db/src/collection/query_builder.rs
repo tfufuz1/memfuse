@@ -285,11 +285,18 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             return Ok(Vec::new());
         }
 
+        #[cfg(feature = "reranking")]
+        let has_reranker = self.reranker.is_some();
+        #[cfg(not(feature = "reranking"))]
+        let has_reranker = false;
+
         let fetch_k = if self.filter.is_some()
             || self.memory_type_filter.is_some()
             || self.filter_fn.is_some()
         {
             (k * 5).min(memfuse_core::MAX_SEARCH_K).max(k)
+        } else if has_reranker {
+            (k * 3).min(memfuse_core::MAX_SEARCH_K).max(k)
         } else {
             k
         };
@@ -350,21 +357,22 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
 
         #[cfg(feature = "reranking")]
         if let Some(reranker) = self.reranker {
-            if let Some(ref text_str) = self.text {
-                if !results.is_empty() && !text_str.is_empty() {
-                    let candidate_texts: Vec<String> = results
-                        .iter()
-                        .map(|r| {
-                            r.metadata
-                                .as_ref()
-                                .and_then(|m| m.get("text").or_else(|| m.get("content")))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or(&r.id)
-                                .to_string()
-                        })
-                        .collect();
+            let text_str = self.text.as_deref().unwrap_or("");
+            if !results.is_empty() && !text_str.is_empty() {
+                let candidate_texts: Vec<String> = results
+                    .iter()
+                    .map(|r| {
+                        r.metadata
+                            .as_ref()
+                            .and_then(|m| m.get("text").or_else(|| m.get("content")))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&r.id)
+                            .to_string()
+                    })
+                    .collect();
 
-                    if let Ok(ranked) = reranker.rerank(text_str, &candidate_texts).await {
+                match reranker.rerank(text_str, &candidate_texts).await {
+                    Ok(ranked) => {
                         let mut reranked_results = Vec::with_capacity(k);
                         for r in ranked.into_iter().take(k) {
                             if let Some(mut result) = results.get(r.original_index).cloned() {
@@ -372,12 +380,21 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                                     if let Some(obj) = meta.as_object_mut() {
                                         obj.insert("ce_score".to_string(), serde_json::json!(r.score));
                                     }
+                                } else {
+                                    result.metadata = Some(serde_json::json!({ "ce_score": r.score }));
                                 }
                                 result.score = r.score;
+                                if let Some(p) = result.provenance.as_mut() {
+                                    p.rerank_score = Some(r.score);
+                                }
                                 reranked_results.push(result);
                             }
                         }
+                        tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
                         return Ok(reranked_results);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Reranking failed (using RRF order): {e}");
                     }
                 }
             }
@@ -587,5 +604,103 @@ mod tests {
 
         assert_eq!(builder_res.len(), legacy.len());
         assert_eq!(builder_res[0].id, legacy[0].id);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
+    async fn test_query_builder_reranking_with_text_and_reranker() {
+        let (col, _dir) = create_test_collection("test_rerank_builder").await;
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .unwrap(); // unwrap
+        col.insert(
+            "doc-2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(json!({"content": "python programming language"})),
+        )
+        .await
+        .unwrap(); // unwrap
+        col.insert(
+            "doc-3",
+            &[0.8, 0.2, 0.0, 0.0],
+            Some(json!({"text": "javascript web development"})),
+        )
+        .await
+        .unwrap(); // unwrap
+
+        let reranker_res =
+            memfuse_embed::CrossEncoderReranker::new(memfuse_embed::RerankConfig::default());
+        if let Ok(reranker) = reranker_res {
+            let res = col
+                .query()
+                .text("rust")
+                .embedding([1.0, 0.0, 0.0, 0.0])
+                .reranker(&reranker)
+                .include_provenance(true)
+                .k(2)
+                .execute()
+                .await
+                .unwrap(); // unwrap
+
+            assert_eq!(res.len(), 2, "Results must be truncated to k=2");
+
+            for item in &res {
+                let meta = item.metadata.as_ref().expect("metadata must exist"); // expect
+                assert!(
+                    meta.get("ce_score").is_some(),
+                    "ce_score must be attached to metadata"
+                );
+                if let Some(prov) = &item.provenance {
+                    assert!(
+                        prov.rerank_score.is_some(),
+                        "rerank_score must be set in provenance"
+                    );
+                }
+            }
+
+            assert!(
+                res[0].score >= res[1].score,
+                "Results must be sorted descending by rerank score"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
+    async fn test_query_builder_reranking_no_text_query_skips_rerank() {
+        let (col, _dir) = create_test_collection("test_rerank_no_text").await;
+        col.insert("doc-1", &[1.0, 0.0, 0.0, 0.0], Some(json!({"val": 1})))
+            .await
+            .unwrap(); // unwrap
+        col.insert("doc-2", &[0.9, 0.1, 0.0, 0.0], Some(json!({"val": 2})))
+            .await
+            .unwrap(); // unwrap
+
+        let reranker_res =
+            memfuse_embed::CrossEncoderReranker::new(memfuse_embed::RerankConfig::default());
+        if let Ok(reranker) = reranker_res {
+            let res = col
+                .query()
+                .embedding([1.0, 0.0, 0.0, 0.0])
+                .reranker(&reranker)
+                .k(2)
+                .execute()
+                .await
+                .unwrap(); // unwrap
+
+            assert_eq!(res.len(), 2);
+            for item in &res {
+                if let Some(meta) = &item.metadata {
+                    assert!(
+                        meta.get("ce_score").is_none(),
+                        "ce_score should not be attached when reranking is skipped"
+                    );
+                }
+            }
+        }
     }
 }

@@ -19,7 +19,7 @@
 #![deny(unsafe_code)]
 
 #[cfg(feature = "onnx")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 #[cfg(feature = "onnx")]
 use std::sync::Arc;
 
@@ -38,6 +38,11 @@ use tracing::{debug, info, warn};
 pub mod reranker;
 #[cfg(feature = "onnx")]
 pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
+
+/// Counter tracking the number of ONNX session load operations (for test verification).
+#[cfg(feature = "onnx")]
+pub static SESSION_LOAD_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// Conservative default. Override via `TextEmbedderConfig::max_batch_size`.
 /// At 1536D × 512 × f32 = ~3 MB input tensor; safe within 128 MB memory budgets.
@@ -78,10 +83,10 @@ pub type OnnxEmbedder = TextEmbedder;
 /// thread pool, preventing Tokio runtime starvation. A [`tokio::sync::Semaphore`]
 /// limits the number of concurrent inference operations.
 #[cfg(feature = "onnx")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TextEmbedder {
-    /// Path to model directory or model.onnx file.
-    session_path: PathBuf,
+    /// Shared ONNX session (thread-safe via `Arc<Mutex>`).
+    session: Arc<parking_lot::Mutex<ort::session::Session>>,
     /// Shared tokenizer instance (thread-safe via `Arc`).
     tokenizer: Arc<Tokenizer>,
     /// Semaphore limiting parallel ONNX inference threads.
@@ -90,6 +95,16 @@ pub struct TextEmbedder {
     config: TextEmbedderConfig,
     /// Expected output embedding dimension.
     expected_dim: Option<usize>,
+}
+
+#[cfg(feature = "onnx")]
+impl std::fmt::Debug for TextEmbedder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextEmbedder")
+            .field("config", &self.config)
+            .field("expected_dim", &self.expected_dim)
+            .finish()
+    }
 }
 
 #[cfg(feature = "onnx")]
@@ -222,10 +237,23 @@ impl TextEmbedder {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| MemFuseError::Internal(format!("Failed to load tokenizer: {}", e)))?;
 
+        info!("Loading ONNX model session from {:?}", model_path);
+        let session = ort::session::Session::builder()
+            .map_err(|e| MemFuseError::Internal(format!("Failed to build ONNX session: {}", e)))?
+            .commit_from_file(&model_path)
+            .map_err(|e| {
+                MemFuseError::Internal(format!(
+                    "Failed to load ONNX model from {:?}: {}",
+                    model_path, e
+                ))
+            })?;
+
+        SESSION_LOAD_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let pool_size = config.pool_size;
         let expected_dim = config.expected_dim;
         Ok(Self {
-            session_path: model_path,
+            session: Arc::new(parking_lot::Mutex::new(session)),
             tokenizer: Arc::new(tokenizer),
             semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
             config,
@@ -251,21 +279,13 @@ impl TextEmbedder {
             .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
 
         let text = text.to_string();
-        let session_path = self.session_path.clone();
+        let session = self.session.clone();
         let tokenizer = self.tokenizer.clone();
         let max_sequence_length = self.config.max_sequence_length;
 
         let output = tokio::task::spawn_blocking(move || {
-            // AI-TAG[PERF][MAJOR] ONNX Session re-created per embed call (ID: AGT-EMBED-f07dcaf8) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210)
-            // BEFUND: TextEmbedder rebuilds the ort::session::Session from file inside spawn_blocking for every single embed_async invocation.
-            // RISIKO: Repeated disk IO and model parsing overhead per embedding request degrades throughput under high embedding query load.
-            // EMPFEHLUNG: Refactor TextEmbedder to wrap Arc<Mutex<Session>> or a thread-safe SessionPool similar to OnnxReranker.
-            let mut session = ort::session::Session::builder()
-                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
-                .commit_from_file(&session_path)
-                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
-
-            Self::run_inference(&mut session, &tokenizer, &text, max_sequence_length)
+            let mut guard = session.lock();
+            Self::run_inference(&mut guard, &tokenizer, &text, max_sequence_length)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))??;
@@ -546,29 +566,18 @@ mod tests {
     async fn test_embed_batch_oversized_limit(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use memfuse_core::EmbeddingProvider;
+        use std::path::PathBuf;
 
-        let dir = tempdir()?;
-        File::create(dir.path().join("model.onnx"))?;
-        File::create(dir.path().join("tokenizer.json"))?;
-
-        let tokenizer_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("fixtures")
-            .join("tokenizer.json");
+            .join("model.onnx");
 
-        let tokenizer = if tokenizer_path.exists() {
-            Tokenizer::from_file(tokenizer_path).unwrap()
-        } else {
+        if !fixture_path.exists() {
             return Ok(());
-        };
+        }
 
-        let embedder = TextEmbedder {
-            session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(tokenizer),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            config: TextEmbedderConfig::default(),
-            expected_dim: None,
-        };
+        let embedder = TextEmbedder::from_path(&fixture_path)?;
 
         let large_texts: Vec<&str> = vec!["text"; MAX_EMBED_BATCH_SIZE + 1];
         let res = EmbeddingProvider::embed_batch(&embedder, &large_texts).await;

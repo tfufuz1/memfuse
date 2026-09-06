@@ -26,7 +26,8 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
   (Anthropic Containment Pattern)
 - **Session DAG** — Grok-Pattern: Konversationsverzweigung als persistierter,
-  azyklischer Graph (Native Pure-Rust)
+  azyklischer Graph mit vollständiger Tauri-UI-Anbindung (Erstellen von Branches ab
+  jeder Nachricht, Umschalten des aktiven Branches & Historien-Navigation)
 - **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
   "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
 - **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
@@ -117,7 +118,10 @@ let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).awai
 
 ## MCP-Server (für Claude Desktop & andere MCP-Clients)
 
-Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`):
+Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`).
+
+> 📖 **Vollständige MCP-Dokumentation & Konfigurationsanweisung:**
+> Siehe [crates/memfuse-mcp/README.md](crates/memfuse-mcp/README.md) für Installation, Claude-Desktop-Konfiguration (`claude_desktop_config.json`), Schritt-für-Schritt Demo und Troubleshooting.
 
 ```bash
 # Standardmäßig im Read-Only-Modus (Schreibzugriff gesperrt):
