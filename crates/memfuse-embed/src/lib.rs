@@ -256,6 +256,10 @@ impl TextEmbedder {
         let max_sequence_length = self.config.max_sequence_length;
 
         let output = tokio::task::spawn_blocking(move || {
+            // AI-TAG[PERF][MAJOR] ONNX Session re-created per embed call (ID: AGT-EMBED-f07dcaf8) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210)
+            // BEFUND: TextEmbedder rebuilds the ort::session::Session from file inside spawn_blocking for every single embed_async invocation.
+            // RISIKO: Repeated disk IO and model parsing overhead per embedding request degrades throughput under high embedding query load.
+            // EMPFEHLUNG: Refactor TextEmbedder to wrap Arc<Mutex<Session>> or a thread-safe SessionPool similar to OnnxReranker.
             let mut session = ort::session::Session::builder()
                 .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
                 .commit_from_file(&session_path)

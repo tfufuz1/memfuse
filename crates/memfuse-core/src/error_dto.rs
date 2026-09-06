@@ -404,4 +404,35 @@ mod tests {
             serde_json::from_str(&json_str).expect("serde deserialize"); // unwrap allowed
         assert_eq!(dto, deser_dto);
     }
+
+    #[test]
+    fn test_dto_constructors_and_display() {
+        let dto1 = MemFuseErrorDto::new("CustomKind", "custom message");
+        assert_eq!(dto1.kind, "CustomKind");
+        assert_eq!(dto1.message, "custom message");
+        assert!(dto1.details.is_none());
+        assert_eq!(dto1.to_string(), "[CustomKind]: custom message");
+
+        let details = serde_json::json!({"key": "value"});
+        let dto2 = MemFuseErrorDto::with_details("CustomKindWithDetails", "msg", details.clone());
+        assert_eq!(dto2.kind, "CustomKindWithDetails");
+        assert_eq!(dto2.details.as_ref(), Some(&details));
+
+        let dto_str: MemFuseErrorDto = "str err".into();
+        assert_eq!(dto_str.kind, "InvalidInput");
+        assert_eq!(dto_str.message, "str err");
+
+        let dto_string: MemFuseErrorDto = String::from("string err").into();
+        assert_eq!(dto_string.kind, "InvalidInput");
+        assert_eq!(dto_string.message, "string err");
+
+        let owned_err = MemFuseError::NotFound("item missing".into());
+        let dto_owned: MemFuseErrorDto = MemFuseErrorDto::from(owned_err);
+        assert_eq!(dto_owned.kind, "NotFound");
+        assert_eq!(dto_owned.message, "item missing");
+
+        // Test std::error::Error trait implementation
+        let err_trait: &dyn std::error::Error = &dto1;
+        assert_eq!(err_trait.to_string(), "[CustomKind]: custom message");
+    }
 }

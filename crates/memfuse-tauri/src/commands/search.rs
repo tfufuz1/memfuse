@@ -189,6 +189,7 @@ pub async fn multi_step_search(
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))?;
 
+    // RESOLVED: AGT-TAURI-96c44961 — Fixed missing provenance field in SearchResultDto initializer in multi_step_search (TS: 2026-09-06T11:38:00Z)
     let results = multi_res
         .results
         .into_iter()
@@ -209,6 +210,7 @@ pub async fn multi_step_search(
                 .and_then(|s| s.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
+            provenance: r.provenance.as_ref().map(ProvenanceDto::from),
         })
         .collect();
 

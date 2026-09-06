@@ -290,6 +290,10 @@ fn check_subinterpreter_guard(py: Python<'_>) -> PyResult<()> {
     Ok(())
 }
 
+// AI-TAG[SECURITY][MAJOR] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286)
+// BEFUND: Workspace Cargo.toml sets `panic = "abort"` in [profile.release], which disables unwinding for release cdylib builds.
+// RISIKO: In release builds, `std::panic::catch_unwind` in `run_blocking_ffi` cannot intercept panics, causing any Rust core panic to abort the CPython process via SIGABRT rather than raising PyRuntimeError.
+// EMPFEHLUNG: Configure profile-overrides or panic="unwind" for the cdylib target or document release profile unwinding requirements for PyO3 bindings.
 /// Safely executes a blocking closure across FFI boundaries with thread state release
 /// and panic containment to guarantee no Rust panic propagates across FFI boundaries into Python.
 fn run_blocking_ffi<F, R>(py: Python<'_>, f: F) -> PyResult<R>

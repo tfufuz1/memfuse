@@ -18,10 +18,6 @@ impl TextEmbeddingEngine for DummyEmbedder {
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         Ok(vec![vec![0.1; self.dim]; texts.len()])
     }
-
-    fn dimension(&self) -> usize {
-        self.dim
-    }
 }
 
 #[tokio::test]
@@ -132,14 +128,15 @@ async fn test_ingestion_pipeline_directory() {
     std::fs::write(&doc2_path, "Doc 2 content").expect("write doc2");
     std::fs::write(&ignored_path, "binary data").expect("write ignored");
 
-    let report = pipeline
-        .ingest_directory(tmp.path(), &collection)
+    let reports = pipeline
+        .ingest_folder(tmp.path(), &collection)
         .await
-        .expect("ingest_dir");
+        .expect("ingest_folder");
 
-    assert_eq!(report.total_files, 2);
-    assert_eq!(report.chunks_created, 2);
-    assert!(report.errors.is_empty());
+    let total_chunks: usize = reports.iter().map(|r| r.chunks_created).sum();
+    assert_eq!(reports.len(), 2);
+    assert_eq!(total_chunks, 2);
+    assert!(reports.iter().all(|r| r.errors.is_empty()));
 
     let results = collection
         .query()
