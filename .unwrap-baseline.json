@@ -14781,6 +14781,10 @@
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "41227a6bead9c52f"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "47987876db91e1fd"
   },
   {
@@ -14862,10 +14866,6 @@
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "babe1e170e9d4945"
-  },
-  {
-    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
-    "hash": "bebdf436520f91d2"
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
