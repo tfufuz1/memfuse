@@ -1388,8 +1388,9 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
+        let mut calibration = calibration;
         let (idx, selected, metrics) = router
-            .select_profile_cascade(&chunks, &profiles, &calibration)
+            .select_profile_cascade(&chunks, &profiles, &mut calibration)
             .expect("Cascade selection succeeds");
 
         assert_eq!(selected.name, "mid-slm");
@@ -1453,8 +1454,9 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
+        let mut calibration = calibration;
         let (idx, selected, metrics) = router
-            .select_profile_cascade(&chunks, &profiles, &calibration)
+            .select_profile_cascade(&chunks, &profiles, &mut calibration)
             .expect("Cascade fallthrough succeeds");
 
         assert_eq!(selected.name, "low-slm");
@@ -1464,6 +1466,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1492,13 +1496,15 @@ mod tests {
             .unwrap();
         db.inner_storage().commit(tx).await.unwrap();
 
+        let fp = ConfigFingerprint::new([1u8; 32], 0.1, QuantizationLevel::F16);
         let profile = SlmProfile::new(
             "conv-slm",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.001,
-        );
+        )
+        .with_fingerprint(fp.clone());
 
         let router = RouterEngine::new(collection, vec![profile], None);
 
@@ -1512,7 +1518,7 @@ mod tests {
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
-            last_calibrated = st.conformal.window_total >= 30;
+            last_calibrated = st.is_calibrated(&fp);
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
@@ -1524,7 +1530,304 @@ mod tests {
 
         assert!(
             last_calibrated,
-            "After 55 decisions with record_outcome (>= 30 samples), decision must be calibrated (calibrated = true)"
+            "After 55 decisions with record_outcome (>= 30 samples) and unchanged fingerprint, decision must be calibrated (calibrated = true)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_invalidation_on_temperature_change() {
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_temp",
+                &vec_data,
+                Some(json!({"text": "temperature shift content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp1 = ConfigFingerprint::new([1u8; 32], 0.1, QuantizationLevel::F16);
+        let profile1 = SlmProfile::new(
+            "temp-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp1.clone());
+
+        let router = RouterEngine::new(collection, vec![profile1], None);
+
+        // Warm up with 35 successful outcomes under fp1
+        for _ in 0..35 {
+            let decision = router
+                .route(&vec_data, "temperature shift content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        let cal_stats = router.calibration_stats();
+        assert!(
+            cal_stats["temp-slm"].is_calibrated(&fp1),
+            "Profile should be calibrated under initial fp1"
+        );
+
+        // Update profile with new temperature (0.7 -> different bucket)
+        let fp2 = ConfigFingerprint::new([1u8; 32], 0.7, QuantizationLevel::F16);
+        assert_ne!(
+            fp1.temperature_bucket, fp2.temperature_bucket,
+            "Buckets must differ for 0.1 vs 0.7"
+        );
+
+        let profile2 = SlmProfile::new(
+            "temp-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp2.clone());
+
+        router.update_profiles(vec![profile2]);
+
+        // Next route call must observe calibrated = false due to configuration shift
+        let decision_after_shift = router
+            .route(&vec_data, "temperature shift content")
+            .await
+            .unwrap();
+        assert!(
+            !decision_after_shift.confidence.as_ref().unwrap().calibrated,
+            "Decision after temperature shift must be uncalibrated"
+        );
+
+        let stats_after_shift = router.calibration_stats();
+        assert!(
+            !stats_after_shift["temp-slm"].is_calibrated(&fp2),
+            "Calibration state must report is_calibrated = false immediately after shift"
+        );
+
+        // Warm up again with 35 decisions under fp2
+        for _ in 0..35 {
+            let d = router
+                .route(&vec_data, "temperature shift content")
+                .await
+                .unwrap();
+            router.record_outcome(d.decision_id, RoutingOutcome::Success);
+        }
+
+        let stats_recalibrated = router.calibration_stats();
+        assert!(
+            stats_recalibrated["temp-slm"].is_calibrated(&fp2),
+            "Profile should become calibrated again under fp2 after re-warmup window"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_invalidation_on_prompt_template_hash_change() {
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_prompt",
+                &vec_data,
+                Some(json!({"text": "prompt shift content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp_hash1 = ConfigFingerprint::new([1u8; 32], 0.2, QuantizationLevel::Q8_0);
+        let profile1 = SlmProfile::new(
+            "prompt-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_hash1.clone());
+
+        let router = RouterEngine::new(collection, vec![profile1], None);
+
+        for _ in 0..35 {
+            let decision = router
+                .route(&vec_data, "prompt shift content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        assert!(
+            router.calibration_stats()["prompt-slm"].is_calibrated(&fp_hash1),
+            "Profile should be calibrated under prompt hash 1"
+        );
+
+        // Shift prompt template hash
+        let fp_hash2 = ConfigFingerprint::new([2u8; 32], 0.2, QuantizationLevel::Q8_0);
+        let profile2 = SlmProfile::new(
+            "prompt-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_hash2.clone());
+
+        router.update_profiles(vec![profile2]);
+
+        let decision_after_shift = router
+            .route(&vec_data, "prompt shift content")
+            .await
+            .unwrap();
+        assert!(
+            !decision_after_shift.confidence.as_ref().unwrap().calibrated,
+            "Decision after prompt template hash shift must be uncalibrated"
+        );
+        assert!(
+            !router.calibration_stats()["prompt-slm"].is_calibrated(&fp_hash2),
+            "State must report is_calibrated = false"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_invalidation_on_quantization_change() {
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_quant",
+                &vec_data,
+                Some(json!({"text": "quantization shift content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp_q8 = ConfigFingerprint::new([3u8; 32], 0.0, QuantizationLevel::Q8_0);
+        let profile1 = SlmProfile::new(
+            "quant-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_q8.clone());
+
+        let router = RouterEngine::new(collection, vec![profile1], None);
+
+        for _ in 0..35 {
+            let decision = router
+                .route(&vec_data, "quantization shift content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        assert!(
+            router.calibration_stats()["quant-slm"].is_calibrated(&fp_q8),
+            "Profile should be calibrated under Q8_0 quantization"
+        );
+
+        // Shift quantization level from Q8_0 to Q4_K_M
+        let fp_q4 = ConfigFingerprint::new([3u8; 32], 0.0, QuantizationLevel::Q4_K_M);
+        let profile2 = SlmProfile::new(
+            "quant-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_q4.clone());
+
+        router.update_profiles(vec![profile2]);
+
+        let decision_after_shift = router
+            .route(&vec_data, "quantization shift content")
+            .await
+            .unwrap();
+        assert!(
+            !decision_after_shift.confidence.as_ref().unwrap().calibrated,
+            "Decision after quantization level shift must be uncalibrated"
+        );
+        assert!(
+            !router.calibration_stats()["quant-slm"].is_calibrated(&fp_q4),
+            "State must report is_calibrated = false"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_failsafe_on_unknown_quantization() {
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_unknown",
+                &vec_data,
+                Some(json!({"text": "unknown quantization content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp_unknown = ConfigFingerprint::new([4u8; 32], 0.1, QuantizationLevel::Unknown);
+        let profile = SlmProfile::new(
+            "unknown-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_unknown.clone());
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Perform 50 decisions with record_outcome under Unknown quantization
+        for _ in 0..50 {
+            let decision = router
+                .route(&vec_data, "unknown quantization content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        let stats = router.calibration_stats();
+        assert!(
+            !stats["unknown-slm"].is_calibrated(&fp_unknown),
+            "QuantizationLevel::Unknown must fail-safe and never yield is_calibrated = true"
         );
     }
 
@@ -1623,13 +1926,16 @@ mod tests {
             .unwrap();
         db.inner_storage().commit(tx).await.unwrap();
 
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+        let fp = ConfigFingerprint::new([1u8; 32], 0.5, QuantizationLevel::F16);
         let profile = SlmProfile::new(
             "parallel-conv-slm",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.5,
-        );
+        )
+        .with_fingerprint(fp);
 
         let router = Arc::new(RouterEngine::new(collection, vec![profile], None));
 
@@ -1873,13 +2179,16 @@ mod tests {
             .await
             .unwrap();
 
+        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+        let fp = ConfigFingerprint::new([1u8; 32], 0.1, QuantizationLevel::F16);
         let profile = SlmProfile::new(
             "default",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.01,
-        );
+        )
+        .with_fingerprint(fp);
 
         let router = RouterEngine::new(collection, vec![profile], None);
         let decision = router.route(&vec_coding, "function test").await.unwrap();
