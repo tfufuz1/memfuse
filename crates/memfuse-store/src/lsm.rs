@@ -2459,12 +2459,18 @@ mod tests {
         for i in 0..25 {
             let key = format!("pfx:{:02}", i);
             let val = format!("val:{:02}", i);
-            storage.put(tx, key.as_bytes(), val.as_bytes()).await.unwrap();
+            storage
+                .put(tx, key.as_bytes(), val.as_bytes())
+                .await
+                .unwrap();
         }
         storage.commit(tx).await.unwrap();
 
         // 1st call: limit 10, cursor None -> 10 items + Some(cursor)
-        let (p1, cur1) = storage.scan_prefix_bounded(b"pfx:", 10, None).await.unwrap();
+        let (p1, cur1) = storage
+            .scan_prefix_bounded(b"pfx:", 10, None)
+            .await
+            .unwrap();
         assert_eq!(p1.len(), 10);
         assert_eq!(p1[0].0, b"pfx:00");
         assert_eq!(p1[9].0, b"pfx:09");
