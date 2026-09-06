@@ -1,24 +1,30 @@
 use memfuse_agent::{
     AgentContext, AgentTool, DeadLetterReason, NodeType, OrchestratorEngine, StateGraph, StepResult,
 };
-use memfuse_core::{MemFuseError, Result, TokenBudget};
+use memfuse_core::{
+    BoxFuture, MemFuseError, Result, TokenBudget};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_tool_timeout_creates_dead_letter() -> Result<()> {
     struct HangingTool;
-    #[async_trait::async_trait]
-    impl AgentTool for HangingTool {
+        impl AgentTool for HangingTool {
         fn name(&self) -> &str {
             "hanging"
         }
         fn timeout_ms(&self) -> u64 {
             50 // 50ms Timeout
         }
-        async fn execute(&self, _: &AgentContext, _: serde_json::Value) -> Result<StepResult> {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            unreachable!()
+        fn execute<'a>(
+            &'a self,
+            _: &'a AgentContext,
+            _: serde_json::Value,
+        ) -> BoxFuture<'a, Result<StepResult>> {
+            Box::pin(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                unreachable!()
+            })
         }
     }
 
@@ -92,26 +98,31 @@ async fn test_tool_retry_succeeds_on_second_attempt() -> Result<()> {
     struct FlakeyTool {
         attempt: AtomicU32,
     }
-    #[async_trait::async_trait]
-    impl AgentTool for FlakeyTool {
+        impl AgentTool for FlakeyTool {
         fn name(&self) -> &str {
             "flakey"
         }
         fn is_retriable(&self) -> bool {
             true
         }
-        async fn execute(&self, _: &AgentContext, _: serde_json::Value) -> Result<StepResult> {
-            let n = self.attempt.fetch_add(1, Ordering::SeqCst);
-            if n == 0 {
-                Err(MemFuseError::Internal("transient failure".into()))
-            } else {
-                Ok(StepResult {
-                    node_id: "task_a".to_string(),
-                    output: serde_json::json!({"status": "ok"}),
-                    tokens_consumed: 10,
-                    next_edge: None,
-                })
-            }
+        fn execute<'a>(
+            &'a self,
+            _: &'a AgentContext,
+            _: serde_json::Value,
+        ) -> BoxFuture<'a, Result<StepResult>> {
+            Box::pin(async move {
+                let n = self.attempt.fetch_add(1, Ordering::SeqCst);
+                if n == 0 {
+                    Err(MemFuseError::Internal("transient failure".into()))
+                } else {
+                    Ok(StepResult {
+                        node_id: "task_a".to_string(),
+                        output: serde_json::json!({"status": "ok"}),
+                        tokens_consumed: 10,
+                        next_edge: None,
+                    })
+                }
+            })
         }
     }
 

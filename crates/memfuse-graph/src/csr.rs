@@ -15,8 +15,8 @@
 //                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
-use async_trait::async_trait;
 use memfuse_core::{
+    BoxFuture,
     Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine, TxId,
 };
 use parking_lot::RwLock;
@@ -1039,9 +1039,9 @@ impl Default for CsrGraph {
     }
 }
 
-#[async_trait]
 impl GraphIndex for CsrGraph {
-    async fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()> {
+    fn add_entity<'a>(&'a self, tx: TxId, entity: Entity) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
@@ -1066,9 +1066,11 @@ impl GraphIndex for CsrGraph {
             .or_default()
             .insert(entity.id, entity);
         Ok(())
+        })
     }
 
-    async fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()> {
+    fn add_edge<'a>(&'a self, tx: TxId, edge: Edge) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
@@ -1111,45 +1113,53 @@ impl GraphIndex for CsrGraph {
                 business_valid_to: edge.business_valid_to,
             });
         Ok(())
+        })
     }
 
-    async fn personalized_page_rank(
-        &self,
-        seed_nodes: &[EntityId],
-        config: &memfuse_core::PprConfig,
-    ) -> Result<Vec<(EntityId, f32)>> {
+    fn personalized_page_rank<'a>(
+        &'a self,
+        seed_nodes: &'a [EntityId],
+        config: &'a memfuse_core::PprConfig,
+    ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+        Box::pin(async move {
         self.compact();
         let inner = self.inner.read();
         Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+        })
     }
 
-    async fn traverse_at(
-        &self,
+    fn traverse_at<'a>(
+        &'a self,
         start_node: EntityId,
         max_hops: usize,
         seq_no: u64,
-    ) -> Result<Vec<(EntityId, f32)>> {
+    ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+        Box::pin(async move {
         self.traverse_at_time(start_node, max_hops, TxId::new(seq_no))
             .await
+        })
     }
 
-    async fn traverse_at_time(
-        &self,
+    fn traverse_at_time<'a>(
+        &'a self,
         start: EntityId,
         max_hops: usize,
         as_of: TxId,
-    ) -> Result<Vec<(EntityId, f32)>> {
+    ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+        Box::pin(async move {
         self.traverse_at_bitemporal(start, max_hops, as_of, None)
             .await
+        })
     }
 
-    async fn traverse_at_bitemporal(
-        &self,
+    fn traverse_at_bitemporal<'a>(
+        &'a self,
         start: EntityId,
         max_hops: usize,
         as_of_tx: TxId,
         as_of_business: Option<i64>,
-    ) -> Result<Vec<(EntityId, f32)>> {
+    ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+        Box::pin(async move {
         if max_hops > 100 {
             return Err(MemFuseError::InvalidInput(format!(
                 "max_hops {max_hops} exceeds upper safety limit of 100"
@@ -1304,9 +1314,11 @@ impl GraphIndex for CsrGraph {
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(results)
+        })
     }
 
-    async fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>> {
+    fn traverse<'a>(&'a self, start: EntityId, max_hops: usize) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+        Box::pin(async move {
         if max_hops > 100 {
             return Err(MemFuseError::InvalidInput(format!(
                 "max_hops {max_hops} exceeds upper safety limit of 100"
@@ -1445,9 +1457,11 @@ impl GraphIndex for CsrGraph {
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(results)
+        })
     }
 
-    async fn commit(&self, tx: TxId) -> Result<()> {
+    fn commit<'a>(&'a self, tx: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
@@ -1574,9 +1588,11 @@ impl GraphIndex for CsrGraph {
         self.last_tx_id.fetch_max(tx.inner(), Ordering::SeqCst);
 
         Ok(())
+        })
     }
 
-    async fn remove_edge(&self, tx: TxId, from: EntityId, to: EntityId) -> Result<()> {
+    fn remove_edge<'a>(&'a self, tx: TxId, from: EntityId, to: EntityId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
@@ -1597,47 +1613,61 @@ impl GraphIndex for CsrGraph {
             .or_default()
             .push((from, to));
         Ok(())
+        })
     }
 
-    async fn add_bidirectional(
-        &self,
+    fn add_bidirectional<'a>(
+        &'a self,
         tx: TxId,
         from: EntityId,
         to: EntityId,
-        label: &str,
-    ) -> Result<()> {
+        label: &'a str,
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.add_edge(tx, Edge::new(from, to, label)).await?;
         self.add_edge(tx, Edge::new(to, from, label)).await?;
         Ok(())
+        })
     }
 
-    async fn neighbors(&self, start: EntityId) -> Result<Vec<EntityId>> {
+    fn neighbors<'a>(&'a self, start: EntityId) -> BoxFuture<'a, Result<Vec<EntityId>>> {
+        Box::pin(async move {
         self.neighbors(start).await
+        })
     }
 
-    async fn rollback(&self, tx: TxId) -> Result<()> {
+    fn rollback<'a>(&'a self, tx: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         let mut inner = self.inner.write();
         inner.staged_entities.remove(&tx);
         inner.staged_edges.remove(&tx);
         inner.staged_removals.remove(&tx);
         Ok(())
+        })
     }
 
-    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
+    fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         // Physical rollback for CSR graph is driven by WAL replay or reloading state from storage.
         // In-memory staged transactions are handled by rollback().
         Ok(())
+        })
     }
 
-    async fn last_tx_id(&self) -> Result<TxId> {
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+        Box::pin(async move {
         Ok(TxId::new(self.last_tx_id.load(Ordering::SeqCst)))
+        })
     }
 
-    async fn len(&self) -> usize {
+    fn len<'a>(&'a self) -> BoxFuture<'a, usize> {
+        Box::pin(async move {
         self.entity_count()
+        })
     }
 
-    async fn stats(&self) -> Result<GraphIndexStats> {
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<GraphIndexStats>> {
+        Box::pin(async move {
         let inner = self.inner.read();
         let num_entities = inner.entities.iter().flatten().count();
         let num_edges = inner.targets.len()
@@ -1658,6 +1688,7 @@ impl GraphIndex for CsrGraph {
             num_entities,
             num_edges,
             memory_usage_bytes: mem,
+        })
         })
     }
 }

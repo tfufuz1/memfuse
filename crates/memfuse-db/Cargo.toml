@@ -18,7 +18,6 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-async-trait = { workspace = true }
 parking_lot = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 

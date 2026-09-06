@@ -641,6 +641,7 @@ pub async fn cleanup_orphaned_consolidation_intents<S: StorageEngine>(
 
 #[cfg(test)]
 mod tests {
+    use memfuse_core::BoxFuture;
     use super::*;
 
     fn make_chunk(id: u64, content: &str, relevance: f32, is_tool: bool) -> ContextChunk {
@@ -758,13 +759,18 @@ mod tests {
     }
 
     struct UnreachableLlmGenerator;
-    #[async_trait::async_trait]
-    impl LlmTextGenerator for UnreachableLlmGenerator {
-        async fn generate(&self, _prompt: &str) -> Result<String> {
+        impl LlmTextGenerator for UnreachableLlmGenerator {
+        fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+
+            Box::pin(async move {
             Err(MemFuseError::Io(std::io::Error::new(
                 std::io::ErrorKind::ConnectionRefused,
                 "Unreachable LLM generator",
             )))
+
+
+            })
+
         }
     }
 
@@ -809,10 +815,15 @@ mod tests {
     }
 
     struct MockLlmGenerator;
-    #[async_trait::async_trait]
-    impl LlmTextGenerator for MockLlmGenerator {
-        async fn generate(&self, _prompt: &str) -> Result<String> {
+        impl LlmTextGenerator for MockLlmGenerator {
+        fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+
+            Box::pin(async move {
             Ok("Zusammenfassung der 3 Quelldokumente".to_string())
+
+
+            })
+
         }
     }
 
@@ -873,84 +884,132 @@ mod tests {
         fail_delete: Arc<AtomicBool>,
     }
 
-    #[async_trait::async_trait]
-    impl StorageEngine for FaultyDeleteStorage {
-        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        impl StorageEngine for FaultyDeleteStorage {
+        fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move {
             self.inner.get(key).await
+
+            })
         }
 
-        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
+        fn get_at_seq<'a>(&'a self, key: &'a [u8], seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move {
             self.inner.get_at_seq(key, seq).await
+
+            })
         }
 
-        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+        fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.put(tx_id, key, value).await
+
+            })
         }
 
-        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+        fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             if self.fail_delete.load(Ordering::SeqCst) {
                 return Err(memfuse_core::MemFuseError::Transaction(
                     "INJECTED FAULT: Storage delete failure".into(),
                 ));
             }
             self.inner.delete(tx_id, key).await
+
+            })
         }
 
-        async fn commit(&self, tx_id: TxId) -> Result<()> {
+        fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.commit(tx_id).await
+
+            })
         }
 
-        async fn rollback(&self, tx_id: TxId) -> Result<()> {
+        fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.rollback(tx_id).await
+
+            })
         }
 
-        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.rollback_to_tx(tx_id).await
+
+            })
         }
 
-        async fn flush(&self) -> Result<()> {
+        fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.flush().await
+
+            })
         }
 
-        async fn stats(&self) -> Result<StorageStats> {
+        fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+            Box::pin(async move {
             self.inner.stats().await
+
+            })
         }
 
-        async fn last_seq_no(&self) -> Result<u64> {
+        fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+            Box::pin(async move {
             self.inner.last_seq_no().await
+
+            })
         }
 
-        async fn last_tx_id(&self) -> Result<TxId> {
+        fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+            Box::pin(async move {
             self.inner.last_tx_id().await
+
+            })
         }
 
-        async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.pin_checkpoint(seq_no).await
+
+            })
         }
 
-        async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+        fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
             self.inner.unpin_checkpoint(seq_no).await
+
+            })
         }
 
-        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
             self.inner.scan_prefix(prefix).await
+
+            })
         }
 
-        async fn scan_prefix_at(
-            &self,
-            prefix: &[u8],
+        fn scan_prefix_at<'a>(
+            &'a self,
+            prefix: &'a [u8],
             seq_no: u64,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
             self.inner.scan_prefix_at(prefix, seq_no).await
+
+            })
         }
 
-        async fn scan(
-            &self,
-            start: std::ops::Bound<&[u8]>,
-            end: std::ops::Bound<&[u8]>,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        fn scan<'a>(
+            &'a self,
+            start: std::ops::Bound<&'a [u8]>,
+            end: std::ops::Bound<&'a [u8]>,
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
             self.inner.scan(start, end).await
+
+            })
         }
+
     }
 
     #[tokio::test]

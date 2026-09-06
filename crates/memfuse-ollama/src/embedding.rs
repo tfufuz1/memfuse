@@ -7,8 +7,7 @@
 
 use crate::client::{OllamaClient, OllamaConfig, DEFAULT_BASE_URL, DEFAULT_EMBED_MODEL};
 use crate::model_info::known_dimension;
-use async_trait::async_trait;
-use memfuse_core::{EmbeddingError, EmbeddingProvider, MemFuseError};
+use memfuse_core::{BoxFuture, EmbeddingError, EmbeddingProvider, MemFuseError};
 
 /// Implementation of `TextEmbeddingEngine` using Ollama's HTTP API.
 #[derive(Clone, Debug)]
@@ -71,62 +70,25 @@ impl OllamaEmbedder {
     }
 }
 
-#[async_trait]
 impl EmbeddingProvider for OllamaEmbedder {
     fn provider_name(&self) -> &str {
         "ollama"
     }
 
-    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
-        let vec = self
-            .client
-            .embed(&self.model, text)
-            .await
-            .map_err(|e| match e {
-                MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
-                    EmbeddingError::Unavailable(msg)
-                }
-                other => EmbeddingError::ComputationFailed(other.to_string()),
-            })?;
+    fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
+        Box::pin(async move {
+            let vec = self
+                .client
+                .embed(&self.model, text)
+                .await
+                .map_err(|e| match e {
+                    MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                        EmbeddingError::Unavailable(msg)
+                    }
+                    other => EmbeddingError::ComputationFailed(other.to_string()),
+                })?;
 
-        if let Some(expected_dim) = self.expected_dimension {
-            if vec.len() != expected_dim {
-                return Err(EmbeddingError::ComputationFailed(format!(
-                    "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
-                    vec.len(),
-                    expected_dim,
-                    self.model
-                )));
-            }
-        }
-        Ok(vec)
-    }
-
-    fn embedding_dim(&self) -> usize {
-        self.expected_dimension.unwrap_or(0)
-    }
-
-    async fn embed_batch(
-        &self,
-        texts: &[&str],
-    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
-        if texts.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let output = self
-            .client
-            .embed_batch(&self.model, texts)
-            .await
-            .map_err(|e| match e {
-                MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
-                    EmbeddingError::Unavailable(msg)
-                }
-                other => EmbeddingError::ComputationFailed(other.to_string()),
-            })?;
-
-        if let Some(expected_dim) = self.expected_dimension {
-            for vec in &output {
+            if let Some(expected_dim) = self.expected_dimension {
                 if vec.len() != expected_dim {
                     return Err(EmbeddingError::ComputationFailed(format!(
                         "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
@@ -136,9 +98,49 @@ impl EmbeddingProvider for OllamaEmbedder {
                     )));
                 }
             }
-        }
+            Ok(vec)
+        })
+    }
 
-        Ok(output)
+    fn embedding_dim(&self) -> usize {
+        self.expected_dimension.unwrap_or(0)
+    }
+
+    fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [&'a str],
+    ) -> BoxFuture<'a, std::result::Result<Vec<Vec<f32>>, EmbeddingError>> {
+        Box::pin(async move {
+            if texts.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let output = self
+                .client
+                .embed_batch(&self.model, texts)
+                .await
+                .map_err(|e| match e {
+                    MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                        EmbeddingError::Unavailable(msg)
+                    }
+                    other => EmbeddingError::ComputationFailed(other.to_string()),
+                })?;
+
+            if let Some(expected_dim) = self.expected_dimension {
+                for vec in &output {
+                    if vec.len() != expected_dim {
+                        return Err(EmbeddingError::ComputationFailed(format!(
+                            "Ollama returned embedding of dimension {} but expected {}. Model '{}' may have changed. Rebuild the HNSW index.",
+                            vec.len(),
+                            expected_dim,
+                            self.model
+                        )));
+                    }
+                }
+            }
+
+            Ok(output)
+        })
     }
 }
 

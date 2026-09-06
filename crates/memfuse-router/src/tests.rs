@@ -1514,7 +1514,7 @@ mod tests {
                 .await
                 .unwrap();
             let conf = decision.confidence.expect("Confidence metrics present");
-            last_calibrated = conf.calibrated;
+            last_calibrated = conf.is_calibrated();
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
@@ -1884,7 +1884,7 @@ mod tests {
             0.01,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let decision = router.route(&vec_coding, "function test").await.unwrap();
 
         let cal_before = router.calibration_stats();
@@ -1918,7 +1918,7 @@ mod tests {
             0.01,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         let unknown_id = DecisionId::new();
 
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));

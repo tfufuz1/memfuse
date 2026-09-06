@@ -350,6 +350,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
 
         #[cfg(feature = "reranking")]
         if let Some(reranker) = self.reranker {
+            let text_str = self.text.as_deref().unwrap_or("");
             if !results.is_empty() && !text_str.is_empty() {
                 let candidate_texts: Vec<String> = results
                     .iter()
@@ -397,7 +398,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 mod tests {
     use super::*;
     use crate::{Collection, DistanceMetric, Language};
-    use memfuse_core::{FilterExpr, HybridQuery};
+    use memfuse_core::{
+    BoxFuture, FilterExpr, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
     use memfuse_store::{LsmConfig, LsmStorage};

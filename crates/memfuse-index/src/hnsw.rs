@@ -1944,7 +1944,6 @@ impl HnswIndexCore {
     // Kept for backward compatibility or direct calls if needed, though facade should use `HnswIndex` wrapper
 }
 
-#[async_trait::async_trait]
 impl VectorIndex for HnswIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         if let Some(ref err) = self.inner.validation_error {

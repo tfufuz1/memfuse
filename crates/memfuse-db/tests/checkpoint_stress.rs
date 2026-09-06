@@ -1,5 +1,6 @@
 use memfuse_checkpoint::PersistentCheckpointStore;
-use memfuse_core::{StorageEngine, TxId};
+use memfuse_core::{
+    BoxFuture, StorageEngine, TxId};
 use memfuse_store::{LsmConfig, LsmStorage};
 use std::sync::Arc;
 use tempfile::TempDir;

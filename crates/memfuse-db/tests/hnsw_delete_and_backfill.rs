@@ -1,8 +1,8 @@
 // FILE-CONTEXT: HNSW Soft-Delete Error Propagation & Search Backfill Verification
 // ZWECK: Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern.
 
-use async_trait::async_trait;
 use memfuse_core::{
+    BoxFuture,
     DocId, MemFuseError, Result, ScoredDocument, TxId, VectorIndex, VectorIndexStats,
 };
 use memfuse_db::{MemFuse, MemFuseConfig};
@@ -20,7 +20,6 @@ struct FaultyDeleteVectorIndex {
     fail_delete: AtomicBool,
 }
 
-#[async_trait]
 impl VectorIndex for FaultyDeleteVectorIndex {
     async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         self.inner.insert(tx, id, embedding).await

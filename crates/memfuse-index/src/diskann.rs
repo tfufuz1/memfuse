@@ -985,7 +985,6 @@ impl Clone for DiskAnnIndex {
     }
 }
 
-#[async_trait::async_trait]
 impl VectorIndex for DiskAnnIndex {
     async fn insert(&self, _tx: TxId, _id: DocId, embedding: &[f32]) -> Result<()> {
         self.check_quantizer_drift(embedding);

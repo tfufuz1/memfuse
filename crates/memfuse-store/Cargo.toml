@@ -23,7 +23,6 @@ memfuse-crypto = { workspace = true }
 parking_lot = { workspace = true }
 tokio = { workspace = true }
 memmap2 = { workspace = true }
-async-trait = { workspace = true }
 tracing = { workspace = true }
 
 rand = { workspace = true }

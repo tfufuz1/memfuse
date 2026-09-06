@@ -65,6 +65,7 @@ use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableRead
 use crate::wal::{Wal, WalOp};
 use bytes::Bytes;
 use memfuse_core::{
+    BoxFuture,
     DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result, SnapshotRegistry,
     StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
 };
@@ -699,7 +700,7 @@ impl LsmStorage {
     }
 }
 
-#[async_trait::async_trait]
+
 impl StorageEngine for LsmStorage {
     /// # ACID-Garantie
     /// Bietet Snapshot-Isolations-Point-Reads des aktuellsten committed Zustands.
@@ -709,7 +710,8 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         validate_key(key)?;
         let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
         let res = self.get_at_seq(key, current_max_seq).await?;
@@ -720,6 +722,7 @@ impl StorageEngine for LsmStorage {
             res.is_some()
         );
         Ok(res)
+        })
     }
 
     /// # ACID-Garantie
@@ -730,7 +733,8 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn get_at_seq(&self, key: &[u8], seq_no: u64) -> Result<Option<Vec<u8>>> {
+    fn get_at_seq<'a>(&'a self, key: &'a [u8], seq_no: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         validate_key(key)?;
         // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
         let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
@@ -786,6 +790,7 @@ impl StorageEngine for LsmStorage {
         }
 
         Ok(None)
+        })
     }
 
     /// # ACID-Garantie
@@ -796,7 +801,8 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+    fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         validate_key(key)?;
         validate_value(value)?;
         self.apply_backpressure().await;
@@ -818,9 +824,11 @@ impl StorageEngine for LsmStorage {
             },
         )?;
         Ok(())
+        })
     }
 
-    async fn delete_many(&self, tx_id: TxId, keys: Vec<Vec<u8>>) -> Result<u64> {
+    fn delete_many<'a>(&'a self, tx_id: TxId, keys: Vec<Vec<u8>>) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
         if keys.len() > MAX_BATCH_SIZE {
             return Err(MemFuseError::InvalidInput(format!(
                 "Batch size ({} items) exceeds limit of {} items",
@@ -852,9 +860,11 @@ impl StorageEngine for LsmStorage {
 
         self.tx_buffer.stage_many(tx_id, ops)?;
         Ok(count)
+        })
     }
 
-    async fn delete_prefix(&self, tx_id: TxId, prefix: &[u8]) -> Result<u64> {
+    fn delete_prefix<'a>(&'a self, tx_id: TxId, prefix: &'a [u8]) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
         let matching_keys: Vec<Vec<u8>> = self
             .scan_prefix(prefix)
             .await?
@@ -862,6 +872,7 @@ impl StorageEngine for LsmStorage {
             .map(|(key, _)| key)
             .collect();
         self.delete_many(tx_id, matching_keys).await
+        })
     }
 
     /// # ACID-Garantie
@@ -872,7 +883,8 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
+    fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         validate_key(key)?;
         let doc_id = {
             let hash = blake3::hash(key);
@@ -889,6 +901,7 @@ impl StorageEngine for LsmStorage {
             },
         )?;
         Ok(())
+        })
     }
 
     /// # ACID-Garantie
@@ -900,7 +913,8 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn commit(&self, tx_id: TxId) -> Result<()> {
+    fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.apply_backpressure().await;
         if !self.budget.has_memory_capacity() {
             return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
@@ -1017,6 +1031,7 @@ impl StorageEngine for LsmStorage {
         }
 
         Ok(())
+        })
     }
 
     /// # ACID-Garantie
@@ -1034,9 +1049,11 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn rollback(&self, tx_id: TxId) -> Result<()> {
+    fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.tx_buffer.discard(tx_id);
         Ok(())
+        })
     }
 
     /// # ACID-Garantie
@@ -1047,18 +1064,24 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+    fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Self::rollback_to_tx(self, tx_id).await
+        })
     }
 
-    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
+    fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.snapshot_registry.pin(seq_no);
         Ok(())
+        })
     }
 
-    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
+    fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.snapshot_registry.unpin(seq_no);
         Ok(())
+        })
     }
 
     /// # ACID-Garantie
@@ -1069,7 +1092,8 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    async fn flush(&self) -> Result<()> {
+    fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         // ── Phase 0: Schnellcheck (Read-Lock, kein I/O) ──────────────────────
         {
             let state = self.state.read().await;
@@ -1174,9 +1198,11 @@ impl StorageEngine for LsmStorage {
 
         tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
         Ok(())
+        })
     }
 
-    async fn stats(&self) -> Result<memfuse_core::StorageStats> {
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::StorageStats>> {
+        Box::pin(async move {
         let state = self.state.read().await;
         let sstables = self.sstables.read().await;
         let num_segments = sstables.len();
@@ -1195,26 +1221,34 @@ impl StorageEngine for LsmStorage {
             total_size_bytes,
             memtable_size_bytes,
         })
+        })
     }
 
-    async fn last_seq_no(&self) -> Result<u64> {
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
         Ok(self.next_seq_no.load(Ordering::SeqCst).saturating_sub(1))
+        })
     }
 
-    async fn last_tx_id(&self) -> Result<TxId> {
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+        Box::pin(async move {
         Ok(TxId::new(self.last_committed_tx.load(Ordering::SeqCst)))
+        })
     }
 
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         self.scan_prefix_at(prefix, u64::MAX).await
+        })
     }
 
-    async fn scan_prefix_bounded(
-        &self,
-        prefix: &[u8],
+    fn scan_prefix_bounded<'a>(
+        &'a self,
+        prefix: &'a [u8],
         limit: usize,
-        cursor: Option<&[u8]>,
-    ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)> {
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
         let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
             std::collections::BTreeMap::new();
@@ -1310,9 +1344,11 @@ impl StorageEngine for LsmStorage {
         };
 
         Ok((results, next_cursor))
+        })
     }
 
-    async fn scan_prefix_at(&self, prefix: &[u8], seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix_at<'a>(&'a self, prefix: &'a [u8], seq_no: u64) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         // INVARIANT (Task C - Single snapshot boundary):
         // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
@@ -1390,13 +1426,15 @@ impl StorageEngine for LsmStorage {
         }
 
         Ok(results)
+        })
     }
 
-    async fn scan(
-        &self,
-        start: std::ops::Bound<&[u8]>,
-        end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         use std::ops::Bound;
 
         let last_tx = self.last_committed_tx.load(Ordering::Acquire);
@@ -1471,6 +1509,7 @@ impl StorageEngine for LsmStorage {
             .collect();
 
         Ok(results)
+        })
     }
 }
 

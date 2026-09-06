@@ -1,3 +1,4 @@
+use memfuse_core::BoxFuture;
 use memfuse_agent::context::{AgentContext, AgentStatus};
 use memfuse_agent::engine::OrchestratorEngine;
 use memfuse_agent::graph::{NodeType, StateGraph};
@@ -9,23 +10,24 @@ use tempfile::TempDir;
 
 struct IncrementTool;
 
-#[async_trait::async_trait]
 impl AgentTool for IncrementTool {
     fn name(&self) -> &str {
         "increment"
     }
 
-    async fn execute(
-        &self,
-        _ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
         input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        let val = input.as_u64().unwrap_or(0);
-        Ok(StepResult {
-            node_id: "task_1".to_string(),
-            output: serde_json::json!(val + 1),
-            tokens_consumed: 10,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            let val = input.as_u64().unwrap_or(0);
+            Ok(StepResult {
+                node_id: "task_1".to_string(),
+                output: serde_json::json!(val + 1),
+                tokens_consumed: 10,
+                next_edge: None,
+            })
         })
     }
 }

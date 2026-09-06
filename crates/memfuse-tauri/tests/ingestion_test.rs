@@ -1,5 +1,4 @@
-use async_trait::async_trait;
-use memfuse_core::{GraphIndex, Result, TextEmbeddingEngine};
+use memfuse_core::{BoxFuture, GraphIndex, Result, TextEmbeddingEngine};
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_tauri_lib::ingestion::{IngestionPipeline, MAX_COOCCURRENCE_ENTITIES_PER_CHUNK};
 use std::sync::Arc;
@@ -9,18 +8,17 @@ struct DummyEmbedder {
     dim: usize,
 }
 
-#[async_trait]
 impl TextEmbeddingEngine for DummyEmbedder {
-    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
-        Ok(vec![0.1; self.dim])
+    fn embed<'a>(&'a self, _text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
+        Box::pin(async move {
+            Ok(vec![0.1; self.dim])
+        })
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.1; self.dim]; texts.len()])
-    }
-
-    fn dimension(&self) -> usize {
-        self.dim
+    fn embed_batch<'a>(&'a self, texts: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<Vec<f32>>>> {
+        Box::pin(async move {
+            Ok(vec![vec![0.1; self.dim]; texts.len()])
+        })
     }
 }
 

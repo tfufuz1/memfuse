@@ -11,7 +11,8 @@
 //! metadata breadcrumbs.
 
 use crate::context::ContextManager;
-use memfuse_core::{ContextChunk, DocId};
+use memfuse_core::{
+    ContextChunk, DocId};
 use serde_json::json;
 
 /// Approximate character count per token (BPE ratio consistent with `ContextManager::estimate_tokens`).

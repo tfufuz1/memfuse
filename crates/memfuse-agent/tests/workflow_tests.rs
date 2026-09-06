@@ -1,3 +1,4 @@
+use memfuse_core::BoxFuture;
 use memfuse_agent::{NodeType, StateGraph};
 
 #[tokio::test]
@@ -145,24 +146,25 @@ struct CountingTool {
     call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[async_trait::async_trait]
 impl memfuse_agent::AgentTool for CountingTool {
     fn name(&self) -> &str {
         &self.name
     }
 
-    async fn execute(
-        &self,
-        _ctx: &memfuse_agent::AgentContext,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a memfuse_agent::AgentContext,
         _input: serde_json::Value,
-    ) -> memfuse_core::Result<memfuse_agent::StepResult> {
-        self.call_count
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(memfuse_agent::StepResult {
-            node_id: self.name.clone(),
-            output: serde_json::json!({"status": "ok"}),
-            tokens_consumed: self.tokens,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<memfuse_agent::StepResult>> {
+        Box::pin(async move {
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(memfuse_agent::StepResult {
+                node_id: self.name.clone(),
+                output: serde_json::json!({"status": "ok"}),
+                tokens_consumed: self.tokens,
+                next_edge: None,
+            })
         })
     }
 }

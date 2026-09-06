@@ -7,7 +7,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use memfuse_core::{FilterExpr, MemoryType};
+use memfuse_core::{
+    FilterExpr, MemoryType};
 
 /// Extrahiert den MemoryType aus Dokument-Metadaten (Rückwärtskompatibel).
 pub fn extract_memory_type(metadata: &Option<Value>) -> MemoryType {

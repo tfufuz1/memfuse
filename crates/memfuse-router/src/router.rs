@@ -15,20 +15,27 @@ use std::sync::Arc;
 const CALIBRATION_WARMUP_WINDOW: u32 = 30;
 
 /// Calibrated confidence metrics for a routing decision.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfidenceMetrics {
-    /// Lower bound of the confidence interval (None when not calibrated).
-    pub score_lower: Option<f32>,
-    /// Upper bound of the confidence interval (None when not calibrated).
-    pub score_upper: Option<f32>,
-    /// Whether the score was calibrated via outcome-driven conformal calibration.
-    pub calibrated: bool,
-    /// Current conformal quantile threshold used for this decision.
-    pub quantile_threshold: f32,
-    /// Non-conformity score of the decision.
-    pub non_conformity_score: f32,
-    /// Margin/ratio between best and second best score.
-    pub selection_margin: f32,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConfidenceMetrics {
+    Calibrated {
+        score_lower: f32,
+        score_upper: f32,
+        quantile_threshold: f32,
+        non_conformity_score: f32,
+        selection_margin: f32,
+    },
+    Uncalibrated {
+        non_conformity_score: f32,
+        selection_margin: f32,
+        quantile_threshold: f32,
+    },
+}
+
+impl ConfidenceMetrics {
+    pub fn is_calibrated(&self) -> bool {
+        matches!(self, ConfidenceMetrics::Calibrated { .. })
+    }
 }
 
 /// Result of a routing operation containing the selected profile, prepared context, confidence, and decision ID.
@@ -297,17 +304,20 @@ impl RouterEngine {
             // 4. Construct ConfidenceMetrics from updated lock state
             let metrics = cal.get(&selected_profile.name).map(|state| {
                 let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
-                ConfidenceMetrics {
-                    score_lower: if calibrated {
-                        Some(best_score * (1.0 - state.conformal.alpha))
-                    } else {
-                        None
-                    },
-                    score_upper: None,
-                    calibrated,
-                    quantile_threshold: state.conformal.quantile_threshold,
-                    non_conformity_score: non_conformity,
-                    selection_margin: confidence_ratio as f32,
+                if calibrated {
+                    ConfidenceMetrics::Calibrated {
+                        score_lower: best_score * (1.0 - state.conformal.alpha),
+                        score_upper: best_score * (1.0 + state.conformal.alpha),
+                        quantile_threshold: state.conformal.quantile_threshold,
+                        non_conformity_score: non_conformity,
+                        selection_margin: confidence_ratio as f32,
+                    }
+                } else {
+                    ConfidenceMetrics::Uncalibrated {
+                        non_conformity_score: non_conformity,
+                        selection_margin: confidence_ratio as f32,
+                        quantile_threshold: state.conformal.quantile_threshold,
+                    }
                 }
             });
 

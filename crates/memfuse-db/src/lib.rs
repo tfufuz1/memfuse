@@ -67,7 +67,8 @@
 // SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
 pub use memfuse_core::TextEmbeddingEngine;
-use memfuse_core::{DocId, Result, StorageEngine, TxId};
+use memfuse_core::{
+    DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -87,11 +88,10 @@ pub use context_compaction::{
 };
 
 #[cfg(feature = "sandbox")]
-#[async_trait::async_trait]
 pub trait SandboxBridge: Send + Sync {
-    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>>;
-    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()>;
-    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
+    fn db_search<'a>(&'a self, query: &'a [u8], k: usize) -> BoxFuture<'a, Result<Vec<u8>>>;
+    fn db_insert<'a>(&'a self, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>>;
+    fn db_get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>>;
 }
 
 // mod Collection is used via pub mod collection
@@ -1125,53 +1125,58 @@ impl MemFuse {
 }
 
 #[cfg(feature = "sandbox")]
-#[async_trait::async_trait]
 impl SandboxBridge for MemFuse {
-    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>> {
-        // Assume query is a binary f32 array (little endian)
-        let f32_count = query.len() / 4;
-        let mut vector = Vec::with_capacity(f32_count);
-        for i in 0..f32_count {
-            let start = i * 4;
-            let bits = u32::from_le_bytes(
-                query
-                    .get(start..start + 4)
-                    .ok_or_else(|| {
-                        memfuse_core::MemFuseError::Serialization("Query too short".into())
-                    })?
-                    .try_into()
-                    .map_err(|_| {
-                        memfuse_core::MemFuseError::Serialization("Invalid slice".into())
-                    })?,
-            );
-            vector.push(f32::from_bits(bits));
-        }
-
-        let results: Vec<SearchResult> = self.search(&vector, k).await?;
-        Ok(serde_json::to_vec(&results)
-            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?)
-    }
-
-    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let id = String::from_utf8_lossy(key).to_string();
-        // Assume value is a JSON representing (embedding, metadata) or just value
-        let val_json: Value = serde_json::from_slice(value)
-            .unwrap_or(serde_json::json!({ "raw_data": String::from_utf8_lossy(value) }));
-
-        self.insert(&id, &[], Some(val_json)).await
-    }
-
-    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let id = String::from_utf8_lossy(key).to_string();
-        let doc = self.get(&id).await?;
-        match doc {
-            Some(d) => {
-                Ok(Some(serde_json::to_vec(&d).map_err(|e| {
-                    memfuse_core::MemFuseError::Internal(e.to_string())
-                })?))
+    fn db_search<'a>(&'a self, query: &'a [u8], k: usize) -> BoxFuture<'a, Result<Vec<u8>>> {
+        Box::pin(async move {
+            // Assume query is a binary f32 array (little endian)
+            let f32_count = query.len() / 4;
+            let mut vector = Vec::with_capacity(f32_count);
+            for i in 0..f32_count {
+                let start = i * 4;
+                let bits = u32::from_le_bytes(
+                    query
+                        .get(start..start + 4)
+                        .ok_or_else(|| {
+                            memfuse_core::MemFuseError::Serialization("Query too short".into())
+                        })?
+                        .try_into()
+                        .map_err(|_| {
+                            memfuse_core::MemFuseError::Serialization("Invalid slice".into())
+                        })?,
+                );
+                vector.push(f32::from_bits(bits));
             }
-            None => Ok(None),
-        }
+
+            let results: Vec<SearchResult> = self.search(&vector, k).await?;
+            Ok(serde_json::to_vec(&results)
+                .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?)
+        })
+    }
+
+    fn db_insert<'a>(&'a self, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let id = String::from_utf8_lossy(key).to_string();
+            // Assume value is a JSON representing (embedding, metadata) or just value
+            let val_json: Value = serde_json::from_slice(value)
+                .unwrap_or(serde_json::json!({ "raw_data": String::from_utf8_lossy(value) }));
+
+            self.insert(&id, &[], Some(val_json)).await
+        })
+    }
+
+    fn db_get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
+            let id = String::from_utf8_lossy(key).to_string();
+            let doc = self.get(&id).await?;
+            match doc {
+                Some(d) => {
+                    Ok(Some(serde_json::to_vec(&d).map_err(|e| {
+                        memfuse_core::MemFuseError::Internal(e.to_string())
+                    })?))
+                }
+                None => Ok(None),
+            }
+        })
     }
 }
 

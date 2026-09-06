@@ -24,9 +24,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[cfg(feature = "onnx")]
-use async_trait::async_trait;
 #[cfg(feature = "onnx")]
-use memfuse_core::{EmbeddingError, EmbeddingProvider, MemFuseError, Result};
+use memfuse_core::{
+    BoxFuture, EmbeddingError, EmbeddingProvider, MemFuseError, Result};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
@@ -93,13 +93,13 @@ pub struct TextEmbedder {
 }
 
 #[cfg(feature = "onnx")]
-#[async_trait]
 impl EmbeddingProvider for TextEmbedder {
     fn provider_name(&self) -> &str {
         "onnx"
     }
 
-    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+    fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
+        Box::pin(async move {
         let max_len = self.config.max_sequence_length;
         if let Ok(encoding) = self.tokenizer.encode(text, true) {
             let len = encoding.get_ids().len();
@@ -121,57 +121,60 @@ impl EmbeddingProvider for TextEmbedder {
             }
             other => EmbeddingError::ComputationFailed(other.to_string()),
         })
+        })
     }
 
     fn embedding_dim(&self) -> usize {
         self.expected_dim.unwrap_or(0)
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[&str],
-    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
-        let limit = self.config.max_batch_size;
-        if texts.len() > limit {
-            return Err(EmbeddingError::Unavailable(format!(
-                "Batch size {} exceeds max_batch_size {}. Split into smaller batches.",
-                texts.len(),
-                limit
-            )));
-        }
+    fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [&'a str],
+    ) -> BoxFuture<'a, std::result::Result<Vec<Vec<f32>>, EmbeddingError>> {
+        Box::pin(async move {
+            let limit = self.config.max_batch_size;
+            if texts.len() > limit {
+                return Err(EmbeddingError::Unavailable(format!(
+                    "Batch size {} exceeds max_batch_size {}. Split into smaller batches.",
+                    texts.len(),
+                    limit
+                )));
+            }
 
-        let mut handles = Vec::with_capacity(texts.len());
-        for text in texts {
-            let text_owned = text.to_string();
-            let embedder = self.clone();
-            handles.push(tokio::spawn(
-                async move { embedder.embed(&text_owned).await },
-            ));
-        }
+            let mut handles = Vec::with_capacity(texts.len());
+            for text in texts {
+                let text_owned = text.to_string();
+                let embedder = self.clone();
+                handles.push(tokio::spawn(
+                    async move { embedder.embed(&text_owned).await },
+                ));
+            }
 
-        let mut results = Vec::with_capacity(texts.len());
-        let mut parallel_failed = false;
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(res)) => results.push(res),
-                Ok(Err(e)) => return Err(e),
-                Err(_) => {
-                    parallel_failed = true;
-                    break;
+            let mut results = Vec::with_capacity(texts.len());
+            let mut parallel_failed = false;
+            for handle in handles {
+                match handle.await {
+                    Ok(Ok(res)) => results.push(res),
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        parallel_failed = true;
+                        break;
+                    }
                 }
             }
-        }
 
-        if !parallel_failed && results.len() == texts.len() {
-            return Ok(results);
-        }
+            if !parallel_failed && results.len() == texts.len() {
+                return Ok(results);
+            }
 
-        // Sequential fallback path
-        let mut seq_results = Vec::with_capacity(texts.len());
-        for text in texts {
-            seq_results.push(self.embed(text).await?);
-        }
-        Ok(seq_results)
+            // Sequential fallback path
+            let mut seq_results = Vec::with_capacity(texts.len());
+            for text in texts {
+                seq_results.push(self.embed(text).await?);
+            }
+            Ok(seq_results)
+        })
     }
 }
 
@@ -475,14 +478,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_embedding_engine() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use async_trait::async_trait;
-        use memfuse_core::{Result, TextEmbeddingEngine};
+                use memfuse_core::{
+    BoxFuture, Result, TextEmbeddingEngine};
 
         struct MockEngine;
-        #[async_trait]
         impl TextEmbeddingEngine for MockEngine {
-            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-                Ok(vec![text.len() as f32])
+            fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
+                Box::pin(async move {
+                    Ok(vec![text.len() as f32])
+                })
             }
         }
 
@@ -495,25 +499,26 @@ mod tests {
     #[tokio::test]
     async fn test_embed_batch_ordering_and_fallback(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use async_trait::async_trait;
-        use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+                use memfuse_core::{
+    BoxFuture, MemFuseError, Result, TextEmbeddingEngine};
 
         struct MockOrderedEngine {
             fail_on: Option<String>,
         }
 
-        #[async_trait]
         impl TextEmbeddingEngine for MockOrderedEngine {
-            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-                if let Some(ref fail) = self.fail_on {
-                    if text == fail {
-                        return Err(MemFuseError::InvalidInput(format!("Failed on {text}")));
+            fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
+                Box::pin(async move {
+                    if let Some(ref fail) = self.fail_on {
+                        if text == fail {
+                            return Err(MemFuseError::InvalidInput(format!("Failed on {text}")));
+                        }
                     }
-                }
-                Ok(vec![
-                    text.len() as f32,
-                    (text.chars().next().unwrap_or('a') as u32) as f32,
-                ])
+                    Ok(vec![
+                        text.len() as f32,
+                        (text.chars().next().unwrap_or('a') as u32) as f32,
+                    ])
+                })
             }
         }
 

@@ -1069,10 +1069,6 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
-    "hash": "0a071211aafa9a80"
-  },
-  {
-    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "0d840fa90712d743"
   },
   {
@@ -1146,10 +1142,6 @@
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "410ae2a4894a3301"
-  },
-  {
-    "file": "crates/memfuse-checkpoint/src/lib.rs",
-    "hash": "4a9bf711144495f6"
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
@@ -1273,6 +1265,10 @@
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "ae910433bdb0de9f"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "b4092bd982c7c97b"
   },
   {
@@ -1314,6 +1310,10 @@
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
     "hash": "d16d1cb2b73481a0"
+  },
+  {
+    "file": "crates/memfuse-checkpoint/src/lib.rs",
+    "hash": "d5bf0fe0dfb8f065"
   },
   {
     "file": "crates/memfuse-checkpoint/src/lib.rs",
@@ -1981,7 +1981,11 @@
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "270fd7b6f613125c"
+    "hash": "21e509c3ba19b32a"
+  },
+  {
+    "file": "crates/memfuse-core/src/traits/mod.rs",
+    "hash": "43e8f1c1b73d04b2"
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
@@ -2005,14 +2009,6 @@
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "653bf28640b9a349"
-  },
-  {
-    "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "75da98a9c6aa8b33"
-  },
-  {
-    "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "784832bda5169145"
   },
   {
@@ -2021,11 +2017,11 @@
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "8a7126d790efe41d"
+    "hash": "907107665336de4d"
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "907107665336de4d"
+    "hash": "928218526cd1be67"
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
@@ -2041,15 +2037,15 @@
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "b2c1f0392bd75b81"
-  },
-  {
-    "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "c5c892dc80ea94b8"
+    "hash": "c3eaa032ebf8e812"
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "ca16c3baef989809"
+  },
+  {
+    "file": "crates/memfuse-core/src/traits/mod.rs",
+    "hash": "d66a2b0eeef0790f"
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
@@ -2058,6 +2054,10 @@
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "e997fa97a044afd7"
+  },
+  {
+    "file": "crates/memfuse-core/src/traits/mod.rs",
+    "hash": "fb9e81e2f911bb5d"
   },
   {
     "file": "crates/memfuse-core/src/tx_buffer.rs",
@@ -4373,15 +4373,15 @@
   },
   {
     "file": "crates/memfuse-db/src/multistep.rs",
-    "hash": "5c4b99a44f30fedc"
-  },
-  {
-    "file": "crates/memfuse-db/src/multistep.rs",
     "hash": "66805022ab16e012"
   },
   {
     "file": "crates/memfuse-db/src/multistep.rs",
     "hash": "69399a6cae7e3a2d"
+  },
+  {
+    "file": "crates/memfuse-db/src/multistep.rs",
+    "hash": "c415c7b5e3954513"
   },
   {
     "file": "crates/memfuse-db/src/multistep.rs",
@@ -10381,10 +10381,6 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "4bd8a08a697f6602"
-  },
-  {
-    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "4e3db88e99c11786"
   },
   {
@@ -10481,6 +10477,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "974adb0ec5093dd8"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "98a9344b44ae8f3f"
   },
   {
@@ -10549,11 +10549,11 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ecfddf64a81d1a72"
+    "hash": "ecff54360b1df174"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ecff54360b1df174"
+    "hash": "ed82bd5f828c03b8"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -15037,15 +15037,15 @@
   },
   {
     "file": "crates/memfuse-text/src/lib.rs",
-    "hash": "4ccf995071abc934"
+    "hash": "1daee82f3ad83465"
   },
   {
     "file": "crates/memfuse-text/src/lib.rs",
-    "hash": "808f92bdb2d028f3"
+    "hash": "7b993138915dee45"
   },
   {
     "file": "crates/memfuse-text/src/lib.rs",
-    "hash": "c9824ec9f8f2679b"
+    "hash": "82639ede605ce9df"
   },
   {
     "file": "crates/memfuse-text/tests/alloc_profiler.rs",

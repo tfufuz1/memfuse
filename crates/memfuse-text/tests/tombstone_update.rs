@@ -3,7 +3,8 @@
 //! Verifies that `upsert_document` no longer eagerly deletes old posting-list
 //! entries on updates (tombstone path) while maintaining full BM25 correctness.
 
-use memfuse_core::{DocId, Result, StorageEngine, TxId};
+use memfuse_core::{
+    BoxFuture, DocId, Result, StorageEngine, TxId};
 use memfuse_text::InvertedIndex;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -31,72 +32,104 @@ impl MockStorage {
     }
 }
 
-#[async_trait::async_trait]
+
 impl StorageEngine for MockStorage {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         Ok(self.store.read().get(key).cloned())
+        })
     }
-    async fn put(&self, _tx: TxId, key: &[u8], value: &[u8]) -> Result<()> {
+    fn put<'a>(&'a self, _tx: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.store.write().insert(key.to_vec(), value.to_vec());
         Ok(())
+        })
     }
-    async fn delete(&self, _tx: TxId, key: &[u8]) -> Result<()> {
+    fn delete<'a>(&'a self, _tx: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         self.delete_calls
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.store.write().remove(key);
         Ok(())
+        })
     }
-    async fn commit(&self, _tx: TxId) -> Result<()> {
+    fn commit<'a>(&'a self, _tx: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
-    async fn rollback(&self, _tx: TxId) -> Result<()> {
+    fn rollback<'a>(&'a self, _tx: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
-    async fn rollback_to_tx(&self, _tx: TxId) -> Result<()> {
+    fn rollback_to_tx<'a>(&'a self, _tx: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
-    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
+    fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
         self.get(key).await
+        })
     }
-    async fn last_seq_no(&self) -> Result<u64> {
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move {
         Ok(0)
+        })
     }
-    async fn last_tx_id(&self) -> Result<TxId> {
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+        Box::pin(async move {
         Ok(TxId::new(0))
+        })
     }
-    async fn flush(&self) -> Result<()> {
+    fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
-    async fn stats(&self) -> Result<memfuse_core::StorageStats> {
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::StorageStats>> {
+        Box::pin(async move {
         Ok(memfuse_core::StorageStats {
             num_segments: 0,
             total_size_bytes: 0,
             memtable_size_bytes: 0,
         })
+        })
     }
-    async fn pin_checkpoint(&self, _id: u64) -> Result<()> {
+    fn pin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
-    async fn unpin_checkpoint(&self, _id: u64) -> Result<()> {
+    fn unpin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
         Ok(())
+        })
     }
-    async fn scan(
-        &self,
-        _start: std::ops::Bound<&[u8]>,
-        _end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         Ok(Vec::new())
+        })
     }
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         let store = self.store.read();
         Ok(store
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
+        })
     }
-    async fn scan_prefix_at(&self, prefix: &[u8], _seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    fn scan_prefix_at<'a>(&'a self, prefix: &'a [u8], _seq_no: u64) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
         self.scan_prefix(prefix).await
+        })
     }
 }
 

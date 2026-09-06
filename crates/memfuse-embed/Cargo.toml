@@ -7,7 +7,6 @@ rust-version.workspace = true
 
 [dependencies]
 memfuse-core = { workspace = true }
-async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }

@@ -15,7 +15,8 @@
 // TEST: cargo test -p memfuse-db
 // DONE: ContextManager nutzt MarkdownChunker zur Dokument-Zerlegung.
 
-use memfuse_core::{ContextChunk, ContextWindow, DocId, Result, TokenBudget};
+use memfuse_core::{
+    ContextChunk, ContextWindow, DocId, Result, TokenBudget};
 
 /// Manages autonomous context preparation for LLM consumption.
 ///
