@@ -77,9 +77,9 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-crypto` | 0 | 2425 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-core` | 1 | 9259 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 1 | 9261 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-checkpoint` | 2 | 5617 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-embed` | 2 | 1435 | 🧊 Optional |  |
+| `memfuse-embed` | 2 | 1434 | 🧊 Optional |  |
 | `memfuse-graph` | 2 | 7323 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-ollama` | 2 | 3351 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15284 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
