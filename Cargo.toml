@@ -15,6 +15,7 @@ members = [
     "crates/memfuse-agent",
     "crates/memfuse-ollama",
     "crates/memfuse-router",
+    "benchmarks/memfuse-bench",
     "xtask",
 ]
 
