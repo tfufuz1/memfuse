@@ -10605,7 +10605,7 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
-    "hash": "ed82bd5f828c03b8"
+    "hash": "ecff54360b1df174"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
@@ -14628,6 +14628,22 @@
     "hash": "2d6ecb21d1f120b4"
   },
   {
+    "file": "crates/memfuse-tauri/src/ingestion/entities.rs",
+    "hash": "0ba9e8fff4c8052b"
+  },
+  {
+    "file": "crates/memfuse-tauri/src/ingestion/entities.rs",
+    "hash": "406a7a151dba6ded"
+  },
+  {
+    "file": "crates/memfuse-tauri/src/ingestion/entities.rs",
+    "hash": "892edfed37e59f2d"
+  },
+  {
+    "file": "crates/memfuse-tauri/src/ingestion/entities.rs",
+    "hash": "cb75b5b43acb2387"
+  },
+  {
     "file": "crates/memfuse-tauri/src/ingestion/pipeline.rs",
     "hash": "02c7454003f3d029"
   },
@@ -14801,6 +14817,10 @@
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "1614a163ca9b5740"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "224aec85f856b880"
   },
   {
@@ -14845,7 +14865,7 @@
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
-    "hash": "642f8dfed09af917"
+    "hash": "6618032fc210c078"
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
@@ -14854,6 +14874,10 @@
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "6c72d37178312d04"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "6e840d2b989cce73"
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
@@ -14874,6 +14898,14 @@
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
     "hash": "7c33345c9af23e88"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "81cfaddc69630cbe"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "8a34a747368c28f1"
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
@@ -14901,7 +14933,11 @@
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
-    "hash": "babe1e170e9d4945"
+    "hash": "bf76a6284271d4e6"
+  },
+  {
+    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
+    "hash": "c64af9800f76c22b"
   },
   {
     "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
@@ -14928,8 +14964,8 @@
     "hash": "f780e9fc22c53be8"
   },
   {
-    "file": "crates/memfuse-tauri/tests/ingestion_test.rs",
-    "hash": "f894446a4664a8ae"
+    "file": "crates/memfuse-tauri/tests/multi_step_search_test.rs",
+    "hash": "baf4d06f9db685c9"
   },
   {
     "file": "crates/memfuse-tauri/tests/parser_robustness_test.rs",
