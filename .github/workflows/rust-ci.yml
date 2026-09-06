@@ -43,6 +43,21 @@ jobs:
       - name: Check memfuse-embed --all-features
         run: cargo check --locked -p memfuse-embed --all-features
 
+  maturin-dry-run:
+    name: PyPI Wheel Build Check (Maturin Dry-Run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install maturin
+        run: pip install maturin
+      - name: Dry-run maturin build
+        run: maturin build --manifest-path crates/memfuse-py/Cargo.toml
+
   test:
     name: Test Suite (Triple-Run Flaky-Detection)
     runs-on: ubuntu-latest
