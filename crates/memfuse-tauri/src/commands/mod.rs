@@ -2,12 +2,14 @@ mod chat;
 mod collections;
 mod ingest;
 mod search;
+pub mod session_dag;
 mod transform;
 
 pub use chat::*;
 pub use collections::*;
 pub use ingest::*;
 pub use search::*;
+pub use session_dag::*;
 pub use transform::*;
 
 use memfuse_core::{MemFuseError, Result};

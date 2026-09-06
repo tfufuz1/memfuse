@@ -26,7 +26,8 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
   (Anthropic Containment Pattern)
 - **Session DAG** — Grok-Pattern: Konversationsverzweigung als persistierter,
-  azyklischer Graph (Native Pure-Rust)
+  azyklischer Graph mit vollständiger Tauri-UI-Anbindung (Erstellen von Branches ab
+  jeder Nachricht, Umschalten des aktiven Branches & Historien-Navigation)
 - **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
   "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
 - **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
