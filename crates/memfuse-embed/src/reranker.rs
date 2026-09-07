@@ -440,6 +440,7 @@ impl OnnxReranker {
         result
     }
 
+    #[allow(dead_code)]
     fn extract_scores_from_tensor(
         shape: &[i64],
         data: &[f32],

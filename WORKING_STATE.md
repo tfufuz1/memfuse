@@ -12,7 +12,6 @@ Ergebnis: **3 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-embed/src/reranker.rs` | 314 | `AGT-EMBED-62093e61` | `ML-SCORING` | `MINOR` | `2026-09-06T11:19:00Z` | // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
 | `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 | `crates/memfuse-ollama/src/importance.rs` | 39 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 
