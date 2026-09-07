@@ -133,6 +133,38 @@ impl KeyManager {
         })
     }
 
+    /// Derives a sub-key specifically for KV-cache segment encryption, bound to a
+    /// specific `(tenant_id, model_fingerprint)` tuple.
+    ///
+    /// Cryptographically enforces both tenant isolation and model quantization separation via HKDF-Expand.
+    pub fn derive_kv_key(
+        &self,
+        tenant_id: memfuse_core::TenantId,
+        model_fingerprint: &crate::kv_cipher::ModelFingerprint,
+    ) -> Result<Self> {
+        let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
+            .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
+
+        let mut sub_key = [0u8; 32];
+        let mut info = Vec::with_capacity(64 + model_fingerprint.model_id.len() + model_fingerprint.quantization.len());
+        info.extend_from_slice(b"memfuse-kv-layer-v1:");
+        info.extend_from_slice(&tenant_id.inner().to_le_bytes());
+        info.extend_from_slice(&model_fingerprint.hash);
+        info.extend_from_slice(model_fingerprint.model_id.as_bytes());
+        info.extend_from_slice(model_fingerprint.quantization.as_bytes());
+
+        hk.expand(&info, &mut sub_key)
+            .map_err(|e| CryptoError::Crypto(format!("HKDF KV sub-key expansion failed: {}", e)))?;
+
+        let mut nonce_prefix = [0u8; 4];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_prefix);
+
+        Ok(Self {
+            key: VolatileEncryptionKey::new(sub_key),
+            nonce_prefix,
+        })
+    }
+
     /// Derives an integrity key for HMAC-SHA256.
     pub fn integrity_key(&self) -> Result<[u8; 32]> {
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())

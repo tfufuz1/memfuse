@@ -3,8 +3,9 @@
 // INVARIANTEN: Roundtrip invariant: decrypt(encrypt(pt)) == pt. Authenticity invariant: 1-bit ciphertext flip must fail decryption.
 // STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
+use memfuse_core::TenantId;
 use memfuse_crypto::wal_crypto::{EncryptedWal, IntegrityVerifier, WalEntrySnapshot, WalHmac};
-use memfuse_crypto::CryptoKey;
+use memfuse_crypto::{CryptoKey, KvSegmentCipher, ModelFingerprint};
 use proptest::prelude::*;
 
 proptest! {
@@ -32,6 +33,65 @@ proptest! {
             let res = km.decrypt_auto_nonce(&ciphertext, &nonce);
             prop_assert!(res.is_err(), "Decryption of corrupted ciphertext with 1-bit flip MUST fail");
         }
+    }
+
+    #[test]
+    fn prop_kv_segment_cipher_roundtrip(
+        tenant_val in 1u64..10_000u64,
+        model_id in "[a-zA-Z0-9_-]{1,32}",
+        quant in "(Q4_K_M|Q8_0|F16|BF16)",
+        plaintext in proptest::collection::vec(any::<u8>(), 0..5_000),
+    ) {
+        let km = CryptoKey::try_new("kv-proptest-passphrase", b"kv-proptest-salt").unwrap();
+        let cipher = KvSegmentCipher::new(km);
+
+        let tenant_id = TenantId::try_new(tenant_val).unwrap();
+        let fp = ModelFingerprint::new([0x33u8; 32], model_id, quant);
+
+        let encrypted = cipher.encrypt(tenant_id, fp.clone(), &plaintext).unwrap();
+        prop_assert_eq!(encrypted.tenant_id, tenant_id);
+        prop_assert_eq!(&encrypted.model_fingerprint, &fp);
+
+        let decrypted = cipher.decrypt(&encrypted).unwrap();
+        prop_assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn prop_kv_segment_cipher_mismatch_fails_decrypt(
+        tenant_a_val in 1u64..5_000u64,
+        tenant_b_offset in 1u64..5_000u64,
+        plaintext in proptest::collection::vec(any::<u8>(), 0..1_000),
+    ) {
+        let km = CryptoKey::try_new("kv-mismatch-passphrase", b"kv-mismatch-salt").unwrap();
+        let cipher = KvSegmentCipher::new(km);
+
+        let tenant_a = TenantId::try_new(tenant_a_val).unwrap();
+        let tenant_b = TenantId::try_new(tenant_a_val + tenant_b_offset).unwrap();
+        let fp_a = ModelFingerprint::new([0x11u8; 32], "llama-3.2", "Q4_K_M");
+
+        let mut encrypted = cipher.encrypt(tenant_a, fp_a, &plaintext).unwrap();
+
+        // Tampering tenant_id MUST cause decryption authentication failure (not silent corrupt data)
+        encrypted.tenant_id = tenant_b;
+        prop_assert!(cipher.decrypt(&encrypted).is_err());
+    }
+
+    #[test]
+    fn prop_kv_segment_cipher_freshness_nonce_and_ciphertext(
+        tenant_val in 1u64..10_000u64,
+        plaintext in proptest::collection::vec(any::<u8>(), 0..1_000),
+    ) {
+        let km = CryptoKey::try_new("kv-freshness-passphrase", b"kv-freshness-salt").unwrap();
+        let cipher = KvSegmentCipher::new(km);
+
+        let tenant_id = TenantId::try_new(tenant_val).unwrap();
+        let fp = ModelFingerprint::new([0x77u8; 32], "model-freshness", "Q8_0");
+
+        let enc1 = cipher.encrypt(tenant_id, fp.clone(), &plaintext).unwrap();
+        let enc2 = cipher.encrypt(tenant_id, fp, &plaintext).unwrap();
+
+        prop_assert_ne!(enc1.nonce, enc2.nonce, "Two encryptions of same plaintext MUST have distinct nonces");
+        prop_assert_ne!(&enc1.ciphertext, &enc2.ciphertext, "Two encryptions of same plaintext MUST have distinct ciphertexts");
     }
 
     #[test]
