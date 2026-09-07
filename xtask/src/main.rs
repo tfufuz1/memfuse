@@ -37,6 +37,7 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_duplicate_symbols;
 mod check_vetoes;
 
 use chrono::{NaiveDate, NaiveDateTime};
@@ -1111,6 +1112,25 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
     !failed
 }
 
+pub fn get_changed_rs_files_from_git_diff() -> Result<Vec<String>, String> {
+    let output = std::process::Command::new("git")
+        .args(["diff", "--name-only", "HEAD~1"])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let files: Vec<String> = stdout
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| s.ends_with(".rs") && Path::new(s).exists())
+                .collect();
+            Ok(files)
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
 pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     let root = find_root_dir();
     let full_path = root.join(file_path);
@@ -1768,6 +1788,31 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-duplicate-symbols" => {
+            let changed_files = get_changed_rs_files_from_git_diff().unwrap_or_default();
+            match check_duplicate_symbols::check_duplicate_symbols(&changed_files) {
+                Ok(duplicates) => {
+                    if !duplicates.is_empty() {
+                        eprintln!(
+                            "❌ check-duplicate-symbols failed: {} Duplikat(e) gefunden",
+                            duplicates.len()
+                        );
+                        for d in &duplicates {
+                            eprintln!(
+                                "  {}:{} und {}:{} — doppeltes {} '{}'",
+                                d.file, d.first_line, d.file, d.duplicate_line, d.symbol_kind, d.symbol_name
+                            );
+                        }
+                        process::exit(1);
+                    }
+                    println!("✅ check-duplicate-symbols: keine Duplikate gefunden");
+                }
+                Err(e) => {
+                    eprintln!("❌ check-duplicate-symbols failed: {}", e);
+                    process::exit(1);
+                }
+            }
+        }
         "check-vetoes" => {
             if let Err(e) = check_vetoes::check_vetoes() {
                 eprintln!("❌ check-vetoes failed: {}", e);
@@ -1830,7 +1875,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
@@ -2624,8 +2669,9 @@ mod tests {
             ("memfuse-candle", 1),
             ("memfuse-checkpoint", 1),
             ("memfuse-crypto", 1),
-            ("memfuse-graph", 1),
             ("memfuse-kv-bridge", 1),
+            ("memfuse-graph", 1),
+        ("memfuse-kv-bridge", 1),
             ("memfuse-text", 1),
             ("memfuse-embed", 2),
             ("memfuse-index", 2),

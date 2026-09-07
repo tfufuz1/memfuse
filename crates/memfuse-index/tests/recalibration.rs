@@ -15,7 +15,6 @@ async fn test_quantizer_recalibration() {
         distance_metric: memfuse_core::DistanceMetric::Euclidean,
         quantize: true,
         quantizer_recalibration_sample_size: 1000,
-        ..Default::default()
     };
     let index = Arc::new(HnswIndex::try_new(config).unwrap());
 
