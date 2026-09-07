@@ -1292,6 +1292,7 @@ fn test_importance_score_parser_robust() {
 async fn test_evaluate_importance_with_dead_client_returns_err() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
+    use memfuse_ollama::OllamaClient;
     use memfuse_store::LsmStorage;
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
@@ -1326,26 +1327,10 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     let vec = vec![1.0, 0.0, 0.0, 0.0];
     col.insert("doc_test", &vec, None).await.unwrap(); // unwrap
 
-    struct DeadLlm;
-
-    impl memfuse_core::LlmTextGenerator for DeadLlm {
-        fn generate<'a>(
-            &'a self,
-            _prompt: &'a str,
-        ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<String>> {
-            Box::pin(async move {
-                Err(memfuse_core::MemFuseError::Io(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionRefused,
-                    "Dead LLM",
-                )))
-            })
-        }
-    }
-
-    let dead_llm = DeadLlm;
+    let dead_client = OllamaClient::new("http://127.0.0.1:1");
 
     let res = col
-        .evaluate_importance_with_llm("doc_test", &dead_llm, "llama3.2")
+        .evaluate_importance_with_llm("doc_test", &dead_client, None)
         .await;
     assert!(res.is_err());
     assert!(matches!(
@@ -1356,6 +1341,87 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     // Verify document's score was NOT overwritten or corrupted
     let doc = col.get("doc_test").await.unwrap().unwrap(); // unwrap
     assert!(doc.metadata.is_some());
+}
+
+#[tokio::test]
+async fn test_evaluate_importance_with_llm_persists_model_id_provenance() {
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_ollama::OllamaClient;
+    use memfuse_store::LsmStorage;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+    let addr = listener.local_addr().unwrap(); // unwrap
+    let server_url = format!("http://{}", addr);
+
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = [0u8; 4096];
+            let _ = socket.read(&mut buf).await;
+            let body = serde_json::json!({
+                "message": {
+                    "role": "assistant",
+                    "content": "0.92"
+                }
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.ok();
+        }
+    });
+
+    let dir = tempdir().unwrap(); // unwrap
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(), // unwrap
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(), // unwrap
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let vec = vec![1.0, 0.0, 0.0, 0.0];
+    col.insert("doc_test_prov", &vec, None).await.unwrap(); // unwrap
+
+    let client = OllamaClient::new(server_url);
+
+    let importance = col
+        .evaluate_importance_with_llm("doc_test_prov", &client, None)
+        .await
+        .unwrap(); // unwrap
+
+    assert_eq!(importance.value(), 0.92);
+
+    let doc = col.get("doc_test_prov").await.unwrap().unwrap(); // unwrap
+    let meta = doc.metadata.unwrap(); // unwrap
+    assert_eq!(
+        meta.get("model_id").and_then(|v| v.as_str()),
+        Some(client.config().model.as_str())
+    );
 }
 
 #[test]

@@ -11,9 +11,7 @@ async fn test_nrem_cycle_tombstones_duplicates() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(dir.path(), config)
-        .await
-        .unwrap();
+    let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
     let collection = db.collection("nrem_test").await.unwrap();
 
     let duplicate_emb = vec![1.0, 0.0, 0.0, 0.0];
@@ -58,9 +56,7 @@ async fn test_nrem_reaper_periodic_execution_and_cancellation() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(dir.path(), config)
-        .await
-        .unwrap();
+    let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
     let collection = db.collection("nrem_reaper_test").await.unwrap();
 
     let duplicate_emb = vec![0.0, 1.0, 0.0, 0.0];

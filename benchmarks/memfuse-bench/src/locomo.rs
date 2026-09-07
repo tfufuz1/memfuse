@@ -112,7 +112,9 @@ pub fn load_locomo_dataset(path: &Path) -> Result<Vec<LocomoCase>> {
     let mut cases = Vec::new();
 
     for sample in samples {
-        let sample_id = sample.sample_id.unwrap_or_else(|| "conv_unknown".to_string());
+        let sample_id = sample
+            .sample_id
+            .unwrap_or_else(|| "conv_unknown".to_string());
         if let Some(qa_list) = sample.qa {
             for (qa_idx, qa) in qa_list.into_iter().enumerate() {
                 let category = qa
@@ -194,7 +196,9 @@ where
         for (rank_idx, chunk) in results.iter().enumerate() {
             let chunk_lower = chunk.text.to_lowercase();
             let is_match = (!expected_lower.is_empty() && chunk_lower.contains(&expected_lower))
-                || evidence_lowers.iter().any(|ev| !ev.is_empty() && chunk_lower.contains(ev));
+                || evidence_lowers
+                    .iter()
+                    .any(|ev| !ev.is_empty() && chunk_lower.contains(ev));
 
             if is_match {
                 hit_rank = Some(rank_idx + 1);
@@ -223,15 +227,27 @@ where
         let hits = category_rec5_hits.get(&cat).copied().unwrap_or(0);
         let mrr_sum = category_mrr_sum.get(&cat).copied().unwrap_or(0.0);
 
-        let rec5 = if total > 0 { hits as f64 / total as f64 } else { 0.0 };
-        let mrr = if total > 0 { mrr_sum / total as f64 } else { 0.0 };
+        let rec5 = if total > 0 {
+            hits as f64 / total as f64
+        } else {
+            0.0
+        };
+        let mrr = if total > 0 {
+            mrr_sum / total as f64
+        } else {
+            0.0
+        };
 
         per_category_recall_at_5.insert(cat, rec5);
         per_category_mrr.insert(cat, mrr);
     }
 
     let n = eval_cases.len();
-    let overall_recall_at_5 = if n > 0 { total_rec5_hits as f64 / n as f64 } else { 0.0 };
+    let overall_recall_at_5 = if n > 0 {
+        total_rec5_hits as f64 / n as f64
+    } else {
+        0.0
+    };
     let overall_mrr = if n > 0 { total_mrr_sum / n as f64 } else { 0.0 };
 
     Ok(LocomoReport {
