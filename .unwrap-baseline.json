@@ -2325,10 +2325,6 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
-    "hash": "b97209fa20ce33a0"
-  },
-  {
-    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "bc926c873d63dff5"
   },
   {
@@ -2358,14 +2354,6 @@
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "d2ed8cada24d9b75"
-  },
-  {
-    "file": "crates/memfuse-core/src/types/domain.rs",
-    "hash": "d49d628b30cfca8b"
-  },
-  {
-    "file": "crates/memfuse-core/src/types/domain.rs",
-    "hash": "d86dae207b7a33d5"
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
