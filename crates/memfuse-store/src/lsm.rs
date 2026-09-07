@@ -65,9 +65,8 @@ use crate::sstable::{create_block_cache, BlockCache, SstableBuilder, SstableRead
 use crate::wal::{Wal, WalOp};
 use bytes::Bytes;
 use memfuse_core::{
-    BoxFuture,
-    DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result, SnapshotRegistry,
-    StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
+    BoxFuture, DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result,
+    SnapshotRegistry, StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
 };
 use memfuse_crypto::crypto::KeyManager;
 use std::path::PathBuf;
@@ -700,7 +699,6 @@ impl LsmStorage {
     }
 }
 
-
 impl StorageEngine for LsmStorage {
     /// # ACID-Garantie
     /// Bietet Snapshot-Isolations-Point-Reads des aktuellsten committed Zustands.
@@ -712,16 +710,16 @@ impl StorageEngine for LsmStorage {
     /// Panikt nicht in Produktionscode.
     fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
         Box::pin(async move {
-        validate_key(key)?;
-        let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
-        let res = self.get_at_seq(key, current_max_seq).await?;
-        tracing::debug!(
-            "LsmStorage::get key={:?} seq={} found={}",
-            String::from_utf8_lossy(key),
-            current_max_seq,
-            res.is_some()
-        );
-        Ok(res)
+            validate_key(key)?;
+            let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
+            let res = self.get_at_seq(key, current_max_seq).await?;
+            tracing::debug!(
+                "LsmStorage::get key={:?} seq={} found={}",
+                String::from_utf8_lossy(key),
+                current_max_seq,
+                res.is_some()
+            );
+            Ok(res)
         })
     }
 
@@ -733,63 +731,67 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    fn get_at_seq<'a>(&'a self, key: &'a [u8], seq_no: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+    fn get_at_seq<'a>(
+        &'a self,
+        key: &'a [u8],
+        seq_no: u64,
+    ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
         Box::pin(async move {
-        validate_key(key)?;
-        // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
-        let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
-        let state = self.state.read().await;
-        tracing::debug!(
-            "LsmStorage::get_at_seq key={:?} seq={} snapshot_tx={}",
-            String::from_utf8_lossy(key),
-            seq_no,
-            snapshot_tx
-        );
+            validate_key(key)?;
+            // Genau EINMAL laden — Snapshot-Konsistenz über die gesamte Methode (INVARIANT-2)
+            let snapshot_tx = self.last_committed_tx.load(Ordering::Acquire);
+            let state = self.state.read().await;
+            tracing::debug!(
+                "LsmStorage::get_at_seq key={:?} seq={} snapshot_tx={}",
+                String::from_utf8_lossy(key),
+                seq_no,
+                snapshot_tx
+            );
 
-        // 1. MemTable (only if seq_no in entry <= target seq_no AND tx_id <= snapshot_tx)
-        if let Some((val, seq, _tx)) = state.memtable.get_at_seq(key, seq_no, snapshot_tx) {
-            if (seq & TOMBSTONE_BIT) != 0 {
-                return Ok(None);
-            }
-            return Ok(Some(val.to_vec()));
-        }
-
-        // 2. Immutable MemTables (newest first)
-        for mt in state.immutable_memtables.iter().rev() {
-            if let Some((val, seq, _tx)) = mt.get_at_seq(key, seq_no, snapshot_tx) {
+            // 1. MemTable (only if seq_no in entry <= target seq_no AND tx_id <= snapshot_tx)
+            if let Some((val, seq, _tx)) = state.memtable.get_at_seq(key, seq_no, snapshot_tx) {
                 if (seq & TOMBSTONE_BIT) != 0 {
                     return Ok(None);
                 }
                 return Ok(Some(val.to_vec()));
             }
-        }
 
-        // 3. SSTables (newest first, filtered by seq_no and snapshot_tx)
-        let sstables = self.sstables.read().await;
-        for sst in sstables.iter().rev() {
-            // SSTables already only contain entries up to their last_key.
-            // But we still need to check the entry's seq_no and tx_id.
-            if let Some((val, seq, tx)) = sst.get(key).await? {
-                tracing::debug!(
+            // 2. Immutable MemTables (newest first)
+            for mt in state.immutable_memtables.iter().rev() {
+                if let Some((val, seq, _tx)) = mt.get_at_seq(key, seq_no, snapshot_tx) {
+                    if (seq & TOMBSTONE_BIT) != 0 {
+                        return Ok(None);
+                    }
+                    return Ok(Some(val.to_vec()));
+                }
+            }
+
+            // 3. SSTables (newest first, filtered by seq_no and snapshot_tx)
+            let sstables = self.sstables.read().await;
+            for sst in sstables.iter().rev() {
+                // SSTables already only contain entries up to their last_key.
+                // But we still need to check the entry's seq_no and tx_id.
+                if let Some((val, seq, tx)) = sst.get(key).await? {
+                    tracing::debug!(
                     "LsmStorage::get_at_seq SSTable check: seq={} target_seq={} tx={} snapshot_tx={}",
                     seq & !TOMBSTONE_BIT,
                     seq_no,
                     tx,
                     snapshot_tx
                 );
-                if (seq & !TOMBSTONE_BIT) <= seq_no && tx <= snapshot_tx {
-                    if (seq & TOMBSTONE_BIT) != 0 {
-                        tracing::debug!("LsmStorage::get_at_seq FOUND TOMBSTONE");
-                        return Ok(None);
+                    if (seq & !TOMBSTONE_BIT) <= seq_no && tx <= snapshot_tx {
+                        if (seq & TOMBSTONE_BIT) != 0 {
+                            tracing::debug!("LsmStorage::get_at_seq FOUND TOMBSTONE");
+                            return Ok(None);
+                        }
+                        tracing::debug!("LsmStorage::get_at_seq MATCH found in SSTable");
+                        return Ok(Some(val.to_vec()));
                     }
-                    tracing::debug!("LsmStorage::get_at_seq MATCH found in SSTable");
-                    return Ok(Some(val.to_vec()));
+                    tracing::debug!("LsmStorage::get_at_seq SKIPPED entry due to seq/tx filter");
                 }
-                tracing::debug!("LsmStorage::get_at_seq SKIPPED entry due to seq/tx filter");
             }
-        }
 
-        Ok(None)
+            Ok(None)
         })
     }
 
@@ -803,75 +805,121 @@ impl StorageEngine for LsmStorage {
     /// Panikt nicht in Produktionscode.
     fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        validate_key(key)?;
-        validate_value(value)?;
-        self.apply_backpressure().await;
-        if !self.budget.has_memory_capacity() {
-            return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
-        }
-        let doc_id = {
-            let hash = blake3::hash(key);
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
-            DocId::new(u64::from_le_bytes(bytes))
-        };
+            validate_key(key)?;
+            validate_value(value)?;
+            self.apply_backpressure().await;
+            if !self.budget.has_memory_capacity() {
+                return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
+            }
+            let doc_id = {
+                let hash = blake3::hash(key);
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&hash.as_bytes()[..8]);
+                DocId::new(u64::from_le_bytes(bytes))
+            };
 
-        self.tx_buffer.stage(
-            tx_id,
-            IndexOp::Insert {
-                doc_id,
-                data: (key.to_vec(), value.to_vec()),
-            },
-        )?;
-        Ok(())
+            self.tx_buffer.stage(
+                tx_id,
+                IndexOp::Insert {
+                    doc_id,
+                    data: (key.to_vec(), value.to_vec()),
+                },
+            )?;
+            Ok(())
+        })
+    }
+
+    fn put_if_absent<'a>(
+        &'a self,
+        tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move {
+            validate_key(key)?;
+            validate_value(value)?;
+            self.apply_backpressure().await;
+            if !self.budget.has_memory_capacity() {
+                return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
+            }
+
+            let _commit_lock = self.commit_mutex.lock().await;
+
+            if let Some(is_insert) = self.tx_buffer.staged_status(key) {
+                if is_insert {
+                    return Ok(false);
+                }
+            }
+
+            let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
+            if self.get_at_seq(key, current_max_seq).await?.is_some() {
+                return Ok(false);
+            }
+
+            let doc_id = {
+                let hash = blake3::hash(key);
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&hash.as_bytes()[..8]);
+                DocId::new(u64::from_le_bytes(bytes))
+            };
+
+            self.tx_buffer.stage(
+                tx_id,
+                IndexOp::Insert {
+                    doc_id,
+                    data: (key.to_vec(), value.to_vec()),
+                },
+            )?;
+
+            Ok(true)
         })
     }
 
     fn delete_many<'a>(&'a self, tx_id: TxId, keys: Vec<Vec<u8>>) -> BoxFuture<'a, Result<u64>> {
         Box::pin(async move {
-        if keys.len() > MAX_BATCH_SIZE {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Batch size ({} items) exceeds limit of {} items",
-                keys.len(),
-                MAX_BATCH_SIZE
-            )));
-        }
-        for key in &keys {
-            validate_key(key)?;
-        }
-        let count = keys.len() as u64;
-        if count == 0 {
-            return Ok(0);
-        }
+            if keys.len() > MAX_BATCH_SIZE {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Batch size ({} items) exceeds limit of {} items",
+                    keys.len(),
+                    MAX_BATCH_SIZE
+                )));
+            }
+            for key in &keys {
+                validate_key(key)?;
+            }
+            let count = keys.len() as u64;
+            if count == 0 {
+                return Ok(0);
+            }
 
-        let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = keys
-            .into_iter()
-            .map(|key| {
-                let hash = blake3::hash(&key);
-                let mut bytes = [0u8; 8];
-                bytes.copy_from_slice(&hash.as_bytes()[..8]);
-                let doc_id = DocId::new(u64::from_le_bytes(bytes));
-                IndexOp::Delete {
-                    doc_id,
-                    data: Some((key, Vec::new())),
-                }
-            })
-            .collect();
+            let ops: Vec<IndexOp<(Vec<u8>, Vec<u8>)>> = keys
+                .into_iter()
+                .map(|key| {
+                    let hash = blake3::hash(&key);
+                    let mut bytes = [0u8; 8];
+                    bytes.copy_from_slice(&hash.as_bytes()[..8]);
+                    let doc_id = DocId::new(u64::from_le_bytes(bytes));
+                    IndexOp::Delete {
+                        doc_id,
+                        data: Some((key, Vec::new())),
+                    }
+                })
+                .collect();
 
-        self.tx_buffer.stage_many(tx_id, ops)?;
-        Ok(count)
+            self.tx_buffer.stage_many(tx_id, ops)?;
+            Ok(count)
         })
     }
 
     fn delete_prefix<'a>(&'a self, tx_id: TxId, prefix: &'a [u8]) -> BoxFuture<'a, Result<u64>> {
         Box::pin(async move {
-        let matching_keys: Vec<Vec<u8>> = self
-            .scan_prefix(prefix)
-            .await?
-            .into_iter()
-            .map(|(key, _)| key)
-            .collect();
-        self.delete_many(tx_id, matching_keys).await
+            let matching_keys: Vec<Vec<u8>> = self
+                .scan_prefix(prefix)
+                .await?
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect();
+            self.delete_many(tx_id, matching_keys).await
         })
     }
 
@@ -885,22 +933,22 @@ impl StorageEngine for LsmStorage {
     /// Panikt nicht in Produktionscode.
     fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        validate_key(key)?;
-        let doc_id = {
-            let hash = blake3::hash(key);
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&hash.as_bytes()[..8]);
-            DocId::new(u64::from_le_bytes(bytes))
-        };
+            validate_key(key)?;
+            let doc_id = {
+                let hash = blake3::hash(key);
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&hash.as_bytes()[..8]);
+                DocId::new(u64::from_le_bytes(bytes))
+            };
 
-        self.tx_buffer.stage(
-            tx_id,
-            IndexOp::Delete {
-                doc_id,
-                data: Some((key.to_vec(), Vec::new())),
-            },
-        )?;
-        Ok(())
+            self.tx_buffer.stage(
+                tx_id,
+                IndexOp::Delete {
+                    doc_id,
+                    data: Some((key.to_vec(), Vec::new())),
+                },
+            )?;
+            Ok(())
         })
     }
 
@@ -915,122 +963,122 @@ impl StorageEngine for LsmStorage {
     /// Panikt nicht in Produktionscode.
     fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.apply_backpressure().await;
-        if !self.budget.has_memory_capacity() {
-            return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
-        }
+            self.apply_backpressure().await;
+            if !self.budget.has_memory_capacity() {
+                return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
+            }
 
-        // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
-        // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
-        // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
-        let _commit_lock = self.commit_mutex.lock().await;
+            // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
+            // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
+            // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
+            let _commit_lock = self.commit_mutex.lock().await;
 
-        let ops = self.tx_buffer.drain(tx_id);
-        if ops.is_empty() {
-            return Ok(());
-        }
-        let state = self.state.read().await;
+            let ops = self.tx_buffer.drain(tx_id);
+            if ops.is_empty() {
+                return Ok(());
+            }
+            let state = self.state.read().await;
 
-        let mut wal_ops = Vec::with_capacity(ops.len());
-        let mut mem_updates = Vec::with_capacity(ops.len());
+            let mut wal_ops = Vec::with_capacity(ops.len());
+            let mut mem_updates = Vec::with_capacity(ops.len());
 
-        for op in &ops {
-            let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
-            match op {
-                IndexOp::Insert { doc_id: _, data } => {
-                    let (key, value) = data;
-                    wal_ops.push((
-                        WalOp::Put {
-                            tx_id,
-                            key: key.clone(),
-                            value: value.clone(),
-                        },
-                        seq_no,
-                    ));
-                    mem_updates.push((key.clone(), value.clone(), seq_no));
-                }
-                IndexOp::Delete { doc_id: _, data } => {
-                    if let Some((key, _)) = data {
+            for op in &ops {
+                let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
+                match op {
+                    IndexOp::Insert { doc_id: _, data } => {
+                        let (key, value) = data;
                         wal_ops.push((
-                            WalOp::Delete {
+                            WalOp::Put {
                                 tx_id,
                                 key: key.clone(),
+                                value: value.clone(),
                             },
                             seq_no,
                         ));
-                        mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
+                        mem_updates.push((key.clone(), value.clone(), seq_no));
+                    }
+                    IndexOp::Delete { doc_id: _, data } => {
+                        if let Some((key, _)) = data {
+                            wal_ops.push((
+                                WalOp::Delete {
+                                    tx_id,
+                                    key: key.clone(),
+                                },
+                                seq_no,
+                            ));
+                            mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
+                        }
+                    }
+                    _ => {
+                        return Err(MemFuseError::InvalidInput(
+                            "Unsupported operation type staged in LSM commit".to_string(),
+                        ));
                     }
                 }
-                _ => {
-                    return Err(MemFuseError::InvalidInput(
-                        "Unsupported operation type staged in LSM commit".to_string(),
-                    ));
+            }
+
+            // --- PHASE 2: Group Commit to WAL ---
+            let wal_entries = state.wal.prepare_batch(wal_ops).await?;
+            if let Err(e) = state.wal.append_batch(&wal_entries).await {
+                // FATAL I/O ERROR: Physical Rollback to last committed transaction state
+                drop(state);
+                let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
+                if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx).await {
+                    tracing::error!(
+                        "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
+                        rollback_err
+                    );
                 }
+                return Err(MemFuseError::Storage(format!(
+                    "Commit failed (at WAL append), WAL rollback executed: {}",
+                    e
+                )));
             }
-        }
 
-        // --- PHASE 2: Group Commit to WAL ---
-        let wal_entries = state.wal.prepare_batch(wal_ops).await?;
-        if let Err(e) = state.wal.append_batch(&wal_entries).await {
-            // FATAL I/O ERROR: Physical Rollback to last committed transaction state
-            drop(state);
-            let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
-            if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx).await {
-                tracing::error!(
-                    "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
-                    rollback_err
-                );
-            }
-            return Err(MemFuseError::Storage(format!(
-                "Commit failed (at WAL append), WAL rollback executed: {}",
-                e
-            )));
-        }
-
-        // INVARIANT (Task D - Commit Ordering):
-        // 1. WAL append must succeed FIRST (done in PHASE 2).
-        // 2. last_committed_tx.store() must happen AFTER successful WAL append (done here before/during MemTable write).
-        // 3. MemTable write happens AFTER WAL append succeeds.
-        if tx_id.inner() < TxId::INTERNAL_BASE {
-            let mut current = self.last_committed_tx.load(Ordering::Acquire);
-            while tx_id.inner() > current {
-                match self.last_committed_tx.compare_exchange_weak(
-                    current,
-                    tx_id.inner(),
-                    Ordering::SeqCst,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => {
-                        break;
+            // INVARIANT (Task D - Commit Ordering):
+            // 1. WAL append must succeed FIRST (done in PHASE 2).
+            // 2. last_committed_tx.store() must happen AFTER successful WAL append (done here before/during MemTable write).
+            // 3. MemTable write happens AFTER WAL append succeeds.
+            if tx_id.inner() < TxId::INTERNAL_BASE {
+                let mut current = self.last_committed_tx.load(Ordering::Acquire);
+                while tx_id.inner() > current {
+                    match self.last_committed_tx.compare_exchange_weak(
+                        current,
+                        tx_id.inner(),
+                        Ordering::SeqCst,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(actual) => current = actual,
                     }
-                    Err(actual) => current = actual,
+                }
+                if tx_id.inner() <= current && tx_id.inner() != 0 {
+                    // Already superseded
+                } else if tx_id.inner() == 0 {
+                    tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
                 }
             }
-            if tx_id.inner() <= current && tx_id.inner() != 0 {
-                // Already superseded
-            } else if tx_id.inner() == 0 {
-                tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
+
+            // --- PHASE 3: Apply to MemTable ---
+            for (key, value, seq) in mem_updates {
+                let entry_size = key.len() + value.len() + 8;
+                if let Err(e) = self.budget.consume_memory(entry_size as u64) {
+                    tracing::warn!("Memory budget tracking warning during commit: {e}");
+                }
+                state
+                    .memtable
+                    .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
             }
-        }
 
-        // --- PHASE 3: Apply to MemTable ---
-        for (key, value, seq) in mem_updates {
-            let entry_size = key.len() + value.len() + 8;
-            if let Err(e) = self.budget.consume_memory(entry_size as u64) {
-                tracing::warn!("Memory budget tracking warning during commit: {e}");
+            // Check if flush is needed
+            if state.memtable.size() > self.config.memtable_size_limit {
+                drop(state);
+                self.flush().await?;
             }
-            state
-                .memtable
-                .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
-        }
 
-        // Check if flush is needed
-        if state.memtable.size() > self.config.memtable_size_limit {
-            drop(state);
-            self.flush().await?;
-        }
-
-        Ok(())
+            Ok(())
         })
     }
 
@@ -1051,8 +1099,8 @@ impl StorageEngine for LsmStorage {
     /// Panikt nicht in Produktionscode.
     fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.tx_buffer.discard(tx_id);
-        Ok(())
+            self.tx_buffer.discard(tx_id);
+            Ok(())
         })
     }
 
@@ -1065,22 +1113,20 @@ impl StorageEngine for LsmStorage {
     /// # Panics
     /// Panikt nicht in Produktionscode.
     fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Self::rollback_to_tx(self, tx_id).await
-        })
+        Box::pin(async move { Self::rollback_to_tx(self, tx_id).await })
     }
 
     fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.snapshot_registry.pin(seq_no);
-        Ok(())
+            self.snapshot_registry.pin(seq_no);
+            Ok(())
         })
     }
 
     fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.snapshot_registry.unpin(seq_no);
-        Ok(())
+            self.snapshot_registry.unpin(seq_no);
+            Ok(())
         })
     }
 
@@ -1094,152 +1140,154 @@ impl StorageEngine for LsmStorage {
     /// Panikt nicht in Produktionscode.
     fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        // ── Phase 0: Schnellcheck (Read-Lock, kein I/O) ──────────────────────
-        {
-            let state = self.state.read().await;
-            if state.memtable.is_empty() {
-                return Ok(());
+            // ── Phase 0: Schnellcheck (Read-Lock, kein I/O) ──────────────────────
+            {
+                let state = self.state.read().await;
+                if state.memtable.is_empty() {
+                    return Ok(());
+                }
+            } // read lock freigegeben
+
+            // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
+            let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
+            let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
+            // WAL wird HIER erstellt — kein Lock gehalten
+            let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
+
+            // ── Phase 2: Atomarer In-Memory-Swap (Write-Lock, nur Pointer-Ops) ───
+            let (old_memtable, old_wal_path) = {
+                let mut state = self.state.write().await;
+                if state.memtable.is_empty() {
+                    // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
+                    // WAL-Datei aufräumen (best-effort)
+                    drop(state);
+                    let _ = tokio::fs::remove_file(
+                        &self.config.path.join(format!("wal-{}.log", flush_id)),
+                    )
+                    .await;
+                    return Ok(());
+                }
+                let old_memtable =
+                    std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
+                let old_wal = std::mem::replace(&mut state.wal, new_wal);
+                state.immutable_memtables.push(old_memtable.clone());
+
+                // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
+                // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
+                let old_wal_path = old_wal.path().to_path_buf();
+                drop(old_wal);
+                (old_memtable, old_wal_path)
+            }; // write lock freigegeben
+
+            let sst_path = {
+                let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
+                let seq = self.next_seq_no.load(Ordering::Relaxed);
+                self.config
+                    .path
+                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
+            };
+            let mut builder =
+                SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone())
+                    .await?;
+
+            for (k, v, seq, tx) in old_memtable.iter_latest() {
+                builder.add(&k, &v, seq, tx).await?;
             }
-        } // read lock freigegeben
+            builder
+                .finish()
+                .await
+                .map_err(|e| MemFuseError::Storage(format!("SSTable finish failed: {}", e)))?;
 
-        // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
-        let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
-        let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
-        // WAL wird HIER erstellt — kein Lock gehalten
-        let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
-
-        // ── Phase 2: Atomarer In-Memory-Swap (Write-Lock, nur Pointer-Ops) ───
-        let (old_memtable, old_wal_path) = {
-            let mut state = self.state.write().await;
-            if state.memtable.is_empty() {
-                // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
-                // WAL-Datei aufräumen (best-effort)
-                drop(state);
-                let _ =
-                    tokio::fs::remove_file(&self.config.path.join(format!("wal-{}.log", flush_id)))
-                        .await;
-                return Ok(());
-            }
-            let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
-            let old_wal = std::mem::replace(&mut state.wal, new_wal);
-            state.immutable_memtables.push(old_memtable.clone());
-
-            // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
-            // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
-            let old_wal_path = old_wal.path().to_path_buf();
-            drop(old_wal);
-            (old_memtable, old_wal_path)
-        }; // write lock freigegeben
-
-        let sst_path = {
-            let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
-            let seq = self.next_seq_no.load(Ordering::Relaxed);
-            self.config
-                .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
-        };
-        let mut builder =
-            SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone()).await?;
-
-        for (k, v, seq, tx) in old_memtable.iter_latest() {
-            builder.add(&k, &v, seq, tx).await?;
-        }
-        builder
-            .finish()
+            let reader = SstableReader::open_with_key_manager(
+                &sst_path,
+                Arc::clone(&self.block_cache),
+                self.key_manager.clone(),
+            )
             .await
-            .map_err(|e| MemFuseError::Storage(format!("SSTable finish failed: {}", e)))?;
+            .map_err(|e| {
+                MemFuseError::Storage(format!("SSTable open after flush failed: {}", e))
+            })?;
 
-        let reader = SstableReader::open_with_key_manager(
-            &sst_path,
-            Arc::clone(&self.block_cache),
-            self.key_manager.clone(),
-        )
-        .await
-        .map_err(|e| MemFuseError::Storage(format!("SSTable open after flush failed: {}", e)))?;
+            // Atomic transition: remove from immutable memtables and add to SSTables
+            let mut state = self.state.write().await;
+            let mut sstables = self.sstables.write().await;
 
-        // Atomic transition: remove from immutable memtables and add to SSTables
-        let mut state = self.state.write().await;
-        let mut sstables = self.sstables.write().await;
+            state
+                .immutable_memtables
+                .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
-        state
-            .immutable_memtables
-            .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
-
-        // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
-        let sst_max_tx = reader.metadata().max_tx_id;
-        if sst_max_tx < TxId::INTERNAL_BASE {
-            let mut current = self.last_committed_tx.load(Ordering::Acquire);
-            while sst_max_tx > current {
-                match self.last_committed_tx.compare_exchange_weak(
-                    current,
-                    sst_max_tx,
-                    Ordering::SeqCst,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break,
-                    Err(actual) => current = actual,
+            // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
+            let sst_max_tx = reader.metadata().max_tx_id;
+            if sst_max_tx < TxId::INTERNAL_BASE {
+                let mut current = self.last_committed_tx.load(Ordering::Acquire);
+                while sst_max_tx > current {
+                    match self.last_committed_tx.compare_exchange_weak(
+                        current,
+                        sst_max_tx,
+                        Ordering::SeqCst,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => break,
+                        Err(actual) => current = actual,
+                    }
                 }
             }
-        }
 
-        sstables.push(Arc::new(reader));
-        sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
+            sstables.push(Arc::new(reader));
+            sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
 
-        drop(sstables);
-        drop(state);
+            drop(sstables);
+            drop(state);
 
-        // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
-        if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
-            tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
-        }
+            // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
+            if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
+                tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
+            }
 
-        let bytes_freed = old_memtable.size() as u64;
-        self.budget.release_memory(bytes_freed);
+            let bytes_freed = old_memtable.size() as u64;
+            self.budget.release_memory(bytes_freed);
 
-        tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
-        Ok(())
+            tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
+            Ok(())
         })
     }
 
     fn stats<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::StorageStats>> {
         Box::pin(async move {
-        let state = self.state.read().await;
-        let sstables = self.sstables.read().await;
-        let num_segments = sstables.len();
-        let mut total_size_bytes = 0;
-        for sst in sstables.iter() {
-            total_size_bytes += sst.metadata().file_size;
-        }
+            let state = self.state.read().await;
+            let sstables = self.sstables.read().await;
+            let num_segments = sstables.len();
+            let mut total_size_bytes = 0;
+            for sst in sstables.iter() {
+                total_size_bytes += sst.metadata().file_size;
+            }
 
-        let mut memtable_size_bytes = state.memtable.size() as u64;
-        for m in &state.immutable_memtables {
-            memtable_size_bytes += m.size() as u64;
-        }
+            let mut memtable_size_bytes = state.memtable.size() as u64;
+            for m in &state.immutable_memtables {
+                memtable_size_bytes += m.size() as u64;
+            }
 
-        Ok(memfuse_core::StorageStats {
-            num_segments,
-            total_size_bytes,
-            memtable_size_bytes,
-        })
+            Ok(memfuse_core::StorageStats {
+                num_segments,
+                total_size_bytes,
+                memtable_size_bytes,
+            })
         })
     }
 
     fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-        Box::pin(async move {
-        Ok(self.next_seq_no.load(Ordering::SeqCst).saturating_sub(1))
-        })
+        Box::pin(async move { Ok(self.next_seq_no.load(Ordering::SeqCst).saturating_sub(1)) })
     }
 
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-        Box::pin(async move {
-        Ok(TxId::new(self.last_committed_tx.load(Ordering::SeqCst)))
-        })
+        Box::pin(async move { Ok(TxId::new(self.last_committed_tx.load(Ordering::SeqCst))) })
     }
 
-    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        self.scan_prefix_at(prefix, u64::MAX).await
-        })
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { self.scan_prefix_at(prefix, u64::MAX).await })
     }
 
     fn scan_prefix_bounded<'a>(
@@ -1249,45 +1297,56 @@ impl StorageEngine for LsmStorage {
         cursor: Option<&'a [u8]>,
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
-        let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
-            std::collections::BTreeMap::new();
-        let state = self.state.read().await;
-        let sstables = self.sstables.read().await;
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+            let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
+                std::collections::BTreeMap::new();
+            let state = self.state.read().await;
+            let sstables = self.sstables.read().await;
 
-        // Collect from SSTables
-        for sst in sstables.iter() {
-            let first = sst.first_key();
-            let last = sst.last_key();
-            if !first.is_empty() && !last.is_empty() {
-                if prefix > last.as_ref() {
-                    continue;
+            // Collect from SSTables
+            for sst in sstables.iter() {
+                let first = sst.first_key();
+                let last = sst.last_key();
+                if !first.is_empty() && !last.is_empty() {
+                    if prefix > last.as_ref() {
+                        continue;
+                    }
+                    let mut prefix_end = prefix.to_vec();
+                    if let Some(last_byte) = prefix_end.last_mut() {
+                        if let Some(next_byte) = last_byte.checked_add(1) {
+                            *last_byte = next_byte;
+                            if first.as_ref() >= prefix_end.as_slice() {
+                                continue;
+                            }
+                        }
+                    }
                 }
-                let mut prefix_end = prefix.to_vec();
-                if let Some(last_byte) = prefix_end.last_mut() {
-                    if let Some(next_byte) = last_byte.checked_add(1) {
-                        *last_byte = next_byte;
-                        if first.as_ref() >= prefix_end.as_slice() {
-                            continue;
+
+                let entries = sst.scan_prefix(prefix).await?;
+                for (k, v, seq, tx) in entries {
+                    if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                        let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v, seq);
                         }
                     }
                 }
             }
 
-            let entries = sst.scan_prefix(prefix).await?;
-            for (k, v, seq, tx) in entries {
-                if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
-                    let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
-                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                        *entry = (v, seq);
+            // Collect from immutable memtables
+            for mt in &state.immutable_memtables {
+                for (k, v, seq, tx) in mt.iter() {
+                    if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                        let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.clone(), seq);
+                        }
                     }
                 }
             }
-        }
 
-        // Collect from immutable memtables
-        for mt in &state.immutable_memtables {
-            for (k, v, seq, tx) in mt.iter() {
+            // Collect from active memtable
+            for (k, v, seq, tx) in state.memtable.iter() {
                 if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
                     let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
@@ -1295,102 +1354,110 @@ impl StorageEngine for LsmStorage {
                     }
                 }
             }
-        }
 
-        // Collect from active memtable
-        for (k, v, seq, tx) in state.memtable.iter() {
-            if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
-                let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
-                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                    *entry = (v.clone(), seq);
-                }
-            }
-        }
+            let range_bound = if let Some(cur) = cursor {
+                std::ops::Bound::Excluded(Bytes::copy_from_slice(cur))
+            } else {
+                std::ops::Bound::Unbounded
+            };
 
-        let range_bound = if let Some(cur) = cursor {
-            std::ops::Bound::Excluded(Bytes::copy_from_slice(cur))
-        } else {
-            std::ops::Bound::Unbounded
-        };
+            let mut results = Vec::new();
+            let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
 
-        let mut results = Vec::new();
-        let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
-
-        while let Some((k, (v, seq))) = iter.next() {
-            if (seq & TOMBSTONE_BIT) == 0 {
-                results.push((k.to_vec(), v.to_vec()));
-                if results.len() == limit {
-                    break;
-                }
-            }
-        }
-
-        let next_cursor = if results.len() == limit {
-            // Check if there are remaining valid entries in the iterator
-            let mut has_more = false;
-            for (_k, (_v, seq)) in iter {
+            for (k, (v, seq)) in iter.by_ref() {
                 if (seq & TOMBSTONE_BIT) == 0 {
-                    has_more = true;
-                    break;
+                    results.push((k.to_vec(), v.to_vec()));
+                    if results.len() == limit {
+                        break;
+                    }
                 }
             }
-            if has_more {
-                results.last().map(|(k, _)| k.clone())
+
+            let next_cursor = if results.len() == limit {
+                // Check if there are remaining valid entries in the iterator
+                let mut has_more = false;
+                for (_k, (_v, seq)) in iter {
+                    if (seq & TOMBSTONE_BIT) == 0 {
+                        has_more = true;
+                        break;
+                    }
+                }
+                if has_more {
+                    results.last().map(|(k, _)| k.clone())
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
-        Ok((results, next_cursor))
+            Ok((results, next_cursor))
         })
     }
 
-    fn scan_prefix_at<'a>(&'a self, prefix: &'a [u8], seq_no: u64) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+    fn scan_prefix_at<'a>(
+        &'a self,
+        prefix: &'a [u8],
+        seq_no: u64,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-        // INVARIANT (Task C - Single snapshot boundary):
-        // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
-        let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
-            std::collections::BTreeMap::new();
-        let state = self.state.read().await;
-        let sstables = self.sstables.read().await;
+            // INVARIANT (Task C - Single snapshot boundary):
+            // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+            let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
+                std::collections::BTreeMap::new();
+            let state = self.state.read().await;
+            let sstables = self.sstables.read().await;
 
-        // Collect from SSTables
-        for sst in sstables.iter() {
-            let first = sst.first_key();
-            let last = sst.last_key();
-            if !first.is_empty() && !last.is_empty() {
-                if prefix > last.as_ref() {
-                    continue;
+            // Collect from SSTables
+            for sst in sstables.iter() {
+                let first = sst.first_key();
+                let last = sst.last_key();
+                if !first.is_empty() && !last.is_empty() {
+                    if prefix > last.as_ref() {
+                        continue;
+                    }
+                    let mut prefix_end = prefix.to_vec();
+                    if let Some(last_byte) = prefix_end.last_mut() {
+                        if let Some(next_byte) = last_byte.checked_add(1) {
+                            *last_byte = next_byte;
+                            if first.as_ref() >= prefix_end.as_slice() {
+                                continue;
+                            }
+                        }
+                    }
                 }
-                let mut prefix_end = prefix.to_vec();
-                if let Some(last_byte) = prefix_end.last_mut() {
-                    if let Some(next_byte) = last_byte.checked_add(1) {
-                        *last_byte = next_byte;
-                        if first.as_ref() >= prefix_end.as_slice() {
-                            continue;
+
+                let entries = sst.scan_prefix(prefix).await?;
+                for (k, v, seq, tx) in entries {
+                    let raw_seq = seq & !TOMBSTONE_BIT;
+                    if raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                        let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v, seq);
                         }
                     }
                 }
             }
 
-            let entries = sst.scan_prefix(prefix).await?;
-            for (k, v, seq, tx) in entries {
-                let raw_seq = seq & !TOMBSTONE_BIT;
-                if raw_seq <= seq_no && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
-                    let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
-                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                        *entry = (v, seq);
+            // Collect from immutable memtables
+            for mt in &state.immutable_memtables {
+                for (k, v, seq, tx) in mt.iter() {
+                    let raw_seq = seq & !TOMBSTONE_BIT;
+                    if k.starts_with(prefix)
+                        && raw_seq <= seq_no
+                        && (tx <= last_tx || tx >= TxId::INTERNAL_BASE)
+                    {
+                        let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.clone(), seq);
+                        }
                     }
                 }
             }
-        }
 
-        // Collect from immutable memtables
-        for mt in &state.immutable_memtables {
-            for (k, v, seq, tx) in mt.iter() {
+            // Collect from active memtable
+            for (k, v, seq, tx) in state.memtable.iter() {
                 let raw_seq = seq & !TOMBSTONE_BIT;
                 if k.starts_with(prefix)
                     && raw_seq <= seq_no
@@ -1402,30 +1469,15 @@ impl StorageEngine for LsmStorage {
                     }
                 }
             }
-        }
 
-        // Collect from active memtable
-        for (k, v, seq, tx) in state.memtable.iter() {
-            let raw_seq = seq & !TOMBSTONE_BIT;
-            if k.starts_with(prefix)
-                && raw_seq <= seq_no
-                && (tx <= last_tx || tx >= TxId::INTERNAL_BASE)
-            {
-                let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
-                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                    *entry = (v.clone(), seq);
+            let mut results = Vec::with_capacity(map.len());
+            for (k, (v, seq)) in map {
+                if (seq & TOMBSTONE_BIT) == 0 {
+                    results.push((k.to_vec(), v.to_vec()));
                 }
             }
-        }
 
-        let mut results = Vec::with_capacity(map.len());
-        for (k, (v, seq)) in map {
-            if (seq & TOMBSTONE_BIT) == 0 {
-                results.push((k.to_vec(), v.to_vec()));
-            }
-        }
-
-        Ok(results)
+            Ok(results)
         })
     }
 
@@ -1435,29 +1487,52 @@ impl StorageEngine for LsmStorage {
         end: std::ops::Bound<&'a [u8]>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-        use std::ops::Bound;
+            use std::ops::Bound;
 
-        let last_tx = self.last_committed_tx.load(Ordering::Acquire);
-        let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
-        let state = self.state.read().await;
-        let sstables = self.sstables.read().await;
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+            let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
+            let state = self.state.read().await;
+            let sstables = self.sstables.read().await;
 
-        // 1. SSTables (filtered by visibility tx <= last_tx)
-        for sst in sstables.iter() {
-            let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
-            for (k, v, seq, tx) in entries {
-                if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
-                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                        *entry = (v.to_vec(), seq);
+            // 1. SSTables (filtered by visibility tx <= last_tx)
+            for sst in sstables.iter() {
+                let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
+                for (k, v, seq, tx) in entries {
+                    if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.to_vec(), seq);
+                        }
                     }
                 }
             }
-        }
 
-        // 2. Immutable memtables (older → newer)
-        for mt in &state.immutable_memtables {
-            for (k, v, seq, tx) in mt.iter() {
+            // 2. Immutable memtables (older → newer)
+            for mt in &state.immutable_memtables {
+                for (k, v, seq, tx) in mt.iter() {
+                    if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                        continue;
+                    }
+                    let in_range = match start {
+                        Bound::Included(s) => k.as_ref() >= s,
+                        Bound::Excluded(s) => k.as_ref() > s,
+                        Bound::Unbounded => true,
+                    } && match end {
+                        Bound::Included(e) => k.as_ref() <= e,
+                        Bound::Excluded(e) => k.as_ref() < e,
+                        Bound::Unbounded => true,
+                    };
+                    if in_range {
+                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.to_vec(), seq);
+                        }
+                    }
+                }
+            }
+
+            // 3. Active memtable
+            for (k, v, seq, tx) in state.memtable.iter() {
                 if tx > last_tx && tx < TxId::INTERNAL_BASE {
                     continue;
                 }
@@ -1477,38 +1552,15 @@ impl StorageEngine for LsmStorage {
                     }
                 }
             }
-        }
 
-        // 3. Active memtable
-        for (k, v, seq, tx) in state.memtable.iter() {
-            if tx > last_tx && tx < TxId::INTERNAL_BASE {
-                continue;
-            }
-            let in_range = match start {
-                Bound::Included(s) => k.as_ref() >= s,
-                Bound::Excluded(s) => k.as_ref() > s,
-                Bound::Unbounded => true,
-            } && match end {
-                Bound::Included(e) => k.as_ref() <= e,
-                Bound::Excluded(e) => k.as_ref() < e,
-                Bound::Unbounded => true,
-            };
-            if in_range {
-                let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                    *entry = (v.to_vec(), seq);
-                }
-            }
-        }
+            // 4. Filter tombstones
+            let results = map
+                .into_iter()
+                .filter(|(_, (_, seq))| (seq & TOMBSTONE_BIT) == 0)
+                .map(|(k, (v, _))| (k, v))
+                .collect();
 
-        // 4. Filter tombstones
-        let results = map
-            .into_iter()
-            .filter(|(_, (_, seq))| (seq & TOMBSTONE_BIT) == 0)
-            .map(|(k, (v, _))| (k, v))
-            .collect();
-
-        Ok(results)
+            Ok(results)
         })
     }
 }
@@ -3162,5 +3214,98 @@ mod tests {
         assert_eq!(storage2.flush_counter.load(Ordering::Relaxed), 1);
         assert!(tmp1.path().join("wal-0.log").exists());
         assert!(tmp2.path().join("wal-0.log").exists());
+    }
+
+    #[tokio::test]
+    async fn test_lsm_put_if_absent_parallel_two_tasks() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+        let key = b"cas_key_2tasks";
+
+        let s1 = Arc::clone(&storage);
+        let h1 = tokio::spawn(async move {
+            let tx = TxId::new(1);
+            let res = s1.put_if_absent(tx, key, b"val1").await;
+            if res.as_ref().copied().unwrap_or(false) {
+                let _ = s1.commit(tx).await;
+            }
+            res
+        });
+
+        let s2 = Arc::clone(&storage);
+        let h2 = tokio::spawn(async move {
+            let tx = TxId::new(2);
+            let res = s2.put_if_absent(tx, key, b"val2").await;
+            if res.as_ref().copied().unwrap_or(false) {
+                let _ = s2.commit(tx).await;
+            }
+            res
+        });
+
+        let r1 = h1.await.unwrap().unwrap();
+        let r2 = h2.await.unwrap().unwrap();
+
+        assert_ne!(
+            r1, r2,
+            "Exactly one task must succeed (true) and the other fail (false)"
+        );
+
+        let stored_val = storage.get(key).await.unwrap().expect("value must exist");
+        if r1 {
+            assert_eq!(stored_val, b"val1");
+        } else {
+            assert_eq!(stored_val, b"val2");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_lsm_put_if_absent_stress_200_tasks() {
+        let (storage, _tmp) = test_storage().await;
+        let storage = Arc::new(storage);
+        let key = b"cas_key_stress_200";
+
+        let mut set = tokio::task::JoinSet::new();
+
+        for i in 0..200u64 {
+            let s = Arc::clone(&storage);
+            let val = format!("val_{i}").into_bytes();
+            set.spawn(async move {
+                let tx = TxId::new(i + 1);
+                let res = s.put_if_absent(tx, key, &val).await;
+                if res.as_ref().copied().unwrap_or(false) {
+                    let _ = s.commit(tx).await;
+                }
+                (i, res)
+            });
+        }
+
+        let mut true_count = 0;
+        let mut false_count = 0;
+        let mut winning_task_id = None;
+
+        while let Some(res) = set.join_next().await {
+            let (task_id, result) = res.unwrap();
+            match result {
+                Ok(true) => {
+                    true_count += 1;
+                    winning_task_id = Some(task_id);
+                }
+                Ok(false) => {
+                    false_count += 1;
+                }
+                Err(e) => panic!("Unexpected error in task {task_id}: {e:?}"),
+            }
+        }
+
+        assert_eq!(true_count, 1, "Exactly 1 task must return Ok(true)");
+        assert_eq!(false_count, 199, "199 tasks must return Ok(false)");
+
+        let winner = winning_task_id.expect("winning task id");
+        let expected_val = format!("val_{winner}").into_bytes();
+        let stored_val = storage.get(key).await.unwrap().expect("value must exist");
+        assert_eq!(
+            stored_val, expected_val,
+            "Stored value must match winning task's value"
+        );
     }
 }

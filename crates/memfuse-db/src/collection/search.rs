@@ -433,6 +433,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
+    /// Mindest-Kandidatenpool für Cross-Encoder-Reranking.
+    /// Wissenschaftliche Basis: arXiv:2604.01733 (T2-RAGBench).
+    /// k_pool=20 → Recall@5=0.458; k_pool=100 → Recall@5=0.888 (Qualitätsknie).
+    pub const DEFAULT_MIN_RERANK_CANDIDATES: usize = 100;
+
     #[cfg(feature = "reranking")]
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
@@ -445,55 +450,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         reranker: Option<&memfuse_embed::CrossEncoderReranker>,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<crate::SearchResult>> {
-        let k = k.min(memfuse_core::MAX_SEARCH_K);
-        // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
-        let pre_rerank_k = if reranker.is_some() { k * 3 } else { k };
-        let mut results = self
-            .hybrid_search(text, vector, pre_rerank_k, anchor_entities)
-            .await?;
-
-        // Schritt 2: Optional Cross-Encoder Reranking
-        if let Some(reranker) = reranker {
-            let candidate_texts: Vec<String> = results
-                .iter()
-                .map(|r| {
-                    r.metadata
-                        .as_ref()
-                        .and_then(|m| m.get("text").or_else(|| m.get("content")))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&r.id)
-                        .to_string()
-                })
-                .collect();
-
-            match reranker.rerank(text, &candidate_texts).await {
-                Ok(ranked) => {
-                    let mut reranked_results = Vec::with_capacity(k);
-                    for r in ranked.into_iter().take(k) {
-                        if let Some(mut result) = results.get(r.original_index).cloned() {
-                            if let Some(meta) = result.metadata.as_mut() {
-                                if let Some(obj) = meta.as_object_mut() {
-                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
-                                }
-                            }
-                            result.score = r.score;
-                            if let Some(p) = result.provenance.as_mut() {
-                                p.rerank_score = Some(r.score);
-                            }
-                            reranked_results.push(result);
-                        }
-                    }
-                    tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
-                    return Ok(reranked_results);
-                }
-                Err(e) => {
-                    tracing::warn!("Reranking failed (using RRF order): {e}");
-                }
-            }
+        let mut builder = self.query().text(text).vector(vector).k(k);
+        if let Some(r) = reranker {
+            builder = builder.reranker(r);
         }
-
-        results.truncate(k);
-        Ok(results)
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
+        builder.execute().await
     }
 
     /// Performs hybrid search with custom fusion weights for vector, text, and graph signals,
@@ -680,12 +644,20 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        // Oversized candidate pool to prevent result shortfall when superseded docs are removed
-        let candidate_k = if query.include_superseded {
-            k
-        } else {
-            k.saturating_mul(3).min(memfuse_core::MAX_SEARCH_K).max(k)
-        };
+        // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
+        let mult = query
+            .rerank_pool_multiplier
+            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
+        let max_pool = query
+            .rerank_pool_max
+            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        let rerank_k = k.saturating_mul(mult).min(max_pool);
+        candidate_k = candidate_k.max(rerank_k).min(memfuse_core::MAX_SEARCH_K).max(k);
 
         let total_docs = self.len().await;
 

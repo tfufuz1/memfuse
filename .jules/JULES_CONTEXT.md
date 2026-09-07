@@ -77,6 +77,7 @@ Layer 4:  memfuse-{mcp,tauri} ← agent + db + ollama + crypto/graph
 | ADR-043 | last_committed_tx vor SSTable-Sichtbarkeit | `last_committed_tx` vor `sstables.push()` in LsmStorage::flush aktualisieren |
 | ADR-044 | MCP Write-Authorization & Sandbox Policy | DB-Schreibzugriffe im MCP Server standardmäßig GESPERRT (Read-Only) |
 | ADR-045 | Entkopplung memfuse-router und memfuse-mcp | JSON-RPC Typen in `memfuse-core::ipc`, memfuse-router hängtfrei von memfuse-mcp |
+| ADR-063 | TenantId-Typ als Layer-0 Fundament | Typisierter Bezeichner `TenantId` in `memfuse-core`, volle Isolation bleibt Horizont-4-Arbeit |
 
 ---
 
