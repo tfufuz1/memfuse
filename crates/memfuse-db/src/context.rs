@@ -100,10 +100,10 @@ impl ContextManager {
     ///
     /// Filters by relevance threshold, sorts by score, and truncates to budget.
     pub fn prepare_context(&self, mut chunks: Vec<ContextChunk>) -> Result<ContextWindow> {
-        // Filter by relevance threshold
-        chunks.retain(|c| c.relevance >= self.relevance_threshold);
+        // Filter by relevance threshold (retaining NaN chunks so total_cmp can order them safely without dropping)
+        chunks.retain(|c| c.relevance.is_nan() || c.relevance >= self.relevance_threshold);
 
-        // Sort by relevance descending with deterministic doc_id tiebreaker
+        // Sort by relevance descending, then by doc_id ascending for deterministic tie-breaking (ADR-DB-001 / Spec §6.15)
         chunks.sort_by(|a, b| {
             b.relevance
                 .total_cmp(&a.relevance)
@@ -360,6 +360,73 @@ mod tests {
     fn test_token_estimation() {
         let tokens = ContextManager::estimate_tokens("hello world foo bar");
         assert!(tokens >= 4); // At least 4 words
+    }
+
+    #[test]
+    fn test_prepare_context_equal_scores_deterministic() {
+        let budget = TokenBudget::new(10000, 0);
+        let mgr = ContextManager::new(budget);
+
+        // Erstelle 20 Chunks in nicht-aufsteigender doc_id Reihenfolge
+        let doc_ids = vec![
+            15, 3, 20, 1, 8, 12, 5, 19, 2, 10, 14, 7, 18, 4, 11, 16, 6, 13, 9, 17,
+        ];
+
+        let mut expected_ids: Vec<u64> = doc_ids.clone();
+        expected_ids.sort_unstable();
+
+        for _ in 0..10 {
+            let chunks: Vec<ContextChunk> = doc_ids
+                .iter()
+                .map(|&id| ContextChunk {
+                    doc_id: DocId::new(id),
+                    content: format!("chunk content {}", id),
+                    relevance: 0.85,
+                    token_count: 10,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                })
+                .collect();
+
+            let window = mgr.prepare_context(chunks).expect("prepare_context");
+            let result_ids: Vec<u64> = window.chunks.iter().map(|c| c.doc_id.inner()).collect();
+            assert_eq!(result_ids, expected_ids);
+        }
+    }
+
+    #[test]
+    fn test_prepare_context_nan_relevance_safety() {
+        let budget = TokenBudget::new(10000, 0);
+        let mgr = ContextManager::new(budget);
+
+        let chunks = vec![
+            ContextChunk {
+                doc_id: DocId::new(10),
+                content: "nan chunk".into(),
+                relevance: f32::NAN,
+                token_count: 10,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            },
+            ContextChunk {
+                doc_id: DocId::new(5),
+                content: "normal chunk".into(),
+                relevance: 0.5,
+                token_count: 10,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            },
+        ];
+
+        let window = mgr.prepare_context(chunks).expect("prepare_context");
+        // total_cmp considers NaN greater than normal numbers:
+        // so relevance: NAN (descending) comes before 0.5.
+        assert_eq!(window.chunks.len(), 2);
+        assert!(window.chunks[0].relevance.is_nan());
+        assert_eq!(window.chunks[1].doc_id, DocId::new(5));
     }
 
     #[test]

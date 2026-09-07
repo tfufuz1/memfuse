@@ -107,11 +107,13 @@ pub trait SandboxBridge: Send + Sync {
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
+pub mod homeostat;
 pub mod multistep;
 pub mod reaper;
 pub mod thermostat;
 pub mod transaction;
 
+pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};

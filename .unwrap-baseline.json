@@ -4005,6 +4005,14 @@
   },
   {
     "file": "crates/memfuse-db/src/context.rs",
+    "hash": "fb5c33fa6f457e9d"
+  },
+  {
+    "file": "crates/memfuse-db/src/context.rs",
+    "hash": "fd3b1d80aa14d6bf"
+  },
+  {
+    "file": "crates/memfuse-db/src/context.rs",
     "hash": "ffed02bce1512957"
   },
   {
@@ -10849,11 +10857,19 @@
   },
   {
     "file": "crates/memfuse-ollama/src/importance.rs",
+    "hash": "258b66804d89a0d5"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/importance.rs",
     "hash": "565da001a0760ee3"
   },
   {
     "file": "crates/memfuse-ollama/src/importance.rs",
     "hash": "692a59e5e346e999"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/importance.rs",
+    "hash": "7aa7a5fc2c382e66"
   },
   {
     "file": "crates/memfuse-ollama/src/importance.rs",
