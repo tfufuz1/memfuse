@@ -298,18 +298,22 @@ impl RouterEngine {
             let metrics = cal.get(&selected_profile.name).map(|state| {
                 let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
                 if calibrated {
-                    ConfidenceMetrics::Calibrated {
-                        score_lower: best_score * (1.0 - state.conformal.alpha),
-                        score_upper: best_score * (1.0 + state.conformal.alpha),
+                    ConfidenceMetrics {
+                        score_lower: Some(best_score * (1.0 - state.conformal.alpha)),
+                        score_upper: Some(best_score * (1.0 + state.conformal.alpha)),
+                        calibrated: true,
                         quantile_threshold: state.conformal.quantile_threshold,
                         non_conformity_score: non_conformity,
                         selection_margin: confidence_ratio as f32,
                     }
                 } else {
-                    ConfidenceMetrics::Uncalibrated {
+                    ConfidenceMetrics {
+                        score_lower: None,
+                        score_upper: None,
+                        calibrated: false,
+                        quantile_threshold: state.conformal.quantile_threshold,
                         non_conformity_score: non_conformity,
                         selection_margin: confidence_ratio as f32,
-                        quantile_threshold: state.conformal.quantile_threshold,
                     }
                 }
             });
