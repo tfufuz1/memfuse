@@ -8,8 +8,7 @@
 // Multi-Step Iterative Retrieval Engine (OpenAI o-series Pattern)
 
 use crate::{Collection, SearchResult};
-use memfuse_core::{
-    BoxFuture, Result, StorageEngine};
+use memfuse_core::{BoxFuture, Result, StorageEngine};
 use std::sync::Arc;
 
 /// Konfiguration für Multi-Step Retrieval.
@@ -218,7 +217,7 @@ mod tests {
         responses: std::sync::Mutex<Vec<Vec<String>>>,
     }
 
-        impl QueryRewriter for DummyRewriter {
+    impl QueryRewriter for DummyRewriter {
         fn rewrite<'a>(
             &'a self,
             _original_query: &'a str,
@@ -386,7 +385,7 @@ mod tests {
 
     struct FailingRewriter;
 
-        impl QueryRewriter for FailingRewriter {
+    impl QueryRewriter for FailingRewriter {
         fn rewrite<'a>(
             &'a self,
             _original_query: &'a str,

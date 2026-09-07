@@ -1,5 +1,5 @@
 # MemFuse — Jules Agent Context
-> Version: 2.0 | Stand: 2026-09-06 | Permanent Ambient Context für Jules Sessions
+> Version: 2.0 | Stand: 2026-09-07 | Permanent Ambient Context für Jules Sessions
 >
 > ⚠️ **FRISCHEGARANTIE**: Diese Datei ist ein Kurzzeit-Snapshot.
 > Bei Widerspruch gilt immer: `WORKING_STATE.md` (autogeneriert) > Code > diese Datei.
@@ -7,7 +7,7 @@
 
 ---
 
-## 🎯 Aktueller Projektstatus (Stand: 2026-09-06)
+## 🎯 Aktueller Projektstatus (Stand: 2026-09-07)
 
 **Phase 1 — RAG-Fundament: ✅ VOLLSTÄNDIG ABGESCHLOSSEN (HEAD 4162ebb)**
 
@@ -77,6 +77,7 @@ Layer 4:  memfuse-{mcp,tauri} ← agent + db + ollama + crypto/graph
 | ADR-043 | last_committed_tx vor SSTable-Sichtbarkeit | `last_committed_tx` vor `sstables.push()` in LsmStorage::flush aktualisieren |
 | ADR-044 | MCP Write-Authorization & Sandbox Policy | DB-Schreibzugriffe im MCP Server standardmäßig GESPERRT (Read-Only) |
 | ADR-045 | Entkopplung memfuse-router und memfuse-mcp | JSON-RPC Typen in `memfuse-core::ipc`, memfuse-router hängtfrei von memfuse-mcp |
+| ADR-063 | TenantId-Typ als Layer-0 Fundament | Typisierter Bezeichner `TenantId` in `memfuse-core`, volle Isolation bleibt Horizont-4-Arbeit |
 
 ---
 

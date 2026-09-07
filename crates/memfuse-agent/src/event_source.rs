@@ -10,8 +10,7 @@
 //! Provides `EventSource` trait and concrete implementations (`PollingDocumentEventSource`, `VecEventSource`).
 
 use crate::context::MAX_ID_LEN;
-use memfuse_core::{
-    BoxFuture, MemFuseError, Result, StorageEngine};
+use memfuse_core::{BoxFuture, MemFuseError, Result, StorageEngine};
 use memfuse_db::Collection;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -227,9 +226,7 @@ impl VecEventSource {
 
 impl EventSource for VecEventSource {
     fn next_event<'a>(&'a mut self) -> BoxFuture<'a, Result<Option<BackgroundEvent>>> {
-        Box::pin(async move {
-            Ok(self.events.pop_front())
-        })
+        Box::pin(async move { Ok(self.events.pop_front()) })
     }
 
     fn is_exhausted(&self) -> bool {

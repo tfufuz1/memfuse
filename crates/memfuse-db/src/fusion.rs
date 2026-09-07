@@ -12,7 +12,67 @@
 // SIEHE AUCH: DECISIONS.md ADR-003, crates/memfuse-db/AGENTS.md §4-Signal Fusion
 
 use crate::{ProvenanceRecord, SearchResult};
+use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap};
+
+/// Konfiguration für den Resonanz-Kohärenz-Bonus (F-09).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ResonanceConfig {
+    /// Exponent β für den Kohärenz-Bonus. Default: 0.5.
+    pub beta: f32,
+    /// Boost-Stärke γ. Default: 0.3.
+    pub gamma: f32,
+}
+
+impl Default for ResonanceConfig {
+    fn default() -> Self {
+        Self {
+            beta: 0.5,
+            gamma: 0.3,
+        }
+    }
+}
+
+/// Wendet Resonanz-Kohärenz-Bonus auf fusionierte Ergebnisse an.
+///
+/// INVARIANTE INV-PROV-2: `signal_contributions` bleiben unverändert (unboosted).
+/// `coherence_bonus` wird in `provenance.coherence_bonus` geschrieben.
+///
+/// Feature-Flag: Nur aufrufen wenn `physio-resonance-fusion` aktiv.
+#[cfg(feature = "physio-resonance-fusion")]
+pub fn apply_resonance_bonus(
+    results: Vec<SearchResult>,
+    total_signal_count: usize,
+    config: &ResonanceConfig,
+) -> Vec<SearchResult> {
+    if total_signal_count == 0 {
+        return results;
+    }
+    let beta = config.beta.clamp(0.1, 2.0);
+    let gamma = config.gamma.clamp(0.0, 1.0);
+    let mut results: Vec<_> = results
+        .into_iter()
+        .map(|mut r| {
+            let signal_count = r.matched_signals.len();
+            let coherence = (signal_count as f32 / total_signal_count as f32).powf(beta);
+            let bonus = gamma * coherence;
+            r.score *= 1.0 + bonus;
+            if let Some(ref mut prov) = r.provenance {
+                prov.coherence_bonus = bonus;
+            }
+            r
+        })
+        .collect();
+
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    results
+}
 
 struct HeapEntry {
     result: SearchResult,
@@ -55,15 +115,20 @@ pub enum SignalKind {
     Text,
     /// Graph (traversal / PageRank) search signal.
     Graph,
+    #[cfg(feature = "physio-synaptic-edges")]
+    /// Synaptic/Hebbian edge weight signal (F-03).
+    Synaptic,
 }
 
 impl SignalKind {
-    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph").
+    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph", "synaptic").
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "vector" | "vec" => Some(SignalKind::Vector),
             "text" | "bm25" | "keyword" => Some(SignalKind::Text),
             "graph" => Some(SignalKind::Graph),
+            #[cfg(feature = "physio-synaptic-edges")]
+            "synaptic" | "hebbian" => Some(SignalKind::Synaptic),
             _ => None,
         }
     }
@@ -114,7 +179,8 @@ impl MetadataMergePriority {
 }
 
 /// Baut einen ProvenanceRecord aus den verfügbaren Signal-Scores und optionalen Signal-Gewichten.
-/// Erfüllt INV-PROV-1: sum(contributions.rrf_contribution) ≈ unboosted RRF score (|Δ| < 1e-6)
+/// Erfüllt INV-PROV-1: sum(contributions.rrf_contribution) ≈ unboosted RRF score (|Δ| < 1e-6).
+/// Die Invariante wird in Debug-Builds per `debug_assert!` überprüft, wenn `expected_total` (Ground-Truth RRF score) angegeben ist.
 #[allow(clippy::too_many_arguments)]
 pub fn build_provenance(
     vector_distance: Option<f32>,
@@ -130,6 +196,7 @@ pub fn build_provenance(
     rrf_k: f32,
     source_collection: Option<String>,
     index_type: Option<String>,
+    expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -186,16 +253,22 @@ pub fn build_provenance(
         source_collection,
         index_type,
         signal_contributions,
+        coherence_bonus: 0.0,
     };
 
     #[cfg(debug_assertions)]
     {
-        let expected_rrf: f32 = record
-            .signal_contributions
-            .values()
-            .map(|c| c.rrf_contribution)
-            .sum();
-        let _ = expected_rrf;
+        if let Some(expected) = expected_total {
+            let expected_rrf: f32 = record
+                .signal_contributions
+                .values()
+                .map(|c| c.rrf_contribution)
+                .sum();
+            debug_assert!(
+                (expected_rrf - expected).abs() < 1e-6,
+                "INV-PROV-1 violation in build_provenance: sum of contributions ({expected_rrf}) != expected RRF score ({expected})"
+            );
+        }
     }
 
     record
@@ -263,6 +336,7 @@ pub fn weighted_reciprocal_rank_fusion(
         max_results,
         MetadataMergePriority::default(),
         true,
+        None,
     )
 }
 
@@ -275,7 +349,7 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
     max_results: usize,
     priority: MetadataMergePriority,
 ) -> Vec<SearchResult> {
-    weighted_reciprocal_rank_fusion_with_options(result_sets, max_results, priority, true)
+    weighted_reciprocal_rank_fusion_with_options(result_sets, max_results, priority, true, None)
 }
 
 /// Weighted Reciprocal Rank Fusion with explicit metadata merge priority and provenance toggle.
@@ -284,10 +358,15 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
     max_results: usize,
     priority: MetadataMergePriority,
     include_provenance: bool,
+    resonance_config: Option<&ResonanceConfig>,
 ) -> Vec<SearchResult> {
     if max_results == 0 {
         return Vec::new();
     }
+
+    let total_signal_count = result_sets.len();
+    let _ = total_signal_count;
+    let _ = &resonance_config;
 
     // Sort result sets according to configured metadata merge priority.
     // Stable sort preserves original relative order for signals with equal rank.
@@ -370,6 +449,12 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                         entry.3.index_type = Some("graph".to_string());
                     }
                 }
+                #[cfg(feature = "physio-synaptic-edges")]
+                Some(SignalKind::Synaptic) => {
+                    if entry.3.index_type.is_none() {
+                        entry.3.index_type = Some("synaptic".to_string());
+                    }
+                }
                 None => {}
             }
 
@@ -395,6 +480,9 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 for (sig, r) in doc_prov.signal_ranks {
                     entry.3.signal_ranks.entry(sig).or_insert(r);
                 }
+                for (sig, contrib) in doc_prov.signal_contributions {
+                    entry.3.signal_contributions.entry(sig).or_insert(contrib);
+                }
             }
         }
     }
@@ -415,8 +503,8 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 || prov.source_collection.is_some()
                 || prov.index_type.is_some())
         {
-            if prov.signal_contributions.is_empty() {
-                Some(build_provenance(
+            let final_prov = if prov.signal_contributions.is_empty() {
+                build_provenance(
                     prov.vector_distance,
                     prov.signal_ranks.get("vector").copied(),
                     None,
@@ -433,10 +521,28 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                     k as f32,
                     prov.source_collection,
                     prov.index_type,
-                ))
+                    None,
+                )
             } else {
-                Some(prov)
+                prov
+            };
+
+            #[cfg(debug_assertions)]
+            {
+                if !final_prov.signal_contributions.is_empty() {
+                    let sum_contrib: f32 = final_prov
+                        .signal_contributions
+                        .values()
+                        .map(|c| c.rrf_contribution)
+                        .sum();
+                    debug_assert!(
+                        (sum_contrib - score).abs() < 1e-6,
+                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of contributions ({sum_contrib}) != entry score ({score})"
+                    );
+                }
             }
+
+            Some(final_prov)
         } else {
             None
         };
@@ -461,10 +567,20 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         }
     }
 
-    heap.into_sorted_vec()
+    let results: Vec<SearchResult> = heap
+        .into_sorted_vec()
         .into_iter()
         .map(|e| e.result)
-        .collect()
+        .collect();
+
+    #[cfg(feature = "physio-resonance-fusion")]
+    let results = if let Some(cfg) = resonance_config {
+        apply_resonance_bonus(results, total_signal_count, cfg)
+    } else {
+        results
+    };
+
+    results
 }
 
 /// Converts optional FusionWeights into (vector, text, graph) weight tuple.
@@ -945,6 +1061,284 @@ mod tests {
     }
 
     #[test]
+    fn test_build_provenance_invariant_consistent() {
+        let rank = 1u32;
+        let weight = 1.0f32;
+        let k = 60.0f32;
+        let expected_contrib = weight / (k + rank as f32);
+
+        let prov = build_provenance(
+            Some(0.95),
+            Some(rank),
+            Some(weight),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            k,
+            Some("test_collection".to_string()),
+            Some("hnsw".to_string()),
+            Some(expected_contrib),
+        );
+
+        let sum: f32 = prov
+            .signal_contributions
+            .values()
+            .map(|c| c.rrf_contribution)
+            .sum();
+        assert!((sum - expected_contrib).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "INV-PROV-1 violation in build_provenance")]
+    fn test_build_provenance_invariant_inconsistent_panics() {
+        let rank = 1u32;
+        let weight = 1.0f32;
+        let k = 60.0f32;
+        let wrong_expected = 0.999f32; // Discrepancy > 1e-6
+
+        build_provenance(
+            Some(0.95),
+            Some(rank),
+            Some(weight),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            k,
+            Some("test_collection".to_string()),
+            Some("hnsw".to_string()),
+            Some(wrong_expected),
+        );
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "INV-PROV-1 violation in weighted_reciprocal_rank_fusion")]
+    fn test_weighted_rrf_inconsistent_signal_contribution_panics() {
+        let mut prov = ProvenanceRecord {
+            vector_distance: Some(0.95),
+            source_collection: Some("col".to_string()),
+            index_type: Some("hnsw".to_string()),
+            ..Default::default()
+        };
+        // Inject an inconsistent prior signal contribution manually into doc.provenance
+        prov.signal_contributions.insert(
+            "text".to_string(),
+            crate::SignalContribution {
+                raw_score: 0.95,
+                rank: 1,
+                rrf_contribution: 0.9999, // Unexpected extra contribution causing discrepancy
+            },
+        );
+
+        let set = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.95,
+            metadata: None,
+            matched_signals: vec!["vector".to_string()],
+            provenance: Some(prov),
+        }];
+
+        weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 10);
+    }
+
+    #[test]
+    #[cfg(feature = "physio-resonance-fusion")]
+    fn test_resonance_bonus_multi_signal_beats_single_signal() {
+        let doc_multi = |score: f32| SearchResult {
+            id: "doc_multi".to_string(),
+            score,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+
+        let make_set = |name: &str, include_single: bool| {
+            let mut list = Vec::new();
+            if include_single {
+                list.push(SearchResult {
+                    id: "doc_single".to_string(),
+                    score: 0.99,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                });
+            }
+            for i in 0..124 {
+                list.push(SearchResult {
+                    id: format!("filler_{name}_{i}"),
+                    score: 0.5,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                });
+            }
+            list.push(doc_multi(0.8));
+            (name.to_string(), list, 1.0)
+        };
+
+        let s1 = make_set("vector", true);
+        let s2 = make_set("text", false);
+        let s3 = make_set("graph", false);
+
+        let cfg = ResonanceConfig::default();
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![s1, s2, s3],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(
+            fused[0].id, "doc_multi",
+            "Multi-signal doc with resonance bonus must beat single-signal doc despite lower unboosted score"
+        );
+        assert!(fused[0].score > fused[1].score);
+    }
+
+    #[test]
+    #[cfg(feature = "physio-resonance-fusion")]
+    fn test_resonance_bonus_provenance_coherence_set() {
+        let set1 = (
+            "vector".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            }],
+            1.0,
+        );
+        let set2 = (
+            "text".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            }],
+            1.0,
+        );
+
+        let cfg = ResonanceConfig::default();
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![set1, set2],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(fused.len(), 1);
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
+        assert!(
+            prov.coherence_bonus > 0.0,
+            "coherence_bonus must be > 0.0 for multi-signal document"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "physio-resonance-fusion")]
+    fn test_resonance_bonus_single_signal_no_boost() {
+        let set1 = (
+            "vector".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            }],
+            1.0,
+        );
+
+        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![set1],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(fused.len(), 1);
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
+        assert!((prov.coherence_bonus - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(feature = "physio-resonance-fusion")]
+    fn test_inv_prov2_signal_contributions_unchanged() {
+        let set1 = (
+            "vector".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            }],
+            1.0,
+        );
+        let set2 = (
+            "text".to_string(),
+            vec![SearchResult {
+                id: "doc1".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            }],
+            1.0,
+        );
+
+        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![set1, set2],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        let res = &fused[0];
+        let prov = match res.provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
+
+        let unboosted_sum: f32 = prov
+            .signal_contributions
+            .values()
+            .map(|c| c.rrf_contribution)
+            .sum();
+
+        let expected_unboosted = (1.0 / 61.0) + (1.0 / 61.0);
+        assert!((unboosted_sum - expected_unboosted).abs() < 1e-6);
+
+        let expected_final = expected_unboosted * (1.0 + prov.coherence_bonus);
+        assert!((res.score - expected_final).abs() < 1e-6);
+        assert!((unboosted_sum - res.score).abs() > 1e-6);
+    }
+
+    #[test]
     fn test_provenance_attribution_sums_to_rrf() {
         let vec_set = (
             "vector".to_string(),
@@ -1002,7 +1396,10 @@ mod tests {
         assert_eq!(fused.len(), 2);
 
         for res in &fused {
-            let prov = res.provenance.as_ref().expect("Provenance must be present");
+            let prov = match res.provenance.as_ref() {
+                Some(p) => p,
+                None => panic!("Provenance must be present"),
+            };
             assert!(!prov.signal_contributions.is_empty());
             let sum_contrib: f32 = prov
                 .signal_contributions

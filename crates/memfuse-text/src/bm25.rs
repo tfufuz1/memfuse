@@ -85,19 +85,15 @@ pub fn score_term_with_params(
 
     let tf = tf as f32;
     let doc_len = doc_len as f32;
-    let df = df as f32;
+    let df = df.min(n) as f32;
     let n = n as f32;
 
-    // Standard IDF formula: ln((N - df + 0.5) / (df + 0.5))
-    // If a term appears in more than half of the documents, the raw IDF formula can be negative.
-    // If df > n, the argument to ln() becomes negative, leading to NaN.
-    let idf_arg = (n - df + 0.5) / (df + 0.5);
-    let idf = if idf_arg <= 1.0 {
-        // If the term is very common (df > N/2 approximately), we use a small positive floor.
-        // This also handles the corruption case where df > n.
-        1e-6
-    } else {
-        idf_arg.ln()
+    let idf = {
+        // Robertson-Spärck-Jones BM25+: ln(1 + (N − df + 0.5) / (df + 0.5))
+        // Mathematische Garantie: IDF ≥ ln(1) = 0 für alle df ∈ [0, N].
+        // Kein Floor-Artefakt mehr nötig.
+        let arg = 1.0 + (n - df + 0.5) / (df + 0.5);
+        arg.ln()
     };
 
     let avg_doc = avg_doc_len.max(1.0);
@@ -177,6 +173,23 @@ mod tests {
 
     proptest! {
         #[test]
+        fn prop_bm25_idf_non_negative_for_high_df(
+            n in 0..100_000u32,
+            df_fraction in 0.0..1.0f64,
+        ) {
+            let df = ((n as f64) * df_fraction).round() as u32;
+            let df = df.min(n);
+            let n_f = n as f32;
+            let df_f = df as f32;
+
+            let arg = 1.0 + (n_f - df_f + 0.5) / (df_f + 0.5);
+            let idf = arg.ln();
+
+            prop_assert!(idf.is_finite(), "IDF must be finite for df <= n");
+            prop_assert!(idf >= 0.0, "IDF must be non-negative for all df in [0, n]");
+        }
+
+        #[test]
         fn prop_bm25_score_term_finite_and_non_negative(
             tf in 0..10_000u32,
             doc_len in 0..10_000u32,
@@ -218,9 +231,9 @@ mod tests {
             // and IDF <= ln((2N + 1) / 1) = ln(2N + 1) for valid df >= 0,
             // or IDF = 1e-6 floor for df > N/2.
             let max_possible_idf = if n == 0 {
-                1e-6f32
+                0.0f32
             } else {
-                ((2.0 * (n as f64) + 1.0).ln() as f32).max(1e-6)
+                (((2.0 * (n as f64) + 2.0) / 3.0).ln() as f32).max(0.0)
             };
             let upper_bound = (BM25_K1 + 1.0) * max_possible_idf + 1e-4; // float safety margin
 
@@ -240,19 +253,40 @@ mod tests {
     fn score_term_case_exact_anti_mirroring_value() {
         // Independent mathematical calculation:
         // tf = 1, doc_len = 10, avg_doc_len = 10.0, df = 1, n = 10, k1 = 1.5, b = 0.75
-        // idf_arg = (10 - 1 + 0.5) / (1 + 0.5) = 9.5 / 1.5 = 6.333333333...
-        // idf = ln(19/3) = 1.8458268
+        // idf_arg = 1.0 + (10 - 1 + 0.5) / (1 + 0.5) = 1.0 + 9.5 / 1.5 = 22 / 3 = 7.3333333...
+        // idf = ln(22/3) = 1.9924302
         // norm_doc_len = 10 / 10 = 1.0
         // tf_num = 1 * 2.5 = 2.5
         // tf_den = 1 + 1.5 * (0.25 + 0.75) = 2.5
         // tf_factor = 2.5 / 2.5 = 1.0
-        // expected score = 1.8458268
+        // expected score = 1.9924302
         let score = score_term(1, 10, 10.0, 1, 10);
-        let expected = 1.845_826_8;
+        let expected = 1.992_430_2;
         assert!(
             (score - expected).abs() < 1e-6,
             "Expected score close to {}, got {}",
             expected,
+            score
+        );
+    }
+
+    #[test]
+    fn test_bm25_high_freq_term_gets_nonzero_idf() {
+        // For df = n (term appears in all documents), Robertson-Spärck-Jones BM25+ yields:
+        // idf = ln(1 + (n - n + 0.5)/(n + 0.5)) = ln(1 + 0.5 / (n + 0.5))
+        // For n = 9, df = 9: idf = ln(1 + 0.5 / 9.5) = ln(10 / 9.5) ≈ 0.051293
+        // For n = 1, df = 1: idf = ln(1 + 0.5 / 1.5) = ln(4 / 3) ≈ 0.287682
+        let n = 9u32;
+        let df = 9u32;
+        let idf_arg = 1.0 + (n as f32 - df as f32 + 0.5) / (df as f32 + 0.5);
+        let expected_idf = idf_arg.ln();
+
+        let score = score_term(1, 10, 10.0, df, n);
+        assert!(score > 0.0, "Score for df = n must be non-zero");
+        assert!(
+            (score - expected_idf).abs() < 1e-5,
+            "IDF for high freq term must match Robertson-Spärck-Jones value {}, got {}",
+            expected_idf,
             score
         );
     }

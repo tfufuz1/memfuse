@@ -120,8 +120,8 @@ pub async fn chat_with_rag(
     )
     .await?;
 
-    let is_root = session.node_count() == 1
-        && session.get_node(0).map_or(false, |n| n.prompt == message);
+    let is_root =
+        session.node_count() == 1 && session.get_node(0).map_or(false, |n| n.prompt == message);
 
     if !is_root {
         session

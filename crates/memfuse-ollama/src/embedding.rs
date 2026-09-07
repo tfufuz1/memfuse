@@ -75,7 +75,10 @@ impl EmbeddingProvider for OllamaEmbedder {
         "ollama"
     }
 
-    fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
         Box::pin(async move {
             let vec = self
                 .client
@@ -115,16 +118,16 @@ impl EmbeddingProvider for OllamaEmbedder {
                 return Ok(Vec::new());
             }
 
-            let output = self
-                .client
-                .embed_batch(&self.model, texts)
-                .await
-                .map_err(|e| match e {
-                    MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
-                        EmbeddingError::Unavailable(msg)
-                    }
-                    other => EmbeddingError::ComputationFailed(other.to_string()),
-                })?;
+            let output =
+                self.client
+                    .embed_batch(&self.model, texts)
+                    .await
+                    .map_err(|e| match e {
+                        MemFuseError::NotFound(msg) | MemFuseError::InvalidInput(msg) => {
+                            EmbeddingError::Unavailable(msg)
+                        }
+                        other => EmbeddingError::ComputationFailed(other.to_string()),
+                    })?;
 
             if let Some(expected_dim) = self.expected_dimension {
                 for vec in &output {

@@ -1,6 +1,5 @@
 use memfuse_checkpoint::{CheckpointManifest, CheckpointMeta, PersistentCheckpointStore};
-use memfuse_core::{
-    BoxFuture, MemFuseError, Result, StorageEngine, StorageStats, TxId};
+use memfuse_core::{BoxFuture, MemFuseError, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -21,100 +20,82 @@ impl MockPersistentStorage {
 
 impl StorageEngine for MockPersistentStorage {
     fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-        Box::pin(async move {
-        Ok(self.data.lock().get(key).cloned())
-
-        })
+        Box::pin(async move { Ok(self.data.lock().get(key).cloned()) })
     }
-    fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-        Box::pin(async move {
-        self.get(key).await
-
-        })
+    fn get_at_seq<'a>(
+        &'a self,
+        key: &'a [u8],
+        _seq: u64,
+    ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move { self.get(key).await })
     }
-    fn put<'a>(&'a self, _tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+    fn put<'a>(
+        &'a self,
+        _tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.data.lock().insert(key.to_vec(), value.to_vec());
-        Ok(())
-
+            self.data.lock().insert(key.to_vec(), value.to_vec());
+            Ok(())
         })
     }
     fn delete<'a>(&'a self, _tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.data.lock().remove(key);
-        Ok(())
-
+            self.data.lock().remove(key);
+            Ok(())
         })
     }
     fn commit<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-        Box::pin(async move {
-        Ok(0)
-
-        })
+        Box::pin(async move { Ok(0) })
     }
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-        Box::pin(async move {
-        Ok(TxId::new(0))
-
-        })
+        Box::pin(async move { Ok(TxId::new(0)) })
     }
     fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
         Box::pin(async move {
-        Ok(StorageStats {
-            num_segments: 0,
-            total_size_bytes: 0,
-            memtable_size_bytes: 0,
-        })
-
+            Ok(StorageStats {
+                num_segments: 0,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
         })
     }
     fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.pinned.lock().insert(seq_no);
-        Ok(())
-
+            self.pinned.lock().insert(seq_no);
+            Ok(())
         })
     }
     fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.pinned.lock().remove(&seq_no);
-        Ok(())
-
+            self.pinned.lock().remove(&seq_no);
+            Ok(())
         })
     }
-    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-        let data = self.data.lock();
-        Ok(data
-            .iter()
-            .filter(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect())
-
+            let data = self.data.lock();
+            Ok(data
+                .iter()
+                .filter(|(k, _)| k.starts_with(prefix))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect())
         })
     }
     fn scan<'a>(
@@ -122,12 +103,8 @@ impl StorageEngine for MockPersistentStorage {
         _s: std::ops::Bound<&'a [u8]>,
         _e: std::ops::Bound<&'a [u8]>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        Ok(Vec::new())
-
-        })
+        Box::pin(async move { Ok(Vec::new()) })
     }
-
 }
 
 /// Test 1: Monotonicity across simulated process restarts.

@@ -3,9 +3,8 @@
 // STAND: TS:2026-08-31T22:30:00Z (SESSION: 0dcb9f3b)
 
 use memfuse_core::{
-    BoxFuture,
-    DocId, EntityId, MemFuseError, Result, ScoredDocument, StorageEngine, StorageStats, TxId,
-    VectorIndex, VectorIndexStats,
+    BoxFuture, DocId, EntityId, MemFuseError, Result, ScoredDocument, StorageEngine, StorageStats,
+    TxId, VectorIndex, VectorIndexStats,
 };
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_graph::CsrGraph;
@@ -47,143 +46,109 @@ impl FaultyStorage {
 
 impl StorageEngine for FaultyStorage {
     fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-        Box::pin(async move {
-        self.inner.get(key).await
-
-        })
+        Box::pin(async move { self.inner.get(key).await })
     }
 
     fn get_at_seq<'a>(&'a self, key: &'a [u8], seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-        Box::pin(async move {
-        self.inner.get_at_seq(key, seq).await
-
-        })
+        Box::pin(async move { self.inner.get_at_seq(key, seq).await })
     }
 
     fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        if self.fail_put_text.load(Ordering::SeqCst) && key.starts_with(b"__txt:") {
-            return Err(MemFuseError::Transaction(
-                "INJECTED FAULT: BM25/Text staging storage put failure".into(),
-            ));
-        }
-        if self.fail_put_graph.load(Ordering::SeqCst) && key.starts_with(b"__graph:") {
-            return Err(MemFuseError::Transaction(
-                "INJECTED FAULT: CSR-Graph staging storage put failure".into(),
-            ));
-        }
-        self.inner.put(tx_id, key, value).await
-
+            if self.fail_put_text.load(Ordering::SeqCst) && key.starts_with(b"__txt:") {
+                return Err(MemFuseError::Transaction(
+                    "INJECTED FAULT: BM25/Text staging storage put failure".into(),
+                ));
+            }
+            if self.fail_put_graph.load(Ordering::SeqCst) && key.starts_with(b"__graph:") {
+                return Err(MemFuseError::Transaction(
+                    "INJECTED FAULT: CSR-Graph staging storage put failure".into(),
+                ));
+            }
+            self.inner.put(tx_id, key, value).await
         })
     }
 
     fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        self.inner.delete(tx_id, key).await
-
-        })
+        Box::pin(async move { self.inner.delete(tx_id, key).await })
     }
 
     fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        if self.fail_all_commits.load(Ordering::SeqCst) {
-            return Err(MemFuseError::Transaction(
-                "INJECTED FAULT: LSM commit failure (all)".into(),
-            ));
-        }
+            if self.fail_all_commits.load(Ordering::SeqCst) {
+                return Err(MemFuseError::Transaction(
+                    "INJECTED FAULT: LSM commit failure (all)".into(),
+                ));
+            }
 
-        let count = {
-            let mut map = self.commit_count.lock();
-            let c = map.entry(tx_id).or_insert(0);
-            *c += 1;
-            *c
-        };
+            let count = {
+                let mut map = self.commit_count.lock();
+                let c = map.entry(tx_id).or_insert(0);
+                *c += 1;
+                *c
+            };
 
-        {
-            let target_idx = self.fail_on_commit_index.lock();
-            if let Some(target) = *target_idx {
-                if target == count {
-                    return Err(MemFuseError::Transaction(format!(
-                        "INJECTED FAULT: Commit #{} failed for tx {}",
-                        count, tx_id
-                    )));
+            {
+                let target_idx = self.fail_on_commit_index.lock();
+                if let Some(target) = *target_idx {
+                    if target == count {
+                        return Err(MemFuseError::Transaction(format!(
+                            "INJECTED FAULT: Commit #{} failed for tx {}",
+                            count, tx_id
+                        )));
+                    }
                 }
             }
-        }
 
-        self.inner.commit(tx_id).await
-
+            self.inner.commit(tx_id).await
         })
     }
 
     fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        self.inner.rollback(tx_id).await
-
-        })
+        Box::pin(async move { self.inner.rollback(tx_id).await })
     }
 
     fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        self.inner.rollback_to_tx(tx_id).await
-
-        })
+        Box::pin(async move { self.inner.rollback_to_tx(tx_id).await })
     }
 
     fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        self.inner.flush().await
-
-        })
+        Box::pin(async move { self.inner.flush().await })
     }
 
     fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
-        Box::pin(async move {
-        self.inner.stats().await
-
-        })
+        Box::pin(async move { self.inner.stats().await })
     }
 
     fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-        Box::pin(async move {
-        self.inner.last_seq_no().await
-
-        })
+        Box::pin(async move { self.inner.last_seq_no().await })
     }
 
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-        Box::pin(async move {
-        self.inner.last_tx_id().await
-
-        })
+        Box::pin(async move { self.inner.last_tx_id().await })
     }
 
     fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        self.inner.pin_checkpoint(seq_no).await
-
-        })
+        Box::pin(async move { self.inner.pin_checkpoint(seq_no).await })
     }
 
     fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        self.inner.unpin_checkpoint(seq_no).await
-
-        })
+        Box::pin(async move { self.inner.unpin_checkpoint(seq_no).await })
     }
 
-    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        self.inner.scan_prefix(prefix).await
-
-        })
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { self.inner.scan_prefix(prefix).await })
     }
 
-    fn scan_prefix_at<'a>(&'a self, prefix: &'a [u8], seq_no: u64) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        self.inner.scan_prefix_at(prefix, seq_no).await
-
-        })
+    fn scan_prefix_at<'a>(
+        &'a self,
+        prefix: &'a [u8],
+        seq_no: u64,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { self.inner.scan_prefix_at(prefix, seq_no).await })
     }
 
     fn scan<'a>(
@@ -191,12 +156,8 @@ impl StorageEngine for FaultyStorage {
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        self.inner.scan(start, end).await
-
-        })
+        Box::pin(async move { self.inner.scan(start, end).await })
     }
-
 }
 
 /// Fault-Injecting VectorIndex Proxy wrapping HnswIndex.

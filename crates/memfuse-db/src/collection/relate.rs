@@ -1,6 +1,5 @@
 use super::{crud::validate_doc_id, Collection};
-use memfuse_core::{
-    DocId, Result, StorageEngine, VectorIndex};
+use memfuse_core::{DocId, Result, StorageEngine, VectorIndex};
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z)
@@ -50,7 +49,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         db_tx.stage_graph_edge(edge);
 
         match db_tx.commit().await {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.check_and_trigger_community_detection(1);
+                Ok(())
+            }
             Err(e) => Err(e),
         }
     }

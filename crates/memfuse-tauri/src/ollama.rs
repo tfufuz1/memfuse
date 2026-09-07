@@ -43,47 +43,47 @@ impl OllamaBridge {
     }
 }
 
-#[async_trait::async_trait]
 impl memfuse_core::TextEmbeddingEngine for OllamaBridge {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        self.client.embed(&self.model, text).await
+    fn embed<'a>(&'a self, text: &'a str) -> memfuse_core::BoxFuture<'a, Result<Vec<f32>>> {
+        Box::pin(async move { self.client.embed(&self.model, text).await })
     }
 }
 
-#[async_trait::async_trait]
 impl memfuse_db::QueryRewriter for OllamaBridge {
-    async fn rewrite(
-        &self,
-        original_query: &str,
-        current_results: &[memfuse_db::SearchResult],
-    ) -> Result<Vec<String>> {
-        let prompt = format!(
-            "Die ursprüngliche Suchanfrage war: \"{}\".\n\
-             Bisher wurden {} Ergebnisse gefunden, die möglicherweise unvollständig sind.\n\
-             Generiere bis zu 2 alternative, präzisere Suchbegriffe oder Teilfragen.\n\
-             Gib NUR die Suchanfragen zurück, jeweils eine pro Zeile, ohne Aufzählungszeichen.",
-            original_query,
-            current_results.len()
-        );
+    fn rewrite<'a>(
+        &'a self,
+        original_query: &'a str,
+        current_results: &'a [memfuse_db::SearchResult],
+    ) -> memfuse_core::BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
+            let prompt = format!(
+                "Die ursprüngliche Suchanfrage war: \"{}\".\n\
+                 Bisher wurden {} Ergebnisse gefunden, die möglicherweise unvollständig sind.\n\
+                 Generiere bis zu 2 alternative, präzisere Suchbegriffe oder Teilfragen.\n\
+                 Gib NUR die Suchanfragen zurück, jeweils eine pro Zeile, ohne Aufzählungszeichen.",
+                original_query,
+                current_results.len()
+            );
 
-        match self.client.generate_text(&self.model, &prompt).await {
-            Ok(response) => {
-                let sub_queries: Vec<String> = response
-                    .lines()
-                    .map(|l| {
-                        l.trim()
-                            .trim_start_matches(|c: char| {
-                                c.is_ascii_digit() || c == '.' || c == '-' || c == '*'
-                            })
-                            .trim()
-                            .to_string()
-                    })
-                    .filter(|l| !l.is_empty() && l != original_query)
-                    .take(2)
-                    .collect();
-                Ok(sub_queries)
+            match self.client.generate_text(&self.model, &prompt).await {
+                Ok(response) => {
+                    let sub_queries: Vec<String> = response
+                        .lines()
+                        .map(|l| {
+                            l.trim()
+                                .trim_start_matches(|c: char| {
+                                    c.is_ascii_digit() || c == '.' || c == '-' || c == '*'
+                                })
+                                .trim()
+                                .to_string()
+                        })
+                        .filter(|l| !l.is_empty() && l != original_query)
+                        .take(2)
+                        .collect();
+                    Ok(sub_queries)
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
-        }
+        })
     }
 }

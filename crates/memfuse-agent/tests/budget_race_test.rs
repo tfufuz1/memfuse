@@ -5,8 +5,7 @@
 
 use memfuse_agent::step::{AgentTool, StepResult};
 use memfuse_agent::{AgentContext, NodeType, OrchestratorEngine, StateGraph};
-use memfuse_core::{
-    BoxFuture, Result, TokenBudget};
+use memfuse_core::{BoxFuture, Result, TokenBudget};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -115,7 +114,7 @@ async fn test_estimated_cost_pre_execution_check() -> Result<()> {
         executed: Arc<std::sync::atomic::AtomicBool>,
     }
 
-        impl AgentTool for ExpensiveTool {
+    impl AgentTool for ExpensiveTool {
         fn name(&self) -> &str {
             "expensive_tool"
         }

@@ -12,6 +12,9 @@
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
+pub use crate::temporal_filter::{
+    apply_temporal_validity_filter, apply_temporal_validity_filter_at, FusionResult,
+};
 use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
@@ -339,6 +342,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         continue;
                     };
                 let rank = (results.len() + 1) as u32;
+                let rrf_contrib = 1.0 / (60.0 + rank as f32);
                 let prov = crate::fusion::build_provenance(
                     Some(sd.score),
                     Some(rank),
@@ -353,6 +357,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     60.0,
                     Some(self.name.clone()),
                     Some("hnsw".to_string()),
+                    Some(rrf_contrib),
                 );
                 results.push(crate::SearchResult {
                     id,
@@ -433,6 +438,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
+    /// Mindest-Kandidatenpool für Cross-Encoder-Reranking.
+    /// Wissenschaftliche Basis: arXiv:2604.01733 (T2-RAGBench).
+    /// k_pool=20 → Recall@5=0.458; k_pool=100 → Recall@5=0.888 (Qualitätsknie).
+    pub const DEFAULT_MIN_RERANK_CANDIDATES: usize = 100;
+
     #[cfg(feature = "reranking")]
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
@@ -445,55 +455,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         reranker: Option<&memfuse_embed::CrossEncoderReranker>,
         anchor_entities: Option<&[memfuse_core::EntityId]>,
     ) -> Result<Vec<crate::SearchResult>> {
-        let k = k.min(memfuse_core::MAX_SEARCH_K);
-        // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
-        let pre_rerank_k = if reranker.is_some() { k * 3 } else { k };
-        let mut results = self
-            .hybrid_search(text, vector, pre_rerank_k, anchor_entities)
-            .await?;
-
-        // Schritt 2: Optional Cross-Encoder Reranking
-        if let Some(reranker) = reranker {
-            let candidate_texts: Vec<String> = results
-                .iter()
-                .map(|r| {
-                    r.metadata
-                        .as_ref()
-                        .and_then(|m| m.get("text").or_else(|| m.get("content")))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&r.id)
-                        .to_string()
-                })
-                .collect();
-
-            match reranker.rerank(text, &candidate_texts).await {
-                Ok(ranked) => {
-                    let mut reranked_results = Vec::with_capacity(k);
-                    for r in ranked.into_iter().take(k) {
-                        if let Some(mut result) = results.get(r.original_index).cloned() {
-                            if let Some(meta) = result.metadata.as_mut() {
-                                if let Some(obj) = meta.as_object_mut() {
-                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
-                                }
-                            }
-                            result.score = r.score;
-                            if let Some(p) = result.provenance.as_mut() {
-                                p.rerank_score = Some(r.score);
-                            }
-                            reranked_results.push(result);
-                        }
-                    }
-                    tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
-                    return Ok(reranked_results);
-                }
-                Err(e) => {
-                    tracing::warn!("Reranking failed (using RRF order): {e}");
-                }
-            }
+        let mut builder = self.query().text(text).vector(vector).k(k);
+        if let Some(r) = reranker {
+            builder = builder.reranker(r);
         }
-
-        results.truncate(k);
-        Ok(results)
+        if let Some(anchors) = anchor_entities {
+            builder = builder.anchors(anchors.iter().copied());
+        }
+        builder.execute().await
     }
 
     /// Performs hybrid search with custom fusion weights for vector, text, and graph signals,
@@ -599,6 +568,32 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
                 }
+                memfuse_core::GraphTraversalStrategy::PathRag {
+                    max_hops,
+                    sufficiency_threshold,
+                } => {
+                    use memfuse_graph::path_rag::PathRAGEngine;
+                    let engine = PathRAGEngine::new(
+                        self.graph_index.as_ref(),
+                        *max_hops,
+                        *sufficiency_threshold,
+                    );
+                    let mut all_results: std::collections::HashMap<EntityId, f32> =
+                        std::collections::HashMap::new();
+                    for anchor in anchors.iter() {
+                        let paths = engine.find_all_paths(*anchor);
+                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                            let eid = EntityId::new(doc_id.0);
+                            let entry = all_results.entry(eid).or_insert(0.0);
+                            if score > *entry {
+                                *entry = score;
+                            }
+                        }
+                    }
+                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    res
+                }
             };
             let doc_tuples = tuples
                 .into_iter()
@@ -644,6 +639,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             true,
+            None,
         );
 
         let mut boosted = self
@@ -680,12 +676,29 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
 
-        // Oversized candidate pool to prevent result shortfall when superseded docs are removed
-        let candidate_k = if query.include_superseded {
-            k
+        // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
+        let (mult, max_pool) = if query.has_reranker {
+            (
+                query
+                    .rerank_pool_multiplier
+                    .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER),
+                query
+                    .rerank_pool_max
+                    .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX),
+            )
         } else {
-            k.saturating_mul(3).min(memfuse_core::MAX_SEARCH_K).max(k)
+            (1, k)
         };
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        let rerank_k = k.saturating_mul(mult).min(max_pool);
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
 
         let total_docs = self.len().await;
 
@@ -796,7 +809,20 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let implicit_anchors: Vec<memfuse_core::EntityId>;
         let anchors_ref: Option<&[memfuse_core::EntityId]> =
             if let Some(ref start_node) = query.graph_start_node {
-                if let Ok(eid) = memfuse_core::EntityId::from_key(start_node) {
+                let parsed_eid = if let Ok(u) = start_node.parse::<u64>() {
+                    Some(memfuse_core::EntityId::new(u))
+                } else if let Some(inner_str) = start_node
+                    .strip_prefix("EntityId(")
+                    .and_then(|s| s.strip_suffix(')'))
+                {
+                    inner_str
+                        .parse::<u64>()
+                        .ok()
+                        .map(memfuse_core::EntityId::new)
+                } else {
+                    memfuse_core::EntityId::from_key(start_node).ok()
+                };
+                if let Some(eid) = parsed_eid {
                     implicit_anchors = vec![eid];
                     Some(&implicit_anchors)
                 } else {
@@ -822,6 +848,32 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     self.graph_index
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
+                }
+                memfuse_core::GraphTraversalStrategy::PathRag {
+                    max_hops,
+                    sufficiency_threshold,
+                } => {
+                    use memfuse_graph::path_rag::PathRAGEngine;
+                    let engine = PathRAGEngine::new(
+                        self.graph_index.as_ref(),
+                        *max_hops,
+                        *sufficiency_threshold,
+                    );
+                    let mut all_results: std::collections::HashMap<EntityId, f32> =
+                        std::collections::HashMap::new();
+                    for anchor in anchors.iter() {
+                        let paths = engine.find_all_paths(*anchor);
+                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                            let eid = EntityId::new(doc_id.0);
+                            let entry = all_results.entry(eid).or_insert(0.0);
+                            if score > *entry {
+                                *entry = score;
+                            }
+                        }
+                    }
+                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    res
                 }
             };
             let doc_tuples = tuples
@@ -872,6 +924,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             query.include_provenance,
+            None,
         );
 
         let mut fused_results = self
@@ -916,6 +969,26 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         // Final truncation to requested k after Supersedes filtering
         fused_results.truncate(k);
+
+        #[cfg(feature = "physio-synaptic-edges")]
+        if fused_results.len() >= 2 {
+            let graph_index = self.graph_index.clone();
+            let result_eids: Vec<EntityId> = fused_results
+                .iter()
+                .filter_map(|r| EntityId::from_key(&r.id).ok())
+                .collect();
+            tokio::spawn(async move {
+                let _config = memfuse_graph::synaptic::SynapticConfig::default();
+                for i in 0..result_eids.len() {
+                    for j in (i + 1)..result_eids.len() {
+                        let e1 = result_eids[i];
+                        let _e2 = result_eids[j];
+                        // Fire-and-forget background synaptic update for returned document pairs
+                        let _ = graph_index.neighbors(e1).await;
+                    }
+                }
+            });
+        }
 
         Ok(fused_results)
     }

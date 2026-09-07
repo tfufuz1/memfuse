@@ -1,5 +1,4 @@
-use memfuse_core::{
-    BoxFuture, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine};
+use memfuse_core::{BoxFuture, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine};
 use memfuse_db::{
     cleanup_orphaned_consolidation_intents, ContextCompactor, MemFuse, MemFuseConfig,
 };
@@ -19,15 +18,11 @@ impl MockLlmGenerator {
 }
 
 impl LlmTextGenerator for MockLlmGenerator {
-    fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
-
+    fn generate<'a>(&'a self, _prompt: &'a str) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
-        self.call_count.fetch_add(1, Ordering::SeqCst);
-        Ok("Mock LLM summary of source documents".to_string())
-
-
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            Ok("Mock LLM summary of source documents".to_string())
         })
-
     }
 }
 

@@ -161,6 +161,12 @@ impl HnswHeader {
                 .try_into()
                 .map_err(|_| MemFuseError::Storage("Invalid version bytes".into()))?,
         );
+        if version != HNSW_VERSION {
+            return Err(MemFuseError::Storage(format!(
+                "Unsupported HNSW version: {}, expected {}",
+                version, HNSW_VERSION
+            )));
+        }
 
         let dimension = u32::from_le_bytes(
             bytes
@@ -415,10 +421,10 @@ impl MmapIndex {
 
     pub fn get_connections(&self, record: &NodeRecord, layer: usize) -> Result<Vec<u32>> {
         let offset = record.connections_offset as usize;
-        let num_layers_byte = match self.mmap.get(offset) {
-            Some(&b) => b,
-            None => return Ok(Vec::new()),
-        };
+        let num_layers_byte = *self
+            .mmap
+            .get(offset)
+            .ok_or_else(|| MemFuseError::Storage("Connections offset out of bounds".into()))?;
 
         let num_layers = num_layers_byte as usize;
         if layer >= num_layers {
@@ -432,10 +438,10 @@ impl MmapIndex {
             let check_pos = current_pos.checked_add(4).ok_or_else(|| {
                 MemFuseError::Storage("Connection length position overflow".into())
             })?;
-            let len_bytes = match self.mmap.get(current_pos..check_pos) {
-                Some(slice) => slice,
-                None => return Ok(Vec::new()),
-            };
+            let len_bytes = self
+                .mmap
+                .get(current_pos..check_pos)
+                .ok_or_else(|| MemFuseError::Storage("Connection length out of bounds".into()))?;
             let len = u32::from_le_bytes(
                 len_bytes
                     .try_into()
@@ -457,10 +463,10 @@ impl MmapIndex {
         let check_pos = current_pos
             .checked_add(4)
             .ok_or_else(|| MemFuseError::Storage("Connection length position overflow".into()))?;
-        let len_bytes = match self.mmap.get(current_pos..check_pos) {
-            Some(slice) => slice,
-            None => return Ok(Vec::new()),
-        };
+        let len_bytes = self
+            .mmap
+            .get(current_pos..check_pos)
+            .ok_or_else(|| MemFuseError::Storage("Connection length out of bounds".into()))?;
 
         let len = u32::from_le_bytes(
             len_bytes
@@ -673,5 +679,173 @@ mod tests {
         // NodeRecord parsing errors
         let short_node = vec![0u8; 10];
         assert!(NodeRecord::from_bytes(&short_node).is_err());
+    }
+
+    #[test]
+    fn test_open_rejects_invalid_magic() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("invalid_magic.hnsw");
+        let header = HnswHeader::new(128, 16, 1, 0, -1.0, 1.0, 0, -1, 64, 64, 1);
+        let mut bytes = header.to_bytes().to_vec();
+        bytes[0..4].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
+        std::fs::write(&path, &bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let res = MmapIndex::open(&path);
+        assert!(res.is_err(), "Expected error for invalid magic");
+        if let Err(MemFuseError::Storage(msg)) = res {
+            assert!(
+                msg.contains("bad magic"),
+                "Unexpected error message: {}",
+                msg
+            );
+        } else {
+            panic!("Expected Storage error");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_open_rejects_unsupported_version() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("unsupported_version.hnsw");
+        let header = HnswHeader::new(128, 16, 1, 0, -1.0, 1.0, 0, -1, 64, 64, 1);
+        let mut bytes = header.to_bytes().to_vec();
+        let unsupported_version = HNSW_VERSION + 1;
+        bytes[4..6].copy_from_slice(&unsupported_version.to_le_bytes());
+        std::fs::write(&path, &bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let res = MmapIndex::open(&path);
+        assert!(res.is_err(), "Expected error for unsupported version");
+        if let Err(MemFuseError::Storage(msg)) = res {
+            assert!(
+                msg.contains("Unsupported HNSW version"),
+                "Unexpected error message: {}",
+                msg
+            );
+        } else {
+            panic!("Expected Storage error");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_open_rejects_truncated_header() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("truncated_header.hnsw");
+        let header = HnswHeader::new(128, 16, 1, 0, -1.0, 1.0, 0, -1, 64, 64, 1);
+        let bytes = header.to_bytes();
+        std::fs::write(&path, &bytes[..20]).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let res = MmapIndex::open(&path);
+        assert!(res.is_err(), "Expected error for truncated header");
+        if let Err(MemFuseError::Storage(msg)) = res {
+            assert!(
+                msg.contains("too small"),
+                "Unexpected error message: {}",
+                msg
+            );
+        } else {
+            panic!("Expected Storage error");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_connections_rejects_out_of_bounds_offset() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("oob_connections.hnsw");
+        let header = HnswHeader::new(128, 16, 1, 0, -1.0, 1.0, 1, 0, 64, 64 + 25, 1);
+        let mut file_bytes = header.to_bytes().to_vec();
+        let record = NodeRecord {
+            doc_id: 1,
+            max_layer: 1,
+            vector_offset: 64 + 25,
+            connections_offset: 9999,
+        };
+        file_bytes.extend_from_slice(&record.to_bytes());
+        std::fs::write(&path, &file_bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let mmap_index = MmapIndex::open(&path)?;
+        let res = mmap_index.get_connections(&record, 0);
+        assert!(
+            res.is_err(),
+            "Expected error for out-of-bounds connections_offset"
+        );
+        if let Err(MemFuseError::Storage(msg)) = res {
+            assert!(
+                msg.contains("out of bounds"),
+                "Unexpected error message: {}",
+                msg
+            );
+        } else {
+            panic!("Expected Storage error");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_vector_rejects_out_of_bounds_offset() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("oob_vector.hnsw");
+        let header = HnswHeader::new(128, 16, 1, 0, -1.0, 1.0, 1, 0, 64, 64 + 25, 1);
+        let mut file_bytes = header.to_bytes().to_vec();
+        let record = NodeRecord {
+            doc_id: 1,
+            max_layer: 1,
+            vector_offset: 9999,
+            connections_offset: 64 + 25,
+        };
+        file_bytes.extend_from_slice(&record.to_bytes());
+        std::fs::write(&path, &file_bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let mmap_index = MmapIndex::open(&path)?;
+        let res = mmap_index.get_vector(&record);
+        assert!(
+            res.is_err(),
+            "Expected error for out-of-bounds vector_offset"
+        );
+        if let Err(MemFuseError::Storage(msg)) = res {
+            assert!(
+                msg.contains("out of bounds"),
+                "Unexpected error message: {}",
+                msg
+            );
+        } else {
+            panic!("Expected Storage error");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_connections_rejects_absurd_length_field() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let path = temp_dir.path().join("absurd_length.hnsw");
+        let header = HnswHeader::new(4, 16, 1, 0, -1.0, 1.0, 1, 0, 64, 64 + 25, 1);
+        let mut file_bytes = header.to_bytes().to_vec();
+        let conn_offset = 64 + 25;
+        let record = NodeRecord {
+            doc_id: 1,
+            max_layer: 1,
+            vector_offset: 64 + 25 + 100,
+            connections_offset: conn_offset as u64,
+        };
+        file_bytes.extend_from_slice(&record.to_bytes());
+        file_bytes.push(1);
+        file_bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        std::fs::write(&path, &file_bytes).map_err(|e| MemFuseError::Storage(e.to_string()))?;
+
+        let mmap_index = MmapIndex::open(&path)?;
+        let res = mmap_index.get_connections(&record, 0);
+        assert!(res.is_err(), "Expected error for absurd length field");
+        if let Err(MemFuseError::Storage(msg)) = res {
+            assert!(
+                msg.contains("overflow") || msg.contains("out of bounds"),
+                "Unexpected error message: {}",
+                msg
+            );
+        } else {
+            panic!("Expected Storage error");
+        }
+        Ok(())
     }
 }

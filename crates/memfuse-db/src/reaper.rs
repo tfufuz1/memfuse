@@ -4,11 +4,17 @@
 // NICHT-OFFENSICHTLICH: Orphan Reaper triggert bei HNSW-Indextrennung automatischen Rebuild mit Timeout.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-use crate::collection::Collection;
+use crate::collection::{Collection, StoredDocument};
+use crate::sleep_cycle::NremConfig;
+use crate::sleep_cycle_executor::execute_nrem_cycle;
 use memfuse_core::traits::StorageEngine;
 use memfuse_core::tx_buffer::TxBuffer;
+use memfuse_core::DocId;
 use std::sync::Arc;
 use std::time::Duration;
+
+#[cfg(feature = "physio-features")]
+use crate::thermostat::{FreeEnergyThermostat, ThermostatConfig};
 
 /// Maximum number of orphan transactions processed in a single reaper tick
 /// to avoid starving foreground operations.
@@ -16,6 +22,88 @@ pub const MAX_ORPHANS_PER_TICK: usize = 100;
 
 /// Maximum number of expired documents processed in a single expiry reaper tick.
 pub const MAX_EXPIRED_PER_TICK: usize = 100;
+
+/// Starts a background task for periodic NREM consolidation.
+pub fn start_nrem_reaper<S: StorageEngine>(
+    collection: Arc<Collection<S>>,
+    nrem_config: NremConfig,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        tracing::info!(
+            collection = %collection.name(),
+            interval = ?interval,
+            "NREM reaper task started"
+        );
+
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    // Extract turns from collection (chronologically sorted)
+                    let user_key_prefix = collection.user_key_prefix();
+                    let entries = match collection.storage().scan_prefix(&user_key_prefix).await {
+                        Ok(entries) => entries,
+                        Err(err) => {
+                            tracing::error!(
+                                collection = %collection.name(),
+                                error = %err,
+                                "NREM reaper: failed to scan collection"
+                            );
+                            continue;
+                        }
+                    };
+
+                    let mut turns: Vec<(DocId, Vec<f32>)> = Vec::new();
+                    for (k, v) in entries {
+                        if collection.name() == "default" && k.starts_with(b"__") {
+                            continue;
+                        }
+                        if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&v) {
+                            if let Ok(doc_id) = DocId::from_key(&stored.id) {
+                                turns.push((doc_id, stored.embedding));
+                            }
+                        }
+                    }
+
+                    if turns.is_empty() {
+                        continue;
+                    }
+
+                    match execute_nrem_cycle(&collection, &turns, &nrem_config).await {
+                        Ok(res) => {
+                            if !res.duplicates_tombstoned.is_empty() {
+                                tracing::info!(
+                                    collection = %collection.name(),
+                                    tombstoned = res.duplicates_tombstoned.len(),
+                                    segments = res.segments_created,
+                                    "NREM reaper: consolidated duplicate turns"
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                collection = %collection.name(),
+                                error = %err,
+                                "NREM reaper: cycle execution failed"
+                            );
+                        }
+                    }
+                }
+                _ = cancel_token.cancelled() => {
+                    tracing::info!(
+                        collection = %collection.name(),
+                        "NREM reaper task shutting down via token"
+                    );
+                    break;
+                }
+            }
+        }
+    })
+}
 
 /// Starts a background task to periodically clean up expired documents with TTL.
 pub fn start_expiry_reaper<S: StorageEngine>(
@@ -60,6 +148,34 @@ pub fn start_expiry_reaper<S: StorageEngine>(
                     );
                     break;
                 }
+            }
+        }
+    })
+}
+
+/// Starts a background task for thermostat-driven importance-score eviction.
+/// Nur aktiv wenn `physio-features` Feature-Flag gesetzt.
+#[cfg(feature = "physio-features")]
+pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
+    collection: Arc<Collection<S, V>>,
+    thermostat_config: ThermostatConfig,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    let thermostat = FreeEnergyThermostat::new(thermostat_config);
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    match collection.reap_by_thermostat(&thermostat, 100).await {
+                        Ok(n) if n > 0 => tracing::info!(evicted = n, "Thermostat reaper evicted chunks"),
+                        Ok(_) => {},
+                        Err(e) => tracing::error!(error = %e, "Thermostat reaper error"),
+                    }
+                }
+                _ = cancel_token.cancelled() => break,
             }
         }
     })
@@ -332,5 +448,179 @@ mod tests {
         let handle = start_expiry_reaper(col, Duration::from_secs(60), cancel_token);
         let res = handle.await;
         assert!(res.is_ok(), "Task should exit cleanly upon cancellation");
+    }
+
+    #[tokio::test]
+    async fn test_thermostat_reaper_eviction_thresholds() {
+        use crate::thermostat::{FreeEnergyThermostat, ThermostatConfig};
+        use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::Ordering;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap(); // unwrap
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(), // unwrap
+        );
+        let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+        let col = Arc::new(crate::Collection::new(
+            "default".to_string(),
+            storage,
+            index.clone(),
+            Arc::new(CsrGraph::new()),
+            next_tx.clone(),
+            4,
+            memfuse_text::Language::English,
+        ));
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+
+        // 1. Add 10 old low-score chunks
+        for i in 0..10 {
+            let id = format!("old_low_{i}");
+            let imp = MemoryImportance::new(
+                ImportanceScore::new(0.02),
+                DecayFunction::Exponential { half_life_tx: 100 },
+                TxId::new(1),
+            );
+            col.insert(&id, &vec, Some(json!({ "importance": imp })))
+                .await
+                .unwrap(); // unwrap
+        }
+
+        // 2. Add fresh high-score chunks
+        for i in 0..5 {
+            let id = format!("fresh_high_{i}");
+            let imp = MemoryImportance::new(
+                ImportanceScore::new(0.95),
+                DecayFunction::Exponential {
+                    half_life_tx: 100_000,
+                },
+                TxId::new(100_000),
+            );
+            col.insert(&id, &vec, Some(json!({ "importance": imp })))
+                .await
+                .unwrap(); // unwrap
+        }
+
+        // Advance current transaction ID to 50_000
+        next_tx.store(50_000, Ordering::SeqCst);
+
+        let thermostat = FreeEnergyThermostat::new(ThermostatConfig {
+            kappa: 2.0,
+            base_half_life_tx: 1_000,
+            eviction_threshold: 0.01,
+        });
+
+        // Reap with thermostat sweep
+        let evicted = col.reap_by_thermostat(&thermostat, 100).await.unwrap(); // unwrap
+        assert_eq!(evicted, 10, "All 10 old low-score chunks should be evicted");
+
+        // Verify old_low chunks are gone
+        for i in 0..10 {
+            let res = col.get(&format!("old_low_{i}")).await.unwrap(); // unwrap
+            assert!(res.is_none(), "old_low_{i} must be deleted");
+        }
+
+        // Verify fresh_high chunks remain
+        for i in 0..5 {
+            let res = col.get(&format!("fresh_high_{i}")).await.unwrap(); // unwrap
+            assert!(res.is_some(), "fresh_high_{i} must remain");
+        }
+    }
+
+    #[cfg(feature = "physio-features")]
+    #[tokio::test]
+    async fn test_start_thermostat_reaper_background_task() {
+        use crate::thermostat::ThermostatConfig;
+        use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
+        use memfuse_graph::CsrGraph;
+        use memfuse_index::HnswIndex;
+        use memfuse_store::LsmStorage;
+        use serde_json::json;
+        use std::sync::atomic::Ordering;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap(); // unwrap
+        let storage = Arc::new(
+            LsmStorage::new(memfuse_store::LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(), // unwrap
+        );
+        let index = Arc::new(
+            HnswIndex::try_new(memfuse_index::HnswConfig {
+                dimension: 4,
+                ..Default::default()
+            })
+            .unwrap(), // unwrap
+        );
+        let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+        let col = Arc::new(crate::Collection::new(
+            "default".to_string(),
+            storage,
+            index,
+            Arc::new(CsrGraph::new()),
+            next_tx.clone(),
+            4,
+            memfuse_text::Language::English,
+        ));
+
+        let vec = vec![1.0, 0.0, 0.0, 0.0];
+        let imp = MemoryImportance::new(
+            ImportanceScore::new(0.01),
+            DecayFunction::Exponential { half_life_tx: 10 },
+            TxId::new(1),
+        );
+        col.insert("decay_target", &vec, Some(json!({ "importance": imp })))
+            .await
+            .unwrap(); // unwrap
+
+        next_tx.store(100_000, Ordering::SeqCst);
+
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        let handle = start_thermostat_reaper(
+            col.clone(),
+            ThermostatConfig::default(),
+            Duration::from_millis(10),
+            cancel_token.clone(),
+        );
+
+        let mut evicted = false;
+        for _ in 0..50 {
+            sleep(Duration::from_millis(10)).await;
+            if col.get("decay_target").await.unwrap().is_none() {
+                // unwrap
+                evicted = true;
+                break;
+            }
+        }
+
+        cancel_token.cancel();
+        let _ = handle.await;
+
+        assert!(
+            evicted,
+            "Thermostat reaper task should evict low score document"
+        );
     }
 }

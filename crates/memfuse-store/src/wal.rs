@@ -793,6 +793,7 @@ impl Wal {
             };
 
             if let Err(e) = file.write_all(&key).await {
+                // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(MemFuseError::Storage(format!(
                     "Failed to write WAL integrity key: {}",
@@ -800,6 +801,7 @@ impl Wal {
                 )));
             }
             if let Err(e) = file.sync_all().await {
+                // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(MemFuseError::Storage(format!(
                     "Failed to sync WAL integrity key file: {}",
@@ -810,12 +812,14 @@ impl Wal {
 
             #[cfg(windows)]
             if let Err(e) = set_restrictive_file_acl(&tmp_path) {
+                // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(e.into());
             }
 
             // Atomically link tmp_path to key_path. Fails if key_path already exists (O_EXCL semantics).
             let link_res = tokio::fs::hard_link(&tmp_path, &key_path).await;
+            // Cleanup-Fehler hier ist unkritisch: das Ergebnis der Link-Operation wird unten ausgewertet.
             let _ = tokio::fs::remove_file(&tmp_path).await;
 
             match link_res {
@@ -903,6 +907,7 @@ impl Wal {
             };
 
             if let Err(e) = file.write_all(&bytes).await {
+                // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(MemFuseError::Storage(format!(
                     "Failed to write WAL UUID sidecar: {}",
@@ -911,6 +916,7 @@ impl Wal {
             }
 
             if let Err(e) = file.sync_all().await {
+                // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 return Err(MemFuseError::Storage(format!(
                     "Failed to sync WAL UUID sidecar file: {}",
@@ -920,6 +926,7 @@ impl Wal {
             drop(file);
 
             if let Err(e) = tokio::fs::rename(&tmp_path, &uuid_path).await {
+                // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
                 let _ = tokio::fs::remove_file(&tmp_path).await;
                 if uuid_path.exists() {
                     return read_uuid_file(&uuid_path).await;

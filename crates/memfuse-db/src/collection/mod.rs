@@ -20,8 +20,7 @@ pub mod tx;
 #[allow(deprecated)]
 mod tests;
 
-use memfuse_core::{
-    DocId, Result, StorageEngine, TextEmbeddingEngine, TxId, VectorIndex};
+use memfuse_core::{DocId, Result, StorageEngine, TextEmbeddingEngine, TxId, VectorIndex};
 use memfuse_graph::CsrGraph;
 use memfuse_index::HnswIndex;
 use memfuse_store::LsmStorage;
@@ -56,6 +55,7 @@ impl From<&StoredDocument> for StoredDocumentMeta {
 }
 
 /// Parses an LLM response string into an f32 importance score in `[0.0, 1.0]`.
+#[deprecated(note = "Use memfuse_ollama::parse_importance_score_response instead")]
 pub fn parse_importance_score(response: &str) -> f32 {
     for token in response.split_whitespace() {
         if let Ok(val) = token.parse::<f32>() {
@@ -237,6 +237,10 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     pub(super) insert_lock: Arc<tokio::sync::Mutex<()>>,
     pub(super) kv_locks: Arc<kv_lock::KvKeyLocks>,
+    /// Zählt Graph-Mutationen seit letzter Community Detection.
+    pub(super) mutations_since_community_detection: Arc<AtomicU64>,
+    /// Trigger-Schwelle: bei Überschreitung wird Community Detection geplant (Default: 100, 0 = deaktiviert).
+    pub(super) community_detection_trigger_threshold: Arc<AtomicU64>,
 }
 
 impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
@@ -253,6 +257,10 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
             insert_lock: self.insert_lock.clone(),
             kv_locks: self.kv_locks.clone(),
+            mutations_since_community_detection: self.mutations_since_community_detection.clone(),
+            community_detection_trigger_threshold: self
+                .community_detection_trigger_threshold
+                .clone(),
         }
     }
 }
@@ -318,6 +326,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             embedder: parking_lot::RwLock::new(None),
             insert_lock: Arc::new(tokio::sync::Mutex::new(())),
             kv_locks: Arc::new(kv_lock::KvKeyLocks::new()),
+            mutations_since_community_detection: Arc::new(AtomicU64::new(0)),
+            community_detection_trigger_threshold: Arc::new(AtomicU64::new(100)),
         }
     }
 
@@ -492,5 +502,65 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Loads text index statistics from storage.
     pub async fn load_text_stats(&self) -> Result<()> {
         self.text_index.load_stats().await
+    }
+
+    /// Sets the mutation threshold for auto-triggered community detection (0 = disabled).
+    pub fn set_community_detection_trigger_threshold(&self, threshold: u64) {
+        self.community_detection_trigger_threshold
+            .store(threshold, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Builder method to set the mutation threshold for auto-triggered community detection (0 = disabled).
+    pub fn with_community_detection_trigger_threshold(self, threshold: u64) -> Self {
+        self.set_community_detection_trigger_threshold(threshold);
+        self
+    }
+
+    /// Returns the configured mutation threshold for auto-triggered community detection.
+    pub fn community_detection_trigger_threshold(&self) -> u64 {
+        self.community_detection_trigger_threshold
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Returns the number of graph mutations since the last community detection execution.
+    pub fn mutations_since_community_detection(&self) -> u64 {
+        self.mutations_since_community_detection
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Increments mutation counter and triggers background community detection if threshold is reached.
+    pub(super) fn check_and_trigger_community_detection(&self, count: usize) {
+        let threshold = self
+            .community_detection_trigger_threshold
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if threshold == 0 || count == 0 {
+            return;
+        }
+
+        let prev = self
+            .mutations_since_community_detection
+            .fetch_add(count as u64, std::sync::atomic::Ordering::Relaxed);
+
+        if prev + (count as u64) >= threshold {
+            self.mutations_since_community_detection
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+            let collection_clone = self.clone();
+            tokio::spawn(async move {
+                match collection_clone.run_community_detection().await {
+                    Ok(assignments) => {
+                        tracing::info!(
+                            communities = assignments.len(),
+                            "Auto-triggered community detection completed"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Auto-triggered community detection failed"
+                        );
+                    }
+                }
+            });
+        }
     }
 }

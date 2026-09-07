@@ -107,10 +107,10 @@ Die Crate setzt `#![deny(unsafe_code)]` auf Modulebene durch. In `distance.rs`, 
 
 ### Benannte Lücken & Fehlende Testkategorien
 
-1. **Fehlende Bounds- & Malformed-Input Tests in Persistenz-Readern**
+1. **Fehlende Bounds- & Malformed-Input Tests in Persistenz-Readern [ERLEDIGT]**
    - **Kategorie:** Robustheit / Security
-   - **Lücke:** Es fehlen gezielte Tests mit abgeschnittenen, beschädigten oder manipulierten Header-Bytes für `MmapIndex::open` und `DiskAnnIndex::load`.
-   - **Empfehlung:** Hinzufügen von Fuzzing/Unit-Tests mit ungültigen `magic`-Bytes, abweichenden `version`-Nummern und übergroßen Offset-Angaben.
+   - **Lücke:** Es fehlten gezielte Tests mit abgeschnittenen, beschädigten oder manipulierten Header-Bytes für `MmapIndex::open` und `DiskAnnIndex::load`.
+   - **Status:** Erledigt (2026-08-30). Gezielte Tests in `crates/memfuse-index/src/persistence.rs` (`test_open_rejects_invalid_magic`, `test_open_rejects_unsupported_version`, `test_open_rejects_truncated_header`, `test_get_connections_rejects_out_of_bounds_offset`, `test_get_vector_rejects_out_of_bounds_offset`, `test_get_connections_rejects_absurd_length_field`) sowie DiskANN-Tests decken alle Fehlerpfade panic-frei ab.
 
 2. **Fehlende Property-Based-Tests (proptest / quickcheck)**
    - **Kategorie:** Invarianten-Testing
@@ -132,7 +132,7 @@ Die Crate setzt `#![deny(unsafe_code)]` auf Modulebene durch. In `distance.rs`, 
 | **API-01** | `persistence.rs:18` | Felder von `HnswHeader` auf `pub(crate)` verengen und Getter anbieten. | **Mittel** |
 | **API-02** | `quantize.rs:14` | Visibility von `ScalarQuantizer` und internen Unterstrukturen verringern. | **Mittel** |
 | **API-03** | `distance.rs` | Verengung interner SIMD-Intrinsics-Wrapper auf `pub(crate)`. | **Nice-to-have** |
-| **TST-01** | `tests/` | Erstellung von Malformed-Data-Tests für `MmapIndex` und `DiskAnnHeader`. | **Mittel** |
+| **TST-01** | `tests/` | Erstellung von Malformed-Data-Tests für `MmapIndex` und `DiskAnnHeader`. | **Erledigt (2026-08-30)** |
 | **TST-02** | `distance.rs` / `quantize.rs` | Proptest-Integration für Vektor-Distanzmessung und Skalar-Quantisierung. | **Nice-to-have** |
 
 ---

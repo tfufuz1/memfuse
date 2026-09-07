@@ -76,7 +76,7 @@ fn test_sq8_kendall_tau_rank_correlation() {
     let quantizer_uniform = ScalarQuantizer::train(&uniform_refs, dim);
     let uniform_quantized: Vec<Vec<u8>> = uniform_vectors
         .iter()
-        .map(|v| quantizer_uniform.quantize(v))
+        .map(|v| quantizer_uniform.quantize(v).unwrap())
         .collect();
 
     // 2. Skewed / Heterogeneous Distribution Data (Dimensions 0..10 are 100x larger)
@@ -92,7 +92,7 @@ fn test_sq8_kendall_tau_rank_correlation() {
     let quantizer_skewed = ScalarQuantizer::train(&skewed_refs, dim);
     let skewed_quantized: Vec<Vec<u8>> = skewed_vectors
         .iter()
-        .map(|v| quantizer_skewed.quantize(v))
+        .map(|v| quantizer_skewed.quantize(v).unwrap())
         .collect();
 
     // Evaluate Kendall-Tau across 30 query vectors

@@ -24,11 +24,11 @@ proptest! {
     ) {
         let dim = values.len();
         let quantizer = ScalarQuantizer::try_train(&[values.as_slice()], dim).expect("try_train should succeed");
-        let u8_vec = quantizer.quantize(&values);
-        let reconstructed = quantizer.dequantize(&u8_vec);
+        let u8_vec = quantizer.quantize(&values).expect("quantize should succeed");
+        let reconstructed = quantizer.dequantize(&u8_vec).expect("dequantize should succeed");
 
         for i in 0..dim {
-            let range = quantizer.maxes[i] - quantizer.mins[i];
+            let range = quantizer.maxes()[i] - quantizer.mins()[i];
             let diff = (values[i] - reconstructed[i]).abs();
             let max_allowed_diff = range / 255.0 + 1e-5;
             prop_assert!(

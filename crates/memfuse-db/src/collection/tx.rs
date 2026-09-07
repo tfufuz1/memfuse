@@ -1,6 +1,5 @@
 use super::Collection;
-use memfuse_core::{
-    Result, StorageEngine, TxId, VectorIndex};
+use memfuse_core::{Result, StorageEngine, TxId, VectorIndex};
 use std::sync::atomic::Ordering;
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {

@@ -16,7 +16,7 @@ Alle Tag-Typen (`AI-TAG`, `ANCHOR`, `REVIEW-PASS`) sowie der `FILE-CONTEXT`-Head
 1. **`TS:`-Zeitstempel**: Sekundengenaues Format `YYYY-MM-DDTHH:MM:SSZ` (z.B. `2026-08-29T09:14:07Z`), ermittelt via `date -u +%Y-%m-%dT%H:%M:%SZ`.
 2. **`SESSION:`-Token**: 8-stelliger Hex-Hash der Jules-Sitzung (z.B. `SESSION:a3f29c1d`), bereitgestellt durch das Environment-Setup-Skript (`[10/10] Session identity`).
 3. **Hash-basierte ID**: `AGT-<CRATE>-<8-hex-hash>` für ALLE NEUEN Tags (z.B. `AGT-STORE-a3f29c1d`). Der Hash entspricht den ersten 8 Zeichen von `sha256(crate + dateipfad + zeile_bei_erstellung + ts)`.
-   - *Bestandsschutz Schnittpunkt*: Bestehende `AGT-<CRATE>-NNN`-IDs (erstellt vor dem 2026-08-29 / Prompt 06) werden aus Kompatibilität mit ADR-Referenzen in `DECISIONS.md` NICHT rückwirkend migriert.
+   - *Bestandsschutz Schnittpunkt*: Bestehende `AGT-<CRATE>-NNN`-IDs (erstellt vor dem 2026-08-29 / Prompt 06) werden aus Kompatibilität mit ADR-Referenzen in `docs/decisions/` NICHT rückwirkend migriert.
 
 Ein Tag ohne `TS:`- oder `SESSION:`-Feld gilt als Grammatikverstoß (wird von CI Gate 7 durchgesetzt).
 

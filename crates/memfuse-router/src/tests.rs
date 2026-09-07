@@ -192,6 +192,7 @@ mod tests {
             context: context_window,
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
 
         let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
@@ -817,6 +818,7 @@ mod tests {
             },
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_err = dispatch_to_slm(&decision).await;
         assert!(
@@ -831,6 +833,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_closed = dispatch_to_slm(&decision_closed).await;
         assert!(
@@ -850,6 +853,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
@@ -871,6 +875,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
         assert_eq!(res_obj, "{\"custom_data\":42}");
@@ -888,6 +893,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_empty = dispatch_to_slm(&decision_empty).await;
         assert!(
@@ -1208,6 +1214,7 @@ mod tests {
             },
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -1388,8 +1395,9 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
+        let mut calibration = calibration;
         let (idx, selected, metrics) = router
-            .select_profile_cascade(&chunks, &profiles, &calibration)
+            .select_profile_cascade(&chunks, &profiles, &mut calibration)
             .expect("Cascade selection succeeds");
 
         assert_eq!(selected.name, "mid-slm");
@@ -1453,8 +1461,9 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
+        let mut calibration = calibration;
         let (idx, selected, metrics) = router
-            .select_profile_cascade(&chunks, &profiles, &calibration)
+            .select_profile_cascade(&chunks, &profiles, &mut calibration)
             .expect("Cascade fallthrough succeeds");
 
         assert_eq!(selected.name, "low-slm");
@@ -1464,6 +1473,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
+        use memfuse_core::ConfigFingerprint;
+
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1492,13 +1503,15 @@ mod tests {
             .unwrap();
         db.inner_storage().commit(tx).await.unwrap();
 
+        let fp = ConfigFingerprint::new("llama-3b", "F16", "template", 0.1);
         let profile = SlmProfile::new(
             "conv-slm",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.001,
-        );
+        )
+        .with_fingerprint(fp.clone());
 
         let router = RouterEngine::new(collection, vec![profile], None);
 
@@ -1512,7 +1525,7 @@ mod tests {
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
-            last_calibrated = st.conformal.window_total >= 30;
+            last_calibrated = st.is_calibrated(Some(&fp));
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
@@ -1524,7 +1537,301 @@ mod tests {
 
         assert!(
             last_calibrated,
-            "After 55 decisions with record_outcome (>= 30 samples), decision must be calibrated (calibrated = true)"
+            "After 55 decisions with record_outcome (>= 30 samples) and unchanged fingerprint, decision must be calibrated (calibrated = true)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_invalidation_on_temperature_change() {
+        use memfuse_core::ConfigFingerprint;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_temp",
+                &vec_data,
+                Some(json!({"text": "temperature shift content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp1 = ConfigFingerprint::new("llama-3b", "F16", "template", 0.1);
+        let profile1 = SlmProfile::new(
+            "temp-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp1.clone());
+
+        let router = RouterEngine::new(collection, vec![profile1], None);
+
+        // Warm up with 35 successful outcomes under fp1
+        for _ in 0..35 {
+            let decision = router
+                .route(&vec_data, "temperature shift content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        let cal_stats = router.calibration_stats();
+        assert!(
+            cal_stats["temp-slm"].is_calibrated(Some(&fp1)),
+            "Profile should be calibrated under initial fp1"
+        );
+
+        // Update profile with new temperature (0.7 -> different temperature bits)
+        let fp2 = ConfigFingerprint::new("llama-3b", "F16", "template", 0.7);
+        assert_ne!(
+            fp1.temperature_bits, fp2.temperature_bits,
+            "Bits must differ for 0.1 vs 0.7"
+        );
+
+        let profile2 = SlmProfile::new(
+            "temp-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp2.clone());
+
+        router.update_profiles(vec![profile2]);
+
+        // Next route call must observe calibrated = false due to configuration shift
+        let decision_after_shift = router
+            .route(&vec_data, "temperature shift content")
+            .await
+            .unwrap();
+        assert!(
+            !decision_after_shift.confidence.as_ref().unwrap().calibrated,
+            "Decision after temperature shift must be uncalibrated"
+        );
+
+        let stats_after_shift = router.calibration_stats();
+        assert!(
+            !stats_after_shift["temp-slm"].is_calibrated(Some(&fp2)),
+            "Calibration state must report is_calibrated = false immediately after shift"
+        );
+
+        // Warm up again with 35 decisions under fp2
+        for _ in 0..35 {
+            let d = router
+                .route(&vec_data, "temperature shift content")
+                .await
+                .unwrap();
+            router.record_outcome(d.decision_id, RoutingOutcome::Success);
+        }
+
+        let stats_recalibrated = router.calibration_stats();
+        assert!(
+            stats_recalibrated["temp-slm"].is_calibrated(Some(&fp2)),
+            "Profile should become calibrated again under fp2 after re-warmup window"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_invalidation_on_prompt_template_hash_change() {
+        use memfuse_core::ConfigFingerprint;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_prompt",
+                &vec_data,
+                Some(json!({"text": "prompt shift content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp_hash1 = ConfigFingerprint::new("llama-3b", "Q8_0", "Template A", 0.2);
+        let profile1 = SlmProfile::new(
+            "prompt-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_hash1.clone());
+
+        let router = RouterEngine::new(collection, vec![profile1], None);
+
+        for _ in 0..35 {
+            let decision = router
+                .route(&vec_data, "prompt shift content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        assert!(
+            router.calibration_stats()["prompt-slm"].is_calibrated(Some(&fp_hash1)),
+            "Profile should be calibrated under prompt hash 1"
+        );
+
+        // Shift prompt template hash
+        let fp_hash2 = ConfigFingerprint::new("llama-3b", "Q8_0", "Template B", 0.2);
+        let profile2 = SlmProfile::new(
+            "prompt-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_hash2.clone());
+
+        router.update_profiles(vec![profile2]);
+
+        let decision_after_shift = router
+            .route(&vec_data, "prompt shift content")
+            .await
+            .unwrap();
+        assert!(
+            !decision_after_shift.confidence.as_ref().unwrap().calibrated,
+            "Decision after prompt template hash shift must be uncalibrated"
+        );
+        assert!(
+            !router.calibration_stats()["prompt-slm"].is_calibrated(Some(&fp_hash2)),
+            "State must report is_calibrated = false"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_invalidation_on_quantization_change() {
+        use memfuse_core::ConfigFingerprint;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_quant",
+                &vec_data,
+                Some(json!({"text": "quantization shift content"})),
+            )
+            .await
+            .unwrap();
+
+        let fp_q8 = ConfigFingerprint::new("llama-3b", "Q8_0", "template", 0.0);
+        let profile1 = SlmProfile::new(
+            "quant-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_q8.clone());
+
+        let router = RouterEngine::new(collection, vec![profile1], None);
+
+        for _ in 0..35 {
+            let decision = router
+                .route(&vec_data, "quantization shift content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        assert!(
+            router.calibration_stats()["quant-slm"].is_calibrated(Some(&fp_q8)),
+            "Profile should be calibrated under Q8_0 quantization"
+        );
+
+        // Shift quantization level from Q8_0 to Q4_K_M
+        let fp_q4 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "template", 0.0);
+        let profile2 = SlmProfile::new(
+            "quant-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        )
+        .with_fingerprint(fp_q4.clone());
+
+        router.update_profiles(vec![profile2]);
+
+        let decision_after_shift = router
+            .route(&vec_data, "quantization shift content")
+            .await
+            .unwrap();
+        assert!(
+            !decision_after_shift.confidence.as_ref().unwrap().calibrated,
+            "Decision after quantization level shift must be uncalibrated"
+        );
+        assert!(
+            !router.calibration_stats()["quant-slm"].is_calibrated(Some(&fp_q4)),
+            "State must report is_calibrated = false"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calibration_failsafe_on_unknown_quantization() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_unknown",
+                &vec_data,
+                Some(json!({"text": "unknown quantization content"})),
+            )
+            .await
+            .unwrap();
+
+        // Profile without fingerprint set (fingerprint: None)
+        let profile = SlmProfile::new(
+            "unknown-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.001,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Perform 50 decisions with record_outcome without fingerprint set
+        for _ in 0..50 {
+            let decision = router
+                .route(&vec_data, "unknown quantization content")
+                .await
+                .unwrap();
+            router.record_outcome(decision.decision_id, RoutingOutcome::Success);
+        }
+
+        let stats = router.calibration_stats();
+        assert!(
+            !stats["unknown-slm"].is_calibrated(None),
+            "Unfingerprinted profile must fail-safe and never yield is_calibrated = true"
         );
     }
 
@@ -1623,13 +1930,16 @@ mod tests {
             .unwrap();
         db.inner_storage().commit(tx).await.unwrap();
 
+        use memfuse_core::ConfigFingerprint;
+        let fp = ConfigFingerprint::new("llama-3b", "F16", "template", 0.5);
         let profile = SlmProfile::new(
             "parallel-conv-slm",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.5,
-        );
+        )
+        .with_fingerprint(fp);
 
         let router = Arc::new(RouterEngine::new(collection, vec![profile], None));
 
@@ -1775,6 +2085,7 @@ mod tests {
             },
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -1873,13 +2184,16 @@ mod tests {
             .await
             .unwrap();
 
+        use memfuse_core::ConfigFingerprint;
+        let fp = ConfigFingerprint::new("llama-3b", "F16", "template", 0.1);
         let profile = SlmProfile::new(
             "default",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.01,
-        );
+        )
+        .with_fingerprint(fp);
 
         let router = RouterEngine::new(collection, vec![profile], None);
         let decision = router.route(&vec_coding, "function test").await.unwrap();
@@ -1969,5 +2283,140 @@ mod tests {
         let unknown_id = DecisionId::new();
 
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
+    }
+
+    #[tokio::test]
+    async fn test_lyapunov_drift_status_integration() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Initial status for unknown profile should be None
+        assert_eq!(router.drift_status("unknown-slm"), None);
+
+        // Set baseline distribution for test-slm
+        let baseline: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
+        assert!(router.set_lyapunov_baseline("test-slm", &baseline));
+
+        // Status before route call
+        assert_eq!(router.drift_status("test-slm"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_lyapunov_observe_score_and_analyze_drift_detection() {
+        use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
+
+        let mut watcher = LyapunovDriftWatcher::new(20);
+        let baseline: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0 * 0.2).collect();
+        watcher.set_baseline(&baseline);
+
+        // Feed 50 stable scores close to baseline
+        for i in 0..50 {
+            let score = (i % 20) as f32 / 100.0;
+            watcher.observe_score(score);
+        }
+
+        match watcher.analyze() {
+            LyapunovResult::Stable { lyapunov_exponent } => {
+                assert!(
+                    lyapunov_exponent <= 0.05,
+                    "Expected lyapunov_exponent <= 0.05, got {}",
+                    lyapunov_exponent
+                );
+            }
+            other => panic!("Expected Stable after 50 stable scores, got {:?}", other),
+        }
+
+        // Feed 10 outlier scores (scores = 0.95)
+        let mut last_res = LyapunovResult::InsufficientData;
+        for _ in 0..10 {
+            last_res = watcher.observe_score(0.95);
+        }
+
+        assert_eq!(watcher.analyze(), last_res);
+        match last_res {
+            LyapunovResult::DriftDetected {
+                lyapunov_exponent,
+                reason,
+            } => {
+                assert!(lyapunov_exponent > 0.0);
+                assert!(reason.kl_divergence > 0.0);
+            }
+            other => panic!(
+                "Expected DriftDetected after 10 outlier scores, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_route_populates_drift_status_after_sufficient_data(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_lyapunov",
+                &vec_data,
+                Some(json!({"text": "lyapunov test content"})),
+            )
+            .await?;
+
+        let profile = SlmProfile::new(
+            "lyapunov-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Perform 25 routing decisions
+        let mut last_decision = None;
+        for _ in 0..25 {
+            let decision = router.route(&vec_data, "lyapunov test content").await?;
+            last_decision = Some(decision);
+        }
+
+        let decision = last_decision.expect("decision present");
+        assert!(
+            decision.drift_status.is_some(),
+            "drift_status should be populated (Some) after 20+ routing decisions"
+        );
+        let status = decision.drift_status.unwrap();
+        assert!(
+            matches!(
+                status,
+                crate::lyapunov::LyapunovResult::Stable { .. }
+                    | crate::lyapunov::LyapunovResult::DriftDetected { .. }
+            ),
+            "Expected Stable or DriftDetected, got {:?}",
+            status
+        );
+
+        Ok(())
     }
 }

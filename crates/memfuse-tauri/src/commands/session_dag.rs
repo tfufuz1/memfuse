@@ -250,10 +250,7 @@ pub async fn switch_branch(
     branch_id: String,
 ) -> Result<(), MemFuseErrorDto> {
     let node_id = branch_id.parse::<u64>().map_err(|_| {
-        MemFuseErrorDto::new(
-            "InvalidInput",
-            format!("Invalid branch_id: '{branch_id}'"),
-        )
+        MemFuseErrorDto::new("InvalidInput", format!("Invalid branch_id: '{branch_id}'"))
     })?;
 
     let tree = get_or_load_session(&state, &session_id).await?;
@@ -273,10 +270,7 @@ pub async fn get_branch_history(
     branch_id: String,
 ) -> Result<Vec<AgentStateNodeDto>, MemFuseErrorDto> {
     let target_node_id = branch_id.parse::<u64>().map_err(|_| {
-        MemFuseErrorDto::new(
-            "InvalidInput",
-            format!("Invalid branch_id: '{branch_id}'"),
-        )
+        MemFuseErrorDto::new("InvalidInput", format!("Invalid branch_id: '{branch_id}'"))
     })?;
 
     let tree = get_or_load_session(&state, &session_id).await?;
@@ -525,7 +519,12 @@ mod tests {
         assert_eq!(branches.len(), 2);
 
         let new_state_ref2: State<'_, AppState> = unsafe { std::mem::transmute(&new_state) };
-        let history = get_branch_history(new_state_ref2, "persisted_sess".to_string(), "1".to_string()).await?;
+        let history = get_branch_history(
+            new_state_ref2,
+            "persisted_sess".to_string(),
+            "1".to_string(),
+        )
+        .await?;
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].step_id, "0");
         assert_eq!(history[1].step_id, "1");
