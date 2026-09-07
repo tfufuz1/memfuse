@@ -1,0 +1,18 @@
+[package]
+name = "memfuse-kv-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker)"
+
+[dependencies]
+memfuse-core = { workspace = true }
+zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+ahash = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

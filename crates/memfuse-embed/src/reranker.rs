@@ -789,9 +789,18 @@ mod tests {
         let reranker = CrossEncoderReranker::passthrough();
         // Manually record outcomes on reranker directly
         let results = vec![
-            RerankResult { original_index: 0, score: 2.5 },
-            RerankResult { original_index: 1, score: 1.8 },
-            RerankResult { original_index: 5, score: -0.5 },
+            RerankResult {
+                original_index: 0,
+                score: 2.5,
+            },
+            RerankResult {
+                original_index: 1,
+                score: 1.8,
+            },
+            RerankResult {
+                original_index: 5,
+                score: -0.5,
+            },
         ];
         // With passthrough, implicit feedback is skipped
         reranker.record_implicit_feedback(&results, 2);
@@ -840,8 +849,14 @@ mod tests {
     fn test_implicit_feedback_passthrough_skipped() {
         let reranker = CrossEncoderReranker::passthrough();
         let results = vec![
-            RerankResult { original_index: 0, score: 0.9 },
-            RerankResult { original_index: 1, score: 0.8 },
+            RerankResult {
+                original_index: 0,
+                score: 0.9,
+            },
+            RerankResult {
+                original_index: 1,
+                score: 0.8,
+            },
         ];
         reranker.record_implicit_feedback(&results, 1);
         assert_eq!(reranker.calibration_observation_count(), 0);

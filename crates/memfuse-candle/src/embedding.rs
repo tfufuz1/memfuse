@@ -85,7 +85,9 @@ impl EmbeddingProvider for CandleEmbedClient {
                     .map_err(|e| EmbeddingError::ComputationFailed(e.to_string()))
             })
             .await
-            .map_err(|e| EmbeddingError::ComputationFailed(format!("Candle task join error: {e}")))?
+            .map_err(|e| {
+                EmbeddingError::ComputationFailed(format!("Candle task join error: {e}"))
+            })?
         })
     }
 }
@@ -133,20 +135,20 @@ mod tests {
             "decoder": null,
             "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
         }"#;
-        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).map_err(|e| e.to_string()).unwrap();
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes())
+            .map_err(|e| e.to_string())
+            .unwrap();
 
-        let client = CandleEmbedClient::new(
-            Device::Cpu,
-            mock_model,
-            fingerprint.clone(),
-            tokenizer,
-        );
+        let client =
+            CandleEmbedClient::new(Device::Cpu, mock_model, fingerprint.clone(), tokenizer);
 
         assert_eq!(client.provider_name(), "candle");
         assert_eq!(client.embedding_dim(), 4);
         assert_eq!(client.fingerprint(), &fingerprint);
 
-        let vec = EmbeddingProvider::embed(&client, "test sentence").await.unwrap();
+        let vec = EmbeddingProvider::embed(&client, "test sentence")
+            .await
+            .unwrap();
         assert_eq!(vec, vec![0.5f32, 0.5f32, 0.5f32, 0.5f32]);
 
         // Test blanket TextEmbeddingEngine

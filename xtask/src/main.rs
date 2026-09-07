@@ -37,6 +37,8 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_vetoes;
+
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1766,6 +1768,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-vetoes" => {
+            if let Err(e) = check_vetoes::check_vetoes() {
+                eprintln!("❌ check-vetoes failed: {}", e);
+                process::exit(1);
+            }
+        }
         "validate-tags" => {
             let fix = args.iter().any(|arg| arg == "--fix");
             let success = run_validate_tags(fix);
@@ -1822,7 +1830,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
@@ -2608,26 +2616,26 @@ mod tests {
     #[test]
     fn test_workspace_crate_layers_regression() {
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 17, "Expected 17 workspace crates");
+        assert_eq!(crates.len(), 18, "Expected 18 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),
-            ("memfuse-calibration", 0),
+            ("memfuse-calibration", 1),
+            ("memfuse-candle", 1),
+            ("memfuse-checkpoint", 1),
             ("memfuse-crypto", 1),
-            ("memfuse-checkpoint", 2),
+            ("memfuse-graph", 1),
+            ("memfuse-text", 1),
             ("memfuse-embed", 2),
-            ("memfuse-graph", 2),
+            ("memfuse-index", 2),
             ("memfuse-ollama", 2),
             ("memfuse-store", 2),
-            ("memfuse-text", 2),
-            ("memfuse-candle", 3),
-            ("memfuse-index", 3),
-            ("memfuse-db", 4),
-            ("memfuse-bench", 5),
-            ("memfuse-router", 5),
-            ("memfuse-tauri", 5),
-            ("memfuse-agent", 6),
-            ("memfuse-mcp", 7),
+            ("memfuse-db", 3),
+            ("memfuse-bench", 4),
+            ("memfuse-router", 4),
+            ("memfuse-tauri", 4),
+            ("memfuse-agent", 5),
+            ("memfuse-mcp", 6),
         ]
         .into_iter()
         .collect();

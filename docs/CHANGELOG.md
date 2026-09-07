@@ -4,6 +4,10 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
+| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker). |
+| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
+| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
 | `TS:2026-09-07T12:00:00Z` | `crates/memfuse-db/src/temporal_filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bi-temporaler Validity-Filter für Post-RRF Fusion-Ergebnisse in Retrieval-Pipelines. |
 | `TS:2026-09-07T08:30:00Z` | `crates/memfuse-db/src/sleep_cycle_executor.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verbindet NREM-Phase-Ergebnisse mit der Collection-Mutation-API. |
 | `TS:2026-09-07T00:00:00Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cryptographic deletion proof for GDPR Article 17 compliance verification across storage layers. |

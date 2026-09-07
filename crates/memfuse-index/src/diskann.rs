@@ -24,9 +24,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
+const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DFTR";
+const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"MEMFUSE_DISKANN_INTEGRITY_KEY___";
 const DISKANN_VERSION: u16 = 1;
-const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
-const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
+const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"FOOT";
+const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse-diskann-integrity-key-32";
 /// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
 /// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
 /// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
@@ -284,7 +286,7 @@ struct DiskAnnIndexInner {
     pending_inserts: RwLock<Vec<(DocId, Vec<f32>)>>,
     /// Monotoner Zähler (AtomicU64 für Threshold-Check ohne Lock).
     pending_count: AtomicU64,
-    pub(crate) hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
+    hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
 }
 
 impl DiskAnnIndex {
@@ -1512,9 +1514,10 @@ impl DiskAnnIndex {
         let query_vec = query.to_vec();
         let self_clone = self.clone();
 
-        let search_res = tokio::task::spawn_blocking(move || self_clone.search_blocking(&query_vec, k, header))
-            .await
-            .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?;
+        let search_res =
+            tokio::task::spawn_blocking(move || self_clone.search_blocking(&query_vec, k, header))
+                .await
+                .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?;
 
         match search_res {
             Ok(res) => Ok(res),
