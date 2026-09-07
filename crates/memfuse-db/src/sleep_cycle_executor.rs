@@ -9,14 +9,14 @@
 use crate::collection::{Collection, StoredDocumentMeta};
 use crate::rem_phase::{run_rem_phase, RemPhaseResult, SegmentSynthesizer};
 use crate::sleep_cycle::{group_turns_into_segments, run_nrem_phase, NremConfig, NremPhaseResult};
-use memfuse_core::traits::StorageEngine;
+use memfuse_core::traits::{StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
 
 /// Führt NREM-Phase aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
 ///
 /// Gibt das `NremPhaseResult` zurück.
-pub async fn execute_nrem_cycle<S: StorageEngine>(
-    collection: &Collection<S>,
+pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
+    collection: &Collection<S, V>,
     turns: &[(DocId, Vec<f32>)],
     config: &NremConfig,
 ) -> Result<NremPhaseResult> {
