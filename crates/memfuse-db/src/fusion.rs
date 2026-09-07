@@ -114,7 +114,8 @@ impl MetadataMergePriority {
 }
 
 /// Baut einen ProvenanceRecord aus den verfügbaren Signal-Scores und optionalen Signal-Gewichten.
-/// Erfüllt INV-PROV-1: sum(contributions.rrf_contribution) ≈ unboosted RRF score (|Δ| < 1e-6)
+/// Erfüllt INV-PROV-1: sum(contributions.rrf_contribution) ≈ unboosted RRF score (|Δ| < 1e-6).
+/// Die Invariante wird in Debug-Builds per `debug_assert!` überprüft, wenn `expected_total` (Ground-Truth RRF score) angegeben ist.
 #[allow(clippy::too_many_arguments)]
 pub fn build_provenance(
     vector_distance: Option<f32>,
@@ -130,6 +131,7 @@ pub fn build_provenance(
     rrf_k: f32,
     source_collection: Option<String>,
     index_type: Option<String>,
+    expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -190,12 +192,17 @@ pub fn build_provenance(
 
     #[cfg(debug_assertions)]
     {
-        let expected_rrf: f32 = record
-            .signal_contributions
-            .values()
-            .map(|c| c.rrf_contribution)
-            .sum();
-        let _ = expected_rrf;
+        if let Some(expected) = expected_total {
+            let expected_rrf: f32 = record
+                .signal_contributions
+                .values()
+                .map(|c| c.rrf_contribution)
+                .sum();
+            debug_assert!(
+                (expected_rrf - expected).abs() < 1e-6,
+                "INV-PROV-1 violation in build_provenance: sum of contributions ({expected_rrf}) != expected RRF score ({expected})"
+            );
+        }
     }
 
     record
@@ -395,6 +402,9 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 for (sig, r) in doc_prov.signal_ranks {
                     entry.3.signal_ranks.entry(sig).or_insert(r);
                 }
+                for (sig, contrib) in doc_prov.signal_contributions {
+                    entry.3.signal_contributions.entry(sig).or_insert(contrib);
+                }
             }
         }
     }
@@ -415,8 +425,8 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 || prov.source_collection.is_some()
                 || prov.index_type.is_some())
         {
-            if prov.signal_contributions.is_empty() {
-                Some(build_provenance(
+            let final_prov = if prov.signal_contributions.is_empty() {
+                build_provenance(
                     prov.vector_distance,
                     prov.signal_ranks.get("vector").copied(),
                     None,
@@ -433,10 +443,28 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                     k as f32,
                     prov.source_collection,
                     prov.index_type,
-                ))
+                    None,
+                )
             } else {
-                Some(prov)
+                prov
+            };
+
+            #[cfg(debug_assertions)]
+            {
+                if !final_prov.signal_contributions.is_empty() {
+                    let sum_contrib: f32 = final_prov
+                        .signal_contributions
+                        .values()
+                        .map(|c| c.rrf_contribution)
+                        .sum();
+                    debug_assert!(
+                        (sum_contrib - score).abs() < 1e-6,
+                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of contributions ({sum_contrib}) != entry score ({score})"
+                    );
+                }
             }
+
+            Some(final_prov)
         } else {
             None
         };
@@ -942,6 +970,96 @@ mod tests {
         }];
         let fused = weighted_reciprocal_rank_fusion(vec![("vec".to_string(), set, -0.5)], 10);
         assert!(fused.is_empty());
+    }
+
+    #[test]
+    fn test_build_provenance_invariant_consistent() {
+        let rank = 1u32;
+        let weight = 1.0f32;
+        let k = 60.0f32;
+        let expected_contrib = weight / (k + rank as f32);
+
+        let prov = build_provenance(
+            Some(0.95),
+            Some(rank),
+            Some(weight),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            k,
+            Some("test_collection".to_string()),
+            Some("hnsw".to_string()),
+            Some(expected_contrib),
+        );
+
+        let sum: f32 = prov
+            .signal_contributions
+            .values()
+            .map(|c| c.rrf_contribution)
+            .sum();
+        assert!((sum - expected_contrib).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "INV-PROV-1 violation in build_provenance")]
+    fn test_build_provenance_invariant_inconsistent_panics() {
+        let rank = 1u32;
+        let weight = 1.0f32;
+        let k = 60.0f32;
+        let wrong_expected = 0.999f32; // Discrepancy > 1e-6
+
+        build_provenance(
+            Some(0.95),
+            Some(rank),
+            Some(weight),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            k,
+            Some("test_collection".to_string()),
+            Some("hnsw".to_string()),
+            Some(wrong_expected),
+        );
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "INV-PROV-1 violation in weighted_reciprocal_rank_fusion")]
+    fn test_weighted_rrf_inconsistent_signal_contribution_panics() {
+        let mut prov = ProvenanceRecord {
+            vector_distance: Some(0.95),
+            source_collection: Some("col".to_string()),
+            index_type: Some("hnsw".to_string()),
+            ..Default::default()
+        };
+        // Inject an inconsistent prior signal contribution manually into doc.provenance
+        prov.signal_contributions.insert(
+            "text".to_string(),
+            crate::SignalContribution {
+                raw_score: 0.95,
+                rank: 1,
+                rrf_contribution: 0.9999, // Unexpected extra contribution causing discrepancy
+            },
+        );
+
+        let set = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.95,
+            metadata: None,
+            matched_signals: vec!["vector".to_string()],
+            provenance: Some(prov),
+        }];
+
+        weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 10);
     }
 
     #[test]
