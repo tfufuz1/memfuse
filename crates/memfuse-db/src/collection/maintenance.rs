@@ -4,14 +4,18 @@
 // NICHT-OFFENSICHTLICH: Pending TxIntents werden beim Start via Forward-Commit repariert und markiert.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
+use super::{extract_text, Collection, StoredDocument, StoredDocumentMeta};
 use crate::thermostat::{FreeEnergyThermostat, ThermostatInputs};
+use memfuse_calibration::IsotonicCalibrator;
 use memfuse_core::{
-    DocId, EntityId, GraphIndex, LlmTextGenerator, MemFuseError, Result, StorageEngine, TextIndex,
-    TxId, VectorIndex, EXPIRY_METADATA_KEY,
+    DocId, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
+    EXPIRY_METADATA_KEY,
 };
 use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
+use memfuse_ollama::{score_importance_with_calibrator, OllamaClient};
+use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Führt einen thermostat-gesteuerten Importance-Score-Sweep durch.
@@ -457,7 +461,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Bewertet die Wichtigkeit eines Dokuments via LLM (Ollama) und
-    /// aktualisiert den Importance-Score in den Metadaten.
+    /// aktualisiert den Importance-Score sowie die Provenance in den Metadaten.
     ///
     /// # Fehlerverhalten
     /// Bei LLM-Fehler wird der bestehende Score NICHT überschrieben.
@@ -465,8 +469,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn evaluate_importance_with_llm(
         &self,
         doc_id: &str,
-        generator: &(impl LlmTextGenerator + ?Sized),
-        _model: &str,
+        client: &OllamaClient,
+        calibrator: Option<&Arc<Mutex<IsotonicCalibrator>>>,
     ) -> Result<memfuse_core::ImportanceScore> {
         let user_key = self.namespaced_key(doc_id.as_bytes(), 0);
         let Some(data) = self.storage.get(&user_key).await? else {
@@ -478,20 +482,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         let text = extract_text(&stored.metadata).unwrap_or_else(|| stored.id.clone());
 
-        let prompt = format!(
-            "Bewerte die langfristige Wichtigkeit dieser Information für einen KI-Agenten \
-             auf einer Skala von 0.0 (unwichtig, vergänglich) bis 1.0 (sehr wichtig, dauerhaft).\n\
-             Antworte NUR mit einer Dezimalzahl zwischen 0.0 und 1.0, ohne Erklärung.\n\n\
-             Information: {}\n\nWichtigkeits-Score:",
-            text.chars().take(500).collect::<String>()
-        );
+        let assessment = score_importance_with_calibrator(client, &text, calibrator)
+            .await
+            .map_err(|e| {
+                MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
+            })?;
 
-        let response = generator.generate(&prompt).await.map_err(|e| {
-            memfuse_core::MemFuseError::Internal(format!("LLM importance evaluation failed: {e}"))
-        })?;
-
-        let score = parse_importance_score(&response);
-        let importance_score = memfuse_core::ImportanceScore::new(score);
+        let importance_score = assessment.score;
 
         let tx = self.allocate_tx()?;
         let doc_id_typed = DocId::from_key(doc_id)?;
@@ -536,6 +533,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         if let Ok(val) = serde_json::to_value(imp) {
             meta_obj.insert("importance".to_string(), val);
         }
+
+        meta_obj.insert(
+            "model_id".to_string(),
+            serde_json::json!(assessment.model_id),
+        );
 
         let meta_only = StoredDocumentMeta::from(&stored);
         let user_bytes = serde_json::to_vec(&stored)?;

@@ -408,9 +408,18 @@ mod tests {
     fn test_fusion_weights_default_is_balanced() {
         let w = FusionWeights::default();
         let eps = 1e-5f32;
-        assert!((w.vector() - 1.0 / 3.0).abs() < eps, "Default vector weight must be 1/3");
-        assert!((w.text() - 1.0 / 3.0).abs() < eps, "Default text weight must be 1/3");
-        assert!((w.graph() - 1.0 / 3.0).abs() < eps, "Default graph weight must be 1/3");
+        assert!(
+            (w.vector() - 1.0 / 3.0).abs() < eps,
+            "Default vector weight must be 1/3"
+        );
+        assert!(
+            (w.text() - 1.0 / 3.0).abs() < eps,
+            "Default text weight must be 1/3"
+        );
+        assert!(
+            (w.graph() - 1.0 / 3.0).abs() < eps,
+            "Default graph weight must be 1/3"
+        );
     }
 
     #[test]
