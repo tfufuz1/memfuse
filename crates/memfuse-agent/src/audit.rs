@@ -11,7 +11,9 @@
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
 use crate::context::{validate_node_id, validate_task_id};
-use memfuse_core::{BoxFuture, Result, StorageEngine};
+use memfuse_core::{Result, StorageEngine};
+#[cfg(any(test, feature = "test-utils"))]
+use memfuse_core::BoxFuture;
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -27,6 +29,13 @@ pub struct AuditEntry {
     pub payload: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// Summary statistics for legacy audit entry migration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct MigrationStats {
+    pub migrated: usize,
+    pub failed: usize,
 }
 
 /// Append-only audit log backed by a MemFuse collection.
@@ -124,12 +133,12 @@ impl<S: StorageEngine> AuditLog<S> {
 /// Migrates legacy zero-vector audit entries from the HNSW vector index and doc_key mappings
 /// into the direct LSM KV store format (`put_kv`).
 ///
-/// Returns the number of migrated audit entries.
+/// Returns [`MigrationStats`] detailing successfully migrated and failed entries.
 pub async fn migrate_legacy_audit_entries<S: StorageEngine, V: memfuse_core::VectorIndex>(
     collection: &Collection<S, V>,
-) -> Result<usize> {
+) -> Result<MigrationStats> {
     let raw = collection.scan_prefix("audit:").await?;
-    let mut count = 0;
+    let mut stats = MigrationStats::default();
 
     for (key, val) in raw {
         if !key.starts_with("audit:") {
@@ -142,33 +151,107 @@ pub async fn migrate_legacy_audit_entries<S: StorageEngine, V: memfuse_core::Vec
                 // Extract audit entry payload from metadata
                 let entry_val = obj.get("metadata").cloned().unwrap_or(val.clone());
 
-                let doc_id = memfuse_core::DocId::from_key(&key)?;
-                let tx = collection.allocate_tx()?;
+                let doc_id = match memfuse_core::DocId::from_key(&key) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        tracing::error!(
+                            key = %key,
+                            error = %err,
+                            "Failed to generate DocId from key during audit entry migration"
+                        );
+                        stats.failed += 1;
+                        continue;
+                    }
+                };
+
+                let tx = match collection.allocate_tx() {
+                    Ok(tx_id) => tx_id,
+                    Err(err) => {
+                        tracing::error!(
+                            key = %key,
+                            error = %err,
+                            "Failed to allocate transaction during audit entry migration"
+                        );
+                        stats.failed += 1;
+                        continue;
+                    }
+                };
 
                 // Remove from HNSW vector index
-                let _ = collection.vector_index().delete(tx, doc_id).await;
-                let _ = collection.vector_index().commit(tx).await;
+                if let Err(err) = collection.vector_index().delete(tx, doc_id).await {
+                    tracing::error!(
+                        doc_id = ?doc_id,
+                        key = %key,
+                        error = %err,
+                        "Failed to delete zero-vector entry from vector index during migration"
+                    );
+                    let _ = collection.storage().rollback(tx).await;
+                    stats.failed += 1;
+                    continue;
+                }
+
+                if let Err(err) = collection.vector_index().commit(tx).await {
+                    tracing::error!(
+                        doc_id = ?doc_id,
+                        key = %key,
+                        error = %err,
+                        "Failed to commit vector index deletion during migration"
+                    );
+                    let _ = collection.storage().rollback(tx).await;
+                    stats.failed += 1;
+                    continue;
+                }
 
                 // Delete legacy doc_key (key_type=1) mapping
                 let doc_key = collection.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
-                collection.storage().delete(tx, &doc_key).await?;
+                if let Err(err) = collection.storage().delete(tx, &doc_key).await {
+                    tracing::error!(
+                        doc_id = ?doc_id,
+                        key = %key,
+                        error = %err,
+                        "Failed to delete doc_key mapping during migration"
+                    );
+                    let _ = collection.storage().rollback(tx).await;
+                    stats.failed += 1;
+                    continue;
+                }
 
                 // Save pure KV entry
-                collection.put_kv(&key, &entry_val).await?;
+                if let Err(err) = collection.put_kv(&key, &entry_val).await {
+                    tracing::error!(
+                        key = %key,
+                        error = %err,
+                        "Failed to save pure KV entry during migration"
+                    );
+                    let _ = collection.storage().rollback(tx).await;
+                    stats.failed += 1;
+                    continue;
+                }
 
-                collection.storage().commit(tx).await?;
-                count += 1;
+                if let Err(err) = collection.storage().commit(tx).await {
+                    tracing::error!(
+                        key = %key,
+                        error = %err,
+                        "Failed to commit storage transaction during migration"
+                    );
+                    let _ = collection.storage().rollback(tx).await;
+                    stats.failed += 1;
+                    continue;
+                }
+
+                stats.migrated += 1;
             }
         }
     }
 
-    if count > 0 {
+    if stats.migrated > 0 || stats.failed > 0 {
         tracing::info!(
-            "Migrated {} legacy zero-vector audit entries from HNSW index",
-            count
+            migrated = stats.migrated,
+            failed = stats.failed,
+            "Legacy zero-vector audit entry migration completed"
         );
     }
-    Ok(count)
+    Ok(stats)
 }
 
 #[cfg(test)]
