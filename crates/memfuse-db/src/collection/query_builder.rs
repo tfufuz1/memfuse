@@ -12,6 +12,9 @@ use memfuse_core::{
     StorageEngine, VectorIndex,
 };
 
+#[cfg(feature = "physio-pid-homeostasis")]
+use std::sync::Arc;
+
 /// Custom weights for vector, text, and graph signals in hybrid search.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SignalWeights {
@@ -142,6 +145,8 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
+    #[cfg(feature = "physio-pid-homeostasis")]
+    pid_controller: Option<Arc<parking_lot::Mutex<memfuse_calibration::PidController>>>,
     seq: Option<u64>,
     as_of_timestamp: Option<u64>,
     query_timestamp: Option<u64>,
@@ -169,6 +174,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             reranker: None,
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
+            #[cfg(feature = "physio-pid-homeostasis")]
+            pid_controller: None,
             seq: None,
             as_of_timestamp: None,
             query_timestamp: None,
@@ -307,6 +314,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets optional PID controller for dynamic reranking candidate pool size homeostasis.
+    #[cfg(feature = "physio-pid-homeostasis")]
+    pub fn pid_controller(
+        mut self,
+        pid: Arc<parking_lot::Mutex<memfuse_calibration::PidController>>,
+    ) -> Self {
+        self.pid_controller = Some(pid);
+        self
+    }
+
     /// Sets snapshot sequence number for MVCC snapshot-isolated queries.
     pub fn seq(mut self, seq_no: u64) -> Self {
         self.seq = Some(seq_no);
@@ -369,6 +386,19 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         #[cfg(not(feature = "reranking"))]
         let _has_reranker = false;
 
+        #[allow(unused_mut)]
+        let mut rerank_pool_max = self.rerank_pool_max;
+
+        #[cfg(all(feature = "reranking", feature = "physio-pid-homeostasis"))]
+        if self.reranker.is_some() {
+            if let Some(ref pid) = self.pid_controller {
+                let pid_guard = pid.lock();
+                if let Some(pid_pool_size) = pid_guard.current_pool_size {
+                    rerank_pool_max = Some(pid_pool_size);
+                }
+            }
+        }
+
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
             vector_query: self.vector.clone(),
@@ -389,7 +419,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             include_superseded: self.include_superseded,
             include_provenance: self.include_provenance,
             rerank_pool_multiplier: self.rerank_pool_multiplier,
-            rerank_pool_max: self.rerank_pool_max,
+            rerank_pool_max,
             k,
         };
 
@@ -443,6 +473,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         if let Some(reranker) = self.reranker {
             let text_str = self.text.as_deref().unwrap_or("");
             if !results.is_empty() && !text_str.is_empty() {
+                let current_pool = results.len();
+                let start_time = std::time::Instant::now();
+
                 let candidate_texts: Vec<String> = results
                     .iter()
                     .map(|r| {
@@ -477,6 +510,19 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 });
 
                 if let Ok(ranked) = reranked {
+                    let elapsed_ms = start_time.elapsed().as_secs_f32() * 1000.0;
+
+                    #[cfg(feature = "physio-pid-homeostasis")]
+                    if let Some(ref pid) = self.pid_controller {
+                        let new_pool_size = pid.lock().update(current_pool, elapsed_ms);
+                        tracing::debug!(
+                            measured_latency_ms = elapsed_ms,
+                            current_pool = current_pool,
+                            new_pool_size = new_pool_size,
+                            "PID controller updated pool size after reranking"
+                        );
+                    }
+
                     let mut reranked_results = Vec::with_capacity(k);
                     for r in ranked.into_iter().take(k) {
                         if let Some(mut result) = results.get(r.original_index).cloned() {
@@ -855,6 +901,61 @@ mod tests {
                 "Results must be sorted descending by rerank score"
             );
         }
+    }
+
+    #[tokio::test]
+    #[cfg(all(feature = "reranking", feature = "physio-pid-homeostasis"))]
+    async fn test_pid_controller_integration_with_reranker() {
+        let (col, _dir) = create_test_collection("test_pid_rerank").await;
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .unwrap();
+        col.insert(
+            "doc-2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(json!({"text": "python programming language"})),
+        )
+        .await
+        .unwrap();
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
+        let pid = Arc::new(parking_lot::Mutex::new(
+            memfuse_calibration::PidController::default(),
+        ));
+
+        // First call: initial update
+        let res = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .pid_controller(pid.clone())
+            .k(2)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 2);
+        let updated_size = pid.lock().current_pool_size;
+        assert!(updated_size.is_some());
+
+        // Second call: verify pid controller's stored current_pool_size is used as rerank_pool_max
+        let res2 = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .pid_controller(pid.clone())
+            .k(2)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res2.len(), 2);
     }
 
     #[tokio::test]
