@@ -2751,11 +2751,13 @@ name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "memfuse-calibration",
  "memfuse-checkpoint",
  "memfuse-core",
  "memfuse-embed",
  "memfuse-graph",
  "memfuse-index",
+ "memfuse-ollama",
  "memfuse-store",
  "memfuse-text",
  "parking_lot",

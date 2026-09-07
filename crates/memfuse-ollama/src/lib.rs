@@ -10,6 +10,7 @@ pub use client::{
 pub use context_prefixer::{ContextPrefixConfig, ContextPrefixEngine, ContextPrefixer};
 pub use embedding::OllamaEmbedder;
 pub use importance::{
-    parse_importance_score_response, score_importance, Confidence, ImportanceAssessment,
+    parse_importance_score_response, record_importance_outcome, score_importance,
+    score_importance_with_calibrator, Confidence, ImportanceAssessment,
 };
 pub use model_info::ModelInfo;

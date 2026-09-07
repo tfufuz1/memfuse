@@ -70,7 +70,10 @@ async fn test_auto_community_detection_disabled_when_threshold_is_zero() {
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
         .expect("open db");
-    let col = db.collection("disabled_comm_test").await.expect("collection");
+    let col = db
+        .collection("disabled_comm_test")
+        .await
+        .expect("collection");
 
     assert_eq!(col.community_detection_trigger_threshold(), 0);
 
