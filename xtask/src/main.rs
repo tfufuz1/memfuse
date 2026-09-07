@@ -37,6 +37,8 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_vetoes;
+
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1766,6 +1768,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-vetoes" => {
+            if let Err(e) = check_vetoes::check_vetoes() {
+                eprintln!("❌ check-vetoes failed: {}", e);
+                process::exit(1);
+            }
+        }
         "validate-tags" => {
             let fix = args.iter().any(|arg| arg == "--fix");
             let success = run_validate_tags(fix);
@@ -1822,7 +1830,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }

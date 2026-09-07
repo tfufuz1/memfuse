@@ -2,6 +2,11 @@
 > Maschinenausführbare Checkliste. Jede Session MUSS mit dieser
 > Sequenz beginnen, bevor Code geschrieben oder Dateien geändert werden.
 
+- **VETOES.md** (Root): Permanent abgelehnte oder eingeschränkt akzeptierte Features.
+  Vor jeder neuen Feature-Implementierung mit "F-NN"-Bezeichnung prüfen ob ein
+  Eintrag existiert. `just check-vetoes` läuft automatisch, ist aber kein Ersatz
+  für manuelles Lesen vor Arbeitsbeginn an physio-*/Nucleation-artigen Features.
+
 ## Phase 0 — Session-Identität etablieren (30 Sekunden)
 
 **Primärquelle:** Das Environment-Setup-Skript liefert SESSION_HASH und TS bereits
