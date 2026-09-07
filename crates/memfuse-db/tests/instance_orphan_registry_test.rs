@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use memfuse_checkpoint::{global_orphan_registry, PinnedSeqNoOrphan, StateCheckpoint};
 use memfuse_core::TxId;
 use memfuse_db::{MemFuse, MemFuseConfig};

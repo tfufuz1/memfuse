@@ -122,6 +122,9 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
     seq: Option<u64>,
+    as_of_timestamp: Option<u64>,
+    query_timestamp: Option<u64>,
+    current_tx: Option<memfuse_core::TxId>,
 }
 
 impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
@@ -146,6 +149,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
             seq: None,
+            as_of_timestamp: None,
+            query_timestamp: None,
+            current_tx: None,
         }
     }
 
@@ -286,6 +292,24 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets historical point-in-time "as-of" timestamp for temporal validity filtering (Post-RRF, Pre-Reranking).
+    pub fn as_of(mut self, timestamp: u64) -> Self {
+        self.as_of_timestamp = Some(timestamp);
+        self
+    }
+
+    /// Sets query business timestamp for temporal validity filtering (Post-RRF, Pre-Reranking).
+    pub fn query_timestamp(mut self, timestamp: u64) -> Self {
+        self.query_timestamp = Some(timestamp);
+        self
+    }
+
+    /// Sets current system transaction ID for temporal validity filtering (Post-RRF, Pre-Reranking).
+    pub fn current_tx(mut self, tx: memfuse_core::TxId) -> Self {
+        self.current_tx = Some(tx);
+        self
+    }
+
     /// Configures builder options from an existing `HybridQuery` struct.
     pub fn query_config(mut self, query: &memfuse_core::HybridQuery) -> Self {
         if let Some(ref text) = query.text_query {
@@ -320,9 +344,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         }
 
         #[cfg(feature = "reranking")]
-        let has_reranker = self.reranker.is_some();
+        let _has_reranker = self.reranker.is_some();
         #[cfg(not(feature = "reranking"))]
-        let has_reranker = false;
+        let _has_reranker = false;
 
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
@@ -380,6 +404,20 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             results = filtered;
         }
 
+        // Post-RRF Bi-temporal Validity Filtering (ADR-033 / ADR-038)
+        // Executed NACH RRF-Fusion and VOR CrossEncoder Reranking to ensure high efficiency
+        // (expensive CrossEncoder reranker is only invoked on temporally valid candidates).
+        if let Some(as_of) = self.as_of_timestamp {
+            results = crate::temporal_filter::apply_temporal_validity_filter_at(results, as_of);
+        } else if self.query_timestamp.is_some() || self.current_tx.is_some() {
+            let ctx = self.current_tx.unwrap_or(memfuse_core::TxId::new(u64::MAX));
+            results = crate::temporal_filter::apply_temporal_validity_filter(
+                results,
+                ctx,
+                self.query_timestamp,
+            );
+        }
+
         #[cfg(feature = "reranking")]
         if let Some(reranker) = self.reranker {
             let text_str = self.text.as_deref().unwrap_or("");
@@ -411,7 +449,11 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                         "Reranker deadline exceeded — falling back to RRF order"
                     );
                 })
-                .and_then(|r| r.map_err(|e| { tracing::warn!("Reranking failed: {e}"); }));
+                .and_then(|r| {
+                    r.map_err(|e| {
+                        tracing::warn!("Reranking failed: {e}");
+                    })
+                });
 
                 if let Ok(ranked) = reranked {
                     let mut reranked_results = Vec::with_capacity(k);
@@ -453,7 +495,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 mod tests {
     use super::*;
     use crate::{Collection, DistanceMetric, Language};
-    use memfuse_core::{BoxFuture, FilterExpr, HybridQuery};
+    use memfuse_core::{FilterExpr, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
     use memfuse_store::{LsmConfig, LsmStorage};
@@ -652,9 +694,13 @@ mod tests {
             let id = format!("doc-{:03}", i);
             let text = format!("rust system engineering doc {:03}", i);
             let val = (i as f32 + 1.0) / 150.0;
-            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
-                .await
-                .unwrap();
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": text })),
+            )
+            .await
+            .unwrap();
         }
 
         let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
@@ -683,9 +729,13 @@ mod tests {
             let id = format!("doc-{:03}", i);
             let text = format!("benchmark item {:03}", i);
             let val = (i as f32 + 1.0) / 300.0;
-            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
-                .await
-                .unwrap();
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": text })),
+            )
+            .await
+            .unwrap();
         }
 
         let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
@@ -716,7 +766,11 @@ mod tests {
             .unwrap();
 
         // Since fetch_k is capped at 50, top-30 query successfully completes and receives results
-        assert_eq!(res_custom_max.len(), 30, "k=30 requested with fetch_k capped at 50");
+        assert_eq!(
+            res_custom_max.len(),
+            30,
+            "k=30 requested with fetch_k capped at 50"
+        );
     }
 
     #[tokio::test]
@@ -818,7 +872,10 @@ mod tests {
             .execute()
             .await;
 
-        assert!(res.is_ok(), "Query must succeed even when reranker times out");
+        assert!(
+            res.is_ok(),
+            "Query must succeed even when reranker times out"
+        );
         let results = res.unwrap(); // unwrap
         assert_eq!(results.len(), 2);
         for item in &results {

@@ -98,8 +98,13 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
+pub mod temporal_filter;
 pub mod thermostat;
 pub mod transaction;
+
+pub use temporal_filter::{
+    apply_temporal_validity_filter, apply_temporal_validity_filter_at, FusionResult,
+};
 
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 

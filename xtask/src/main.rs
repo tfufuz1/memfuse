@@ -1178,7 +1178,10 @@ pub fn run_check_jules_context_freshness() -> bool {
             }
         }
         Err(e) => {
-            eprintln!("❌ Failed to check docs/decisions/README.md git timestamp: {}", e);
+            eprintln!(
+                "❌ Failed to check docs/decisions/README.md git timestamp: {}",
+                e
+            );
             failed = true;
         }
     }

@@ -22,9 +22,11 @@ static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 // 1. Thread Safety: Atomic counter increments (`ALLOC_COUNT`, `DEALLOC_COUNT`, `ALLOC_BYTES`) use relaxed atomic operations, preserving `Sync` safety.
 // 2. Memory Safety: All heap allocations and deallocations are forwarded unchanged to `std::alloc::System`.
 // 3. Trait Contract: `alloc` and `dealloc` obey all layout and pointer invariants required by the `GlobalAlloc` contract.
-unsafe impl GlobalAlloc for CountingAllocator { // SAFETY: Thread-safe delegation to System allocator.
+unsafe impl GlobalAlloc for CountingAllocator {
+    // SAFETY: Thread-safe delegation to System allocator.
     // SAFETY: Layout invariants (size, alignment) are guaranteed by the `GlobalAlloc` contract caller.
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 { // SAFETY: Layout verified by GlobalAlloc caller.
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: Layout verified by GlobalAlloc caller.
         ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
         // SAFETY: `layout` is guaranteed valid by caller of `GlobalAlloc::alloc`, forwarded directly to `System.alloc`.
@@ -33,7 +35,8 @@ unsafe impl GlobalAlloc for CountingAllocator { // SAFETY: Thread-safe delegatio
     }
 
     // SAFETY: Pointer and layout invariants are guaranteed by the `GlobalAlloc` contract caller (`ptr` was allocated by `alloc` with matching `layout`).
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) { // SAFETY: Pointer and layout verified by GlobalAlloc caller.
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: Pointer and layout verified by GlobalAlloc caller.
         DEALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         // SAFETY: `ptr` and `layout` are guaranteed valid by caller of `GlobalAlloc::dealloc`, forwarded directly to `System.dealloc`.
         unsafe { System.dealloc(ptr, layout) }; // SAFETY: Forward ptr and layout to System allocator.

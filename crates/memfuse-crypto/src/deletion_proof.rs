@@ -119,14 +119,12 @@ impl DeletionProof {
         }
         let deleted_keys_hash: [u8; 32] = *hasher.finalize().as_bytes();
 
-        let scope_bytes = bincode::serialize(&scope)
-            .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+        let scope_bytes =
+            bincode::serialize(&scope).map_err(|e| MemFuseError::Internal(e.to_string()))?;
         let tx_bytes = deleted_after_tx.0.to_le_bytes();
 
-        let signature = compute_hmac_sha256(
-            proof_key,
-            &[&scope_bytes, &deleted_keys_hash, &tx_bytes],
-        )?;
+        let signature =
+            compute_hmac_sha256(proof_key, &[&scope_bytes, &deleted_keys_hash, &tx_bytes])?;
 
         Ok(Self {
             scope,
@@ -141,8 +139,8 @@ impl DeletionProof {
     /// Verifiziert Signatur (constant-time).
     /// NICHT-GARANTIE: Prüft nur Signatur, nicht ob Storage tatsächlich bereinigt ist.
     pub fn verify(&self, proof_key: &[u8]) -> Result<bool> {
-        let scope_bytes = bincode::serialize(&self.scope)
-            .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+        let scope_bytes =
+            bincode::serialize(&self.scope).map_err(|e| MemFuseError::Internal(e.to_string()))?;
         let tx_bytes = self.deleted_after_tx.0.to_le_bytes();
 
         let expected = compute_hmac_sha256(
@@ -157,8 +155,7 @@ impl DeletionProof {
     /// Exportiert Proof als JSON für Compliance-Dokumentation.
     /// ExcludedScope-Liste ist maschinenlesbar enthalten.
     pub fn export_for_audit(&self) -> Result<String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| MemFuseError::Internal(e.to_string()))
+        serde_json::to_string_pretty(self).map_err(|e| MemFuseError::Internal(e.to_string()))
     }
 
     /// Gibt die Tenant-ID aus dem Scope zurück.
@@ -217,15 +214,8 @@ mod tests {
         let scope = DeletionScope::Tenant {
             tenant_id: TenantId::try_new(1).unwrap(),
         };
-        let proof = DeletionProof::create(
-            scope,
-            vec![],
-            TxId(1),
-            vec![],
-            vec![],
-            &test_key(),
-        )
-        .unwrap();
+        let proof =
+            DeletionProof::create(scope, vec![], TxId(1), vec![], vec![], &test_key()).unwrap();
 
         let wrong_key = vec![1u8; 32];
         assert!(!proof.verify(&wrong_key).unwrap());
@@ -329,7 +319,8 @@ mod tests {
             doc_id: DocId(1),
             tenant_id: t1,
         };
-        let p1 = DeletionProof::create(doc_scope, vec![], TxId(1), vec![], vec![], &test_key()).unwrap();
+        let p1 =
+            DeletionProof::create(doc_scope, vec![], TxId(1), vec![], vec![], &test_key()).unwrap();
         assert_eq!(p1.tenant_id(), t1);
 
         let t2 = TenantId::try_new(20).unwrap();
@@ -337,12 +328,14 @@ mod tests {
             collection_id: CollectionId(5),
             tenant_id: t2,
         };
-        let p2 = DeletionProof::create(col_scope, vec![], TxId(1), vec![], vec![], &test_key()).unwrap();
+        let p2 =
+            DeletionProof::create(col_scope, vec![], TxId(1), vec![], vec![], &test_key()).unwrap();
         assert_eq!(p2.tenant_id(), t2);
 
         let t3 = TenantId::try_new(30).unwrap();
         let tenant_scope = DeletionScope::Tenant { tenant_id: t3 };
-        let p3 = DeletionProof::create(tenant_scope, vec![], TxId(1), vec![], vec![], &test_key()).unwrap();
+        let p3 = DeletionProof::create(tenant_scope, vec![], TxId(1), vec![], vec![], &test_key())
+            .unwrap();
         assert_eq!(p3.tenant_id(), t3);
     }
 }

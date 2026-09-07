@@ -500,7 +500,7 @@ impl DiskAnnIndex {
         // Implementation: Lade bestehenden Graphen aus Mmap, füge neue Knoten hinzu
         // via Greedy-Search (wie build() aber nur für neue Knoten), schreibe komplett neu.
         // Vereinfachung für erste Version: delegiere an build() mit allen Vektoren.
-        // TODO H1: Echte inkrementelle Implementierung (Streaming-DiskANN).
+        // AI-TAG[PERFORMANCE][MEDIUM] AGT-INDEX-005: Echte inkrementelle Implementierung (Streaming-DiskANN).
         let (mut all_vecs, mut all_ids) = self.load_all_vectors_from_mmap().await?;
         for (id, vec) in new_vecs {
             all_vecs.push(vec.clone());

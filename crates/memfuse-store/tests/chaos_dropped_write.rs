@@ -77,7 +77,8 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
                         // 2. `open`, `dup2`, and `close` are standard POSIX syscall wrappers on Linux target (`#[cfg(target_os = "linux")]`).
                         // 3. `fd_num` was parsed directly from an existing `/proc/self/fd` entry pointing to `wal_path`, ensuring it is an open file descriptor belonging to the current process.
                         // 4. Return values (`ro_fd >= 0`) are checked before `dup2` and `close` to prevent acting on invalid descriptors.
-                        unsafe { // SAFETY: Valid NUL-terminated CString path pointer and verified open file descriptor fd_num from /proc/self/fd.
+                        unsafe {
+                            // SAFETY: Valid NUL-terminated CString path pointer and verified open file descriptor fd_num from /proc/self/fd.
                             let ro_fd = open(path_c.as_ptr(), 0); // O_RDONLY = 0
                             if ro_fd >= 0 {
                                 dup2(ro_fd, fd_num);
@@ -147,7 +148,8 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
                         // 2. `open`, `dup2`, and `close` are standard POSIX syscall wrappers on Linux target (`#[cfg(target_os = "linux")]`).
                         // 3. `fd_num` was parsed directly from an existing `/proc/self/fd` entry pointing to `wal_path`, ensuring it is an open file descriptor belonging to the current process.
                         // 4. Return values (`rw_fd >= 0`) are checked before `dup2` and `close` to prevent acting on invalid descriptors.
-                        unsafe { // SAFETY: Valid NUL-terminated CString path pointer and verified open file descriptor fd_num from /proc/self/fd.
+                        unsafe {
+                            // SAFETY: Valid NUL-terminated CString path pointer and verified open file descriptor fd_num from /proc/self/fd.
                             let rw_fd = open(path_c.as_ptr(), 2 | 1024); // O_RDWR | O_APPEND
                             if rw_fd >= 0 {
                                 dup2(rw_fd, fd_num);

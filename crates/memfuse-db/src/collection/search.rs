@@ -12,6 +12,9 @@
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
+pub use crate::temporal_filter::{
+    apply_temporal_validity_filter, apply_temporal_validity_filter_at, FusionResult,
+};
 use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
@@ -657,7 +660,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             candidate_k = candidate_k.max(k.saturating_mul(3));
         }
         let rerank_k = k.saturating_mul(mult).min(max_pool);
-        candidate_k = candidate_k.max(rerank_k).min(memfuse_core::MAX_SEARCH_K).max(k);
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
 
         let total_docs = self.len().await;
 

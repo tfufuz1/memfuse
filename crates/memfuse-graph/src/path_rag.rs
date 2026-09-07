@@ -7,10 +7,10 @@
 //! INTEGRATION: PathRAG liefert ein RRF-Signal neben Vektor- und BM25-Signal.
 //! Resultat von to_rrf_signal() wird in FusionEngine als drittes Signal eingespeist.
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
 use memfuse_core::DocId;
 pub use memfuse_core::EntityId;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 /// Ein gefundener Pfad zwischen zwei Knoten.
 #[derive(Debug, Clone)]
@@ -57,11 +57,7 @@ impl<G: PathGraph> PathRAGEngine<G> {
     ///
     /// Gibt None zurück wenn kein Pfad innerhalb max_hops existiert
     /// oder Sufficiency-Gate fehlschlägt.
-    pub fn find_path(
-        &self,
-        source: EntityId,
-        target: EntityId,
-    ) -> Option<GraphPath> {
+    pub fn find_path(&self, source: EntityId, target: EntityId) -> Option<GraphPath> {
         if source == target {
             return Some(GraphPath {
                 nodes: vec![source],
@@ -99,7 +95,6 @@ impl<G: PathGraph> PathRAGEngine<G> {
             if let Some(Reverse((d_bits, u))) = heap_fwd.pop() {
                 let d = f32::from_bits(d_bits);
                 if d <= *dist_fwd.get(&u).unwrap_or(&f32::INFINITY) {
-
                     // Treffen-Check
                     if let Some(&bwd_d) = dist_bwd.get(&u) {
                         let total = d + bwd_d;
@@ -127,7 +122,6 @@ impl<G: PathGraph> PathRAGEngine<G> {
             if let Some(Reverse((d_bits, u))) = heap_bwd.pop() {
                 let d = f32::from_bits(d_bits);
                 if d <= *dist_bwd.get(&u).unwrap_or(&f32::INFINITY) {
-
                     if let Some(&fwd_d) = dist_fwd.get(&u) {
                         let total = fwd_d + d;
                         if total < best_dist {
@@ -249,13 +243,15 @@ mod tests {
             self.edges
                 .iter()
                 .flat_map(|(from, nbrs)| {
-                    nbrs.iter().filter_map(move |(to, w)| {
-                        if *to == node {
-                            Some((*from, *w))
-                        } else {
-                            None
-                        }
-                    })
+                    nbrs.iter().filter_map(
+                        move |(to, w)| {
+                            if *to == node {
+                                Some((*from, *w))
+                            } else {
+                                None
+                            }
+                        },
+                    )
                 })
                 .collect()
         }
