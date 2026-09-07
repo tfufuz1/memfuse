@@ -639,6 +639,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             true,
+            None,
         );
 
         let mut boosted = self
@@ -936,6 +937,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             query.include_provenance,
+            None,
         );
 
         let mut fused_results = self
