@@ -145,7 +145,9 @@ pub fn group_turns_into_segments(
                 {
                     seg.add_turn(*doc_id, emb.clone());
                 } else {
-                    raw_segments.push(current_segment.take().expect("current_segment exists"));
+                    if let Some(seg) = current_segment.take() {
+                        raw_segments.push(seg);
+                    }
                     current_segment = Some(WorkingSegment::new(*doc_id, emb.clone()));
                 }
             }
