@@ -1,16 +1,44 @@
-# AGENTS.md — MemFuse Operative Agent Rules
-> Version 6.0 · 2026-08-29 · Ambient context — always loaded
+# MemFuse — AI-Assistenten-Kontext
+## Verifizierter Codestand · HEAD `36ad007a` · Stand 2026-09-07
 
-## 1. Mission
+> **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
+> nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
+> Diese Datei hat Vorrang (Code-Befund > Spezifikation, §0.1 Quellenhierarchie).
 
-MemFuse is an embedded 4-signal memory engine & RAG desktop app for local AI agents.
-**Non-negotiable constraints**: Pure-Rust sovereign core (no C-deps except optional
-ONNX feature-gate in memfuse-embed), no Docker, no HTTP server as production component.
-All errors propagate via `MemFuseError` + `?` — zero silent failures.
+---
 
-## 2. Toolchain
+## Crate-Topologie (verifiziert)
 
-| Action | Command | Note |
+```
+Layer 0 — Fundament:      memfuse-core Typen, Traits, Domains, Kryptographie-Basis
+                          memfuse-crypto WAL-Crypto (HMAC-Chain ✅), anti_tamper.rs, crypto.rs
+                          [memfuse-calibration → FEHLT, muss angelegt werden (ADR-068)]
+
+Layer 1 — Storage-Primitiven: memfuse-store LSM-Storage, MemTable (16-Shard BTreeMap, KEIN SkipList)
+                          memfuse-index HNSW (CoW-Rebuild ✅), DiskANN (read-only, persist_delta fehlt)
+                          memfuse-text BM25 (IDF-Bug in bm25.rs:95-100, Fix ausstehend)
+                          memfuse-embed Embedder, Reranker (Rohsigmoid, NICHT kalibriert)
+
+Layer 2 — Graph:          memfuse-graph community.rs, csr.rs, ppr.rs, session_dag.rs
+                          PathRAGEngine: FEHLT (ADR-073)
+                          ImmunMemory (F-04): FEHLT
+
+Layer 3 — Orchestrierung: memfuse-router RouterEngine, SlmProfile (KEIN ConfigFingerprint-Feld)
+                          memfuse-db Kernoperationen
+
+Layer 4 — Integration:    memfuse-kv-bridge → FEHLT komplett
+                          memfuse-candle → FEHLT komplett
+
+Layer 5 — Peripherie:     memfuse-bench 9-Dokument-Synthetik-Korpus (statistisch bedeutungslos)
+                          memfuse-tauri Desktop App Shell ✅
+                          memfuse-py Verzeichnis existiert, NICHT in Cargo.toml members
+```
+
+---
+
+## Was TATSÄCHLICH implementiert ist (verifiziert ✅)
+
+| Komponente | Status | Datei |
 |---|---|---|
 | Compile check | `cargo check --workspace --exclude memfuse-tauri` | |
 | Test suite | `cargo test --workspace --exclude memfuse-tauri` | Before every commit |
