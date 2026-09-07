@@ -240,6 +240,10 @@ pub struct HybridQuery {
     /// Prevents retrieval cost explosion for large k queries.
     #[serde(default)]
     pub rerank_pool_max: Option<usize>,
+    /// Whether a cross-encoder reranker is attached to this query.
+    /// Controls candidate pool expansion: only expand when true.
+    #[serde(default)]
+    pub has_reranker: bool,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -371,6 +375,7 @@ impl HybridQueryBuilder {
             include_provenance: self.include_provenance,
             rerank_pool_multiplier: self.rerank_pool_multiplier,
             rerank_pool_max: self.rerank_pool_max,
+            has_reranker: false,
             k: self.k.unwrap_or(10),
         })
     }
