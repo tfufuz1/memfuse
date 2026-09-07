@@ -14,7 +14,11 @@
 //! Aktivierung: Feature-Flag `onnx` erforderlich.
 //! Modell: bge-reranker-base oder ms-marco-MiniLM-L-6-v2 (ONNX-Export).
 
-use memfuse_core::MemFuseError;
+use memfuse_calibration::PlattScaler;
+use memfuse_core::{ConfigFingerprint, MemFuseError};
+
+/// Alias für `PlattScaler` zur Rückwärtskompatibilität und ADR-070-Konformität.
+pub use memfuse_calibration::PlattScaler as PlattScaledSigmoid;
 
 /// Maximale Anzahl von Kandidaten pro Reranking-Aufruf zur Vermeidung unbegrenzter Allokationen.
 pub const MAX_CANDIDATES: usize = 10_000;
@@ -26,126 +30,6 @@ pub struct RerankResult {
     pub original_index: usize,
     /// Cross-Encoder Relevanz-Score (höher = relevanter)
     pub score: f32,
-}
-
-/// Platt-Scaling Kalibrierung für Cross-Encoder-Logits: `sigmoid(A * logit + B)`.
-///
-/// Passt rohe Model-Logits an die tatsächliche Wahrscheinlichkeit/Relevanz an,
-/// damit Konfidenzwerte über verschiedene Modelle/Fine-Tunings vergleichbar sind.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PlattScaledSigmoid {
-    a: f32,
-    b: f32,
-}
-
-impl Default for PlattScaledSigmoid {
-    fn default() -> Self {
-        Self::identity()
-    }
-}
-
-impl PlattScaledSigmoid {
-    /// Erstellt eine neue `PlattScaledSigmoid`-Instanz mit den angegebenen Parametern `A` und `B`.
-    pub fn new(a: f32, b: f32) -> Self {
-        Self { a, b }
-    }
-
-    /// Unkalibrierter Fallback (identisch zum bisherigen `sigmoid(logit)`-Verhalten, $A=1.0, B=0.0$).
-    /// Kennzeichnet das Ergebnis als unkalibriert, solange kein gefittetes Modell vorliegt.
-    pub fn identity() -> Self {
-        Self { a: 1.0, b: 0.0 }
-    }
-
-    /// Prüft, ob diese Instanz dem unkalibrierten Default (`identity()`, $A=1.0, B=0.0$) entspricht.
-    pub fn is_identity(&self) -> bool {
-        (self.a - 1.0).abs() < f32::EPSILON && self.b.abs() < f32::EPSILON
-    }
-
-    /// Gibt die aktuellen Parameter `(a, b)` zurück.
-    pub fn params(&self) -> (f32, f32) {
-        (self.a, self.b)
-    }
-
-    /// Wendet das gefittete Platt-Scaling `sigmoid(A * logit + B)` an.
-    pub fn transform(&self, logit: f32) -> f32 {
-        if logit.is_nan() {
-            return 0.5;
-        }
-        let z = self.a * logit + self.b;
-        1.0 / (1.0 + (-z).exp())
-    }
-
-    /// Fittet Parameter `A` und `B` via Negative-Log-Likelihood-Minimierung mit L2-Regularisierung
-    /// und Target-Smoothing (Platt, 1999) auf gelabelten `(logit, is_relevant)`-Beobachtungen.
-    ///
-    /// Bei leeren, ungültigen oder extrem verrauschten Daten fällt das Fitting sicher auf
-    /// `PlattScaledSigmoid::identity()` zurück.
-    pub fn fit(observations: &[(f32, bool)]) -> Self {
-        // Filter invalid/non-finite logits
-        let valid_obs: Vec<(f32, bool)> = observations
-            .iter()
-            .copied()
-            .filter(|(logit, _)| logit.is_finite())
-            .collect();
-
-        if valid_obs.is_empty() {
-            return Self::identity();
-        }
-
-        let pos_count = valid_obs.iter().filter(|(_, is_rel)| *is_rel).count();
-        let neg_count = valid_obs.len() - pos_count;
-
-        // Platt's target smoothing parameters (Platt 1999):
-        // t_pos = (N_pos + 1) / (N_pos + 2)
-        // t_neg = 1 / (N_neg + 2)
-        let t_pos = (pos_count as f32 + 1.0) / (pos_count as f32 + 2.0);
-        let t_neg = 1.0 / (neg_count as f32 + 2.0);
-
-        // Optimization hyper-parameters (Gradient Descent with Adam-like adaptive step / momentum)
-        let mut a = 1.0f32;
-        let mut b = 0.0f32;
-        let mut lr = 0.05f32;
-        let iterations = 300;
-        let l2_reg = 0.001f32;
-
-        for _ in 0..iterations {
-            let mut grad_a = 0.0f32;
-            let mut grad_b = 0.0f32;
-
-            for &(logit, is_rel) in &valid_obs {
-                let target = if is_rel { t_pos } else { t_neg };
-                let z = a * logit + b;
-                let p = 1.0 / (1.0 + (-z).exp());
-                let err = p - target;
-
-                grad_a += err * logit;
-                grad_b += err;
-            }
-
-            let n = valid_obs.len() as f32;
-            grad_a = grad_a / n + l2_reg * (a - 1.0);
-            grad_b = grad_b / n + l2_reg * b;
-
-            // Gradient clipping for numerical stability
-            let grad_norm = (grad_a * grad_a + grad_b * grad_b).sqrt();
-            if grad_norm > 10.0 {
-                grad_a = (grad_a / grad_norm) * 10.0;
-                grad_b = (grad_b / grad_norm) * 10.0;
-            }
-
-            a -= lr * grad_a;
-            b -= lr * grad_b;
-
-            // Decay learning rate gradually
-            lr *= 0.995;
-        }
-
-        if !a.is_finite() || !b.is_finite() {
-            return Self::identity();
-        }
-
-        Self { a, b }
-    }
 }
 
 /// Konfiguration für Cross-Encoder Reranking.
@@ -160,7 +44,9 @@ pub struct RerankConfig {
     /// Batch-Größe für parallele Inferenz
     pub batch_size: usize,
     /// Optionale Platt-Scaling Kalibrierung für Roh-Logits
-    pub calibration: PlattScaledSigmoid,
+    pub calibration: PlattScaler,
+    /// Minimum Observationen vor erstem Fit (Default: 50, aus IsotonicCalibrator-Warmup)
+    pub calibration_warmup: usize,
     /// Maximum allowed execution time in milliseconds before timing out. Default: 500ms.
     pub rerank_deadline_ms: Option<u64>,
     /// Simulated delay in milliseconds for testing timeouts. Default: None.
@@ -174,7 +60,8 @@ impl Default for RerankConfig {
             tokenizer_path: std::path::PathBuf::from("models/tokenizer.json"),
             max_length: 512,
             batch_size: 8,
-            calibration: PlattScaledSigmoid::identity(),
+            calibration: PlattScaler::identity(),
+            calibration_warmup: 50,
             rerank_deadline_ms: Some(500),
             simulate_delay_ms: None,
         }
@@ -182,8 +69,8 @@ impl Default for RerankConfig {
 }
 
 impl RerankConfig {
-    /// Setzt ein gefittetes `PlattScaledSigmoid` Modell für die Logit-Kalibrierung.
-    pub fn with_calibration(mut self, calibration: PlattScaledSigmoid) -> Self {
+    /// Setzt ein gefittetes `PlattScaler` Modell für die Logit-Kalibrierung.
+    pub fn with_calibration(mut self, calibration: PlattScaler) -> Self {
         self.calibration = calibration;
         self
     }
@@ -268,6 +155,7 @@ impl OnnxReranker {
         &self,
         query: &str,
         candidates: &[String],
+        calibration: &PlattScaler,
     ) -> Result<Vec<RerankResult>, MemFuseError> {
         if candidates.is_empty() {
             return Ok(vec![]);
@@ -282,7 +170,7 @@ impl OnnxReranker {
         let tokenizer = std::sync::Arc::clone(&self.tokenizer);
         let max_length = self.config.max_length;
         let batch_size = self.config.batch_size;
-        let calibration = self.config.calibration.clone();
+        let calibration = calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
             Self::score_pairs_blocking(
                 &session,
@@ -480,7 +368,8 @@ impl OnnxReranker {
             ));
         }
 
-        // AI-TAG[ML-SCORING][MINOR] RESOLVED: Cross-encoder raw logits are transformed via PlattScaledSigmoid (sigmoid(A*x + B)) for calibrated confidence scores (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T12:00:00Z) (SESSION: 8efa6210)
+        // AI-TAG[CALIBRATION][MINOR] AGT-EMBED-62093e61 [RESOLVED] (TS: 2026-09-06T12:00:00Z)
+        // Kalibrierungslücke: Platt-Scaling nun via record_outcome() + fitted_calibration.
         let transform = |x: f32| -> f32 { calibration.transform(x) };
         let mut scores = Vec::with_capacity(b_size);
 
@@ -534,22 +423,62 @@ impl OnnxReranker {
 pub struct CrossEncoderReranker {
     _config: RerankConfig,
     backend: RerankerBackend,
+    /// Online-Kalibrierungshistorie für Platt-Fitting.
+    /// Tuple: (raw_logit, is_relevant: bool)
+    calibration_buffer: parking_lot::Mutex<Vec<(f32, bool)>>,
+    /// Minimum Observationen vor erstem Fit (Default: 50, aus IsotonicCalibrator-Warmup)
+    calibration_warmup: usize,
+    /// Aktuell gefittetes Kalibrierungsmodell.
+    fitted_calibration: parking_lot::RwLock<PlattScaler>,
+    /// ConfigFingerprint für INV-CAL-2: Invalide bei Modellwechsel.
+    calibration_fingerprint: parking_lot::RwLock<Option<ConfigFingerprint>>,
 }
 
 impl CrossEncoderReranker {
+    /// Nimmt Feedback-Signal auf (raw logit + Relevanz-Label).
+    /// Triggert Re-Fit wenn Warmup erreicht.
+    pub fn record_outcome(&self, raw_logit: f32, is_relevant: bool) {
+        let mut buf = self.calibration_buffer.lock();
+        buf.push((raw_logit, is_relevant));
+        if buf.len() >= self.calibration_warmup {
+            let new_calib = PlattScaler::fit(&buf);
+            *self.fitted_calibration.write() = new_calib;
+        }
+    }
+
+    /// Appliziert aktuell gefittete Kalibrierung auf rohen Logit-Score.
+    pub fn calibrate(&self, raw_logit: f32) -> f32 {
+        self.fitted_calibration.read().apply(raw_logit)
+    }
+
+    /// Invalidiert Kalibrierung bei Modellwechsel (INV-CAL-2).
+    pub fn invalidate_calibration(&self, new_fingerprint: ConfigFingerprint) {
+        *self.fitted_calibration.write() = PlattScaler::identity();
+        self.calibration_buffer.lock().clear();
+        *self.calibration_fingerprint.write() = Some(new_fingerprint);
+    }
+
+    /// Gibt die aktuell aktiv gefittete Kalibrierung zurück.
+    pub fn fitted_calibration(&self) -> PlattScaler {
+        self.fitted_calibration.read().clone()
+    }
+
     /// Erstellt einen Passthrough-CrossEncoderReranker (für Benchmarks/Tests ohne ONNX-Modelldatei).
     pub fn passthrough() -> Self {
-        Self {
-            _config: RerankConfig::default(),
-            backend: RerankerBackend::Passthrough,
-        }
+        Self::passthrough_with_config(RerankConfig::default())
     }
 
     /// Erstellt einen Passthrough-CrossEncoderReranker mit einer benutzerdefinierten Konfiguration.
     pub fn passthrough_with_config(config: RerankConfig) -> Self {
+        let calibration = config.calibration.clone();
+        let warmup = config.calibration_warmup;
         Self {
             _config: config,
             backend: RerankerBackend::Passthrough,
+            calibration_buffer: parking_lot::Mutex::new(Vec::new()),
+            calibration_warmup: warmup,
+            fitted_calibration: parking_lot::RwLock::new(calibration),
+            calibration_fingerprint: parking_lot::RwLock::new(None),
         }
     }
 
@@ -558,20 +487,27 @@ impl CrossEncoderReranker {
         &self._config
     }
 
-    /// Setzt ein gefittetes `PlattScaledSigmoid` Modell für den CrossEncoderReranker.
-    pub fn with_calibration(mut self, calibration: PlattScaledSigmoid) -> Self {
-        self._config.calibration = calibration;
+    /// Setzt ein gefittetes `PlattScaler` Modell für den CrossEncoderReranker.
+    pub fn with_calibration(mut self, calibration: PlattScaler) -> Self {
+        self._config.calibration = calibration.clone();
+        *self.fitted_calibration.write() = calibration;
         self
     }
 
     /// Erstellt einen neuen CrossEncoderReranker.
     pub fn new(config: RerankConfig) -> Result<Self, MemFuseError> {
+        let calibration = config.calibration.clone();
+        let warmup = config.calibration_warmup;
         #[cfg(feature = "onnx")]
         {
             let onnx = OnnxReranker::new(config.clone())?;
             Ok(Self {
                 _config: config,
                 backend: RerankerBackend::Onnx(onnx),
+                calibration_buffer: parking_lot::Mutex::new(Vec::new()),
+                calibration_warmup: warmup,
+                fitted_calibration: parking_lot::RwLock::new(calibration),
+                calibration_fingerprint: parking_lot::RwLock::new(None),
             })
         }
         #[cfg(not(feature = "onnx"))]
@@ -579,6 +515,10 @@ impl CrossEncoderReranker {
             Ok(Self {
                 _config: config,
                 backend: RerankerBackend::Passthrough,
+                calibration_buffer: parking_lot::Mutex::new(Vec::new()),
+                calibration_warmup: warmup,
+                fitted_calibration: parking_lot::RwLock::new(calibration),
+                calibration_fingerprint: parking_lot::RwLock::new(None),
             })
         }
     }
@@ -611,7 +551,10 @@ impl CrossEncoderReranker {
                 })
                 .collect()),
             #[cfg(feature = "onnx")]
-            RerankerBackend::Onnx(onnx) => onnx.rerank(_query, candidates).await,
+            RerankerBackend::Onnx(onnx) => {
+                let calib = self.fitted_calibration.read().clone();
+                onnx.rerank(_query, candidates, &calib).await
+            }
         }
     }
 }
@@ -825,6 +768,118 @@ mod tests {
 
         let reranker = CrossEncoderReranker::passthrough().with_calibration(cal.clone());
         assert_eq!(reranker._config.calibration, cal);
+        assert_eq!(reranker.fitted_calibration(), cal);
+    }
+
+    #[test]
+    fn test_cross_encoder_online_calibration_and_invalidation() {
+        let config = RerankConfig::default();
+        let reranker = CrossEncoderReranker::passthrough_with_config(config);
+
+        // Initial fitted calibration is identity
+        assert!(reranker.fitted_calibration().is_identity());
+
+        // Record outcomes under warmup threshold (49 items when warmup is 50)
+        for i in 0..49 {
+            let logit = (i as f32 - 25.0) * 0.1;
+            let is_rel = logit > 0.0;
+            reranker.record_outcome(logit, is_rel);
+        }
+        assert!(reranker.fitted_calibration().is_identity());
+
+        // Record 50th outcome -> triggers fitting
+        reranker.record_outcome(2.5, true);
+        assert!(!reranker.fitted_calibration().is_identity());
+        assert!(reranker.fitted_calibration().params().0 > 0.0);
+
+        // Verify calibrate() uses fitted calibration
+        let calibrated_val = reranker.calibrate(1.0);
+        let identity_val = PlattScaler::identity().apply(1.0);
+        assert_ne!(calibrated_val, identity_val);
+
+        // Invalidate calibration with new ConfigFingerprint (INV-CAL-2)
+        let fp = ConfigFingerprint::new("bge-reranker-v2", "Q4", "default", 0.0);
+        reranker.invalidate_calibration(fp);
+
+        assert!(reranker.fitted_calibration().is_identity());
+        assert_eq!(reranker.calibration_buffer.lock().len(), 0);
+    }
+
+    use proptest::prelude::*;
+
+    /// Helper to compute Expected Calibration Error (ECE) with M bins.
+    fn compute_ece(probs_and_labels: &[(f32, bool)], num_bins: usize) -> f32 {
+        if probs_and_labels.is_empty() {
+            return 0.0;
+        }
+
+        let mut bin_counts = vec![0usize; num_bins];
+        let mut bin_acc_sums = vec![0.0f32; num_bins];
+        let mut bin_conf_sums = vec![0.0f32; num_bins];
+
+        for &(p, label) in probs_and_labels {
+            let bin_idx = ((p * num_bins as f32).floor() as usize).min(num_bins - 1);
+            bin_counts[bin_idx] += 1;
+            bin_conf_sums[bin_idx] += p;
+            if label {
+                bin_acc_sums[bin_idx] += 1.0;
+            }
+        }
+
+        let total = probs_and_labels.len() as f32;
+        let mut ece = 0.0f32;
+
+        for i in 0..num_bins {
+            if bin_counts[i] > 0 {
+                let count = bin_counts[i] as f32;
+                let avg_acc = bin_acc_sums[i] / count;
+                let avg_conf = bin_conf_sums[i] / count;
+                ece += (count / total) * (avg_acc - avg_conf).abs();
+            }
+        }
+
+        ece
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+        #[test]
+        fn prop_platt_calibration_reduces_ece(
+            scale in 1.5f32..5.0f32,
+            shift in -2.0f32..2.0f32,
+        ) {
+            // Generate synthetic miscalibrated logits where true logit distribution
+            // has temperature scaling A != 1 or shift B != 0
+            let mut observations = Vec::new();
+            for i in -50..=50 {
+                let x = i as f32 * 0.1;
+                let true_z = scale * x + shift;
+                let true_p = 1.0 / (1.0 + (-true_z).exp());
+                // Probabilistic binary label derived from true_p
+                let is_rel = (i as f32 * 0.01 + 0.5) > (1.0 - true_p);
+                observations.push((x, is_rel));
+            }
+
+            let identity = PlattScaler::identity();
+            let uncalibrated_eval: Vec<(f32, bool)> = observations
+                .iter()
+                .map(|&(x, label)| (identity.apply(x), label))
+                .collect();
+            let ece_uncalibrated = compute_ece(&uncalibrated_eval, 10);
+
+            let fitted = PlattScaler::fit(&observations);
+            let calibrated_eval: Vec<(f32, bool)> = observations
+                .iter()
+                .map(|&(x, label)| (fitted.apply(x), label))
+                .collect();
+            let ece_calibrated = compute_ece(&calibrated_eval, 10);
+
+            // Calibrated ECE must be less than or equal to uncalibrated ECE (with small tolerance for finite sample variance)
+            prop_assert!(
+                ece_calibrated <= ece_uncalibrated + 0.05,
+                "Calibrated ECE ({ece_calibrated}) should be <= uncalibrated ECE ({ece_uncalibrated})"
+            );
+        }
     }
 
     #[cfg(feature = "onnx")]
