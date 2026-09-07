@@ -1,16 +1,44 @@
-# AGENTS.md — MemFuse Operative Agent Rules
-> Version 6.0 · 2026-08-29 · Ambient context — always loaded
+# MemFuse — AI-Assistenten-Kontext
+## Verifizierter Codestand · HEAD `36ad007a` · Stand 2026-09-07
 
-## 1. Mission
+> **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
+> nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
+> Diese Datei hat Vorrang (Code-Befund > Spezifikation, §0.1 Quellenhierarchie).
 
-MemFuse is an embedded 4-signal memory engine & RAG desktop app for local AI agents.
-**Non-negotiable constraints**: Pure-Rust sovereign core (no C-deps except optional
-ONNX feature-gate in memfuse-embed), no Docker, no HTTP server as production component.
-All errors propagate via `MemFuseError` + `?` — zero silent failures.
+---
 
-## 2. Toolchain
+## Crate-Topologie (verifiziert)
 
-| Action | Command | Note |
+```
+Layer 0 — Fundament:      memfuse-core Typen, Traits, Domains, Kryptographie-Basis
+                          memfuse-crypto WAL-Crypto (HMAC-Chain ✅), anti_tamper.rs, crypto.rs
+                          [memfuse-calibration → FEHLT, muss angelegt werden (ADR-068)]
+
+Layer 1 — Storage-Primitiven: memfuse-store LSM-Storage, MemTable (16-Shard BTreeMap, KEIN SkipList)
+                          memfuse-index HNSW (CoW-Rebuild ✅), DiskANN (read-only, persist_delta fehlt)
+                          memfuse-text BM25 (IDF-Bug in bm25.rs:95-100, Fix ausstehend)
+                          memfuse-embed Embedder, Reranker (Rohsigmoid, NICHT kalibriert)
+
+Layer 2 — Graph:          memfuse-graph community.rs, csr.rs, ppr.rs, session_dag.rs
+                          PathRAGEngine: FEHLT (ADR-073)
+                          ImmunMemory (F-04): FEHLT
+
+Layer 3 — Orchestrierung: memfuse-router RouterEngine, SlmProfile (KEIN ConfigFingerprint-Feld)
+                          memfuse-db Kernoperationen
+
+Layer 4 — Integration:    memfuse-kv-bridge → FEHLT komplett
+                          memfuse-candle → FEHLT komplett
+
+Layer 5 — Peripherie:     memfuse-bench 9-Dokument-Synthetik-Korpus (statistisch bedeutungslos)
+                          memfuse-tauri Desktop App Shell ✅
+                          memfuse-py Verzeichnis existiert, NICHT in Cargo.toml members
+```
+
+---
+
+## Was TATSÄCHLICH implementiert ist (verifiziert ✅)
+
+| Komponente | Status | Datei |
 |---|---|---|
 | Compile check | `cargo check --workspace --exclude memfuse-tauri` | |
 | Test suite | `cargo test --workspace --exclude memfuse-tauri` | Before every commit |
@@ -45,7 +73,7 @@ Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie
 - **Sync-Docs Nix-Fallback**: `just sync-docs` verwendet `nix develop -c` — bei fehlendem Nix direkt `cargo xtask sync-docs` aufrufen. Beide Pfade sind in der justfile mit `||`-Fallback abgesichert.
 - **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
 - **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
-- **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `grep -oP '(?<=^## ADR-)\d+' DECISIONS.md | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
+- **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `ls docs/decisions/ | grep -oP '(?<=ADR-)\d+' | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
 
 ## 5. Judgment Boundaries
 
@@ -96,7 +124,7 @@ Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
 | `CONSTITUTION.md` | Writing ADR, API design, security changes, exit criteria |
 | `docs/SOURCE_OF_TRUTH.md` | Checking crate status, inventory, architecture topology |
 | `docs/ARCHITECTURE.md` | Understanding layer boundaries, invariant status |
-| `DECISIONS.md` | Before any architectural change |
+| `docs/decisions/` | Before any architectural change |
 | `docs/TYPE_REGISTRY.md` | Register central domain types & traits before creating new ones |
 | `.jules/AUDIT_INTAKE_PROTOCOL.md` | Verifying incoming external audit findings before implementation |
 | `.jules/SESSION_BOOTSTRAP.md` | Maschinenausführbare Session-Checkliste | Immer zu Beginn |

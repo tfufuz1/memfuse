@@ -284,6 +284,7 @@ impl OnnxReranker {
         let batch_size = self.config.batch_size;
         let calibration = self.config.calibration.clone();
 
+        let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
             Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size, &calibration)
         })
