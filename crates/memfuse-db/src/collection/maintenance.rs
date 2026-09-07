@@ -60,8 +60,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     {
                         (imp.base_score.value(), imp.created_at_tx.inner())
                     } else if let Some(raw_f64) = imp_val.as_f64() {
-                        let created =
-                            obj.get("created_at_tx").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let created = obj
+                            .get("created_at_tx")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         (raw_f64 as f32, created)
                     } else {
                         continue;

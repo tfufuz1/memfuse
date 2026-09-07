@@ -692,6 +692,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         if !query.include_superseded {
             candidate_k = candidate_k.max(k.saturating_mul(3));
         }
+        // PROPOSED INTEGRATION POINT (Feature F-08 & P11 Deadline):
+        // To enable P95 latency feedback-driven candidate pool regulation and hard deadlines,
+        // callers can optionally replace static `mult` / `max_pool` parameters with dynamic PID regulation:
+        // ```rust
+        // if let Some(ref mut pid_controller) = query.pid_controller {
+        //     let dynamic_k_pool = crate::homeostat::pid_regulated_candidate_pool(pid_controller, observed_p95_latency_ms);
+        //     candidate_k = candidate_k.max(dynamic_k_pool).min(memfuse_core::MAX_SEARCH_K).max(k);
+        // }
+        // if let Some(ref deadline) = query.deadline {
+        //     if deadline.deadline_exceeded(started_at) {
+        //         tracing::warn!("Rerank search deadline exceeded; aborting candidates phase early");
+        //     }
+        // }
+        // ```
+        let rerank_k = k.saturating_mul(mult).min(max_pool);
         candidate_k = candidate_k
             .max(rerank_k)
             .min(memfuse_core::MAX_SEARCH_K)
@@ -812,7 +827,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .strip_prefix("EntityId(")
                     .and_then(|s| s.strip_suffix(')'))
                 {
-                    inner_str.parse::<u64>().ok().map(memfuse_core::EntityId::new)
+                    inner_str
+                        .parse::<u64>()
+                        .ok()
+                        .map(memfuse_core::EntityId::new)
                 } else {
                     memfuse_core::EntityId::from_key(start_node).ok()
                 };
