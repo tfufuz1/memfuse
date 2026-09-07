@@ -20,7 +20,7 @@ use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
@@ -172,6 +172,7 @@ impl DiskAnnFooter {
         buf
     }
 
+    #[allow(dead_code)]
     fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
             return Err(MemFuseError::Storage("DiskANN footer too small".into()));
@@ -284,6 +285,8 @@ struct DiskAnnIndexInner {
     pending_inserts: RwLock<Vec<(DocId, Vec<f32>)>>,
     /// Monotoner Zähler (AtomicU64 für Threshold-Check ohne Lock).
     pending_count: AtomicU64,
+    /// Flag um überlappende persist_delta-Hintergrundläufe zu verhindern.
+    flushing_in_progress: AtomicBool,
     hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
 }
 
@@ -318,9 +321,30 @@ impl DiskAnnIndex {
                 drift_warn_count: AtomicU64::new(0),
                 pending_inserts: RwLock::new(Vec::new()),
                 pending_count: AtomicU64::new(0),
+                flushing_in_progress: AtomicBool::new(false),
                 hnsw_fallback: RwLock::new(None),
             }),
         })
+    }
+
+    /// Stößt `persist_delta()` asynchron im Tokio-Hintergrund-Task an,
+    /// falls nicht bereits ein persist_delta-Lauf aktiv ist.
+    pub fn trigger_background_persist_delta(&self) {
+        if !self.inner.flushing_in_progress.swap(true, Ordering::AcqRel) {
+            let index_clone = self.clone();
+            tokio::spawn(async move {
+                struct FlushGuard(Arc<DiskAnnIndexInner>);
+                impl Drop for FlushGuard {
+                    fn drop(&mut self) {
+                        self.0.flushing_in_progress.store(false, Ordering::Release);
+                    }
+                }
+                let _guard = FlushGuard(Arc::clone(&index_clone.inner));
+                if let Err(e) = index_clone.persist_delta().await {
+                    tracing::error!(error = %e, "DiskANN Hintergrund-persist_delta fehlgeschlagen");
+                }
+            });
+        }
     }
 
     fn check_quantizer_drift(&self, vector: &[f32]) {
@@ -512,6 +536,7 @@ impl DiskAnnIndex {
                 break;
             }
             let mut vec = Vec::with_capacity(dim);
+            #[allow(clippy::chunks_exact_to_as_chunks)]
             for chunk in vec_bytes.chunks_exact(4) {
                 if let Ok(b) = chunk.try_into() {
                     vec.push(f32::from_le_bytes(b));
@@ -828,6 +853,7 @@ impl DiskAnnIndex {
         let mut graph: Vec<Vec<u32>> = vec![vec![]; total_nodes];
 
         // Phase 1: Adjazenzlisten bestehender Knoten aus Mmap laden
+        #[allow(clippy::needless_range_loop)]
         for i in 0..existing_count {
             let node = self.load_node(i as u32)?;
             graph[i] = node.neighbors;
@@ -1284,13 +1310,24 @@ impl DiskAnnIndex {
                     .node_size_bytes
                     .store(node_size_bytes as u64, Ordering::SeqCst);
 
+                let file_len = mmap.len();
+                let sector_size = header.sector_size as usize;
+                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
+                let expected_min_size = start_offset.saturating_add(
+                    (header.node_count as usize).saturating_mul(node_size_bytes),
+                );
+                if file_len < expected_min_size {
+                    return Err(MemFuseError::Storage(format!(
+                        "DiskANN file truncated or corrupt node_count: file len {}, expected at least {}",
+                        file_len, expected_min_size
+                    )));
+                }
+
                 *inner.header.write() = Some(header);
                 *inner.mmap.write() = Some(mmap);
                 inner.cache.write().clear();
 
                 let mut ids = Vec::with_capacity(header.node_count as usize);
-                let sector_size = header.sector_size as usize;
-                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
                 let read_size = node_size_bytes;
                 if !read_size.is_multiple_of(sector_size) {
                     return Err(MemFuseError::Index(
@@ -1690,7 +1727,7 @@ impl VectorIndex for DiskAnnIndex {
         };
 
         if count >= PENDING_FLUSH_THRESHOLD {
-            self.persist_delta().await?;
+            self.trigger_background_persist_delta();
         }
         Ok(())
     }
