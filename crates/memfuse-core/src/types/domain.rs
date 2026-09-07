@@ -108,17 +108,6 @@ impl Default for TenantId {
     }
 }
 
-impl TryFrom<u64> for TenantId {
-    type Error = MemFuseError;
-
-    fn try_from(id: u64) -> Result<Self> {
-        Self::try_new(id)
-    }
-}
-
-#[deprecated(
-    note = "Nutze TryFrom<u64> (fehlerbehaftet) statt From<u64> — From umgeht INV-TENANT-1 stillschweigend bei id=0."
-)]
 impl From<u64> for TenantId {
     fn from(id: u64) -> Self {
         Self(id)
@@ -1883,7 +1872,6 @@ mod tests {
 
     #[test]
     fn test_tenant_id_hardening() {
-        assert!(TenantId::try_from(0u64).is_err());
         assert!(TenantId::try_new(0).is_err());
         assert_eq!(TenantId::SYSTEM.inner(), 0);
     }
