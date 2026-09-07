@@ -568,6 +568,32 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
                 }
+                memfuse_core::GraphTraversalStrategy::PathRag {
+                    max_hops,
+                    sufficiency_threshold,
+                } => {
+                    use memfuse_graph::path_rag::PathRAGEngine;
+                    let engine = PathRAGEngine::new(
+                        self.graph_index.as_ref(),
+                        *max_hops,
+                        *sufficiency_threshold,
+                    );
+                    let mut all_results: std::collections::HashMap<EntityId, f32> =
+                        std::collections::HashMap::new();
+                    for anchor in anchors.iter() {
+                        let paths = engine.find_all_paths(*anchor);
+                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                            let eid = EntityId::new(doc_id.0);
+                            let entry = all_results.entry(eid).or_insert(0.0);
+                            if score > *entry {
+                                *entry = score;
+                            }
+                        }
+                    }
+                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    res
+                }
             };
             let doc_tuples = tuples
                 .into_iter()
@@ -776,7 +802,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let implicit_anchors: Vec<memfuse_core::EntityId>;
         let anchors_ref: Option<&[memfuse_core::EntityId]> =
             if let Some(ref start_node) = query.graph_start_node {
-                if let Ok(eid) = memfuse_core::EntityId::from_key(start_node) {
+                let parsed_eid = if let Ok(u) = start_node.parse::<u64>() {
+                    Some(memfuse_core::EntityId::new(u))
+                } else if let Some(inner_str) = start_node
+                    .strip_prefix("EntityId(")
+                    .and_then(|s| s.strip_suffix(')'))
+                {
+                    inner_str.parse::<u64>().ok().map(memfuse_core::EntityId::new)
+                } else {
+                    memfuse_core::EntityId::from_key(start_node).ok()
+                };
+                if let Some(eid) = parsed_eid {
                     implicit_anchors = vec![eid];
                     Some(&implicit_anchors)
                 } else {
@@ -802,6 +838,32 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     self.graph_index
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
+                }
+                memfuse_core::GraphTraversalStrategy::PathRag {
+                    max_hops,
+                    sufficiency_threshold,
+                } => {
+                    use memfuse_graph::path_rag::PathRAGEngine;
+                    let engine = PathRAGEngine::new(
+                        self.graph_index.as_ref(),
+                        *max_hops,
+                        *sufficiency_threshold,
+                    );
+                    let mut all_results: std::collections::HashMap<EntityId, f32> =
+                        std::collections::HashMap::new();
+                    for anchor in anchors.iter() {
+                        let paths = engine.find_all_paths(*anchor);
+                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                            let eid = EntityId::new(doc_id.0);
+                            let entry = all_results.entry(eid).or_insert(0.0);
+                            if score > *entry {
+                                *entry = score;
+                            }
+                        }
+                    }
+                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    res
                 }
             };
             let doc_tuples = tuples

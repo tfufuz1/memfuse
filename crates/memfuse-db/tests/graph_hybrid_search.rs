@@ -216,3 +216,103 @@ async fn test_hybrid_search_with_ppr_strategy() {
         "doc_c should be retrieved via PPR multi-hop graph signal"
     );
 }
+
+#[tokio::test]
+async fn test_hybrid_search_with_pathrag_strategy() {
+    use memfuse_core::GraphTraversalStrategy;
+    use memfuse_db::SearchStrategy;
+
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: 4,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+
+    let db = MemFuse::open_with_config(tmp.path(), config)
+        .await
+        .expect("open db");
+    let col = db.collection("pathrag-hybrid-test").await.expect("col");
+
+    // Insert chain of documents: doc_a -> doc_b -> doc_c
+    col.insert(
+        "doc_a",
+        &[1.0, 0.0, 0.0, 0.0],
+        Some(json!({"text": "document A"})),
+    )
+    .await
+    .expect("insert doc_a");
+    col.insert(
+        "doc_b",
+        &[0.0, 0.0, 0.0, 1.0],
+        Some(json!({"text": "unrelated content B"})),
+    )
+    .await
+    .expect("insert doc_b");
+    col.insert(
+        "doc_c",
+        &[0.0, 0.0, 1.0, 0.0],
+        Some(json!({"text": "unrelated content C"})),
+    )
+    .await
+    .expect("insert doc_c");
+
+    col.relate("doc_a", "doc_b", "rel")
+        .await
+        .expect("relate a->b");
+    col.relate("doc_b", "doc_c", "rel")
+        .await
+        .expect("relate b->c");
+
+    let anchor_eid = EntityId::from_key("doc_a").expect("anchor doc_a");
+
+    let pathrag_strategy = GraphTraversalStrategy::PathRag {
+        max_hops: 3,
+        sufficiency_threshold: 0.1,
+    };
+
+    let results = col
+        .hybrid_search_with_strategy(
+            "nonmatchingtext",
+            &[0.0, 1.0, 0.0, 0.0],
+            10,
+            Some(&[anchor_eid]),
+            None,
+            Some(&pathrag_strategy),
+            None,
+        )
+        .await
+        .expect("hybrid_search_with_strategy PathRag");
+
+    assert!(
+        results.iter().any(|r| r.id == "doc_b"),
+        "doc_b should be retrieved via PathRAG graph signal"
+    );
+    assert!(
+        results.iter().any(|r| r.id == "doc_c"),
+        "doc_c should be retrieved via PathRAG transitive multi-hop graph signal"
+    );
+
+    // Test query builder API with SearchStrategy::PathRag
+    let builder_results = col
+        .query()
+        .anchors(vec![anchor_eid])
+        .strategy(SearchStrategy::PathRag {
+            max_hops: 3,
+            sufficiency_threshold: 0.1,
+        })
+        .fusion_weights(memfuse_core::FusionWeights::new(0.33, 0.33, 0.34).expect("weights"))
+        .k(10)
+        .execute()
+        .await
+        .expect("query builder PathRag");
+
+    assert!(
+        builder_results.iter().any(|r| r.id == "doc_b"),
+        "doc_b should be retrieved via QueryBuilder PathRag"
+    );
+    assert!(
+        builder_results.iter().any(|r| r.id == "doc_c"),
+        "doc_c should be retrieved via QueryBuilder PathRag multi-hop"
+    );
+}

@@ -23,6 +23,13 @@ pub enum GraphTraversalStrategy {
     },
     /// Personalized PageRank power iteration starting from seed nodes.
     PersonalizedPageRank(PprConfig),
+    /// PathRAG bidirectional Dijkstra traversal with sufficiency filtering.
+    PathRag {
+        /// Maximum traversal hop depth.
+        max_hops: usize,
+        /// Sufficiency threshold for filtering low-confidence paths (default 0.1).
+        sufficiency_threshold: f64,
+    },
 }
 
 impl Default for GraphTraversalStrategy {
