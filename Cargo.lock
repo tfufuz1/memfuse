@@ -2695,6 +2695,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "memfuse-calibration"
+version = "0.1.0"
+dependencies = [
+ "memfuse-core",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "memfuse-checkpoint"
 version = "0.1.0"
 dependencies = [
@@ -2720,11 +2731,11 @@ dependencies = [
  "bincode",
  "blake3",
  "flatbuffers",
- "memfuse-crypto",
  "parking_lot",
  "proptest",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -2734,12 +2745,17 @@ name = "memfuse-crypto"
 version = "0.1.0"
 dependencies = [
  "aes-gcm-siv",
+ "bincode",
+ "blake3",
  "criterion",
  "hkdf",
  "hmac",
+ "memfuse-core",
  "memfuse-crypto",
  "proptest",
  "rand 0.8.8",
+ "serde",
+ "serde_json",
  "sha2",
  "subtle",
  "thiserror 2.0.20",
@@ -2774,6 +2790,7 @@ dependencies = [
 name = "memfuse-embed"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "memfuse-core",
  "ndarray 0.15.6",
  "ort",

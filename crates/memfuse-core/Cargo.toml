@@ -10,8 +10,6 @@ description = "Core types, traits, and error handling for MemFuse"
 test-utils = []
 
 [dependencies]
-# Standalone crypto error mapping
-memfuse-crypto = { workspace = true }
 # Standard error derive macro for MemFuseError.
 thiserror = { workspace = true }
 # Bincode serialization error support.
@@ -27,6 +25,8 @@ ahash = { workspace = true }
 # Async trait object support (desugars async trait methods for dyn-compatibility).
 # Cryptographic hashing for deterministic key derivation (DocId/EntityId).
 blake3 = { workspace = true }
+# Cryptographic hash function SHA-256 for ConfigFingerprint.
+sha2 = "0.10"
 # Zero-copy IPC serialization support.
 flatbuffers = { workspace = true }
 

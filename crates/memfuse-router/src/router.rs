@@ -114,7 +114,7 @@ impl RouterEngine {
                 let mut state = cal
                     .remove(&p.name)
                     .unwrap_or_else(|| ProfileCalibrationState::new(p.min_relevance_score));
-                state.check_and_invalidate_fingerprint(&p.config_fingerprint);
+                state.check_and_invalidate_fingerprint(p.fingerprint.as_ref());
                 (p.name.clone(), state)
             })
             .collect();
@@ -171,23 +171,21 @@ impl RouterEngine {
             .read()
             .iter()
             .find(|p| p.name == profile_name)
-            .map(|p| p.config_fingerprint.clone());
+            .and_then(|p| p.fingerprint.clone());
 
         let non_conformity = outcome.non_conformity_score();
 
         let mut cal = self.calibration.write();
         if let Some(state) = cal.get_mut(&profile_name) {
-            if let Some(fp) = active_fp {
-                state.check_and_invalidate_fingerprint(&fp);
-                if fp.quantization != QuantizationLevel::Unknown {
-                    state.recalibrate_conformal(non_conformity);
-                    tracing::debug!(
-                        profile = %profile_name,
-                        ?outcome,
-                        non_conformity,
-                        "Router outcome recorded"
-                    );
-                }
+            state.check_and_invalidate_fingerprint(active_fp.as_ref());
+            if active_fp.is_some() {
+                state.recalibrate_conformal(non_conformity);
+                tracing::debug!(
+                    profile = %profile_name,
+                    ?outcome,
+                    non_conformity,
+                    "Router outcome recorded"
+                );
             }
         }
         true
@@ -272,8 +270,8 @@ impl RouterEngine {
                 .map(|p| {
                     let mut ep = p.clone();
                     if let Some(state) = cal.get_mut(&p.name) {
-                        state.check_and_invalidate_fingerprint(&p.config_fingerprint);
-                        if state.is_calibrated(&p.config_fingerprint) {
+                        state.check_and_invalidate_fingerprint(p.fingerprint.as_ref());
+                        if state.is_calibrated(p.fingerprint.as_ref()) {
                             ep.min_relevance_score = state.calibrated_min_score;
                         }
                     }
@@ -440,8 +438,8 @@ impl RouterEngine {
 
             let (threshold, is_calibrated) = match state {
                 Some(st) => {
-                    st.check_and_invalidate_fingerprint(&profile.config_fingerprint);
-                    if st.is_calibrated(&profile.config_fingerprint) {
+                    st.check_and_invalidate_fingerprint(profile.fingerprint.as_ref());
+                    if st.is_calibrated(profile.fingerprint.as_ref()) {
                         (st.calibrated_min_score, true)
                     } else {
                         (profile.min_relevance_score, false)

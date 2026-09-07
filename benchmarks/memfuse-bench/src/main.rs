@@ -72,11 +72,11 @@ fn pad_vector(v: &[f32], target_dim: usize) -> Vec<f32> {
     padded
 }
 
-// BENCHMARK-KORPUS: 50 Dokumente über 5 Themengruppen.
-// Mindestanforderung: statistische Signifikanz erfordert > 30 Dokumente.
-// Ziel: Recall@5 mit p<0.05 unterscheidbar von Zufallsauswahl.
-// Upgrade zu LongMemEval-S: Roadmap H2.
-fn build_evaluation_corpus() -> Vec<SyntheticDocument> {
+fn create_synthetic_corpus() -> (
+    Vec<SyntheticDocument>,
+    Vec<GroundTruthQuery>,
+    Vec<GroundTruthQuery>,
+) {
     const DIM: usize = 768;
 
     vec![
@@ -451,9 +451,10 @@ fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, 
     let scenario_a_queries = vec![
         GroundTruthQuery {
             query_id: "q_a_1".into(),
-            query_text: "Ownership system borrow checking memory leaks Rust Grundlagen".into(),
-            query_embedding: pad_vector(&[0.90, 0.10, 0.0, 0.0], DIM),
-            relevant_doc_ids: vec!["doc_rust_1".into()],
+            query_text:
+                "Haftung B2B Lieferbedingungen ACME Enterprise Systems Firmenkundengeschäft".into(),
+            query_embedding: pad_vector(&[0.80, 0.20, 0.0, 0.0], DIM),
+            relevant_doc_ids: vec!["doc_agb_b2b_sec4".into()],
         },
         GroundTruthQuery {
             query_id: "q_a_2".into(),
@@ -485,15 +486,18 @@ fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, 
     let scenario_b_queries = vec![
         GroundTruthQuery {
             query_id: "q_b_1".into(),
-            query_text: "Wie verhindert das Ownership System in Rust Speicherlecks zur Kompilierzeit?".into(),
-            query_embedding: pad_vector(&[0.90, 0.10, 0.0, 0.0], DIM),
-            relevant_doc_ids: vec!["doc_rust_1".into()],
+            query_text:
+                "Welche Frist gilt für ordentliche Kündigung nach der Probezeit im Arbeitsvertrag?"
+                    .into(),
+            query_embedding: pad_vector(&[0.1, 0.86, 0.04, 0.0], DIM),
+            relevant_doc_ids: vec!["doc_arbeitsvertrag_kuendigung".into()],
         },
         GroundTruthQuery {
             query_id: "q_b_2".into(),
-            query_text: "Wie schränkt HNSW Graph die Suchkomplexität bei der Vektorsuche ein?".into(),
-            query_embedding: pad_vector(&[0.12, 0.88, 0.0, 0.0], DIM),
-            relevant_doc_ids: vec!["doc_ml_12".into()],
+            query_text: "Welche Haftungsregelungen gelten im B2B Geschäft von ACME Enterprise?"
+                .into(),
+            query_embedding: pad_vector(&[0.80, 0.20, 0.0, 0.0], DIM),
+            relevant_doc_ids: vec!["doc_agb_b2b_sec4".into()],
         },
         GroundTruthQuery {
             query_id: "q_b_3".into(),
@@ -657,7 +661,9 @@ async fn run_scenario_a(
     };
 
     let err_reduction = if base_metrics.error_rate_at_1 > 0.0 {
-        ((base_metrics.error_rate_at_1 - feat_metrics.error_rate_at_1) / base_metrics.error_rate_at_1) * 100.0
+        ((base_metrics.error_rate_at_1 - feat_metrics.error_rate_at_1)
+            / base_metrics.error_rate_at_1)
+            * 100.0
     } else {
         0.0
     };
@@ -749,7 +755,9 @@ async fn run_scenario_b(
     };
 
     let err_reduction = if base_metrics.error_rate_at_1 > 0.0 {
-        ((base_metrics.error_rate_at_1 - feat_metrics.error_rate_at_1) / base_metrics.error_rate_at_1) * 100.0
+        ((base_metrics.error_rate_at_1 - feat_metrics.error_rate_at_1)
+            / base_metrics.error_rate_at_1)
+            * 100.0
     } else {
         0.0
     };
@@ -767,8 +775,14 @@ async fn run_scenario_b(
 fn generate_markdown_summary(report: &BenchmarkReport) -> String {
     let mut out = String::new();
     out.push_str("# MemFuse — Retrieval Accuracy Benchmark Report\n\n");
-    out.push_str(&format!("**Stand / Zeitstempel**: `{}`\n", report.timestamp));
-    out.push_str(&format!("**Testkorpus**: {} Dokument-Chunks, {} Testabfragen\n\n", report.corpus_size_docs, report.total_test_queries));
+    out.push_str(&format!(
+        "**Stand / Zeitstempel**: `{}`\n",
+        report.timestamp
+    ));
+    out.push_str(&format!(
+        "**Testkorpus**: {} Dokument-Chunks, {} Testabfragen\n\n",
+        report.corpus_size_docs, report.total_test_queries
+    ));
 
     out.push_str("## Zusammenfassung der Messergebnisse\n\n");
     out.push_str("| Szenario | Modus | Recall@1 | Recall@3 | Recall@5 | MRR | Fehlerrate@1 | Delta (Recall@1) | Delta (Fehler) |\n");
@@ -870,7 +884,11 @@ mod tests {
         let doc_ids: HashSet<&str> = docs.iter().map(|d| d.id.as_str()).collect();
         for q in q_a.iter().chain(q_b.iter()) {
             for rel in &q.relevant_doc_ids {
-                assert!(doc_ids.contains(rel.as_str()), "Query target {} not found in corpus", rel);
+                assert!(
+                    doc_ids.contains(rel.as_str()),
+                    "Query target {} not found in corpus",
+                    rel
+                );
             }
         }
     }

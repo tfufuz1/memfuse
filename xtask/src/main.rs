@@ -1,5 +1,26 @@
 #[allow(dead_code)]
 fn chrono_or_today() -> String {
+    if let Ok(content) = fs::read_to_string("WORKING_STATE.md") {
+        let re = Regex::new(r"Stand:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+        if let Some(caps) = re.captures(&content) {
+            let existing_date = caps[1].to_string();
+            if let Ok(output) = std::process::Command::new("date")
+                .args(["-u", "+%Y-%m-%d"])
+                .output()
+            {
+                if output.status.success() {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !s.is_empty() {
+                        if existing_date >= s {
+                            return existing_date;
+                        }
+                        return s;
+                    }
+                }
+            }
+            return existing_date;
+        }
+    }
     if let Ok(output) = std::process::Command::new("date")
         .args(["-u", "+%Y-%m-%d"])
         .output()
@@ -7,11 +28,6 @@ fn chrono_or_today() -> String {
         if output.status.success() {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {
-                if let Ok(git_date) = get_git_file_last_modified("WORKING_STATE.md") {
-                    if git_date > s {
-                        return git_date;
-                    }
-                }
                 return s;
             }
         }
@@ -942,26 +958,110 @@ pub fn check_no_orphan_adr_files(root_dir: &Path) -> bool {
         return true;
     }
 
-    let md_files: Vec<_> = match fs::read_dir(&decisions_dir) {
+    let adr_file_re = Regex::new(r"^ADR-\d+.*\.md$").unwrap();
+
+    let invalid_files: Vec<_> = match fs::read_dir(&decisions_dir) {
         Ok(dir) => dir
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().ends_with(".md"))
-            .filter(|e| !e.file_name().to_string_lossy().starts_with("README"))
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name != "README.md" && name != "INDEX.md" && !adr_file_re.is_match(&name)
+            })
             .collect(),
         Err(_) => return true,
     };
 
-    if !md_files.is_empty() {
+    if !invalid_files.is_empty() {
         eprintln!(
-            "❌ docs/decisions/ enthält {} ADR-Files außerhalb des kanonischen DECISIONS.md:",
-            md_files.len()
+            "❌ docs/decisions/ enthält {} unvollständige oder fehlerhaft benannte Markdown-Dateien:",
+            invalid_files.len()
         );
-        for f in &md_files {
+        for f in &invalid_files {
             eprintln!("   - {}", f.file_name().to_string_lossy());
         }
         return false;
     }
     true
+}
+
+pub fn check_adr_consistency_dir(root_dir: &Path) -> bool {
+    let mut failed = false;
+
+    // 1. Prüfe, dass DECISIONS.md im Root nur noch die Weiterleitungsnotiz enthält
+    let root_decisions_path = root_dir.join("DECISIONS.md");
+    if root_decisions_path.exists() {
+        let content = fs::read_to_string(&root_decisions_path).unwrap_or_default();
+        if content.contains("## ADR-") {
+            eprintln!("❌ Consistency error: DECISIONS.md im Root-Verzeichnis enthält noch '## ADR-' Abschnitte statt ausschließlich der Weiterleitungsnotiz!");
+            failed = true;
+        }
+    } else {
+        eprintln!("❌ Consistency error: DECISIONS.md im Root-Verzeichnis existiert nicht!");
+        failed = true;
+    }
+
+    // 2. Scanne docs/decisions/
+    let decisions_dir = root_dir.join("docs/decisions");
+    if !decisions_dir.exists() {
+        eprintln!("❌ Consistency error: Verzeichnis docs/decisions/ existiert nicht!");
+        return false;
+    }
+
+    let adr_re = Regex::new(r"^ADR-(\d+)").unwrap();
+    let mut adr_numbers: Vec<(u32, String)> = Vec::new();
+    let mut all_contents = String::new();
+
+    if let Ok(entries) = fs::read_dir(&decisions_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".md") && name != "README.md" && name != "INDEX.md" {
+                if let Some(caps) = adr_re.captures(&name) {
+                    if let Ok(num) = caps[1].parse::<u32>() {
+                        adr_numbers.push((num, name.clone()));
+                    }
+                }
+                if let Ok(c) = fs::read_to_string(entry.path()) {
+                    all_contents.push_str(&c);
+                    all_contents.push('\n');
+                }
+            }
+        }
+    }
+
+    // Prüfe ADR-Eindeutigkeit
+    let mut seen = std::collections::HashMap::new();
+    for (num, filename) in &adr_numbers {
+        if let Some(prev_file) = seen.insert(*num, filename) {
+            eprintln!(
+                "❌ Consistency error: ADR-{:03} ist doppelt vergeben! ({}, {})",
+                num, prev_file, filename
+            );
+            failed = true;
+        }
+    }
+
+    // Lücken-Erkennung
+    let mut sorted_numbers: Vec<u32> = adr_numbers.iter().map(|(num, _)| *num).collect();
+    sorted_numbers.sort_unstable();
+    sorted_numbers.dedup();
+
+    for window in sorted_numbers.windows(2) {
+        if window[1] - window[0] > 1 {
+            for missing in (window[0] + 1)..window[1] {
+                let placeholder_pattern = format!("ADR-{:03}", missing);
+                if !all_contents.contains(&placeholder_pattern) {
+                    eprintln!(
+                        "❌ Consistency error: Lücke bei ADR-{:03} ohne dokumentierte Begründung!",
+                        missing
+                    );
+                    failed = true;
+                }
+            }
+        }
+    }
+
+    !failed
 }
 
 pub fn check_adr_consistency(decisions: &str) -> bool {
@@ -972,6 +1072,7 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
         .lines()
         .filter_map(|l| {
             l.strip_prefix("## ADR-")
+                .or_else(|| l.strip_prefix("# ADR-"))
                 .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
                 .and_then(|num_str| num_str.parse::<u32>().ok())
         })
@@ -994,9 +1095,6 @@ pub fn check_adr_consistency(decisions: &str) -> bool {
     sorted_numbers.dedup();
     for window in sorted_numbers.windows(2) {
         if window[1] - window[0] > 1 {
-            // Lücke gefunden zwischen window[0] und window[1]
-            // Prüfe, ob ein expliziter Platzhalter-Eintrag für die
-            // fehlenden Nummern existiert (Text wie "Nicht vergeben")
             for missing in (window[0] + 1)..window[1] {
                 let placeholder_pattern = format!("ADR-{:03}", missing);
                 if !decisions.contains(&placeholder_pattern) {
@@ -1066,21 +1164,21 @@ pub fn run_check_jules_context_freshness() -> bool {
 
     let mut failed = false;
 
-    // Check against DECISIONS.md
-    match get_git_file_last_modified("DECISIONS.md") {
+    // Check against docs/decisions/README.md
+    match get_git_file_last_modified("docs/decisions/README.md") {
         Ok(decisions_date) => {
             if decisions_date.as_str() > stand_date.as_str() {
                 eprintln!(
-                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, DECISIONS.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den ADR-Tabellen-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
+                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, docs/decisions/README.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den ADR-Tabellen-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
                     stand_date, decisions_date
                 );
                 failed = true;
             } else {
-                println!("✅ JULES_CONTEXT.md is up to date relative to DECISIONS.md (Stand: {}, DECISIONS.md: {})", stand_date, decisions_date);
+                println!("✅ JULES_CONTEXT.md is up to date relative to docs/decisions/README.md (Stand: {}, docs/decisions/README.md: {})", stand_date, decisions_date);
             }
         }
         Err(e) => {
-            eprintln!("❌ Failed to check DECISIONS.md git timestamp: {}", e);
+            eprintln!("❌ Failed to check docs/decisions/README.md git timestamp: {}", e);
             failed = true;
         }
     }
@@ -1134,14 +1232,12 @@ pub fn run_check_consistency() -> bool {
         failed = true;
     }
 
-    // (c) & (d) ADR uniqueness & gap detection
-    let decisions_path = root_dir.join("DECISIONS.md");
-    let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
-    if !check_adr_consistency(&decisions) {
+    // (c) & (d) ADR uniqueness, gap detection, and directory consistency
+    if !check_adr_consistency_dir(&root_dir) {
         failed = true;
     }
 
-    // (e) Orphan ADR files check
+    // (e) Malformed ADR files check
     if !check_no_orphan_adr_files(&root_dir) {
         failed = true;
     }
@@ -2106,13 +2202,14 @@ mod tests {
         // Non-existent directory returns true
         assert!(check_no_orphan_adr_files(temp_dir.path()));
 
-        // Directory with README.md returns true
+        // Directory with README.md and valid ADR files returns true
         fs::create_dir_all(&decisions_dir).unwrap();
         fs::write(decisions_dir.join("README.md"), "# Archived").unwrap();
+        fs::write(decisions_dir.join("ADR-048-test.md"), "test").unwrap();
         assert!(check_no_orphan_adr_files(temp_dir.path()));
 
-        // Directory with an ADR file returns false
-        fs::write(decisions_dir.join("ADR-048-test.md"), "test").unwrap();
+        // Directory with invalidly named file returns false
+        fs::write(decisions_dir.join("random_file.md"), "test").unwrap();
         assert!(!check_no_orphan_adr_files(temp_dir.path()));
     }
 
@@ -2178,12 +2275,10 @@ mod tests {
     #[test]
     fn test_check_consistency_passes_on_current_decisions() {
         let root = find_root_dir();
-        let decisions_path = root.join("DECISIONS.md");
-        let decisions = fs::read_to_string(&decisions_path).unwrap_or_default();
-        let pass = check_adr_consistency(&decisions);
+        let pass = check_adr_consistency_dir(&root);
         assert!(
             pass,
-            "DECISIONS.md must be clean and free of duplicate ADR numbers"
+            "docs/decisions/ must be clean and free of duplicate ADR numbers"
         );
     }
 
@@ -2512,11 +2607,11 @@ mod tests {
     #[test]
     fn test_workspace_crate_layers_regression() {
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 15, "Expected 15 workspace crates");
+        assert_eq!(crates.len(), 16, "Expected 16 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
-            ("memfuse-crypto", 0),
-            ("memfuse-core", 1),
+            ("memfuse-core", 0),
+            ("memfuse-crypto", 1),
             ("memfuse-checkpoint", 2),
             ("memfuse-embed", 2),
             ("memfuse-graph", 2),

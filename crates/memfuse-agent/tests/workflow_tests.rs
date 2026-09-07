@@ -1,5 +1,5 @@
-use memfuse_core::BoxFuture;
 use memfuse_agent::{NodeType, StateGraph};
+use memfuse_core::BoxFuture;
 
 #[tokio::test]
 async fn test_stategraph_construction() {

@@ -16,8 +16,8 @@
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use memfuse_core::{
-    BoxFuture,
-    Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine, TxId,
+    BoxFuture, Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
+    StorageEngine, TxId,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -1042,77 +1042,77 @@ impl Default for CsrGraph {
 impl GraphIndex for CsrGraph {
     fn add_entity<'a>(&'a self, tx: TxId, entity: Entity) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        debug_assert!(
+            debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
+            // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
+            if is_suspicious_tx_id(tx) {
+                tracing::warn!(
                 tx_id = tx.inner(),
                 hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
                 "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in add_entity (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
                  möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
-        }
-        // Lazy index allocation: Entity indices are assigned in commit(),
-        // avoiding premature mutation of id_map/reverse_map on rollback.
-        let mut inner = self.inner.write();
-        inner
-            .staged_entities
-            .entry(tx)
-            .or_default()
-            .insert(entity.id, entity);
-        Ok(())
+            }
+            // Lazy index allocation: Entity indices are assigned in commit(),
+            // avoiding premature mutation of id_map/reverse_map on rollback.
+            let mut inner = self.inner.write();
+            inner
+                .staged_entities
+                .entry(tx)
+                .or_default()
+                .insert(entity.id, entity);
+            Ok(())
         })
     }
 
     fn add_edge<'a>(&'a self, tx: TxId, edge: Edge) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        debug_assert!(
+            debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
+            // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
+            if is_suspicious_tx_id(tx) {
+                tracing::warn!(
                 tx_id = tx.inner(),
                 hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
                 "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in add_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
                  möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
-        }
-        if !edge.weight.is_finite() || edge.weight < 0.0 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "Invalid edge weight {}: weight must be finite and non-negative",
-                edge.weight
-            )));
-        }
-        let mut inner = self.inner.write();
-        let tx_valid_from = edge.tx_valid_from.or(Some(tx));
+            }
+            if !edge.weight.is_finite() || edge.weight < 0.0 {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "Invalid edge weight {}: weight must be finite and non-negative",
+                    edge.weight
+                )));
+            }
+            let mut inner = self.inner.write();
+            let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
-        // Lazy index allocation: Store EntityIds directly in staged_edges.
-        // Internal indices via get_or_create_index are allocated only during commit(),
-        // ensuring rollback does not leak entity indices into id_map/reverse_map.
-        inner
-            .staged_edges
-            .entry(tx)
-            .or_default()
-            .entry(edge.from)
-            .or_default()
-            .push(StagedEdgePayload {
-                target: edge.to,
-                weight: edge.weight,
-                tx_valid_from,
-                tx_valid_to: edge.tx_valid_to,
-                business_valid_from: edge.business_valid_from,
-                business_valid_to: edge.business_valid_to,
-            });
-        Ok(())
+            // Lazy index allocation: Store EntityIds directly in staged_edges.
+            // Internal indices via get_or_create_index are allocated only during commit(),
+            // ensuring rollback does not leak entity indices into id_map/reverse_map.
+            inner
+                .staged_edges
+                .entry(tx)
+                .or_default()
+                .entry(edge.from)
+                .or_default()
+                .push(StagedEdgePayload {
+                    target: edge.to,
+                    weight: edge.weight,
+                    tx_valid_from,
+                    tx_valid_to: edge.tx_valid_to,
+                    business_valid_from: edge.business_valid_from,
+                    business_valid_to: edge.business_valid_to,
+                });
+            Ok(())
         })
     }
 
@@ -1122,9 +1122,9 @@ impl GraphIndex for CsrGraph {
         config: &'a memfuse_core::PprConfig,
     ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
         Box::pin(async move {
-        self.compact();
-        let inner = self.inner.read();
-        Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+            self.compact();
+            let inner = self.inner.read();
+            Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
         })
     }
 
@@ -1135,8 +1135,8 @@ impl GraphIndex for CsrGraph {
         seq_no: u64,
     ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
         Box::pin(async move {
-        self.traverse_at_time(start_node, max_hops, TxId::new(seq_no))
-            .await
+            self.traverse_at_time(start_node, max_hops, TxId::new(seq_no))
+                .await
         })
     }
 
@@ -1147,8 +1147,8 @@ impl GraphIndex for CsrGraph {
         as_of: TxId,
     ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
         Box::pin(async move {
-        self.traverse_at_bitemporal(start, max_hops, as_of, None)
-            .await
+            self.traverse_at_bitemporal(start, max_hops, as_of, None)
+                .await
         })
     }
 
@@ -1160,250 +1160,142 @@ impl GraphIndex for CsrGraph {
         as_of_business: Option<i64>,
     ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
         Box::pin(async move {
-        if max_hops > 100 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "max_hops {max_hops} exceeds upper safety limit of 100"
-            )));
-        }
-        if max_hops > MAX_TRAVERSAL_HOPS as usize {
-            tracing::warn!(
+            if max_hops > 100 {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "max_hops {max_hops} exceeds upper safety limit of 100"
+                )));
+            }
+            if max_hops > MAX_TRAVERSAL_HOPS as usize {
+                tracing::warn!(
                 requested_max_hops = max_hops,
                 effective_max_hops = MAX_TRAVERSAL_HOPS,
                 "traverse_at_bitemporal requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
             );
-        }
-        let inner = self.inner.read();
-        let start_idx = match inner.id_map.get(&start) {
-            Some(&idx) => idx,
-            None => return Ok(Vec::new()),
-        };
+            }
+            let inner = self.inner.read();
+            let start_idx = match inner.id_map.get(&start) {
+                Some(&idx) => idx,
+                None => return Ok(Vec::new()),
+            };
 
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
-            return Ok(Vec::new());
-        }
-
-        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
-
-        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
-        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
-
-        queue.push_back((start_idx, 0, 1.0));
-
-        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
-            if hop > effective_max {
-                continue;
+            if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+                return Ok(Vec::new());
             }
 
-            let existing = visited.entry(node_idx).or_insert(0.0);
-            if current_score > *existing {
-                *existing = current_score;
-            }
+            let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
 
-            if hop < effective_max {
-                if visited.len() >= MAX_VISITED_NODES {
-                    tracing::warn!(
+            let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
+            let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
+
+            queue.push_back((start_idx, 0, 1.0));
+
+            while let Some((node_idx, hop, current_score)) = queue.pop_front() {
+                if hop > effective_max {
+                    continue;
+                }
+
+                let existing = visited.entry(node_idx).or_insert(0.0);
+                if current_score > *existing {
+                    *existing = current_score;
+                }
+
+                if hop < effective_max {
+                    if visited.len() >= MAX_VISITED_NODES {
+                        tracing::warn!(
                         visited_count = visited.len(),
                         max_visited = MAX_VISITED_NODES,
                         "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
                     );
-                    break;
-                }
-
-                // 1. CSR traversal (compacted edges)
-                if node_idx < inner.offsets.len() - 1 {
-                    let start_edge = inner.offsets[node_idx];
-                    let end_edge = inner.offsets[node_idx + 1];
-
-                    for edge_idx in start_edge..end_edge {
-                        let neighbor_idx = inner.targets[edge_idx];
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        let tx_valid_from = inner.tx_valid_froms.get(edge_idx).copied().flatten();
-                        let tx_valid_to = inner.tx_valid_tos.get(edge_idx).copied().flatten();
-                        let business_valid_from =
-                            inner.business_valid_froms.get(edge_idx).copied().flatten();
-                        let business_valid_to =
-                            inner.business_valid_tos.get(edge_idx).copied().flatten();
-
-                        if !is_edge_visible_bitemporal(
-                            tx_valid_from,
-                            tx_valid_to,
-                            as_of_tx,
-                            business_valid_from,
-                            business_valid_to,
-                            as_of_business,
-                        ) {
-                            continue;
-                        }
-                        let weight = inner.weights[edge_idx];
-                        let next_score = current_score * SCORE_DECAY * weight;
-
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
-                            if !visited.contains_key(&neighbor_idx)
-                                && visited.len() + queue.len() >= MAX_VISITED_NODES
-                            {
-                                tracing::warn!(
-                                    visited_and_queued = visited.len() + queue.len(),
-                                    max_visited = MAX_VISITED_NODES,
-                                    "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
-                                );
-                                break;
-                            }
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
-                        }
+                        break;
                     }
-                }
 
-                // 2. Delta buffer traversal (uncompacted committed edges)
-                if let Some(pending) = inner.pending_edges.get(&node_idx) {
-                    for edge in pending {
-                        let neighbor_idx = edge.target;
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        if !is_edge_visible_bitemporal(
-                            edge.tx_valid_from,
-                            edge.tx_valid_to,
-                            as_of_tx,
-                            edge.business_valid_from,
-                            edge.business_valid_to,
-                            as_of_business,
-                        ) {
-                            continue;
-                        }
-                        let next_score = current_score * SCORE_DECAY * edge.weight;
+                    // 1. CSR traversal (compacted edges)
+                    if node_idx < inner.offsets.len() - 1 {
+                        let start_edge = inner.offsets[node_idx];
+                        let end_edge = inner.offsets[node_idx + 1];
 
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
-                            if !visited.contains_key(&neighbor_idx)
-                                && visited.len() + queue.len() >= MAX_VISITED_NODES
-                            {
-                                tracing::warn!(
-                                    visited_and_queued = visited.len() + queue.len(),
-                                    max_visited = MAX_VISITED_NODES,
-                                    "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
-                                );
-                                break;
+                        for edge_idx in start_edge..end_edge {
+                            let neighbor_idx = inner.targets[edge_idx];
+                            if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                                continue;
                             }
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
-                        }
-                    }
-                }
-            }
-        }
+                            let tx_valid_from =
+                                inner.tx_valid_froms.get(edge_idx).copied().flatten();
+                            let tx_valid_to = inner.tx_valid_tos.get(edge_idx).copied().flatten();
+                            let business_valid_from =
+                                inner.business_valid_froms.get(edge_idx).copied().flatten();
+                            let business_valid_to =
+                                inner.business_valid_tos.get(edge_idx).copied().flatten();
 
-        visited.remove(&start_idx);
+                            if !is_edge_visible_bitemporal(
+                                tx_valid_from,
+                                tx_valid_to,
+                                as_of_tx,
+                                business_valid_from,
+                                business_valid_to,
+                                as_of_business,
+                            ) {
+                                continue;
+                            }
+                            let weight = inner.weights[edge_idx];
+                            let next_score = current_score * SCORE_DECAY * weight;
 
-        let mut results: Vec<(EntityId, f32)> = visited
-            .into_iter()
-            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
-            .collect();
-
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        Ok(results)
-        })
-    }
-
-    fn traverse<'a>(&'a self, start: EntityId, max_hops: usize) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
-        Box::pin(async move {
-        if max_hops > 100 {
-            return Err(MemFuseError::InvalidInput(format!(
-                "max_hops {max_hops} exceeds upper safety limit of 100"
-            )));
-        }
-        if max_hops > MAX_TRAVERSAL_HOPS as usize {
-            tracing::warn!(
-                requested_max_hops = max_hops,
-                effective_max_hops = MAX_TRAVERSAL_HOPS,
-                "traverse requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
-            );
-        }
-
-        // Merge-read: read directly from both compacted CSR arrays AND uncompacted pending_edges delta buffer.
-        // No full compact() call is required before traversal.
-        let inner = self.inner.read();
-        let start_idx = match inner.id_map.get(&start) {
-            Some(&idx) => idx,
-            None => return Ok(Vec::new()), // Start node not in graph
-        };
-
-        // If the start node itself is not committed, we shouldn't start traversal from it
-        if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
-            return Ok(Vec::new());
-        }
-
-        let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
-
-        // BFS with score decay
-        let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
-        let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
-
-        queue.push_back((start_idx, 0, 1.0));
-
-        while let Some((node_idx, hop, current_score)) = queue.pop_front() {
-            if hop > effective_max {
-                continue;
-            }
-
-            // Only keep the best score per node
-            let existing = visited.entry(node_idx).or_insert(0.0);
-            if current_score > *existing {
-                *existing = current_score;
-            }
-
-            if hop < effective_max {
-                if visited.len() >= MAX_VISITED_NODES {
-                    tracing::warn!(
-                        visited_count = visited.len(),
-                        max_visited = MAX_VISITED_NODES,
-                        "traverse visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
-                    );
-                    break;
-                }
-
-                // 1. CSR traversal (compacted edges)
-                if node_idx < inner.offsets.len() - 1 {
-                    let start_edge = inner.offsets[node_idx];
-                    let end_edge = inner.offsets[node_idx + 1];
-
-                    for edge_idx in start_edge..end_edge {
-                        let neighbor_idx = inner.targets[edge_idx];
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        let weight = inner.weights[edge_idx];
-                        let next_score = current_score * SCORE_DECAY * weight;
-
-                        if !visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score
-                        {
-                            // Only visit nodes that have a committed entity (FIND-GRA-001)
-                            if inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
+                            if (!visited.contains_key(&neighbor_idx)
+                                || visited[&neighbor_idx] < next_score)
+                                && inner
+                                    .entities
+                                    .get(neighbor_idx)
+                                    .is_some_and(|e| e.is_some())
                             {
                                 if !visited.contains_key(&neighbor_idx)
                                     && visited.len() + queue.len() >= MAX_VISITED_NODES
                                 {
                                     tracing::warn!(
-                                        visited_and_queued = visited.len() + queue.len(),
-                                        max_visited = MAX_VISITED_NODES,
-                                        "traverse visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
-                                    );
+                                    visited_and_queued = visited.len() + queue.len(),
+                                    max_visited = MAX_VISITED_NODES,
+                                    "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                );
+                                    break;
+                                }
+                                queue.push_back((neighbor_idx, hop + 1, next_score));
+                            }
+                        }
+                    }
+
+                    // 2. Delta buffer traversal (uncompacted committed edges)
+                    if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                        for edge in pending {
+                            let neighbor_idx = edge.target;
+                            if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                                continue;
+                            }
+                            if !is_edge_visible_bitemporal(
+                                edge.tx_valid_from,
+                                edge.tx_valid_to,
+                                as_of_tx,
+                                edge.business_valid_from,
+                                edge.business_valid_to,
+                                as_of_business,
+                            ) {
+                                continue;
+                            }
+                            let next_score = current_score * SCORE_DECAY * edge.weight;
+
+                            if (!visited.contains_key(&neighbor_idx)
+                                || visited[&neighbor_idx] < next_score)
+                                && inner
+                                    .entities
+                                    .get(neighbor_idx)
+                                    .is_some_and(|e| e.is_some())
+                            {
+                                if !visited.contains_key(&neighbor_idx)
+                                    && visited.len() + queue.len() >= MAX_VISITED_NODES
+                                {
+                                    tracing::warn!(
+                                    visited_and_queued = visited.len() + queue.len(),
+                                    max_visited = MAX_VISITED_NODES,
+                                    "traverse_at_bitemporal visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                );
                                     break;
                                 }
                                 queue.push_back((neighbor_idx, hop + 1, next_score));
@@ -1411,208 +1303,326 @@ impl GraphIndex for CsrGraph {
                         }
                     }
                 }
+            }
 
-                // 2. Delta buffer traversal (uncompacted committed edges)
-                if let Some(pending) = inner.pending_edges.get(&node_idx) {
-                    for edge in pending {
-                        let neighbor_idx = edge.target;
-                        if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
-                            continue;
-                        }
-                        let next_score = current_score * SCORE_DECAY * edge.weight;
+            visited.remove(&start_idx);
 
-                        if (!visited.contains_key(&neighbor_idx)
-                            || visited[&neighbor_idx] < next_score)
-                            && inner
-                                .entities
-                                .get(neighbor_idx)
-                                .is_some_and(|e| e.is_some())
-                        {
+            let mut results: Vec<(EntityId, f32)> = visited
+                .into_iter()
+                .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
+                .collect();
+
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            Ok(results)
+        })
+    }
+
+    fn traverse<'a>(
+        &'a self,
+        start: EntityId,
+        max_hops: usize,
+    ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+        Box::pin(async move {
+            if max_hops > 100 {
+                return Err(MemFuseError::InvalidInput(format!(
+                    "max_hops {max_hops} exceeds upper safety limit of 100"
+                )));
+            }
+            if max_hops > MAX_TRAVERSAL_HOPS as usize {
+                tracing::warn!(
+                requested_max_hops = max_hops,
+                effective_max_hops = MAX_TRAVERSAL_HOPS,
+                "traverse requested max_hops ({max_hops}) exceeds internal cap MAX_TRAVERSAL_HOPS ({MAX_TRAVERSAL_HOPS}); capping traversal depth"
+            );
+            }
+
+            // Merge-read: read directly from both compacted CSR arrays AND uncompacted pending_edges delta buffer.
+            // No full compact() call is required before traversal.
+            let inner = self.inner.read();
+            let start_idx = match inner.id_map.get(&start) {
+                Some(&idx) => idx,
+                None => return Ok(Vec::new()), // Start node not in graph
+            };
+
+            // If the start node itself is not committed, we shouldn't start traversal from it
+            if !inner.entities.get(start_idx).is_some_and(|e| e.is_some()) {
+                return Ok(Vec::new());
+            }
+
+            let effective_max = (max_hops as u8).min(MAX_TRAVERSAL_HOPS);
+
+            // BFS with score decay
+            let mut visited: HashMap<InternalIndex, f32> = HashMap::new();
+            let mut queue: VecDeque<(InternalIndex, u8, f32)> = VecDeque::new();
+
+            queue.push_back((start_idx, 0, 1.0));
+
+            while let Some((node_idx, hop, current_score)) = queue.pop_front() {
+                if hop > effective_max {
+                    continue;
+                }
+
+                // Only keep the best score per node
+                let existing = visited.entry(node_idx).or_insert(0.0);
+                if current_score > *existing {
+                    *existing = current_score;
+                }
+
+                if hop < effective_max {
+                    if visited.len() >= MAX_VISITED_NODES {
+                        tracing::warn!(
+                        visited_count = visited.len(),
+                        max_visited = MAX_VISITED_NODES,
+                        "traverse visited node limit reached ({MAX_VISITED_NODES}); halting graph expansion"
+                    );
+                        break;
+                    }
+
+                    // 1. CSR traversal (compacted edges)
+                    if node_idx < inner.offsets.len() - 1 {
+                        let start_edge = inner.offsets[node_idx];
+                        let end_edge = inner.offsets[node_idx + 1];
+
+                        for edge_idx in start_edge..end_edge {
+                            let neighbor_idx = inner.targets[edge_idx];
+                            if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                                continue;
+                            }
+                            let weight = inner.weights[edge_idx];
+                            let next_score = current_score * SCORE_DECAY * weight;
+
                             if !visited.contains_key(&neighbor_idx)
-                                && visited.len() + queue.len() >= MAX_VISITED_NODES
+                                || visited[&neighbor_idx] < next_score
                             {
-                                tracing::warn!(
+                                // Only visit nodes that have a committed entity (FIND-GRA-001)
+                                if inner
+                                    .entities
+                                    .get(neighbor_idx)
+                                    .is_some_and(|e| e.is_some())
+                                {
+                                    if !visited.contains_key(&neighbor_idx)
+                                        && visited.len() + queue.len() >= MAX_VISITED_NODES
+                                    {
+                                        tracing::warn!(
+                                        visited_and_queued = visited.len() + queue.len(),
+                                        max_visited = MAX_VISITED_NODES,
+                                        "traverse visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
+                                    );
+                                        break;
+                                    }
+                                    queue.push_back((neighbor_idx, hop + 1, next_score));
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Delta buffer traversal (uncompacted committed edges)
+                    if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                        for edge in pending {
+                            let neighbor_idx = edge.target;
+                            if inner.tombstoned_edges.contains(&(node_idx, neighbor_idx)) {
+                                continue;
+                            }
+                            let next_score = current_score * SCORE_DECAY * edge.weight;
+
+                            if (!visited.contains_key(&neighbor_idx)
+                                || visited[&neighbor_idx] < next_score)
+                                && inner
+                                    .entities
+                                    .get(neighbor_idx)
+                                    .is_some_and(|e| e.is_some())
+                            {
+                                if !visited.contains_key(&neighbor_idx)
+                                    && visited.len() + queue.len() >= MAX_VISITED_NODES
+                                {
+                                    tracing::warn!(
                                     visited_and_queued = visited.len() + queue.len(),
                                     max_visited = MAX_VISITED_NODES,
                                     "traverse visited node limit reached ({MAX_VISITED_NODES}); halting neighbor expansion"
                                 );
-                                break;
+                                    break;
+                                }
+                                queue.push_back((neighbor_idx, hop + 1, next_score));
                             }
-                            queue.push_back((neighbor_idx, hop + 1, next_score));
                         }
                     }
                 }
             }
-        }
 
-        // Remove the start node from results
-        visited.remove(&start_idx);
+            // Remove the start node from results
+            visited.remove(&start_idx);
 
-        let mut results: Vec<(EntityId, f32)> = visited
-            .into_iter()
-            .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
-            .collect();
+            let mut results: Vec<(EntityId, f32)> = visited
+                .into_iter()
+                .filter_map(|(idx, score)| inner.reverse_map.get(idx).map(|&id| (id, score)))
+                .collect();
 
-        // Sort by score descending
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            // Sort by score descending
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        Ok(results)
+            Ok(results)
         })
     }
 
     fn commit<'a>(&'a self, tx: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        debug_assert!(
+            debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
+            // AGT-GRAPH-001: Heuristik — wall-clock-abgeleitete oder unallozierte TxIds warnen.
+            if is_suspicious_tx_id(tx) {
+                tracing::warn!(
                 tx_id = tx.inner(),
                 hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
                 "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in commit (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
                  möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet. \
                  Rollback-Korrelation kann verletzt sein."
             );
-        }
-        let (entities_to_commit, edges_to_commit, removals_to_commit) = {
-            let inner = self.inner.read();
-            let entities = inner.staged_entities.get(&tx).cloned();
-            let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
-                let mut list = Vec::new();
-                for (&from_id, to_list) in tx_edges {
-                    for edge in to_list {
-                        list.push((
-                            from_id,
-                            edge.target,
-                            PersistedEdgePayload {
-                                weight: edge.weight,
-                                tx_valid_from: edge.tx_valid_from,
-                                tx_valid_to: edge.tx_valid_to,
-                                business_valid_from: edge.business_valid_from,
-                                business_valid_to: edge.business_valid_to,
-                            },
-                        ));
+            }
+            let (entities_to_commit, edges_to_commit, removals_to_commit) = {
+                let inner = self.inner.read();
+                let entities = inner.staged_entities.get(&tx).cloned();
+                let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
+                    let mut list = Vec::new();
+                    for (&from_id, to_list) in tx_edges {
+                        for edge in to_list {
+                            list.push((
+                                from_id,
+                                edge.target,
+                                PersistedEdgePayload {
+                                    weight: edge.weight,
+                                    tx_valid_from: edge.tx_valid_from,
+                                    tx_valid_to: edge.tx_valid_to,
+                                    business_valid_from: edge.business_valid_from,
+                                    business_valid_to: edge.business_valid_to,
+                                },
+                            ));
+                        }
+                    }
+                    list
+                });
+                let removals = inner.staged_removals.get(&tx).cloned();
+                (entities, edges, removals)
+            };
+
+            if let Some(ref storage) = self.storage {
+                if let Some(ref entities) = entities_to_commit {
+                    for entity in entities.values() {
+                        self.persist_entity(storage.as_ref(), tx, entity).await?;
                     }
                 }
-                list
-            });
-            let removals = inner.staged_removals.get(&tx).cloned();
-            (entities, edges, removals)
-        };
-
-        if let Some(ref storage) = self.storage {
-            if let Some(ref entities) = entities_to_commit {
-                for entity in entities.values() {
-                    self.persist_entity(storage.as_ref(), tx, entity).await?;
-                }
-            }
-            if let Some(ref edges) = edges_to_commit {
-                for (from_id, to_id, payload) in edges {
-                    self.persist_edge(storage.as_ref(), tx, from_id, to_id, payload)
-                        .await?;
-                }
-            }
-            if let Some(ref removals) = removals_to_commit {
-                for (from_id, to_id) in removals {
-                    self.delete_edge_persistence(storage.as_ref(), tx, from_id, to_id)
-                        .await?;
-                }
-            }
-        }
-
-        let mut inner = self.inner.write();
-
-        // 1. Commit entities
-        if let Some(tx_entities) = inner.staged_entities.remove(&tx) {
-            for (id, entity) in tx_entities {
-                let idx = inner.get_or_create_index(id);
-                if idx >= inner.entities.len() {
-                    inner.entities.resize(idx + 1, None);
-                }
-                inner.entities[idx] = Some(entity);
-                inner.is_dirty = true;
-            }
-        }
-        inner.is_dirty = true;
-
-        // 2. Commit edges (lazy index resolution occurs here)
-        if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
-            for (from_id, edges) in tx_edges {
-                let from_idx = inner.get_or_create_index(from_id);
-                let mut converted_edges = Vec::with_capacity(edges.len());
-                for edge in edges {
-                    let to_idx = inner.get_or_create_index(edge.target);
-                    converted_edges.push(EdgePayload {
-                        target: to_idx,
-                        weight: edge.weight,
-                        tx_valid_from: edge.tx_valid_from,
-                        tx_valid_to: edge.tx_valid_to,
-                        business_valid_from: edge.business_valid_from,
-                        business_valid_to: edge.business_valid_to,
-                    });
-                }
-                let count = converted_edges.len();
-                inner
-                    .pending_edges
-                    .entry(from_idx)
-                    .or_default()
-                    .extend(converted_edges);
-                inner.pending_edge_count += count;
-            }
-            inner.is_dirty = true;
-        }
-
-        // 3. Commit removals
-        if let Some(tx_removals) = inner.staged_removals.remove(&tx) {
-            for (from_id, to_id) in tx_removals {
-                let from_idx = inner.id_map.get(&from_id).copied();
-                let to_idx = inner.id_map.get(&to_id).copied();
-                if let (Some(f_idx), Some(t_idx)) = (from_idx, to_idx) {
-                    if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
-                        pending.retain(|edge| edge.target != t_idx);
+                if let Some(ref edges) = edges_to_commit {
+                    for (from_id, to_id, payload) in edges {
+                        self.persist_edge(storage.as_ref(), tx, from_id, to_id, payload)
+                            .await?;
                     }
-                    inner.tombstoned_edges.insert((f_idx, t_idx));
+                }
+                if let Some(ref removals) = removals_to_commit {
+                    for (from_id, to_id) in removals {
+                        self.delete_edge_persistence(storage.as_ref(), tx, from_id, to_id)
+                            .await?;
+                    }
+                }
+            }
+
+            let mut inner = self.inner.write();
+
+            // 1. Commit entities
+            if let Some(tx_entities) = inner.staged_entities.remove(&tx) {
+                for (id, entity) in tx_entities {
+                    let idx = inner.get_or_create_index(id);
+                    if idx >= inner.entities.len() {
+                        inner.entities.resize(idx + 1, None);
+                    }
+                    inner.entities[idx] = Some(entity);
                     inner.is_dirty = true;
                 }
             }
-        }
+            inner.is_dirty = true;
 
-        // Auto-rebuild CSR arrays if pending delta buffer reaches or exceeds threshold
-        if inner.pending_edge_count >= self.config.rebuild_threshold {
-            inner.compact();
-        }
+            // 2. Commit edges (lazy index resolution occurs here)
+            if let Some(tx_edges) = inner.staged_edges.remove(&tx) {
+                for (from_id, edges) in tx_edges {
+                    let from_idx = inner.get_or_create_index(from_id);
+                    let mut converted_edges = Vec::with_capacity(edges.len());
+                    for edge in edges {
+                        let to_idx = inner.get_or_create_index(edge.target);
+                        converted_edges.push(EdgePayload {
+                            target: to_idx,
+                            weight: edge.weight,
+                            tx_valid_from: edge.tx_valid_from,
+                            tx_valid_to: edge.tx_valid_to,
+                            business_valid_from: edge.business_valid_from,
+                            business_valid_to: edge.business_valid_to,
+                        });
+                    }
+                    let count = converted_edges.len();
+                    inner
+                        .pending_edges
+                        .entry(from_idx)
+                        .or_default()
+                        .extend(converted_edges);
+                    inner.pending_edge_count += count;
+                }
+                inner.is_dirty = true;
+            }
 
-        self.last_tx_id.fetch_max(tx.inner(), Ordering::SeqCst);
+            // 3. Commit removals
+            if let Some(tx_removals) = inner.staged_removals.remove(&tx) {
+                for (from_id, to_id) in tx_removals {
+                    let from_idx = inner.id_map.get(&from_id).copied();
+                    let to_idx = inner.id_map.get(&to_id).copied();
+                    if let (Some(f_idx), Some(t_idx)) = (from_idx, to_idx) {
+                        if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
+                            pending.retain(|edge| edge.target != t_idx);
+                        }
+                        inner.tombstoned_edges.insert((f_idx, t_idx));
+                        inner.is_dirty = true;
+                    }
+                }
+            }
 
-        Ok(())
+            // Auto-rebuild CSR arrays if pending delta buffer reaches or exceeds threshold
+            if inner.pending_edge_count >= self.config.rebuild_threshold {
+                inner.compact();
+            }
+
+            self.last_tx_id.fetch_max(tx.inner(), Ordering::SeqCst);
+
+            Ok(())
         })
     }
 
-    fn remove_edge<'a>(&'a self, tx: TxId, from: EntityId, to: EntityId) -> BoxFuture<'a, Result<()>> {
+    fn remove_edge<'a>(
+        &'a self,
+        tx: TxId,
+        from: EntityId,
+        to: EntityId,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        debug_assert!(
+            debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
             "TxId {} verletzt AGT-GRAPH-001 Origin-Invariante — Sentinel TxId(0) oder Wall-Clock-abgeleitete IDs korrumpieren rollback_to_tx()-Kausalordnung",
             tx
         );
-        if is_suspicious_tx_id(tx) {
-            tracing::warn!(
+            if is_suspicious_tx_id(tx) {
+                tracing::warn!(
                 tx_id = tx.inner(),
                 hint = if tx == TxId::INVALID { "Sentinel TxId(0)" } else { "Wall-Clock-ns-Bereich" },
                 "AGT-GRAPH-001: Verdächtiger oder unallozierter TxId in remove_edge (weder im plausiblen next_tx-Bereich noch im INTERNAL_BASE-Bereich [u64::MAX - 1_000_000]) — \
                  möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet."
             );
-        }
-        let mut inner = self.inner.write();
-        inner
-            .staged_removals
-            .entry(tx)
-            .or_default()
-            .push((from, to));
-        Ok(())
+            }
+            let mut inner = self.inner.write();
+            inner
+                .staged_removals
+                .entry(tx)
+                .or_default()
+                .push((from, to));
+            Ok(())
         })
     }
 
@@ -1624,71 +1634,65 @@ impl GraphIndex for CsrGraph {
         label: &'a str,
     ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.add_edge(tx, Edge::new(from, to, label)).await?;
-        self.add_edge(tx, Edge::new(to, from, label)).await?;
-        Ok(())
+            self.add_edge(tx, Edge::new(from, to, label)).await?;
+            self.add_edge(tx, Edge::new(to, from, label)).await?;
+            Ok(())
         })
     }
 
     fn neighbors<'a>(&'a self, start: EntityId) -> BoxFuture<'a, Result<Vec<EntityId>>> {
-        Box::pin(async move {
-        self.neighbors(start).await
-        })
+        Box::pin(async move { self.neighbors(start).await })
     }
 
     fn rollback<'a>(&'a self, tx: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        let mut inner = self.inner.write();
-        inner.staged_entities.remove(&tx);
-        inner.staged_edges.remove(&tx);
-        inner.staged_removals.remove(&tx);
-        Ok(())
+            let mut inner = self.inner.write();
+            inner.staged_entities.remove(&tx);
+            inner.staged_edges.remove(&tx);
+            inner.staged_removals.remove(&tx);
+            Ok(())
         })
     }
 
     fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        // Physical rollback for CSR graph is driven by WAL replay or reloading state from storage.
-        // In-memory staged transactions are handled by rollback().
-        Ok(())
+            // Physical rollback for CSR graph is driven by WAL replay or reloading state from storage.
+            // In-memory staged transactions are handled by rollback().
+            Ok(())
         })
     }
 
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-        Box::pin(async move {
-        Ok(TxId::new(self.last_tx_id.load(Ordering::SeqCst)))
-        })
+        Box::pin(async move { Ok(TxId::new(self.last_tx_id.load(Ordering::SeqCst))) })
     }
 
     fn len<'a>(&'a self) -> BoxFuture<'a, usize> {
-        Box::pin(async move {
-        self.entity_count()
-        })
+        Box::pin(async move { self.entity_count() })
     }
 
     fn stats<'a>(&'a self) -> BoxFuture<'a, Result<GraphIndexStats>> {
         Box::pin(async move {
-        let inner = self.inner.read();
-        let num_entities = inner.entities.iter().flatten().count();
-        let num_edges = inner.targets.len()
-            + inner.pending_edge_count
-            + inner
-                .staged_edges
-                .values()
-                .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
-                .sum::<usize>();
+            let inner = self.inner.read();
+            let num_entities = inner.entities.iter().flatten().count();
+            let num_edges = inner.targets.len()
+                + inner.pending_edge_count
+                + inner
+                    .staged_edges
+                    .values()
+                    .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
+                    .sum::<usize>();
 
-        let mem = (inner.reverse_map.len() * std::mem::size_of::<EntityId>())
-            + (inner.entities.len() * std::mem::size_of::<Option<Entity>>())
-            + (inner.offsets.len() * std::mem::size_of::<usize>())
-            + (inner.targets.len() * std::mem::size_of::<usize>())
-            + (inner.weights.len() * std::mem::size_of::<f32>());
+            let mem = (inner.reverse_map.len() * std::mem::size_of::<EntityId>())
+                + (inner.entities.len() * std::mem::size_of::<Option<Entity>>())
+                + (inner.offsets.len() * std::mem::size_of::<usize>())
+                + (inner.targets.len() * std::mem::size_of::<usize>())
+                + (inner.weights.len() * std::mem::size_of::<f32>());
 
-        Ok(GraphIndexStats {
-            num_entities,
-            num_edges,
-            memory_usage_bytes: mem,
-        })
+            Ok(GraphIndexStats {
+                num_entities,
+                num_edges,
+                memory_usage_bytes: mem,
+            })
         })
     }
 }
