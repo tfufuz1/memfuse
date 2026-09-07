@@ -48,6 +48,17 @@ pub struct EdgeAssertion {
     pub object_repr: Vec<u8>,
 }
 
+impl EdgeAssertion {
+    /// Berechnet den Blake3-Pattern-Hash über (subject, predicate_hash, object_repr).
+    pub fn pattern_hash(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&self.subject.to_le_bytes());
+        hasher.update(&self.predicate_hash);
+        hasher.update(&self.object_repr);
+        *hasher.finalize().as_bytes()
+    }
+}
+
 /// Trait für modulare Widerspruchserkennungs-Strategien.
 pub trait ContradictionDetector {
     /// Prüft, ob zwei Aussagen im Widerspruch zueinander stehen.
@@ -85,6 +96,14 @@ impl ImmunMemory {
             antibodies: HashMap::new(),
             suppression_threshold,
         }
+    }
+
+    /// Prüft eine Kanten-Aussage vor dem Einfügen, registriert das Widerspruchsmuster
+    /// und gibt den Antikörper-Eintrag zurück.
+    pub fn check_before_insert(&mut self, assertion: &EdgeAssertion) -> Option<Antibody> {
+        let pattern = assertion.pattern_hash();
+        let ab = self.record_contradiction(pattern, TxId::new(0));
+        Some(ab.clone())
     }
 
     /// Bewertet mit Hilfe des übergebenen [`ContradictionDetector`]s, ob zwei Kanten-Aussagen
@@ -128,7 +147,7 @@ impl ImmunMemory {
     pub fn is_suppressed(&self, pattern_hash: [u8; 32]) -> bool {
         self.antibodies
             .get(&pattern_hash)
-            .map_or(false, |ab| ab.suppressed)
+            .is_some_and(|ab| ab.suppressed)
     }
 
     /// Gibt einen Iterator über alle aktuell aktiven (unterdrückenden) Antikörper zurück.

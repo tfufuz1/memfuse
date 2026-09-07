@@ -2792,6 +2792,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "bincode",
+ "blake3",
  "memfuse-core",
  "memfuse-store",
  "parking_lot",
