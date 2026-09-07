@@ -1842,7 +1842,7 @@ mod tests {
 
     #[test]
     fn test_tenant_id_valid() {
-        let t = TenantId::try_new(42).unwrap();
+        let t = TenantId::try_new(42).expect("valid tenant_id");
         assert_eq!(t.inner(), 42);
         assert!(!t.is_system());
     }

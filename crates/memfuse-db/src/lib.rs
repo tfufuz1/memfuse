@@ -68,6 +68,8 @@
 
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
+#[cfg(feature = "sandbox")]
+use memfuse_core::BoxFuture;
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -81,6 +83,7 @@ pub mod collection;
 pub mod context;
 pub mod context_compaction;
 pub mod sleep_cycle;
+pub mod temporal_filter;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
@@ -103,9 +106,9 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
-pub mod temporal_filter;
 pub mod thermostat;
 pub mod transaction;
+
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
