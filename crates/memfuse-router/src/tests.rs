@@ -2276,4 +2276,35 @@ mod tests {
 
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
     }
+
+    #[tokio::test]
+    async fn test_lyapunov_drift_status_integration() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Initial status for unknown profile should be None
+        assert_eq!(router.drift_status("unknown-slm"), None);
+
+        // Set baseline distribution for test-slm
+        let baseline: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
+        assert!(router.set_lyapunov_baseline("test-slm", &baseline));
+
+        // Status before route call
+        assert_eq!(router.drift_status("test-slm"), None);
+    }
 }

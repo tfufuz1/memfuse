@@ -20,51 +20,6 @@ impl Default for QuantizationLevel {
     }
 }
 
-/// Unique configuration fingerprint tracking execution parameters of an SLM.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct ConfigFingerprint {
-    /// Blake3 or SHA-256 hash of the active prompt template.
-    pub prompt_template_hash: [u8; 32],
-    /// Quantized temperature parameter to avoid floating-point rounding jitter.
-    pub temperature_bucket: u8,
-    /// Quantization level of the target model binary.
-    pub quantization: QuantizationLevel,
-}
-
-impl Default for ConfigFingerprint {
-    fn default() -> Self {
-        Self {
-            prompt_template_hash: [0u8; 32],
-            temperature_bucket: 0,
-            quantization: QuantizationLevel::Unknown,
-        }
-    }
-}
-
-impl ConfigFingerprint {
-    /// Creates a new `ConfigFingerprint` with quantized temperature.
-    pub fn new(
-        prompt_template_hash: [u8; 32],
-        temperature: f32,
-        quantization: QuantizationLevel,
-    ) -> Self {
-        Self {
-            prompt_template_hash,
-            temperature_bucket: Self::bucket_temperature(temperature),
-            quantization,
-        }
-    }
-
-    /// Quantizes float temperature into a discrete bucket byte (0.05 step sizing).
-    pub fn bucket_temperature(temperature: f32) -> u8 {
-        if !temperature.is_finite() || temperature < 0.0 {
-            0
-        } else {
-            (temperature * 20.0).round().clamp(0.0, 255.0) as u8
-        }
-    }
-}
-
 /// Represents a Small Language Model (SLM) target and its domain expertise parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlmProfile {
@@ -312,7 +267,6 @@ impl ProfileCalibrationState {
             conformal: ConformalCalibrator::new(0.05, 0.01, original_min_score),
             last_calibrated_fingerprint: None,
         }
-        self.last_calibrated_fingerprint.as_ref() == Some(active_fp)
     }
 
     /// Checks active fingerprint against recorded calibration fingerprint.
