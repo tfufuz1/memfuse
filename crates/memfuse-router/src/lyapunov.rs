@@ -157,11 +157,7 @@ impl LyapunovDriftWatcher {
         let mut sum_log_ratio = 0.0f32;
 
         for i in 1..=w {
-            let num = self
-                .divergence_history
-                .get(i)
-                .copied()
-                .unwrap_or(0.0);
+            let num = self.divergence_history.get(i).copied().unwrap_or(0.0);
             let den = self
                 .divergence_history
                 .get(i - 1)

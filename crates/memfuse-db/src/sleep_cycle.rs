@@ -207,14 +207,12 @@ pub fn group_turns_into_segments(
 /// Bei `similarity > threshold` wird der ÄLTERE Turn (kleinere `DocId` als Proxy für frühere Erstellung)
 /// als Duplikat markiert.
 ///
-/// AI-TAG[HARDENING][MEDIUM] TODO: Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert,
+/// AI-TAG[SLEEP][MINOR] DocId-Timestamp-Proxy Hinweis (ID: AGT-DB-660fbb5f)
+/// Hinweis: Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert,
 /// sollte diese Funktion `TxId` oder explizite Timestamps als Parameter anstelle von `DocId` akzeptieren.
 ///
 /// RÜCKGABE: `Vec<(DocId /* zu tombstonen: älterer Turn */, DocId /* Original: neuerer/wichtigerer Turn */)>`
-pub fn detect_near_duplicates(
-    turns: &[(DocId, Vec<f32>)],
-    threshold: f32,
-) -> Vec<(DocId, DocId)> {
+pub fn detect_near_duplicates(turns: &[(DocId, Vec<f32>)], threshold: f32) -> Vec<(DocId, DocId)> {
     let mut pairs = Vec::new();
     let n = turns.len();
 
@@ -258,8 +256,7 @@ pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremP
     let mut duplicates = Vec::new();
 
     // Map von DocId -> Vec<f32> für schnellen Zugriff per Segment
-    let turn_map: std::collections::HashMap<DocId, Vec<f32>> =
-        turns.iter().cloned().collect();
+    let turn_map: std::collections::HashMap<DocId, Vec<f32>> = turns.iter().cloned().collect();
 
     for segment in &segments {
         let segment_turns: Vec<(DocId, Vec<f32>)> = segment
@@ -268,7 +265,8 @@ pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremP
             .filter_map(|id| turn_map.get(id).map(|emb| (*id, emb.clone())))
             .collect();
 
-        let dup_pairs = detect_near_duplicates(&segment_turns, config.near_duplicate_cosine_threshold);
+        let dup_pairs =
+            detect_near_duplicates(&segment_turns, config.near_duplicate_cosine_threshold);
         for (older, _newer) in dup_pairs {
             duplicates.push(older);
         }
@@ -348,7 +346,11 @@ mod tests {
         };
 
         let segments = group_turns_into_segments(&turns, &config);
-        assert_eq!(segments.len(), 2, "10 turns with 2 distinct clusters must produce exactly 2 segments");
+        assert_eq!(
+            segments.len(),
+            2,
+            "10 turns with 2 distinct clusters must produce exactly 2 segments"
+        );
         assert_eq!(segments[0].turn_ids.len(), 5);
         assert_eq!(segments[1].turn_ids.len(), 5);
     }
@@ -357,15 +359,16 @@ mod tests {
     fn test_detect_near_duplicates_older_tombstoned() {
         let emb = vec![1.0, 0.0, 0.0, 0.0];
         // DocId 10 is older than DocId 20
-        let turns = vec![
-            (DocId::new(10), emb.clone()),
-            (DocId::new(20), emb.clone()),
-        ];
+        let turns = vec![(DocId::new(10), emb.clone()), (DocId::new(20), emb.clone())];
 
         let pairs = detect_near_duplicates(&turns, 0.95);
         assert_eq!(pairs.len(), 1);
         let (older, newer) = pairs[0];
-        assert_eq!(older, DocId::new(10), "The older turn (smaller DocId) must be flagged for tombstoning");
+        assert_eq!(
+            older,
+            DocId::new(10),
+            "The older turn (smaller DocId) must be flagged for tombstoning"
+        );
         assert_eq!(newer, DocId::new(20));
     }
 
@@ -373,13 +376,13 @@ mod tests {
     fn test_detect_near_duplicates_sub_threshold() {
         let emb_a = vec![1.0, 0.0, 0.0, 0.0];
         let emb_b = vec![0.0, 1.0, 0.0, 0.0]; // Cosine sim = 0.0 < 0.95
-        let turns = vec![
-            (DocId::new(10), emb_a),
-            (DocId::new(20), emb_b),
-        ];
+        let turns = vec![(DocId::new(10), emb_a), (DocId::new(20), emb_b)];
 
         let pairs = detect_near_duplicates(&turns, 0.95);
-        assert!(pairs.is_empty(), "Embeddings below similarity threshold must not trigger near-duplicate detection");
+        assert!(
+            pairs.is_empty(),
+            "Embeddings below similarity threshold must not trigger near-duplicate detection"
+        );
     }
 
     #[test]

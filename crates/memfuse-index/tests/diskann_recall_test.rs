@@ -134,3 +134,116 @@ async fn test_diskann_recall_at_10_above_95() {
         avg_recall
     );
 }
+
+#[tokio::test]
+async fn test_diskann_incremental_vs_full_rebuild_recall_parity() {
+    let dim = 32;
+    let base_vectors = 1_000;
+    let incremental_vectors = 50; // 50 / 1050 ≈ 0.047 <= 0.10 threshold for incremental insert
+    let num_queries = 30;
+    let k = 10;
+
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let full_path = temp_dir.path().join("full_rebuild.idx");
+    let inc_path = temp_dir.path().join("incremental.idx");
+
+    let mut rng = rand::thread_rng();
+
+    // 1. Generate base + incremental vectors
+    let mut all_vectors = Vec::with_capacity(base_vectors + incremental_vectors);
+    let mut all_ids = Vec::with_capacity(base_vectors + incremental_vectors);
+    for i in 0..(base_vectors + incremental_vectors) {
+        let mut v: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in v.iter_mut() {
+                *x /= norm;
+            }
+        }
+        all_vectors.push(v);
+        all_ids.push(DocId::from(i as u64 + 1));
+    }
+
+    // 2. Generate ground-truth query vectors
+    let mut queries = Vec::with_capacity(num_queries);
+    for _ in 0..num_queries {
+        let mut q: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
+        let norm: f32 = q.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in q.iter_mut() {
+                *x /= norm;
+            }
+        }
+        queries.push(q);
+    }
+
+    let ground_truths: Vec<HashSet<DocId>> = queries
+        .iter()
+        .map(|q| independent_brute_force_knn(q, &all_vectors, &all_ids, k))
+        .collect();
+
+    // 3. Build Full Rebuild Index
+    let full_config = DiskAnnConfig {
+        index_path: full_path,
+        dimension: dim,
+        max_degree: 32,
+        beam_width: 64,
+        distance_metric: DistanceMetric::Cosine,
+        ..DiskAnnConfig::default()
+    };
+    let full_index = DiskAnnIndex::try_new(full_config).unwrap();
+    full_index.build(&all_vectors, &all_ids).await.unwrap();
+
+    let mut full_recall = 0.0;
+    for (q, gt) in queries.iter().zip(ground_truths.iter()) {
+        let results = full_index.search(q, k).await.unwrap();
+        let hits = results.iter().filter(|r| gt.contains(&r.doc_id)).count();
+        full_recall += hits as f64 / k as f64;
+    }
+    let full_avg_recall = full_recall / num_queries as f64;
+
+    // 4. Build Incremental Index (base via build(), then 50 vectors via insert() + persist_delta())
+    let inc_config = DiskAnnConfig {
+        index_path: inc_path,
+        dimension: dim,
+        max_degree: 32,
+        beam_width: 64,
+        distance_metric: DistanceMetric::Cosine,
+        ..DiskAnnConfig::default()
+    };
+    let inc_index = DiskAnnIndex::try_new(inc_config).unwrap();
+
+    let (base_vecs, base_doc_ids) = (&all_vectors[..base_vectors], &all_ids[..base_vectors]);
+    inc_index.build(base_vecs, base_doc_ids).await.unwrap();
+
+    for i in base_vectors..(base_vectors + incremental_vectors) {
+        inc_index
+            .insert(memfuse_core::TxId(1), all_ids[i], &all_vectors[i])
+            .await
+            .unwrap();
+    }
+    inc_index.persist_delta().await.unwrap();
+
+    let mut inc_recall = 0.0;
+    for (q, gt) in queries.iter().zip(ground_truths.iter()) {
+        let results = inc_index.search(q, k).await.unwrap();
+        let hits = results.iter().filter(|r| gt.contains(&r.doc_id)).count();
+        inc_recall += hits as f64 / k as f64;
+    }
+    let inc_avg_recall = inc_recall / num_queries as f64;
+
+    println!(
+        "Full Rebuild Recall@10: {:.4}, Incremental Recall@10: {:.4}",
+        full_avg_recall, inc_avg_recall
+    );
+
+    // Recall drop should be <= 0.05 (5 percentage points)
+    let recall_drop = full_avg_recall - inc_avg_recall;
+    assert!(
+        recall_drop <= 0.05,
+        "Incremental insert Recall@10 ({:.4}) dropped too much compared to full rebuild ({:.4}): drop = {:.4} (allowed <= 0.05)",
+        inc_avg_recall,
+        full_avg_recall,
+        recall_drop
+    );
+}

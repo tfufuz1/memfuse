@@ -83,6 +83,7 @@ pub mod collection;
 pub mod context;
 pub mod context_compaction;
 pub mod sleep_cycle;
+pub mod temporal_filter;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
@@ -105,9 +106,9 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
-pub mod temporal_filter;
 pub mod thermostat;
 pub mod transaction;
+
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};

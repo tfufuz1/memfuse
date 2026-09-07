@@ -29,3 +29,6 @@ for res in results:
 ## Development & Publishing
 
 Refer to [PUBLISHING.md](PUBLISHING.md) for instructions on local building, testing, and release management.
+
+> **Note on Workspace Architecture**:
+> Dieses Crate wird ABSICHTLICH NICHT im Root-Workspace geführt, da es ein abweichendes Panic-Profil (`unwind` statt `abort`) für sichere FFI-Panic-Behandlung benötigt (siehe `run_blocking_ffi`, AGT-PY-d5d2be30). Build separat via `cd crates/memfuse-py && cargo build --release`.
