@@ -676,18 +676,22 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_text_empty = text.trim().is_empty();
 
         // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
-        let mult = query
-            .rerank_pool_multiplier
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
-        let max_pool = query
-            .rerank_pool_max
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
 
         let mut candidate_k = k;
         if !query.include_superseded {
             candidate_k = candidate_k.max(k.saturating_mul(3));
         }
-        let rerank_k = k.saturating_mul(mult).min(max_pool);
         candidate_k = candidate_k
             .max(rerank_k)
             .min(memfuse_core::MAX_SEARCH_K)
