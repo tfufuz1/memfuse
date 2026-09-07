@@ -192,6 +192,7 @@ mod tests {
             context: context_window,
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
 
         let answer = dispatch_to_slm(&decision).await.expect("dispatch ok"); // expect
@@ -817,6 +818,7 @@ mod tests {
             },
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_err = dispatch_to_slm(&decision).await;
         assert!(
@@ -831,6 +833,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_closed = dispatch_to_slm(&decision_closed).await;
         assert!(
@@ -850,6 +853,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_rpc_err = dispatch_to_slm(&decision_rpc_err).await;
         assert!(
@@ -871,6 +875,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_obj = dispatch_to_slm(&decision_obj).await.unwrap(); // unwrap
         assert_eq!(res_obj, "{\"custom_data\":42}");
@@ -888,6 +893,7 @@ mod tests {
             context: decision.context.clone(),
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
         let res_empty = dispatch_to_slm(&decision_empty).await;
         assert!(
@@ -1208,6 +1214,7 @@ mod tests {
             },
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -2078,6 +2085,7 @@ mod tests {
             },
             confidence: None,
             decision_id: DecisionId::new(),
+            drift_status: None,
         };
 
         let res = dispatch_to_slm(&decision).await;
@@ -2275,5 +2283,140 @@ mod tests {
         let unknown_id = DecisionId::new();
 
         assert!(!router.record_outcome(unknown_id, RoutingOutcome::Success));
+    }
+
+    #[tokio::test]
+    async fn test_lyapunov_drift_status_integration() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Initial status for unknown profile should be None
+        assert_eq!(router.drift_status("unknown-slm"), None);
+
+        // Set baseline distribution for test-slm
+        let baseline: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
+        assert!(router.set_lyapunov_baseline("test-slm", &baseline));
+
+        // Status before route call
+        assert_eq!(router.drift_status("test-slm"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_lyapunov_observe_score_and_analyze_drift_detection() {
+        use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
+
+        let mut watcher = LyapunovDriftWatcher::new(20);
+        let baseline: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0 * 0.2).collect();
+        watcher.set_baseline(&baseline);
+
+        // Feed 50 stable scores close to baseline
+        for i in 0..50 {
+            let score = (i % 20) as f32 / 100.0;
+            watcher.observe_score(score);
+        }
+
+        match watcher.analyze() {
+            LyapunovResult::Stable { lyapunov_exponent } => {
+                assert!(
+                    lyapunov_exponent <= 0.05,
+                    "Expected lyapunov_exponent <= 0.05, got {}",
+                    lyapunov_exponent
+                );
+            }
+            other => panic!("Expected Stable after 50 stable scores, got {:?}", other),
+        }
+
+        // Feed 10 outlier scores (scores = 0.95)
+        let mut last_res = LyapunovResult::InsufficientData;
+        for _ in 0..10 {
+            last_res = watcher.observe_score(0.95);
+        }
+
+        assert_eq!(watcher.analyze(), last_res);
+        match last_res {
+            LyapunovResult::DriftDetected {
+                lyapunov_exponent,
+                reason,
+            } => {
+                assert!(lyapunov_exponent > 0.0);
+                assert!(reason.kl_divergence > 0.0);
+            }
+            other => panic!(
+                "Expected DriftDetected after 10 outlier scores, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_route_populates_drift_status_after_sufficient_data(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_lyapunov",
+                &vec_data,
+                Some(json!({"text": "lyapunov test content"})),
+            )
+            .await?;
+
+        let profile = SlmProfile::new(
+            "lyapunov-slm",
+            "http://localhost:9999/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.01,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Perform 25 routing decisions
+        let mut last_decision = None;
+        for _ in 0..25 {
+            let decision = router.route(&vec_data, "lyapunov test content").await?;
+            last_decision = Some(decision);
+        }
+
+        let decision = last_decision.expect("decision present");
+        assert!(
+            decision.drift_status.is_some(),
+            "drift_status should be populated (Some) after 20+ routing decisions"
+        );
+        let status = decision.drift_status.unwrap();
+        assert!(
+            matches!(
+                status,
+                crate::lyapunov::LyapunovResult::Stable { .. }
+                    | crate::lyapunov::LyapunovResult::DriftDetected { .. }
+            ),
+            "Expected Stable or DriftDetected, got {:?}",
+            status
+        );
+
+        Ok(())
     }
 }

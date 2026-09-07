@@ -47,12 +47,22 @@ pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
 /// AGT-DB-003 — Boundary defence at Layer 2 against unbounded `k` from untrusted JSON-RPC.
 pub const MAX_SEARCH_K: usize = 1_000;
 
-/// Internal tenant identifier.
+/// Mandanten-Identifikator. Layer-0-Typ (memfuse-core).
+///
+/// LAYER-BEGRÜNDUNG: TenantId ist Abhängigkeit für KV-Cache-Isolation (Layer 4).
+/// In Layer 1+ definiert → zyklische Crate-Abhängigkeit unvermeidbar.
+///
+/// INVARIANTE INV-TENANT-1: TenantId(0) ist SYSTEM-reserviert.
+/// `TenantId::try_new(0)` → Err. Keine Ausnahmen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TenantId(pub u64);
 
 impl TenantId {
+    /// SYSTEM tenant identifier (`0`).
+    pub const SYSTEM: Self = Self(0);
+    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
     /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
@@ -60,16 +70,18 @@ impl TenantId {
     /// SYSTEM tenant identifier (0).
     pub const SYSTEM: Self = Self(0);
 
-    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    /// Const-Konstruktor.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
-    /// Creates a new `TenantId`, ensuring `id != 0`.
+    /// Sicherer Konstruktor. Gibt Err wenn id == 0.
     pub fn try_new(id: u64) -> Result<Self> {
         if id == 0 {
-            Err(MemFuseError::InvalidInput("TenantId(0) is reserved for TenantId::SYSTEM".to_string()))
+            Err(MemFuseError::InvalidInput(
+                "TenantId(0) is reserved for TenantId::SYSTEM".to_string(),
+            ))
         } else {
             Ok(Self(id))
         }
@@ -124,7 +136,9 @@ impl CollectionId {
     /// Creates a new `CollectionId`, ensuring `id != 0`.
     pub fn try_new(id: u64) -> Result<Self> {
         if id == 0 {
-            Err(MemFuseError::InvalidInput("CollectionId cannot be 0".to_string()))
+            Err(MemFuseError::InvalidInput(
+                "CollectionId cannot be 0".to_string(),
+            ))
         } else {
             Ok(Self(id))
         }
@@ -210,6 +224,7 @@ impl std::fmt::Display for DocId {
         write!(f, "DocId({})", self.0)
     }
 }
+
 /// Internal entity identifier for graph nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -991,7 +1006,8 @@ mod tests {
         let serialized = serde_json::to_string(&tenant).expect("TenantId serialization failed");
         assert_eq!(serialized, "987654321");
 
-        let deserialized: TenantId = serde_json::from_str(&serialized).expect("TenantId deserialization failed");
+        let deserialized: TenantId =
+            serde_json::from_str(&serialized).expect("TenantId deserialization failed");
         assert_eq!(tenant, deserialized);
     }
 
@@ -1830,7 +1846,7 @@ mod tests {
 
     #[test]
     fn test_tenant_id_valid() {
-        let t = TenantId::try_new(42).unwrap();
+        let t = TenantId::try_new(42).expect("valid tenant_id");
         assert_eq!(t.inner(), 42);
         assert!(!t.is_system());
     }
@@ -1839,13 +1855,5 @@ mod tests {
     fn test_tenant_id_system_constant() {
         assert_eq!(TenantId::SYSTEM.inner(), 0);
         assert!(TenantId::SYSTEM.is_system());
-    }
-
-    #[test]
-    fn test_tenant_id_try_new_serde_roundtrip() {
-        let t = TenantId::try_new(999).unwrap();
-        let json = serde_json::to_string(&t).unwrap();
-        let back: TenantId = serde_json::from_str(&json).unwrap();
-        assert_eq!(t, back);
     }
 }

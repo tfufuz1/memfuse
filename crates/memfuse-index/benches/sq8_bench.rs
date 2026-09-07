@@ -19,17 +19,17 @@ fn bench_sq8(c: &mut Criterion) {
     let a: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
     let b: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect();
 
-    let a_q = quantizer.quantize(&a);
-    let b_q = quantizer.quantize(&b);
+    let a_q = quantizer.quantize(&a).expect("quantize");
+    let b_q = quantizer.quantize(&b).expect("quantize");
 
     let mut group = c.benchmark_group("SQ8");
 
     group.bench_function("quantize", |b_bench| {
-        b_bench.iter(|| quantizer.quantize(black_box(&a)))
+        b_bench.iter(|| quantizer.quantize(black_box(&a)).unwrap())
     });
 
     group.bench_function("dequantize", |b_bench| {
-        b_bench.iter(|| quantizer.dequantize(black_box(&a_q)))
+        b_bench.iter(|| quantizer.dequantize(black_box(&a_q)).unwrap())
     });
 
     group.bench_function("asymmetric_dist_cosine", |b_bench| {

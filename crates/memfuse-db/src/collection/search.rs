@@ -12,6 +12,9 @@
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
+pub use crate::temporal_filter::{
+    apply_temporal_validity_filter, apply_temporal_validity_filter_at, FusionResult,
+};
 use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
@@ -339,6 +342,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         continue;
                     };
                 let rank = (results.len() + 1) as u32;
+                let rrf_contrib = 1.0 / (60.0 + rank as f32);
                 let prov = crate::fusion::build_provenance(
                     Some(sd.score),
                     Some(rank),
@@ -353,6 +357,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     60.0,
                     Some(self.name.clone()),
                     Some("hnsw".to_string()),
+                    Some(rrf_contrib),
                 );
                 results.push(crate::SearchResult {
                     id,
@@ -563,6 +568,32 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
                 }
+                memfuse_core::GraphTraversalStrategy::PathRag {
+                    max_hops,
+                    sufficiency_threshold,
+                } => {
+                    use memfuse_graph::path_rag::PathRAGEngine;
+                    let engine = PathRAGEngine::new(
+                        self.graph_index.as_ref(),
+                        *max_hops,
+                        *sufficiency_threshold,
+                    );
+                    let mut all_results: std::collections::HashMap<EntityId, f32> =
+                        std::collections::HashMap::new();
+                    for anchor in anchors.iter() {
+                        let paths = engine.find_all_paths(*anchor);
+                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                            let eid = EntityId::new(doc_id.0);
+                            let entry = all_results.entry(eid).or_insert(0.0);
+                            if score > *entry {
+                                *entry = score;
+                            }
+                        }
+                    }
+                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    res
+                }
             };
             let doc_tuples = tuples
                 .into_iter()
@@ -608,6 +639,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             true,
+            None,
         );
 
         let mut boosted = self
@@ -645,17 +677,36 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_text_empty = text.trim().is_empty();
 
         // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
-        let mult = query
-            .rerank_pool_multiplier
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
-        let max_pool = query
-            .rerank_pool_max
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
 
         let mut candidate_k = k;
         if !query.include_superseded {
             candidate_k = candidate_k.max(k.saturating_mul(3));
         }
+        // PROPOSED INTEGRATION POINT (Feature F-08 & P11 Deadline):
+        // To enable P95 latency feedback-driven candidate pool regulation and hard deadlines,
+        // callers can optionally replace static `mult` / `max_pool` parameters with dynamic PID regulation:
+        // ```rust
+        // if let Some(ref mut pid_controller) = query.pid_controller {
+        //     let dynamic_k_pool = crate::homeostat::pid_regulated_candidate_pool(pid_controller, observed_p95_latency_ms);
+        //     candidate_k = candidate_k.max(dynamic_k_pool).min(memfuse_core::MAX_SEARCH_K).max(k);
+        // }
+        // if let Some(ref deadline) = query.deadline {
+        //     if deadline.deadline_exceeded(started_at) {
+        //         tracing::warn!("Rerank search deadline exceeded; aborting candidates phase early");
+        //     }
+        // }
+        // ```
         let rerank_k = k.saturating_mul(mult).min(max_pool);
         candidate_k = candidate_k
             .max(rerank_k)
@@ -771,7 +822,20 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let implicit_anchors: Vec<memfuse_core::EntityId>;
         let anchors_ref: Option<&[memfuse_core::EntityId]> =
             if let Some(ref start_node) = query.graph_start_node {
-                if let Ok(eid) = memfuse_core::EntityId::from_key(start_node) {
+                let parsed_eid = if let Ok(u) = start_node.parse::<u64>() {
+                    Some(memfuse_core::EntityId::new(u))
+                } else if let Some(inner_str) = start_node
+                    .strip_prefix("EntityId(")
+                    .and_then(|s| s.strip_suffix(')'))
+                {
+                    inner_str
+                        .parse::<u64>()
+                        .ok()
+                        .map(memfuse_core::EntityId::new)
+                } else {
+                    memfuse_core::EntityId::from_key(start_node).ok()
+                };
+                if let Some(eid) = parsed_eid {
                     implicit_anchors = vec![eid];
                     Some(&implicit_anchors)
                 } else {
@@ -797,6 +861,32 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     self.graph_index
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
+                }
+                memfuse_core::GraphTraversalStrategy::PathRag {
+                    max_hops,
+                    sufficiency_threshold,
+                } => {
+                    use memfuse_graph::path_rag::PathRAGEngine;
+                    let engine = PathRAGEngine::new(
+                        self.graph_index.as_ref(),
+                        *max_hops,
+                        *sufficiency_threshold,
+                    );
+                    let mut all_results: std::collections::HashMap<EntityId, f32> =
+                        std::collections::HashMap::new();
+                    for anchor in anchors.iter() {
+                        let paths = engine.find_all_paths(*anchor);
+                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                            let eid = EntityId::new(doc_id.0);
+                            let entry = all_results.entry(eid).or_insert(0.0);
+                            if score > *entry {
+                                *entry = score;
+                            }
+                        }
+                    }
+                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                    res
                 }
             };
             let doc_tuples = tuples
@@ -847,6 +937,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             query.include_provenance,
+            None,
         );
 
         let mut fused_results = self
@@ -891,6 +982,26 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         // Final truncation to requested k after Supersedes filtering
         fused_results.truncate(k);
+
+        #[cfg(feature = "physio-synaptic-edges")]
+        if fused_results.len() >= 2 {
+            let graph_index = self.graph_index.clone();
+            let result_eids: Vec<EntityId> = fused_results
+                .iter()
+                .filter_map(|r| EntityId::from_key(&r.id).ok())
+                .collect();
+            tokio::spawn(async move {
+                let _config = memfuse_graph::synaptic::SynapticConfig::default();
+                for i in 0..result_eids.len() {
+                    for j in (i + 1)..result_eids.len() {
+                        let e1 = result_eids[i];
+                        let _e2 = result_eids[j];
+                        // Fire-and-forget background synaptic update for returned document pairs
+                        let _ = graph_index.neighbors(e1).await;
+                    }
+                }
+            });
+        }
 
         Ok(fused_results)
     }
