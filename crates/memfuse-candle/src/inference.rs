@@ -65,7 +65,9 @@ impl LlmTextGenerator for CandleLlmClient {
                 guard.generate(&prompt_owned, &tokenizer, &device)
             })
             .await
-            .map_err(|e| MemFuseError::Internal(format!("Candle inference task join error: {e}")))?
+            .map_err(|e| {
+                MemFuseError::Internal(format!("Candle inference task join error: {e}"))
+            })?
         })
     }
 }
@@ -110,11 +112,14 @@ mod tests {
             "decoder": null,
             "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
         }"#;
-        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes())
-            .map_err(|e| e.to_string())
-            .unwrap();
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).map_err(|e| e.to_string()).unwrap();
 
-        let client = CandleLlmClient::new(Device::Cpu, mock_model, fingerprint.clone(), tokenizer);
+        let client = CandleLlmClient::new(
+            Device::Cpu,
+            mock_model,
+            fingerprint.clone(),
+            tokenizer,
+        );
 
         assert_eq!(client.fingerprint(), &fingerprint);
 

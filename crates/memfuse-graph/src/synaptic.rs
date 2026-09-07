@@ -101,14 +101,22 @@ pub fn synaptic_score(hebbian_weight: f32, pheromone: f32, alpha: f32) -> f32 {
 
 /// Führt Hebbian-Update durch und prüft Homöostase-Invariante.
 /// Gibt `true` zurück wenn homöostatische Skalierung nötig war.
-pub fn apply_hebbian_update(edge: &mut Edge, co_activation: f32, config: &SynapticConfig) -> bool {
+pub fn apply_hebbian_update(
+    edge: &mut Edge,
+    co_activation: f32,
+    config: &SynapticConfig,
+) -> bool {
     let delta = config.eta * co_activation - config.delta * edge.hebbian_weight;
     edge.hebbian_weight = (edge.hebbian_weight + delta).max(0.0);
     edge.hebbian_weight > config.w_max
 }
 
 /// Führt Pheromon-Update durch (Evaporation + Verstärkung).
-pub fn apply_pheromone_update(edge: &mut Edge, path_length: usize, config: &SynapticConfig) {
+pub fn apply_pheromone_update(
+    edge: &mut Edge,
+    path_length: usize,
+    config: &SynapticConfig,
+) {
     let reinforcement = if path_length > 0 {
         config.q / (path_length as f32)
     } else {
@@ -118,7 +126,10 @@ pub fn apply_pheromone_update(edge: &mut Edge, path_length: usize, config: &Syna
 }
 
 /// Homöostatische Skalierung: wenn Σ_j w_ij > W_max, skaliere alle Kanten von i proportional.
-pub fn apply_homeostatic_scaling(outgoing_edges: &mut [Edge], w_max: f32) {
+pub fn apply_homeostatic_scaling(
+    outgoing_edges: &mut [Edge],
+    w_max: f32,
+) {
     let sum_w: f32 = outgoing_edges.iter().map(|e| e.hebbian_weight).sum();
     if sum_w > w_max && sum_w > 0.0 {
         let scale = w_max / sum_w;

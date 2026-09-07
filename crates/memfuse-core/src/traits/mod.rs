@@ -480,10 +480,7 @@ pub trait LlmTextGenerator: Send + Sync + 'static {
 /// Trait-Abstraktion für LLM-Synthesizer zur Segment-Zusammenfassung (REM-Phase).
 pub trait SegmentSynthesizer: Send + Sync {
     /// Synthetisiert ein Segment von Texten zu einer abstrakten Zusammenfassung.
-    fn synthesize_segment<'a>(
-        &'a self,
-        segment_texts: &'a [&'a str],
-    ) -> BoxFuture<'a, Result<String>>;
+    fn synthesize_segment<'a>(&'a self, segment_texts: &'a [&'a str]) -> BoxFuture<'a, Result<String>>;
     /// Gibt die Modell-ID des Synthesizers zurück.
     fn model_id(&self) -> &str;
 }

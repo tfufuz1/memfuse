@@ -94,8 +94,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_compute_fingerprint_differs_by_quantization() -> Result<(), Box<dyn std::error::Error>>
-    {
+    fn test_compute_fingerprint_differs_by_quantization() -> Result<(), Box<dyn std::error::Error>> {
         let mut tmp_file = NamedTempFile::new()?;
         tmp_file.write_all(b"mock weight blob data 1234567890")?;
 

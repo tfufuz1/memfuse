@@ -21,10 +21,7 @@ pub fn parse_gguf_metadata(model_path: &Path) -> Result<GgufMetadata, MemFuseErr
     let mut file = File::open(model_path).map_err(|e| {
         MemFuseError::Io(std::io::Error::new(
             e.kind(),
-            format!(
-                "Failed to open GGUF model file {}: {e}",
-                model_path.display()
-            ),
+            format!("Failed to open GGUF model file {}: {e}", model_path.display()),
         ))
     })?;
 

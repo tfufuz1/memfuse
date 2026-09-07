@@ -47,26 +47,23 @@ async fn test_diskann_rebuild_fault_injection_preserves_previous_index() {
         .expect("write partial tmp file");
 
     // Also attempt an interrupted task simulate
-    let interrupted_index =
-        DiskAnnIndex::try_new(config.clone()).expect("interrupted DiskAnnIndex");
+    let interrupted_index = DiskAnnIndex::try_new(config.clone()).expect("interrupted DiskAnnIndex");
     let mut large_vectors = initial_vectors.clone();
     large_vectors.push(vec![99.0f32, 0.0, 0.0, 0.0]);
     let mut large_ids = initial_ids.clone();
     large_ids.push(DocId::from(999));
 
     // Spawn build in a task and abort it mid-air to simulate abrupt process kill / crash
-    let build_task =
-        tokio::spawn(async move { interrupted_index.build(&large_vectors, &large_ids).await });
+    let build_task = tokio::spawn(async move {
+        interrupted_index.build(&large_vectors, &large_ids).await
+    });
     // Abort immediately
     build_task.abort();
     let _ = build_task.await;
 
     // 3. Reload index from original path and verify the PREVIOUS valid index state remains untouched and functional
     let reloaded_index = DiskAnnIndex::try_new(config.clone()).expect("reloaded DiskAnnIndex");
-    reloaded_index
-        .load()
-        .await
-        .expect("reloading previous valid index must succeed");
+    reloaded_index.load().await.expect("reloading previous valid index must succeed");
 
     let reloaded_res = reloaded_index
         .search(&initial_query, 1)

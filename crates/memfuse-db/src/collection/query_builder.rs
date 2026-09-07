@@ -144,8 +144,7 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
     #[cfg(feature = "physio-replicator-weights")]
-    replicator_state:
-        Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
+    replicator_state: Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
     #[cfg(feature = "physio-pid-homeostasis")]
@@ -1056,14 +1055,19 @@ mod tests {
     #[test]
     fn test_no_reranker_uses_k_not_10k() {
         let k = 10;
-        let query = HybridQuery::builder().with_k(k).build().unwrap();
+        let query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
         assert!(!query.has_reranker);
 
         let rerank_k = if query.has_reranker {
             let mult = query
                 .rerank_pool_multiplier
                 .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
-            let max_pool = query.rerank_pool_max.unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
             k.saturating_mul(mult).min(max_pool)
         } else {
             k
@@ -1088,14 +1092,19 @@ mod tests {
     #[test]
     fn test_reranker_expands_to_100_for_k10() {
         let k = 10;
-        let mut query = HybridQuery::builder().with_k(k).build().unwrap();
+        let mut query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
         query.has_reranker = true;
 
         let rerank_k = if query.has_reranker {
             let mult = query
                 .rerank_pool_multiplier
                 .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
-            let max_pool = query.rerank_pool_max.unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
             k.saturating_mul(mult).min(max_pool)
         } else {
             k

@@ -455,6 +455,7 @@ mod tests {
         assert!(window.total_tokens > 0);
         assert!(!window.chunks[0].content.is_empty());
     }
+
 }
 
 #[cfg(test)]

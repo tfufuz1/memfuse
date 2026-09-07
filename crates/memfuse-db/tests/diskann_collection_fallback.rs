@@ -42,8 +42,7 @@ async fn test_collection_query_with_corrupted_diskann_returns_results_via_fallba
         .expect("write corrupt file");
 
     // 3. Create a reloaded DiskANN index instance that fails loading and falls back to HNSW
-    let reloaded_diskann =
-        Arc::new(DiskAnnIndex::try_new(diskann_config).expect("try_new reloaded"));
+    let reloaded_diskann = Arc::new(DiskAnnIndex::try_new(diskann_config).expect("try_new reloaded"));
     let _ = reloaded_diskann.load().await; // Load fails & activates HNSW fallback internally
 
     // Insert new document into the fallback index
@@ -83,12 +82,7 @@ async fn test_collection_query_with_corrupted_diskann_returns_results_via_fallba
         .expect("insert through collection");
 
     // 5. Query collection via regular Collection::query() path
-    let search_results = collection
-        .query()
-        .vector(vec![1.0f32, 0.0, 0.0, 0.0])
-        .k(5)
-        .execute()
-        .await;
+    let search_results = collection.query().vector(vec![1.0f32, 0.0, 0.0, 0.0]).k(5).execute().await;
 
     // Verify Collection::query() does NOT return an Err, but returns valid results
     assert!(

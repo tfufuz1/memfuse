@@ -91,13 +91,13 @@ pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
-pub use memfuse_core::SegmentSynthesizer;
 pub use reaper::start_nrem_reaper;
 pub use sleep_cycle::{
     compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
     run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
 };
 pub use sleep_cycle_executor::{execute_nrem_cycle, execute_sleep_cycle};
+pub use memfuse_core::SegmentSynthesizer;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
@@ -123,14 +123,14 @@ pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewr
 
 #[cfg(feature = "physio-percolation")]
 pub use collection::maintenance::PercolationResult;
+#[cfg(feature = "physio-percolation")]
+pub use memfuse_graph::percolation::PercolationConfig;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 use memfuse_core::FilterExpr;
-#[cfg(feature = "physio-percolation")]
-pub use memfuse_graph::percolation::PercolationConfig;
 pub use memfuse_text::Language;
 
 /// Herkunftsnachweis für ein einzelnes Suchergebnis.

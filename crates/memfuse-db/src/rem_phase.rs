@@ -43,7 +43,7 @@ pub async fn run_rem_phase(
     segments: &[TurnSegment],
     segment_texts: &[Vec<String>], // Texte der Turns pro Segment
     synthesizer: &dyn SegmentSynthesizer,
-    min_turns_for_rem: usize, // Default: 3 — kurze Segmente überspringen
+    min_turns_for_rem: usize,      // Default: 3 — kurze Segmente überspringen
 ) -> RemPhaseResult {
     let mut synthesized_chunks = Vec::new();
     let mut skipped_segments = 0;
@@ -114,10 +114,7 @@ mod tests {
     }
 
     impl SegmentSynthesizer for MockSynthesizer {
-        fn synthesize_segment<'a>(
-            &'a self,
-            segment_texts: &'a [&'a str],
-        ) -> BoxFuture<'a, Result<String>> {
+        fn synthesize_segment<'a>(&'a self, segment_texts: &'a [&'a str]) -> BoxFuture<'a, Result<String>> {
             Box::pin(async move {
                 if self.should_fail.load(Ordering::SeqCst) {
                     Err(memfuse_core::MemFuseError::Internal(
@@ -184,7 +181,11 @@ mod tests {
             turn_ids: vec![DocId::new(10), DocId::new(20), DocId::new(30)],
             representative_embedding: vec![1.0, 0.0],
         };
-        let texts = vec![vec!["A".to_string(), "B".to_string(), "C".to_string()]];
+        let texts = vec![vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+        ]];
 
         let res = run_rem_phase(&[segment], &texts, &synthesizer, 3).await;
 

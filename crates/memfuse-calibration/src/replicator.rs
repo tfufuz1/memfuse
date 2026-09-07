@@ -27,11 +27,7 @@ impl ReplicatorState {
     /// Erstellt einen neuen State mit Gleichverteilung.
     pub fn new(signal_names: Vec<String>, eta: f32) -> Self {
         let signal_names = if signal_names.is_empty() {
-            vec![
-                "vector".to_string(),
-                "text".to_string(),
-                "graph".to_string(),
-            ]
+            vec!["vector".to_string(), "text".to_string(), "graph".to_string()]
         } else {
             signal_names
         };
@@ -169,11 +165,7 @@ mod tests {
     #[test]
     fn test_replicator_equal_rewards_preserves_uniform() {
         let mut state = ReplicatorState::new(
-            vec![
-                "vector".to_string(),
-                "text".to_string(),
-                "graph".to_string(),
-            ],
+            vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
             0.05,
         );
         let initial_weights = state.weights.clone();
@@ -190,11 +182,7 @@ mod tests {
     #[test]
     fn test_replicator_positive_reward_increases_weight() {
         let mut state = ReplicatorState::new(
-            vec![
-                "vector".to_string(),
-                "text".to_string(),
-                "graph".to_string(),
-            ],
+            vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
             0.1,
         );
         let initial_w0 = state.weights[0];
@@ -213,11 +201,7 @@ mod tests {
     #[test]
     fn test_replicator_invalidate_on_config_change() {
         let mut state = ReplicatorState::new(
-            vec![
-                "vector".to_string(),
-                "text".to_string(),
-                "graph".to_string(),
-            ],
+            vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
             0.05,
         );
         state.update(&[1.0, 0.0, 0.0]);
@@ -240,11 +224,7 @@ mod tests {
     #[test]
     fn test_record_retrieval_feedback() {
         let state = Arc::new(parking_lot::RwLock::new(ReplicatorState::new(
-            vec![
-                "vector".to_string(),
-                "text".to_string(),
-                "graph".to_string(),
-            ],
+            vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
             0.05,
         )));
 

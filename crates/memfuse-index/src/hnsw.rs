@@ -1840,8 +1840,10 @@ impl HnswIndexCore {
         }
 
         // For each node in region (or adjacent to region), prune references to tombstoned region nodes
-        let tombstoned_set: AHashSet<u32> =
-            tombstoned_in_region.iter().map(|&id| id as u32).collect();
+        let tombstoned_set: AHashSet<u32> = tombstoned_in_region
+            .iter()
+            .map(|&id| id as u32)
+            .collect();
 
         for (i, node) in nodes.iter().enumerate() {
             let global_idx = mmap_count + i;
