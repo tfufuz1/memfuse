@@ -62,11 +62,17 @@ impl TenantId {
     /// SYSTEM tenant identifier (`0`).
     pub const SYSTEM: Self = Self(0);
     /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    #[deprecated(note = "Identisch zu TenantId::SYSTEM — nutze SYSTEM für Klarheit.")]
     pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
+    #[deprecated(note = "Identisch zu TenantId::SYSTEM — nutze SYSTEM für Klarheit.")]
     pub const INVALID: Self = Self(0);
 
     /// Const-Konstruktor.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Nutze TenantId::try_new() oder TenantId::SYSTEM — new() umgeht INV-TENANT-1 und wird in einer künftigen Version entfernt."
+    )]
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
@@ -98,10 +104,21 @@ impl TenantId {
 
 impl Default for TenantId {
     fn default() -> Self {
-        Self::DEFAULT
+        Self::SYSTEM
     }
 }
 
+impl TryFrom<u64> for TenantId {
+    type Error = MemFuseError;
+
+    fn try_from(id: u64) -> Result<Self> {
+        Self::try_new(id)
+    }
+}
+
+#[deprecated(
+    note = "Nutze TryFrom<u64> (fehlerbehaftet) statt From<u64> — From umgeht INV-TENANT-1 stillschweigend bei id=0."
+)]
 impl From<u64> for TenantId {
     fn from(id: u64) -> Self {
         Self(id)
@@ -974,10 +991,10 @@ mod tests {
     #[test]
     fn test_tenant_id_defaults_and_constants() {
         let default_tenant = TenantId::default();
-        assert_eq!(default_tenant, TenantId::DEFAULT);
+        assert_eq!(default_tenant, TenantId::SYSTEM);
         assert_eq!(default_tenant.inner(), 0);
         assert_eq!(TenantId::new(42).inner(), 42);
-        assert_eq!(TenantId::from(100u64), TenantId::new(100));
+        assert_eq!(TenantId::try_from(100u64).unwrap(), TenantId::new(100));
         assert_eq!(format!("{default_tenant}"), "TenantId(0)");
     }
 
@@ -1862,5 +1879,12 @@ mod tests {
     fn test_tenant_id_system_constant() {
         assert_eq!(TenantId::SYSTEM.inner(), 0);
         assert!(TenantId::SYSTEM.is_system());
+    }
+
+    #[test]
+    fn test_tenant_id_hardening() {
+        assert!(TenantId::try_from(0u64).is_err());
+        assert!(TenantId::try_new(0).is_err());
+        assert_eq!(TenantId::SYSTEM.inner(), 0);
     }
 }
