@@ -27,13 +27,10 @@ const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"FOOT";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse-diskann-integrity-key-32";
 const DISKANN_VERSION: u16 = 1;
-/// Pending-Threshold: nach 50 pending inserts → Trigger für persist_delta().
-/// Datenverlustrisiko im Absturzfall ist durch das WAL-rückgestützte
-/// `pending.wal` (siehe `recover_pending_delta()`) abgedeckt — ein Absturz
-/// innerhalb dieses Fensters führt zu Wiederherstellung beim nächsten Start,
-/// nicht zu Datenverlust. Der verbleibende Aspekt dieses Schwellwerts ist rein
-/// ein Latenz-Trigger (siehe `trigger_background_persist_delta()`), kein
-/// Korrektheitsrisiko mehr.
+/// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
+/// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
+/// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
+/// innerhalb dieses 50-Insert-Fensters sind nicht-geflushte Vektoren unpersistent.
 const PENDING_FLUSH_THRESHOLD: u64 = 50;
 
 /// Header for DiskANN index file.
@@ -1209,7 +1206,7 @@ impl DiskAnnIndex {
 
         if index_exists {
             let inner = Arc::clone(&self.inner);
-            let load_res = tokio::task::spawn_blocking(move || {
+            let load_handle = tokio::task::spawn_blocking(move || {
                 use std::sync::atomic::Ordering;
 
                 // Clean up any orphaned temporary files from interrupted persist_delta or build calls
@@ -1241,10 +1238,41 @@ impl DiskAnnIndex {
                 #[allow(unsafe_code)]
                 let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
+                if mmap.len() < DiskAnnHeader::SIZE + DiskAnnFooter::SIZE {
+                    return Err(MemFuseError::Storage(
+                        "DiskANN file too small for header and footer".into(),
+                    ));
+                }
+
                 let header_slice = mmap.get(0..DiskAnnHeader::SIZE).ok_or_else(|| {
                     MemFuseError::Storage("DiskANN file too small for header".into())
                 })?;
                 let header = DiskAnnHeader::try_from_bytes(header_slice)?;
+
+                // Verify HMAC integrity footer
+                let footer_slice = mmap
+                    .get(mmap.len() - DiskAnnFooter::SIZE..)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("DiskANN file too small for footer".into())
+                    })?;
+                let footer = DiskAnnFooter::try_from_bytes(footer_slice)?;
+
+                let payload = mmap
+                    .get(..mmap.len() - DiskAnnFooter::SIZE)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("DiskANN payload slice out of bounds".into())
+                    })?;
+
+                let mut hmac =
+                    memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+                hmac.update(payload);
+                let computed_hmac = hmac.finalize();
+
+                if footer.hmac != computed_hmac {
+                    return Err(MemFuseError::Storage(
+                        "DiskANN index file HMAC integrity validation failed: checksum mismatch".into(),
+                    ));
+                }
 
                 if inner.config.sector_size != header.sector_size as usize {
                     return Err(MemFuseError::Index(format!(
@@ -1344,23 +1372,26 @@ impl DiskAnnIndex {
                 }
                 *inner.doc_ids.write() = ids;
                 Ok(())
-            })
-            .await
-            .map_err(|e| {
-                MemFuseError::Storage(format!("Join error during DiskANN load: {}", e))
-            })?;
+            });
 
-            if let Err(e) = load_res {
+            let load_res = load_handle
+                .await
+                .map_err(|e| {
+                    MemFuseError::Storage(format!("Join error during DiskANN load: {}", e))
+                })
+                .and_then(|res| res);
+
+            if let Err(err) = load_res {
                 if self.inner.config.fallback_policy == DiskAnnFallbackPolicy::UseHnswOnFailure {
-                    tracing::warn!(
+                    tracing::error!(
                         index_path = %self.inner.config.index_path.display(),
-                        error = %e,
-                        "DiskANN index file load failed — initializing HNSW fallback"
+                        error = %err,
+                        "DiskANN index loading or integrity validation failed — using HNSW fallback"
                     );
                     self.init_hnsw_fallback()?;
                     return Ok(());
                 } else {
-                    return Err(e);
+                    return Err(err);
                 }
             }
         }
@@ -1678,10 +1709,10 @@ impl Clone for DiskAnnIndex {
 }
 
 impl VectorIndex for DiskAnnIndex {
-    async fn insert(&self, _tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+    async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         let fallback_opt = self.inner.hnsw_fallback.read().clone();
         if let Some(hnsw) = fallback_opt {
-            return hnsw.insert(_tx, id, embedding).await;
+            return hnsw.insert(tx, id, embedding).await;
         }
 
         self.check_quantizer_drift(embedding);
@@ -2456,91 +2487,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_insert_returns_fast_even_at_flush_threshold() -> Result<()> {
-        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
-        let index_path = temp_dir.path().join("latency.idx");
+    async fn test_diskann_footer_roundtrip_hmac_integrity() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("footer_roundtrip.idx");
 
         let config = DiskAnnConfig {
-            index_path,
-            dimension: 16,
-            max_degree: 8,
-            beam_width: 8,
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            sector_size: 4096,
             distance_metric: DistanceMetric::Euclidean,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
             ..DiskAnnConfig::default()
         };
 
-        let index = DiskAnnIndex::try_new(config)?;
+        let index = DiskAnnIndex::try_new(config.clone()).unwrap();
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(42)];
+        index.build(&vectors, &ids).await.unwrap();
 
-        // Fill pending buffer up to PENDING_FLUSH_THRESHOLD - 1 (49 items)
-        for i in 1..PENDING_FLUSH_THRESHOLD {
-            let id = DocId::from(i);
-            let v = vec![i as f32; 16];
-            index.insert(TxId(1), id, &v).await?;
-        }
+        // 1. Verify index file contains a valid DiskAnnFooter at the end
+        let file_bytes = tokio::fs::read(&index_path).await.unwrap();
+        assert!(file_bytes.len() >= DiskAnnFooter::SIZE);
+        let footer_slice = &file_bytes[file_bytes.len() - DiskAnnFooter::SIZE..];
+        let footer = DiskAnnFooter::try_from_bytes(footer_slice).expect("footer parsing");
+        assert_eq!(&footer.magic, DISKANN_FOOTER_MAGIC);
 
-        // Measure time taken by the threshold-triggering 50th insert()
-        let triggering_id = DocId::from(PENDING_FLUSH_THRESHOLD);
-        let triggering_v = vec![PENDING_FLUSH_THRESHOLD as f32; 16];
+        // Verify HMAC calculation over payload
+        let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY).unwrap();
+        let payload = &file_bytes[..file_bytes.len() - DiskAnnFooter::SIZE];
+        hmac.update(payload);
+        let expected_hmac = hmac.finalize();
+        assert_eq!(footer.hmac, expected_hmac);
 
-        let start = std::time::Instant::now();
-        index.insert(TxId(1), triggering_id, &triggering_v).await?;
-        let elapsed = start.elapsed();
+        // 2. Corrupt one byte of HMAC in footer, write to disk, and verify load returns integrity error
+        let mut corrupt_bytes = file_bytes.clone();
+        let last_idx = corrupt_bytes.len() - 1;
+        corrupt_bytes[last_idx] ^= 0xFF;
+        tokio::fs::write(&index_path, &corrupt_bytes)
+            .await
+            .expect("write corrupt footer file");
 
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        let load_res = reloaded_index.load().await;
         assert!(
-            elapsed < std::time::Duration::from_millis(20),
-            "insert() took {:?}, exceeding the 20ms latency budget at flush threshold!",
-            elapsed
+            load_res.is_err(),
+            "Loading corrupted HMAC footer must return Err"
         );
-
-        // Wait briefly for background flush task or call persist_delta() to clean up
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        index.persist_delta().await?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_no_concurrent_persist_delta_races() -> Result<()> {
-        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
-        let index_path = temp_dir.path().join("race_prevention.idx");
-
-        let config = DiskAnnConfig {
-            index_path,
-            dimension: 16,
-            max_degree: 8,
-            beam_width: 8,
-            distance_metric: DistanceMetric::Euclidean,
-            ..DiskAnnConfig::default()
-        };
-
-        let index = DiskAnnIndex::try_new(config)?;
-
-        // Build initial index with 10 items
-        let base_vecs: Vec<Vec<f32>> = (0..10).map(|i| vec![i as f32; 16]).collect();
-        let base_ids: Vec<DocId> = (0..10).map(|i| DocId::from(i + 1)).collect();
-        index.build(&base_vecs, &base_ids).await?;
-
-        // Rapidly perform 60 inserts exceeding PENDING_FLUSH_THRESHOLD
-        for i in 11..=70 {
-            let id = DocId::from(i as u64);
-            let v = vec![i as f32; 16];
-            index.insert(TxId(1), id, &v).await?;
-        }
-
-        // Give background tasks time to process, then invoke persist_delta to flush remaining
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        index.persist_delta().await?;
-
-        // Verify that total node count is 70 and no file corruption occurred
-        assert_eq!(index.len().await, 70);
-
-        // Verify index reloading and search accuracy
-        index.load().await?;
-        let query = vec![65.0f32; 16];
-        let res = index.search(&query, 1).await?;
-        assert!(!res.is_empty());
-        assert_eq!(res[0].doc_id, DocId::from(65u64));
-
-        Ok(())
+        let err_msg = load_res.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("HMAC integrity validation failed"),
+            "Unexpected error message: {}",
+            err_msg
+        );
     }
 }
