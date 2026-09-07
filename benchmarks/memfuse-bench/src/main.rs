@@ -72,11 +72,7 @@ fn pad_vector(v: &[f32], target_dim: usize) -> Vec<f32> {
     padded
 }
 
-fn create_synthetic_corpus() -> (
-    Vec<SyntheticDocument>,
-    Vec<GroundTruthQuery>,
-    Vec<GroundTruthQuery>,
-) {
+fn build_evaluation_corpus() -> Vec<SyntheticDocument> {
     const DIM: usize = 768;
 
     vec![
@@ -454,7 +450,7 @@ fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, 
             query_text:
                 "Haftung B2B Lieferbedingungen ACME Enterprise Systems Firmenkundengeschäft".into(),
             query_embedding: pad_vector(&[0.80, 0.20, 0.0, 0.0], DIM),
-            relevant_doc_ids: vec!["doc_agb_b2b_sec4".into()],
+            relevant_doc_ids: vec!["doc_rust_1".into()],
         },
         GroundTruthQuery {
             query_id: "q_a_2".into(),
@@ -490,14 +486,14 @@ fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, 
                 "Welche Frist gilt für ordentliche Kündigung nach der Probezeit im Arbeitsvertrag?"
                     .into(),
             query_embedding: pad_vector(&[0.1, 0.86, 0.04, 0.0], DIM),
-            relevant_doc_ids: vec!["doc_arbeitsvertrag_kuendigung".into()],
+            relevant_doc_ids: vec!["doc_rust_2".into()],
         },
         GroundTruthQuery {
             query_id: "q_b_2".into(),
             query_text: "Welche Haftungsregelungen gelten im B2B Geschäft von ACME Enterprise?"
                 .into(),
             query_embedding: pad_vector(&[0.80, 0.20, 0.0, 0.0], DIM),
-            relevant_doc_ids: vec!["doc_agb_b2b_sec4".into()],
+            relevant_doc_ids: vec!["doc_rust_1".into()],
         },
         GroundTruthQuery {
             query_id: "q_b_3".into(),
