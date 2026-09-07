@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-09-03T10:00:00Z (SESSION: 8d7a9f86)
-// ZWECK: Reproduzierbarer Benchmark-Harness für Retrieval-Qualität (Context-Präfix & Cross-Encoder Reranking)
+// STAND: 2026-09-07 (SESSION: 8d7a9f86)
+// ZWECK: Reproduzierbarer Benchmark-Harness für Retrieval-Qualität & LongMemEval Regressions-Suite
 // INVARIANTEN: Standalone, reproduzierbar, synthetischer Korpus mit Ground-Truth-Annotationen.
 
+use memfuse_bench::long_mem_eval::{check_regression, RegressionSuite};
 use memfuse_core::Result;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_embed::{CrossEncoderReranker, RerankConfig};
@@ -869,6 +870,48 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     println!("\nBenchmark results saved to `benchmarks/results/results.json` and `benchmarks/results/summary.md`.\n");
     println!("{}", markdown_summary);
+
+    // ---------------------------------------------------------------------
+    // LONGMEMEVAL REGRESSION SUITE EXECUTION & BASELINE GATING
+    // ---------------------------------------------------------------------
+    println!("\n=== Running LongMemEval Regression Suite ===");
+    let db_cfg = MemFuseConfig {
+        dimension: 768,
+        ..Default::default()
+    };
+    let reg_temp_dir = TempDir::new()?;
+    let reg_db = MemFuse::open_with_config(reg_temp_dir.path(), db_cfg).await?;
+    let reg_col = reg_db.collection("long_mem_eval_regression").await?;
+
+    let suite = RegressionSuite::baseline();
+    let reg_report = suite.run_against_collection(&reg_col).await?;
+
+    println!(
+        "LongMemEval Regression Suite Summary: Total Scenarios = {}, Recall@5 = {:.3}, Recall@10 = {:.3}, Failed Scenarios = {:?}",
+        reg_report.total_scenarios,
+        reg_report.recall_at_5,
+        reg_report.recall_at_10,
+        reg_report.failed_scenarios
+    );
+
+    let baseline_path = Path::new("benchmarks/memfuse-bench/baseline_recall.json");
+    let cli_args: Vec<String> = std::env::args().collect();
+    let update_baseline = cli_args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
+
+    if update_baseline {
+        let baseline_json = serde_json::to_string_pretty(&reg_report)?;
+        fs::write(baseline_path, baseline_json)?;
+        println!(
+            "Saved regression baseline to `{}`.",
+            baseline_path.display()
+        );
+    } else {
+        check_regression(&reg_report, baseline_path)?;
+        println!(
+            "✅ LongMemEval regression gate PASSED against `{}`.",
+            baseline_path.display()
+        );
+    }
 
     Ok(())
 }

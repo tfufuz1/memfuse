@@ -100,6 +100,10 @@ check-embed:
 dag-check:
     nix develop -c cargo xtask check-dag || cargo xtask check-dag
 
+# Checks for permanent feature veto keywords in recent commits
+check-vetoes:
+    nix develop -c cargo xtask check-vetoes || cargo xtask check-vetoes
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
     #!/usr/bin/env bash
@@ -187,6 +191,15 @@ debt-audit:
         echo ""; echo "❌ Debt-Audit FAILED — WP-0.0 zuerst abschließen!"; exit 1
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
+
+# Runs the LongMemEval regression benchmark suite and compares against baseline
+bench-regression:
+    #!/usr/bin/env bash
+    if command -v nix &> /dev/null && nix develop -c true &> /dev/null; then
+        nix develop -c cargo run -p memfuse-bench --release
+    else
+        cargo run -p memfuse-bench --release
+    fi
 
 # Bootstrap a new feature using the Micro-Spec Template
 spec NAME:

@@ -57,3 +57,9 @@ timestamp_secs,stage,num_chunks,vm_rss_kb,vm_rss_mb
 1788456240,after_insert,100,12972,12.67
 1788456240,after_search,100,13100,12.79
 1788763302,before_insert,10000,5672,5.54
+1788789185,before_insert,10,5844,5.71
+1788789185,after_insert,10,7508,7.33
+1788789185,after_search,10,7636,7.46
+1788789185,before_insert,50,7636,7.46
+1788789186,after_insert,50,10452,10.21
+1788789186,after_search,50,10452,10.21
