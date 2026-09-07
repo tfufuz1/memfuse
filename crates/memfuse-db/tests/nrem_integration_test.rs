@@ -1,8 +1,9 @@
+use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::BoxFuture;
 use memfuse_core::DocId;
 use memfuse_db::{
-    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, MemFuse, MemFuseConfig, NremConfig,
-    SegmentSynthesizer,
+    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, CommunityStabilityTracker,
+    MemFuse, MemFuseConfig, NremConfig, RemConfig,
 };
 use std::time::Duration;
 use tempfile::tempdir;
@@ -105,18 +106,14 @@ async fn test_nrem_reaper_periodic_execution_and_cancellation() {
     );
 }
 
-struct TestSynthesizer;
+struct TestLlmGenerator;
 
-impl SegmentSynthesizer for TestSynthesizer {
-    fn synthesize_segment<'a>(
+impl LlmTextGenerator for TestLlmGenerator {
+    fn generate<'a>(
         &'a self,
-        segment_texts: &'a [&'a str],
+        prompt: &'a str,
     ) -> BoxFuture<'a, memfuse_core::Result<String>> {
-        Box::pin(async move { Ok(format!("Synthesized: {}", segment_texts.join(" + "))) })
-    }
-
-    fn model_id(&self) -> &str {
-        "test-synth"
+        Box::pin(async move { Ok(format!("Synthesized summary from prompt of length {}", prompt.len())) })
     }
 }
 
@@ -133,6 +130,7 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
     let emb_a = vec![1.0, 0.0, 0.0, 0.0];
     let mut turns = Vec::new();
 
+    // Insert 5 turns into collection and build a graph cluster among them
     for i in 1..=5 {
         let doc_id_str = format!("turn_{}", i);
         collection
@@ -147,6 +145,14 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
         turns.push((doc_id, emb_a.clone()));
     }
 
+    // Connect nodes into a graph cluster
+    for i in 1..5 {
+        collection
+            .relate(&format!("turn_{}", i), &format!("turn_{}", i + 1), "connected")
+            .await
+            .unwrap();
+    }
+
     let nrem_config = NremConfig {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
@@ -154,26 +160,63 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
         near_duplicate_cosine_threshold: 0.99, // high so turns aren't tombstoned in NREM
     };
 
-    let synthesizer = TestSynthesizer;
-    let (nrem_res, rem_res) =
-        execute_sleep_cycle(&collection, &turns, &nrem_config, Some(&synthesizer))
-            .await
-            .unwrap();
+    let rem_config = RemConfig {
+        min_community_size: 3,
+        stability_cycles_required: 2,
+        max_llm_calls_per_cycle: 5,
+    };
 
-    assert_eq!(nrem_res.segments_created, 1);
-    let rem = rem_res.expect("REM phase result should be present");
-    assert_eq!(rem.synthesized_chunks.len(), 1);
-    assert_eq!(rem.skipped_segments, 0);
+    let llm = TestLlmGenerator;
+    let mut tracker = CommunityStabilityTracker::new();
 
-    let synth_chunk = &rem.synthesized_chunks[0];
-    assert!(synth_chunk.content.contains("Synthesized:"));
-    assert_eq!(synth_chunk.source_turn_ids.len(), 5);
+    // First sleep cycle: stability count = 1 (< required 2)
+    let (nrem_res_1, rem_res_1) = execute_sleep_cycle(
+        &collection,
+        &turns,
+        &nrem_config,
+        Some(&rem_config),
+        Some(&llm),
+        Some(&mut tracker),
+    )
+    .await
+    .unwrap();
 
-    // Verify synthesized chunk was inserted into collection (via get or get_kv)
-    let synth_id = format!("rem_synth_{}_0", synthesizer.model_id());
+    assert_eq!(nrem_res_1.segments_created, 1);
+    let rem_1 = rem_res_1.expect("REM phase result should be present");
+    assert_eq!(
+        rem_1.synthesized.len(),
+        0,
+        "Community observed once < stability_cycles_required=2, so 0 synthesized"
+    );
+
+    // Second sleep cycle: stability count = 2 (>= required 2)
+    let (_nrem_res_2, rem_res_2) = execute_sleep_cycle(
+        &collection,
+        &turns,
+        &nrem_config,
+        Some(&rem_config),
+        Some(&llm),
+        Some(&mut tracker),
+    )
+    .await
+    .unwrap();
+
+    let rem_2 = rem_res_2.expect("REM phase result should be present");
+    assert_eq!(
+        rem_2.synthesized.len(),
+        1,
+        "Stable community should now be synthesized"
+    );
+
+    let meta_chunk = &rem_2.synthesized[0];
+    assert!(meta_chunk.content.starts_with("[SYNTHESIZED FROM"));
+    assert_eq!(meta_chunk.abstracts_from.len(), 5);
+
+    // Verify synthesized chunk was inserted into collection via get_kv
+    let synth_id = format!("rem_synth_{}_0", meta_chunk.source_community_hash);
     let kv_val = collection.get_kv(&synth_id).await.unwrap();
     assert!(kv_val.is_some());
     let doc_meta = kv_val.unwrap();
     assert_eq!(doc_meta["rem_synthesized"], true);
-    assert_eq!(doc_meta["source_turn_count"], 5);
+    assert_eq!(doc_meta["source_community_hash"], meta_chunk.source_community_hash);
 }

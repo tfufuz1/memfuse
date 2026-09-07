@@ -9,6 +9,7 @@ description = "MemFuse — Embedded hybrid-search for AI agents"
 [dependencies]
 memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
+blake3 = { workspace = true }
 memfuse-index = { workspace = true }
 memfuse-text = { workspace = true }
 memfuse-checkpoint = { workspace = true }
