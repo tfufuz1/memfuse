@@ -72,11 +72,7 @@ fn pad_vector(v: &[f32], target_dim: usize) -> Vec<f32> {
     padded
 }
 
-fn create_synthetic_corpus() -> (
-    Vec<SyntheticDocument>,
-    Vec<GroundTruthQuery>,
-    Vec<GroundTruthQuery>,
-) {
+fn build_evaluation_corpus() -> Vec<SyntheticDocument> {
     const DIM: usize = 768;
 
     vec![
