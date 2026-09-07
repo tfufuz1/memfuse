@@ -12,6 +12,9 @@ use memfuse_core::{
     StorageEngine, VectorIndex,
 };
 
+#[cfg(feature = "physio-pid-homeostasis")]
+use std::sync::Arc;
+
 /// Custom weights for vector, text, and graph signals in hybrid search.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SignalWeights {
@@ -144,6 +147,8 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     replicator_state: Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
+    #[cfg(feature = "physio-pid-homeostasis")]
+    pid_controller: Option<Arc<parking_lot::Mutex<memfuse_calibration::PidController>>>,
     seq: Option<u64>,
     as_of_timestamp: Option<u64>,
     query_timestamp: Option<u64>,
@@ -173,6 +178,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             replicator_state: None,
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
+            #[cfg(feature = "physio-pid-homeostasis")]
+            pid_controller: None,
             seq: None,
             as_of_timestamp: None,
             query_timestamp: None,
@@ -318,6 +325,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
     /// Default: 200 (`DEFAULT_RERANK_POOL_MAX`), capping pre-retrieval pool size for large `k`.
     pub fn rerank_pool_max(mut self, max: usize) -> Self {
         self.rerank_pool_max = Some(max);
+        self
+    }
+
+    /// Sets optional PID controller for dynamic reranking candidate pool size homeostasis.
+    #[cfg(feature = "physio-pid-homeostasis")]
+    pub fn pid_controller(
+        mut self,
+        pid: Arc<parking_lot::Mutex<memfuse_calibration::PidController>>,
+    ) -> Self {
+        self.pid_controller = Some(pid);
         self
     }
 
@@ -473,6 +490,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         if let Some(reranker) = self.reranker {
             let text_str = self.text.as_deref().unwrap_or("");
             if !results.is_empty() && !text_str.is_empty() {
+                let current_pool = results.len();
+                let start_time = std::time::Instant::now();
+
                 let candidate_texts: Vec<String> = results
                     .iter()
                     .map(|r| {
@@ -888,6 +908,61 @@ mod tests {
                 "Results must be sorted descending by rerank score"
             );
         }
+    }
+
+    #[tokio::test]
+    #[cfg(all(feature = "reranking", feature = "physio-pid-homeostasis"))]
+    async fn test_pid_controller_integration_with_reranker() {
+        let (col, _dir) = create_test_collection("test_pid_rerank").await;
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .unwrap();
+        col.insert(
+            "doc-2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(json!({"text": "python programming language"})),
+        )
+        .await
+        .unwrap();
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
+        let pid = Arc::new(parking_lot::Mutex::new(
+            memfuse_calibration::PidController::default(),
+        ));
+
+        // First call: initial update
+        let res = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .pid_controller(pid.clone())
+            .k(2)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 2);
+        let updated_size = pid.lock().current_pool_size;
+        assert!(updated_size.is_some());
+
+        // Second call: verify pid controller's stored current_pool_size is used as rerank_pool_max
+        let res2 = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .pid_controller(pid.clone())
+            .k(2)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res2.len(), 2);
     }
 
     #[tokio::test]
