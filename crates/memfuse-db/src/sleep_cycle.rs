@@ -1,379 +1,420 @@
-//! REM-Phase sleep cycle processing for community synthesis and abstraction.
-//!
-//! Provides deterministic community stability tracking and LLM-driven meta-chunk synthesis.
-
 // FILE-CONTEXT
-// STAND: 2026-09-07T00:00:00Z
-// ZWECK: REM-Phase Sleep-Cycle Consolidation & MetaChunk Synthesis
-// INVARIANTEN: No unwrap/panic in production code; abstracts_from.len() >= 1; max_llm_calls_per_cycle strictly enforced.
+// ZWECK: Sleep-Cycle-Architecture - NREM-Phase (Non-REM: Strukturierte Gedächtniskonsolidierung, Near-Duplicate-Detection & Segmentation).
+// INVARIANTEN: Strikte Trennung von NREM (strukturierte statische/statistische Konsolidierung) und REM (generative Wissenssynthese).
+//              Keine LLM-API-Aufrufe in der NREM-Phase. Keine Abhängigkeit zu memfuse-graph (P1-DAG-Integrität).
+// STAND: TS:2026-08-29T18:00:00Z
 
-use memfuse_core::{DocId, LlmTextGenerator, Result, TxId};
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+//! NREM Phase (Non-Rapid Eye Movement) Memory Consolidation.
+//!
+//! # Architektur-Hinweis (REM vs. NREM)
+//! Die REM-Phase (generative Wissenssynthese via LLM) ist **NICHT** Teil dieses Moduls
+//! und wird in einer separaten Komponente/Prompt implementiert.
+//! Dieses Modul deckt ausschließlich die NREM-Phase ab:
+//! - Sequenzielles Sliding-Window-Clustering zeitlich benachbarter Turn-Embeddings.
+//! - Segmentlokale Near-Duplicate-Detection (O(n²) nur innerhalb eines Segments).
+//! - Identifikation verwaister Graph-Kanten zur kaskadierenden Bereinigung.
 
-/// Configuration for the REM phase of sleep cycle processing.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RemConfig {
-    /// Minimum community member count required for synthesis. Default: 4.
-    pub min_community_size: usize,
-    /// Cohesion threshold for community qualification. Default: 0.6.
-    pub cohesion_threshold: f32,
-    /// Number of consecutive sleep cycle runs a community must be stably observed. Default: 3.
-    pub stability_cycles_required: u32,
-    /// Maximum number of LLM synthesis calls allowed per cycle (cost guardrail P12). Default: 10.
-    pub max_llm_calls_per_cycle: u32,
+use crate::context_compaction::{CompactedContext, ContextCompactor};
+use memfuse_core::{ContextChunk, DocId};
+use std::collections::HashSet;
+
+/// Konfiguration für die NREM-Konsolidierungsphase.
+#[derive(Debug, Clone)]
+pub struct NremConfig {
+    /// Mindestanzahl von Turns pro Segment (Default: 3).
+    pub min_turns_per_segment: usize,
+    /// Maximale Anzahl von Turns pro Segment (Default: 20).
+    pub max_turns_per_segment: usize,
+    /// Cosine-Similarity-Schwellwert für Near-Duplicate-Detection (Default: 0.95).
+    pub near_duplicate_cosine_threshold: f32,
 }
 
-impl Default for RemConfig {
+impl Default for NremConfig {
     fn default() -> Self {
         Self {
-            min_community_size: 4,
-            cohesion_threshold: 0.6,
-            stability_cycles_required: 3,
-            max_llm_calls_per_cycle: 10,
+            min_turns_per_segment: 3,
+            max_turns_per_segment: 20,
+            near_duplicate_cosine_threshold: 0.95,
         }
     }
 }
 
-/// Tracks community stability over consecutive sleep cycles.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CommunityStabilityTracker {
-    history: HashMap<u64, u32>,
+/// Repräsentiert ein semantisch zusammenhängendes Segment aus aufeinanderfolgenden Turns.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurnSegment {
+    /// Liste aller DocIds der Turns in diesem Segment.
+    pub turn_ids: Vec<DocId>,
+    /// Repräsentatives Embedding des Segments.
+    /// Berechnet als Zentroid (Mittelwertsvektor) aller Turn-Embeddings des Segments,
+    /// um die semantische Mitte des Segments stabil abzubilden.
+    pub representative_embedding: Vec<f32>,
 }
 
-impl CommunityStabilityTracker {
-    /// Creates a new, empty `CommunityStabilityTracker`.
-    pub fn new() -> Self {
-        Self::default()
+/// Ergebnis der NREM-Konsolidierungsphase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NremPhaseResult {
+    /// Anzahl der erzeugten Segmente.
+    pub segments_created: usize,
+    /// Liste aller DocIds, die als Duplikate markiert/tombstoned wurden.
+    pub duplicates_tombstoned: Vec<DocId>,
+    /// Chunks, für die abhängige Graph-Kanten via Kaskadierungslogik nachgezogen werden müssen.
+    /// Zur Einhaltung der P1-DAG-Integrität liefert dieses Modul NUR die Liste und ruft `memfuse-graph`
+    /// nicht selbst auf, um Crate-Zyklen zu vermeiden.
+    pub cascade_edge_tombstones_needed: Vec<DocId>,
+}
+
+/// Berechnet die Cosine-Similarity zwischen zwei Vektoren ohne `panic!` oder `unwrap()`.
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    if norm_a <= 0.0 || norm_b <= 0.0 {
+        return 0.0;
+    }
+    dot / (norm_a.sqrt() * norm_b.sqrt())
+}
+
+#[derive(Debug, Clone)]
+struct WorkingSegment {
+    turns: Vec<(DocId, Vec<f32>)>,
+    representative: Vec<f32>,
+}
+
+impl WorkingSegment {
+    fn new(first_doc_id: DocId, first_emb: Vec<f32>) -> Self {
+        Self {
+            representative: first_emb.clone(),
+            turns: vec![(first_doc_id, first_emb)],
+        }
     }
 
-    /// Observes a community hash in the current cycle, incrementing its consecutive stability count.
-    /// Returns the updated stability count.
-    pub fn observe(&mut self, community_members_hash: u64) -> u32 {
-        let count = self.history.entry(community_members_hash).or_insert(0);
-        *count += 1;
-        *count
+    fn add_turn(&mut self, doc_id: DocId, emb: Vec<f32>) {
+        self.turns.push((doc_id, emb));
+        let dim = self.representative.len();
+        if dim == 0 {
+            return;
+        }
+        let mut sum = vec![0.0f32; dim];
+        for (_, turn_emb) in &self.turns {
+            for (s, v) in sum.iter_mut().zip(turn_emb.iter()) {
+                *s += *v;
+            }
+        }
+        let count = self.turns.len() as f32;
+        for s in sum.iter_mut() {
+            *s /= count;
+        }
+        self.representative = sum;
     }
-
-    /// Removes communities from history if they were not observed in the current cycle.
-    pub fn reset_if_absent(&mut self, currently_observed: &HashSet<u64>) {
-        self.history.retain(|k, _| currently_observed.contains(k));
-    }
 }
 
-/// Synthesized high-level context chunk abstracting multiple source documents.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MetaChunk {
-    /// Synthesized text content prefixed with machine-readable source count marker.
-    pub content: String,
-    /// Source document identifiers abstracted by this MetaChunk (MANDATORY: len >= 1).
-    pub abstracts_from: Vec<DocId>,
-    /// Unique hash identifier of the source community.
-    pub source_community_hash: u64,
-    /// Transaction ID at which this MetaChunk was created.
-    pub created_at_tx: TxId,
-    /// Identifier of the LLM model used for synthesis.
-    pub llm_model_id: String,
-}
-
-/// Result of running the REM phase across stable communities.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RemPhaseResult {
-    /// Synthesized meta-chunks produced in this cycle.
-    pub synthesized: Vec<MetaChunk>,
-    /// Hashes of qualified communities deferred to future cycles due to `max_llm_calls_per_cycle` budget limit.
-    pub deferred_community_hashes: Vec<u64>,
-}
-
-/// Executes the REM phase across detected stable communities.
+/// Gruppiert semantisch zusammenhängende, zeitlich benachbarte Turns via sequenziellem Sliding-Window-Clustering.
 ///
-/// Synthesizes high-level context chunks (`MetaChunk`) for qualified communities up to
-/// `config.max_llm_calls_per_cycle`. Excess communities are deferred without failing the phase.
-pub async fn run_rem_phase(
-    stable_communities: &[(u64, Vec<DocId>)],
-    source_texts: &HashMap<DocId, String>,
-    llm: &(impl LlmTextGenerator + ?Sized),
-    config: &RemConfig,
-) -> Result<RemPhaseResult> {
-    run_rem_phase_with_tx(
-        stable_communities,
-        source_texts,
-        llm,
-        config,
-        TxId(0),
-        "default",
-    )
-    .await
+/// Ein neuer Turn gehört zum aktuellen Segment, wenn seine Cosine-Similarity zum Segment-Repräsentanten
+/// über dem Schwellwert liegt UND `max_turns_per_segment` nicht überschritten ist.
+///
+/// **Sonderregel zur Segment-Kohäsion:**
+/// Ein Segment unter `min_turns_per_segment` wird NICHT isoliert als Mikro-Segment belassen,
+/// sondern mit dem Nachbarsegment zusammengeführt (vorrangig mit dem vorausgehenden, andernfalls mit dem nachfolgenden).
+pub fn group_turns_into_segments(
+    turns: &[(DocId, Vec<f32>)],
+    config: &NremConfig,
+) -> Vec<TurnSegment> {
+    if turns.is_empty() {
+        return Vec::new();
+    }
+
+    let mut raw_segments: Vec<WorkingSegment> = Vec::new();
+    let mut current_segment: Option<WorkingSegment> = None;
+
+    for (doc_id, emb) in turns {
+        match current_segment.as_mut() {
+            Some(seg) => {
+                let sim = cosine_similarity(&seg.representative, emb);
+                // Kohäsions-Check: hohe Ähnlichkeit und Kapazität vorhanden
+                if sim >= config.near_duplicate_cosine_threshold
+                    && seg.turns.len() < config.max_turns_per_segment
+                {
+                    seg.add_turn(*doc_id, emb.clone());
+                } else {
+                    if let Some(seg) = current_segment.take() {
+                        raw_segments.push(seg);
+                    }
+                    current_segment = Some(WorkingSegment::new(*doc_id, emb.clone()));
+                }
+            }
+            None => {
+                current_segment = Some(WorkingSegment::new(*doc_id, emb.clone()));
+            }
+        }
+    }
+
+    if let Some(seg) = current_segment {
+        raw_segments.push(seg);
+    }
+
+    if raw_segments.is_empty() {
+        return Vec::new();
+    }
+
+    // Merging-Pass für Mikro-Segmente unter min_turns_per_segment
+    let mut merged: Vec<WorkingSegment> = Vec::new();
+
+    for seg in raw_segments {
+        if let Some(last) = merged.last_mut() {
+            if last.turns.len() < config.min_turns_per_segment {
+                // Letztes Segment ist zu klein -> verschmelze aktuelles Segment hinein
+                for (id, emb) in seg.turns {
+                    last.add_turn(id, emb);
+                }
+                continue;
+            }
+        }
+        merged.push(seg);
+    }
+
+    // Prüfe abschließend das letzte Segment in merged
+    if merged.len() > 1 {
+        let last_idx = merged.len() - 1;
+        if merged[last_idx].turns.len() < config.min_turns_per_segment {
+            let last_seg = merged.remove(last_idx);
+            let prev = &mut merged[last_idx - 1];
+            for (id, emb) in last_seg.turns {
+                prev.add_turn(id, emb);
+            }
+        }
+    }
+
+    merged
+        .into_iter()
+        .map(|ws| TurnSegment {
+            turn_ids: ws.turns.into_iter().map(|(id, _)| id).collect(),
+            representative_embedding: ws.representative,
+        })
+        .collect()
 }
 
-/// Executes the REM phase with explicit transaction ID and model identifier metadata.
-pub async fn run_rem_phase_with_tx(
-    stable_communities: &[(u64, Vec<DocId>)],
-    source_texts: &HashMap<DocId, String>,
-    llm: &(impl LlmTextGenerator + ?Sized),
-    config: &RemConfig,
-    created_at_tx: TxId,
-    llm_model_id: &str,
-) -> Result<RemPhaseResult> {
-    // 1. Filter stable communities by minimum community size
-    let qualified: Vec<&(u64, Vec<DocId>)> = stable_communities
+/// Führt einen paarweisen Cosine-Similarity-Vergleich INNERHALB eines Segments durch (O(n²) segmentlokal).
+///
+/// Bei `similarity > threshold` wird der ÄLTERE Turn (kleinere `DocId` als Proxy für frühere Erstellung)
+/// als Duplikat markiert.
+///
+/// TODO: Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert,
+/// sollte diese Funktion `TxId` oder explizite Timestamps als Parameter anstelle von `DocId` akzeptieren.
+///
+/// RÜCKGABE: `Vec<(DocId /* zu tombstonen: älterer Turn */, DocId /* Original: neuerer/wichtigerer Turn */)>`
+pub fn detect_near_duplicates(
+    turns: &[(DocId, Vec<f32>)],
+    threshold: f32,
+) -> Vec<(DocId, DocId)> {
+    let mut pairs = Vec::new();
+    let n = turns.len();
+
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let (doc_id_i, emb_i) = &turns[i];
+            let (doc_id_j, emb_j) = &turns[j];
+
+            if doc_id_i == doc_id_j {
+                continue;
+            }
+
+            let sim = cosine_similarity(emb_i, emb_j);
+            if sim > threshold {
+                let (older, newer) = if doc_id_i.inner() < doc_id_j.inner() {
+                    (*doc_id_i, *doc_id_j)
+                } else {
+                    (*doc_id_j, *doc_id_i)
+                };
+                pairs.push((older, newer));
+            }
+        }
+    }
+
+    pairs
+}
+
+/// Orchestriert die NREM-Phase (Segmentierung & Near-Duplicate-Detection).
+///
+/// Führt KEINE LLM-API-Aufrufe durch (NREM ist rein strukturell/statistisch).
+pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremPhaseResult {
+    if turns.is_empty() {
+        return NremPhaseResult {
+            segments_created: 0,
+            duplicates_tombstoned: Vec::new(),
+            cascade_edge_tombstones_needed: Vec::new(),
+        };
+    }
+
+    let segments = group_turns_into_segments(turns, config);
+    let mut duplicates = Vec::new();
+
+    // Map von DocId -> Vec<f32> für schnellen Zugriff per Segment
+    let turn_map: std::collections::HashMap<DocId, Vec<f32>> =
+        turns.iter().cloned().collect();
+
+    for segment in &segments {
+        let segment_turns: Vec<(DocId, Vec<f32>)> = segment
+            .turn_ids
+            .iter()
+            .filter_map(|id| turn_map.get(id).map(|emb| (*id, emb.clone())))
+            .collect();
+
+        let dup_pairs = detect_near_duplicates(&segment_turns, config.near_duplicate_cosine_threshold);
+        for (older, _newer) in dup_pairs {
+            duplicates.push(older);
+        }
+    }
+
+    duplicates.sort_unstable_by_key(|d| d.inner());
+    duplicates.dedup();
+
+    let cascade_edge_tombstones_needed = duplicates.clone();
+
+    NremPhaseResult {
+        segments_created: segments.len(),
+        duplicates_tombstoned: duplicates,
+        cascade_edge_tombstones_needed,
+    }
+}
+
+/// Adapterfunktion zur Kompaktierung eines Segments via des bereits vorhandenen `ContextCompactor`.
+///
+/// Wählt Chunks aus `chunks`, die zu `segment.turn_ids` gehören, und führt `ContextCompactor::compact` aus.
+pub fn compact_segment_via_context_compactor(
+    segment: &TurnSegment,
+    compactor: &ContextCompactor,
+    chunks: &[ContextChunk],
+) -> CompactedContext {
+    let turn_set: HashSet<DocId> = segment.turn_ids.iter().copied().collect();
+    let segment_chunks: Vec<ContextChunk> = chunks
         .iter()
-        .filter(|(_, members)| members.len() >= config.min_community_size)
+        .filter(|c| turn_set.contains(&c.doc_id))
+        .cloned()
         .collect();
 
-    let max_calls = config.max_llm_calls_per_cycle as usize;
-    let (to_process, deferred) = if qualified.len() > max_calls {
-        qualified.split_at(max_calls)
-    } else {
-        (qualified.as_slice(), [].as_slice())
-    };
-
-    let deferred_community_hashes: Vec<u64> = deferred.iter().map(|(hash, _)| *hash).collect();
-    let mut synthesized = Vec::with_capacity(to_process.len());
-
-    for (community_hash, members) in to_process {
-        if members.is_empty() {
-            tracing::warn!(
-                community_hash = community_hash,
-                "Skipping community synthesis for empty member set"
-            );
-            continue;
-        }
-
-        let mut prompt_content = String::new();
-        for doc_id in members {
-            if let Some(text) = source_texts.get(doc_id) {
-                prompt_content.push_str(&format!("- Chunk [DocId: {}]: {}\n", doc_id.0, text));
-            }
-        }
-
-        let prompt = format!(
-            "Synthesisiere die folgenden Dokumenten-Texte zu einem kohärenten Meta-Kontext:\n\n{}\n\nSynthese:",
-            prompt_content
-        );
-
-        match llm.generate(&prompt).await {
-            Ok(summary) => {
-                let content = format!(
-                    "[SYNTHESIZED FROM {} SOURCES]\n{}",
-                    members.len(),
-                    summary
-                );
-                synthesized.push(MetaChunk {
-                    content,
-                    abstracts_from: members.clone(),
-                    source_community_hash: *community_hash,
-                    created_at_tx,
-                    llm_model_id: llm_model_id.to_string(),
-                });
-            }
-            Err(e) => {
-                tracing::error!(
-                    community_hash = community_hash,
-                    error = %e,
-                    "LLM synthesis failed for community; continuing with remaining communities"
-                );
-            }
-        }
-    }
-
-    Ok(RemPhaseResult {
-        synthesized,
-        deferred_community_hashes,
-    })
+    compactor.compact(segment_chunks)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memfuse_core::BoxFuture;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::sync::Arc;
 
-    #[derive(Default)]
-    struct MockLlmGenerator {
-        fail_community_contains: Option<String>,
-        call_count: Arc<AtomicU32>,
-    }
-
-    impl LlmTextGenerator for MockLlmGenerator {
-        fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
-            self.call_count.fetch_add(1, Ordering::SeqCst);
-            let prompt_owned = prompt.to_string();
-            let fail_pattern = self.fail_community_contains.clone();
-            Box::pin(async move {
-                if let Some(pattern) = fail_pattern {
-                    if prompt_owned.contains(&pattern) {
-                        return Err(memfuse_core::MemFuseError::Internal(
-                            "Simulated LLM synthesis failure".to_string(),
-                        ));
-                    }
-                }
-                Ok(format!(
-                    "Synthesized summary for prompt len {}",
-                    prompt_owned.len()
-                ))
-            })
+    fn make_embedding(base: f32, dim: usize) -> Vec<f32> {
+        let mut v = vec![0.0f32; dim];
+        if dim > 0 {
+            v[0] = base;
+            for i in 1..dim {
+                v[i] = 0.1 * (i as f32);
+            }
         }
-    }
-
-    #[tokio::test]
-    async fn test_community_below_min_size_skipped() {
-        let config = RemConfig {
-            min_community_size: 4,
-            ..Default::default()
-        };
-        let llm = MockLlmGenerator::default();
-
-        let stable_communities = vec![
-            (1001, vec![DocId(1), DocId(2), DocId(3)]), // size 3 < min 4
-            (1002, vec![DocId(4), DocId(5), DocId(6), DocId(7)]), // size 4 >= min 4
-        ];
-
-        let mut source_texts = HashMap::new();
-        for id in 1..=7 {
-            source_texts.insert(DocId(id), format!("Text for doc {}", id));
+        // Normalize
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in v.iter_mut() {
+                *x /= norm;
+            }
         }
-
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .unwrap();
-
-        assert_eq!(res.synthesized.len(), 1);
-        assert_eq!(res.synthesized[0].source_community_hash, 1002);
-        assert_eq!(res.synthesized[0].abstracts_from.len(), 4);
-        assert!(res.deferred_community_hashes.is_empty());
-        assert_eq!(llm.call_count.load(Ordering::SeqCst), 1);
+        v
     }
 
     #[test]
-    fn test_community_stability_tracker_observation_and_reset() {
-        let mut tracker = CommunityStabilityTracker::new();
-        let comm_hash_a = 0xA1B2C3D4;
-        let comm_hash_b = 0xE5F67890;
-
-        assert_eq!(tracker.observe(comm_hash_a), 1);
-        assert_eq!(tracker.observe(comm_hash_a), 2);
-        // 2 cycles observed < required 3
-        assert_eq!(tracker.history.get(&comm_hash_a), Some(&2));
-
-        assert_eq!(tracker.observe(comm_hash_b), 1);
-
-        // Current observation only includes comm_hash_a
-        let mut observed = HashSet::new();
-        observed.insert(comm_hash_a);
-
-        tracker.reset_if_absent(&observed);
-
-        assert_eq!(tracker.history.get(&comm_hash_a), Some(&2));
-        assert_eq!(tracker.history.get(&comm_hash_b), None);
-    }
-
-    #[tokio::test]
-    async fn test_max_llm_calls_per_cycle_limit() {
-        let config = RemConfig {
-            min_community_size: 1,
-            max_llm_calls_per_cycle: 10,
-            ..Default::default()
-        };
-        let llm = MockLlmGenerator::default();
-
-        let mut stable_communities = Vec::new();
-        let mut source_texts = HashMap::new();
-
-        for i in 1..=15 {
-            let hash = i as u64;
-            let doc_id = DocId(i as u64);
-            stable_communities.push((hash, vec![doc_id]));
-            source_texts.insert(doc_id, format!("Doc text {}", i));
+    fn test_group_turns_into_segments_two_clusters() {
+        // 10 synthetic embeddings: 5 in Cluster A, 5 in Cluster B
+        let mut turns = Vec::new();
+        // Cluster A (orthogonal to B)
+        let emb_a = vec![1.0, 0.0, 0.0, 0.0];
+        for i in 1..=5 {
+            turns.push((DocId::new(i), emb_a.clone()));
+        }
+        // Cluster B
+        let emb_b = vec![0.0, 1.0, 0.0, 0.0];
+        for i in 6..=10 {
+            turns.push((DocId::new(i), emb_b.clone()));
         }
 
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .unwrap();
+        let config = NremConfig {
+            min_turns_per_segment: 3,
+            max_turns_per_segment: 20,
+            near_duplicate_cosine_threshold: 0.95,
+        };
 
-        assert_eq!(res.synthesized.len(), 10);
-        assert_eq!(res.deferred_community_hashes.len(), 5);
-        assert_eq!(res.deferred_community_hashes, vec![11, 12, 13, 14, 15]);
-        assert_eq!(llm.call_count.load(Ordering::SeqCst), 10);
+        let segments = group_turns_into_segments(&turns, &config);
+        assert_eq!(segments.len(), 2, "10 turns with 2 distinct clusters must produce exactly 2 segments");
+        assert_eq!(segments[0].turn_ids.len(), 5);
+        assert_eq!(segments[1].turn_ids.len(), 5);
     }
 
-    #[tokio::test]
-    async fn test_meta_chunk_mandatory_source_and_synthesized_marker() {
-        let config = RemConfig {
-            min_community_size: 2,
-            ..Default::default()
-        };
-        let llm = MockLlmGenerator::default();
-
-        let stable_communities = vec![(9999, vec![DocId(10), DocId(11)])];
-        let mut source_texts = HashMap::new();
-        source_texts.insert(DocId(10), "Source doc 10 content".to_string());
-        source_texts.insert(DocId(11), "Source doc 11 content".to_string());
-
-        let res = run_rem_phase_with_tx(
-            &stable_communities,
-            &source_texts,
-            &llm,
-            &config,
-            TxId(42),
-            "mock-llm-v1",
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(res.synthesized.len(), 1);
-        let meta = &res.synthesized[0];
-
-        assert!(
-            !meta.abstracts_from.is_empty(),
-            "abstracts_from MUST have >= 1 source"
-        );
-        assert_eq!(meta.abstracts_from.len(), 2);
-        assert_eq!(meta.created_at_tx, TxId(42));
-        assert_eq!(meta.llm_model_id, "mock-llm-v1");
-        assert!(
-            meta.content.starts_with("[SYNTHESIZED FROM 2 SOURCES]"),
-            "Content must start with machine-readable marker prefix"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_llm_failure_resilience() {
-        let config = RemConfig {
-            min_community_size: 1,
-            max_llm_calls_per_cycle: 10,
-            ..Default::default()
-        };
-
-        // Fail when processing community 2's doc text
-        let llm = MockLlmGenerator {
-            fail_community_contains: Some("Doc text 2".to_string()),
-            call_count: Arc::new(AtomicU32::new(0)),
-        };
-
-        let stable_communities = vec![
-            (101, vec![DocId(1)]),
-            (102, vec![DocId(2)]), // This one will fail LLM generation
-            (103, vec![DocId(3)]),
+    #[test]
+    fn test_detect_near_duplicates_older_tombstoned() {
+        let emb = vec![1.0, 0.0, 0.0, 0.0];
+        // DocId 10 is older than DocId 20
+        let turns = vec![
+            (DocId::new(10), emb.clone()),
+            (DocId::new(20), emb.clone()),
         ];
 
-        let mut source_texts = HashMap::new();
-        source_texts.insert(DocId(1), "Doc text 1".to_string());
-        source_texts.insert(DocId(2), "Doc text 2".to_string());
-        source_texts.insert(DocId(3), "Doc text 3".to_string());
+        let pairs = detect_near_duplicates(&turns, 0.95);
+        assert_eq!(pairs.len(), 1);
+        let (older, newer) = pairs[0];
+        assert_eq!(older, DocId::new(10), "The older turn (smaller DocId) must be flagged for tombstoning");
+        assert_eq!(newer, DocId::new(20));
+    }
 
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .unwrap();
+    #[test]
+    fn test_detect_near_duplicates_sub_threshold() {
+        let emb_a = vec![1.0, 0.0, 0.0, 0.0];
+        let emb_b = vec![0.0, 1.0, 0.0, 0.0]; // Cosine sim = 0.0 < 0.95
+        let turns = vec![
+            (DocId::new(10), emb_a),
+            (DocId::new(20), emb_b),
+        ];
 
-        // Failed community 102 should be skipped without breaking overall phase
-        assert_eq!(res.synthesized.len(), 2);
-        let synthesized_hashes: Vec<u64> = res
-            .synthesized
-            .iter()
-            .map(|m| m.source_community_hash)
-            .collect();
-        assert_eq!(synthesized_hashes, vec![101, 103]);
+        let pairs = detect_near_duplicates(&turns, 0.95);
+        assert!(pairs.is_empty(), "Embeddings below similarity threshold must not trigger near-duplicate detection");
+    }
+
+    #[test]
+    fn test_empty_input_no_panic() {
+        let config = NremConfig::default();
+        let res = run_nrem_phase(&[], &config);
+        assert_eq!(res.segments_created, 0);
+        assert!(res.duplicates_tombstoned.is_empty());
+        assert!(res.cascade_edge_tombstones_needed.is_empty());
+    }
+
+    #[test]
+    fn test_min_turns_per_segment_merging() {
+        // Seg 1: 5 turns (Cluster A)
+        // Seg 2: 1 turn (Cluster B - under min_turns_per_segment = 3)
+        let mut turns = Vec::new();
+        let emb_a = vec![1.0, 0.0, 0.0, 0.0];
+        for i in 1..=5 {
+            turns.push((DocId::new(i), emb_a.clone()));
+        }
+        let emb_b = vec![0.0, 1.0, 0.0, 0.0];
+        turns.push((DocId::new(6), emb_b));
+
+        let config = NremConfig {
+            min_turns_per_segment: 3,
+            max_turns_per_segment: 20,
+            near_duplicate_cosine_threshold: 0.95,
+        };
+
+        let segments = group_turns_into_segments(&turns, &config);
+        assert_eq!(
+            segments.len(),
+            1,
+            "Segment under min_turns_per_segment must be merged into neighboring segment"
+        );
+        assert_eq!(segments[0].turn_ids.len(), 6);
     }
 }
