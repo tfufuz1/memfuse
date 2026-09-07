@@ -3,9 +3,7 @@
 // ZWECK: Reproduzierbarer Benchmark-Harness für Retrieval-Qualität & LongMemEval / LoCoMo Regressions-Suite
 // INVARIANTEN: Standalone, reproduzierbar, synthetischer Korpus mit Ground-Truth-Annotationen.
 
-use memfuse_bench::compare::{
-    CombinedMetrics, LocomoMetricsSummary, LongMemEvalMetricsSummary,
-};
+use memfuse_bench::compare::{CombinedMetrics, LocomoMetricsSummary, LongMemEvalMetricsSummary};
 use memfuse_bench::locomo::{load_locomo_dataset, run_locomo_eval};
 use memfuse_bench::long_mem_eval::{
     check_regression, load_from_jsonl, run_long_mem_eval, RegressionSuite, ScoredChunk,
@@ -1166,8 +1164,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     );
 
     let baseline_path = Path::new("benchmarks/memfuse-bench/baseline_recall.json");
-    let update_baseline =
-        args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
+    let update_baseline = args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
 
     if update_baseline {
         let baseline_json = serde_json::to_string_pretty(&reg_report)?;

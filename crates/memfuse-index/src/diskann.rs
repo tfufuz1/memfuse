@@ -231,6 +231,8 @@ pub struct DiskAnnConfig {
     pub quantize: bool,
     /// Fallback policy when index file loading or integrity validation fails.
     pub fallback_policy: DiskAnnFallbackPolicy,
+    /// Optional override for pending flush threshold (for benchmarking). None uses PENDING_FLUSH_THRESHOLD (50).
+    pub pending_flush_threshold: Option<u64>,
 }
 
 impl Default for DiskAnnConfig {
@@ -245,6 +247,7 @@ impl Default for DiskAnnConfig {
             distance_metric: DistanceMetric::Cosine,
             quantize: false,
             fallback_policy: DiskAnnFallbackPolicy::default(),
+            pending_flush_threshold: None,
         }
     }
 }
@@ -1728,7 +1731,13 @@ impl VectorIndex for DiskAnnIndex {
             self.inner.pending_count.fetch_add(1, Ordering::Relaxed) + 1
         };
 
-        if count >= PENDING_FLUSH_THRESHOLD {
+        let threshold = self
+            .inner
+            .config
+            .pending_flush_threshold
+            .unwrap_or(PENDING_FLUSH_THRESHOLD);
+
+        if count >= threshold {
             self.trigger_background_persist_delta();
         }
         Ok(())
@@ -2574,11 +2583,16 @@ mod tests {
         // 2. Füge 3 Vektoren ein (unterhalb von PENDING_FLUSH_THRESHOLD=50) -> WAL wird geschrieben, persist_delta NICHT aufgerufen
         let uncommitted_doc_id = DocId::from(999u64);
         let uncommitted_vec = vec![99.0, 0.0, 0.0, 0.0];
-        index.insert(TxId(1), uncommitted_doc_id, &uncommitted_vec).await?;
+        index
+            .insert(TxId(1), uncommitted_doc_id, &uncommitted_vec)
+            .await?;
 
         // Prüfe, dass pending.wal existiert
         let pending_wal = index_path.with_extension("pending.wal");
-        assert!(pending_wal.exists(), "pending.wal muss nach insert() auf Disk existieren");
+        assert!(
+            pending_wal.exists(),
+            "pending.wal muss nach insert() auf Disk existieren"
+        );
 
         // 3. Simuliere Absturz: Verwürfe die Index-Instanz ohne persist_delta() aufzurufen
         drop(index);
@@ -2588,13 +2602,23 @@ mod tests {
         reloaded_index.load().await?;
 
         // 5. Verifiziere, dass recover_pending_delta() gelaufen ist und der Vektor auffindbar ist
-        assert_eq!(reloaded_index.len().await, 6, "Der wiederhergestellte Vektor muss im Index enthalten sein");
+        assert_eq!(
+            reloaded_index.len().await,
+            6,
+            "Der wiederhergestellte Vektor muss im Index enthalten sein"
+        );
         let results = reloaded_index.search(&uncommitted_vec, 1).await?;
         assert!(!results.is_empty());
-        assert_eq!(results[0].doc_id, uncommitted_doc_id, "Der wiederhergestellte Vektor muss per Suche auffindbar sein");
+        assert_eq!(
+            results[0].doc_id, uncommitted_doc_id,
+            "Der wiederhergestellte Vektor muss per Suche auffindbar sein"
+        );
 
         // Verifiziere, dass pending.wal nach verarbeiteter Recovery gelöscht wurde
-        assert!(!pending_wal.exists(), "pending.wal muss nach erfolgreicher Recovery gelöscht sein");
+        assert!(
+            !pending_wal.exists(),
+            "pending.wal muss nach erfolgreicher Recovery gelöscht sein"
+        );
 
         Ok(())
     }

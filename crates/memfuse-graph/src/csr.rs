@@ -784,7 +784,11 @@ impl CsrGraph {
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
         if let Some(doc_id) = source_doc_id {
-            inner.doc_to_edges.entry(doc_id).or_default().insert((from, to));
+            inner
+                .doc_to_edges
+                .entry(doc_id)
+                .or_default()
+                .insert((from, to));
         }
         inner
             .pending_edges
@@ -874,67 +878,73 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let (weight, tx_valid_from, tx_valid_to, business_valid_from, business_valid_to, source_doc_id) =
-                if let Ok(p) = bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+            let (
+                weight,
+                tx_valid_from,
+                tx_valid_to,
+                business_valid_from,
+                business_valid_to,
+                source_doc_id,
+            ) = if let Ok(p) = bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+                (
+                    p.weight,
+                    p.tx_valid_from,
+                    p.tx_valid_to,
+                    p.business_valid_from,
+                    p.business_valid_to,
+                    p.source_doc_id,
+                )
+            } else {
+                // Backward compatibility fallback for legacy 5-field PersistedEdgePayload
+                #[derive(Deserialize)]
+                struct LegacyPersistedEdgePayloadV2 {
+                    weight: f32,
+                    valid_from: Option<TxId>,
+                    valid_to: Option<TxId>,
+                    business_valid_from: Option<i64>,
+                    business_valid_to: Option<i64>,
+                }
+
+                if let Ok(legacy2) =
+                    bincode::deserialize::<LegacyPersistedEdgePayloadV2>(&raw_value)
+                {
                     (
-                        p.weight,
-                        p.tx_valid_from,
-                        p.tx_valid_to,
-                        p.business_valid_from,
-                        p.business_valid_to,
-                        p.source_doc_id,
+                        legacy2.weight,
+                        legacy2.valid_from,
+                        legacy2.valid_to,
+                        legacy2.business_valid_from,
+                        legacy2.business_valid_to,
+                        None,
                     )
                 } else {
-                    // Backward compatibility fallback for legacy 5-field PersistedEdgePayload
+                    // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
                     #[derive(Deserialize)]
-                    struct LegacyPersistedEdgePayloadV2 {
+                    struct LegacyPersistedEdgePayloadV1 {
                         weight: f32,
                         valid_from: Option<TxId>,
                         valid_to: Option<TxId>,
-                        business_valid_from: Option<i64>,
-                        business_valid_to: Option<i64>,
                     }
 
-                    if let Ok(legacy2) =
-                        bincode::deserialize::<LegacyPersistedEdgePayloadV2>(&raw_value)
+                    if let Ok(legacy) =
+                        bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
                     {
                         (
-                            legacy2.weight,
-                            legacy2.valid_from,
-                            legacy2.valid_to,
-                            legacy2.business_valid_from,
-                            legacy2.business_valid_to,
+                            legacy.weight,
+                            legacy.valid_from,
+                            legacy.valid_to,
+                            None,
+                            None,
                             None,
                         )
                     } else {
-                        // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
-                        #[derive(Deserialize)]
-                        struct LegacyPersistedEdgePayloadV1 {
-                            weight: f32,
-                            valid_from: Option<TxId>,
-                            valid_to: Option<TxId>,
-                        }
-
-                        if let Ok(legacy) =
-                            bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
-                        {
-                            (
-                                legacy.weight,
-                                legacy.valid_from,
-                                legacy.valid_to,
-                                None,
-                                None,
-                                None,
-                            )
-                        } else {
-                            // Backward compatibility fallback for legacy raw f32 weight values
-                            let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
-                                MemFuseError::Internal(format!("graph edge deserialize: {e}"))
-                            })?;
-                            (w, None, None, None, None, None)
-                        }
+                        // Backward compatibility fallback for legacy raw f32 weight values
+                        let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                            MemFuseError::Internal(format!("graph edge deserialize: {e}"))
+                        })?;
+                        (w, None, None, None, None, None)
                     }
-                };
+                }
+            };
 
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
@@ -1838,7 +1848,11 @@ impl GraphIndex for CsrGraph {
                     for edge in edges {
                         let to_idx = inner.get_or_create_index(edge.target);
                         if let Some(doc_id) = edge.source_doc_id {
-                            inner.doc_to_edges.entry(doc_id).or_default().insert((from_id, edge.target));
+                            inner
+                                .doc_to_edges
+                                .entry(doc_id)
+                                .or_default()
+                                .insert((from_id, edge.target));
                         }
                         converted_edges.push(EdgePayload {
                             target: to_idx,

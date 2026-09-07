@@ -56,6 +56,10 @@ harness = false
 name = "audit_benchmarks"
 harness = false
 
+[[bench]]
+name = "flush_threshold_amplification"
+harness = false
+
 [[test]]
 name = "diskann_fault_injection_test"
 required-features = ["experimental-diskann"]

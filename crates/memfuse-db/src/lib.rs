@@ -95,8 +95,8 @@ pub use memfuse_core::SegmentSynthesizer;
 pub use reaper::start_nrem_reaper;
 pub use sleep_cycle::{
     compact_segment_via_context_compactor, compute_community_hash, detect_near_duplicates,
-    group_turns_into_segments, run_nrem_phase, run_rem_phase, CommunityStabilityTracker,
-    MetaChunk, NremConfig, NremPhaseResult, RemConfig, RemPhaseResult, TurnSegment,
+    group_turns_into_segments, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, MetaChunk,
+    NremConfig, NremPhaseResult, RemConfig, RemPhaseResult, TurnSegment,
 };
 pub use sleep_cycle_executor::{execute_nrem_cycle, execute_sleep_cycle};
 

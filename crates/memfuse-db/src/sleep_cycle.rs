@@ -790,8 +790,16 @@ mod tests {
             .await
             .expect("run_rem_phase should succeed");
 
-        assert_eq!(res.synthesized.len(), 10, "Strictly 10 communities synthesized");
-        assert_eq!(res.deferred_community_hashes.len(), 5, "5 excess communities deferred");
+        assert_eq!(
+            res.synthesized.len(),
+            10,
+            "Strictly 10 communities synthesized"
+        );
+        assert_eq!(
+            res.deferred_community_hashes.len(),
+            5,
+            "5 excess communities deferred"
+        );
     }
 
     #[tokio::test]
