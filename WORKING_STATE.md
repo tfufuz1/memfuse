@@ -26,7 +26,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-embed` | 2 | 1867 | 🧊 Optional |  |
 | `memfuse-index` | 2 | 13858 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3919 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 15882 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 2 | 15885 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-db` | 3 | 24799 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 4 | 2709 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 4 | 4329 | 🟢 Clean |  |
