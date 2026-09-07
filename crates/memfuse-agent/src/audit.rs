@@ -11,8 +11,7 @@
 //! Entries are stored via [`Collection`] and keyed `audit:{task_id}:step:{n}`.
 
 use crate::context::{validate_node_id, validate_task_id};
-use memfuse_core::{
-    BoxFuture, Result, StorageEngine};
+use memfuse_core::{BoxFuture, Result, StorageEngine};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -408,112 +407,110 @@ impl InMemoryStorageEngine {
 impl StorageEngine for InMemoryStorageEngine {
     fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
         Box::pin(async move {
-        let guard = self
-            .data
-            .lock()
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
-        Ok(guard.get(key).cloned())
+            let guard = self
+                .data
+                .lock()
+                .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
+            Ok(guard.get(key).cloned())
         })
     }
 
-    fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+    fn get_at_seq<'a>(
+        &'a self,
+        key: &'a [u8],
+        _seq: u64,
+    ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move { self.get(key).await })
+    }
+
+    fn put<'a>(
+        &'a self,
+        _tx_id: memfuse_core::TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        self.get(key).await
+            let mut guard = self
+                .data
+                .lock()
+                .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
+            guard.insert(key.to_vec(), value.to_vec());
+            Ok(())
         })
     }
 
-    fn put<'a>(&'a self, _tx_id: memfuse_core::TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+    fn delete<'a>(
+        &'a self,
+        _tx_id: memfuse_core::TxId,
+        key: &'a [u8],
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-        let mut guard = self
-            .data
-            .lock()
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
-        guard.insert(key.to_vec(), value.to_vec());
-        Ok(())
-        })
-    }
-
-    fn delete<'a>(&'a self, _tx_id: memfuse_core::TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        let mut guard = self
-            .data
-            .lock()
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
-        guard.remove(key);
-        Ok(())
+            let mut guard = self
+                .data
+                .lock()
+                .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
+            guard.remove(key);
+            Ok(())
         })
     }
 
     fn commit<'a>(&'a self, _tx_id: memfuse_core::TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 
     fn rollback<'a>(&'a self, _tx_id: memfuse_core::TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 
     fn rollback_to_tx<'a>(&'a self, _tx_id: memfuse_core::TxId) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 
     fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 
     fn stats<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::StorageStats>> {
         Box::pin(async move {
-        Ok(memfuse_core::StorageStats {
-            num_segments: 0,
-            total_size_bytes: 0,
-            memtable_size_bytes: 0,
-        })
+            Ok(memfuse_core::StorageStats {
+                num_segments: 0,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
         })
     }
 
     fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-        Box::pin(async move {
-        Ok(0)
-        })
+        Box::pin(async move { Ok(0) })
     }
 
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<memfuse_core::TxId>> {
-        Box::pin(async move {
-        Ok(memfuse_core::TxId::new(0))
-        })
+        Box::pin(async move { Ok(memfuse_core::TxId::new(0)) })
     }
 
     fn pin_checkpoint<'a>(&'a self, _seq_no: u64) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 
     fn unpin_checkpoint<'a>(&'a self, _seq_no: u64) -> BoxFuture<'a, Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
 
-    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-        let guard = self
-            .data
-            .lock()
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
-        let entries = guard
-            .iter()
-            .filter(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        Ok(entries)
+            let guard = self
+                .data
+                .lock()
+                .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
+            let entries = guard
+                .iter()
+                .filter(|(k, _)| k.starts_with(prefix))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            Ok(entries)
         })
     }
 
@@ -523,29 +520,29 @@ impl StorageEngine for InMemoryStorageEngine {
         end: std::ops::Bound<&'a [u8]>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-        let guard = self
-            .data
-            .lock()
-            .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
-        let mut entries: Vec<(Vec<u8>, Vec<u8>)> = guard
-            .iter()
-            .filter(|(k, _)| {
-                let s_ok = match start {
-                    std::ops::Bound::Included(s) => k.as_slice() >= s,
-                    std::ops::Bound::Excluded(s) => k.as_slice() > s,
-                    std::ops::Bound::Unbounded => true,
-                };
-                let e_ok = match end {
-                    std::ops::Bound::Included(e) => k.as_slice() <= e,
-                    std::ops::Bound::Excluded(e) => k.as_slice() < e,
-                    std::ops::Bound::Unbounded => true,
-                };
-                s_ok && e_ok
-            })
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        Ok(entries)
+            let guard = self
+                .data
+                .lock()
+                .map_err(|e| memfuse_core::MemFuseError::Internal(format!("Lock poisoned: {e}")))?;
+            let mut entries: Vec<(Vec<u8>, Vec<u8>)> = guard
+                .iter()
+                .filter(|(k, _)| {
+                    let s_ok = match start {
+                        std::ops::Bound::Included(s) => k.as_slice() >= s,
+                        std::ops::Bound::Excluded(s) => k.as_slice() > s,
+                        std::ops::Bound::Unbounded => true,
+                    };
+                    let e_ok = match end {
+                        std::ops::Bound::Included(e) => k.as_slice() <= e,
+                        std::ops::Bound::Excluded(e) => k.as_slice() < e,
+                        std::ops::Bound::Unbounded => true,
+                    };
+                    s_ok && e_ok
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(entries)
         })
     }
 }

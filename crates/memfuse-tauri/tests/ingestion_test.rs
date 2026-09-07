@@ -10,15 +10,11 @@ struct DummyEmbedder {
 
 impl TextEmbeddingEngine for DummyEmbedder {
     fn embed<'a>(&'a self, _text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
-        Box::pin(async move {
-            Ok(vec![0.1; self.dim])
-        })
+        Box::pin(async move { Ok(vec![0.1; self.dim]) })
     }
 
     fn embed_batch<'a>(&'a self, texts: &'a [&'a str]) -> BoxFuture<'a, Result<Vec<Vec<f32>>>> {
-        Box::pin(async move {
-            Ok(vec![vec![0.1; self.dim]; texts.len()])
-        })
+        Box::pin(async move { Ok(vec![vec![0.1; self.dim]; texts.len()]) })
     }
 }
 
@@ -540,10 +536,22 @@ async fn test_mandatory_3_synthetic_50_sentences_reduction() {
     let acme = memfuse_core::EntityId::from("ACME Corp AG");
     let techstart = memfuse_core::EntityId::from("TechStart GmbH");
 
-    assert!(graph.entity_exists(max), "Max Mustermann must exist in graph");
-    assert!(graph.entity_exists(erika), "Erika Musterfrau must exist in graph");
-    assert!(graph.entity_exists(acme), "ACME Corp AG must exist in graph");
-    assert!(graph.entity_exists(techstart), "TechStart GmbH must exist in graph");
+    assert!(
+        graph.entity_exists(max),
+        "Max Mustermann must exist in graph"
+    );
+    assert!(
+        graph.entity_exists(erika),
+        "Erika Musterfrau must exist in graph"
+    );
+    assert!(
+        graph.entity_exists(acme),
+        "ACME Corp AG must exist in graph"
+    );
+    assert!(
+        graph.entity_exists(techstart),
+        "TechStart GmbH must exist in graph"
+    );
 
     // Check co_occurrence edge count:
     let total_edges = graph.stats().await.expect("stats").num_edges;

@@ -378,10 +378,14 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                             if let Some(mut result) = results.get(r.original_index).cloned() {
                                 if let Some(meta) = result.metadata.as_mut() {
                                     if let Some(obj) = meta.as_object_mut() {
-                                        obj.insert("ce_score".to_string(), serde_json::json!(r.score));
+                                        obj.insert(
+                                            "ce_score".to_string(),
+                                            serde_json::json!(r.score),
+                                        );
                                     }
                                 } else {
-                                    result.metadata = Some(serde_json::json!({ "ce_score": r.score }));
+                                    result.metadata =
+                                        Some(serde_json::json!({ "ce_score": r.score }));
                                 }
                                 result.score = r.score;
                                 if let Some(p) = result.provenance.as_mut() {
@@ -416,8 +420,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 mod tests {
     use super::*;
     use crate::{Collection, DistanceMetric, Language};
-    use memfuse_core::{
-    BoxFuture, FilterExpr, HybridQuery};
+    use memfuse_core::{BoxFuture, FilterExpr, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
     use memfuse_store::{LsmConfig, LsmStorage};

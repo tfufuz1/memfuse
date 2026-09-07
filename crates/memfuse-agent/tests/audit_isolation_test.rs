@@ -1,6 +1,5 @@
 use memfuse_agent::audit::{migrate_legacy_audit_entries, AuditEntry, AuditLog};
-use memfuse_core::{
-    BoxFuture, DocId, MemFuseError, Result, StorageEngine, VectorIndex};
+use memfuse_core::{BoxFuture, DocId, MemFuseError, Result, StorageEngine, VectorIndex};
 use memfuse_db::{MemFuse, MemFuseConfig};
 use std::sync::Arc;
 use tempfile::TempDir;

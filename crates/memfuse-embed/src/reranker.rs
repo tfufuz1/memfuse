@@ -277,8 +277,16 @@ impl OnnxReranker {
         let max_length = self.config.max_length;
         let batch_size = self.config.batch_size;
 
+        let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
-            Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size)
+            Self::score_pairs_blocking(
+                &session,
+                &tokenizer,
+                &pairs,
+                max_length,
+                batch_size,
+                &calibration,
+            )
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("Rerank task panicked: {e:?}")))?
@@ -307,6 +315,7 @@ impl OnnxReranker {
         pairs: &[(String, String)],
         max_length: usize,
         batch_size: usize,
+        calibration: &PlattScaledSigmoid,
     ) -> Result<Vec<f32>, String> {
         if pairs.is_empty() {
             return Ok(vec![]);
@@ -316,7 +325,8 @@ impl OnnxReranker {
         let mut all_scores = Vec::with_capacity(pairs.len());
 
         for chunk in pairs.chunks(batch_size) {
-            let chunk_scores = Self::score_batch(session, tokenizer, chunk, max_length)?;
+            let chunk_scores =
+                Self::score_batch(session, tokenizer, chunk, max_length, calibration)?;
             all_scores.extend(chunk_scores);
         }
 
@@ -328,6 +338,7 @@ impl OnnxReranker {
         tokenizer: &Tokenizer,
         chunk: &[(String, String)],
         max_length: usize,
+        calibration: &PlattScaledSigmoid,
     ) -> Result<Vec<f32>, String> {
         let mut encodings = Vec::with_capacity(chunk.len());
 
@@ -416,12 +427,12 @@ impl OnnxReranker {
                 let (shape, data) = out
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("Failed to extract output tensor: {e}"))?;
-                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &self.config.calibration)
+                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, calibration)
             } else if let Some((_, out)) = outputs.iter().next() {
                 let (shape, data) = out
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("Failed to extract output tensor: {e}"))?;
-                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &self.config.calibration)
+                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, calibration)
             } else {
                 Err("Reranker model produced no outputs".into())
             }
@@ -442,7 +453,12 @@ impl OnnxReranker {
             ));
         }
 
-        Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &PlattScaledSigmoid::identity())
+        Self::extract_scores_from_tensor_calibrated(
+            shape,
+            data,
+            b_size,
+            &PlattScaledSigmoid::identity(),
+        )
     }
 
     fn extract_scores_from_tensor_calibrated(
@@ -719,7 +735,10 @@ mod tests {
         assert!(!fitted.is_identity());
 
         let (a, _b) = fitted.params();
-        assert!(a > 0.0, "Scaling factor A should be positive for positively correlated logits");
+        assert!(
+            a > 0.0,
+            "Scaling factor A should be positive for positively correlated logits"
+        );
 
         // Verify that transform() provides sharper separation than identity sigmoid
         let identity = PlattScaledSigmoid::identity();
@@ -798,6 +817,7 @@ mod tests {
             tokenizer_path,
             max_length: 128,
             batch_size: 4,
+            calibration: PlattScaledSigmoid::identity(),
         };
 
         let res = CrossEncoderReranker::new(cfg);

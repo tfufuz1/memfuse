@@ -786,6 +786,45 @@ impl Default for PprConfig {
     }
 }
 
+/// Configuration fingerprint tracking execution parameters for calibration invalidation (Principle P8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, Default)]
+pub struct ConfigFingerprint {
+    /// Target model identifier or backend name.
+    pub model: String,
+    /// Quantization level or description (e.g., "Q4", "F16").
+    pub quantization: String,
+    /// Prompt template identifier or hash string.
+    pub prompt_template_hash: String,
+    /// Quantized temperature bucket byte (0.05 step sizing).
+    pub temperature_bucket: u8,
+}
+
+impl ConfigFingerprint {
+    /// Creates a new `ConfigFingerprint` with quantized temperature bucket.
+    pub fn new(
+        model: impl Into<String>,
+        quantization: impl Into<String>,
+        prompt_template_hash: impl Into<String>,
+        temperature: f32,
+    ) -> Self {
+        Self {
+            model: model.into(),
+            quantization: quantization.into(),
+            prompt_template_hash: prompt_template_hash.into(),
+            temperature_bucket: Self::bucket_temperature(temperature),
+        }
+    }
+
+    /// Quantizes float temperature into a discrete bucket byte (0.05 step sizing).
+    pub fn bucket_temperature(temperature: f32) -> u8 {
+        if !temperature.is_finite() || temperature < 0.0 {
+            0
+        } else {
+            (temperature * 20.0).round().clamp(0.0, 255.0) as u8
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
