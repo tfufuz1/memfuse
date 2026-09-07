@@ -68,6 +68,8 @@
 
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
+#[cfg(feature = "sandbox")]
+use memfuse_core::BoxFuture;
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
