@@ -21,9 +21,7 @@ impl memfuse_core::EmbeddingProvider for MockEmbedder {
         &'a self,
         _text: &'a str,
     ) -> BoxFuture<'a, std::result::Result<Vec<f32>, memfuse_core::EmbeddingError>> {
-        Box::pin(async move {
-            Ok(vec![0.1f32; self.dimension])
-        })
+        Box::pin(async move { Ok(vec![0.1f32; self.dimension]) })
     }
 
     fn embedding_dim(&self) -> usize {
@@ -34,9 +32,7 @@ impl memfuse_core::EmbeddingProvider for MockEmbedder {
         &'a self,
         texts: &'a [&'a str],
     ) -> BoxFuture<'a, std::result::Result<Vec<Vec<f32>>, memfuse_core::EmbeddingError>> {
-        Box::pin(async move {
-            Ok(vec![vec![0.1f32; self.dimension]; texts.len()])
-        })
+        Box::pin(async move { Ok(vec![vec![0.1f32; self.dimension]; texts.len()]) })
     }
 }
 

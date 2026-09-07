@@ -416,12 +416,22 @@ impl OnnxReranker {
                 let (shape, data) = out
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("Failed to extract output tensor: {e}"))?;
-                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &self.config.calibration)
+                Self::extract_scores_from_tensor_calibrated(
+                    shape,
+                    data,
+                    b_size,
+                    &self.config.calibration,
+                )
             } else if let Some((_, out)) = outputs.iter().next() {
                 let (shape, data) = out
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("Failed to extract output tensor: {e}"))?;
-                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &self.config.calibration)
+                Self::extract_scores_from_tensor_calibrated(
+                    shape,
+                    data,
+                    b_size,
+                    &self.config.calibration,
+                )
             } else {
                 Err("Reranker model produced no outputs".into())
             }
@@ -442,7 +452,12 @@ impl OnnxReranker {
             ));
         }
 
-        Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &PlattScaledSigmoid::identity())
+        Self::extract_scores_from_tensor_calibrated(
+            shape,
+            data,
+            b_size,
+            &PlattScaledSigmoid::identity(),
+        )
     }
 
     fn extract_scores_from_tensor_calibrated(
@@ -719,7 +734,10 @@ mod tests {
         assert!(!fitted.is_identity());
 
         let (a, _b) = fitted.params();
-        assert!(a > 0.0, "Scaling factor A should be positive for positively correlated logits");
+        assert!(
+            a > 0.0,
+            "Scaling factor A should be positive for positively correlated logits"
+        );
 
         // Verify that transform() provides sharper separation than identity sigmoid
         let identity = PlattScaledSigmoid::identity();

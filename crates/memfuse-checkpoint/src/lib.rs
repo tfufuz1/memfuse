@@ -23,8 +23,7 @@
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
 // SIEHE AUCH:  ADR-011
 
-use memfuse_core::{
-    BoxFuture, MemFuseError, Result, TxId, WorkflowState};
+use memfuse_core::{BoxFuture, MemFuseError, Result, TxId, WorkflowState};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -836,8 +835,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Öffnet einen PersistentCheckpointStore asynchron mit Rekonstruktion und Monotonie-Garantie.
     pub async fn open(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
         let ns = namespace.into();
-        let orphan_path =
-            std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_path = std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
         let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
         Self::open_with_orphan_registry(storage, ns, orphan_registry).await
     }
@@ -938,8 +936,7 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
         let ns = namespace.into();
-        let orphan_path =
-            std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_path = std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
         let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
         Self::new_with_orphan_registry(storage, ns, orphan_registry)
     }
@@ -1423,9 +1420,7 @@ impl<S: memfuse_core::StorageEngine> CheckpointRegistry for PersistentCheckpoint
     }
 
     fn list_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<CheckpointMeta>>> {
-        Box::pin(async move {
-            self.list_checkpoints().await
-        })
+        Box::pin(async move { self.list_checkpoints().await })
     }
 }
 
@@ -1484,8 +1479,7 @@ impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memfuse_core::{
-    BoxFuture, Result, StorageEngine, StorageStats};
+    use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats};
     use parking_lot::Mutex;
     use std::collections::HashSet;
 
@@ -1507,108 +1501,92 @@ mod tests {
         }
     }
 
-        impl StorageEngine for MockStorage {
+    impl StorageEngine for MockStorage {
         fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(self.data.lock().get(key).cloned())
-
-            })
+            Box::pin(async move { Ok(self.data.lock().get(key).cloned()) })
         }
-        fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            self.get(key).await
-
-            })
+        fn get_at_seq<'a>(
+            &'a self,
+            key: &'a [u8],
+            _seq: u64,
+        ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { self.get(key).await })
         }
-        fn put<'a>(&'a self, _tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        fn put<'a>(
+            &'a self,
+            _tx_id: TxId,
+            key: &'a [u8],
+            value: &'a [u8],
+        ) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            if let Some(fail_key) = self.fail_on_put.lock().as_ref() {
-                if key == fail_key {
-                    return Err(MemFuseError::Internal("Mock Storage Error".to_string()));
+                if let Some(fail_key) = self.fail_on_put.lock().as_ref() {
+                    if key == fail_key {
+                        return Err(MemFuseError::Internal("Mock Storage Error".to_string()));
+                    }
                 }
-            }
-            self.data.lock().insert(key.to_vec(), value.to_vec());
-            Ok(())
-
+                self.data.lock().insert(key.to_vec(), value.to_vec());
+                Ok(())
             })
         }
         fn delete<'a>(&'a self, _tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            self.data.lock().remove(key);
-            Ok(())
-
+                self.data.lock().remove(key);
+                Ok(())
             })
         }
         fn commit<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            self.rolled_back_tx.lock().push(tx_id);
-            Ok(())
-
+                self.rolled_back_tx.lock().push(tx_id);
+                Ok(())
             })
         }
         fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-            Box::pin(async move {
-            Ok(0)
-
-            })
+            Box::pin(async move { Ok(0) })
         }
         fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-            Box::pin(async move {
-            Ok(TxId::new(0))
-
-            })
+            Box::pin(async move { Ok(TxId::new(0)) })
         }
         fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
             Box::pin(async move {
-            Ok(StorageStats {
-                num_segments: 0,
-                total_size_bytes: 0,
-                memtable_size_bytes: 0,
-            })
-
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
             })
         }
         fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            self.pinned.lock().insert(seq_no);
-            Ok(())
-
+                self.pinned.lock().insert(seq_no);
+                Ok(())
             })
         }
         fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            self.pinned.lock().remove(&seq_no);
-            Ok(())
-
+                self.pinned.lock().remove(&seq_no);
+                Ok(())
             })
         }
-        fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        fn scan_prefix<'a>(
+            &'a self,
+            prefix: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move {
-            let data = self.data.lock();
-            Ok(data
-                .iter()
-                .filter(|(k, _)| k.starts_with(prefix))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect())
-
+                let data = self.data.lock();
+                Ok(data
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(prefix))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect())
             })
         }
         fn scan<'a>(
@@ -1616,13 +1594,9 @@ mod tests {
             _s: std::ops::Bound<&'a [u8]>,
             _e: std::ops::Bound<&'a [u8]>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-            Box::pin(async move {
-            Ok(Vec::new())
-
-            })
+            Box::pin(async move { Ok(Vec::new()) })
         }
-
-        }
+    }
 
     #[tokio::test]
     async fn test_create_and_load() {
@@ -1632,7 +1606,10 @@ mod tests {
             .create_checkpoint("cp1", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
             .unwrap(); // unwrap
-        let loaded = CheckpointRegistry::load_checkpoint(&store, 1).await.unwrap().unwrap(); // unwrap
+        let loaded = CheckpointRegistry::load_checkpoint(&store, 1)
+            .await
+            .unwrap()
+            .unwrap(); // unwrap
         assert_eq!(loaded, meta);
     }
 

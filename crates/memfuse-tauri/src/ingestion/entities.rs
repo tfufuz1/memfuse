@@ -69,7 +69,8 @@ impl SimpleEntityExtractor {
                         };
 
                         // Prüfung auf generische Bürokratie-Komposita
-                        let has_generic_suffix = phrase.iter().any(|w| Self::has_generic_noun_suffix(w));
+                        let has_generic_suffix =
+                            phrase.iter().any(|w| Self::has_generic_noun_suffix(w));
 
                         // Dokumentenweite Phrasen-Häufigkeit (case-insensitive)
                         let phrase_lower = joined.to_lowercase();
@@ -121,7 +122,11 @@ impl SimpleEntityExtractor {
     }
 
     fn is_capitalized_candidate(word: &str) -> bool {
-        let starts_upper = word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+        let starts_upper = word
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false);
         if !starts_upper {
             return false;
         }
@@ -329,7 +334,8 @@ mod tests {
 
     #[test]
     fn test_mandatory_1_regression_urlaubsantragsprozess() {
-        let text = "Der Urlaubsantragsprozess muss durch die Abteilung Personalwesen genehmigt werden.";
+        let text =
+            "Der Urlaubsantragsprozess muss durch die Abteilung Personalwesen genehmigt werden.";
         let entities = SimpleEntityExtractor::extract(text);
 
         let urlaubs_id = EntityId::from("Urlaubsantragsprozess");
