@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 memfuse-core = { workspace = true }
+memfuse-calibration = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
@@ -35,3 +36,4 @@ optional = true
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 criterion = { workspace = true }
+proptest = "1.4"

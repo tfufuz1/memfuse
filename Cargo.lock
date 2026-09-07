@@ -2773,10 +2773,12 @@ name = "memfuse-embed"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "memfuse-calibration",
  "memfuse-core",
  "ndarray 0.15.6",
  "ort",
  "parking_lot",
+ "proptest",
  "serde",
  "tempfile",
  "tokenizers",
@@ -2790,6 +2792,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "bincode",
+ "blake3",
  "memfuse-core",
  "memfuse-store",
  "parking_lot",

@@ -172,31 +172,30 @@ pub fn group_turns_into_segments(
         return Vec::new();
     }
 
-    // Merging-Pass für Mikro-Segmente unter min_turns_per_segment
+    // Pass 1: Forward-Merge — zu-kleines Segment wird in VORHERIGES gemergt (wenn möglich)
     let mut merged: Vec<WorkingSegment> = Vec::new();
-
     for seg in raw_segments {
-        if let Some(last) = merged.last_mut() {
-            if last.turns.len() < config.min_turns_per_segment {
-                // Letztes Segment ist zu klein -> verschmelze aktuelles Segment hinein
+        if merged.is_empty() {
+            merged.push(seg);
+            continue;
+        }
+        // Wenn das aktuelle Segment zu klein ist: in Vorgänger mergen
+        if seg.turns.len() < config.min_turns_per_segment {
+            if let Some(last) = merged.last_mut() {
                 for (id, emb) in seg.turns {
                     last.add_turn(id, emb);
                 }
-                continue;
             }
+        } else {
+            merged.push(seg);
         }
-        merged.push(seg);
     }
 
-    // Prüfe abschließend das letzte Segment in merged
-    if merged.len() > 1 {
-        let last_idx = merged.len() - 1;
-        if merged[last_idx].turns.len() < config.min_turns_per_segment {
-            let last_seg = merged.remove(last_idx);
-            let prev = &mut merged[last_idx - 1];
-            for (id, emb) in last_seg.turns {
-                prev.add_turn(id, emb);
-            }
+    // Pass 2: Backward-Merge — erstes Segment zu klein → in NÄCHSTES mergen
+    if merged.len() >= 2 && merged[0].turns.len() < config.min_turns_per_segment {
+        let first = merged.remove(0);
+        for (id, emb) in first.turns {
+            merged[0].add_turn(id, emb);
         }
     }
 
@@ -392,7 +391,10 @@ mod tests {
         let emb = vec![1.0, 0.0, 0.0, 0.0];
         // Chronologically first turn (position 0) has a HIGHER numerical DocId (9999)
         // than the second turn (position 1, DocId 100).
-        let turns = vec![(DocId::new(9999), emb.clone()), (DocId::new(100), emb.clone())];
+        let turns = vec![
+            (DocId::new(9999), emb.clone()),
+            (DocId::new(100), emb.clone()),
+        ];
 
         let pairs = detect_near_duplicates(&turns, 0.95);
         assert_eq!(pairs.len(), 1);
