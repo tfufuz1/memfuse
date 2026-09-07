@@ -112,11 +112,15 @@ pub mod filter;
 pub mod fusion;
 pub mod homeostat;
 pub mod multistep;
+pub mod physio_config;
+pub mod physio_scheduler;
 pub mod reaper;
 pub mod thermostat;
 pub mod transaction;
 
 pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
+pub use physio_config::PhysioConfig;
+pub use physio_scheduler::PhysioScheduler;
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
