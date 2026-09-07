@@ -62,7 +62,11 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `memfuse-kv-bridge` | FEHLT | Crate existiert nicht im Repository |
 | `EdgeProvenance` | FEHLT | Typ existiert nicht in den Crates (`grep -rn "EdgeProvenance" crates/`) |
 | `memfuse-candle` Serving-Anbindung | NICHT VERDRAHTET | Crate existiert als Member, ist aber nicht in `memfuse-db`, `memfuse-router` oder `memfuse-ollama` eingebunden |
-| `memfuse-py` Workspace-Einbindung | ENTKOPPELT | Eigenständiger Workspace in `crates/memfuse-py`, nicht in `Cargo.toml` `members` (ADR-050) |
+### Bewusst entkoppelte Architektur-Komponenten (Keine technische Schuld) 🟢
+
+| Komponente / Feature | Status | Begründung / Dokumentation |
+|---|---|---|
+| `memfuse-py` Workspace-Isolierung | BEWUSST ISOLIERT | Eigenständiger Workspace in `crates/memfuse-py`, nicht in Root-`Cargo.toml` `members` (ADR-064). Benötigt `panic = "unwind"` im Release-Profil für FFI `catch_unwind()`, während der Haupt-Workspace `panic = "abort"` nutzt. CI deckt den Crate separat ab. |
 
 ---
 
@@ -74,9 +78,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
    `search.rs` filtert abgelöste Dokumente nur zur Abfragezeit (Query-Time Filter). Eine aktive Kaskaden-Invalidierung verknüpfter CSR-Graph-Kanten bei Dokument-Superseding fehlt.
 3. **`EdgeProvenance`-Typ fehlt**:
    Herkunftsnachweise für Graph-Kanten (`EdgeProvenance`) sind in Spezifikationen erwähnt, jedoch im Codebase noch nicht als Typ implementiert.
-4. **`memfuse-py` nicht in Root-Workspace-Members**:
-   Per ADR-050/ADR-056 ist `crates/memfuse-py` als eigenständiger Cargo-Workspace mit unabhänigem `panic = "unwind"` release-Profil ausgekoppelt und wird nicht vom Root-Workspace gebaut.
-5. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
+4. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
    `memfuse-candle` ist zwar als Workspace-Crate vorhanden, dient aber derzeit als isoliertes Modul und ist noch nicht in die Haupt-Serving-Pipeline (`memfuse-db` / `memfuse-router`) eingebunden.
 
 ---

@@ -27,10 +27,13 @@ const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
-/// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
-/// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
-/// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
-/// innerhalb dieses 50-Insert-Fensters sind nicht-geflushte Vektoren unpersistent.
+/// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta (reine
+/// Batching-Performance-Entscheidung, siehe trigger_background_persist_delta()).
+/// CRASH-SICHERHEIT: Jeder insert() schreibt VOR dem In-Memory-Push per
+/// append_to_pending_wal() in `<index>.pending.wal` (inkl. fsync via file.sync_all()).
+/// Bei Absturz/OOM innerhalb des Flush-Fensters stellt recover_pending_delta() beim
+/// nächsten Öffnen/load() alle WAL-persistierten Vektoren wieder her und führt persist_delta()
+/// aus — kein Datenverlust.
 const PENDING_FLUSH_THRESHOLD: u64 = 50;
 
 /// Header for DiskANN index file.
@@ -2539,5 +2542,60 @@ mod tests {
             "Unexpected error message: {}",
             err_msg
         );
+    }
+
+    #[tokio::test]
+    async fn test_diskann_pending_wal_recovery() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let index_path = temp_dir.path().join("wal_recovery.idx");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 4,
+            max_degree: 4,
+            beam_width: 4,
+            distance_metric: DistanceMetric::Euclidean,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
+            ..DiskAnnConfig::default()
+        };
+
+        // 1. Erstelle Index und baue Basis mit 5 Vektoren
+        let index = DiskAnnIndex::try_new(config.clone())?;
+        let base_vecs = vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![2.0, 0.0, 0.0, 0.0],
+            vec![3.0, 0.0, 0.0, 0.0],
+            vec![4.0, 0.0, 0.0, 0.0],
+            vec![5.0, 0.0, 0.0, 0.0],
+        ];
+        let base_ids: Vec<DocId> = (1..=5).map(DocId::from).collect();
+        index.build(&base_vecs, &base_ids).await?;
+
+        // 2. Füge 3 Vektoren ein (unterhalb von PENDING_FLUSH_THRESHOLD=50) -> WAL wird geschrieben, persist_delta NICHT aufgerufen
+        let uncommitted_doc_id = DocId::from(999u64);
+        let uncommitted_vec = vec![99.0, 0.0, 0.0, 0.0];
+        index.insert(TxId(1), uncommitted_doc_id, &uncommitted_vec).await?;
+
+        // Prüfe, dass pending.wal existiert
+        let pending_wal = index_path.with_extension("pending.wal");
+        assert!(pending_wal.exists(), "pending.wal muss nach insert() auf Disk existieren");
+
+        // 3. Simuliere Absturz: Verwürfe die Index-Instanz ohne persist_delta() aufzurufen
+        drop(index);
+
+        // 4. Erstelle neue Index-Instanz und rufe load() auf
+        let reloaded_index = DiskAnnIndex::try_new(config)?;
+        reloaded_index.load().await?;
+
+        // 5. Verifiziere, dass recover_pending_delta() gelaufen ist und der Vektor auffindbar ist
+        assert_eq!(reloaded_index.len().await, 6, "Der wiederhergestellte Vektor muss im Index enthalten sein");
+        let results = reloaded_index.search(&uncommitted_vec, 1).await?;
+        assert!(!results.is_empty());
+        assert_eq!(results[0].doc_id, uncommitted_doc_id, "Der wiederhergestellte Vektor muss per Suche auffindbar sein");
+
+        // Verifiziere, dass pending.wal nach verarbeiteter Recovery gelöscht wurde
+        assert!(!pending_wal.exists(), "pending.wal muss nach erfolgreicher Recovery gelöscht sein");
+
+        Ok(())
     }
 }
