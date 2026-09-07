@@ -83,8 +83,8 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-graph` | 1 | 8341 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-embed` | 2 | 1778 | 🧊 Optional |  |
-| `memfuse-index` | 2 | 13508 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-ollama` | 2 | 3689 | 🟢 Clean |  |
+| `memfuse-index` | 2 | 13067 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-ollama` | 2 | 3861 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15567 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-db` | 3 | 22923 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 4 | 1564 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |

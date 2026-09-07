@@ -33,7 +33,11 @@ async fn test_long_mem_eval_fixture_parsing_and_eval() {
             } else {
                 Ok(vec![])
             }
-        }) as memfuse_bench::long_mem_eval::BoxFuture<'static, memfuse_core::Result<Vec<ScoredChunk>>>
+        })
+            as memfuse_bench::long_mem_eval::BoxFuture<
+                'static,
+                memfuse_core::Result<Vec<ScoredChunk>>,
+            >
     };
 
     let report = run_long_mem_eval(&cases, mock_search)
@@ -79,7 +83,11 @@ async fn test_locomo_fixture_parsing_and_eval() {
                     score: 0.88,
                 }])
             }
-        }) as memfuse_bench::long_mem_eval::BoxFuture<'static, memfuse_core::Result<Vec<ScoredChunk>>>
+        })
+            as memfuse_bench::long_mem_eval::BoxFuture<
+                'static,
+                memfuse_core::Result<Vec<ScoredChunk>>,
+            >
     };
 
     let report = run_locomo_eval(&cases, mock_search)

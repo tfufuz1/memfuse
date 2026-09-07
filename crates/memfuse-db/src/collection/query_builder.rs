@@ -140,6 +140,8 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
+    #[cfg(feature = "physio-replicator-weights")]
+    replicator_state: Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
     seq: Option<u64>,
@@ -167,6 +169,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
+            #[cfg(feature = "physio-replicator-weights")]
+            replicator_state: None,
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
             seq: None,
@@ -290,6 +294,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets an online adaptive replicator state for dynamic signal fusion weights.
+    #[cfg(feature = "physio-replicator-weights")]
+    pub fn replicator_state(
+        mut self,
+        state: std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>,
+    ) -> Self {
+        self.replicator_state = Some(state);
+        self
+    }
+
     /// Sets the candidate pool multiplier for pre-reranking candidate expansion.
     ///
     /// Default: 10 (`DEFAULT_RERANK_POOL_MULTIPLIER`), yielding ~100 candidates for `k=10`
@@ -369,6 +383,21 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         #[cfg(not(feature = "reranking"))]
         let _has_reranker = false;
 
+        let fusion_weights = {
+            #[cfg(feature = "physio-replicator-weights")]
+            {
+                if let Some(ref state) = self.replicator_state {
+                    state.read().fusion_weights()
+                } else {
+                    self.weights.unwrap_or_default()
+                }
+            }
+            #[cfg(not(feature = "physio-replicator-weights"))]
+            {
+                self.weights.unwrap_or_default()
+            }
+        };
+
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
             vector_query: self.vector.clone(),
@@ -382,7 +411,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 .as_ref()
                 .map(|s| s.to_graph_strategy())
                 .unwrap_or_default(),
-            fusion_weights: self.weights.unwrap_or_default(),
+            fusion_weights,
             filter: self.filter.clone(),
             memory_type_filter: self.memory_type_filter.clone(),
             same_community_as: self.same_community_as,
@@ -390,6 +419,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             include_provenance: self.include_provenance,
             rerank_pool_multiplier: self.rerank_pool_multiplier,
             rerank_pool_max: self.rerank_pool_max,
+            has_reranker: _has_reranker,
             k,
         };
 
@@ -477,6 +507,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 });
 
                 if let Ok(ranked) = reranked {
+                    // Implizites Calibration-Feedback (k=5 als Relevanz-Cutoff)
+                    reranker.record_implicit_feedback(&ranked, 5.min(k));
+
                     let mut reranked_results = Vec::with_capacity(k);
                     for r in ranked.into_iter().take(k) {
                         if let Some(mut result) = results.get(r.original_index).cloned() {
@@ -942,5 +975,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_no_reranker_uses_k_not_10k() {
+        let k = 10;
+        let query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
+        assert!(!query.has_reranker);
+
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
+
+        assert!(
+            candidate_k <= k * 3,
+            "Without reranker, candidate_k ({candidate_k}) must not exceed k * 3 ({})",
+            k * 3
+        );
+    }
+
+    #[test]
+    fn test_reranker_expands_to_100_for_k10() {
+        let k = 10;
+        let mut query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
+        query.has_reranker = true;
+
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
+
+        assert!(
+            candidate_k >= 100,
+            "With reranker, candidate_k ({candidate_k}) must be >= 100 for k=10"
+        );
     }
 }

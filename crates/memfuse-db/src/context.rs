@@ -100,14 +100,14 @@ impl ContextManager {
     ///
     /// Filters by relevance threshold, sorts by score, and truncates to budget.
     pub fn prepare_context(&self, mut chunks: Vec<ContextChunk>) -> Result<ContextWindow> {
-        // Filter by relevance threshold
-        chunks.retain(|c| c.relevance >= self.relevance_threshold);
+        // Filter by relevance threshold (retaining NaN chunks so total_cmp can order them safely without dropping)
+        chunks.retain(|c| c.relevance.is_nan() || c.relevance >= self.relevance_threshold);
 
-        // Sort by relevance descending
+        // Sort by relevance descending, then by doc_id ascending for deterministic tie-breaking (ADR-DB-001 / Spec §6.15)
         chunks.sort_by(|a, b| {
             b.relevance
-                .partial_cmp(&a.relevance)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .total_cmp(&a.relevance)
+                .then_with(|| a.doc_id.inner().cmp(&b.doc_id.inner()))
         });
 
         // Truncate to token budget
@@ -363,6 +363,73 @@ mod tests {
     }
 
     #[test]
+    fn test_prepare_context_equal_scores_deterministic() {
+        let budget = TokenBudget::new(10000, 0);
+        let mgr = ContextManager::new(budget);
+
+        // Erstelle 20 Chunks in nicht-aufsteigender doc_id Reihenfolge
+        let doc_ids = vec![
+            15, 3, 20, 1, 8, 12, 5, 19, 2, 10, 14, 7, 18, 4, 11, 16, 6, 13, 9, 17,
+        ];
+
+        let mut expected_ids: Vec<u64> = doc_ids.clone();
+        expected_ids.sort_unstable();
+
+        for _ in 0..10 {
+            let chunks: Vec<ContextChunk> = doc_ids
+                .iter()
+                .map(|&id| ContextChunk {
+                    doc_id: DocId::new(id),
+                    content: format!("chunk content {}", id),
+                    relevance: 0.85,
+                    token_count: 10,
+                    metadata: None,
+                    contextual_prefix: None,
+                    links: Vec::new(),
+                })
+                .collect();
+
+            let window = mgr.prepare_context(chunks).expect("prepare_context");
+            let result_ids: Vec<u64> = window.chunks.iter().map(|c| c.doc_id.inner()).collect();
+            assert_eq!(result_ids, expected_ids);
+        }
+    }
+
+    #[test]
+    fn test_prepare_context_nan_relevance_safety() {
+        let budget = TokenBudget::new(10000, 0);
+        let mgr = ContextManager::new(budget);
+
+        let chunks = vec![
+            ContextChunk {
+                doc_id: DocId::new(10),
+                content: "nan chunk".into(),
+                relevance: f32::NAN,
+                token_count: 10,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            },
+            ContextChunk {
+                doc_id: DocId::new(5),
+                content: "normal chunk".into(),
+                relevance: 0.5,
+                token_count: 10,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            },
+        ];
+
+        let window = mgr.prepare_context(chunks).expect("prepare_context");
+        // total_cmp considers NaN greater than normal numbers:
+        // so relevance: NAN (descending) comes before 0.5.
+        assert_eq!(window.chunks.len(), 2);
+        assert!(window.chunks[0].relevance.is_nan());
+        assert_eq!(window.chunks[1].doc_id, DocId::new(5));
+    }
+
+    #[test]
     fn test_single_document_exceeds_budget() {
         let budget = TokenBudget::new(20, 10); // 10 available
         let mgr = ContextManager::new(budget);
@@ -387,6 +454,57 @@ mod tests {
         assert!(window.total_tokens <= 10);
         assert!(window.total_tokens > 0);
         assert!(!window.chunks[0].content.is_empty());
+    }
+
+    #[test]
+    fn test_prepare_context_equal_scores_deterministic() {
+        let budget = TokenBudget::new(10000, 0);
+        let mgr = ContextManager::new(budget);
+
+        // Erstelle 20 Chunks mit identischen relevance-Scores aber verschiedenen, ungeordneten doc_ids
+        let raw_ids = vec![
+            105, 42, 12, 99, 1, 700, 30, 88, 5, 200, 15, 60, 400, 3, 22, 111, 7, 50, 80, 120,
+        ];
+        let chunks: Vec<ContextChunk> = raw_ids
+            .into_iter()
+            .map(|id| ContextChunk {
+                doc_id: DocId::new(id),
+                content: format!("Content for chunk {id}"),
+                relevance: 0.85,
+                token_count: 5,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            })
+            .collect();
+
+        let mut previous_doc_ids: Option<Vec<u64>> = None;
+
+        // Rufe prepare_context 10× auf
+        for _ in 0..10 {
+            let window = mgr
+                .prepare_context(chunks.clone())
+                .expect("prepare_context succeeded");
+            let current_doc_ids: Vec<u64> =
+                window.chunks.iter().map(|c| c.doc_id.inner()).collect();
+
+            // Assert: Die Reihenfolge der doc_ids ist in allen 10 Aufrufen identisch
+            if let Some(ref prev) = previous_doc_ids {
+                assert_eq!(
+                    prev, &current_doc_ids,
+                    "Sorting order must be deterministic across calls"
+                );
+            } else {
+                // Assert: Aufsteigend sortiert (kleinste doc_id zuerst bei gleichem Score)
+                let mut sorted_ids = current_doc_ids.clone();
+                sorted_ids.sort_unstable();
+                assert_eq!(
+                    current_doc_ids, sorted_ids,
+                    "Doc IDs must be strictly sorted in ascending order"
+                );
+                previous_doc_ids = Some(current_doc_ids);
+            }
+        }
     }
 }
 
