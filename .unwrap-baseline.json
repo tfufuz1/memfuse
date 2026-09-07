@@ -2069,6 +2069,10 @@
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
+    "hash": "bd2049834be026fb"
+  },
+  {
+    "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "c3eaa032ebf8e812"
   },
   {
