@@ -15,6 +15,7 @@
 //                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
+use crate::immune::{EdgeAssertion, ImmunMemory};
 use memfuse_core::{
     BoxFuture, Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
     StorageEngine, TxId,
@@ -368,6 +369,9 @@ pub struct CsrGraph {
     /// Optionaler Persistenz-Handle. None = reiner In-Memory-Modus (z.B. Tests).
     storage: Option<Arc<dyn StorageEngine>>,
     last_tx_id: AtomicU64,
+    /// Optionales Antikörper-Register für Widerspruchsprävention (F-04/ADR-073).
+    /// None = disabled (default, P1-safe).
+    immune_memory: Option<RwLock<ImmunMemory>>,
 }
 
 impl CsrGraph {
@@ -383,6 +387,7 @@ impl CsrGraph {
             inner: RwLock::new(GraphInner::new()),
             storage: None,
             last_tx_id: AtomicU64::new(0),
+            immune_memory: None,
         }
     }
 
@@ -401,6 +406,18 @@ impl CsrGraph {
             inner: RwLock::new(GraphInner::new()),
             storage: Some(storage),
             last_tx_id: AtomicU64::new(0),
+            immune_memory: None,
+        }
+    }
+
+    /// Erstellt CsrGraph mit aktiviertem Antikörper-Register für Widerspruchsprävention (F-04/ADR-073).
+    pub fn with_immune_memory(suppression_threshold: u32) -> Self {
+        Self {
+            config: CsrGraphConfig::default(),
+            inner: RwLock::new(GraphInner::new()),
+            storage: None,
+            last_tx_id: AtomicU64::new(0),
+            immune_memory: Some(RwLock::new(ImmunMemory::new(suppression_threshold))),
         }
     }
 
@@ -435,11 +452,39 @@ impl CsrGraph {
         tx_valid_to: Option<TxId>,
         business_valid_from: Option<i64>,
         business_valid_to: Option<i64>,
+        predicate_hash: Option<[u8; 32]>,
+        object_repr: Option<Vec<u8>>,
     ) -> Result<()> {
         if !weight.is_finite() || weight < 0.0 {
             return Err(MemFuseError::InvalidInput(format!(
                 "Invalid edge weight {weight}: weight must be finite and non-negative"
             )));
+        }
+
+        // Immune-Check wenn aktiviert
+        if let Some(ref immune_lock) = self.immune_memory {
+            if let (Some(pred_hash), Some(obj)) = (predicate_hash, object_repr.as_ref()) {
+                let assertion = EdgeAssertion {
+                    subject: from.inner(),
+                    predicate_hash: pred_hash,
+                    object_repr: obj.clone(),
+                };
+                let mut immune = immune_lock.write();
+                if let Some(antibody) = immune.check_before_insert(&assertion) {
+                    if antibody.suppressed {
+                        // Widerspruch unterdrückt — Einfügen blockiert
+                        tracing::warn!(
+                            suppression_count = antibody.contradiction_count,
+                            "ImmunMemory: edge insertion suppressed by antibody"
+                        );
+                        return Err(MemFuseError::PolicyViolation(
+                            "Contradictory edge suppressed by immune memory".to_string(),
+                        ));
+                    }
+                    // Widerspruch erkannt aber noch nicht suppressed — loggen, trotzdem einfügen
+                    tracing::warn!("ImmunMemory: contradictory edge detected (not yet suppressed)");
+                }
+            }
         }
 
         // Phase 1: Edge einfügen (Write-Lock kurz halten, kein I/O)
@@ -480,7 +525,7 @@ impl CsrGraph {
         to: EntityId,
         weight: f32,
     ) -> Result<()> {
-        self.add_edge(from, to, weight, None, None, None, None)
+        self.add_edge(from, to, weight, None, None, None, None, None, None)
             .await
     }
 
@@ -498,8 +543,18 @@ impl CsrGraph {
         tx_valid_from: Option<TxId>,
         tx_valid_to: Option<TxId>,
     ) -> Result<()> {
-        self.add_edge(from, to, weight, tx_valid_from, tx_valid_to, None, None)
-            .await
+        self.add_edge(
+            from,
+            to,
+            weight,
+            tx_valid_from,
+            tx_valid_to,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     /// Directly inserts an edge with full bi-temporal validity into the CSR graph without staging.
@@ -522,6 +577,8 @@ impl CsrGraph {
             tx_valid_to,
             business_valid_from,
             business_valid_to,
+            None,
+            None,
         )
         .await
     }
@@ -1092,6 +1149,30 @@ impl GraphIndex for CsrGraph {
                     edge.weight
                 )));
             }
+
+            // Immune-Check wenn aktiviert
+            if let Some(ref immune_lock) = self.immune_memory {
+                let pred_hash = *blake3::hash(edge.label.as_bytes()).as_bytes();
+                let assertion = EdgeAssertion {
+                    subject: edge.from.inner(),
+                    predicate_hash: pred_hash,
+                    object_repr: edge.to.as_bytes(),
+                };
+                let mut immune = immune_lock.write();
+                if let Some(antibody) = immune.check_before_insert(&assertion) {
+                    if antibody.suppressed {
+                        tracing::warn!(
+                            suppression_count = antibody.contradiction_count,
+                            "ImmunMemory: edge insertion suppressed by antibody"
+                        );
+                        return Err(MemFuseError::PolicyViolation(
+                            "Contradictory edge suppressed by immune memory".to_string(),
+                        ));
+                    }
+                    tracing::warn!("ImmunMemory: contradictory edge detected (not yet suppressed)");
+                }
+            }
+
             let mut inner = self.inner.write();
             let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
@@ -3673,5 +3754,101 @@ mod tests {
             "Visited cap includes hub and leaves, total returned results equals MAX_VISITED_NODES - 1"
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_immune_memory_contradiction_suppression() {
+        let graph = Arc::new(CsrGraph::with_immune_memory(3));
+        let from = EntityId::new(10);
+        let to = EntityId::new(20);
+        let pred_hash = [7u8; 32];
+        let object_repr = b"ContradictoryValue".to_vec();
+
+        // 1st insertion: recorded, not yet suppressed (count = 1)
+        let res1 = graph
+            .add_edge(
+                from,
+                to,
+                1.0,
+                None,
+                None,
+                None,
+                None,
+                Some(pred_hash),
+                Some(object_repr.clone()),
+            )
+            .await;
+        assert!(res1.is_ok(), "First insertion should succeed");
+
+        // 2nd insertion: recorded, not yet suppressed (count = 2)
+        let res2 = graph
+            .add_edge(
+                from,
+                to,
+                1.0,
+                None,
+                None,
+                None,
+                None,
+                Some(pred_hash),
+                Some(object_repr.clone()),
+            )
+            .await;
+        assert!(res2.is_ok(), "Second insertion should succeed");
+
+        // 3rd insertion: recorded, reaches suppression threshold (count = 3) -> suppressed!
+        let res3 = graph
+            .add_edge(
+                from,
+                to,
+                1.0,
+                None,
+                None,
+                None,
+                None,
+                Some(pred_hash),
+                Some(object_repr),
+            )
+            .await;
+        assert!(
+            res3.is_err(),
+            "Third insertion should fail due to immune memory contradiction suppression"
+        );
+        let err = res3.unwrap_err();
+        assert!(
+            matches!(err, MemFuseError::PolicyViolation(ref msg) if msg.contains("Contradictory edge suppressed by immune memory")),
+            "Expected policy violation error, got: {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_default_csr_graph_no_immune_check() {
+        let graph = Arc::new(CsrGraph::new());
+        let from = EntityId::new(100);
+        let to = EntityId::new(200);
+        let pred_hash = [9u8; 32];
+        let object_repr = b"SomeValue".to_vec();
+
+        // Standard CsrGraph::new() has immune_memory = None, so insertion never blocks
+        for i in 1..=5 {
+            let res = graph
+                .add_edge(
+                    from,
+                    to,
+                    1.0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(pred_hash),
+                    Some(object_repr.clone()),
+                )
+                .await;
+            assert!(
+                res.is_ok(),
+                "Insertion {i} on default CsrGraph without immune memory should always succeed"
+            );
+        }
     }
 }
