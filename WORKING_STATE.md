@@ -16,24 +16,24 @@ Ergebnis: **0 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9831 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9842 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 1 | 992 | 🟢 Clean |  |
-| `memfuse-candle` | 1 | 489 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
+| `memfuse-candle` | 1 | 718 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 2836 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 8928 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 9250 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-kv-bridge` | 1 | 355 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-embed` | 2 | 1882 | 🧊 Optional |  |
-| `memfuse-index` | 2 | 14167 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-ollama` | 2 | 3916 | 🟢 Clean |  |
+| `memfuse-index` | 2 | 14165 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15882 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-db` | 3 | 24962 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 3 | 25045 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 4 | 2747 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 4 | 4329 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
 | `memfuse-agent` | 5 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 6 | 4009 | 🟢 Clean |  |
+| `memfuse-mcp` | 6 | 4281 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
@@ -56,7 +56,7 @@ Layer 4:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retri
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
 Layer 5:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
-Layer 6:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
+Layer 6:  memfuse-mcp —  (deps: memfuse-agent, memfuse-candle, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
 ```
 
 **Aktiver Workspace-Build**: 18 Workspace Crates (17 Kern-Crates + 1 optionales Crate `memfuse-embed`).
