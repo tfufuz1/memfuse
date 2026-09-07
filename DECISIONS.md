@@ -867,3 +867,16 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Einzelne Fault-Injection-Tests laufen als reguläre Integrationstests in `cargo test --workspace`.
     - Die kombinierte Fault-Matrix (`chaos_matrix.rs`) läuft ausschließlich nightly, ist `#[ignore]`-gated und blockiert keine Pull Requests.
 *   **Begründung**: Bietet gezielte Abdeckung verbleibender Crash-Resilienz-Lücken (SSTable Bit-Flips, echte Process-Kills, Task-Abbrüche, Memory-Pressure) ohne Beeinträchtigung der Produktionscode-Topologie oder der PR-Laufzeiten.
+
+---
+
+## ADR-063: Instance-scoped Orphan Registry Wiring
+*   **Datum**: 2026-09-06
+*   **Status**: ✅ Final
+*   **Kontext**: ADR-053 hat `InstanceOrphanRegistry` eingeführt, um den veralteten prozessweiten `ORPHAN_REGISTRY`-Singleton zu ersetzen. Allerdings gab es bisher keine Verdrahtung in `MemFuse`, wodurch Multi-Tenant-Szenarien (mehrere `MemFuse`-Instanzen im selben Prozess) physisch dieselbe Orphan-Pin-Datei nutzten und Pins anderer Instanzen überschreiben konnten.
+*   **Entscheidung**:
+    - `MemFuseConfig` wird um ein optionales Feld `orphan_registry_path: Option<PathBuf>` erweitert. Standardmäßig (bei `None`) wird der Pfad instanzspezifisch aus dem Datenbank-Öffnungspfad als `<db_path>/.orphan_registry.json` abgeleitet.
+    - `MemFuse` instanziiert beim Öffnen eine instanzspezifische `InstanceOrphanRegistry` und stellt diese über die Methode `db.orphan_registry()` bereit.
+    - `PersistentCheckpointStore` stellt die Konstruktoren `open_with_orphan_registry` und `new_with_orphan_registry` bereit, um die direkte Übergabe einer instanzgebundenen Registry zu ermöglichen.
+    - Sämtliche Produktionscodepfade nutzen ausschließlich instanzgebundene Orphan-Registries. Der veraltete globale `ORPHAN_REGISTRY`-Singleton und `global_orphan_registry()` verbleiben ausschließlich für Legacy-Kompatibilitätstests.
+*   **Begründung**: Verhindert Daten- und Pin-Überschreibungen in Multi-Tenant-Szenarien und gewährleistet strikte physische Isolation der Orphan-State-Dateien pro Datenbank-Instanz.

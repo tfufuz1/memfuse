@@ -1,7 +1,7 @@
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
 use crate::outcome::{DecisionId, RoutingOutcome};
-use crate::profile::{ProfileCalibrationState, SlmProfile};
+use crate::profile::{ProfileCalibrationState, QuantizationLevel, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
 use memfuse_store::LsmStorage;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 /// Mindestanzahl Calibration-Samples für verlässliche Conformal-Quantile.
 /// Unterhalb dieses Wertes gelten alle Konfidenzmetriken als "unkalibriert".
-const CALIBRATION_WARMUP_WINDOW: u32 = 30;
+pub(crate) const CALIBRATION_WARMUP_WINDOW: u32 = 30;
 
 /// Calibrated confidence metrics for a routing decision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -111,9 +111,10 @@ impl RouterEngine {
         let new_cal: HashMap<String, ProfileCalibrationState> = new_profiles
             .iter()
             .map(|p| {
-                let state = cal
+                let mut state = cal
                     .remove(&p.name)
                     .unwrap_or_else(|| ProfileCalibrationState::new(p.min_relevance_score));
+                state.check_and_invalidate_fingerprint(&p.config_fingerprint);
                 (p.name.clone(), state)
             })
             .collect();
@@ -165,17 +166,29 @@ impl RouterEngine {
             }
         };
 
+        let active_fp = self
+            .profiles
+            .read()
+            .iter()
+            .find(|p| p.name == profile_name)
+            .map(|p| p.config_fingerprint.clone());
+
         let non_conformity = outcome.non_conformity_score();
 
         let mut cal = self.calibration.write();
         if let Some(state) = cal.get_mut(&profile_name) {
-            state.recalibrate_conformal(non_conformity);
-            tracing::debug!(
-                profile = %profile_name,
-                ?outcome,
-                non_conformity,
-                "Router outcome recorded"
-            );
+            if let Some(fp) = active_fp {
+                state.check_and_invalidate_fingerprint(&fp);
+                if fp.quantization != QuantizationLevel::Unknown {
+                    state.recalibrate_conformal(non_conformity);
+                    tracing::debug!(
+                        profile = %profile_name,
+                        ?outcome,
+                        non_conformity,
+                        "Router outcome recorded"
+                    );
+                }
+            }
         }
         true
     }
@@ -258,8 +271,11 @@ impl RouterEngine {
                 .iter()
                 .map(|p| {
                     let mut ep = p.clone();
-                    if let Some(state) = cal.get(&p.name) {
-                        ep.min_relevance_score = state.calibrated_min_score;
+                    if let Some(state) = cal.get_mut(&p.name) {
+                        state.check_and_invalidate_fingerprint(&p.config_fingerprint);
+                        if state.is_calibrated(&p.config_fingerprint) {
+                            ep.min_relevance_score = state.calibrated_min_score;
+                        }
                     }
                     ep
                 })
@@ -267,7 +283,7 @@ impl RouterEngine {
 
             // 2. Scoring + Cascade Selection
             let (selected_idx, selected_profile, _) =
-                self.select_profile_cascade(&chunks, &effective_profiles, &cal)?;
+                self.select_profile_cascade(&chunks, &effective_profiles, &mut cal)?;
 
             let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
@@ -297,20 +313,21 @@ impl RouterEngine {
             // 4. Construct ConfidenceMetrics from updated lock state
             let metrics = cal.get(&selected_profile.name).map(|state| {
                 let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
-                if calibrated {
-                    ConfidenceMetrics::Calibrated {
-                        score_lower: best_score * (1.0 - state.conformal.alpha),
-                        score_upper: best_score * (1.0 + state.conformal.alpha),
-                        quantile_threshold: state.conformal.quantile_threshold,
-                        non_conformity_score: non_conformity,
-                        selection_margin: confidence_ratio as f32,
-                    }
-                } else {
-                    ConfidenceMetrics::Uncalibrated {
-                        non_conformity_score: non_conformity,
-                        selection_margin: confidence_ratio as f32,
-                        quantile_threshold: state.conformal.quantile_threshold,
-                    }
+                ConfidenceMetrics {
+                    score_lower: if calibrated {
+                        Some(best_score * (1.0 - state.conformal.alpha))
+                    } else {
+                        None
+                    },
+                    score_upper: if calibrated {
+                        Some(best_score * (1.0 + state.conformal.alpha))
+                    } else {
+                        None
+                    },
+                    calibrated,
+                    quantile_threshold: state.conformal.quantile_threshold,
+                    non_conformity_score: non_conformity,
+                    selection_margin: confidence_ratio as f32,
                 }
             });
 
@@ -361,7 +378,7 @@ impl RouterEngine {
         &self,
         chunks: &[(ContextChunk, Option<u64>)],
         profiles: &[SlmProfile],
-        calibration: &HashMap<String, ProfileCalibrationState>,
+        calibration: &mut HashMap<String, ProfileCalibrationState>,
     ) -> Result<(usize, SlmProfile, ConfidenceMetrics)> {
         if chunks.is_empty() {
             return Err(MemFuseError::NotFound(
@@ -419,19 +436,23 @@ impl RouterEngine {
         // 2. Cascade evaluation in descending min_relevance_score order
         for &(orig_idx, profile) in &sorted_profiles {
             let score = compute_profile_score(profile, chunks);
-            let state = calibration.get(&profile.name);
+            let state = calibration.get_mut(&profile.name);
 
-            // AI-TAG[LOGIC][MAJOR] RESOLVED: AGT-ROUTER-2db4f208 (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395)
-            // BEFUND: Unified calibration warmup window threshold using CALIBRATION_WARMUP_WINDOW = 30 across route() and select_profile_cascade().
             let (threshold, is_calibrated) = match state {
-                Some(st) if st.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 => {
-                    (st.calibrated_min_score, true)
+                Some(st) => {
+                    st.check_and_invalidate_fingerprint(&profile.config_fingerprint);
+                    if st.is_calibrated(&profile.config_fingerprint) {
+                        (st.calibrated_min_score, true)
+                    } else {
+                        (profile.min_relevance_score, false)
+                    }
                 }
-                _ => (profile.min_relevance_score, false),
+                None => (profile.min_relevance_score, false),
             };
 
             if score >= threshold {
-                let q_threshold = state
+                let q_threshold = calibration
+                    .get(&profile.name)
                     .map(|st| st.conformal.quantile_threshold)
                     .unwrap_or(profile.min_relevance_score);
                 let confidence = ConfidenceMetrics {

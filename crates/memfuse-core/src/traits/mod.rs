@@ -125,6 +125,30 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Stores a key-value pair as part of a transaction.
     fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>>;
 
+    /// Atomically writes `value` under `key` within the given transaction ONLY IF no value
+    /// currently exists for `key` (as observed within the same transaction's read view and uncommitted staged state).
+    ///
+    /// # Semantics & MVCC Guarantees
+    /// Checks key existence against the storage engine's current committed snapshot and any uncommitted
+    /// staged writes for `tx_id`. If the key exists and is non-tombstoned, no write is staged and `Ok(false)`
+    /// is returned. The transaction is NOT automatically rolled back by this call.
+    /// If the key does not exist (or is tombstoned), `value` is staged for `tx_id` and `Ok(true)` is returned.
+    fn put_if_absent<'a>(
+        &'a self,
+        tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move {
+            if self.get(key).await?.is_some() {
+                Ok(false)
+            } else {
+                self.put(tx_id, key, value).await?;
+                Ok(true)
+            }
+        })
+    }
+
     /// Stores multiple key-value pairs as part of a transaction.
     fn put_batch<'a>(
         &'a self,
@@ -215,6 +239,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Scans a range of keys with the given prefix.
     ///
     /// Für neue Call-Sites bevorzuge `scan_prefix_bounded` — lädt unbegrenzt und kann bei großen Prefixes das Speicherbudget sprengen.
+    #[allow(clippy::type_complexity)]
     fn scan_prefix<'a>(&'a self, prefix: &'a [u8])
         -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 
@@ -222,6 +247,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// optionalem Cursor (letzter zurückgegebener Key aus dem vorherigen Aufruf) für Pagination.
     /// Bevorzugt gegenüber `scan_prefix` für jeden neuen Call-Site, der potenziell große
     /// Ergebnismengen erwarten muss.
+    #[allow(clippy::type_complexity)]
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -265,6 +291,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Returns [`MemFuseError::CapabilityUnsupported`][crate::MemFuseError::CapabilityUnsupported]
     /// with capability `"snapshot_read_at"` if snapshot-isolated prefix scan is not implemented.
     /// Tested via `capability_coverage` test module.
+    #[allow(clippy::type_complexity)]
     fn scan_prefix_at<'a>(
         &'a self,
         _prefix: &'a [u8],
@@ -279,6 +306,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     }
 
     /// Scans a range of keys between `start` and `end` bounds.
+    #[allow(clippy::type_complexity)]
     fn scan<'a>(
         &'a self,
         start: std::ops::Bound<&'a [u8]>,

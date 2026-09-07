@@ -4,6 +4,67 @@ use memfuse_core::{MemFuseError, Result, TokenBudget};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+/// Quantization level of the underlying model execution path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(non_camel_case_types)]
+pub enum QuantizationLevel {
+    F16,
+    Q8_0,
+    Q4_K_M,
+    Unknown,
+}
+
+impl Default for QuantizationLevel {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+/// Unique configuration fingerprint tracking execution parameters of an SLM.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct ConfigFingerprint {
+    /// Blake3 or SHA-256 hash of the active prompt template.
+    pub prompt_template_hash: [u8; 32],
+    /// Quantized temperature parameter to avoid floating-point rounding jitter.
+    pub temperature_bucket: u8,
+    /// Quantization level of the target model binary.
+    pub quantization: QuantizationLevel,
+}
+
+impl Default for ConfigFingerprint {
+    fn default() -> Self {
+        Self {
+            prompt_template_hash: [0u8; 32],
+            temperature_bucket: 0,
+            quantization: QuantizationLevel::Unknown,
+        }
+    }
+}
+
+impl ConfigFingerprint {
+    /// Creates a new `ConfigFingerprint` with quantized temperature.
+    pub fn new(
+        prompt_template_hash: [u8; 32],
+        temperature: f32,
+        quantization: QuantizationLevel,
+    ) -> Self {
+        Self {
+            prompt_template_hash,
+            temperature_bucket: Self::bucket_temperature(temperature),
+            quantization,
+        }
+    }
+
+    /// Quantizes float temperature into a discrete bucket byte (0.05 step sizing).
+    pub fn bucket_temperature(temperature: f32) -> u8 {
+        if !temperature.is_finite() || temperature < 0.0 {
+            0
+        } else {
+            (temperature * 20.0).round().clamp(0.0, 255.0) as u8
+        }
+    }
+}
+
 /// Represents a Small Language Model (SLM) target and its domain expertise parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlmProfile {
@@ -18,6 +79,9 @@ pub struct SlmProfile {
     pub token_budget: TokenBudget,
     /// Minimum relevance threshold score required for routing candidates.
     pub min_relevance_score: f32,
+    /// Configuration fingerprint for configuration shift tracking (arXiv:2608.01460).
+    #[serde(default)]
+    pub config_fingerprint: ConfigFingerprint,
 }
 
 impl SlmProfile {
@@ -35,7 +99,14 @@ impl SlmProfile {
             domain_communities: domain_communities.into_iter().collect(),
             token_budget,
             min_relevance_score,
+            config_fingerprint: ConfigFingerprint::default(),
         }
+    }
+
+    /// Builder method to attach a specific `ConfigFingerprint` to this profile.
+    pub fn with_fingerprint(mut self, config_fingerprint: ConfigFingerprint) -> Self {
+        self.config_fingerprint = config_fingerprint;
+        self
     }
 
     /// Validates `SlmProfile` parameters.
@@ -188,6 +259,9 @@ pub struct ProfileCalibrationState {
     pub original_min_score: f32,
     /// Conformal calibrator for distribution-free threshold adaptation.
     pub conformal: ConformalCalibrator,
+    /// Configuration fingerprint under which calibration statistics were gathered.
+    #[serde(default)]
+    pub last_calibrated_fingerprint: Option<ConfigFingerprint>,
 }
 
 impl Default for ProfileCalibrationState {
@@ -198,6 +272,7 @@ impl Default for ProfileCalibrationState {
             calibrated_min_score: 0.5,
             original_min_score: 0.5,
             conformal: ConformalCalibrator::default(),
+            last_calibrated_fingerprint: None,
         }
     }
 }
@@ -210,7 +285,42 @@ impl ProfileCalibrationState {
             calibrated_min_score: original_min_score,
             original_min_score,
             conformal: ConformalCalibrator::new(0.05, 0.01, original_min_score),
+            last_calibrated_fingerprint: None,
         }
+    }
+
+    /// Checks active fingerprint against recorded calibration fingerprint.
+    /// Invalidates calibration stats immediately if quantization is Unknown or if fingerprint changed.
+    pub fn check_and_invalidate_fingerprint(&mut self, active_fp: &ConfigFingerprint) {
+        if active_fp.quantization == QuantizationLevel::Unknown {
+            if self.last_calibrated_fingerprint.is_some() || self.conformal.window_total > 0 {
+                self.reset();
+            }
+            self.last_calibrated_fingerprint = None;
+            return;
+        }
+
+        match &self.last_calibrated_fingerprint {
+            Some(cal_fp) if cal_fp == active_fp => {
+                // Fingerprint matches active execution configuration
+            }
+            _ => {
+                // Configuration shift detected (or initial sample under new fingerprint)
+                self.reset();
+                self.last_calibrated_fingerprint = Some(active_fp.clone());
+            }
+        }
+    }
+
+    /// Returns whether calibration is valid and active for the given active fingerprint.
+    pub fn is_calibrated(&self, active_fp: &ConfigFingerprint) -> bool {
+        if active_fp.quantization == QuantizationLevel::Unknown {
+            return false;
+        }
+        if self.conformal.window_total < crate::router::CALIBRATION_WARMUP_WINDOW as u64 {
+            return false;
+        }
+        self.last_calibrated_fingerprint.as_ref() == Some(active_fp)
     }
 
     /// Durchschnittliche Konfidenz über alle bisherigen Entscheidungen.
@@ -244,6 +354,7 @@ impl ProfileCalibrationState {
         self.cumulative_confidence = 1.0;
         self.calibrated_min_score = self.original_min_score;
         self.conformal = ConformalCalibrator::new(0.05, 0.01, self.original_min_score);
+        self.last_calibrated_fingerprint = None;
     }
 }
 

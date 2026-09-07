@@ -12,7 +12,7 @@
 
 use crate::context::{validate_node_id, validate_task_id};
 use memfuse_core::{
-    Result, StorageEngine};
+    BoxFuture, Result, StorageEngine};
 use memfuse_db::Collection;
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -174,7 +174,6 @@ pub async fn migrate_legacy_audit_entries<S: StorageEngine, V: memfuse_core::Vec
 
 #[cfg(test)]
 mod tests {
-    use memfuse_core::BoxFuture;
     use super::*;
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};

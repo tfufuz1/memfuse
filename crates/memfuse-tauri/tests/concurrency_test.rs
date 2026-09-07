@@ -29,8 +29,13 @@ async fn test_app_state_concurrent_operations() {
         let state_ref = app_state.clone();
         let name = format!("col_{i}");
         let handle = tokio::spawn(async move {
+            // SAFETY: `tauri::State<'_, AppState>` is a transparent wrapper over `&AppState`.
+            // Invariants & Lifetime Proof:
+            // 1. `state_ref` is an `Arc<AppState>` owned by the async task move closure, guaranteeing `AppState` remains alive for the entire task duration.
+            // 2. Transmuting `&AppState` to `tauri::State<'_, AppState>` is layout-compatible because `tauri::State` wraps a reference with identical memory representation.
+            // 3. No mutable alias is created since `AppState` handles interior mutability via parking_lot locks.
             let state: tauri::State<'_, memfuse_tauri_lib::state::AppState> =
-                unsafe { std::mem::transmute(&*state_ref) };
+                unsafe { std::mem::transmute(&*state_ref) }; // SAFETY: Arc<AppState> alive for task; tauri::State memory representation identical to &AppState.
             create_collection(state, name).await.map(|_| ())
         });
         handles.push(handle);
@@ -43,8 +48,13 @@ async fn test_app_state_concurrent_operations() {
             let val = validate_regex_pattern(format!(r"\bword_{i}\b"));
             assert!(val.is_valid);
 
+            // SAFETY: `tauri::State<'_, AppState>` is a transparent wrapper over `&AppState`.
+            // Invariants & Lifetime Proof:
+            // 1. `state_ref` is an `Arc<AppState>` owned by the async task move closure, guaranteeing `AppState` remains alive for the entire task duration.
+            // 2. Transmuting `&AppState` to `tauri::State<'_, AppState>` is layout-compatible because `tauri::State` wraps a reference with identical memory representation.
+            // 3. No mutable alias is created since `AppState` handles interior mutability via parking_lot locks.
             let state: tauri::State<'_, memfuse_tauri_lib::state::AppState> =
-                unsafe { std::mem::transmute(&*state_ref) };
+                unsafe { std::mem::transmute(&*state_ref) }; // SAFETY: Arc<AppState> alive for task; tauri::State memory representation identical to &AppState.
             let res = run_bulk_regex_transform(
                 state,
                 format!("word_{i}"),
@@ -65,8 +75,12 @@ async fn test_app_state_concurrent_operations() {
         let _ = h.await.unwrap();
     }
 
+    // SAFETY: `tauri::State<'_, AppState>` is a transparent wrapper over `&AppState`.
+    // Invariants & Lifetime Proof:
+    // 1. `app_state` is an `Arc<AppState>` alive in local scope, guaranteeing `AppState` remains valid for the function call.
+    // 2. Transmuting `&AppState` to `tauri::State<'_, AppState>` is layout-compatible because `tauri::State` wraps a reference with identical memory representation.
     let state: tauri::State<'_, memfuse_tauri_lib::state::AppState> =
-        unsafe { std::mem::transmute(&*app_state) };
+        unsafe { std::mem::transmute(&*app_state) }; // SAFETY: Arc<AppState> alive in scope; tauri::State layout-compatible with &AppState.
     let cols = list_collections(state).await.expect("list_collections");
     // 1 default collection + 10 created collections = 11
     assert_eq!(cols.len(), 11);
