@@ -786,10 +786,113 @@ impl Default for PprConfig {
     }
 }
 
+/// Konfigurations-Fingerabdruck für P8-Kalibrierungs-Integrität.
+///
+/// INVARIANTE INV-P8-1: Jede Änderung an einem der Felder MUSS
+/// `IsotonicCalibrator::invalidate_on_config_change()` auslösen.
+/// Kein Warmup-Fenster darf nach Fingerprint-Wechsel übersprungen werden.
+///
+/// BEGRÜNDUNG: arXiv:2608.01460 — Coverage-Kollaps unter Konfigurations-Drift.
+/// Q4 und Q8 bei identischem model_id erzeugen unterschiedliche Score-Verteilungen.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ConfigFingerprint {
+    /// LLM-Modell-ID (z.B. "llama-3.2-3b-instruct")
+    pub model_id: String,
+    /// Quantisierungsgrad als String: "Q4_K_M", "Q8_0", "F16", "BF16".
+    /// EXPLIZIT Teil des Fingerprints — Q4 ≠ Q8 bei gleichem model_id.
+    pub quantization: String,
+    /// SHA256 des Prompt-Templates (nicht der Inhalt — nur der Hash).
+    /// Verhindert stille Kalibrierungs-Invalidierung bei Template-Drift.
+    pub prompt_template_hash: [u8; 32],
+    /// Temperatur als Bits für bit-exakten Vergleich (kein float-Gleichheitstest).
+    /// `temperature_bits = temperature.to_bits()`
+    pub temperature_bits: u32,
+}
+
+impl ConfigFingerprint {
+    /// Erstellt einen neuen `ConfigFingerprint`.
+    pub fn new(
+        model_id: impl Into<String>,
+        quantization: impl Into<String>,
+        prompt_template: &str,
+        temperature: f32,
+    ) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(prompt_template.as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+
+        Self {
+            model_id: model_id.into(),
+            quantization: quantization.into(),
+            prompt_template_hash: hash,
+            temperature_bits: temperature.to_bits(),
+        }
+    }
+
+    /// Extrahiert Temperatur als f32 (verlustfrei da via to_bits gespeichert).
+    #[inline]
+    pub fn temperature(&self) -> f32 {
+        f32::from_bits(self.temperature_bits)
+    }
+}
+
+impl Default for ConfigFingerprint {
+    fn default() -> Self {
+        Self::new("default", "F16", "", 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::{prop_assert, prop_assert_eq};
+
+    #[test]
+    fn test_tenant_id_defaults_and_constants() {
+        let default_tenant = TenantId::default();
+        assert_eq!(default_tenant, TenantId::DEFAULT);
+        assert_eq!(default_tenant.inner(), 0);
+        assert_eq!(TenantId::new(42).inner(), 42);
+        assert_eq!(TenantId::from(100u64), TenantId::new(100));
+        assert_eq!(format!("{default_tenant}"), "TenantId(0)");
+    }
+
+    #[test]
+    fn test_tenant_id_collections_hashmap_btreemap() {
+        use std::collections::{BTreeMap, HashMap};
+
+        let t0 = TenantId::DEFAULT;
+        let t1 = TenantId::new(1);
+        let t2 = TenantId::new(2);
+
+        // HashMap key test
+        let mut map = HashMap::new();
+        map.insert(t0, "default_tenant");
+        map.insert(t1, "tenant_one");
+        assert_eq!(map.get(&TenantId::default()), Some(&"default_tenant"));
+        assert_eq!(map.get(&t1), Some(&"tenant_one"));
+        assert_eq!(map.get(&t2), None);
+
+        // BTreeMap key test (testing Ord / PartialOrd)
+        let mut bmap = BTreeMap::new();
+        bmap.insert(t2, "tenant_two");
+        bmap.insert(t0, "tenant_zero");
+        bmap.insert(t1, "tenant_one");
+
+        let keys: Vec<TenantId> = bmap.keys().copied().collect();
+        assert_eq!(keys, vec![t0, t1, t2]);
+    }
+
+    #[test]
+    fn test_tenant_id_serde_roundtrip() {
+        let tenant = TenantId::new(987654321);
+        let serialized = serde_json::to_string(&tenant).expect("TenantId serialization failed");
+        assert_eq!(serialized, "987654321");
+
+        let deserialized: TenantId = serde_json::from_str(&serialized).expect("TenantId deserialization failed");
+        assert_eq!(tenant, deserialized);
+    }
 
     #[test]
     fn test_expiry_metadata_key_constant() {
@@ -1593,5 +1696,128 @@ mod tests {
             let res = TxId::try_from_internal_offset(offset);
             prop_assert!(res.is_err());
         }
+    }
+
+    #[test]
+    fn test_tenant_id_system_reserved() {
+        assert!(TenantId::try_new(0).is_err());
+    }
+
+    #[test]
+    fn test_tenant_id_valid() {
+        let t = TenantId::try_new(42).unwrap();
+        assert_eq!(t.inner(), 42);
+        assert!(!t.is_system());
+    }
+
+    #[test]
+    fn test_tenant_id_system_constant() {
+        assert_eq!(TenantId::SYSTEM.inner(), 0);
+        assert!(TenantId::SYSTEM.is_system());
+    }
+
+    #[test]
+    fn test_tenant_id_try_new_serde_roundtrip() {
+        let t = TenantId::try_new(999).unwrap();
+        let json = serde_json::to_string(&t).unwrap();
+        let back: TenantId = serde_json::from_str(&json).unwrap();
+        assert_eq!(t, back);
+    }
+}
+
+/// Collection-Identifikator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct CollectionId(pub u64);
+
+impl CollectionId {
+    /// Creates a new `CollectionId`.
+    #[inline]
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Returns the inner raw `u64` identifier.
+    #[inline]
+    pub const fn inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for CollectionId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl std::fmt::Display for CollectionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CollectionId({})", self.0)
+    }
+}
+
+/// Mandanten-Identifikator. Layer-0-Typ (memfuse-core).
+///
+/// LAYER-BEGRÜNDUNG: TenantId ist Abhängigkeit für KV-Cache-Isolation (Layer 4).
+/// In Layer 1+ definiert → zyklische Crate-Abhängigkeit unvermeidbar.
+///
+/// INVARIANTE INV-TENANT-1: TenantId(0) ist SYSTEM-reserviert.
+/// `TenantId::try_new(0)` → Err. Keine Ausnahmen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct TenantId(pub u64);
+
+impl TenantId {
+    /// SYSTEM tenant identifier (0).
+    pub const SYSTEM: TenantId = TenantId(0);
+
+    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    pub const DEFAULT: TenantId = TenantId(0);
+
+    /// Const-Konstruktor. Panics bei id == 0 (compile-time-safe für Literals).
+    #[inline]
+    pub const fn new(id: u64) -> Self {
+        assert!(id != 0, "TenantId(0) is reserved for SYSTEM");
+        Self(id)
+    }
+
+    /// Sicherer Konstruktor. Gibt Err wenn id == 0.
+    pub fn try_new(id: u64) -> Result<Self> {
+        if id == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "TenantId(0) is reserved for TenantId::SYSTEM".to_string(),
+            ));
+        }
+        Ok(Self(id))
+    }
+
+    /// Returns the inner raw `u64` identifier.
+    #[inline]
+    pub const fn inner(self) -> u64 {
+        self.0
+    }
+
+    /// Returns `true` if this tenant ID is `SYSTEM` (0).
+    #[inline]
+    pub fn is_system(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl Default for TenantId {
+    fn default() -> Self {
+        Self::SYSTEM
+    }
+}
+
+impl From<u64> for TenantId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl std::fmt::Display for TenantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TenantId({})", self.0)
     }
 }

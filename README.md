@@ -5,7 +5,7 @@
 MemFuse Brain ist eine Desktop-Applikation und ein eingebettetes kognitives Betriebssystem,
 das Ihre Firmendokumente (PDF, Word, Markdown, E-Mails) durchsuchbar macht und
 über ein lokal laufendes Sprachmodell (via Ollama) Fragen dazu beantwortet —
-komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
+komplett offline, ohne dass ein einzes Byte Ihrer Daten das Gerät verlässt.
 
 > ⚠️ **Status: Aktive Entwicklung.** Kern-Suchengine ist produktionsreif
 > verifiziert (LSM-Tree, HNSW, BM25, CSR-Graph-Persistenz). Desktop-App (Tauri),
@@ -114,6 +114,15 @@ RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** au
 
 > ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
+## Workspace Crates (15 Active Crates)
+
+- **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
+- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
+- **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
+- **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
+- **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell)
+- **Layer 5**: `memfuse-bench` (Reproduzierbarer Benchmark-Harness für Retrieval-Genauigkeit)
+
 ## Für Entwickler: Rust-Crates
 
 Der Kern von MemFuse Brain ist als eigenständige, wiederverwendbare
@@ -196,7 +205,7 @@ MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- -
 ## Positionierung
 
 MemFuse ist kein Ersatz für Cloud-Vektordatenbanken (Qdrant, Pinecone).
-MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LLM-Agenten** — in-process, air-gapped, Pure-Rust.
+MemFuse is eine neue Kategorie: **Das lokale Cognitive Operating System für LLM-Agenten** — in-process, air-gapped, Pure-Rust.
 
 | Kriterium | MemFuse | Mem0 | Zep/Graphiti | Chroma+ES+Neo4j |
 |-----------|---------|------|--------------|-----------------|
