@@ -15,7 +15,8 @@
 //! - Identifikation verwaister Graph-Kanten zur kaskadierenden Bereinigung.
 
 use crate::context_compaction::{CompactedContext, ContextCompactor};
-use memfuse_core::{ContextChunk, DocId};
+use memfuse_core::traits::LlmTextGenerator;
+use memfuse_core::{ContextChunk, DocId, TxId};
 use std::collections::HashSet;
 
 /// Konfiguration für die NREM-Konsolidierungsphase.
@@ -296,6 +297,183 @@ pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremP
     }
 }
 
+/// Konfiguration für die REM-Konsolidierungsphase (Rapid Eye Movement).
+#[derive(Debug, Clone)]
+pub struct RemConfig {
+    /// Mindestanzahl von Chunks/Dokumenten in einer Community (Default: 4).
+    pub min_community_size: usize,
+    /// Anzahl aufeinanderfolgender Beobachtungen, bis eine Community als stabil gilt (Default: 3).
+    pub stability_cycles_required: u32,
+    /// Maximale Anzahl von LLM-Aufrufen pro Sleep-Cycle (Default: 10, P12-Kostenschutz).
+    pub max_llm_calls_per_cycle: u32,
+}
+
+impl Default for RemConfig {
+    fn default() -> Self {
+        Self {
+            min_community_size: 4,
+            stability_cycles_required: 3,
+            max_llm_calls_per_cycle: 10,
+        }
+    }
+}
+
+/// Verfolgt die Stabilität von Graph-Communities über aufeinanderfolgende Zyklen hinweg.
+#[derive(Debug, Clone, Default)]
+pub struct CommunityStabilityTracker {
+    history: std::collections::HashMap<u64, u32>,
+}
+
+impl CommunityStabilityTracker {
+    pub fn new() -> Self {
+        Self {
+            history: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Registriert die Beobachtung einer Community und liefert die aktualisierte Anzahl aufeinanderfolgender Zyklen.
+    pub fn observe(&mut self, community_members_hash: u64) -> u32 {
+        let count = self.history.entry(community_members_hash).or_insert(0);
+        *count += 1;
+        *count
+    }
+
+    /// Setzt nicht mehr beobachtete Communities zurück/entfernt sie aus der Historie.
+    pub fn reset_if_absent(&mut self, currently_observed: &std::collections::HashSet<u64>) {
+        self.history
+            .retain(|hash, _| currently_observed.contains(hash));
+    }
+}
+
+/// Ein generativ synthetisierter Wissens-Chunk (MetaChunk) aus der REM-Phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetaChunk {
+    /// Der synthetisierte, abstrakte Inhalt (MUSS mit `[SYNTHESIZED FROM {n} SOURCES] ` beginnen).
+    pub content: String,
+    /// DocIds aller Quell-Chunks, aus denen synthetisiert wurde (len() >= 1).
+    pub abstracts_from: Vec<DocId>,
+    /// Deterministischer Hash der Graph-Community.
+    pub source_community_hash: u64,
+    /// Transaction ID der Erstellung.
+    pub created_at_tx: TxId,
+    /// Modell-ID des verwendeten LLM.
+    pub llm_model_id: String,
+}
+
+/// Ergebnis der REM-Konsolidierungsphase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemPhaseResult {
+    /// Neu generierte MetaChunks.
+    pub synthesized: Vec<MetaChunk>,
+    /// Hashes von qualifizierten Communities, deren Synthese wegen `max_llm_calls_per_cycle` verschoben wurde.
+    pub deferred_community_hashes: Vec<u64>,
+}
+
+/// Berechnet einen deterministischen 64-Bit-Hash für eine Liste von Member-DocIds.
+pub fn compute_community_hash(member_doc_ids: &[DocId]) -> u64 {
+    let mut sorted_ids: Vec<u64> = member_doc_ids.iter().map(|d| d.inner()).collect();
+    sorted_ids.sort_unstable();
+    let mut bytes = Vec::with_capacity(sorted_ids.len() * 8);
+    for id in sorted_ids {
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    let hash = blake3::hash(&bytes);
+    let mut hash_bytes = [0u8; 8];
+    hash_bytes.copy_from_slice(&hash.as_bytes()[0..8]);
+    u64::from_le_bytes(hash_bytes)
+}
+
+/// Führt die REM-Phase (generative Wissenssynthese) über stabile Graph-Communities aus.
+pub async fn run_rem_phase(
+    stable_communities: &[(u64, Vec<DocId>)],
+    source_texts: &std::collections::HashMap<DocId, String>,
+    llm: &dyn LlmTextGenerator,
+    config: &RemConfig,
+) -> memfuse_core::Result<RemPhaseResult> {
+    if stable_communities.is_empty() {
+        return Ok(RemPhaseResult {
+            synthesized: Vec::new(),
+            deferred_community_hashes: Vec::new(),
+        });
+    }
+
+    // 1. Filtere nach min_community_size
+    let qualified: Vec<&(u64, Vec<DocId>)> = stable_communities
+        .iter()
+        .filter(|(_, members)| members.len() >= config.min_community_size)
+        .collect();
+
+    if qualified.is_empty() {
+        return Ok(RemPhaseResult {
+            synthesized: Vec::new(),
+            deferred_community_hashes: Vec::new(),
+        });
+    }
+
+    // 2. Begrenze LLM-Aufrufe auf max_llm_calls_per_cycle
+    let limit = config.max_llm_calls_per_cycle as usize;
+    let (to_process, deferred) = if qualified.len() > limit {
+        (&qualified[..limit], &qualified[limit..])
+    } else {
+        (&qualified[..], &[][..])
+    };
+
+    let deferred_community_hashes: Vec<u64> = deferred.iter().map(|(hash, _)| *hash).collect();
+    let mut synthesized = Vec::new();
+
+    for &(comm_hash, members) in to_process {
+        let mut prompt_builder = String::from(
+            "Synthesize the following related memory chunks into a single cohesive abstract context:\n",
+        );
+        let mut valid_doc_ids = Vec::new();
+
+        for doc_id in members {
+            if let Some(text) = source_texts.get(doc_id) {
+                prompt_builder.push_str(&format!("- [DocId {}]: {}\n", doc_id.inner(), text));
+                valid_doc_ids.push(*doc_id);
+            }
+        }
+
+        if valid_doc_ids.is_empty() {
+            valid_doc_ids = members.clone();
+            for doc_id in members {
+                prompt_builder.push_str(&format!("- [DocId {}]\n", doc_id.inner()));
+            }
+        }
+
+        if valid_doc_ids.is_empty() {
+            continue;
+        }
+
+        match llm.generate(&prompt_builder).await {
+            Ok(generated_text) => {
+                let n = valid_doc_ids.len();
+                let content = format!("[SYNTHESIZED FROM {} SOURCES] {}", n, generated_text);
+
+                synthesized.push(MetaChunk {
+                    content,
+                    abstracts_from: valid_doc_ids,
+                    source_community_hash: *comm_hash,
+                    created_at_tx: TxId::new(0),
+                    llm_model_id: "llm-generator".to_string(),
+                });
+            }
+            Err(e) => {
+                tracing::error!(
+                    community_hash = comm_hash,
+                    error = %e,
+                    "REM phase community LLM synthesis failed; skipping community"
+                );
+            }
+        }
+    }
+
+    Ok(RemPhaseResult {
+        synthesized,
+        deferred_community_hashes,
+    })
+}
+
 /// Adapterfunktion zur Kompaktierung eines Segments via des bereits vorhandenen `ContextCompactor`.
 ///
 /// Wählt Chunks aus `chunks`, die zu `segment.turn_ids` gehören, und führt `ContextCompactor::compact` aus.
@@ -514,6 +692,174 @@ mod tests {
             segments.len(),
             2,
             "Two distinct semantic clusters must produce 2 segments with default config"
+        );
+    }
+
+    struct MockLlmGenerator {
+        fail_community_contains: Option<String>,
+    }
+
+    impl LlmTextGenerator for MockLlmGenerator {
+        fn generate<'a>(
+            &'a self,
+            prompt: &'a str,
+        ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<String>> {
+            Box::pin(async move {
+                if let Some(ref fail_str) = self.fail_community_contains {
+                    if prompt.contains(fail_str) {
+                        return Err(memfuse_core::MemFuseError::Internal(
+                            "Simulated LLM error".into(),
+                        ));
+                    }
+                }
+                Ok("Summary of community memories.".to_string())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rem_phase_community_under_min_size_ignored() {
+        let llm = MockLlmGenerator {
+            fail_community_contains: None,
+        };
+        let config = RemConfig {
+            min_community_size: 4,
+            stability_cycles_required: 1,
+            max_llm_calls_per_cycle: 10,
+        };
+
+        // Community with 3 members < min_community_size = 4
+        let members = vec![DocId::new(1), DocId::new(2), DocId::new(3)];
+        let hash = compute_community_hash(&members);
+        let stable_communities = vec![(hash, members)];
+        let source_texts = std::collections::HashMap::new();
+
+        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+            .await
+            .expect("run_rem_phase should succeed");
+
+        assert_eq!(res.synthesized.len(), 0);
+        assert_eq!(res.deferred_community_hashes.len(), 0);
+    }
+
+    #[test]
+    fn test_community_stability_tracker_cycles_and_reset() {
+        let mut tracker = CommunityStabilityTracker::new();
+        let hash_a = 100u64;
+        let hash_b = 200u64;
+
+        assert_eq!(tracker.observe(hash_a), 1);
+        assert_eq!(tracker.observe(hash_a), 2);
+        assert_eq!(tracker.observe(hash_a), 3);
+
+        assert_eq!(tracker.observe(hash_b), 1);
+
+        let mut observed = std::collections::HashSet::new();
+        observed.insert(hash_a);
+
+        tracker.reset_if_absent(&observed);
+
+        // hash_a is retained and continues at count 4
+        assert_eq!(tracker.observe(hash_a), 4);
+        // hash_b was reset/removed, so observe start at 1 again
+        assert_eq!(tracker.observe(hash_b), 1);
+    }
+
+    #[tokio::test]
+    async fn test_rem_phase_max_llm_calls_per_cycle_limits_and_defers() {
+        let llm = MockLlmGenerator {
+            fail_community_contains: None,
+        };
+        let config = RemConfig {
+            min_community_size: 2,
+            stability_cycles_required: 1,
+            max_llm_calls_per_cycle: 10,
+        };
+
+        // Create 15 qualified communities
+        let mut stable_communities = Vec::new();
+        for i in 0..15 {
+            let members = vec![DocId::new(i * 10 + 1), DocId::new(i * 10 + 2)];
+            let hash = compute_community_hash(&members);
+            stable_communities.push((hash, members));
+        }
+
+        let source_texts = std::collections::HashMap::new();
+
+        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+            .await
+            .expect("run_rem_phase should succeed");
+
+        assert_eq!(res.synthesized.len(), 10, "Strictly 10 communities synthesized");
+        assert_eq!(res.deferred_community_hashes.len(), 5, "5 excess communities deferred");
+    }
+
+    #[tokio::test]
+    async fn test_rem_phase_meta_chunk_has_required_prefix_and_abstracts_from() {
+        let llm = MockLlmGenerator {
+            fail_community_contains: None,
+        };
+        let config = RemConfig {
+            min_community_size: 2,
+            stability_cycles_required: 1,
+            max_llm_calls_per_cycle: 10,
+        };
+
+        let members = vec![DocId::new(10), DocId::new(20), DocId::new(30)];
+        let hash = compute_community_hash(&members);
+        let stable_communities = vec![(hash, members.clone())];
+
+        let mut source_texts = std::collections::HashMap::new();
+        source_texts.insert(DocId::new(10), "Text A".to_string());
+        source_texts.insert(DocId::new(20), "Text B".to_string());
+        source_texts.insert(DocId::new(30), "Text C".to_string());
+
+        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+            .await
+            .expect("run_rem_phase should succeed");
+
+        assert_eq!(res.synthesized.len(), 1);
+        let chunk = &res.synthesized[0];
+        assert_eq!(chunk.abstracts_from.len(), 3);
+        assert!(
+            chunk.content.starts_with("[SYNTHESIZED FROM 3 SOURCES] "),
+            "Content must start with machine-readable prefix, got: {}",
+            chunk.content
+        );
+        assert_eq!(chunk.source_community_hash, hash);
+    }
+
+    #[tokio::test]
+    async fn test_rem_phase_error_on_one_community_continues_others() {
+        let llm = MockLlmGenerator {
+            fail_community_contains: Some("DocId 21".to_string()),
+        };
+        let config = RemConfig {
+            min_community_size: 2,
+            stability_cycles_required: 1,
+            max_llm_calls_per_cycle: 10,
+        };
+
+        let members_1 = vec![DocId::new(10), DocId::new(11)];
+        let members_2 = vec![DocId::new(20), DocId::new(21)]; // Prompt contains "DocId 21" -> fails
+        let members_3 = vec![DocId::new(30), DocId::new(31)];
+
+        let stable_communities = vec![
+            (compute_community_hash(&members_1), members_1),
+            (compute_community_hash(&members_2), members_2),
+            (compute_community_hash(&members_3), members_3),
+        ];
+
+        let source_texts = std::collections::HashMap::new();
+
+        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+            .await
+            .expect("run_rem_phase should not fail even if one community errors out");
+
+        assert_eq!(
+            res.synthesized.len(),
+            2,
+            "Communities 1 and 3 should be synthesized, community 2 skipped due to error"
         );
     }
 }
