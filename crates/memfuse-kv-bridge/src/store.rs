@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
-// STAND: TS:2026-09-07T12:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
 
 use ahash::AHashMap;
 use memfuse_core::TenantId;
@@ -30,6 +30,29 @@ impl TenantIsolatedKvStore {
         map.entry(tenant).or_default().push(segment);
     }
 
+    /// Verschlüsselt einen Klartext-Tensor und fügt ein verschlüsseltes Segment ein.
+    #[cfg(feature = "kv-encryption")]
+    pub fn insert_encrypted_segment(
+        &self,
+        cipher: &memfuse_crypto::KvSegmentCipher,
+        tenant: TenantId,
+        segment_id: u64,
+        model_fingerprint: memfuse_crypto::ModelFingerprint,
+        rope_offset: Option<usize>,
+        plaintext: &[u8],
+    ) -> Result<(), memfuse_crypto::CryptoError> {
+        let segment = KvSegment::new_encrypted(
+            cipher,
+            tenant,
+            segment_id,
+            model_fingerprint,
+            rope_offset,
+            plaintext,
+        )?;
+        self.insert_segment(tenant, segment);
+        Ok(())
+    }
+
     /// INV-TENANT-Analogon für KV-Bridge: Ein Tenant kann niemals Segmente
     /// eines anderen Tenants lesen. Strukturell erzwungen durch getrennte Maps.
     pub fn get_segments(&self, tenant: TenantId) -> Vec<u64> {
@@ -45,6 +68,25 @@ impl TenantIsolatedKvStore {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Liest ein bestimmtes Segment eines Mandanten und entschlüsselt es falls nötig.
+    #[cfg(feature = "kv-encryption")]
+    pub fn get_decrypted_segment(
+        &self,
+        cipher: &memfuse_crypto::KvSegmentCipher,
+        tenant: TenantId,
+        segment_id: u64,
+    ) -> Result<Option<Vec<u8>>, memfuse_crypto::CryptoError> {
+        let map = self.segments.read();
+        if let Some(list) = map.get(&tenant) {
+            if let Some(seg) = list.iter().find(|s| s.segment_id == segment_id) {
+                seg.touch();
+                let decrypted = seg.decrypt_data(cipher)?;
+                return Ok(Some(decrypted));
+            }
+        }
+        Ok(None)
     }
 
     /// Gibt die Anzahl der gespeicherten Segmente für einen bestimmten Tenant zurück.
