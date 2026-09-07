@@ -222,7 +222,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let data = serde_json::to_vec(value)?;
         let written = self.storage.put_if_absent(tx, &user_key, &data).await?;
         if !written {
-            self.storage.rollback(tx).await.ok();
+            if let Err(rollback_err) = self.storage.rollback(tx).await {
+                tracing::error!(
+                    tx_id = ?tx,
+                    key = %id,
+                    error = %rollback_err,
+                    "put_kv_if_absent: rollback after failed put_if_absent also failed — transaction may be left in an inconsistent state"
+                );
+            }
             return Err(memfuse_core::MemFuseError::Conflict(format!(
                 "Key '{}' already exists in collection KV store",
                 id

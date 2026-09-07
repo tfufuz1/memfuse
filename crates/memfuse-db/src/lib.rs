@@ -66,6 +66,8 @@
 // HOTSPOTS:    hybrid_search(), insert(), relate()
 // SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
+#[cfg(feature = "sandbox")]
+use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
@@ -80,11 +82,20 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod sleep_cycle;
+pub mod sleep_cycle_executor;
+pub mod temporal_filter;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
+pub use sleep_cycle::{
+    compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
+    run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
+};
+pub use reaper::start_nrem_reaper;
+pub use sleep_cycle_executor::execute_nrem_cycle;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {

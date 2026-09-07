@@ -12,6 +12,9 @@
 use super::{extract_effective_importance, Collection, StoredDocument, StoredDocumentMeta};
 #[allow(deprecated)]
 use crate::filter::MetadataFilter;
+pub use crate::temporal_filter::{
+    apply_temporal_validity_filter, apply_temporal_validity_filter_at, FusionResult,
+};
 use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
@@ -339,6 +342,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         continue;
                     };
                 let rank = (results.len() + 1) as u32;
+                let rrf_contrib = 1.0 / (60.0 + rank as f32);
                 let prov = crate::fusion::build_provenance(
                     Some(sd.score),
                     Some(rank),
@@ -353,6 +357,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     60.0,
                     Some(self.name.clone()),
                     Some("hnsw".to_string()),
+                    Some(rrf_contrib),
                 );
                 results.push(crate::SearchResult {
                     id,
@@ -657,7 +662,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             candidate_k = candidate_k.max(k.saturating_mul(3));
         }
         let rerank_k = k.saturating_mul(mult).min(max_pool);
-        candidate_k = candidate_k.max(rerank_k).min(memfuse_core::MAX_SEARCH_K).max(k);
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
 
         let total_docs = self.len().await;
 

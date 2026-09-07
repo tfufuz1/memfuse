@@ -73,17 +73,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
-name = "async-trait"
-version = "0.1.92"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.5",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -534,7 +523,6 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "memfuse-checkpoint"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "blake3",
  "dirs",
  "futures-executor",
@@ -551,14 +539,13 @@ name = "memfuse-core"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "async-trait",
  "bincode",
  "blake3",
  "flatbuffers",
- "memfuse-crypto",
  "parking_lot",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 
@@ -567,9 +554,14 @@ name = "memfuse-crypto"
 version = "0.1.0"
 dependencies = [
  "aes-gcm-siv",
+ "bincode",
+ "blake3",
  "hkdf",
  "hmac",
+ "memfuse-core",
  "rand",
+ "serde",
+ "serde_json",
  "sha2",
  "subtle",
  "thiserror",
@@ -581,7 +573,6 @@ dependencies = [
 name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "memfuse-checkpoint",
  "memfuse-core",
  "memfuse-graph",
@@ -601,7 +592,6 @@ name = "memfuse-graph"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "async-trait",
  "bincode",
  "memfuse-core",
  "parking_lot",
@@ -616,7 +606,6 @@ name = "memfuse-index"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "async-trait",
  "memfuse-core",
  "memmap2",
  "parking_lot",
@@ -645,7 +634,6 @@ dependencies = [
 name = "memfuse-store"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "blake3",
  "bytes",
  "crc32fast",
@@ -666,7 +654,6 @@ dependencies = [
 name = "memfuse-text"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bincode",
  "itoa",
  "memfuse-core",

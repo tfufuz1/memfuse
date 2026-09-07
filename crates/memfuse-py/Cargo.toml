@@ -31,3 +31,14 @@ pythonize = "0.24"
 
 [features]
 default = []
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = true
+overflow-checks = true
