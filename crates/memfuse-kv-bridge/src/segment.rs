@@ -3,7 +3,11 @@
 // STAND: TS:2026-09-07T12:00:00Z (SESSION: a413a598)
 
 use memfuse_core::TenantId;
+use std::sync::atomic::{AtomicU64, Ordering};
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+/// Monotoner Logical-Clock-Zähler für Recency-Ordering (P3: Keine SystemTime als Kausalitätsgarant).
+static GLOBAL_KV_ACCESS_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Ein KV-Cache-Segment. P9-Pflicht: Zeroize-on-Drop, nie unverschlüsselt
 /// auf persistentem/auslagerbarem Speicher.
@@ -13,6 +17,8 @@ pub struct KvSegment {
     pub tenant_id: TenantId,
     #[zeroize(skip)]
     pub segment_id: u64,
+    #[zeroize(skip)] // AtomicU64 enthält keine sensiblen Tensor-Daten
+    last_accessed: AtomicU64,
     /// Rohe Tensor-Bytes. WIRD gezeroized beim Drop.
     data: Vec<u8>,
 }
@@ -20,11 +26,24 @@ pub struct KvSegment {
 impl KvSegment {
     /// Erstellt ein neues KV-Cache-Segment.
     pub fn new(tenant_id: TenantId, segment_id: u64, data: Vec<u8>) -> Self {
+        let initial_clock = GLOBAL_KV_ACCESS_COUNTER.fetch_add(1, Ordering::Relaxed);
         Self {
             tenant_id,
             segment_id,
+            last_accessed: AtomicU64::new(initial_clock),
             data,
         }
+    }
+
+    /// Aktualisiert den atomaren Zugriffs-Zeitstempel (Logical Clock) für LRU-Eviction-Heuristiken.
+    pub fn touch(&self) {
+        let now = GLOBAL_KV_ACCESS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        self.last_accessed.store(now, Ordering::Relaxed);
+    }
+
+    /// Gibt den aktuellen atomaren Logical-Clock-Wert des letzten Zugriffs zurück.
+    pub fn last_accessed(&self) -> u64 {
+        self.last_accessed.load(Ordering::Relaxed)
     }
 
     /// Read-Only-Zugriff. Kein Klartext-Export nach außen ohne expliziten Call.
