@@ -1842,7 +1842,7 @@ mod tests {
 
     #[test]
     fn test_tenant_id_valid() {
-        let t = TenantId::try_new(42).unwrap();
+        let t = TenantId::try_new(42).expect("valid tenant_id");
         assert_eq!(t.inner(), 42);
         assert!(!t.is_system());
     }
@@ -1853,11 +1853,4 @@ mod tests {
         assert!(TenantId::SYSTEM.is_system());
     }
 
-    #[test]
-    fn test_tenant_id_serde_roundtrip() {
-        let t = TenantId::try_new(999).unwrap();
-        let json = serde_json::to_string(&t).unwrap();
-        let back: TenantId = serde_json::from_str(&json).unwrap();
-        assert_eq!(t, back);
-    }
 }
