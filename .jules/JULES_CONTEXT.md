@@ -33,7 +33,7 @@
 Layer 0:  memfuse-core        ← Keine Workspace-Deps
 Layer 1:  memfuse-{store,index,text,crypto,graph,checkpoint}  ← nur core
 Layer 2:  memfuse-db          ← alle Layer-1 + ollama + embed(optional)
-Layer 3:  memfuse-{py,ollama,embed,agent,router}  ← db + core (+ ollama/store)
+Layer 3:  memfuse-{py,ollama,embed,agent,router}  ← db + core (+ ollama/store) (Hinweis: memfuse-py ist eigenständiger Cargo-Workspace, siehe ADR-064)
 Layer 4:  memfuse-{mcp,tauri} ← agent + db + ollama + crypto/graph
 ```
 
@@ -78,6 +78,7 @@ Layer 4:  memfuse-{mcp,tauri} ← agent + db + ollama + crypto/graph
 | ADR-044 | MCP Write-Authorization & Sandbox Policy | DB-Schreibzugriffe im MCP Server standardmäßig GESPERRT (Read-Only) |
 | ADR-045 | Entkopplung memfuse-router und memfuse-mcp | JSON-RPC Typen in `memfuse-core::ipc`, memfuse-router hängtfrei von memfuse-mcp |
 | ADR-063 | TenantId-Typ als Layer-0 Fundament | Typisierter Bezeichner `TenantId` in `memfuse-core`, volle Isolation bleibt Horizont-4-Arbeit |
+| ADR-064 | memfuse-py als separater Workspace | Eigenständiger Workspace wegen `panic = "unwind"` FFI-Anforderung. NIEMALS in Root-`members` aufnehmen! |
 
 ---
 
