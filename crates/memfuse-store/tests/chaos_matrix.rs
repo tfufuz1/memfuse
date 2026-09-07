@@ -119,7 +119,7 @@ async fn test_chaos_matrix_task_massacre_and_memory_pressure() {
     }
 
     // Force flush to exercise memory pressure handling
-    let _ = storage.force_flush().await;
+    storage.force_flush().await.ok();
 
     // Ground Truth Discipline Check: All recorded committed keys MUST match ground truth exactly
     let expected = ground_truth.snapshot();
@@ -186,7 +186,7 @@ async fn test_chaos_matrix_bitflip_and_crash_recovery() {
                 // Flip a bit in the file
                 let flip_idx = rng.gen_range(8..file_bytes.len());
                 file_bytes[flip_idx] ^= 0x01 << rng.gen_range(0..8);
-                let _ = tokio::fs::write(&file_path, &file_bytes).await;
+                tokio::fs::write(&file_path, &file_bytes).await.ok();
             }
         }
     }
@@ -246,7 +246,7 @@ async fn test_chaos_matrix_full_combos() {
             ground_truth.record_commit(k, v);
 
             if i % 10 == 0 {
-                let _ = storage.force_flush().await;
+                storage.force_flush().await.ok();
             }
         }
         // Simulated power-cut: drop storage without close()
