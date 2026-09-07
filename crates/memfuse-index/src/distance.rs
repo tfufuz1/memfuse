@@ -698,8 +698,8 @@ pub(crate) fn normalize_inplace(v: &mut [f32]) {
 
 /// Computes the dot product of two u8 vectors.
 #[inline]
-#[allow(unsafe_code)]
-pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
+#[allow(dead_code, unsafe_code)]
+pub(crate) fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -719,7 +719,8 @@ pub fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
     dot_product_u8_scalar(a, b)
 }
 
-pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
+#[allow(dead_code)]
+pub(crate) fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| x as u32 * y as u32)
@@ -728,8 +729,8 @@ pub fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 
 /// Computes the squared Euclidean distance between two u8 vectors.
 #[inline]
-#[allow(unsafe_code)]
-pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
+#[allow(dead_code, unsafe_code)]
+pub(crate) fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -749,7 +750,8 @@ pub fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
     euclidean_distance_sq_u8_scalar(a, b)
 }
 
-pub fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
+#[allow(dead_code)]
+pub(crate) fn euclidean_distance_sq_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| {
@@ -769,8 +771,8 @@ pub struct CosineSimilarityPartsU8 {
 
 /// Computes the parts required for cosine similarity between two u8 vectors.
 #[inline]
-#[allow(unsafe_code)]
-pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+#[allow(dead_code, unsafe_code)]
+pub(crate) fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     debug_assert_eq!(a.len(), b.len());
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -793,7 +795,8 @@ pub fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8
     cosine_similarity_parts_u8_scalar(a, b)
 }
 
-pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
+#[allow(dead_code)]
+pub(crate) fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
     let mut dot = 0;
     let mut norm_a_sq = 0;
     let mut norm_b_sq = 0;
@@ -814,13 +817,14 @@ pub fn cosine_similarity_parts_u8_scalar(a: &[u8], b: &[u8]) -> CosineSimilarity
 }
 
 /// Computes the dot product between an f32 vector and a u8 vector.
-pub fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
+#[allow(dead_code)]
+pub(crate) fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * (y as f32)).sum()
 }
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization with per-dimension scaling.
-pub fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &[f32]) -> f32 {
+pub(crate) fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .zip(alphas.iter())
@@ -843,7 +847,8 @@ pub struct CosineSimilarityPartsF32U8 {
 }
 
 /// Computes the parts required for asymmetric cosine similarity between an f32 and a u8 vector.
-pub fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
+#[allow(dead_code)]
+pub(crate) fn cosine_similarity_parts_f32_u8(a: &[f32], b: &[u8]) -> CosineSimilarityPartsF32U8 {
     let mut dot_f32_u8 = 0.0;
     let mut sum_u8 = 0;
     let mut norm_u8_sq = 0;
@@ -1243,6 +1248,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_public_compute_distance_api_sanity() {
+        let v1 = vec![1.0, 0.0, 0.0];
+        let v2 = vec![0.0, 1.0, 0.0];
+
+        let cos = compute_distance(&v1, &v2, DistanceMetric::Cosine).expect("cosine");
+        assert!((cos - 1.0).abs() < 1e-5);
+
+        let euc = compute_distance(&v1, &v2, DistanceMetric::Euclidean).expect("euclidean");
+        assert!((euc - 2.0_f32.sqrt()).abs() < 1e-5);
+
+        let dot = compute_distance(&v1, &v2, DistanceMetric::DotProduct).expect("dot");
+        assert_eq!(dot, 0.0);
+    }
+
+    #[test]
     fn test_distances_match_scalar() {
         let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         let b = vec![9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
@@ -1322,6 +1342,48 @@ mod tests {
                 assert_eq!(parts_scalar.norm_a_sq, parts_simd.norm_a_sq);
                 assert_eq!(parts_scalar.norm_b_sq, parts_simd.norm_b_sq);
             }
+        }
+    }
+
+    #[test]
+    fn test_u8_metrics_exact_match() {
+        let dimensions = [1, 7, 16, 32, 33, 64, 128, 256];
+
+        for &dim in &dimensions {
+            let a: Vec<u8> = (0..dim).map(|i| ((i * 17 + 3) % 256) as u8).collect();
+            let b: Vec<u8> = (0..dim).map(|i| ((i * 31 + 11) % 256) as u8).collect();
+
+            // 1. Dot Product u8
+            let dot_scalar = dot_product_u8_scalar(&a, &b);
+            let dot_dispatch = dot_product_u8(&a, &b);
+            assert_eq!(
+                dot_scalar, dot_dispatch,
+                "u8 DotProduct mismatch at dim {dim}: scalar={dot_scalar}, dispatch={dot_dispatch}"
+            );
+
+            // 2. Squared Euclidean u8
+            let euc_sq_scalar = euclidean_distance_sq_u8_scalar(&a, &b);
+            let euc_sq_dispatch = euclidean_distance_sq_u8(&a, &b);
+            assert_eq!(
+                euc_sq_scalar, euc_sq_dispatch,
+                "u8 Squared Euclidean mismatch at dim {dim}: scalar={euc_sq_scalar}, dispatch={euc_sq_dispatch}"
+            );
+
+            // 3. Cosine Parts u8
+            let parts_scalar = cosine_similarity_parts_u8_scalar(&a, &b);
+            let parts_dispatch = cosine_similarity_parts_u8(&a, &b);
+            assert_eq!(
+                parts_scalar.dot, parts_dispatch.dot,
+                "u8 Cosine dot mismatch at dim {dim}"
+            );
+            assert_eq!(
+                parts_scalar.norm_a_sq, parts_dispatch.norm_a_sq,
+                "u8 Cosine norm_a_sq mismatch at dim {dim}"
+            );
+            assert_eq!(
+                parts_scalar.norm_b_sq, parts_dispatch.norm_b_sq,
+                "u8 Cosine norm_b_sq mismatch at dim {dim}"
+            );
         }
     }
 

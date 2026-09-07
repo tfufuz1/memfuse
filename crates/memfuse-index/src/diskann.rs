@@ -480,7 +480,7 @@ impl DiskAnnIndex {
                     let q = q_guard
                         .as_ref()
                         .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
-                    q.dequantize(&v)
+                    q.dequantize(&v)?
                 }
             };
             all_vecs.push(vec_f32);
@@ -523,7 +523,7 @@ impl DiskAnnIndex {
                     let q = q_guard
                         .as_ref()
                         .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
-                    Ok(q.dequantize(&v))
+                    q.dequantize(&v)
                 }
             }
         } else {
@@ -895,7 +895,11 @@ impl DiskAnnIndex {
             q_guard.clone()
         };
         let (q_min, q_max, quantized) = if let Some(ref q) = quantizer_opt {
-            (q.mins[0], q.maxes[0], 1)
+            (
+                q.mins().first().copied().unwrap_or(0.0),
+                q.maxes().first().copied().unwrap_or(0.0),
+                1,
+            )
         } else {
             (0.0, 0.0, 0)
         };
@@ -928,7 +932,7 @@ impl DiskAnnIndex {
             let start_pos = file.stream_position().await.map_err(MemFuseError::Io)?;
 
             if let Some(ref q) = quantizer_opt {
-                let qv = q.quantize(&vectors[i]);
+                let qv = q.quantize(&vectors[i])?;
                 file.write_all(&qv).await.map_err(MemFuseError::Io)?;
             } else {
                 for &val in &vectors[i] {
