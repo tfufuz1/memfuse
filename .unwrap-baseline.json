@@ -4624,6 +4624,14 @@
     "hash": "ef8c38b37cb5a4f9"
   },
   {
+    "file": "crates/memfuse-db/src/sleep_cycle.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/sleep_cycle.rs",
+    "hash": "fc1b9074eaa51344"
+  },
+  {
     "file": "crates/memfuse-db/src/transaction.rs",
     "hash": "3dea9b02273f2ea2"
   },
