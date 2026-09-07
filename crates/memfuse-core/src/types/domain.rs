@@ -786,10 +786,102 @@ impl Default for PprConfig {
     }
 }
 
+/// Konfigurations-Fingerabdruck für P8-Kalibrierungs-Integrität.
+///
+/// INVARIANTE INV-P8-1: Jede Änderung an einem der Felder MUSS
+/// `IsotonicCalibrator::invalidate_on_config_change()` auslösen.
+/// Kein Warmup-Fenster darf nach Fingerprint-Wechsel übersprungen werden.
+///
+/// BEGRÜNDUNG: arXiv:2608.01460 — Coverage-Kollaps unter Konfigurations-Drift.
+/// Q4 und Q8 bei identischem model_id erzeugen unterschiedliche Score-Verteilungen.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ConfigFingerprint {
+    /// LLM-Modell-ID (z.B. "llama-3.2-3b-instruct")
+    pub model_id: String,
+    /// Quantisierungsgrad als String: "Q4_K_M", "Q8_0", "F16", "BF16".
+    /// EXPLIZIT Teil des Fingerprints — Q4 ≠ Q8 bei gleichem model_id.
+    pub quantization: String,
+    /// SHA256 des Prompt-Templates (nicht der Inhalt — nur der Hash).
+    /// Verhindert stille Kalibrierungs-Invalidierung bei Template-Drift.
+    pub prompt_template_hash: [u8; 32],
+    /// Temperatur als Bits für bit-exakten Vergleich (kein float-Gleichheitstest).
+    /// `temperature_bits = temperature.to_bits()`
+    pub temperature_bits: u32,
+}
+
+impl ConfigFingerprint {
+    /// Erstellt einen neuen `ConfigFingerprint`.
+    pub fn new(
+        model_id: impl Into<String>,
+        quantization: impl Into<String>,
+        prompt_template: &str,
+        temperature: f32,
+    ) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(prompt_template.as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+
+        Self {
+            model_id: model_id.into(),
+            quantization: quantization.into(),
+            prompt_template_hash: hash,
+            temperature_bits: temperature.to_bits(),
+        }
+    }
+
+    /// Extrahiert Temperatur als f32 (verlustfrei da via to_bits gespeichert).
+    #[inline]
+    pub fn temperature(&self) -> f32 {
+        f32::from_bits(self.temperature_bits)
+    }
+}
+
+impl Default for ConfigFingerprint {
+    fn default() -> Self {
+        Self::new("default", "F16", "", 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::{prop_assert, prop_assert_eq};
+
+    #[test]
+    fn test_config_fingerprint_equality() {
+        let fp1 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "You are helpful.", 0.7);
+        let fp2 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "You are helpful.", 0.7);
+        assert_eq!(fp1, fp2);
+    }
+
+    #[test]
+    fn test_config_fingerprint_quantization_differs() {
+        let fp_q4 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "template", 0.7);
+        let fp_q8 = ConfigFingerprint::new("llama-3b", "Q8_0", "template", 0.7);
+        assert_ne!(fp_q4, fp_q8, "Q4 und Q8 müssen unterschiedliche Fingerprints erzeugen");
+    }
+
+    #[test]
+    fn test_config_fingerprint_template_hash_differs() {
+        let fp1 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "Template A", 0.7);
+        let fp2 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "Template B", 0.7);
+        assert_ne!(fp1.prompt_template_hash, fp2.prompt_template_hash);
+    }
+
+    #[test]
+    fn test_config_fingerprint_temperature_bits() {
+        let fp = ConfigFingerprint::new("model", "Q8_0", "t", 0.42);
+        assert!((fp.temperature() - 0.42).abs() < 1e-7);
+    }
+
+    #[test]
+    fn test_config_fingerprint_serde_roundtrip() {
+        let fp = ConfigFingerprint::new("llama-3b", "Q4_K_M", "tpl", 0.5);
+        let json = serde_json::to_string(&fp).unwrap();
+        let back: ConfigFingerprint = serde_json::from_str(&json).unwrap();
+        assert_eq!(fp, back);
+    }
 
     #[test]
     fn test_expiry_metadata_key_constant() {

@@ -8,34 +8,33 @@
 
 Stand letzter Prüfung: 2026-09-07
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **3 offene Tags**
+Ergebnis: **2 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-embed/src/reranker.rs` | 314 | `AGT-EMBED-62093e61` | `ML-SCORING` | `MINOR` | `2026-09-06T11:19:00Z` | // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
 | `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
-| `crates/memfuse-ollama/src/importance.rs` | 39 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
+| `crates/memfuse-ollama/src/importance.rs` | 73 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9261 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-crypto` | 0 | 2425 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-checkpoint` | 1 | 5617 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-embed` | 1 | 1435 | 🧊 Optional |  |
-| `memfuse-graph` | 1 | 7323 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 11898 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 15284 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | 1 | 5355 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 20271 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 5538 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-ollama` | 3 | 3395 | 🟢 Clean |  |
-| `memfuse-router` | 3 | 3388 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 3808 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 5744 | 🟢 Clean |  |
-| `memfuse-bench` | 5 | 578 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-core` | 1 | 9421 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-checkpoint` | 2 | 5653 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-embed` | 2 | 1684 | 🧊 Optional |  |
+| `memfuse-graph` | 2 | 7323 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-ollama` | 2 | 3485 | 🟢 Clean |  |
+| `memfuse-store` | 2 | 15423 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-text` | 2 | 5355 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-index` | 3 | 11898 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-db` | 4 | 20430 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 5 | 576 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-router` | 5 | 3803 | 🟢 Clean |  |
+| `memfuse-tauri` | 5 | 6134 | 🟢 Clean |  |
+| `memfuse-agent` | 6 | 5537 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-mcp` | 7 | 3808 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
