@@ -2671,6 +2671,7 @@ mod tests {
             ("memfuse-crypto", 1),
             ("memfuse-kv-bridge", 1),
             ("memfuse-graph", 1),
+        ("memfuse-kv-bridge", 1),
             ("memfuse-text", 1),
             ("memfuse-embed", 2),
             ("memfuse-index", 2),

@@ -5,7 +5,8 @@
 
 ## Format
 Jeder Eintrag: `feature_id`, `status` (permanent_rejected | conditionally_accepted),
-`keywords` (Commit-Message/Code-Grep-Trigger), `reason`, `adr_ref` (falls vorhanden).
+`keywords` (Commit-Message/Code-Grep-Trigger), `reason`, `adr_ref` (falls vorhanden),
+`conditional_review_due` (optionales Review-Frist-Datum YYYY-MM-DD für conditionally_accepted Einträge).
 
 ---
 
@@ -13,6 +14,7 @@ Jeder Eintrag: `feature_id`, `status` (permanent_rejected | conditionally_accept
 
 feature_id: F-02
 status: conditionally_accepted
+conditional_review_due: 2026-10-07
 keywords: ["partial hnsw rebuild", "nucleation", "rebuild_region", "F-02"]
 reason: >
   Aktives Re-Wiring eines HNSW-Teilgraphen zerstört Delaunay-ähnliche

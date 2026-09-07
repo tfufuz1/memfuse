@@ -87,6 +87,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --manifest-path crates/memfuse-py/Cargo.toml --all-targets -- -D warnings
 
+  test-py:
+    name: Test Suite (memfuse-py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --manifest-path crates/memfuse-py/Cargo.toml
+
   clippy-tauri-lib:
     name: Clippy (memfuse-tauri --lib)
     runs-on: ubuntu-latest

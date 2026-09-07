@@ -25,7 +25,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-kv-bridge` | 1 | 353 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-embed` | 2 | 1882 | 🧊 Optional |  |
-| `memfuse-index` | 2 | 14021 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 2 | 14023 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3916 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15882 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-db` | 3 | 24814 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
