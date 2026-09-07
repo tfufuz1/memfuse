@@ -47,25 +47,37 @@ pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
 /// AGT-DB-003 — Boundary defence at Layer 2 against unbounded `k` from untrusted JSON-RPC.
 pub const MAX_SEARCH_K: usize = 1_000;
 
-/// Internal tenant identifier.
+/// Mandanten-Identifikator. Layer-0-Typ (memfuse-core).
+///
+/// LAYER-BEGRÜNDUNG: TenantId ist Abhängigkeit für KV-Cache-Isolation (Layer 4).
+/// In Layer 1+ definiert → zyklische Crate-Abhängigkeit unvermeidbar.
+///
+/// INVARIANTE INV-TENANT-1: TenantId(0) ist SYSTEM-reserviert.
+/// `TenantId::try_new(0)` → Err. Keine Ausnahmen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TenantId(pub u64);
 
 impl TenantId {
+    /// SYSTEM tenant identifier (`0`).
+    pub const SYSTEM: Self = Self(0);
+    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
 
-    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    /// Const-Konstruktor.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
-    /// Creates a new `TenantId`, ensuring `id != 0`.
+    /// Sicherer Konstruktor. Gibt Err wenn id == 0.
     pub fn try_new(id: u64) -> Result<Self> {
         if id == 0 {
-            Err(MemFuseError::InvalidInput("TenantId cannot be 0".to_string()))
+            Err(MemFuseError::InvalidInput(
+                "TenantId(0) is reserved for TenantId::SYSTEM".to_string(),
+            ))
         } else {
             Ok(Self(id))
         }
@@ -75,6 +87,18 @@ impl TenantId {
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
+    }
+
+    /// Returns `true` if this tenant ID is `SYSTEM` (0).
+    #[inline]
+    pub fn is_system(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl Default for TenantId {
+    fn default() -> Self {
+        Self::DEFAULT
     }
 }
 
