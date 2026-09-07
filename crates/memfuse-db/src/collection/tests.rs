@@ -2329,6 +2329,56 @@ async fn test_community_boost_post_rrf_preserves_non_community_and_reranks(
     Ok(())
 }
 
+#[cfg(feature = "physio-percolation")]
+#[tokio::test]
+async fn test_run_percolation_check_rebonding() -> memfuse_core::Result<()> {
+    use crate::{MemFuse, MemFuseConfig};
+    use memfuse_core::EntityId;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = MemFuse::open_with_config(
+        dir.path(),
+        MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    let col = db.collection("percolation_test").await?;
+
+    // Insert 12 documents with high similarity between doc_0 and doc_1, but no edge
+    for i in 0..12 {
+        let id = format!("doc_{i}");
+        let emb = if i == 0 {
+            vec![1.0, 0.0, 0.0, 0.0]
+        } else if i == 1 {
+            vec![0.98, 0.02, 0.0, 0.0]
+        } else {
+            let val = (i as f32) / 100.0;
+            vec![0.0, 0.0, val, 1.0 - val]
+        };
+        col.insert(&id, &emb, None).await?;
+    }
+
+    let config = memfuse_graph::percolation::PercolationConfig {
+        critical_threshold: 0.9,
+        rebonding_similarity: 0.85,
+        max_new_edges_per_pass: 10,
+    };
+
+    let result = col.run_percolation_check(&config).await?;
+    assert!(result.health.is_some());
+    assert!(result.rebonding_triggered);
+    assert!(result.new_edges_added > 0);
+
+    // Verify rebonded relationship now exists in graph
+    let neighbors = col.graph_index.neighbors(EntityId::from_key("doc_0")?).await?;
+    assert!(neighbors.contains(&EntityId::from_key("doc_1")?));
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_search_k_zero_returns_canonical_error_message(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {

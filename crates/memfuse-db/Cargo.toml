@@ -35,6 +35,7 @@ sandbox = []
 experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 physio-features = []
+physio-percolation = ["memfuse-graph/physio-percolation"]
 
 [[bench]]
 name = "migration_benchmarks"
