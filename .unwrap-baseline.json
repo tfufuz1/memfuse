@@ -3785,6 +3785,10 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/tests.rs",
+    "hash": "8bfdb91ec39f8bb7"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/tests.rs",
     "hash": "91fcd15a215e3d72"
   },
   {
@@ -7590,6 +7594,30 @@
   {
     "file": "crates/memfuse-graph/src/path_rag.rs",
     "hash": "f822d609533d8bc2"
+  },
+  {
+    "file": "crates/memfuse-graph/src/percolation.rs",
+    "hash": "0956bbc7a62cd938"
+  },
+  {
+    "file": "crates/memfuse-graph/src/percolation.rs",
+    "hash": "23c3e9853dd068fb"
+  },
+  {
+    "file": "crates/memfuse-graph/src/percolation.rs",
+    "hash": "4b964b8072e47b2a"
+  },
+  {
+    "file": "crates/memfuse-graph/src/percolation.rs",
+    "hash": "a278a76b8ca04b97"
+  },
+  {
+    "file": "crates/memfuse-graph/src/percolation.rs",
+    "hash": "f2aabd1cefd87e95"
+  },
+  {
+    "file": "crates/memfuse-graph/src/percolation.rs",
+    "hash": "fc1b9074eaa51344"
   },
   {
     "file": "crates/memfuse-graph/src/ppr.rs",

@@ -668,3 +668,76 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         Ok(())
     }
 }
+
+#[cfg(feature = "physio-percolation")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PercolationResult {
+    pub health: Option<f32>,
+    pub rebonding_triggered: bool,
+    pub new_edges_added: usize,
+}
+
+#[cfg(feature = "physio-percolation")]
+impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
+    /// Überprüft die Perkolations-Gesundheit des Wissensgraphen und löst bei Unterschreitung
+    /// des Schwellenwerts automatisch einen Re-Bonding-Pass aus.
+    #[tracing::instrument(level = "trace", skip(self, config))]
+    pub async fn run_percolation_check(
+        &self,
+        config: &memfuse_graph::percolation::PercolationConfig,
+    ) -> Result<PercolationResult> {
+        let stats = self.graph_index.stats().await?;
+        let health = memfuse_graph::percolation::compute_percolation_health(
+            stats.num_entities,
+            stats.num_edges,
+        );
+
+        let rebonding_triggered = if let Some(phi) = health {
+            memfuse_graph::percolation::should_trigger_rebonding(phi, config)
+        } else {
+            false
+        };
+
+        let mut new_edges_added = 0;
+
+        if rebonding_triggered {
+            let docs = self.scan_prefix("").await?;
+            let mut embeddings = std::collections::HashMap::new();
+            let mut id_map = std::collections::HashMap::new();
+
+            for (_key, val) in docs {
+                if let Ok(stored) = serde_json::from_value::<StoredDocument>(val) {
+                    if let Ok(eid) = EntityId::from_key(&stored.id) {
+                        id_map.insert(eid, stored.id.clone());
+                        embeddings.insert(eid, stored.embedding);
+                    }
+                }
+            }
+
+            let candidate_pairs = memfuse_graph::percolation::find_rebonding_candidates(
+                self.graph_index.as_ref(),
+                &embeddings,
+                config,
+            )
+            .await;
+
+            for (from_id, to_id, _sim) in candidate_pairs {
+                if let (Some(from_str), Some(to_str)) = (id_map.get(&from_id), id_map.get(&to_id)) {
+                    if self
+                        .relate_bidirectional(from_str, to_str, "rebonded")
+                        .await
+                        .is_ok()
+                    {
+                        new_edges_added += 2;
+                    }
+                }
+            }
+        }
+
+        Ok(PercolationResult {
+            health,
+            rebonding_triggered,
+            new_edges_added,
+        })
+    }
+}
