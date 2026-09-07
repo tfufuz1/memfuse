@@ -33,6 +33,7 @@ pub mod path_rag;
 #[cfg(feature = "physio-percolation")]
 pub mod percolation;
 pub mod ppr;
+pub mod provenance;
 pub mod session_dag;
 #[cfg(feature = "physio-synaptic-edges")]
 pub mod synaptic;
@@ -51,6 +52,7 @@ pub use percolation::{
     PercolationConfig,
 };
 pub use ppr::PprContext;
+pub use provenance::{DocEdgeIndex, EdgeProvenance};
 pub use session_dag::{
     AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree,
 };

@@ -8,6 +8,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: "Check for duplicate symbols (fast pre-build gate)"
+        run: cargo run -p xtask -- check-duplicate-symbols
+
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
         run: |
           COUNT=$(grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ \

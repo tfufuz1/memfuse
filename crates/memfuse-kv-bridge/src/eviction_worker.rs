@@ -51,7 +51,10 @@ impl EvictionWorker {
                                 freed += evicted.len();
                                 // evicted geht hier out of scope -> Zeroize
                             }
-                            tracing::debug!(freed_bytes = freed, "KV eviction worker: LRU evict done");
+                            tracing::debug!(
+                                freed_bytes = freed,
+                                "KV eviction worker: LRU evict done"
+                            );
                         }
                         EvictionCommand::Shutdown => break,
                     }

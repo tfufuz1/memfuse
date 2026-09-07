@@ -82,8 +82,7 @@ mod tests {
         unsafe {
             let cleared_slice = std::slice::from_raw_parts(ptr, len);
             assert_eq!(
-                cleared_slice,
-                &[0x00u8; 1024],
+                cleared_slice, &[0x00u8; 1024],
                 "KvSegment data MUST be zeroed after zeroize"
             );
         }

@@ -20,13 +20,13 @@ use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
-const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DFTR";
-const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"MEMFUSE_DISKANN_INTEGRITY_KEY___";
 const DISKANN_VERSION: u16 = 1;
+const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
+const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
 /// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
 /// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
 /// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
@@ -172,6 +172,7 @@ impl DiskAnnFooter {
         buf
     }
 
+    #[allow(dead_code)]
     fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
             return Err(MemFuseError::Storage("DiskANN footer too small".into()));
@@ -284,6 +285,8 @@ struct DiskAnnIndexInner {
     pending_inserts: RwLock<Vec<(DocId, Vec<f32>)>>,
     /// Monotoner Zähler (AtomicU64 für Threshold-Check ohne Lock).
     pending_count: AtomicU64,
+    /// Flag um überlappende persist_delta-Hintergrundläufe zu verhindern.
+    flushing_in_progress: AtomicBool,
     hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
 }
 
@@ -318,9 +321,30 @@ impl DiskAnnIndex {
                 drift_warn_count: AtomicU64::new(0),
                 pending_inserts: RwLock::new(Vec::new()),
                 pending_count: AtomicU64::new(0),
+                flushing_in_progress: AtomicBool::new(false),
                 hnsw_fallback: RwLock::new(None),
             }),
         })
+    }
+
+    /// Stößt `persist_delta()` asynchron im Tokio-Hintergrund-Task an,
+    /// falls nicht bereits ein persist_delta-Lauf aktiv ist.
+    pub fn trigger_background_persist_delta(&self) {
+        if !self.inner.flushing_in_progress.swap(true, Ordering::AcqRel) {
+            let index_clone = self.clone();
+            tokio::spawn(async move {
+                struct FlushGuard(Arc<DiskAnnIndexInner>);
+                impl Drop for FlushGuard {
+                    fn drop(&mut self) {
+                        self.0.flushing_in_progress.store(false, Ordering::Release);
+                    }
+                }
+                let _guard = FlushGuard(Arc::clone(&index_clone.inner));
+                if let Err(e) = index_clone.persist_delta().await {
+                    tracing::error!(error = %e, "DiskANN Hintergrund-persist_delta fehlgeschlagen");
+                }
+            });
+        }
     }
 
     fn check_quantizer_drift(&self, vector: &[f32]) {
@@ -512,6 +536,7 @@ impl DiskAnnIndex {
                 break;
             }
             let mut vec = Vec::with_capacity(dim);
+            #[allow(clippy::chunks_exact_to_as_chunks)]
             for chunk in vec_bytes.chunks_exact(4) {
                 if let Ok(b) = chunk.try_into() {
                     vec.push(f32::from_le_bytes(b));
@@ -828,6 +853,7 @@ impl DiskAnnIndex {
         let mut graph: Vec<Vec<u32>> = vec![vec![]; total_nodes];
 
         // Phase 1: Adjazenzlisten bestehender Knoten aus Mmap laden
+        #[allow(clippy::needless_range_loop)]
         for i in 0..existing_count {
             let node = self.load_node(i as u32)?;
             graph[i] = node.neighbors;
@@ -1111,7 +1137,7 @@ impl DiskAnnIndex {
 
             if let Some(ref q) = quantizer_opt {
                 let qv = q.quantize(&vectors[i])?;
-                file.write_all(&qv).await.map_err(MemFuseError::Io)?;
+                node_buf.extend_from_slice(&qv);
             } else {
                 for &val in &vectors[i] {
                     node_buf.extend_from_slice(&val.to_le_bytes());
@@ -1180,7 +1206,7 @@ impl DiskAnnIndex {
 
         if index_exists {
             let inner = Arc::clone(&self.inner);
-            tokio::task::spawn_blocking(move || {
+            let load_handle = tokio::task::spawn_blocking(move || {
                 use std::sync::atomic::Ordering;
 
                 // Clean up any orphaned temporary files from interrupted persist_delta or build calls
@@ -1212,10 +1238,41 @@ impl DiskAnnIndex {
                 #[allow(unsafe_code)]
                 let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
+                if mmap.len() < DiskAnnHeader::SIZE + DiskAnnFooter::SIZE {
+                    return Err(MemFuseError::Storage(
+                        "DiskANN file too small for header and footer".into(),
+                    ));
+                }
+
                 let header_slice = mmap.get(0..DiskAnnHeader::SIZE).ok_or_else(|| {
                     MemFuseError::Storage("DiskANN file too small for header".into())
                 })?;
                 let header = DiskAnnHeader::try_from_bytes(header_slice)?;
+
+                // Verify HMAC integrity footer
+                let footer_slice =
+                    mmap.get(mmap.len() - DiskAnnFooter::SIZE..)
+                        .ok_or_else(|| {
+                            MemFuseError::Storage("DiskANN file too small for footer".into())
+                        })?;
+                let footer = DiskAnnFooter::try_from_bytes(footer_slice)?;
+
+                let payload = mmap
+                    .get(..mmap.len() - DiskAnnFooter::SIZE)
+                    .ok_or_else(|| {
+                        MemFuseError::Storage("DiskANN payload slice out of bounds".into())
+                    })?;
+
+                let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+                hmac.update(payload);
+                let computed_hmac = hmac.finalize();
+
+                if footer.hmac != computed_hmac {
+                    return Err(MemFuseError::Storage(
+                        "DiskANN index file HMAC integrity validation failed: checksum mismatch"
+                            .into(),
+                    ));
+                }
 
                 if inner.config.sector_size != header.sector_size as usize {
                     return Err(MemFuseError::Index(format!(
@@ -1253,13 +1310,23 @@ impl DiskAnnIndex {
                     .node_size_bytes
                     .store(node_size_bytes as u64, Ordering::SeqCst);
 
+                let file_len = mmap.len();
+                let sector_size = header.sector_size as usize;
+                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
+                let expected_min_size = start_offset
+                    .saturating_add((header.node_count as usize).saturating_mul(node_size_bytes));
+                if file_len < expected_min_size {
+                    return Err(MemFuseError::Storage(format!(
+                        "DiskANN file truncated or corrupt node_count: file len {}, expected at least {}",
+                        file_len, expected_min_size
+                    )));
+                }
+
                 *inner.header.write() = Some(header);
                 *inner.mmap.write() = Some(mmap);
                 inner.cache.write().clear();
 
                 let mut ids = Vec::with_capacity(header.node_count as usize);
-                let sector_size = header.sector_size as usize;
-                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
                 let read_size = node_size_bytes;
                 if !read_size.is_multiple_of(sector_size) {
                     return Err(MemFuseError::Index(
@@ -1304,11 +1371,28 @@ impl DiskAnnIndex {
                 }
                 *inner.doc_ids.write() = ids;
                 Ok(())
-            })
-            .await
-            .map_err(|e| {
-                MemFuseError::Storage(format!("Join error during DiskANN load: {}", e))
-            })??;
+            });
+
+            let load_res = load_handle
+                .await
+                .map_err(|e| {
+                    MemFuseError::Storage(format!("Join error during DiskANN load: {}", e))
+                })
+                .and_then(|res| res);
+
+            if let Err(err) = load_res {
+                if self.inner.config.fallback_policy == DiskAnnFallbackPolicy::UseHnswOnFailure {
+                    tracing::error!(
+                        index_path = %self.inner.config.index_path.display(),
+                        error = %err,
+                        "DiskANN index loading or integrity validation failed — using HNSW fallback"
+                    );
+                    self.init_hnsw_fallback()?;
+                    return Ok(());
+                } else {
+                    return Err(err);
+                }
+            }
         }
 
         if wal_exists {
@@ -1624,7 +1708,12 @@ impl Clone for DiskAnnIndex {
 }
 
 impl VectorIndex for DiskAnnIndex {
-    async fn insert(&self, _tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+    async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.insert(tx, id, embedding).await;
+        }
+
         self.check_quantizer_drift(embedding);
 
         let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
@@ -1637,7 +1726,7 @@ impl VectorIndex for DiskAnnIndex {
         };
 
         if count >= PENDING_FLUSH_THRESHOLD {
-            self.persist_delta().await?;
+            self.trigger_background_persist_delta();
         }
         Ok(())
     }
@@ -2394,5 +2483,61 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_diskann_footer_roundtrip_hmac_integrity() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("footer_roundtrip.idx");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 8,
+            max_degree: 4,
+            sector_size: 4096,
+            distance_metric: DistanceMetric::Euclidean,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config.clone()).unwrap();
+        let vectors = vec![vec![1.0; 8]];
+        let ids = vec![DocId::from(42)];
+        index.build(&vectors, &ids).await.unwrap();
+
+        // 1. Verify index file contains a valid DiskAnnFooter at the end
+        let file_bytes = tokio::fs::read(&index_path).await.unwrap();
+        assert!(file_bytes.len() >= DiskAnnFooter::SIZE);
+        let footer_slice = &file_bytes[file_bytes.len() - DiskAnnFooter::SIZE..];
+        let footer = DiskAnnFooter::try_from_bytes(footer_slice).expect("footer parsing");
+        assert_eq!(&footer.magic, DISKANN_FOOTER_MAGIC);
+
+        // Verify HMAC calculation over payload
+        let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY).unwrap();
+        let payload = &file_bytes[..file_bytes.len() - DiskAnnFooter::SIZE];
+        hmac.update(payload);
+        let expected_hmac = hmac.finalize();
+        assert_eq!(footer.hmac, expected_hmac);
+
+        // 2. Corrupt one byte of HMAC in footer, write to disk, and verify load returns integrity error
+        let mut corrupt_bytes = file_bytes.clone();
+        let last_idx = corrupt_bytes.len() - 1;
+        corrupt_bytes[last_idx] ^= 0xFF;
+        tokio::fs::write(&index_path, &corrupt_bytes)
+            .await
+            .expect("write corrupt footer file");
+
+        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config");
+        let load_res = reloaded_index.load().await;
+        assert!(
+            load_res.is_err(),
+            "Loading corrupted HMAC footer must return Err"
+        );
+        let err_msg = load_res.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("HMAC integrity validation failed"),
+            "Unexpected error message: {}",
+            err_msg
+        );
     }
 }

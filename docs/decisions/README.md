@@ -67,3 +67,6 @@ Gemäß Governance (`CONSTITUTION.md`) ist `docs/decisions/` der alleinige kanon
 | [ADR-060](ADR-060-adr-governance-konsolidierung-auf-decisionsmd-als.md) | ADR-Governance — Konsolidierung auf DECISIONS.md als Einzel-Quelle | - | Final |
 | [ADR-061](ADR-061-2-phasen-lock-für-hnsw-rebuild.md) | 2-Phasen-Lock für HNSW Rebuild | - | Final |
 | [ADR-062](ADR-062-fault-injection-testsuite-für-wal-v3mvcc.md) | Fault-Injection-Testsuite für WAL V3/MVCC (adaptiert aus chimeraDB SPEC-035) | - | Final |
+| [ADR-063](ADR-063-f02-nucleation-tombstone-pruning-vs-ursprungliches-veto.md) | F-02 Nucleation Tombstone-Pruning vs. ursprüngliches Veto | - | Final |
+| [ADR-064](ADR-064-memfuse-py-separater-workspace-panic-strategie.md) | memfuse-py als separater Cargo-Workspace (Panic-Strategie-Isolation) | 2026-09-07 | Final |
+| [ADR-065](ADR-065-duplicate-symbol-ci-gate.md) | Duplicate Symbol CI-Gate zur Prävention von Merge-Kollisionen | 2026-09-07 | Final |
