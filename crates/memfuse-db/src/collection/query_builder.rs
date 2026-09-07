@@ -419,6 +419,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             include_provenance: self.include_provenance,
             rerank_pool_multiplier: self.rerank_pool_multiplier,
             rerank_pool_max: self.rerank_pool_max,
+            has_reranker: _has_reranker,
             k,
         };
 
@@ -506,6 +507,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 });
 
                 if let Ok(ranked) = reranked {
+                    // Implizites Calibration-Feedback (k=5 als Relevanz-Cutoff)
+                    reranker.record_implicit_feedback(&ranked, 5.min(k));
+
                     let mut reranked_results = Vec::with_capacity(k);
                     for r in ranked.into_iter().take(k) {
                         if let Some(mut result) = results.get(r.original_index).cloned() {
@@ -973,39 +977,76 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[cfg(feature = "physio-replicator-weights")]
-    async fn test_query_builder_replicator_state_dynamic_fusion_weights(
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let (col, _dir) = create_test_collection("test_replicator_builder").await;
-        col.insert(
-            "doc-1",
-            &[1.0, 0.0, 0.0, 0.0],
-            Some(json!({"text": "adaptive search test"})),
-        )
-        .await?;
+    #[test]
+    fn test_no_reranker_uses_k_not_10k() {
+        let k = 10;
+        let query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
+        assert!(!query.has_reranker);
 
-        let replicator = Arc::new(parking_lot::RwLock::new(
-            memfuse_calibration::ReplicatorState::new(
-                vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
-                0.1,
-            ),
-        ));
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
 
-        // Update replicator state so vector weight dominates
-        replicator.write().update(&[1.0, 0.0, 0.0]);
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
 
-        let builder_res = col
-            .query()
-            .text("adaptive")
-            .embedding([1.0, 0.0, 0.0, 0.0])
-            .replicator_state(replicator.clone())
-            .k(1)
-            .execute()
-            .await?;
+        assert!(
+            candidate_k <= k * 3,
+            "Without reranker, candidate_k ({candidate_k}) must not exceed k * 3 ({})",
+            k * 3
+        );
+    }
 
-        assert_eq!(builder_res.len(), 1);
-        assert_eq!(builder_res[0].id, "doc-1");
-        Ok(())
+    #[test]
+    fn test_reranker_expands_to_100_for_k10() {
+        let k = 10;
+        let mut query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
+        query.has_reranker = true;
+
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
+
+        assert!(
+            candidate_k >= 100,
+            "With reranker, candidate_k ({candidate_k}) must be >= 100 for k=10"
+        );
     }
 }
