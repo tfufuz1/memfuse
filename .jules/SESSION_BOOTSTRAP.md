@@ -61,7 +61,7 @@ Lade basierend auf der Aufgabe:
 | Code in `memfuse-db/*` | `crates/memfuse-db/AGENTS.md` |
 | Neue Dependency | `rules/dependencies.md` → Cargo.lock prüfen → crates.io verifizieren |
 | Neue API-Oberfläche | `CONSTITUTION.md`, `docs/TYPE_REGISTRY.md` |
-| ADR schreiben | `DECISIONS.md` (letzte 5 ADRs lesen), `CONSTITUTION.md §Governance` |
+| ADR schreiben | `docs/decisions/` (letzte 5 ADRs lesen), `CONSTITUTION.md §Governance` |
 | Tests schreiben | `rules/testing.md`, `rules/test_quality.md` |
 | unsafe Code | `rules/simd_safety.md` — NUR in approved files (AGENTS.md §4) |
 | Crypto/WAL | `rules/wal_crypto.md` → WAL-First-Regel verifizieren |

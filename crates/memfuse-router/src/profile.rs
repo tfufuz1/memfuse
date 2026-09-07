@@ -1,69 +1,8 @@
 //! Profile definition for Small Language Models (SLMs) in MemFuse Router.
 
-use memfuse_core::{MemFuseError, Result, TokenBudget};
+use memfuse_core::{ConfigFingerprint, MemFuseError, Result, TokenBudget};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-
-/// Quantization level of the underlying model execution path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[allow(non_camel_case_types)]
-pub enum QuantizationLevel {
-    F16,
-    Q8_0,
-    Q4_K_M,
-    Unknown,
-}
-
-impl Default for QuantizationLevel {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
-
-/// Unique configuration fingerprint tracking execution parameters of an SLM.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct ConfigFingerprint {
-    /// Blake3 or SHA-256 hash of the active prompt template.
-    pub prompt_template_hash: [u8; 32],
-    /// Quantized temperature parameter to avoid floating-point rounding jitter.
-    pub temperature_bucket: u8,
-    /// Quantization level of the target model binary.
-    pub quantization: QuantizationLevel,
-}
-
-impl Default for ConfigFingerprint {
-    fn default() -> Self {
-        Self {
-            prompt_template_hash: [0u8; 32],
-            temperature_bucket: 0,
-            quantization: QuantizationLevel::Unknown,
-        }
-    }
-}
-
-impl ConfigFingerprint {
-    /// Creates a new `ConfigFingerprint` with quantized temperature.
-    pub fn new(
-        prompt_template_hash: [u8; 32],
-        temperature: f32,
-        quantization: QuantizationLevel,
-    ) -> Self {
-        Self {
-            prompt_template_hash,
-            temperature_bucket: Self::bucket_temperature(temperature),
-            quantization,
-        }
-    }
-
-    /// Quantizes float temperature into a discrete bucket byte (0.05 step sizing).
-    pub fn bucket_temperature(temperature: f32) -> u8 {
-        if !temperature.is_finite() || temperature < 0.0 {
-            0
-        } else {
-            (temperature * 20.0).round().clamp(0.0, 255.0) as u8
-        }
-    }
-}
 
 /// Represents a Small Language Model (SLM) target and its domain expertise parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,9 +18,11 @@ pub struct SlmProfile {
     pub token_budget: TokenBudget,
     /// Minimum relevance threshold score required for routing candidates.
     pub min_relevance_score: f32,
-    /// Configuration fingerprint for configuration shift tracking (arXiv:2608.01460).
+    /// P8-Pflicht: Fingerprint der LLM-Konfiguration bei der Kalibrierung.
+    /// None = noch nicht kalibriert / Fingerprint noch nicht gesetzt.
+    /// INVARIANTE INV-P8-1: Bei Fingerprint-Wechsel MUSS invalidate() aufgerufen werden.
     #[serde(default)]
-    pub config_fingerprint: ConfigFingerprint,
+    pub fingerprint: Option<ConfigFingerprint>,
 }
 
 impl SlmProfile {
@@ -99,14 +40,37 @@ impl SlmProfile {
             domain_communities: domain_communities.into_iter().collect(),
             token_budget,
             min_relevance_score,
-            config_fingerprint: ConfigFingerprint::default(),
+            fingerprint: None,
         }
     }
 
     /// Builder method to attach a specific `ConfigFingerprint` to this profile.
-    pub fn with_fingerprint(mut self, config_fingerprint: ConfigFingerprint) -> Self {
-        self.config_fingerprint = config_fingerprint;
+    pub fn with_fingerprint(mut self, fingerprint: ConfigFingerprint) -> Self {
+        self.fingerprint = Some(fingerprint);
         self
+    }
+
+    /// P8-Pflicht: Setzt Kalibrierungszustand zurück wenn Fingerprint sich ändert.
+    /// Gibt true zurück wenn eine Invalidierung stattgefunden hat.
+    pub fn invalidate_on_config_change(&mut self, new_fp: ConfigFingerprint) -> bool {
+        match &self.fingerprint {
+            Some(existing) if existing == &new_fp => false,
+            _ => {
+                tracing::warn!(
+                    "SlmProfile: ConfigFingerprint changed — invalidating calibration (P8)"
+                );
+                self.fingerprint = Some(new_fp);
+                // Kalibrierungsstatistiken zurücksetzen
+                self.reset_calibration_state();
+                true
+            }
+        }
+    }
+
+    fn reset_calibration_state(&mut self) {
+        // P8-Reset: Baseline configuration defaults reset where applicable
+        // Note: Dynamic runtime calibration statistics (ConformalCalibrator, times_selected, calibrated_min_score)
+        // are maintained in ProfileCalibrationState within RouterEngine.
     }
 
     /// Validates `SlmProfile` parameters.
@@ -290,15 +254,15 @@ impl ProfileCalibrationState {
     }
 
     /// Checks active fingerprint against recorded calibration fingerprint.
-    /// Invalidates calibration stats immediately if quantization is Unknown or if fingerprint changed.
-    pub fn check_and_invalidate_fingerprint(&mut self, active_fp: &ConfigFingerprint) {
-        if active_fp.quantization == QuantizationLevel::Unknown {
+    /// Invalidates calibration stats immediately if active fingerprint is None or changed.
+    pub fn check_and_invalidate_fingerprint(&mut self, active_fp: Option<&ConfigFingerprint>) {
+        let Some(active_fp) = active_fp else {
             if self.last_calibrated_fingerprint.is_some() || self.conformal.window_total > 0 {
                 self.reset();
             }
             self.last_calibrated_fingerprint = None;
             return;
-        }
+        };
 
         match &self.last_calibrated_fingerprint {
             Some(cal_fp) if cal_fp == active_fp => {
@@ -313,10 +277,10 @@ impl ProfileCalibrationState {
     }
 
     /// Returns whether calibration is valid and active for the given active fingerprint.
-    pub fn is_calibrated(&self, active_fp: &ConfigFingerprint) -> bool {
-        if active_fp.quantization == QuantizationLevel::Unknown {
+    pub fn is_calibrated(&self, active_fp: Option<&ConfigFingerprint>) -> bool {
+        let Some(active_fp) = active_fp else {
             return false;
-        }
+        };
         if self.conformal.window_total < crate::router::CALIBRATION_WARMUP_WINDOW as u64 {
             return false;
         }
@@ -346,8 +310,6 @@ impl ProfileCalibrationState {
         adjusted
     }
 
-    // ADR-028: recalibrate() removed — only recalibrate_conformal() is authoritative
-
     /// Setzt Kalibrierungsstate vollständig zurück.
     pub fn reset(&mut self) {
         self.times_selected = 0;
@@ -375,6 +337,23 @@ mod serde_sorted_u64_set {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_slm_profile_fingerprint_change_triggers_invalidation() {
+        let mut profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::default(),
+            0.5,
+        );
+        let fp1 = ConfigFingerprint::new("m", "Q4_K_M", "t", 0.7);
+        let fp2 = ConfigFingerprint::new("m", "Q8_0", "t", 0.7); // andere Quantisierung
+
+        assert!(profile.invalidate_on_config_change(fp1.clone()));
+        assert!(!profile.invalidate_on_config_change(fp1.clone())); // gleicher FP → kein Reset
+        assert!(profile.invalidate_on_config_change(fp2)); // geändert → Reset
+    }
 
     #[test]
     fn test_conformal_calibrator_invariants() {

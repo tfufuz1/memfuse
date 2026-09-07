@@ -2706,6 +2706,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -2760,6 +2761,7 @@ dependencies = [
 name = "memfuse-embed"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "memfuse-core",
  "ndarray 0.15.6",
  "ort",
