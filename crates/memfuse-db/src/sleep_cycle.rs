@@ -204,12 +204,16 @@ pub fn group_turns_into_segments(
 
 /// Führt einen paarweisen Cosine-Similarity-Vergleich INNERHALB eines Segments durch (O(n²) segmentlokal).
 ///
-/// Bei `similarity > threshold` wird der ÄLTERE Turn (kleinere `DocId` als Proxy für frühere Erstellung)
-/// als Duplikat markiert.
+/// Bei `similarity > threshold` wird der ÄLTERE Turn als Duplikat markiert.
+/// Die Funktion verwendet die relative Position im übergebenen Slice als Ordnungskriterium für "älter" (kleinerer Index)
+/// vs. "neuer" (größerer Index).
 ///
-/// AI-TAG[SLEEP][MINOR] DocId-Timestamp-Proxy Hinweis (ID: AGT-DB-660fbb5f)
-/// Hinweis: Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert,
-/// sollte diese Funktion `TxId` oder explizite Timestamps als Parameter anstelle von `DocId` akzeptieren.
+/// **Vorbedingung / Invariante:**
+/// Das `turns`-Slice MUSS in chronologischer Reihenfolge vorliegen (kleinerer Index = älterer Turn).
+///
+/// AI-TAG[SLEEP][MINOR] RESOLVED: AGT-DB-660fbb5f — Position im turns-Slice wird anstelle des
+/// DocId-Zahlenwerts als Ordnungskriterium für älter/neuer verwendet, da DocId via DocId::from_key
+/// aus BLAKE3-Hashes abgeleitet wird und keine Erstellungszeit-Korrelation besitzt. (TS: 2026-09-07T08:00:00Z)
 ///
 /// RÜCKGABE: `Vec<(DocId /* zu tombstonen: älterer Turn */, DocId /* Original: neuerer/wichtigerer Turn */)>`
 pub fn detect_near_duplicates(turns: &[(DocId, Vec<f32>)], threshold: f32) -> Vec<(DocId, DocId)> {
@@ -227,11 +231,9 @@ pub fn detect_near_duplicates(turns: &[(DocId, Vec<f32>)], threshold: f32) -> Ve
 
             let sim = cosine_similarity(emb_i, emb_j);
             if sim > threshold {
-                let (older, newer) = if doc_id_i.inner() < doc_id_j.inner() {
-                    (*doc_id_i, *doc_id_j)
-                } else {
-                    (*doc_id_j, *doc_id_i)
-                };
+                // Da i < j gilt, ist doc_id_i chronologisch älter als doc_id_j.
+                let older = *doc_id_i;
+                let newer = *doc_id_j;
                 pairs.push((older, newer));
             }
         }
@@ -241,6 +243,10 @@ pub fn detect_near_duplicates(turns: &[(DocId, Vec<f32>)], threshold: f32) -> Ve
 }
 
 /// Orchestriert die NREM-Phase (Segmentierung & Near-Duplicate-Detection).
+///
+/// **Vorbedingung / Invariante:**
+/// Das übergebene `turns`-Slice MUSS in chronologischer Reihenfolge vorliegen (frühere Turns zuerst).
+/// Die Segmentierung und Near-Duplicate-Detection stützen sich auf die zeitliche Abfolge der Slice-Indizes.
 ///
 /// Führt KEINE LLM-API-Aufrufe durch (NREM ist rein strukturell/statistisch).
 pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremPhaseResult {
@@ -306,12 +312,13 @@ pub fn compact_segment_via_context_compactor(
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     fn make_embedding(base: f32, dim: usize) -> Vec<f32> {
         let mut v = vec![0.0f32; dim];
         if dim > 0 {
             v[0] = base;
-            for i in 1..dim {
-                v[i] = 0.1 * (i as f32);
+            for (i, elem) in v.iter_mut().enumerate().skip(1) {
+                *elem = 0.1 * (i as f32);
             }
         }
         // Normalize
@@ -358,7 +365,7 @@ mod tests {
     #[test]
     fn test_detect_near_duplicates_older_tombstoned() {
         let emb = vec![1.0, 0.0, 0.0, 0.0];
-        // DocId 10 is older than DocId 20
+        // Index 0 is chronologically older than Index 1
         let turns = vec![(DocId::new(10), emb.clone()), (DocId::new(20), emb.clone())];
 
         let pairs = detect_near_duplicates(&turns, 0.95);
@@ -367,9 +374,27 @@ mod tests {
         assert_eq!(
             older,
             DocId::new(10),
-            "The older turn (smaller DocId) must be flagged for tombstoning"
+            "The older turn (position 0) must be flagged for tombstoning"
         );
         assert_eq!(newer, DocId::new(20));
+    }
+
+    #[test]
+    fn test_detect_near_duplicates_inverse_doc_id_order() {
+        let emb = vec![1.0, 0.0, 0.0, 0.0];
+        // Chronologically first turn (position 0) has a HIGHER numerical DocId (9999)
+        // than the second turn (position 1, DocId 100).
+        let turns = vec![(DocId::new(9999), emb.clone()), (DocId::new(100), emb.clone())];
+
+        let pairs = detect_near_duplicates(&turns, 0.95);
+        assert_eq!(pairs.len(), 1);
+        let (older, newer) = pairs[0];
+        assert_eq!(
+            older,
+            DocId::new(9999),
+            "Position-based relative ordering must pick position 0 as older even when its DocId is numerically larger"
+        );
+        assert_eq!(newer, DocId::new(100));
     }
 
     #[test]
