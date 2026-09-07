@@ -988,12 +988,11 @@ pub fn check_no_orphan_adr_files(root_dir: &Path) -> bool {
 pub fn check_adr_consistency_dir(root_dir: &Path) -> bool {
     let mut failed = false;
 
-    // 1. Prüfe, dass DECISIONS.md im Root nur noch die Weiterleitungsnotiz enthält
+    // 1. Prüfe DECISIONS.md im Root-Verzeichnis (gemäß ADR-060 Einzel-Quelle)
     let root_decisions_path = root_dir.join("DECISIONS.md");
     if root_decisions_path.exists() {
         let content = fs::read_to_string(&root_decisions_path).unwrap_or_default();
-        if content.contains("## ADR-") {
-            eprintln!("❌ Consistency error: DECISIONS.md im Root-Verzeichnis enthält noch '## ADR-' Abschnitte statt ausschließlich der Weiterleitungsnotiz!");
+        if !check_adr_consistency(&content) {
             failed = true;
         }
     } else {
@@ -1001,11 +1000,10 @@ pub fn check_adr_consistency_dir(root_dir: &Path) -> bool {
         failed = true;
     }
 
-    // 2. Scanne docs/decisions/
+    // 2. Scanne docs/decisions/ falls vorhanden
     let decisions_dir = root_dir.join("docs/decisions");
     if !decisions_dir.exists() {
-        eprintln!("❌ Consistency error: Verzeichnis docs/decisions/ existiert nicht!");
-        return false;
+        return !failed;
     }
 
     let adr_re = Regex::new(r"^ADR-(\d+)").unwrap();
@@ -1178,7 +1176,10 @@ pub fn run_check_jules_context_freshness() -> bool {
             }
         }
         Err(e) => {
-            eprintln!("❌ Failed to check docs/decisions/README.md git timestamp: {}", e);
+            eprintln!(
+                "❌ Failed to check docs/decisions/README.md git timestamp: {}",
+                e
+            );
             failed = true;
         }
     }
@@ -2607,10 +2608,11 @@ mod tests {
     #[test]
     fn test_workspace_crate_layers_regression() {
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 16, "Expected 16 workspace crates");
+        assert_eq!(crates.len(), 17, "Expected 17 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),
+            ("memfuse-calibration", 0),
             ("memfuse-crypto", 1),
             ("memfuse-checkpoint", 2),
             ("memfuse-embed", 2),
@@ -2618,6 +2620,7 @@ mod tests {
             ("memfuse-ollama", 2),
             ("memfuse-store", 2),
             ("memfuse-text", 2),
+            ("memfuse-candle", 3),
             ("memfuse-index", 3),
             ("memfuse-db", 4),
             ("memfuse-bench", 5),

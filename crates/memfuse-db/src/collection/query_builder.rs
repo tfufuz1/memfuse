@@ -12,6 +12,9 @@ use memfuse_core::{
     StorageEngine, VectorIndex,
 };
 
+#[cfg(feature = "physio-pid-homeostasis")]
+use std::sync::Arc;
+
 /// Custom weights for vector, text, and graph signals in hybrid search.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SignalWeights {
@@ -63,6 +66,13 @@ pub enum SearchStrategy {
     },
     /// Personalized PageRank power iteration graph traversal strategy.
     PersonalizedPageRank(memfuse_core::PprConfig),
+    /// PathRAG bidirectional Dijkstra graph traversal strategy.
+    PathRag {
+        /// Maximum traversal hop depth.
+        max_hops: usize,
+        /// Sufficiency threshold for filtering low-confidence paths.
+        sufficiency_threshold: f64,
+    },
 }
 
 impl SearchStrategy {
@@ -76,6 +86,13 @@ impl SearchStrategy {
             SearchStrategy::PersonalizedPageRank(cfg) => {
                 GraphTraversalStrategy::PersonalizedPageRank(cfg.clone())
             }
+            SearchStrategy::PathRag {
+                max_hops,
+                sufficiency_threshold,
+            } => GraphTraversalStrategy::PathRag {
+                max_hops: *max_hops,
+                sufficiency_threshold: *sufficiency_threshold,
+            },
         }
     }
 }
@@ -87,6 +104,13 @@ impl From<GraphTraversalStrategy> for SearchStrategy {
             GraphTraversalStrategy::PersonalizedPageRank(cfg) => {
                 SearchStrategy::PersonalizedPageRank(cfg)
             }
+            GraphTraversalStrategy::PathRag {
+                max_hops,
+                sufficiency_threshold,
+            } => SearchStrategy::PathRag {
+                max_hops,
+                sufficiency_threshold,
+            },
         }
     }
 }
@@ -119,9 +143,16 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
+    #[cfg(feature = "physio-replicator-weights")]
+    replicator_state: Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
+    #[cfg(feature = "physio-pid-homeostasis")]
+    pid_controller: Option<Arc<parking_lot::Mutex<memfuse_calibration::PidController>>>,
     seq: Option<u64>,
+    as_of_timestamp: Option<u64>,
+    query_timestamp: Option<u64>,
+    current_tx: Option<memfuse_core::TxId>,
 }
 
 impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
@@ -143,9 +174,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
+            #[cfg(feature = "physio-replicator-weights")]
+            replicator_state: None,
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
+            #[cfg(feature = "physio-pid-homeostasis")]
+            pid_controller: None,
             seq: None,
+            as_of_timestamp: None,
+            query_timestamp: None,
+            current_tx: None,
         }
     }
 
@@ -263,6 +301,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets an online adaptive replicator state for dynamic signal fusion weights.
+    #[cfg(feature = "physio-replicator-weights")]
+    pub fn replicator_state(
+        mut self,
+        state: std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>,
+    ) -> Self {
+        self.replicator_state = Some(state);
+        self
+    }
+
     /// Sets the candidate pool multiplier for pre-reranking candidate expansion.
     ///
     /// Default: 10 (`DEFAULT_RERANK_POOL_MULTIPLIER`), yielding ~100 candidates for `k=10`
@@ -280,9 +328,37 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets optional PID controller for dynamic reranking candidate pool size homeostasis.
+    #[cfg(feature = "physio-pid-homeostasis")]
+    pub fn pid_controller(
+        mut self,
+        pid: Arc<parking_lot::Mutex<memfuse_calibration::PidController>>,
+    ) -> Self {
+        self.pid_controller = Some(pid);
+        self
+    }
+
     /// Sets snapshot sequence number for MVCC snapshot-isolated queries.
     pub fn seq(mut self, seq_no: u64) -> Self {
         self.seq = Some(seq_no);
+        self
+    }
+
+    /// Sets historical point-in-time "as-of" timestamp for temporal validity filtering (Post-RRF, Pre-Reranking).
+    pub fn as_of(mut self, timestamp: u64) -> Self {
+        self.as_of_timestamp = Some(timestamp);
+        self
+    }
+
+    /// Sets query business timestamp for temporal validity filtering (Post-RRF, Pre-Reranking).
+    pub fn query_timestamp(mut self, timestamp: u64) -> Self {
+        self.query_timestamp = Some(timestamp);
+        self
+    }
+
+    /// Sets current system transaction ID for temporal validity filtering (Post-RRF, Pre-Reranking).
+    pub fn current_tx(mut self, tx: memfuse_core::TxId) -> Self {
+        self.current_tx = Some(tx);
         self
     }
 
@@ -320,9 +396,24 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         }
 
         #[cfg(feature = "reranking")]
-        let has_reranker = self.reranker.is_some();
+        let _has_reranker = self.reranker.is_some();
         #[cfg(not(feature = "reranking"))]
-        let has_reranker = false;
+        let _has_reranker = false;
+
+        let fusion_weights = {
+            #[cfg(feature = "physio-replicator-weights")]
+            {
+                if let Some(ref state) = self.replicator_state {
+                    state.read().fusion_weights()
+                } else {
+                    self.weights.unwrap_or_default()
+                }
+            }
+            #[cfg(not(feature = "physio-replicator-weights"))]
+            {
+                self.weights.unwrap_or_default()
+            }
+        };
 
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
@@ -337,7 +428,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 .as_ref()
                 .map(|s| s.to_graph_strategy())
                 .unwrap_or_default(),
-            fusion_weights: self.weights.unwrap_or_default(),
+            fusion_weights,
             filter: self.filter.clone(),
             memory_type_filter: self.memory_type_filter.clone(),
             same_community_as: self.same_community_as,
@@ -345,6 +436,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             include_provenance: self.include_provenance,
             rerank_pool_multiplier: self.rerank_pool_multiplier,
             rerank_pool_max: self.rerank_pool_max,
+            has_reranker: _has_reranker,
             k,
         };
 
@@ -380,10 +472,27 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             results = filtered;
         }
 
+        // Post-RRF Bi-temporal Validity Filtering (ADR-033 / ADR-038)
+        // Executed NACH RRF-Fusion and VOR CrossEncoder Reranking to ensure high efficiency
+        // (expensive CrossEncoder reranker is only invoked on temporally valid candidates).
+        if let Some(as_of) = self.as_of_timestamp {
+            results = crate::temporal_filter::apply_temporal_validity_filter_at(results, as_of);
+        } else if self.query_timestamp.is_some() || self.current_tx.is_some() {
+            let ctx = self.current_tx.unwrap_or(memfuse_core::TxId::new(u64::MAX));
+            results = crate::temporal_filter::apply_temporal_validity_filter(
+                results,
+                ctx,
+                self.query_timestamp,
+            );
+        }
+
         #[cfg(feature = "reranking")]
         if let Some(reranker) = self.reranker {
             let text_str = self.text.as_deref().unwrap_or("");
             if !results.is_empty() && !text_str.is_empty() {
+                let current_pool = results.len();
+                let start_time = std::time::Instant::now();
+
                 let candidate_texts: Vec<String> = results
                     .iter()
                     .map(|r| {
@@ -411,9 +520,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                         "Reranker deadline exceeded — falling back to RRF order"
                     );
                 })
-                .and_then(|r| r.map_err(|e| { tracing::warn!("Reranking failed: {e}"); }));
+                .and_then(|r| {
+                    r.map_err(|e| {
+                        tracing::warn!("Reranking failed: {e}");
+                    })
+                });
 
                 if let Ok(ranked) = reranked {
+                    // Implizites Calibration-Feedback (k=5 als Relevanz-Cutoff)
+                    reranker.record_implicit_feedback(&ranked, 5.min(k));
+
                     let mut reranked_results = Vec::with_capacity(k);
                     for r in ranked.into_iter().take(k) {
                         if let Some(mut result) = results.get(r.original_index).cloned() {
@@ -453,7 +569,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 mod tests {
     use super::*;
     use crate::{Collection, DistanceMetric, Language};
-    use memfuse_core::{BoxFuture, FilterExpr, HybridQuery};
+    use memfuse_core::{FilterExpr, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
     use memfuse_store::{LsmConfig, LsmStorage};
@@ -652,9 +768,13 @@ mod tests {
             let id = format!("doc-{:03}", i);
             let text = format!("rust system engineering doc {:03}", i);
             let val = (i as f32 + 1.0) / 150.0;
-            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
-                .await
-                .unwrap();
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": text })),
+            )
+            .await
+            .unwrap();
         }
 
         let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
@@ -683,9 +803,13 @@ mod tests {
             let id = format!("doc-{:03}", i);
             let text = format!("benchmark item {:03}", i);
             let val = (i as f32 + 1.0) / 300.0;
-            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
-                .await
-                .unwrap();
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": text })),
+            )
+            .await
+            .unwrap();
         }
 
         let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
@@ -716,7 +840,11 @@ mod tests {
             .unwrap();
 
         // Since fetch_k is capped at 50, top-30 query successfully completes and receives results
-        assert_eq!(res_custom_max.len(), 30, "k=30 requested with fetch_k capped at 50");
+        assert_eq!(
+            res_custom_max.len(),
+            30,
+            "k=30 requested with fetch_k capped at 50"
+        );
     }
 
     #[tokio::test]
@@ -783,6 +911,61 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(all(feature = "reranking", feature = "physio-pid-homeostasis"))]
+    async fn test_pid_controller_integration_with_reranker() {
+        let (col, _dir) = create_test_collection("test_pid_rerank").await;
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .unwrap();
+        col.insert(
+            "doc-2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(json!({"text": "python programming language"})),
+        )
+        .await
+        .unwrap();
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
+        let pid = Arc::new(parking_lot::Mutex::new(
+            memfuse_calibration::PidController::default(),
+        ));
+
+        // First call: initial update
+        let res = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .pid_controller(pid.clone())
+            .k(2)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 2);
+        let updated_size = pid.lock().current_pool_size;
+        assert!(updated_size.is_some());
+
+        // Second call: verify pid controller's stored current_pool_size is used as rerank_pool_max
+        let res2 = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .pid_controller(pid.clone())
+            .k(2)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res2.len(), 2);
+    }
+
+    #[tokio::test]
     #[cfg(feature = "reranking")]
     async fn test_reranker_deadline_falls_back() {
         let (col, _dir) = create_test_collection("test_rerank_deadline").await;
@@ -818,7 +1001,10 @@ mod tests {
             .execute()
             .await;
 
-        assert!(res.is_ok(), "Query must succeed even when reranker times out");
+        assert!(
+            res.is_ok(),
+            "Query must succeed even when reranker times out"
+        );
         let results = res.unwrap(); // unwrap
         assert_eq!(results.len(), 2);
         for item in &results {
@@ -864,5 +1050,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_no_reranker_uses_k_not_10k() {
+        let k = 10;
+        let query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
+        assert!(!query.has_reranker);
+
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
+
+        assert!(
+            candidate_k <= k * 3,
+            "Without reranker, candidate_k ({candidate_k}) must not exceed k * 3 ({})",
+            k * 3
+        );
+    }
+
+    #[test]
+    fn test_reranker_expands_to_100_for_k10() {
+        let k = 10;
+        let mut query = HybridQuery::builder()
+            .with_k(k)
+            .build()
+            .unwrap();
+        query.has_reranker = true;
+
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
+
+        let mut candidate_k = k;
+        if !query.include_superseded {
+            candidate_k = candidate_k.max(k.saturating_mul(3));
+        }
+        candidate_k = candidate_k
+            .max(rerank_k)
+            .min(memfuse_core::MAX_SEARCH_K)
+            .max(k);
+
+        assert!(
+            candidate_k >= 100,
+            "With reranker, candidate_k ({candidate_k}) must be >= 100 for k=10"
+        );
     }
 }

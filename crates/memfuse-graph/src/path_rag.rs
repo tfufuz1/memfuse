@@ -7,10 +7,10 @@
 //! INTEGRATION: PathRAG liefert ein RRF-Signal neben Vektor- und BM25-Signal.
 //! Resultat von to_rrf_signal() wird in FusionEngine als drittes Signal eingespeist.
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
 use memfuse_core::DocId;
 pub use memfuse_core::EntityId;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 /// Ein gefundener Pfad zwischen zwei Knoten.
 #[derive(Debug, Clone)]
@@ -57,11 +57,7 @@ impl<G: PathGraph> PathRAGEngine<G> {
     ///
     /// Gibt None zurück wenn kein Pfad innerhalb max_hops existiert
     /// oder Sufficiency-Gate fehlschlägt.
-    pub fn find_path(
-        &self,
-        source: EntityId,
-        target: EntityId,
-    ) -> Option<GraphPath> {
+    pub fn find_path(&self, source: EntityId, target: EntityId) -> Option<GraphPath> {
         if source == target {
             return Some(GraphPath {
                 nodes: vec![source],
@@ -99,7 +95,6 @@ impl<G: PathGraph> PathRAGEngine<G> {
             if let Some(Reverse((d_bits, u))) = heap_fwd.pop() {
                 let d = f32::from_bits(d_bits);
                 if d <= *dist_fwd.get(&u).unwrap_or(&f32::INFINITY) {
-
                     // Treffen-Check
                     if let Some(&bwd_d) = dist_bwd.get(&u) {
                         let total = d + bwd_d;
@@ -127,7 +122,6 @@ impl<G: PathGraph> PathRAGEngine<G> {
             if let Some(Reverse((d_bits, u))) = heap_bwd.pop() {
                 let d = f32::from_bits(d_bits);
                 if d <= *dist_bwd.get(&u).unwrap_or(&f32::INFINITY) {
-
                     if let Some(&fwd_d) = dist_fwd.get(&u) {
                         let total = fwd_d + d;
                         if total < best_dist {
@@ -193,6 +187,34 @@ impl<G: PathGraph> PathRAGEngine<G> {
         })
     }
 
+    /// Findet Pfade von einem Ankerknoten zu allen erreichbaren Knoten innerhalb von max_hops.
+    pub fn find_all_paths(&self, source: EntityId) -> Vec<GraphPath> {
+        let mut targets = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back((source, 0));
+
+        while let Some((curr, depth)) = queue.pop_front() {
+            if depth >= self.max_hops {
+                continue;
+            }
+            for (nbr, _) in self.graph.neighbors_with_weights(curr) {
+                if nbr != source && targets.insert(nbr) {
+                    queue.push_back((nbr, depth + 1));
+                }
+            }
+        }
+
+        let mut paths = Vec::new();
+        for target in targets {
+            if let Some(path) = self.find_path(source, target) {
+                if self.sufficiency_check(&path) {
+                    paths.push(path);
+                }
+            }
+        }
+        paths
+    }
+
     /// Sufficiency-Gate: Filtert Pfade unter Konfidenz-Schwelle.
     /// Kritisch für Precision (arXiv:2506.00610).
     pub fn sufficiency_check(&self, path: &GraphPath) -> bool {
@@ -249,13 +271,15 @@ mod tests {
             self.edges
                 .iter()
                 .flat_map(|(from, nbrs)| {
-                    nbrs.iter().filter_map(move |(to, w)| {
-                        if *to == node {
-                            Some((*from, *w))
-                        } else {
-                            None
-                        }
-                    })
+                    nbrs.iter().filter_map(
+                        move |(to, w)| {
+                            if *to == node {
+                                Some((*from, *w))
+                            } else {
+                                None
+                            }
+                        },
+                    )
                 })
                 .collect()
         }
@@ -322,6 +346,17 @@ mod tests {
             ..low_conf
         };
         assert!(engine.sufficiency_check(&high_conf));
+    }
+
+    #[test]
+    fn test_find_all_paths_multi_hop() {
+        let a = EntityId::new(1);
+        let b = EntityId::new(2);
+        let c = EntityId::new(3);
+        let graph = TestGraph::new(vec![(a, b, 0.8), (b, c, 0.9)]);
+        let engine = PathRAGEngine::new(graph, 3, 0.5);
+        let paths = engine.find_all_paths(a);
+        assert_eq!(paths.len(), 2);
     }
 
     #[test]

@@ -692,7 +692,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_db_transaction_staging_and_commit() {
-        use memfuse_core::{BoxFuture, Edge, Entity, EntityId};
+        use memfuse_core::{Edge, Entity, EntityId};
 
         let col = create_test_collection().await;
         let tx_id = col.allocate_tx().unwrap(); // unwrap
