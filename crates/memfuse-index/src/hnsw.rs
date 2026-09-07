@@ -2863,10 +2863,7 @@ mod tests {
 
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
-        assert!(
-            index.quantizer().is_some(),
-            "Quantizer must be preserved"
-        );
+        assert!(index.quantizer().is_some(), "Quantizer must be preserved");
 
         // Verify search still works
         let results = index

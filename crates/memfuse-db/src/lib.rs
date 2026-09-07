@@ -66,10 +66,10 @@
 // HOTSPOTS:    hybrid_search(), insert(), relate()
 // SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
-pub use memfuse_core::TextEmbeddingEngine;
-use memfuse_core::{DocId, Result, StorageEngine, TxId};
 #[cfg(feature = "sandbox")]
 use memfuse_core::BoxFuture;
+pub use memfuse_core::TextEmbeddingEngine;
+use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};

@@ -1,7 +1,6 @@
 use memfuse_agent::audit::{migrate_legacy_audit_entries, AuditEntry, AuditLog};
 use memfuse_core::{
-    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TxId, VectorIndex,
-    VectorIndexStats,
+    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TxId, VectorIndex, VectorIndexStats,
 };
 use memfuse_db::{Collection, MemFuse, MemFuseConfig};
 use memfuse_graph::CsrGraph;
@@ -196,10 +195,7 @@ async fn test_migration_removes_legacy_zero_vectors_from_hnsw() -> Result<()> {
         stats.migrated, 10,
         "Should migrate all 10 legacy audit entries"
     );
-    assert_eq!(
-        stats.failed, 0,
-        "Zero entries should fail during migration"
-    );
+    assert_eq!(stats.failed, 0, "Zero entries should fail during migration");
 
     // 4. Verify HNSW index node count is restored to 2!
     assert_eq!(
@@ -375,7 +371,11 @@ async fn test_migration_hnsw_delete_failure_prevents_orphan_state() -> Result<()
     );
 
     let user_key_1 = col.namespaced_key(fail_key.as_bytes(), 0);
-    let user_key_val = col.storage().get(&user_key_1).await?.expect("user_key exists");
+    let user_key_val = col
+        .storage()
+        .get(&user_key_1)
+        .await?
+        .expect("user_key exists");
     let val_json: serde_json::Value = serde_json::from_slice(&user_key_val)?;
     assert!(
         val_json.as_object().unwrap().contains_key("embedding"),
