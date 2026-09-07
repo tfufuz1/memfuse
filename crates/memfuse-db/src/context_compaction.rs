@@ -760,7 +760,7 @@ mod tests {
 
     struct UnreachableLlmGenerator;
     impl LlmTextGenerator for UnreachableLlmGenerator {
-        fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+        fn generate<'a>(&'a self, _prompt: &'a str) -> BoxFuture<'a, Result<String>> {
             Box::pin(async move {
                 Err(MemFuseError::Io(std::io::Error::new(
                     std::io::ErrorKind::ConnectionRefused,
@@ -812,7 +812,7 @@ mod tests {
 
     struct MockLlmGenerator;
     impl LlmTextGenerator for MockLlmGenerator {
-        fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+        fn generate<'a>(&'a self, _prompt: &'a str) -> BoxFuture<'a, Result<String>> {
             Box::pin(async move { Ok("Zusammenfassung der 3 Quelldokumente".to_string()) })
         }
     }

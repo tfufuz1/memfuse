@@ -1,4 +1,4 @@
-use memfuse_core::{BoxFuture, DistanceMetric, Result};
+use memfuse_core::{DistanceMetric, Result};
 use memfuse_db::{MemFuse, MemFuseConfig};
 use std::sync::Arc;
 use tempfile::tempdir;

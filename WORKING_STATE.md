@@ -8,10 +8,11 @@
 
 Stand letzter Prüfung: 2026-09-07
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **2 offene Tags**
+Ergebnis: **3 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
+| `crates/memfuse-index/src/diskann.rs` | 503 | `AGT-INDEX-005` | `PERFORMANCE` | `MEDIUM` | `` | // AI-TAG[PERFORMANCE][MEDIUM] AGT-INDEX-005: Echte inkrementelle Implementierung (Streaming-DiskANN). |
 | `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 | `crates/memfuse-ollama/src/importance.rs` | 73 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 
@@ -30,8 +31,8 @@ Ergebnis: **2 offene Tags**
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-index` | 2 | 12109 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 2 | 15559 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-db` | 3 | 21167 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 4 | 912 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-db` | 3 | 21169 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 4 | 901 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 4 | 3865 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
 | `memfuse-agent` | 5 | 5530 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
