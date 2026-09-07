@@ -51,6 +51,7 @@
 | `TS:2026-08-30T19:45:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/anti_tamper_matrix.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Systematic WAL anti-tamper matrix, single bit-flip analysis, replay attack protection, and constant-time check. |
 | `TS:2026-08-30T19:35:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/nonce_stress.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-threaded nonce uniqueness stress testing & empirical vs theoretical collision probability verification. |
 | `TS:2026-08-30T19:25:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/rfc_vectors.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verification of cryptographic primitives against official RFC and reference test vectors. |
+| `TS:2026-08-30T19:00:00Z` | `crates/memfuse-graph/src/cascade.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cascading-Invalidation (Supersedes-Chunk -> Graph-Kanten-Tombstone) |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
