@@ -100,6 +100,10 @@ check-embed:
 dag-check:
     nix develop -c cargo xtask check-dag || cargo xtask check-dag
 
+# Checks for permanent feature veto keywords in recent commits
+check-vetoes:
+    nix develop -c cargo xtask check-vetoes || cargo xtask check-vetoes
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
     #!/usr/bin/env bash
