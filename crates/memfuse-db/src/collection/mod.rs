@@ -257,7 +257,9 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             insert_lock: self.insert_lock.clone(),
             kv_locks: self.kv_locks.clone(),
             mutations_since_community_detection: self.mutations_since_community_detection.clone(),
-            community_detection_trigger_threshold: self.community_detection_trigger_threshold.clone(),
+            community_detection_trigger_threshold: self
+                .community_detection_trigger_threshold
+                .clone(),
         }
     }
 }
