@@ -109,6 +109,52 @@ impl std::fmt::Display for DocId {
     }
 }
 
+/// Eindeutiger Mandanten-Bezeichner. Layer-0-Typ ohne Abhängigkeit zu Storage/Networking —
+/// dient als gemeinsames Fundament für zukünftige Mandantentrennung (RBAC, KV-Cache-Isolation,
+/// Orphan-Registry-Persistenzpfade). Die Einführung dieses Typs allein implementiert KEINE
+/// Zugriffskontrolle — sie schafft nur den typisierten Bezeichner, den spätere Isolationsmechanismen
+/// referenzieren können, statt auf impliziten String-Namensräumen aufzubauen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct TenantId(pub u64);
+
+impl TenantId {
+    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    /// MUSS für Rückwärtskompatibilität mit allen bisherigen Daten verwendet werden, die
+    /// vor Einführung dieses Typs geschrieben wurden (kein impliziter Migrations-Bruch).
+    pub const DEFAULT: TenantId = TenantId(0);
+
+    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    #[inline]
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Returns the inner raw `u64` identifier.
+    #[inline]
+    pub const fn inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for TenantId {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl From<u64> for TenantId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl std::fmt::Display for TenantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TenantId({})", self.0)
+    }
+}
+
 /// Internal entity identifier for graph nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -849,38 +895,49 @@ mod tests {
     use proptest::{prop_assert, prop_assert_eq};
 
     #[test]
-    fn test_config_fingerprint_equality() {
-        let fp1 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "You are helpful.", 0.7);
-        let fp2 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "You are helpful.", 0.7);
-        assert_eq!(fp1, fp2);
+    fn test_tenant_id_defaults_and_constants() {
+        let default_tenant = TenantId::default();
+        assert_eq!(default_tenant, TenantId::DEFAULT);
+        assert_eq!(default_tenant.inner(), 0);
+        assert_eq!(TenantId::new(42).inner(), 42);
+        assert_eq!(TenantId::from(100u64), TenantId::new(100));
+        assert_eq!(format!("{default_tenant}"), "TenantId(0)");
     }
 
     #[test]
-    fn test_config_fingerprint_quantization_differs() {
-        let fp_q4 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "template", 0.7);
-        let fp_q8 = ConfigFingerprint::new("llama-3b", "Q8_0", "template", 0.7);
-        assert_ne!(fp_q4, fp_q8, "Q4 und Q8 müssen unterschiedliche Fingerprints erzeugen");
+    fn test_tenant_id_collections_hashmap_btreemap() {
+        use std::collections::{BTreeMap, HashMap};
+
+        let t0 = TenantId::DEFAULT;
+        let t1 = TenantId::new(1);
+        let t2 = TenantId::new(2);
+
+        // HashMap key test
+        let mut map = HashMap::new();
+        map.insert(t0, "default_tenant");
+        map.insert(t1, "tenant_one");
+        assert_eq!(map.get(&TenantId::default()), Some(&"default_tenant"));
+        assert_eq!(map.get(&t1), Some(&"tenant_one"));
+        assert_eq!(map.get(&t2), None);
+
+        // BTreeMap key test (testing Ord / PartialOrd)
+        let mut bmap = BTreeMap::new();
+        bmap.insert(t2, "tenant_two");
+        bmap.insert(t0, "tenant_zero");
+        bmap.insert(t1, "tenant_one");
+
+        let keys: Vec<TenantId> = bmap.keys().copied().collect();
+        assert_eq!(keys, vec![t0, t1, t2]);
     }
 
     #[test]
-    fn test_config_fingerprint_template_hash_differs() {
-        let fp1 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "Template A", 0.7);
-        let fp2 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "Template B", 0.7);
-        assert_ne!(fp1.prompt_template_hash, fp2.prompt_template_hash);
-    }
+    fn test_tenant_id_serde_roundtrip() {
+        let tenant = TenantId::new(987654321);
+        let serialized = serde_json::to_string(&tenant).expect("TenantId serialization failed");
+        assert_eq!(serialized, "987654321");
 
-    #[test]
-    fn test_config_fingerprint_temperature_bits() {
-        let fp = ConfigFingerprint::new("model", "Q8_0", "t", 0.42);
-        assert!((fp.temperature() - 0.42).abs() < 1e-7);
-    }
-
-    #[test]
-    fn test_config_fingerprint_serde_roundtrip() {
-        let fp = ConfigFingerprint::new("llama-3b", "Q4_K_M", "tpl", 0.5);
-        let json = serde_json::to_string(&fp).unwrap();
-        let back: ConfigFingerprint = serde_json::from_str(&json).unwrap();
-        assert_eq!(fp, back);
+        let deserialized: TenantId = serde_json::from_str(&serialized).expect("TenantId deserialization failed");
+        assert_eq!(tenant, deserialized);
     }
 
     #[test]

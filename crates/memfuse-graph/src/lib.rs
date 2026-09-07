@@ -27,11 +27,13 @@
 
 pub mod community;
 pub mod csr;
+pub mod path_rag;
 pub mod ppr;
 pub mod session_dag;
 
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 pub use csr::CsrGraph;
+pub use path_rag::{EntityId, GraphPath, PathGraph, PathRAGEngine};
 pub use ppr::PprContext;
 pub use session_dag::{
     AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree,

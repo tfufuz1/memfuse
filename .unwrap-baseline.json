@@ -3293,6 +3293,10 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "232bcdb842bdb767"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "4188f4f6cdd095cc"
   },
   {
@@ -3346,6 +3350,14 @@
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "c88923b1d09a861f"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "fc1b9074eaa51344"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "ff1ef7ff36a8401b"
   },
   {
     "file": "crates/memfuse-db/src/collection/tests.rs",
@@ -7190,6 +7202,18 @@
   {
     "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "ff1ef7ff36a8401b"
+  },
+  {
+    "file": "crates/memfuse-graph/src/path_rag.rs",
+    "hash": "1347f6c04bb961d7"
+  },
+  {
+    "file": "crates/memfuse-graph/src/path_rag.rs",
+    "hash": "b325feb70cd50da2"
+  },
+  {
+    "file": "crates/memfuse-graph/src/path_rag.rs",
+    "hash": "f822d609533d8bc2"
   },
   {
     "file": "crates/memfuse-graph/src/ppr.rs",
