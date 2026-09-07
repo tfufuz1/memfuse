@@ -1,3 +1,5 @@
+// KONSOLIDIERUNGS-HINWEIS: Dies ist die einzige F-07-Implementierung im Workspace (Stand 2026-08-30). Eine zweite, unbenutzte Implementierung existierte zuvor in memfuse-db/src/replicator.rs und wurde entfernt (P10-Konsolidierung). Vor jeder künftigen F-07-Änderung: prüfe zuerst, ob diese Datei bereits die benötigte Funktionalität bietet.
+
 //! F-07: Replikatordynamik für Online-Adaptive RRF-Signalgewichte.
 //!
 //! Basiert auf: Arora et al. (2012), The Multiplicative Weights Update Method.
@@ -257,6 +259,37 @@ mod tests {
         let guard = state.read();
         assert_eq!(guard.update_count, 1);
         assert!(guard.weights[0] > guard.weights[1]);
+    }
+
+    #[test]
+    fn test_fusion_weights_conversion_and_fallback() {
+        let state = ReplicatorState::new(
+            vec![
+                "vector".to_string(),
+                "text".to_string(),
+                "graph".to_string(),
+            ],
+            0.05,
+        );
+        let fw = state.fusion_weights();
+        assert!((fw.vector() - 1.0 / 3.0).abs() < 1e-5);
+        assert!((fw.text() - 1.0 / 3.0).abs() < 1e-5);
+        assert!((fw.graph() - 1.0 / 3.0).abs() < 1e-5);
+
+        // Test with custom or zero weights fallback
+        let zero_state = ReplicatorState {
+            weights: vec![0.0, 0.0, 0.0],
+            signal_names: vec![
+                "vector".to_string(),
+                "text".to_string(),
+                "graph".to_string(),
+            ],
+            eta: 0.05,
+            update_count: 0,
+            fingerprint: None,
+        };
+        let fw_zero = zero_state.fusion_weights();
+        assert!((fw_zero.vector() - 1.0 / 3.0).abs() < 1e-5);
     }
 
     proptest! {

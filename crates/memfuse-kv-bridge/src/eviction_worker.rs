@@ -46,8 +46,22 @@ impl EvictionWorker {
                             let mut freed = 0;
                             // LRU-Eviction bis target_free_bytes erreicht.
                             // Drop() der KvSegment-Structs triggert Zeroize automatisch.
+                            //
+                            // EVALUATION DER IMPLEMENTIERUNGSSTRATEGIEN:
+                            // (a) O(n)-Scan bei jeder Eviction: Einfach, zuteilungsfrei und ausreichend performant,
+                            //     da die Segmentanzahl in der Regel klein ist.
+                            // (b) Intrusive doppelt verkettete Liste mit O(1) Move-to-Front: Verringert die
+                            //     Laufzeitkomplexität bei sehr großen Segmentmengen, erhöht jedoch die Codekomplexität.
+                            // WAHLE (a) als Erstimplementierung, da keine Performance-Messung vorliegt, die (b)
+                            // rechtfertigt. (b) ist eine mögliche Folgeoptimierung, falls Profiling hohe Eviction-Frequenz zeigt.
                             while freed < target_free_bytes && !segs.is_empty() {
-                                let evicted = segs.remove(0); // LRU an Index 0 angenommen
+                                let lru_index = segs
+                                    .iter()
+                                    .enumerate()
+                                    .min_by_key(|(_, seg)| seg.last_accessed())
+                                    .map(|(idx, _)| idx)
+                                    .unwrap_or(0);
+                                let evicted = segs.remove(lru_index);
                                 freed += evicted.len();
                                 // evicted geht hier out of scope -> Zeroize
                             }
@@ -137,6 +151,60 @@ mod tests {
 
         assert!(freed, "Worker should have evicted 1 segment in background");
         assert_eq!(segments.read()[0].segment_id, 2);
+    }
+
+    #[test]
+    fn test_lru_eviction_order_not_fifo() {
+        let tenant = TenantId::try_new(1).unwrap();
+        // A is created first (clock 1)
+        let seg_a = KvSegment::new(tenant, 10, vec![0x11; 512]);
+        // B is created second (clock 2)
+        let seg_b = KvSegment::new(tenant, 20, vec![0x22; 512]);
+        // C is created third (clock 3)
+        let seg_c = KvSegment::new(tenant, 30, vec![0x33; 512]);
+
+        // A is read/touched last -> clock updated to 4 (most recently used)
+        seg_a.touch();
+
+        assert!(seg_a.last_accessed() > seg_b.last_accessed());
+        assert!(seg_a.last_accessed() > seg_c.last_accessed());
+
+        let segments = Arc::new(RwLock::new(vec![seg_a, seg_b, seg_c]));
+        let worker = EvictionWorker::spawn(Arc::clone(&segments));
+
+        // Trigger eviction of 500 bytes (requires evicting 1 segment)
+        worker.trigger_eviction(500);
+
+        // Wait for worker thread to process command
+        let mut freed = false;
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(10));
+            if segments.read().len() == 2 {
+                freed = true;
+                break;
+            }
+        }
+
+        assert!(freed, "Worker should have evicted 1 segment");
+
+        let remaining = segments.read();
+        let remaining_ids: Vec<u64> = remaining.iter().map(|s| s.segment_id).collect();
+
+        // Under LRU: Segment B (clock 2, least recently used) was evicted.
+        // Segment A (clock 4, most recently used) MUST be retained.
+        // (Note: Under old FIFO logic, Segment A at index 0 would have been incorrectly evicted).
+        assert!(
+            remaining_ids.contains(&10),
+            "Segment A (most recently used) must NOT be evicted"
+        );
+        assert!(
+            !remaining_ids.contains(&20),
+            "Segment B (least recently used) must be evicted"
+        );
+        assert!(
+            remaining_ids.contains(&30),
+            "Segment C must be retained"
+        );
     }
 
     #[test]

@@ -1,16 +1,22 @@
 // FILE-CONTEXT
 // STAND: 2026-09-07 (SESSION: 8d7a9f86)
-// ZWECK: Reproduzierbarer Benchmark-Harness für Retrieval-Qualität & LongMemEval Regressions-Suite
+// ZWECK: Reproduzierbarer Benchmark-Harness für Retrieval-Qualität & LongMemEval / LoCoMo Regressions-Suite
 // INVARIANTEN: Standalone, reproduzierbar, synthetischer Korpus mit Ground-Truth-Annotationen.
 
-use memfuse_bench::long_mem_eval::{check_regression, RegressionSuite};
+use memfuse_bench::compare::{
+    CombinedMetrics, LocomoMetricsSummary, LongMemEvalMetricsSummary,
+};
+use memfuse_bench::locomo::{load_locomo_dataset, run_locomo_eval};
+use memfuse_bench::long_mem_eval::{
+    check_regression, load_from_jsonl, run_long_mem_eval, RegressionSuite, ScoredChunk,
+};
 use memfuse_core::Result;
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_embed::{CrossEncoderReranker, RerankConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Represents a benchmark query with ground truth relevant document IDs.
@@ -835,8 +841,273 @@ fn generate_markdown_summary(report: &BenchmarkReport) -> String {
     out
 }
 
+fn update_current_metrics_long_mem_eval(
+    overall_accuracy: f64,
+    total_cases: usize,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let metrics_path = Path::new("benchmarks/results/current_metrics.json");
+    let mut combined: CombinedMetrics = if metrics_path.exists() {
+        let content = fs::read_to_string(metrics_path)?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        CombinedMetrics::default()
+    };
+
+    combined.long_mem_eval = Some(LongMemEvalMetricsSummary {
+        overall_accuracy,
+        total_cases,
+    });
+
+    if let Some(parent) = metrics_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let json = serde_json::to_string_pretty(&combined)?;
+    fs::write(metrics_path, json)?;
+    Ok(())
+}
+
+fn update_current_metrics_locomo(
+    overall_recall_at_5: f64,
+    overall_mrr: f64,
+    total_eval_cases: usize,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let metrics_path = Path::new("benchmarks/results/current_metrics.json");
+    let mut combined: CombinedMetrics = if metrics_path.exists() {
+        let content = fs::read_to_string(metrics_path)?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        CombinedMetrics::default()
+    };
+
+    combined.locomo = Some(LocomoMetricsSummary {
+        overall_recall_at_5,
+        overall_mrr,
+        total_eval_cases,
+    });
+
+    if let Some(parent) = metrics_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let json = serde_json::to_string_pretty(&combined)?;
+    fs::write(metrics_path, json)?;
+    Ok(())
+}
+
+async fn run_long_mem_eval_cmd(
+    dataset_path: &Path,
+    output_path: &Path,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    println!("=== Executing LongMemEval Benchmark ===");
+    println!("Dataset: {}", dataset_path.display());
+    println!("Output : {}", output_path.display());
+
+    let cases = load_from_jsonl(dataset_path)?;
+    println!("Loaded {} evaluation cases.", cases.len());
+
+    let db_cfg = MemFuseConfig {
+        dimension: 768,
+        ..Default::default()
+    };
+    let temp_dir = TempDir::new()?;
+    let db = MemFuse::open_with_config(temp_dir.path(), db_cfg).await?;
+    let col = db.collection("long_mem_eval_col").await?;
+
+    let dummy_vec = pad_vector(&[0.5, 0.5, 0.0, 0.0], 768);
+    for (case_idx, case) in cases.iter().enumerate() {
+        for (turn_idx, (role, utterance, sess_idx)) in case.session_history.iter().enumerate() {
+            let doc_id = format!("lme_doc_{}_{}_{}", case_idx, sess_idx, turn_idx);
+            let metadata = serde_json::json!({
+                "text": utterance,
+                "speaker": role,
+                "case_id": case.question_id,
+                "session_idx": sess_idx,
+            });
+            col.insert(&doc_id, &dummy_vec, Some(metadata)).await?;
+        }
+    }
+
+    let report = run_long_mem_eval(&cases, |q| {
+        let q_owned = q.to_string();
+        let col_ref = &col;
+        Box::pin(async move {
+            let res = col_ref.query().text(&q_owned).k(10).execute().await?;
+            let chunks = res
+                .into_iter()
+                .map(|r| {
+                    let text = r
+                        .metadata
+                        .as_ref()
+                        .and_then(|m| m.get("text"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    ScoredChunk {
+                        id: r.id,
+                        text,
+                        score: r.score,
+                    }
+                })
+                .collect();
+            Ok(chunks)
+        })
+    })
+    .await?;
+
+    println!(
+        "\nLongMemEval Overall Accuracy: {:.2}% ({}/{} cases)",
+        report.overall_accuracy * 100.0,
+        (report.overall_accuracy * report.total_cases as f64).round() as usize,
+        report.total_cases
+    );
+
+    if let Some(parent) = output_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    let report_json = serde_json::to_string_pretty(&report)?;
+    fs::write(output_path, report_json)?;
+    println!("Saved report to `{}`.", output_path.display());
+
+    update_current_metrics_long_mem_eval(report.overall_accuracy, report.total_cases)?;
+
+    Ok(())
+}
+
+async fn run_locomo_cmd(
+    dataset_path: &Path,
+    output_path: &Path,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    println!("=== Executing LoCoMo Benchmark ===");
+    println!("Dataset: {}", dataset_path.display());
+    println!("Output : {}", output_path.display());
+
+    let cases = load_locomo_dataset(dataset_path)?;
+    println!("Loaded {} evaluation cases.", cases.len());
+
+    let db_cfg = MemFuseConfig {
+        dimension: 768,
+        ..Default::default()
+    };
+    let temp_dir = TempDir::new()?;
+    let db = MemFuse::open_with_config(temp_dir.path(), db_cfg).await?;
+    let col = db.collection("locomo_col").await?;
+
+    let dummy_vec = pad_vector(&[0.5, 0.5, 0.0, 0.0], 768);
+    for (case_idx, case) in cases.iter().enumerate() {
+        for (ev_idx, ev) in case.evidence.iter().enumerate() {
+            let doc_id = format!("locomo_doc_{}_{}", case_idx, ev_idx);
+            let metadata = serde_json::json!({
+                "text": ev,
+                "case_id": case.question_id,
+                "sample_id": case.sample_id,
+            });
+            col.insert(&doc_id, &dummy_vec, Some(metadata)).await?;
+        }
+    }
+
+    let report = run_locomo_eval(&cases, |q| {
+        let q_owned = q.to_string();
+        let col_ref = &col;
+        Box::pin(async move {
+            let res = col_ref.query().text(&q_owned).k(5).execute().await?;
+            let chunks = res
+                .into_iter()
+                .map(|r| {
+                    let text = r
+                        .metadata
+                        .as_ref()
+                        .and_then(|m| m.get("text"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    ScoredChunk {
+                        id: r.id,
+                        text,
+                        score: r.score,
+                    }
+                })
+                .collect();
+            Ok(chunks)
+        })
+    })
+    .await?;
+
+    println!(
+        "\nLoCoMo Overall Recall@5: {:.2}%, Overall MRR: {:.3} ({} eval cases)",
+        report.overall_recall_at_5 * 100.0,
+        report.overall_mrr,
+        report.total_eval_cases
+    );
+
+    if let Some(parent) = output_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    let report_json = serde_json::to_string_pretty(&report)?;
+    fs::write(output_path, report_json)?;
+    println!("Saved report to `{}`.", output_path.display());
+
+    update_current_metrics_locomo(
+        report.overall_recall_at_5,
+        report.overall_mrr,
+        report.total_eval_cases,
+    )?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 1 && (args[1] == "long-mem-eval" || args[1] == "long_mem_eval") {
+        let mut dataset_path =
+            PathBuf::from("benchmarks/memfuse-bench/tests/fixtures/long_mem_eval_fixture.json");
+        let mut output_path = PathBuf::from("benchmarks/results/long_mem_eval_results.json");
+
+        let mut i = 2;
+        while i < args.len() {
+            if args[i] == "--dataset" && i + 1 < args.len() {
+                dataset_path = PathBuf::from(&args[i + 1]);
+                i += 1;
+            } else if args[i] == "--output" && i + 1 < args.len() {
+                output_path = PathBuf::from(&args[i + 1]);
+                i += 1;
+            }
+            i += 1;
+        }
+
+        run_long_mem_eval_cmd(&dataset_path, &output_path).await?;
+        return Ok(());
+    } else if args.len() > 1 && args[1] == "locomo" {
+        let mut dataset_path =
+            PathBuf::from("benchmarks/memfuse-bench/tests/fixtures/locomo_fixture.json");
+        let mut output_path = PathBuf::from("benchmarks/results/locomo_results.json");
+
+        let mut i = 2;
+        while i < args.len() {
+            if args[i] == "--dataset" && i + 1 < args.len() {
+                dataset_path = PathBuf::from(&args[i + 1]);
+                i += 1;
+            } else if args[i] == "--output" && i + 1 < args.len() {
+                output_path = PathBuf::from(&args[i + 1]);
+                i += 1;
+            }
+            i += 1;
+        }
+
+        run_locomo_cmd(&dataset_path, &output_path).await?;
+        return Ok(());
+    }
+
     println!("=== Running MemFuse Retrieval Accuracy Benchmarks ===");
 
     let (docs, queries_a, queries_b) = create_synthetic_corpus();
@@ -895,9 +1166,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     );
 
     let baseline_path = Path::new("benchmarks/memfuse-bench/baseline_recall.json");
-    let cli_args: Vec<String> = std::env::args().collect();
     let update_baseline =
-        cli_args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
+        args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
 
     if update_baseline {
         let baseline_json = serde_json::to_string_pretty(&reg_report)?;

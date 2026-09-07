@@ -3344,6 +3344,7 @@ dependencies = [
 name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "criterion",
  "memfuse-calibration",
  "memfuse-checkpoint",
@@ -3441,6 +3442,7 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "memfuse-agent",
+ "memfuse-candle",
  "memfuse-core",
  "memfuse-crypto",
  "memfuse-db",
