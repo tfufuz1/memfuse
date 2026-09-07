@@ -2852,8 +2852,10 @@ name = "memfuse-ollama"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "memfuse-calibration",
  "memfuse-core",
  "memfuse-embed",
+ "parking_lot",
  "proptest",
  "quick-xml",
  "rand 0.8.8",
