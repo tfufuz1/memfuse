@@ -22,11 +22,11 @@ Ergebnis: **0 offene Tags**
 | `memfuse-crypto` | 1 | 2836 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 8341 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-embed` | 2 | 1779 | 🧊 Optional |  |
+| `memfuse-embed` | 2 | 1778 | 🧊 Optional |  |
 | `memfuse-index` | 2 | 13067 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-ollama` | 2 | 3689 | 🟢 Clean |  |
+| `memfuse-ollama` | 2 | 3861 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15567 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-db` | 3 | 23199 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 3 | 22923 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 4 | 1564 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 4 | 4321 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
@@ -47,7 +47,7 @@ Layer 2:  memfuse-embed —  (deps: memfuse-calibration, memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
           memfuse-ollama —  (deps: memfuse-calibration, memfuse-core)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
-Layer 3:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
+Layer 3:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
 Layer 4:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)

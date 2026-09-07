@@ -509,7 +509,9 @@ mod tests {
             let id = format!("fresh_high_{i}");
             let imp = MemoryImportance::new(
                 ImportanceScore::new(0.95),
-                DecayFunction::Exponential { half_life_tx: 100_000 },
+                DecayFunction::Exponential {
+                    half_life_tx: 100_000,
+                },
                 TxId::new(100_000),
             );
             col.insert(&id, &vec, Some(json!({ "importance": imp })))
@@ -616,6 +618,9 @@ mod tests {
         cancel_token.cancel();
         let _ = handle.await;
 
-        assert!(evicted, "Thermostat reaper task should evict low score document");
+        assert!(
+            evicted,
+            "Thermostat reaper task should evict low score document"
+        );
     }
 }

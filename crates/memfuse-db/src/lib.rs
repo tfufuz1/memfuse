@@ -90,11 +90,11 @@ pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
+pub use reaper::start_nrem_reaper;
 pub use sleep_cycle::{
     compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
     run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
 };
-pub use reaper::start_nrem_reaper;
 pub use sleep_cycle_executor::execute_nrem_cycle;
 
 #[cfg(feature = "sandbox")]
@@ -107,11 +107,13 @@ pub trait SandboxBridge: Send + Sync {
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
+pub mod homeostat;
 pub mod multistep;
 pub mod reaper;
 pub mod thermostat;
 pub mod transaction;
 
+pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
