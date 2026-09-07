@@ -2149,6 +2149,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "1633cda088d795b8"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "164cc43766eea7d8"
   },
   {
@@ -2158,6 +2162,10 @@
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "1fb3317ade5edf89"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "242d43d061abfcc9"
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
@@ -2257,6 +2265,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "9251f6c4e7090c79"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "935e7c7b8d5628e1"
   },
   {
@@ -2302,10 +2314,6 @@
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "adda3c5571e0e562"
-  },
-  {
-    "file": "crates/memfuse-core/src/types/domain.rs",
-    "hash": "b0be3d3504d89e4b"
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
@@ -2361,6 +2369,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "da1bfb7bf20263ef"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "dd70608577566932"
   },
   {
@@ -2374,10 +2386,6 @@
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "f1df4b60852586c4"
-  },
-  {
-    "file": "crates/memfuse-core/src/types/domain.rs",
-    "hash": "f331a4a5b2c4290b"
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
@@ -3454,10 +3462,6 @@
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "66979dc996d2302c"
-  },
-  {
-    "file": "crates/memfuse-db/src/collection/query_builder.rs",
-    "hash": "725e5eb648e3aa8f"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
@@ -4622,14 +4626,6 @@
   {
     "file": "crates/memfuse-db/src/reaper.rs",
     "hash": "ef8c38b37cb5a4f9"
-  },
-  {
-    "file": "crates/memfuse-db/src/sleep_cycle.rs",
-    "hash": "660fbb5f23cc27c4"
-  },
-  {
-    "file": "crates/memfuse-db/src/sleep_cycle.rs",
-    "hash": "fc1b9074eaa51344"
   },
   {
     "file": "crates/memfuse-db/src/transaction.rs",
