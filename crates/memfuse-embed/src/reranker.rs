@@ -283,8 +283,6 @@ impl OnnxReranker {
         let max_length = self.config.max_length;
         let batch_size = self.config.batch_size;
         let calibration = self.config.calibration.clone();
-
-        let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
             Self::score_pairs_blocking(
                 &session,
@@ -843,6 +841,8 @@ mod tests {
             max_length: 128,
             batch_size: 4,
             calibration: PlattScaledSigmoid::identity(),
+            rerank_deadline_ms: Some(500),
+            simulate_delay_ms: None,
         };
 
         let res = CrossEncoderReranker::new(cfg);
