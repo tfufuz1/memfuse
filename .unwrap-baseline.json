@@ -3989,6 +3989,10 @@
   },
   {
     "file": "crates/memfuse-db/src/context.rs",
+    "hash": "c40b5e6030c6cf46"
+  },
+  {
+    "file": "crates/memfuse-db/src/context.rs",
     "hash": "c6f5c83979b7421b"
   },
   {
@@ -3998,6 +4002,14 @@
   {
     "file": "crates/memfuse-db/src/context.rs",
     "hash": "f4d76e3631c970cc"
+  },
+  {
+    "file": "crates/memfuse-db/src/context.rs",
+    "hash": "fb5c33fa6f457e9d"
+  },
+  {
+    "file": "crates/memfuse-db/src/context.rs",
+    "hash": "fd3b1d80aa14d6bf"
   },
   {
     "file": "crates/memfuse-db/src/context.rs",
@@ -4757,6 +4769,10 @@
   },
   {
     "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "2930636e8345b1c2"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
     "hash": "2df972c9df65761c"
   },
   {
@@ -4774,6 +4790,10 @@
   {
     "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
     "hash": "53dff700765630de"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "79d4dbb00e99e9f2"
   },
   {
     "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
@@ -4798,14 +4818,6 @@
   {
     "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
     "hash": "e0229d5afff2fa6b"
-  },
-  {
-    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
-    "hash": "e3802d25f0d94fda"
-  },
-  {
-    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
-    "hash": "e9b83ff4d6fc3780"
   },
   {
     "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
@@ -5841,15 +5853,19 @@
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "02ad8f25e7f11db9"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
     "hash": "06199e513da6dc42"
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
-    "hash": "23021dd90b4e86f9"
+    "hash": "25ae9ee641b6abc6"
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
-    "hash": "25ae9ee641b6abc6"
+    "hash": "37f63575bbebe9a5"
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
@@ -5861,15 +5877,15 @@
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
-    "hash": "9ae7286224542e05"
-  },
-  {
-    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
-    "hash": "9f7ea28b91c9eacf"
+    "hash": "6bc047cd119195c7"
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
     "hash": "a4a144e75629d9bb"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "b5ff6a3f3eac8f13"
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
@@ -5878,10 +5894,6 @@
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
     "hash": "d675a945b5f484a6"
-  },
-  {
-    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
-    "hash": "fef3a7436b631dfb"
   },
   {
     "file": "crates/memfuse-db/tests/semantic_recall.rs",
@@ -10845,11 +10857,19 @@
   },
   {
     "file": "crates/memfuse-ollama/src/importance.rs",
+    "hash": "258b66804d89a0d5"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/importance.rs",
     "hash": "565da001a0760ee3"
   },
   {
     "file": "crates/memfuse-ollama/src/importance.rs",
     "hash": "692a59e5e346e999"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/importance.rs",
+    "hash": "7aa7a5fc2c382e66"
   },
   {
     "file": "crates/memfuse-ollama/src/importance.rs",
