@@ -82,6 +82,7 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod rem_phase;
 pub mod sleep_cycle;
 pub mod sleep_cycle_executor;
 pub mod temporal_filter;
@@ -90,12 +91,13 @@ pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
+pub use rem_phase::{run_rem_phase, RemPhaseResult, SegmentSynthesizer, SynthesizedChunk};
 pub use sleep_cycle::{
     compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
     run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
 };
 pub use reaper::start_nrem_reaper;
-pub use sleep_cycle_executor::execute_nrem_cycle;
+pub use sleep_cycle_executor::{execute_nrem_cycle, execute_sleep_cycle};
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
