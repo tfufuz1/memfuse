@@ -975,15 +975,15 @@ mod tests {
 
     #[tokio::test]
     #[cfg(feature = "physio-replicator-weights")]
-    async fn test_query_builder_replicator_state_dynamic_fusion_weights() {
+    async fn test_query_builder_replicator_state_dynamic_fusion_weights(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (col, _dir) = create_test_collection("test_replicator_builder").await;
         col.insert(
             "doc-1",
             &[1.0, 0.0, 0.0, 0.0],
             Some(json!({"text": "adaptive search test"})),
         )
-        .await
-        .unwrap();
+        .await?;
 
         let replicator = Arc::new(parking_lot::RwLock::new(
             memfuse_calibration::ReplicatorState::new(
@@ -1002,10 +1002,10 @@ mod tests {
             .replicator_state(replicator.clone())
             .k(1)
             .execute()
-            .await
-            .unwrap();
+            .await?;
 
         assert_eq!(builder_res.len(), 1);
         assert_eq!(builder_res[0].id, "doc-1");
+        Ok(())
     }
 }
