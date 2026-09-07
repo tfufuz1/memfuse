@@ -433,6 +433,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
+    /// Mindest-Kandidatenpool für Cross-Encoder-Reranking.
+    /// Wissenschaftliche Basis: arXiv:2604.01733 (T2-RAGBench).
+    /// k_pool=20 → Recall@5=0.458; k_pool=100 → Recall@5=0.888 (Qualitätsknie).
+    pub const DEFAULT_MIN_RERANK_CANDIDATES: usize = 100;
+
     #[cfg(feature = "reranking")]
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
@@ -447,7 +452,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     ) -> Result<Vec<crate::SearchResult>> {
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // Schritt 1: Standard-Hybrid-Suche mit erhöhtem k (Reranking braucht mehr Kandidaten)
-        let pre_rerank_k = if reranker.is_some() { k * 3 } else { k };
+        let pre_rerank_k = if reranker.is_some() {
+            k.saturating_mul(3).clamp(
+                Self::DEFAULT_MIN_RERANK_CANDIDATES,
+                memfuse_core::MAX_SEARCH_K,
+            )
+        } else {
+            k
+        };
         let mut results = self
             .hybrid_search(text, vector, pre_rerank_k, anchor_entities)
             .await?;
@@ -466,29 +478,41 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 })
                 .collect();
 
-            match reranker.rerank(text, &candidate_texts).await {
-                Ok(ranked) => {
-                    let mut reranked_results = Vec::with_capacity(k);
-                    for r in ranked.into_iter().take(k) {
-                        if let Some(mut result) = results.get(r.original_index).cloned() {
-                            if let Some(meta) = result.metadata.as_mut() {
-                                if let Some(obj) = meta.as_object_mut() {
-                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
-                                }
+            let rerank_deadline = std::time::Duration::from_millis(
+                reranker.config().rerank_deadline_ms.unwrap_or(500),
+            );
+
+            let reranked = tokio::time::timeout(
+                rerank_deadline,
+                reranker.rerank(text, &candidate_texts),
+            )
+            .await
+            .map_err(|_| {
+                tracing::warn!(
+                    deadline_ms = rerank_deadline.as_millis(),
+                    "Reranker deadline exceeded — falling back to RRF order"
+                );
+            })
+            .and_then(|r| r.map_err(|e| { tracing::warn!("Reranking failed: {e}"); }));
+
+            if let Ok(ranked) = reranked {
+                let mut reranked_results = Vec::with_capacity(k);
+                for r in ranked.into_iter().take(k) {
+                    if let Some(mut result) = results.get(r.original_index).cloned() {
+                        if let Some(meta) = result.metadata.as_mut() {
+                            if let Some(obj) = meta.as_object_mut() {
+                                obj.insert("ce_score".to_string(), serde_json::json!(r.score));
                             }
-                            result.score = r.score;
-                            if let Some(p) = result.provenance.as_mut() {
-                                p.rerank_score = Some(r.score);
-                            }
-                            reranked_results.push(result);
                         }
+                        result.score = r.score;
+                        if let Some(p) = result.provenance.as_mut() {
+                            p.rerank_score = Some(r.score);
+                        }
+                        reranked_results.push(result);
                     }
-                    tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
-                    return Ok(reranked_results);
                 }
-                Err(e) => {
-                    tracing::warn!("Reranking failed (using RRF order): {e}");
-                }
+                tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
+                return Ok(reranked_results);
             }
         }
 
