@@ -19,8 +19,8 @@ use std::collections::{HashMap, HashSet};
 /// Führt NREM-Phase aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
 ///
 /// Gibt das `NremPhaseResult` zurück.
-pub async fn execute_nrem_cycle<S: StorageEngine>(
-    collection: &Collection<S>,
+pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
+    collection: &Collection<S, V>,
     turns: &[(DocId, Vec<f32>)],
     config: &NremConfig,
 ) -> Result<NremPhaseResult> {

@@ -40,7 +40,7 @@ impl Default for ThermostatInputs {
 }
 
 /// Konfiguration für den Thermostat (via PhysioConfig).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ThermostatConfig {
     /// Verstärkungsfaktor κ. Default: 2.0.
     pub kappa: f32,
