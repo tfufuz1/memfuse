@@ -7,6 +7,9 @@ Die offizielle Python-Anbindung für MemFuse. Übersetzt die asynchrone Rust-API
 in eine synchrone und asynchrone Python-API via PyO3. Konvertiert Python-Typen
 (NumPy, Dictionaries, Strings) in native MemFuse-Typen und kapselt den tokio-Threadpool.
 
+> **Wichtiger Hinweis zur Workspace-Architektur**:
+> Dieses Crate wird ABSICHTLICH NICHT im Root-Workspace geführt, da es ein abweichendes Panic-Profil (`unwind` statt `abort`) für sichere FFI-Panic-Behandlung benötigt (siehe `run_blocking_ffi`, AGT-PY-d5d2be30). Build separat via `cd crates/memfuse-py && cargo build --release`.
+
 ## 2. Modul-Karte
 
 | Datei | Verantwortung |

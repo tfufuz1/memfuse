@@ -240,7 +240,6 @@ impl From<std::array::TryFromSliceError> for MemFuseError {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,7 +332,6 @@ mod tests {
             _ => panic!("Expected ParseError, got {:?}", parse_err),
         }
     }
-
 
     #[test]
     fn test_error_display_all_variants() {

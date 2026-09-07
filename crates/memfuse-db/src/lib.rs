@@ -66,6 +66,8 @@
 // HOTSPOTS:    hybrid_search(), insert(), relate()
 // SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
+#[cfg(feature = "sandbox")]
+use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
@@ -80,11 +82,20 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod sleep_cycle;
+pub mod sleep_cycle_executor;
+pub mod temporal_filter;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
+pub use reaper::start_nrem_reaper;
+pub use sleep_cycle::{
+    compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
+    run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
+};
+pub use sleep_cycle_executor::execute_nrem_cycle;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
@@ -96,11 +107,13 @@ pub trait SandboxBridge: Send + Sync {
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
+pub mod homeostat;
 pub mod multistep;
 pub mod reaper;
 pub mod thermostat;
 pub mod transaction;
 
+pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
@@ -225,6 +238,22 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
+/// Configuration for auto-triggered community detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommunityDetectionConfig {
+    /// Anzahl Graph-Mutationen, die eine neue Community Detection triggern. Default: 100.
+    /// 0 = deaktiviert (manuell).
+    pub auto_trigger_threshold: u64,
+}
+
+impl Default for CommunityDetectionConfig {
+    fn default() -> Self {
+        Self {
+            auto_trigger_threshold: 100,
+        }
+    }
+}
+
 /// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
@@ -241,6 +270,8 @@ pub struct MemFuseConfig {
     /// Optional custom persistence path for the instance-scoped orphan registry.
     /// If `None`, defaults to `<db_path>/.orphan_registry.json` when the database is opened.
     pub orphan_registry_path: Option<std::path::PathBuf>,
+    /// Configuration for auto-triggered community detection.
+    pub community_detection: CommunityDetectionConfig,
 }
 
 impl Default for MemFuseConfig {
@@ -253,6 +284,7 @@ impl Default for MemFuseConfig {
             encryption_passphrase: None,
             expiry_reaper_interval: std::time::Duration::from_secs(60),
             orphan_registry_path: None,
+            community_detection: CommunityDetectionConfig::default(),
         }
     }
 }
@@ -282,6 +314,7 @@ pub struct MemFuse {
     next_tx: Arc<AtomicU64>,
     dimension: usize,
     expiry_reaper_interval: std::time::Duration,
+    community_detection_threshold: u64,
     collections:
         tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
     cancel_token: tokio_util::sync::CancellationToken,
@@ -364,6 +397,7 @@ impl MemFuse {
             next_tx,
             dimension: config.dimension,
             expiry_reaper_interval: config.expiry_reaper_interval,
+            community_detection_threshold: config.community_detection.auto_trigger_threshold,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
             cancel_token,
             task_tracker,
@@ -598,6 +632,7 @@ impl MemFuse {
             self.dimension,
             language,
         );
+        col.set_community_detection_trigger_threshold(self.community_detection_threshold);
 
         // Inherit global embedder if set
         if let Some(emb) = self.embedder.read().as_ref() {

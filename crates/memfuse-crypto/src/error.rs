@@ -52,9 +52,7 @@ impl CryptoError {
 impl From<CryptoError> for memfuse_core::MemFuseError {
     fn from(e: CryptoError) -> Self {
         match e {
-            CryptoError::WalCorruption { offset, reason } => {
-                Self::wal_corruption(offset, reason)
-            }
+            CryptoError::WalCorruption { offset, reason } => Self::wal_corruption(offset, reason),
             CryptoError::InvalidInput(msg) => Self::InvalidInput(msg),
             other => Self::Crypto(other.to_string()),
         }

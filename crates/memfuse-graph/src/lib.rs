@@ -27,12 +27,17 @@
 
 pub mod community;
 pub mod csr;
+pub mod immune;
 pub mod path_rag;
 pub mod ppr;
 pub mod session_dag;
 
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 pub use csr::CsrGraph;
+pub use immune::{
+    Antibody, ContradictionDetector, EdgeAssertion, EdgeId, ExactPredicateConflictDetector,
+    ImmunMemory,
+};
 pub use path_rag::{EntityId, GraphPath, PathGraph, PathRAGEngine};
 pub use ppr::PprContext;
 pub use session_dag::{

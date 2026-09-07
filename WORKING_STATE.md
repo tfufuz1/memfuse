@@ -8,34 +8,30 @@
 
 Stand letzter Prüfung: 2026-09-07
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **2 offene Tags**
+Ergebnis: **0 offene Tags**
 
-| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
-|---|---|---|---|---|---|---|
-| `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
-| `crates/memfuse-ollama/src/importance.rs` | 73 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9741 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 1 | 536 | 🟢 Clean |  |
+| `memfuse-core` | 0 | 9806 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-calibration` | 1 | 541 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 1 | 2844 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-embed` | 1 | 1715 | 🧊 Optional |  |
-| `memfuse-graph` | 1 | 7687 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-ollama` | 1 | 3499 | 🟢 Clean |  |
-| `memfuse-text` | 1 | 5328 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-index` | 2 | 12109 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 2 | 15556 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-db` | 3 | 20533 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 4 | 905 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 4 | 3865 | 🟢 Clean |  |
+| `memfuse-crypto` | 1 | 2836 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-graph` | 1 | 8341 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-embed` | 2 | 1778 | 🧊 Optional |  |
+| `memfuse-index` | 2 | 13067 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-ollama` | 2 | 3861 | 🟢 Clean |  |
+| `memfuse-store` | 2 | 15567 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-db` | 3 | 22923 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 4 | 1564 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-router` | 4 | 4321 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
-| `memfuse-agent` | 5 | 5530 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 6 | 3800 | 🟢 Clean |  |
+| `memfuse-agent` | 5 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-mcp` | 6 | 4009 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
@@ -45,11 +41,11 @@ Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
 Layer 1:  memfuse-calibration —  (deps: memfuse-core)
           memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
-          memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
-          memfuse-ollama —  (deps: memfuse-core)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
-Layer 2:  memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
+Layer 2:  memfuse-embed —  (deps: memfuse-calibration, memfuse-core)
+          memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
+          memfuse-ollama —  (deps: memfuse-calibration, memfuse-core)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
 Layer 3:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
 Layer 4:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)

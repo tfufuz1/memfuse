@@ -1,7 +1,8 @@
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
+use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
 use crate::outcome::{DecisionId, RoutingOutcome};
-use crate::profile::{ProfileCalibrationState, QuantizationLevel, SlmProfile};
+use crate::profile::{ProfileCalibrationState, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
 use memfuse_store::LsmStorage;
@@ -42,6 +43,8 @@ pub struct RoutingDecision {
     pub confidence: Option<ConfidenceMetrics>,
     /// Eindeutige ID dieser Routing-Entscheidung.
     pub decision_id: DecisionId,
+    /// Lyapunov-Drift-Status zum Zeitpunkt der Entscheidung (None wenn InsufficientData).
+    pub drift_status: Option<LyapunovResult>,
 }
 
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
@@ -50,6 +53,7 @@ pub struct RouterEngine {
     profiles: RwLock<Vec<SlmProfile>>,
     pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
     pending_decisions: RwLock<HashMap<DecisionId, String>>,
+    lyapunov_watchers: RwLock<HashMap<String, LyapunovDriftWatcher>>,
 }
 
 impl RouterEngine {
@@ -68,6 +72,13 @@ impl RouterEngine {
                 )
             })
             .collect();
+
+        let lyapunov_watchers = RwLock::new(
+            profiles
+                .iter()
+                .map(|p| (p.name.clone(), LyapunovDriftWatcher::default()))
+                .collect(),
+        );
 
         if let Some(ref path) = calibration_store_path {
             if let Ok(bytes) = std::fs::read(path) {
@@ -90,6 +101,7 @@ impl RouterEngine {
             profiles: RwLock::new(profiles),
             calibration: RwLock::new(calibration),
             pending_decisions: RwLock::new(HashMap::new()),
+            lyapunov_watchers,
         }
     }
 
@@ -119,6 +131,17 @@ impl RouterEngine {
             })
             .collect();
         *cal = new_cal;
+
+        let mut watchers = self.lyapunov_watchers.write();
+        let new_watchers: HashMap<String, LyapunovDriftWatcher> = new_profiles
+            .iter()
+            .map(|p| {
+                let watcher = watchers.remove(&p.name).unwrap_or_default();
+                (p.name.clone(), watcher)
+            })
+            .collect();
+        *watchers = new_watchers;
+
         *self.profiles.write() = new_profiles;
     }
 
@@ -145,6 +168,25 @@ impl RouterEngine {
     pub fn reset_calibration(&self, profile_name: &str) {
         if let Some(state) = self.calibration.write().get_mut(profile_name) {
             state.reset();
+        }
+    }
+
+    /// Gibt den aktuellen Lyapunov-Drift-Status für ein Profil zurück.
+    pub fn drift_status(&self, profile_name: &str) -> Option<LyapunovResult> {
+        self.lyapunov_watchers
+            .read()
+            .get(profile_name)
+            .and_then(|w| w.latest_result.clone())
+    }
+
+    /// Setzt die Baseline für den Lyapunov-Drift-Wächter eines bestimmten Profils.
+    pub fn set_lyapunov_baseline(&self, profile_name: &str, baseline: &[f32]) -> bool {
+        let mut watchers = self.lyapunov_watchers.write();
+        if let Some(watcher) = watchers.get_mut(profile_name) {
+            watcher.set_baseline(baseline);
+            true
+        } else {
+            false
         }
     }
 
@@ -339,20 +381,51 @@ impl RouterEngine {
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
+
+        // 5. Update Lyapunov Drift Watcher with non-conformity score
+        let non_conformity_score = confidence_metrics
+            .as_ref()
+            .map(|m| m.non_conformity_score)
+            .unwrap_or(1.0);
+
+        let drift_status = {
+            let mut watchers = self.lyapunov_watchers.write();
+            if let Some(watcher) = watchers.get_mut(&selected_profile.name) {
+                watcher.observe_score(non_conformity_score);
+                let res = watcher.analyze();
+
+                if let LyapunovResult::DriftDetected {
+                    lyapunov_exponent,
+                    ref reason,
+                } = res
+                {
+                    tracing::warn!(
+                        profile = %selected_profile.name,
+                        lambda = lyapunov_exponent,
+                        kl_divergence = reason.kl_divergence,
+                        "Lyapunov drift detected — conformal calibration may be stale"
+                    );
+                }
+
+                match res {
+                    LyapunovResult::InsufficientData => None,
+                    status => Some(status),
+                }
+            } else {
+                None
+            }
+        };
+
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
         context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
-
-        let decision_id = DecisionId::new();
-        self.pending_decisions
-            .write()
-            .insert(decision_id, selected_profile.name.clone());
 
         Ok(RoutingDecision {
             profile: selected_profile,
             context: context_window,
             confidence: confidence_metrics,
             decision_id,
+            drift_status,
         })
     }
 
