@@ -99,6 +99,9 @@ pub struct HnswConfig {
     /// Sample size used for ScalarQuantizer recalibration during rebuilds.
     /// Default is 10,000 to balance speed and accuracy.
     pub quantizer_recalibration_sample_size: usize,
+    /// Nucleation configuration for hot-path local rebuilds (F-02).
+    #[cfg(feature = "physio-nucleation")]
+    pub nucleation_config: crate::nucleation::NucleationConfig,
 }
 
 impl Default for HnswConfig {
@@ -114,6 +117,8 @@ impl Default for HnswConfig {
             rebuild_threshold: 1.0 - HNSW_REBUILD_DELETION_RATIO,
             quantize: false,
             quantizer_recalibration_sample_size: 10_000,
+            #[cfg(feature = "physio-nucleation")]
+            nucleation_config: crate::nucleation::NucleationConfig::default(),
         }
     }
 }
@@ -222,6 +227,13 @@ impl HnswConfigBuilder {
         self
     }
 
+    /// Sets the nucleation configuration for local hot-path rebuilds (F-02).
+    #[cfg(feature = "physio-nucleation")]
+    pub fn nucleation_config(mut self, config: crate::nucleation::NucleationConfig) -> Self {
+        self.config.nucleation_config = config;
+        self
+    }
+
     /// Build the configuration after validating bounds.
     pub fn build(self) -> Result<HnswConfig> {
         self.config.validate()?;
@@ -311,6 +323,8 @@ pub struct HnswIndexCore {
     seq_log: RwLock<memfuse_core::SequenceLog>,
     pub rebuild_count: AtomicU64,
     pub visited_dead_nodes: AtomicU64,
+    #[cfg(feature = "physio-nucleation")]
+    pub traversal_tracker: RwLock<crate::nucleation::TraversalTracker>,
 }
 
 impl HnswIndex {
@@ -320,6 +334,10 @@ impl HnswIndex {
         let ml = 1.0 / (config.m as f64).ln();
         Ok(Self {
             inner: std::sync::Arc::new(HnswIndexCore {
+                #[cfg(feature = "physio-nucleation")]
+                traversal_tracker: RwLock::new(crate::nucleation::TraversalTracker::new(
+                    config.nucleation_config.clone(),
+                )),
                 config,
                 validation_error: None,
                 nodes: RwLock::new(Vec::new()),
@@ -353,6 +371,10 @@ impl HnswIndex {
         let ml = 1.0 / (config.m as f64).ln();
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
+                #[cfg(feature = "physio-nucleation")]
+                traversal_tracker: RwLock::new(crate::nucleation::TraversalTracker::new(
+                    config.nucleation_config.clone(),
+                )),
                 config,
                 validation_error,
                 nodes: RwLock::new(Vec::new()),
@@ -620,6 +642,52 @@ impl HnswIndex {
     /// Rebuilds the HNSW index from scratch, removing all deleted nodes.
     pub async fn rebuild(&self) -> Result<()> {
         self.inner.rebuild().await
+    }
+
+    /// Rebuilds specific region node IDs (Partial-Rebuild for Nucleation F-02).
+    /// Preserves cross-region neighborhood connections (INV-NUC-1).
+    pub async fn rebuild_region(&self, region_node_ids: Vec<u64>) -> Result<()> {
+        self.inner.rebuild_region(region_node_ids).await
+    }
+
+    /// Checks if nucleation should be triggered for oversaturated hot-path regions
+    /// and spawns an async partial rebuild if so.
+    #[cfg(feature = "physio-nucleation")]
+    pub fn check_and_trigger_nucleation(&self) -> Option<tokio::task::JoinHandle<Result<()>>> {
+        let global_tombstone_ratio = self.deleted_ratio() as f32;
+        let tracker = self.inner.traversal_tracker.read();
+
+        let mut tombstone_map = ahash::AHashMap::new();
+        let total_nodes = self.inner.nodes.read().len();
+        let deleted_guard = self.inner.deleted_nodes.read();
+
+        for i in 0..total_nodes {
+            let id = i as u64;
+            tombstone_map.insert(id, deleted_guard.contains(id));
+        }
+
+        // Convert AHashMap to HashMap for should_trigger_nucleation parameter
+        let std_map: std::collections::HashMap<u64, bool> = tombstone_map.into_iter().collect();
+
+        let regions = crate::nucleation::should_trigger_nucleation(
+            &tracker,
+            &std_map,
+            global_tombstone_ratio,
+            &self.inner.config.nucleation_config,
+        );
+
+        if let Some(region_node_ids) = regions {
+            let inner = std::sync::Arc::clone(&self.inner);
+            Some(tokio::spawn(async move {
+                let res = inner.rebuild_region(region_node_ids).await;
+                if let Err(ref e) = res {
+                    tracing::error!("Failed local partial rebuild for nucleation: {}", e);
+                }
+                res
+            }))
+        } else {
+            None
+        }
     }
 
     /// Prunes sequence log entries that are tombstoned and older than `min_active_seqno`.
@@ -1142,8 +1210,14 @@ impl HnswIndexCore {
         let mut candidates = BinaryHeap::new();
         let mut results = BinaryHeap::new();
 
+        #[cfg(feature = "physio-nucleation")]
+        let mut visited_node_ids = Vec::new();
+
         for &ep in entry_points {
             if visited.insert(ep) {
+                #[cfg(feature = "physio-nucleation")]
+                visited_node_ids.push(ep as u64);
+
                 let dist = self.resolve_dist(ep, query, query_quantized, &ctx)?;
                 let cand = Candidate {
                     index: ep,
@@ -1172,6 +1246,9 @@ impl HnswIndexCore {
                     has_dead_neighbors = true;
                 }
                 if visited.insert(neighbor) {
+                    #[cfg(feature = "physio-nucleation")]
+                    visited_node_ids.push(neighbor as u64);
+
                     let dist = self.resolve_dist(neighbor, query, query_quantized, &ctx)?;
                     let is_better = match results.peek() {
                         Some(worst) => dist < worst.distance,
@@ -1205,6 +1282,13 @@ impl HnswIndexCore {
                 }
             }
         }
+        #[cfg(feature = "physio-nucleation")]
+        if layer == 0 && !visited_node_ids.is_empty() {
+            self.traversal_tracker
+                .write()
+                .record_traversal(visited_node_ids);
+        }
+
         let mut vec = results.into_vec();
         vec.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         Ok(vec)
@@ -1718,6 +1802,80 @@ impl HnswIndexCore {
 
         self.rebuild_count.fetch_add(1, Ordering::SeqCst);
         tracing::info!("HNSW rebuild completed in {:?}", start_time.elapsed());
+        Ok(())
+    }
+
+    /// Performs a local partial rebuild on a region of nodes (F-02 Nucleation Trigger).
+    ///
+    /// Cleans up tombstoned nodes within the region and rewires connections while
+    /// preserving cross-region neighborhood boundary connections (INV-NUC-1).
+    pub async fn rebuild_region(&self, region_node_ids: Vec<u64>) -> Result<()> {
+        if region_node_ids.is_empty() {
+            return Ok(());
+        }
+
+        let _write_lock = self.write_mutex.lock().await;
+
+        let region_set: AHashSet<u64> = region_node_ids.into_iter().collect();
+
+        let mmap_count = self
+            .mmap_index
+            .read()
+            .as_ref()
+            .map(|m| m.header.node_count() as usize)
+            .unwrap_or(0);
+
+        let nodes = self.nodes.read();
+        let mut deleted_nodes = self.deleted_nodes.write();
+
+        let mut tombstoned_in_region = Vec::new();
+        for &node_id in &region_set {
+            if deleted_nodes.contains(node_id) {
+                tombstoned_in_region.push(node_id);
+            }
+        }
+
+        if tombstoned_in_region.is_empty() {
+            return Ok(());
+        }
+
+        // For each node in region (or adjacent to region), prune references to tombstoned region nodes
+        let tombstoned_set: AHashSet<u32> =
+            tombstoned_in_region.iter().map(|&id| id as u32).collect();
+
+        for (i, node) in nodes.iter().enumerate() {
+            let global_idx = mmap_count + i;
+            if deleted_nodes.contains(global_idx as u64) {
+                continue;
+            }
+
+            for conn_rwlock in &node.connections {
+                let mut conns = conn_rwlock.write();
+                conns.retain(|neighbor_id| !tombstoned_set.contains(neighbor_id));
+            }
+        }
+
+        // Remove tombstoned node IDs from doc_to_node and update deleted_count
+        let mut doc_map = self.doc_to_node.write();
+        for &ts_id in &tombstoned_in_region {
+            if ts_id >= mmap_count as u64 {
+                let ram_idx = (ts_id as usize) - mmap_count;
+                if let Some(node) = nodes.get(ram_idx) {
+                    doc_map.remove(&node.doc_id.inner());
+                }
+            }
+            deleted_nodes.insert(ts_id);
+        }
+
+        self.deleted_count
+            .store(deleted_nodes.len(), Ordering::SeqCst);
+
+        tracing::info!(
+            rebuilt_region_nodes = region_set.len(),
+            pruned_tombstones = tombstoned_in_region.len(),
+            "HNSW local partial rebuild completed successfully"
+        );
+
         Ok(())
     }
 
@@ -2286,6 +2444,9 @@ impl VectorIndex for HnswIndex {
             );
             self.trigger_rebuild_async();
         }
+
+        #[cfg(feature = "physio-nucleation")]
+        self.check_and_trigger_nucleation();
 
         self.inner.last_tx_id.store(tx.inner(), Ordering::SeqCst);
         Ok(())
@@ -3767,5 +3928,58 @@ mod tests {
 
         // Total active docs in index should be 149 (100 - 1 deleted + 50 newly inserted)
         assert_eq!(index.len().await, 149);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "physio-nucleation")]
+    async fn test_hnsw_nucleation_integration() {
+        let nucleation_config = crate::nucleation::NucleationConfig {
+            critical_ratio: 2.0,
+            traversal_window: 100,
+            min_global_ratio: 0.01,
+        };
+
+        let config = HnswConfigBuilder::new(4)
+            .rebuild_threshold(0.0) // Disable automatic global rebuilds
+            .nucleation_config(nucleation_config)
+            .build()
+            .unwrap();
+
+        let index = HnswIndex::try_new(config).unwrap();
+        let tx1 = TxId::new(1);
+
+        // 1. Insert 100 vectors
+        for i in 0u64..100 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            index.insert(tx1, DocId::new(i), &v).await.unwrap();
+        }
+        index.commit(tx1).await.unwrap();
+
+        // 2. Search multiple times near hot path nodes 0..10 to populate traversal_tracker
+        let query = vec![2.0, 0.0, 0.0, 0.0];
+        for _ in 0..10 {
+            let _ = index.search(&query, 5).await.unwrap();
+        }
+
+        // 3. Soft-delete nodes in hot path (0, 1, 2) plus 1 node elsewhere (99)
+        // Local tombstones in hot path ~ 30%, global tombstones ~ 4%
+        let tx2 = TxId::new(2);
+        index.delete(tx2, DocId::new(0)).await.unwrap();
+        index.delete(tx2, DocId::new(1)).await.unwrap();
+        index.delete(tx2, DocId::new(2)).await.unwrap();
+        index.delete(tx2, DocId::new(99)).await.unwrap();
+
+        // Commit triggers check_and_trigger_nucleation
+        index.commit(tx2).await.unwrap();
+
+        // Allow async nucleation task to finish
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Verify remaining docs in index
+        let active_docs = index.all_doc_ids().await.unwrap();
+        assert!(!active_docs.contains(&DocId::new(0)));
+        assert!(!active_docs.contains(&DocId::new(1)));
+        assert!(!active_docs.contains(&DocId::new(2)));
+        assert!(!active_docs.contains(&DocId::new(99)));
     }
 }

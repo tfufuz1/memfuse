@@ -6,6 +6,11 @@ license.workspace = true
 rust-version.workspace = true
 description = "CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion)"
 
+[features]
+default = []
+physio-percolation = []
+physio-synaptic-edges = []
+
 [dependencies]
 memfuse-core = { workspace = true }
 parking_lot = { workspace = true }

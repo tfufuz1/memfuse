@@ -17,6 +17,8 @@ members = [
     "crates/memfuse-router",
     "crates/memfuse-calibration",
     "benchmarks/memfuse-bench",
+    "crates/memfuse-candle",
+    "crates/memfuse-kv-bridge",
     "xtask",
 ]
 
@@ -79,6 +81,8 @@ memfuse-agent = { path = "crates/memfuse-agent" }
 memfuse-ollama = { path = "crates/memfuse-ollama" }
 memfuse-router = { path = "crates/memfuse-router" }
 memfuse-calibration = { path = "crates/memfuse-calibration" }
+memfuse-candle = { path = "crates/memfuse-candle" }
+memfuse-kv-bridge = { path = "crates/memfuse-kv-bridge" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────
 # memfuse-cluster, memfuse-sandbox, memfuse-saos-agent wurden in Phase 0 ausgelagert.

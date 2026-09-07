@@ -15,6 +15,66 @@ use parking_lot::Mutex;
 use regex::Regex;
 use std::sync::{Arc, OnceLock};
 
+/// Evaluates importance for multiple text chunks in parallel using tokio::spawn.
+///
+/// Returns a `Vec<ImportanceAssessment>` in the same order as `chunks`.
+/// Individual chunk errors return `ImportanceAssessment` with `Confidence::Unparseable`
+/// and default score 0.5 — never propagate a single chunk error to the entire batch.
+///
+/// # Performance
+/// Spawns one tokio task per chunk up to `max_concurrent` (default: 8).
+/// Uses `futures::stream::buffer_unordered` to limit concurrency without blocking.
+pub async fn score_importance_batch(
+    client: &Arc<OllamaClient>,
+    chunks: &[&str],
+    calibrator: Option<&Arc<Mutex<IsotonicCalibrator>>>,
+    max_concurrent: usize,
+) -> Vec<ImportanceAssessment> {
+    use futures::stream::{self, StreamExt};
+
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+
+    let max_concurrent = max_concurrent.max(1).min(32);
+
+    stream::iter(chunks.iter().enumerate())
+        .map(|(i, chunk_text)| {
+            let client = Arc::clone(client);
+            let calibrator = calibrator.cloned();
+            let text = chunk_text.to_string();
+            async move {
+                (
+                    i,
+                    score_importance_with_calibrator(&client, &text, calibrator.as_ref())
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!(chunk_index = i, error = %e,
+                                "score_importance_batch: chunk failed, using default");
+                            ImportanceAssessment::new(
+                                ImportanceScore::default(),
+                                Confidence::Unparseable,
+                            )
+                        }),
+                )
+            }
+        })
+        .buffer_unordered(max_concurrent)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .fold(
+            vec![
+                ImportanceAssessment::new(ImportanceScore::default(), Confidence::Unparseable,);
+                chunks.len()
+            ],
+            |mut acc, (i, assessment)| {
+                acc[i] = assessment;
+                acc
+            },
+        )
+}
+
 static SCORE_REGEX: OnceLock<Regex> = OnceLock::new();
 
 /// Confidence or parse status of an LLM importance rating.
@@ -202,6 +262,114 @@ pub fn parse_importance_score_response(raw_response: &str) -> ImportanceAssessme
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_score_importance_batch_empty_returns_empty() {
+        let client = Arc::new(OllamaClient::new("http://localhost:11434"));
+        let res = score_importance_batch(&client, &[], None, 8).await;
+        assert!(res.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_score_importance_batch_preserves_order() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+
+                // Extract chunk number from prompt in request body
+                let val = if req.contains("chunk_0") {
+                    "0.1"
+                } else if req.contains("chunk_1") {
+                    "0.2"
+                } else if req.contains("chunk_2") {
+                    "0.3"
+                } else if req.contains("chunk_3") {
+                    "0.4"
+                } else if req.contains("chunk_4") {
+                    "0.5"
+                } else {
+                    "0.9"
+                };
+
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": val
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = Arc::new(OllamaClient::new(server_url));
+        let chunks = ["chunk_0", "chunk_1", "chunk_2", "chunk_3", "chunk_4"];
+        let results = score_importance_batch(&client, &chunks, None, 4).await;
+
+        assert_eq!(results.len(), 5);
+        assert_eq!(results[0].value(), 0.1);
+        assert_eq!(results[1].value(), 0.2);
+        assert_eq!(results[2].value(), 0.3);
+        assert_eq!(results[3].value(), 0.4);
+        assert_eq!(results[4].value(), 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_score_importance_batch_single_error_doesnt_kill_batch() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": "0.7"
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = Arc::new(OllamaClient::new(server_url));
+        // Second chunk is empty string "  " which causes `score_importance_with_calibrator` to return Err(InvalidInput)
+        let chunks = ["valid chunk 1", "   ", "valid chunk 3"];
+        let results = score_importance_batch(&client, &chunks, None, 4).await;
+
+        assert_eq!(results.len(), 3);
+
+        assert_eq!(results[0].confidence, Confidence::Parsed);
+        assert_eq!(results[0].value(), 0.7);
+
+        assert_eq!(results[1].confidence, Confidence::Unparseable);
+        assert_eq!(results[1].value(), 0.5);
+
+        assert_eq!(results[2].confidence, Confidence::Parsed);
+        assert_eq!(results[2].value(), 0.7);
+    }
 
     #[tokio::test]
     async fn test_score_importance_empty_text_error() {

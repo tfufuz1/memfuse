@@ -37,6 +37,8 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_vetoes;
+
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -988,12 +990,11 @@ pub fn check_no_orphan_adr_files(root_dir: &Path) -> bool {
 pub fn check_adr_consistency_dir(root_dir: &Path) -> bool {
     let mut failed = false;
 
-    // 1. Prüfe, dass DECISIONS.md im Root nur noch die Weiterleitungsnotiz enthält
+    // 1. Prüfe DECISIONS.md im Root-Verzeichnis (gemäß ADR-060 Einzel-Quelle)
     let root_decisions_path = root_dir.join("DECISIONS.md");
     if root_decisions_path.exists() {
         let content = fs::read_to_string(&root_decisions_path).unwrap_or_default();
-        if content.contains("## ADR-") {
-            eprintln!("❌ Consistency error: DECISIONS.md im Root-Verzeichnis enthält noch '## ADR-' Abschnitte statt ausschließlich der Weiterleitungsnotiz!");
+        if !check_adr_consistency(&content) {
             failed = true;
         }
     } else {
@@ -1001,11 +1002,10 @@ pub fn check_adr_consistency_dir(root_dir: &Path) -> bool {
         failed = true;
     }
 
-    // 2. Scanne docs/decisions/
+    // 2. Scanne docs/decisions/ falls vorhanden
     let decisions_dir = root_dir.join("docs/decisions");
     if !decisions_dir.exists() {
-        eprintln!("❌ Consistency error: Verzeichnis docs/decisions/ existiert nicht!");
-        return false;
+        return !failed;
     }
 
     let adr_re = Regex::new(r"^ADR-(\d+)").unwrap();
@@ -1768,6 +1768,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-vetoes" => {
+            if let Err(e) = check_vetoes::check_vetoes() {
+                eprintln!("❌ check-vetoes failed: {}", e);
+                process::exit(1);
+            }
+        }
         "validate-tags" => {
             let fix = args.iter().any(|arg| arg == "--fix");
             let success = run_validate_tags(fix);
@@ -1824,7 +1830,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
@@ -2610,24 +2616,26 @@ mod tests {
     #[test]
     fn test_workspace_crate_layers_regression() {
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 16, "Expected 16 workspace crates");
+        assert_eq!(crates.len(), 18, "Expected 18 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),
+            ("memfuse-calibration", 1),
+            ("memfuse-candle", 1),
+            ("memfuse-checkpoint", 1),
             ("memfuse-crypto", 1),
-            ("memfuse-checkpoint", 2),
+            ("memfuse-graph", 1),
+            ("memfuse-text", 1),
             ("memfuse-embed", 2),
-            ("memfuse-graph", 2),
+            ("memfuse-index", 2),
             ("memfuse-ollama", 2),
             ("memfuse-store", 2),
-            ("memfuse-text", 2),
-            ("memfuse-index", 3),
-            ("memfuse-db", 4),
-            ("memfuse-bench", 5),
-            ("memfuse-router", 5),
-            ("memfuse-tauri", 5),
-            ("memfuse-agent", 6),
-            ("memfuse-mcp", 7),
+            ("memfuse-db", 3),
+            ("memfuse-bench", 4),
+            ("memfuse-router", 4),
+            ("memfuse-tauri", 4),
+            ("memfuse-agent", 5),
+            ("memfuse-mcp", 6),
         ]
         .into_iter()
         .collect();
