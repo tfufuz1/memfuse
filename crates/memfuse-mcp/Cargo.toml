@@ -7,6 +7,7 @@ edition.workspace = true
 default = []
 agent-workflows = ["memfuse-agent"]
 onnx = ["memfuse-embed", "memfuse-embed/onnx"]
+candle = ["dep:memfuse-candle"]
 test-utils = ["memfuse-core/test-utils"]
 
 [dependencies]
@@ -16,6 +17,7 @@ memfuse-crypto = { workspace = true }
 memfuse-ollama = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
 memfuse-agent = { workspace = true, optional = true }
+memfuse-candle = { workspace = true, optional = true }
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 rand = { workspace = true }
 parking_lot = { workspace = true }

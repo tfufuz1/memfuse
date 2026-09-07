@@ -23,7 +23,7 @@ Layer 4:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retri
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
 Layer 5:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
-Layer 6:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
+Layer 6:  memfuse-mcp —  (deps: memfuse-agent, memfuse-candle, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
 ```
 
 **Aktiver Workspace-Build**: 18 Workspace Crates (17 Kern-Crates + 1 optionales Crate `memfuse-embed`).

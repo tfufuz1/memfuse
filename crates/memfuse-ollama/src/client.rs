@@ -208,6 +208,15 @@ pub fn is_transient_error(e: &MemFuseError) -> bool {
     }
 }
 
+impl memfuse_core::LlmTextGenerator for OllamaClient {
+    fn generate<'a>(
+        &'a self,
+        prompt: &'a str,
+    ) -> memfuse_core::traits::BoxFuture<'a, memfuse_core::Result<String>> {
+        Box::pin(async move { self.generate_text(&self.config().model, prompt).await })
+    }
+}
+
 impl memfuse_core::SegmentSynthesizer for OllamaClient {
     fn synthesize_segment<'a>(
         &'a self,
