@@ -65,10 +65,7 @@ pub async fn score_importance_batch(
         .into_iter()
         .fold(
             vec![
-                ImportanceAssessment::new(
-                    ImportanceScore::default(),
-                    Confidence::Unparseable,
-                );
+                ImportanceAssessment::new(ImportanceScore::default(), Confidence::Unparseable,);
                 chunks.len()
             ],
             |mut acc, (i, assessment)| {

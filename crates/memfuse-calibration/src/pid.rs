@@ -54,7 +54,8 @@ impl PidController {
         self.prev_error = error;
 
         let new_size = (current_pool_size as f32 + u).round() as isize;
-        let clamped = new_size.clamp(self.min_pool_size as isize, self.max_pool_size as isize) as usize;
+        let clamped =
+            new_size.clamp(self.min_pool_size as isize, self.max_pool_size as isize) as usize;
         self.current_pool_size = Some(clamped);
         clamped
     }

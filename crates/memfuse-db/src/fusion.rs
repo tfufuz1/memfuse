@@ -1266,7 +1266,10 @@ mod tests {
             1.0,
         );
 
-        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let cfg = ResonanceConfig {
+            beta: 0.5,
+            gamma: 0.3,
+        };
         let fused = weighted_reciprocal_rank_fusion_with_options(
             vec![set1],
             10,
@@ -1309,7 +1312,10 @@ mod tests {
             1.0,
         );
 
-        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let cfg = ResonanceConfig {
+            beta: 0.5,
+            gamma: 0.3,
+        };
         let fused = weighted_reciprocal_rank_fusion_with_options(
             vec![set1, set2],
             10,

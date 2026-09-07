@@ -104,7 +104,9 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
                         if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&val) {
                             if let Ok(Some(doc)) = collection.get(&meta.id).await {
                                 if let Some(meta_val) = doc.metadata {
-                                    if let Some(text_val) = meta_val.get("text").and_then(|v| v.as_str()) {
+                                    if let Some(text_val) =
+                                        meta_val.get("text").and_then(|v| v.as_str())
+                                    {
                                         texts_in_seg.push(text_val.to_string());
                                         continue;
                                     }
@@ -119,11 +121,18 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
                 segment_texts.push(texts_in_seg);
             }
 
-            let rem_res = run_rem_phase(&segments, &segment_texts, synthesizer, config.min_turns_per_segment).await;
+            let rem_res = run_rem_phase(
+                &segments,
+                &segment_texts,
+                synthesizer,
+                config.min_turns_per_segment,
+            )
+            .await;
 
             for (idx, chunk) in rem_res.synthesized_chunks.iter().enumerate() {
                 let chunk_id = format!("rem_synth_{}_{}", synthesizer.model_id(), idx);
-                let source_turn_ids_json: Vec<u64> = chunk.source_turn_ids.iter().map(|id| id.inner()).collect();
+                let source_turn_ids_json: Vec<u64> =
+                    chunk.source_turn_ids.iter().map(|id| id.inner()).collect();
                 let metadata = serde_json::json!({
                     "rem_synthesized": true,
                     "source_turn_count": chunk.source_turn_ids.len(),
@@ -132,7 +141,10 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
                     "text": chunk.content,
                 });
 
-                if let Err(e) = collection.insert_text_only(&chunk_id, &chunk.content, Some(metadata.clone())).await {
+                if let Err(e) = collection
+                    .insert_text_only(&chunk_id, &chunk.content, Some(metadata.clone()))
+                    .await
+                {
                     tracing::debug!(chunk_id = %chunk_id, error = %e, "insert_text_only failed; storing synthesized chunk via put_kv");
                     let _ = collection.put_kv(&chunk_id, &metadata).await;
                 }

@@ -210,10 +210,7 @@ mod tests {
             .unwrap();
 
         // Edge 1 -> 2 exists
-        graph
-            .insert_edge_direct(id1, id2, 1.0)
-            .await
-            .unwrap();
+        graph.insert_edge_direct(id1, id2, 1.0).await.unwrap();
         graph.commit(tx).await.unwrap();
 
         let mut embeddings = HashMap::new();
@@ -235,9 +232,7 @@ mod tests {
         // 1 & 2 ignored (connected). 1 & 3 should be candidate.
         assert_eq!(candidates.len(), 1);
         let (cand_from, cand_to, sim) = &candidates[0];
-        assert!(
-            (*cand_from == id1 && *cand_to == id3) || (*cand_from == id3 && *cand_to == id1)
-        );
+        assert!((*cand_from == id1 && *cand_to == id3) || (*cand_from == id3 && *cand_to == id1));
         assert!(*sim > config.rebonding_similarity);
     }
 }

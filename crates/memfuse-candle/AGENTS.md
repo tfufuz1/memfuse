@@ -1,24 +1,24 @@
 # AGENTS.md — memfuse-candle
-> Layer 3 | Candle Inferenz-Backend, GGUF-Modelle | ~400 LOC
+> Layer 3 | Native Candle GGUF ML Inferenz & Embedding Provider | ~800 LOC
 
 ## 1. Zweck & Architekturrolle
 
-Ermöglicht lokales Candle-basiertes Inferenz-Backend für native GGUF-Modellausführung (`candle-core`, `candle-transformers`).
+Inferenz-Backend auf Basis von Candle (`candle-core`, `candle-transformers`) für native GGUF-Modellausführung (Datenhoheit ohne externe Services).
 
 ## 2. Modul-Karte
 
 | Datei | Verantwortung |
 |---|---|
-| `lib.rs` | `#![forbid(unsafe_code)]`, Modulexporte |
-| `embedding.rs` | `CandleEmbedder` — Inferenz & Embeddings via Candle |
-| `inference.rs` | `CandleInferenceEngine` — Textgenerierung via Candle |
+| `lib.rs` | Crate-Exports und Initialisierung |
+| `inference.rs` | Candle GGUF LlmTextGenerator Implementierung |
+| `embedding.rs` | Candle GGUF EmbeddingProvider Implementierung |
 
 ## 3. Kritische Invarianten
 
 ### Zero-Panic-Doctrine
 Keinesfalls `.unwrap()` oder `.expect()` im Produktionscode verwenden.
 
-### spawn_blocking-Pattern für Inferenz
+### Async Thread Safety
 Candle-Tensor-Operationen sind CPU-blockierend. Alle Inferenz- und Embed-Aufrufe MÜSSEN via `tokio::task::spawn_blocking` ausgeführt werden.
 
 ### Error Handling
@@ -27,38 +27,31 @@ Alle Fehler sind als `MemFuseError` zu strukturieren.
 ## 4. Public API Quick-Reference
 
 ```rust
-// === CandleEmbedder (embedding.rs) ===
-pub struct CandleEmbedder { ... }
-
-// === CandleInferenceEngine (inference.rs) ===
-pub struct CandleInferenceEngine { ... }
+pub struct CandleLlmGenerator { ... }
+pub struct CandleEmbedClient { ... }
 ```
 
 ## 5. Anti-Patterns & LLM-Fallstricke
 
 ```rust
-// ❌ FALSCH — Candle Tensors direkt im Tokio Executor Thread ausführen:
-let embedding = model.forward(&tensor)?;
+// ❌ FALSCH — Direct blocking Candle tensor ops inside async:
+let output = model.forward(&input)?;
 
-// ✅ KORREKT — Kapselung in spawn_blocking:
-tokio::task::spawn_blocking(move || {
-    model.forward(&tensor)
-}).await??;
+// ✅ KORREKT — Wrapped in spawn_blocking:
+tokio::task::spawn_blocking(move || model.forward(&input)).await??;
 ```
 
 ## 6. Concurrency & Lock-Hierarchie
 
-`CandleEmbedder` und `CandleInferenceEngine` kapseln CPU-intensive Tensor-Inferenz. Threads nutzen `tokio::task::spawn_blocking`. Keine Locks nach außen sichtbar.
+Inferenz-Sessions verwalten Thread-sichere Gewichte und Caches. Blocking Thread Pools trennen Heavy ML-Tensors vom Tokio Async Reactor.
 
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
 - **Erlaubte Imports**: `memfuse-core` (L0)
-- **Verbotene Imports**: `memfuse-db` (L2), `memfuse-agent` (L3 Peer)
-- **Genutzt von**: Optionale Inferenz-Backends.
+- **Verbotene Imports**: `memfuse-mcp` (L4 Upper)
 
 ## 8. Relevante ADRs & Rules
 
 | ADR/Rule | Relevanz |
 |---|---|
-| ADR-005 | Sovereign Core Doctrine |
-| `rules/async_drop.md` | spawn_blocking für CPU-bound Workloads |
+| Strategy B | Native Candle GGUF Inferenz |

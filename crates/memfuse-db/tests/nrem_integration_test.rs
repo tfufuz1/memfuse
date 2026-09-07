@@ -1,8 +1,8 @@
-use memfuse_core::DocId;
 use memfuse_core::BoxFuture;
+use memfuse_core::DocId;
 use memfuse_db::{
-    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, MemFuse, MemFuseConfig,
-    NremConfig, SegmentSynthesizer,
+    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, MemFuse, MemFuseConfig, NremConfig,
+    SegmentSynthesizer,
 };
 use std::time::Duration;
 use tempfile::tempdir;
@@ -127,9 +127,7 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
         dimension: 4,
         ..Default::default()
     };
-    let db = MemFuse::open_with_config(dir.path(), config)
-        .await
-        .unwrap();
+    let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
     let collection = db.collection("rem_test").await.unwrap();
 
     let emb_a = vec![1.0, 0.0, 0.0, 0.0];
@@ -157,9 +155,10 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
     };
 
     let synthesizer = TestSynthesizer;
-    let (nrem_res, rem_res) = execute_sleep_cycle(&collection, &turns, &nrem_config, Some(&synthesizer))
-        .await
-        .unwrap();
+    let (nrem_res, rem_res) =
+        execute_sleep_cycle(&collection, &turns, &nrem_config, Some(&synthesizer))
+            .await
+            .unwrap();
 
     assert_eq!(nrem_res.segments_created, 1);
     let rem = rem_res.expect("REM phase result should be present");

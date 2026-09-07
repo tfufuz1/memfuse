@@ -3481,6 +3481,10 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "2cf741f23c365faf"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "4188f4f6cdd095cc"
   },
   {
@@ -3505,7 +3509,35 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
-    "hash": "629333830c1ae4f2"
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "66979dc996d2302c"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "66979dc996d2302c"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "66979dc996d2302c"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "66979dc996d2302c"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
@@ -3529,15 +3561,15 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
-    "hash": "8acb2af5cf97ef34"
-  },
-  {
-    "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "a36d59e0fd039af2"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "a6507433f4989b2a"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "a8b66106ca613865"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
@@ -6017,6 +6049,14 @@
   },
   {
     "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "71cfa1af15c2284f"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "783ba629067dec6b"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
     "hash": "a4a144e75629d9bb"
   },
   {
@@ -7809,7 +7849,7 @@
   },
   {
     "file": "crates/memfuse-graph/src/percolation.rs",
-    "hash": "23c3e9853dd068fb"
+    "hash": "42437cbf9b353521"
   },
   {
     "file": "crates/memfuse-graph/src/percolation.rs",
@@ -7817,7 +7857,7 @@
   },
   {
     "file": "crates/memfuse-graph/src/percolation.rs",
-    "hash": "a278a76b8ca04b97"
+    "hash": "bb7487437c47cb4a"
   },
   {
     "file": "crates/memfuse-graph/src/percolation.rs",
@@ -10072,6 +10112,34 @@
     "hash": "fd69583a0fe09dc0"
   },
   {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "2975e1ad2f506261"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "30229c92d980527f"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "60e430788babe003"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "6b54495449267baa"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "949c0dbbc0ac8a32"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "e20a5450e67e4577"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall.rs",
+    "hash": "fe665b0cace80ad0"
+  },
+  {
     "file": "crates/memfuse-index/tests/poisoning.rs",
     "hash": "271349738b637e55"
   },
@@ -10562,6 +10630,34 @@
   {
     "file": "crates/memfuse-index/tests/simd_numerical_audit.rs",
     "hash": "fc77be40e09863d8"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "25085c32fe5c7879"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "5bf7eada6d89c49f"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "b6d9bbff2c8bc5d7"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/segment.rs",
+    "hash": "bb1365364ea0bdb3"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/store.rs",
+    "hash": "75c00d97bb5a0d61"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/store.rs",
+    "hash": "c0dbf5da2d9ef8c9"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/store.rs",
+    "hash": "fd67501a323e0302"
   },
   {
     "file": "crates/memfuse-mcp/src/prompt_injection.rs",

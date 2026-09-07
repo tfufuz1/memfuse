@@ -3424,6 +3424,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "memfuse-kv-bridge"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "memfuse-core",
+ "parking_lot",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "memfuse-mcp"
 version = "0.1.0"
 dependencies = [
