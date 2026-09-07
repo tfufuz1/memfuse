@@ -96,11 +96,8 @@ impl ContextPrefixEngine {
 
         // Dokument kürzen um LLM-Kontextfenster nicht zu sprengen
         let doc_excerpt = truncate_chars(&escaped_doc, self.config.max_document_chars);
-        // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee)
-        // BEFUND: cargo-mutants identifiziert ungenügende Testabdeckung bei der char-Approximationsberechnung (* 4).
-        // RISIKO: Mutation von Multiplikation zu Addition bleibt in bestehenden Unit-Tests unbemerkt.
-        // EMPFEHLUNG: Gezielten Boundary-Test für max_prefix_tokens in context_prefixer tests ergänzen.
-        let max_p = self.config.max_prefix_tokens * 4; // Chars-Approximation
+        // AI-TAG[TESTING][MINOR] RESOLVED: AGT-OLLAMA-47e6619b — compute_max_prefix_chars extrahiert & Unit/Prompt-Boundary-Tests ergänzt (TS: 2026-09-06T12:00:00Z) (SESSION: e4f906ee)
+        let max_p = compute_max_prefix_chars(self.config.max_prefix_tokens);
 
         let prompt = format!(
             "Hier ist ein Dokument:\n<document>\n{doc_excerpt}\n</document>\n\n\
@@ -138,6 +135,11 @@ impl ContextPrefixEngine {
         }
         results
     }
+}
+
+#[inline]
+fn compute_max_prefix_chars(max_prefix_tokens: usize) -> usize {
+    max_prefix_tokens * 4
 }
 
 pub fn truncate_chars(s: &str, max_chars: usize) -> String {
@@ -246,6 +248,59 @@ mod tests {
             s.is_char_boundary(truncated.len()),
             "truncation must be at char boundary"
         );
+    }
+
+    #[test]
+    fn test_compute_max_prefix_chars() {
+        assert_eq!(compute_max_prefix_chars(100), 400);
+        assert_eq!(compute_max_prefix_chars(80), 320);
+        assert_eq!(compute_max_prefix_chars(0), 0);
+    }
+
+    #[tokio::test]
+    async fn test_generate_prefix_max_prefix_tokens_prompt_assertion() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap
+        let addr = listener.local_addr().unwrap(); // unwrap
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let req_str = String::from_utf8_lossy(&buf[..n]);
+                assert!(
+                    req_str.contains("Maximal 400 Zeichen"),
+                    "Prompt must contain 'Maximal 400 Zeichen' for max_prefix_tokens=100, got: {req_str}"
+                );
+
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": "Dies ist ein Kontext-Präfix."
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        let config = ContextPrefixConfig {
+            max_prefix_tokens: 100,
+            ..Default::default()
+        };
+        let engine = ContextPrefixEngine::new(client, config);
+        let prefix = engine
+            .generate_prefix("Gesamtdokument Inhalt", "Chunk Inhalt")
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(prefix, "Dies ist ein Kontext-Präfix.");
     }
 
     #[tokio::test]

@@ -107,10 +107,6 @@ pub mod reaper;
 pub mod thermostat;
 pub mod transaction;
 
-pub use sleep_cycle::{
-    run_nrem_phase as run_rem_phase, run_nrem_phase as run_rem_phase_with_tx,
-    NremConfig as RemConfig, NremPhaseResult as RemPhaseResult,
-};
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
