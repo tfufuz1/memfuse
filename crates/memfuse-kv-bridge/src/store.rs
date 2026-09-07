@@ -37,10 +37,12 @@ impl TenantIsolatedKvStore {
             .read()
             .get(&tenant)
             .map(|v| {
-                v.iter().map(|s| {
-                    s.touch();
-                    s.segment_id
-                }).collect()
+                v.iter()
+                    .map(|s| {
+                        s.touch();
+                        s.segment_id
+                    })
+                    .collect()
             })
             .unwrap_or_default()
     }
