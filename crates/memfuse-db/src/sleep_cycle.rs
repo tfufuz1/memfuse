@@ -25,7 +25,13 @@ pub struct NremConfig {
     pub min_turns_per_segment: usize,
     /// Maximale Anzahl von Turns pro Segment (Default: 20).
     pub max_turns_per_segment: usize,
-    /// Cosine-Similarity-Schwellwert für Near-Duplicate-Detection (Default: 0.95).
+    /// Cosine-Similarity-Schwelle für Segment-Kohäsion (Default: 0.70).
+    /// Ein Turn wird zum aktuellen Segment hinzugefügt wenn sim >= dieses Werts.
+    /// SEMANTIK: "Thematisch verwandt" — bewusst niedriger als near_duplicate_threshold.
+    pub segment_cohesion_threshold: f32,
+    /// Cosine-Similarity-Schwelle für Near-Duplicate-Detection (Default: 0.95).
+    /// Pairs über diesem Wert werden als Duplikate markiert.
+    /// SEMANTIK: "Nahezu identisch" — bewusst hoch.
     pub near_duplicate_cosine_threshold: f32,
 }
 
@@ -34,6 +40,7 @@ impl Default for NremConfig {
         Self {
             min_turns_per_segment: 3,
             max_turns_per_segment: 20,
+            segment_cohesion_threshold: 0.70,
             near_duplicate_cosine_threshold: 0.95,
         }
     }
@@ -140,7 +147,7 @@ pub fn group_turns_into_segments(
             Some(seg) => {
                 let sim = cosine_similarity(&seg.representative, emb);
                 // Kohäsions-Check: hohe Ähnlichkeit und Kapazität vorhanden
-                if sim >= config.near_duplicate_cosine_threshold
+                if sim >= config.segment_cohesion_threshold
                     && seg.turns.len() < config.max_turns_per_segment
                 {
                     seg.add_turn(*doc_id, emb.clone());
@@ -165,31 +172,30 @@ pub fn group_turns_into_segments(
         return Vec::new();
     }
 
-    // Merging-Pass für Mikro-Segmente unter min_turns_per_segment
+    // Pass 1: Forward-Merge — zu-kleines Segment wird in VORHERIGES gemergt (wenn möglich)
     let mut merged: Vec<WorkingSegment> = Vec::new();
-
     for seg in raw_segments {
-        if let Some(last) = merged.last_mut() {
-            if last.turns.len() < config.min_turns_per_segment {
-                // Letztes Segment ist zu klein -> verschmelze aktuelles Segment hinein
+        if merged.is_empty() {
+            merged.push(seg);
+            continue;
+        }
+        // Wenn das aktuelle Segment zu klein ist: in Vorgänger mergen
+        if seg.turns.len() < config.min_turns_per_segment {
+            if let Some(last) = merged.last_mut() {
                 for (id, emb) in seg.turns {
                     last.add_turn(id, emb);
                 }
-                continue;
             }
+        } else {
+            merged.push(seg);
         }
-        merged.push(seg);
     }
 
-    // Prüfe abschließend das letzte Segment in merged
-    if merged.len() > 1 {
-        let last_idx = merged.len() - 1;
-        if merged[last_idx].turns.len() < config.min_turns_per_segment {
-            let last_seg = merged.remove(last_idx);
-            let prev = &mut merged[last_idx - 1];
-            for (id, emb) in last_seg.turns {
-                prev.add_turn(id, emb);
-            }
+    // Pass 2: Backward-Merge — erstes Segment zu klein → in NÄCHSTES mergen
+    if merged.len() >= 2 && merged[0].turns.len() < config.min_turns_per_segment {
+        let first = merged.remove(0);
+        for (id, emb) in first.turns {
+            merged[0].add_turn(id, emb);
         }
     }
 
@@ -349,6 +355,7 @@ mod tests {
         let config = NremConfig {
             min_turns_per_segment: 3,
             max_turns_per_segment: 20,
+            segment_cohesion_threshold: 0.70,
             near_duplicate_cosine_threshold: 0.95,
         };
 
@@ -437,6 +444,7 @@ mod tests {
         let config = NremConfig {
             min_turns_per_segment: 3,
             max_turns_per_segment: 20,
+            segment_cohesion_threshold: 0.70,
             near_duplicate_cosine_threshold: 0.95,
         };
 
@@ -447,5 +455,65 @@ mod tests {
             "Segment under min_turns_per_segment must be merged into neighboring segment"
         );
         assert_eq!(segments[0].turn_ids.len(), 6);
+    }
+
+    #[test]
+    fn test_group_turns_moderate_similarity_uses_cohesion_threshold() {
+        // Turns mit ~0.75 Ähnlichkeit sollen zu EINEM Segment gruppiert werden
+        // (cohesion_threshold=0.70), aber NICHT als Duplikat gelten (0.75 < 0.95).
+        let _dim = 4;
+        // Embedding A: [1, 0, 0, 0], Embedding B: normalisiert ~[0.9, 0.44, 0, 0] → sim ≈ 0.9
+        let emb_a = vec![1.0f32, 0.0, 0.0, 0.0];
+        let mut emb_b = vec![0.9f32, 0.436, 0.0, 0.0];
+        let norm: f32 = emb_b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        for x in emb_b.iter_mut() {
+            *x /= norm;
+        }
+
+        let turns = vec![
+            (DocId::new(1), emb_a.clone()),
+            (DocId::new(2), emb_b.clone()),
+        ];
+        let config = NremConfig {
+            min_turns_per_segment: 1,
+            max_turns_per_segment: 20,
+            segment_cohesion_threshold: 0.70,
+            near_duplicate_cosine_threshold: 0.95,
+        };
+        let segments = group_turns_into_segments(&turns, &config);
+        assert_eq!(
+            segments.len(),
+            1,
+            "Turns with ~0.87 sim should be in ONE segment (cohesion_threshold=0.70)"
+        );
+
+        let dup_pairs = detect_near_duplicates(&turns, config.near_duplicate_cosine_threshold);
+        assert!(
+            dup_pairs.is_empty(),
+            "Turns with sim < 0.95 must NOT be near-duplicates"
+        );
+    }
+
+    #[test]
+    fn test_default_config_produces_meaningful_segmentation() {
+        // Mit Default-Config müssen semantisch unterschiedliche Turns in separate Segmente
+        let emb_a = vec![1.0f32, 0.0, 0.0, 0.0];
+        let emb_b = vec![0.0f32, 1.0, 0.0, 0.0];
+        let turns: Vec<_> = (0..6)
+            .map(|i| {
+                if i < 3 {
+                    (DocId::new(i + 1), emb_a.clone())
+                } else {
+                    (DocId::new(i + 1), emb_b.clone())
+                }
+            })
+            .collect();
+        let config = NremConfig::default();
+        let segments = group_turns_into_segments(&turns, &config);
+        assert_eq!(
+            segments.len(),
+            2,
+            "Two distinct semantic clusters must produce 2 segments with default config"
+        );
     }
 }
