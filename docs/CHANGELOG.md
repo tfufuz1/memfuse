@@ -33,6 +33,7 @@
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/nonce_reuse.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Nonce reuse demonstration and mitigation verification suite. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/proptests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Property-based testing suite for memfuse-crypto using proptest. |
 | `TS:2026-08-31T00:00:00Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/tests/budget_race_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Test token budget concurrency and RMW race condition in memfuse-agent workflow steps. |
+| `TS:2026-08-31T00:00:00Z` | `crates/memfuse-db/src/physio_config.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Konfiguration des PhysioSchedulers für konsolidierte Physiologie-Hintergrund-Tasks. |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/benches/audit_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit Benchmark Suite zur Ermittlung von Durchsatz, Speedup, Latenz-Perzentilen, Pareto-Front und RAM-Footprint |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/quantize_persistence_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für SQ8 Kendall-Tau Rangkorrelation, Persistence Roundtrips und Mmap Fault-Tolerance |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/recall_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für HNSW & DiskANN Graph-Korrektheit & Brute-Force Recall |
@@ -51,6 +52,7 @@
 | `TS:2026-08-30T19:45:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/anti_tamper_matrix.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Systematic WAL anti-tamper matrix, single bit-flip analysis, replay attack protection, and constant-time check. |
 | `TS:2026-08-30T19:35:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/nonce_stress.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-threaded nonce uniqueness stress testing & empirical vs theoretical collision probability verification. |
 | `TS:2026-08-30T19:25:00Z (SESSION: 20260830)` | `crates/memfuse-crypto/tests/rfc_vectors.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verification of cryptographic primitives against official RFC and reference test vectors. |
+| `TS:2026-08-30T19:00:00Z` | `crates/memfuse-graph/src/cascade.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cascading-Invalidation (Supersedes-Chunk -> Graph-Kanten-Tombstone) |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
@@ -206,6 +208,7 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
+| `` | `crates/memfuse-db/src/physio_scheduler.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zentraler PhysioScheduler für koordiniertes, sequenzielles Ausführen aller Physiologie-Aktionen (§10.1). |
 | `` | `crates/memfuse-db/src/sleep_cycle.rs` | `AI-TAG` | `AGT-DB-660fbb5f` | `-` | `RESOLVED` | `0` | /// AI-TAG[SLEEP][MINOR] RESOLVED: AGT-DB-660fbb5f — Position im turns-Slice wird anstelle des |
 | `` | `crates/memfuse-db/tests/diskann_collection_fallback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection Integration Fallback Test (Pflichttest 3). |
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
