@@ -4768,26 +4768,6 @@
     "hash": "ef8c38b37cb5a4f9"
   },
   {
-    "file": "crates/memfuse-db/src/replicator.rs",
-    "hash": "05f830a0b449cd45"
-  },
-  {
-    "file": "crates/memfuse-db/src/replicator.rs",
-    "hash": "175070f2d59854c7"
-  },
-  {
-    "file": "crates/memfuse-db/src/replicator.rs",
-    "hash": "284817d69692dd74"
-  },
-  {
-    "file": "crates/memfuse-db/src/replicator.rs",
-    "hash": "b0ea015b0459a035"
-  },
-  {
-    "file": "crates/memfuse-db/src/replicator.rs",
-    "hash": "b829e8f4e8bb7e91"
-  },
-  {
     "file": "crates/memfuse-db/src/sleep_cycle.rs",
     "hash": "615fd20029fb2173"
   },
@@ -10814,6 +10794,10 @@
   {
     "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
     "hash": "5bf7eada6d89c49f"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "9f88712eb627b2be"
   },
   {
     "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
