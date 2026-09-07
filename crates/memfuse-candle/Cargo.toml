@@ -1,0 +1,26 @@
+[package]
+name = "memfuse-candle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Native Candle GGUF ML inference backend for MemFuse"
+
+[dependencies]
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = "0.21"
+sha2 = "0.10"
+tokio = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+memfuse-core = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]

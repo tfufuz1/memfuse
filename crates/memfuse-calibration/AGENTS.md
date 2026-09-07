@@ -1,79 +1,39 @@
 # AGENTS.md — memfuse-calibration
-> Layer 1 | Probability & Score Calibration | ~600 LOC
 
 ## 1. Zweck & Architekturrolle
 
-Score- und Wahrscheinlichkeitskalibrierungs-Primitives für MemFuse (`IsotonicCalibrator`, `PlattScaler`, `PidController`).
-Wird von höheren Schichten genutzt (Router, Reranker, Importance Scoring), um Roh-Scores auf kalibrierte
-Intervalle $[0.0, 1.0]$ zu mappen sowie Reranking-Pool-Größen dynamisch zu regeln.
+Implements probability calibration primitives (`IsotonicCalibrator` and `PlattScaler`) used across MemFuse components (Router, Reranker, Importance Scoring).
 
 ## 2. Modul-Karte
 
 | Datei | Verantwortung |
 |---|---|
-| `lib.rs` | Modul-Deklarationen, Re-Exports, `#![deny(unsafe_code)]`, `#![warn(missing_docs)]` |
-| `isotonic.rs` | `IsotonicCalibrator` — Nicht-parametrisches PAVA (Pool Adjacent Violators Algorithm) Fitting |
-| `platt.rs` | `PlattScaler` — Parametrische Sigmoid-Regression (Platt Scaling) für Logits |
-| `pid.rs` | `PidController` — F-08 PID-Regler für Reranking-Kandidatenpool-Größe mit Anti-Windup |
+| `lib.rs` | Re-Exports und Modul-Deklarationen |
+| `isotonic.rs` | `IsotonicCalibrator` Implementierung |
+| `platt.rs` | `PlattScaler` Implementierung |
 
 ## 3. Kritische Invarianten
 
-### Layer-1-Garantie
-Importiert ausschließlich `memfuse-core`. Besitzt **keine** I/O, Dateisystem- oder Netzwerkabhängigkeiten.
-
-### Zero-Unsafe
-Standardmäßig `#![deny(unsafe_code)]` erzwingen.
-
-### P8 / INV-CAL Compliance
-Kalibrierungen müssen bei Modell- oder Konfigurationsänderungen via `invalidate_on_config_change(new_fingerprint)` ungültig gemacht werden.
-
-### PID-Homeostase (F-08)
-`PidController` hält Reranking-Latenz auf `target_latency_ms`. Integral-Term wird strikt auf `[-max_integral, max_integral]` geclippt (Anti-Windup), Pool-Größe bleibt in `[min_pool_size, max_pool_size]`.
+1. **Layer 1 Placement**: Depends only on `memfuse-core`.
+2. **Zero-Unsafe**: `#![forbid(unsafe_code)]` compliance.
+3. **P8 Compliance**: Invalidate calibration via `invalidate_on_config_change(new_fingerprint: ConfigFingerprint)`.
 
 ## 4. Public API Quick-Reference
 
-```rust
-pub struct IsotonicCalibrator;
-pub struct PlattScaler;
-pub struct PidController {
-    pub kp: f32,
-    pub ki: f32,
-    pub kd: f32,
-    pub target_latency_ms: f32,
-    pub min_pool_size: usize,
-    pub max_pool_size: usize,
-    pub current_pool_size: Option<usize>,
-}
-
-impl PidController {
-    pub fn update(&mut self, current_pool_size: usize, measured_latency_ms: f32) -> usize;
-    pub fn reset(&mut self);
-}
-```
+`IsotonicCalibrator`, `PlattScaler`
 
 ## 5. Anti-Patterns & LLM-Fallstricke
 
-```rust
-// ❌ Integral-Overflow ohne Clipping:
-self.integral += error; // Kann bei dauerhafter Latenz-Abweichung explodieren
-
-// ✅ KORREKT (Anti-Windup):
-self.integral = (self.integral + error).clamp(-self.max_integral, self.max_integral);
-```
+Keine manuellen Kalibrierungen ohne Invalidation bei Konfigurationsänderung durchführen.
 
 ## 6. Concurrency & Lock-Hierarchie
 
-`memfuse-calibration` ist stateless/pure data structures und besitzt keine internen Lock-Mechanismen.
-Synchronization (z.B. `Arc<parking_lot::Mutex<PidController>>`) erfolgt in konsumierenden Schichten (`memfuse-db`).
+Keine internen Locks. Thread-safety via Pure Functions / Mutexes in aufrufenden Schichten.
 
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
-- **Erlaubte Imports**: `memfuse-core`, `serde`, `parking_lot`, `tracing`.
-- **Konsumenten**: `memfuse-db`, `memfuse-embed`, `memfuse-router`.
+Nutzt `memfuse-core` (Layer 0). Wird von `memfuse-router`, `memfuse-embed` und `memfuse-db` verwendet.
 
 ## 8. Relevante ADRs & Rules
 
-| ADR/Rule | Relevanz |
-|---|---|
-| `rules/error-handling.md` | Fehlerpropagierung über `memfuse-core::MemFuseError` |
-| ADR-070 | Conformal Score Calibration Standard |
+ADR-068 (Calibration Engine), P8 Calibration Principle.
