@@ -1466,7 +1466,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_calibrated_threshold_convergence() {
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+        use memfuse_core::ConfigFingerprint;
 
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
@@ -1496,7 +1496,7 @@ mod tests {
             .unwrap();
         db.inner_storage().commit(tx).await.unwrap();
 
-        let fp = ConfigFingerprint::new([1u8; 32], 0.1, QuantizationLevel::F16);
+        let fp = ConfigFingerprint::new("llama-3b", "F16", "template", 0.1);
         let profile = SlmProfile::new(
             "conv-slm",
             "http://localhost:9999/mcp",
@@ -1518,7 +1518,7 @@ mod tests {
             router.record_outcome(decision.decision_id, RoutingOutcome::Success);
             let cal_stats = router.calibration_stats();
             let st = &cal_stats["conv-slm"];
-            last_calibrated = st.is_calibrated(&fp);
+            last_calibrated = st.is_calibrated(Some(&fp));
             println!(
                 "Call {}: window_total={}, quantile_threshold={}, calibrated={}",
                 i + 1,
@@ -1536,7 +1536,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_calibration_invalidation_on_temperature_change() {
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+        use memfuse_core::ConfigFingerprint;
 
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
@@ -1556,7 +1556,7 @@ mod tests {
             .await
             .unwrap();
 
-        let fp1 = ConfigFingerprint::new([1u8; 32], 0.1, QuantizationLevel::F16);
+        let fp1 = ConfigFingerprint::new("llama-3b", "F16", "template", 0.1);
         let profile1 = SlmProfile::new(
             "temp-slm",
             "http://localhost:9999/mcp",
@@ -1579,15 +1579,15 @@ mod tests {
 
         let cal_stats = router.calibration_stats();
         assert!(
-            cal_stats["temp-slm"].is_calibrated(&fp1),
+            cal_stats["temp-slm"].is_calibrated(Some(&fp1)),
             "Profile should be calibrated under initial fp1"
         );
 
-        // Update profile with new temperature (0.7 -> different bucket)
-        let fp2 = ConfigFingerprint::new([1u8; 32], 0.7, QuantizationLevel::F16);
+        // Update profile with new temperature (0.7 -> different temperature bits)
+        let fp2 = ConfigFingerprint::new("llama-3b", "F16", "template", 0.7);
         assert_ne!(
-            fp1.temperature_bucket, fp2.temperature_bucket,
-            "Buckets must differ for 0.1 vs 0.7"
+            fp1.temperature_bits, fp2.temperature_bits,
+            "Bits must differ for 0.1 vs 0.7"
         );
 
         let profile2 = SlmProfile::new(
@@ -1613,7 +1613,7 @@ mod tests {
 
         let stats_after_shift = router.calibration_stats();
         assert!(
-            !stats_after_shift["temp-slm"].is_calibrated(&fp2),
+            !stats_after_shift["temp-slm"].is_calibrated(Some(&fp2)),
             "Calibration state must report is_calibrated = false immediately after shift"
         );
 
@@ -1628,14 +1628,14 @@ mod tests {
 
         let stats_recalibrated = router.calibration_stats();
         assert!(
-            stats_recalibrated["temp-slm"].is_calibrated(&fp2),
+            stats_recalibrated["temp-slm"].is_calibrated(Some(&fp2)),
             "Profile should become calibrated again under fp2 after re-warmup window"
         );
     }
 
     #[tokio::test]
     async fn test_calibration_invalidation_on_prompt_template_hash_change() {
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+        use memfuse_core::ConfigFingerprint;
 
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
@@ -1655,7 +1655,7 @@ mod tests {
             .await
             .unwrap();
 
-        let fp_hash1 = ConfigFingerprint::new([1u8; 32], 0.2, QuantizationLevel::Q8_0);
+        let fp_hash1 = ConfigFingerprint::new("llama-3b", "Q8_0", "Template A", 0.2);
         let profile1 = SlmProfile::new(
             "prompt-slm",
             "http://localhost:9999/mcp",
@@ -1676,12 +1676,12 @@ mod tests {
         }
 
         assert!(
-            router.calibration_stats()["prompt-slm"].is_calibrated(&fp_hash1),
+            router.calibration_stats()["prompt-slm"].is_calibrated(Some(&fp_hash1)),
             "Profile should be calibrated under prompt hash 1"
         );
 
         // Shift prompt template hash
-        let fp_hash2 = ConfigFingerprint::new([2u8; 32], 0.2, QuantizationLevel::Q8_0);
+        let fp_hash2 = ConfigFingerprint::new("llama-3b", "Q8_0", "Template B", 0.2);
         let profile2 = SlmProfile::new(
             "prompt-slm",
             "http://localhost:9999/mcp",
@@ -1702,14 +1702,14 @@ mod tests {
             "Decision after prompt template hash shift must be uncalibrated"
         );
         assert!(
-            !router.calibration_stats()["prompt-slm"].is_calibrated(&fp_hash2),
+            !router.calibration_stats()["prompt-slm"].is_calibrated(Some(&fp_hash2)),
             "State must report is_calibrated = false"
         );
     }
 
     #[tokio::test]
     async fn test_calibration_invalidation_on_quantization_change() {
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
+        use memfuse_core::ConfigFingerprint;
 
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
@@ -1729,7 +1729,7 @@ mod tests {
             .await
             .unwrap();
 
-        let fp_q8 = ConfigFingerprint::new([3u8; 32], 0.0, QuantizationLevel::Q8_0);
+        let fp_q8 = ConfigFingerprint::new("llama-3b", "Q8_0", "template", 0.0);
         let profile1 = SlmProfile::new(
             "quant-slm",
             "http://localhost:9999/mcp",
@@ -1750,12 +1750,12 @@ mod tests {
         }
 
         assert!(
-            router.calibration_stats()["quant-slm"].is_calibrated(&fp_q8),
+            router.calibration_stats()["quant-slm"].is_calibrated(Some(&fp_q8)),
             "Profile should be calibrated under Q8_0 quantization"
         );
 
         // Shift quantization level from Q8_0 to Q4_K_M
-        let fp_q4 = ConfigFingerprint::new([3u8; 32], 0.0, QuantizationLevel::Q4_K_M);
+        let fp_q4 = ConfigFingerprint::new("llama-3b", "Q4_K_M", "template", 0.0);
         let profile2 = SlmProfile::new(
             "quant-slm",
             "http://localhost:9999/mcp",
@@ -1776,15 +1776,13 @@ mod tests {
             "Decision after quantization level shift must be uncalibrated"
         );
         assert!(
-            !router.calibration_stats()["quant-slm"].is_calibrated(&fp_q4),
+            !router.calibration_stats()["quant-slm"].is_calibrated(Some(&fp_q4)),
             "State must report is_calibrated = false"
         );
     }
 
     #[tokio::test]
     async fn test_calibration_failsafe_on_unknown_quantization() {
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
-
         let dir = tempfile::tempdir().unwrap();
         let config = MemFuseConfig {
             dimension: 4,
@@ -1803,19 +1801,18 @@ mod tests {
             .await
             .unwrap();
 
-        let fp_unknown = ConfigFingerprint::new([4u8; 32], 0.1, QuantizationLevel::Unknown);
+        // Profile without fingerprint set (fingerprint: None)
         let profile = SlmProfile::new(
             "unknown-slm",
             "http://localhost:9999/mcp",
             vec![],
             TokenBudget::new(1000, 100),
             0.001,
-        )
-        .with_fingerprint(fp_unknown.clone());
+        );
 
         let router = RouterEngine::new(collection, vec![profile], None);
 
-        // Perform 50 decisions with record_outcome under Unknown quantization
+        // Perform 50 decisions with record_outcome without fingerprint set
         for _ in 0..50 {
             let decision = router
                 .route(&vec_data, "unknown quantization content")
@@ -1826,8 +1823,8 @@ mod tests {
 
         let stats = router.calibration_stats();
         assert!(
-            !stats["unknown-slm"].is_calibrated(&fp_unknown),
-            "QuantizationLevel::Unknown must fail-safe and never yield is_calibrated = true"
+            !stats["unknown-slm"].is_calibrated(None),
+            "Unfingerprinted profile must fail-safe and never yield is_calibrated = true"
         );
     }
 
@@ -1926,8 +1923,8 @@ mod tests {
             .unwrap();
         db.inner_storage().commit(tx).await.unwrap();
 
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
-        let fp = ConfigFingerprint::new([1u8; 32], 0.5, QuantizationLevel::F16);
+        use memfuse_core::ConfigFingerprint;
+        let fp = ConfigFingerprint::new("llama-3b", "F16", "template", 0.5);
         let profile = SlmProfile::new(
             "parallel-conv-slm",
             "http://localhost:9999/mcp",
@@ -2179,8 +2176,8 @@ mod tests {
             .await
             .unwrap();
 
-        use crate::profile::{ConfigFingerprint, QuantizationLevel};
-        let fp = ConfigFingerprint::new([1u8; 32], 0.1, QuantizationLevel::F16);
+        use memfuse_core::ConfigFingerprint;
+        let fp = ConfigFingerprint::new("llama-3b", "F16", "template", 0.1);
         let profile = SlmProfile::new(
             "default",
             "http://localhost:9999/mcp",
