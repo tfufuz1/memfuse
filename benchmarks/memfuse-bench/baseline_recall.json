@@ -1,0 +1,13 @@
+{
+  "recall_at_5": 0.8387096774193549,
+  "recall_at_10": 0.8709677419354839,
+  "overall_accuracy": 0.8387096774193549,
+  "total_scenarios": 31,
+  "failed_scenarios": [
+    "sup_02",
+    "sup_04",
+    "sup_05",
+    "multi_19",
+    "single_21"
+  ]
+}
