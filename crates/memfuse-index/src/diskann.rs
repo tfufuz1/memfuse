@@ -27,6 +27,8 @@ const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"FOOT";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse-diskann-integrity-key-32";
 const DISKANN_VERSION: u16 = 1;
+const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
+const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
 /// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
 /// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
 /// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
