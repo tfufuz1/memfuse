@@ -22,8 +22,10 @@ pub mod anti_tamper;
 pub mod crypto;
 pub mod deletion_proof;
 pub mod error;
+pub mod kv_cipher;
 pub mod wal_crypto;
 
 pub use crypto::KeyManager as CryptoKey;
 pub use deletion_proof::{DeletionLayer, DeletionProof, DeletionScope, ExcludedScope};
 pub use error::{CryptoError, Result};
+pub use kv_cipher::{EncryptedKvLayer, KvSegmentCipher, ModelFingerprint};

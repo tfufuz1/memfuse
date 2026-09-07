@@ -2868,6 +2868,66 @@
     "hash": "f2a038cded1c121e"
   },
   {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "002ee708c28c6f98"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "132f6b94207c299c"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "195f4378f2bc4ef8"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "3403bf1c3a8eee62"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "3448da7ca833ae37"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "42bfb09e883219b2"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "872195f0b9c7a283"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "b695f2fb6d6bf3da"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "b9b7cb18a72a33aa"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "cbaf5f9188d53a24"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "ce4e2b0539d6bb6c"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "d07f2e9a8814a1c8"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "e92dcccd26003868"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "eda2ec2d329355cc"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_cipher.rs",
+    "hash": "f8cccd25105b2c1c"
+  },
+  {
     "file": "crates/memfuse-crypto/src/wal_crypto.rs",
     "hash": "05a4839ef623fd74"
   },
@@ -3341,7 +3401,19 @@
   },
   {
     "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "15615531adde3c04"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
     "hash": "3bd3c2102220e989"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "450ca8810ad200ed"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "453d8da6d80256c6"
   },
   {
     "file": "crates/memfuse-crypto/tests/proptests.rs",
@@ -3353,7 +3425,23 @@
   },
   {
     "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "6fc9c9bb402da8a2"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "7e663412b961d7ab"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
     "hash": "94e2fad8c4269ba4"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "9a5b51fc0ec11b12"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "9d2859f2e052a196"
   },
   {
     "file": "crates/memfuse-crypto/tests/proptests.rs",
@@ -3369,6 +3457,14 @@
   },
   {
     "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "b826f07491c4c3f8"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "c83d009d7e7bea9a"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
     "hash": "c8c138ee8d657319"
   },
   {
@@ -3378,6 +3474,18 @@
   {
     "file": "crates/memfuse-crypto/tests/proptests.rs",
     "hash": "dd1c0e05153063a1"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "def1865bbf7a48eb"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "df8f99032f7763d6"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/proptests.rs",
+    "hash": "e6ff4b8cbb7f5d9b"
   },
   {
     "file": "crates/memfuse-crypto/tests/rfc_vectors.rs",
