@@ -25,8 +25,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "onnx")]
 #[cfg(feature = "onnx")]
-use memfuse_core::{
-    BoxFuture, EmbeddingError, EmbeddingProvider, MemFuseError, Result};
+use memfuse_core::{BoxFuture, EmbeddingError, EmbeddingProvider, MemFuseError, Result};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
@@ -34,10 +33,8 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "onnx")]
 pub mod reranker;
-#[cfg(feature = "onnx")]
-pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
+pub use reranker::{CrossEncoderReranker, PlattScaledSigmoid, RerankConfig, RerankResult};
 
 /// Counter tracking the number of ONNX session load operations (for test verification).
 #[cfg(feature = "onnx")]
@@ -113,29 +110,32 @@ impl EmbeddingProvider for TextEmbedder {
         "onnx"
     }
 
-    fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
         Box::pin(async move {
-        let max_len = self.config.max_sequence_length;
-        if let Ok(encoding) = self.tokenizer.encode(text, true) {
-            let len = encoding.get_ids().len();
-            if len > max_len {
-                return Err(EmbeddingError::InputTooLong { len, max: max_len });
-            }
-        }
-        self.embed_async(text).await.map_err(|e| match e {
-            MemFuseError::InvalidInput(msg)
-                if msg.contains("too long") || msg.contains("exceeds") =>
-            {
-                EmbeddingError::InputTooLong {
-                    len: text.len(),
-                    max: max_len,
+            let max_len = self.config.max_sequence_length;
+            if let Ok(encoding) = self.tokenizer.encode(text, true) {
+                let len = encoding.get_ids().len();
+                if len > max_len {
+                    return Err(EmbeddingError::InputTooLong { len, max: max_len });
                 }
             }
-            MemFuseError::InvalidInput(msg) | MemFuseError::NotFound(msg) => {
-                EmbeddingError::Unavailable(msg)
-            }
-            other => EmbeddingError::ComputationFailed(other.to_string()),
-        })
+            self.embed_async(text).await.map_err(|e| match e {
+                MemFuseError::InvalidInput(msg)
+                    if msg.contains("too long") || msg.contains("exceeds") =>
+                {
+                    EmbeddingError::InputTooLong {
+                        len: text.len(),
+                        max: max_len,
+                    }
+                }
+                MemFuseError::InvalidInput(msg) | MemFuseError::NotFound(msg) => {
+                    EmbeddingError::Unavailable(msg)
+                }
+                other => EmbeddingError::ComputationFailed(other.to_string()),
+            })
         })
     }
 
@@ -502,15 +502,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_embedding_engine() -> std::result::Result<(), Box<dyn std::error::Error>> {
-                use memfuse_core::{
-    BoxFuture, Result, TextEmbeddingEngine};
+        use memfuse_core::{BoxFuture, Result, TextEmbeddingEngine};
 
         struct MockEngine;
         impl TextEmbeddingEngine for MockEngine {
             fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
-                Box::pin(async move {
-                    Ok(vec![text.len() as f32])
-                })
+                Box::pin(async move { Ok(vec![text.len() as f32]) })
             }
         }
 
@@ -523,8 +520,7 @@ mod tests {
     #[tokio::test]
     async fn test_embed_batch_ordering_and_fallback(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-                use memfuse_core::{
-    BoxFuture, MemFuseError, Result, TextEmbeddingEngine};
+        use memfuse_core::{BoxFuture, MemFuseError, Result, TextEmbeddingEngine};
 
         struct MockOrderedEngine {
             fail_on: Option<String>,

@@ -6,8 +6,7 @@
 
 #[tokio::test]
 async fn test_collection_scan_prefix_batches_via_mock_storage() {
-        use memfuse_core::{
-    BoxFuture, Result, StorageEngine, StorageStats, TxId};
+    use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats, TxId};
     use memfuse_graph::csr::CsrGraph;
     use memfuse_index::HnswIndex;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,93 +16,58 @@ async fn test_collection_scan_prefix_batches_via_mock_storage() {
         bounded_call_count: AtomicUsize,
     }
 
-        impl StorageEngine for BoundedScanMockStorage {
+    impl StorageEngine for BoundedScanMockStorage {
         fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(None)
-
-            })
+            Box::pin(async move { Ok(None) })
         }
         fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(None)
-
-            })
+            Box::pin(async move { Ok(None) })
         }
         fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
             Box::pin(async move {
-            Ok(StorageStats {
-                num_segments: 0,
-                total_size_bytes: 0,
-                memtable_size_bytes: 0,
-            })
-
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
             })
         }
         fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-            Box::pin(async move {
-            Ok(0)
-
-            })
+            Box::pin(async move { Ok(0) })
         }
         fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-            Box::pin(async move {
-            Ok(TxId(0))
-
-            })
+            Box::pin(async move { Ok(TxId(0)) })
         }
         fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
-        fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        fn scan_prefix<'a>(
+            &'a self,
+            _: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move {
-            panic!("scan_prefix should not be called directly when batching!");
-
+                panic!("scan_prefix should not be called directly when batching!");
             })
         }
         fn scan_prefix_bounded<'a>(
@@ -113,33 +77,32 @@ async fn test_collection_scan_prefix_batches_via_mock_storage() {
             cursor: Option<&'a [u8]>,
         ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
             Box::pin(async move {
-            self.bounded_call_count.fetch_add(1, Ordering::SeqCst);
-            let start = if let Some(cur) = cursor {
-                let s = String::from_utf8_lossy(cur);
-                let idx: usize = s["item_".len()..].parse().unwrap();
-                idx + 1
-            } else {
-                0
-            };
+                self.bounded_call_count.fetch_add(1, Ordering::SeqCst);
+                let start = if let Some(cur) = cursor {
+                    let s = String::from_utf8_lossy(cur);
+                    let idx: usize = s["item_".len()..].parse().unwrap();
+                    idx + 1
+                } else {
+                    0
+                };
 
-            let total_items = 5000;
-            let end = (start + limit).min(total_items);
+                let total_items = 5000;
+                let end = (start + limit).min(total_items);
 
-            let val_bytes = serde_json::to_vec(&serde_json::json!({"test": "data"})).unwrap();
-            let mut batch = Vec::new();
-            for i in start..end {
-                let k = format!("item_{:05}", i).into_bytes();
-                batch.push((k, val_bytes.clone()));
-            }
+                let val_bytes = serde_json::to_vec(&serde_json::json!({"test": "data"})).unwrap();
+                let mut batch = Vec::new();
+                for i in start..end {
+                    let k = format!("item_{:05}", i).into_bytes();
+                    batch.push((k, val_bytes.clone()));
+                }
 
-            let next_cursor = if end < total_items {
-                batch.last().map(|(k, _)| k.clone())
-            } else {
-                None
-            };
+                let next_cursor = if end < total_items {
+                    batch.last().map(|(k, _)| k.clone())
+                } else {
+                    None
+                };
 
-            Ok((batch, next_cursor))
-
+                Ok((batch, next_cursor))
             })
         }
         fn scan<'a>(
@@ -147,12 +110,8 @@ async fn test_collection_scan_prefix_batches_via_mock_storage() {
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-            Box::pin(async move {
-            Ok(vec![])
-
-            })
+            Box::pin(async move { Ok(vec![]) })
         }
-
     }
 
     let mock_storage = Arc::new(BoundedScanMockStorage {
@@ -303,8 +262,7 @@ async fn test_relate_success_visible_in_storage_and_graph() {
 
 #[tokio::test]
 async fn test_relate_rollback_semantics_on_storage_commit_failure() {
-        use memfuse_core::{
-    BoxFuture, Result, StorageEngine, StorageStats, TxId};
+    use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats, TxId};
     use memfuse_graph::csr::CsrGraph;
     use memfuse_index::HnswIndex;
     use std::sync::atomic::AtomicU64;
@@ -312,108 +270,69 @@ async fn test_relate_rollback_semantics_on_storage_commit_failure() {
 
     struct FailOnStorageCommit;
 
-        impl StorageEngine for FailOnStorageCommit {
+    impl StorageEngine for FailOnStorageCommit {
         fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(None)
-
-            })
+            Box::pin(async move { Ok(None) })
         }
         fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(None)
-
-            })
+            Box::pin(async move { Ok(None) })
         }
         fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            Err(memfuse_core::MemFuseError::Storage(
-                "Simulated Storage Commit Failure".into(),
-            ))
-
+                Err(memfuse_core::MemFuseError::Storage(
+                    "Simulated Storage Commit Failure".into(),
+                ))
             })
         }
         fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
             Box::pin(async move {
-            Ok(StorageStats {
-                num_segments: 0,
-                total_size_bytes: 0,
-                memtable_size_bytes: 0,
-            })
-
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
             })
         }
         fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-            Box::pin(async move {
-            Ok(0)
-
-            })
+            Box::pin(async move { Ok(0) })
         }
         fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-            Box::pin(async move {
-            Ok(TxId(0))
-
-            })
+            Box::pin(async move { Ok(TxId(0)) })
         }
         fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
-        fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-            Box::pin(async move {
-            Ok(vec![])
-
-            })
+        fn scan_prefix<'a>(
+            &'a self,
+            _: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { Ok(vec![]) })
         }
         fn scan<'a>(
             &'a self,
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-            Box::pin(async move {
-            Ok(vec![])
-
-            })
+            Box::pin(async move { Ok(vec![]) })
         }
-
     }
 
     let storage = Arc::new(FailOnStorageCommit);
@@ -448,8 +367,7 @@ async fn test_relate_rollback_semantics_on_storage_commit_failure() {
 // REGRESSION TEST für F-01: beweist gebrochene Rollback-Semantik in relate()
 #[tokio::test]
 async fn test_relate_rollback_semantics_on_graph_commit_failure() {
-        use memfuse_core::{
-    BoxFuture, Result, StorageEngine, StorageStats, TxId};
+    use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats, TxId};
     use memfuse_graph::csr::{CsrGraph, CsrGraphConfig};
     use memfuse_index::HnswIndex;
     use memfuse_store::{LsmConfig, LsmStorage};
@@ -461,112 +379,73 @@ async fn test_relate_rollback_semantics_on_graph_commit_failure() {
         should_fail: AtomicBool,
     }
 
-        impl StorageEngine for FailOnPutStorage {
+    impl StorageEngine for FailOnPutStorage {
         fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(None)
-
-            })
+            Box::pin(async move { Ok(None) })
         }
         fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
-            Box::pin(async move {
-            Ok(None)
-
-            })
+            Box::pin(async move { Ok(None) })
         }
         fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
             Box::pin(async move {
-            if self.should_fail.load(Ordering::SeqCst) {
-                Err(memfuse_core::MemFuseError::Storage(
-                    "Simulated Graph Storage Commit Failure".into(),
-                ))
-            } else {
-                Ok(())
-            }
-
+                if self.should_fail.load(Ordering::SeqCst) {
+                    Err(memfuse_core::MemFuseError::Storage(
+                        "Simulated Graph Storage Commit Failure".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
             })
         }
         fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
             Box::pin(async move {
-            Ok(StorageStats {
-                num_segments: 0,
-                total_size_bytes: 0,
-                memtable_size_bytes: 0,
-            })
-
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
             })
         }
         fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
-            Box::pin(async move {
-            Ok(0)
-
-            })
+            Box::pin(async move { Ok(0) })
         }
         fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
-            Box::pin(async move {
-            Ok(TxId(0))
-
-            })
+            Box::pin(async move { Ok(TxId(0)) })
         }
         fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
         fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
-            Box::pin(async move {
-            Ok(())
-
-            })
+            Box::pin(async move { Ok(()) })
         }
-        fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-            Box::pin(async move {
-            Ok(vec![])
-
-            })
+        fn scan_prefix<'a>(
+            &'a self,
+            _: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { Ok(vec![]) })
         }
         fn scan<'a>(
             &'a self,
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-            Box::pin(async move {
-            Ok(vec![])
-
-            })
+            Box::pin(async move { Ok(vec![]) })
         }
-
     }
 
     let dir = tempdir().unwrap(); // unwrap
@@ -621,7 +500,7 @@ async fn test_relate_rollback_semantics_on_graph_commit_failure() {
 
 #[tokio::test]
 async fn test_collection_embedder_async_embed() {
-        use memfuse_core::TextEmbeddingEngine;
+    use memfuse_core::TextEmbeddingEngine;
     use std::sync::Arc;
 
     use memfuse_core::BoxFuture;
@@ -630,9 +509,7 @@ async fn test_collection_embedder_async_embed() {
 
     impl TextEmbeddingEngine for FakeEmbedder {
         fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, memfuse_core::Result<Vec<f32>>> {
-            Box::pin(async move {
-                Ok(vec![text.len() as f32 / 100.0; 4])
-            })
+            Box::pin(async move { Ok(vec![text.len() as f32 / 100.0; 4]) })
         }
     }
 
@@ -848,8 +725,7 @@ async fn test_hybrid_search_k_clamping_boundaries() {
 
 #[tokio::test]
 async fn test_doc_id_collision_rejected() {
-    use memfuse_core::{
-    BoxFuture, DocId, MemFuseError, StorageEngine, TxId};
+    use memfuse_core::{BoxFuture, DocId, MemFuseError, StorageEngine, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1268,8 +1144,7 @@ async fn test_ttl_overflow_does_not_expire() {
 
 #[tokio::test]
 async fn test_migrate_doc_keys_v1() {
-    use memfuse_core::{
-    BoxFuture, DocId, StorageEngine, TxId};
+    use memfuse_core::{BoxFuture, DocId, StorageEngine, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1454,7 +1329,10 @@ async fn test_evaluate_importance_with_dead_client_returns_err() {
     struct DeadLlm;
 
     impl memfuse_core::LlmTextGenerator for DeadLlm {
-        fn generate<'a>(&'a self, _prompt: &'a str) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<String>> {
+        fn generate<'a>(
+            &'a self,
+            _prompt: &'a str,
+        ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<String>> {
             Box::pin(async move {
                 Err(memfuse_core::MemFuseError::Io(std::io::Error::new(
                     std::io::ErrorKind::ConnectionRefused,
@@ -1554,8 +1432,7 @@ async fn test_begin_transaction_returns_active_db_transaction() {
 
 #[tokio::test]
 async fn test_reaper_deletes_decayed_working_memory() {
-    use memfuse_core::{
-    BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
+    use memfuse_core::{BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1625,8 +1502,7 @@ async fn test_reaper_deletes_decayed_working_memory() {
 
 #[tokio::test]
 async fn test_reaper_never_deletes_semantic_no_decay() {
-    use memfuse_core::{
-    BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
+    use memfuse_core::{BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1693,8 +1569,7 @@ async fn test_reaper_never_deletes_semantic_no_decay() {
 
 #[test]
 fn test_importance_metadata_integration_and_filtering() {
-    use memfuse_core::{
-    BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
+    use memfuse_core::{BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use serde_json::json;
 
     let created_tx = TxId::new(10);
@@ -1857,8 +1732,7 @@ async fn test_insert_typed_working_has_ttl_metadata() {
 #[tokio::test]
 #[cfg(feature = "experimental-diskann")]
 async fn test_collection_with_diskann_index_hybrid_search() {
-    use memfuse_core::{
-    BoxFuture, DocId, StorageEngine, TextIndex};
+    use memfuse_core::{BoxFuture, DocId, StorageEngine, TextIndex};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{DiskAnnConfig, DiskAnnIndex};
     use memfuse_store::LsmStorage;
@@ -2033,8 +1907,7 @@ async fn test_insert_backward_compatible_has_semantic_default() {
 
 #[tokio::test]
 async fn test_hybrid_search_with_query_memory_type_filter() {
-    use memfuse_core::{
-    BoxFuture, HybridQuery, MemoryType};
+    use memfuse_core::{BoxFuture, HybridQuery, MemoryType};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::{LsmConfig, LsmStorage};
@@ -2247,8 +2120,7 @@ async fn test_search_dimension_mismatch_rejected() {
 
 #[tokio::test]
 async fn test_concurrent_insert_many_collision_safety() {
-    use memfuse_core::{
-    BoxFuture, DocId, MemFuseError, StorageEngine, TxId};
+    use memfuse_core::{BoxFuture, DocId, MemFuseError, StorageEngine, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -2683,8 +2555,7 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
 #[tokio::test]
 async fn test_query_builder_query_config_include_superseded_displacement(
 ) -> memfuse_core::Result<()> {
-    use memfuse_core::{
-    BoxFuture, DocId, HybridQuery};
+    use memfuse_core::{BoxFuture, DocId, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;

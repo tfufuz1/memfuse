@@ -1,11 +1,11 @@
 // Integration tests for continuous event loop and event sources.
 
-use memfuse_core::BoxFuture;
 use memfuse_agent::event_source::{
     BackgroundEvent, EventSource, PollingDocumentEventSource, VecEventSource,
 };
 use memfuse_agent::step::StepResult;
 use memfuse_agent::{AgentContext, EventLoopExitReason, NodeType, OrchestratorEngine, StateGraph};
+use memfuse_core::BoxFuture;
 use memfuse_core::TokenBudget;
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
@@ -232,7 +232,9 @@ struct CustomStreamSource {
 }
 
 impl EventSource for CustomStreamSource {
-    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, memfuse_core::Result<Option<BackgroundEvent>>> {
+    fn next_event<'a>(
+        &'a mut self,
+    ) -> BoxFuture<'a, memfuse_core::Result<Option<BackgroundEvent>>> {
         Box::pin(async move {
             if self.idx < self.stream.len() {
                 let item = self.stream[self.idx].clone();
@@ -293,10 +295,10 @@ struct NotifyEventSource {
 }
 
 impl EventSource for NotifyEventSource {
-    fn next_event<'a>(&'a mut self) -> BoxFuture<'a, memfuse_core::Result<Option<BackgroundEvent>>> {
-        Box::pin(async move {
-            Ok(self.events.pop_front())
-        })
+    fn next_event<'a>(
+        &'a mut self,
+    ) -> BoxFuture<'a, memfuse_core::Result<Option<BackgroundEvent>>> {
+        Box::pin(async move { Ok(self.events.pop_front()) })
     }
 
     fn is_exhausted(&self) -> bool {
