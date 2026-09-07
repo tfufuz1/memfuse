@@ -896,6 +896,7 @@ mod tests {
             max_length: 128,
             batch_size: 4,
             calibration: PlattScaledSigmoid::identity(),
+            calibration_warmup: 50,
             rerank_deadline_ms: Some(500),
             simulate_delay_ms: None,
         };
