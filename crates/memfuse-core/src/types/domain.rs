@@ -47,6 +47,92 @@ pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
 /// AGT-DB-003 — Boundary defence at Layer 2 against unbounded `k` from untrusted JSON-RPC.
 pub const MAX_SEARCH_K: usize = 1_000;
 
+/// Internal tenant identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct TenantId(pub u64);
+
+impl TenantId {
+    /// Invalid tenant identifier sentinel value (`0`).
+    pub const INVALID: Self = Self(0);
+
+    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    #[inline]
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Creates a new `TenantId`, ensuring `id != 0`.
+    pub fn try_new(id: u64) -> Result<Self> {
+        if id == 0 {
+            Err(MemFuseError::InvalidInput("TenantId cannot be 0".to_string()))
+        } else {
+            Ok(Self(id))
+        }
+    }
+
+    /// Returns the inner raw `u64` identifier.
+    #[inline]
+    pub const fn inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for TenantId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl std::fmt::Display for TenantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TenantId({})", self.0)
+    }
+}
+
+/// Internal collection identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct CollectionId(pub u64);
+
+impl CollectionId {
+    /// Invalid collection identifier sentinel value (`0`).
+    pub const INVALID: Self = Self(0);
+
+    /// Creates a new `CollectionId` wrapping the provided `u64` identifier.
+    #[inline]
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Creates a new `CollectionId`, ensuring `id != 0`.
+    pub fn try_new(id: u64) -> Result<Self> {
+        if id == 0 {
+            Err(MemFuseError::InvalidInput("CollectionId cannot be 0".to_string()))
+        } else {
+            Ok(Self(id))
+        }
+    }
+
+    /// Returns the inner raw `u64` identifier.
+    #[inline]
+    pub const fn inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for CollectionId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl std::fmt::Display for CollectionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CollectionId({})", self.0)
+    }
+}
+
 /// Internal document identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -976,7 +1062,31 @@ mod tests {
     }
 
     #[test]
+    fn test_tenant_and_collection_id() {
+        let tenant = TenantId::try_new(1).unwrap();
+        assert_eq!(tenant.inner(), 1);
+        assert_eq!(tenant.to_string(), "TenantId(1)");
+        assert!(TenantId::try_new(0).is_err());
+
+        let collection = CollectionId::try_new(42).unwrap();
+        assert_eq!(collection.inner(), 42);
+        assert_eq!(collection.to_string(), "CollectionId(42)");
+        assert!(CollectionId::try_new(0).is_err());
+    }
+
+    #[test]
     fn test_serialization_roundtrips() {
+        // TenantId & CollectionId
+        let t = TenantId::new(10);
+        let ser = serde_json::to_string(&t).unwrap();
+        let deser: TenantId = serde_json::from_str(&ser).unwrap();
+        assert_eq!(t, deser);
+
+        let c = CollectionId::new(20);
+        let ser = serde_json::to_string(&c).unwrap();
+        let deser: CollectionId = serde_json::from_str(&ser).unwrap();
+        assert_eq!(c, deser);
+
         // DocId
         let doc = DocId::new(42);
         let ser = serde_json::to_string(&doc).unwrap(); // unwrap
