@@ -941,6 +941,20 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             }
         }
 
+        // Cascading-Invalidation: Alle CSR-Kanten die vom superseded Dokument abhängen
+        // werden tombstoniert, damit PathRAG-Sufficiency-Gate konsistent mit dem
+        // aktuellen Chunk-Bestand bleibt (schließt Lücke aus INV-GRAPH-PROV-1).
+        if relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+            let affected_edges = self.graph_index.doc_edge_index.edges_for_doc(to);
+            for edge_id in affected_edges {
+                self.graph_index.tombstone_edge(edge_id, tx).await?;
+            }
+            tracing::debug!(
+                superseded_doc = ?to,
+                "Cascading-Invalidation: Supersedes -> CSR-Edge-Tombstone"
+            );
+        }
+
         Ok(())
     }
 
