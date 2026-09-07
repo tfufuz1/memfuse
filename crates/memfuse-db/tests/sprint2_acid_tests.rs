@@ -132,8 +132,7 @@ async fn test_drop_collection_removes_all_data() {
 
 #[tokio::test]
 async fn test_partial_compaction_preserves_tombstones() {
-    use memfuse_core::{
-    BoxFuture, StorageEngine, TxId};
+    use memfuse_core::{BoxFuture, StorageEngine, TxId};
     use memfuse_store::{CompactionConfig, LsmConfig};
 
     let tmp = TempDir::new().expect("temp dir");

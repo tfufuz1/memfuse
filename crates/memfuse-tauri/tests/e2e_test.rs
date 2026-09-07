@@ -14,7 +14,10 @@ use tempfile::tempdir;
 struct KeywordEmbedder;
 
 impl TextEmbeddingEngine for KeywordEmbedder {
-    fn embed<'a>(&'a self, text: &'a str) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<Vec<f32>>> {
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<Vec<f32>>> {
         Box::pin(async move {
             let lower = text.to_lowercase();
             let dim_urlaub = if lower.contains("urlaub") { 1.0 } else { 0.0 };

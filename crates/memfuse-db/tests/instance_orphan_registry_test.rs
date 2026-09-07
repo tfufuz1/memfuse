@@ -18,14 +18,8 @@ async fn test_multi_instance_orphan_registry_physical_path_and_gc_isolation() {
     let expected_path1 = tmp1.path().join(".orphan_registry.json");
     let expected_path2 = tmp2.path().join(".orphan_registry.json");
 
-    assert_eq!(
-        reg1.get_orphan_pins(),
-        Vec::<PinnedSeqNoOrphan>::new()
-    );
-    assert_eq!(
-        reg2.get_orphan_pins(),
-        Vec::<PinnedSeqNoOrphan>::new()
-    );
+    assert_eq!(reg1.get_orphan_pins(), Vec::<PinnedSeqNoOrphan>::new());
+    assert_eq!(reg2.get_orphan_pins(), Vec::<PinnedSeqNoOrphan>::new());
 
     // 2. Register an orphan pin in Instance 1 and an orphan checkpoint in Instance 2
     let pin_orphan1 = PinnedSeqNoOrphan {
@@ -86,15 +80,17 @@ async fn test_memfuse_open_does_not_touch_global_orphan_registry() {
     let db2 = MemFuse::open(tmp2.path()).await.expect("open db2");
 
     // Mutate and register orphans on both instances
-    db1.orphan_registry().register_orphan_sync(PinnedSeqNoOrphan {
-        seq_no: 777,
-        timestamp_ms: 1000,
-    });
-    db2.orphan_registry().register_checkpoint_sync(StateCheckpoint {
-        tx_id: TxId::new(888),
-        timestamp_ms: 2000,
-        namespace: Some("test".to_string()),
-    });
+    db1.orphan_registry()
+        .register_orphan_sync(PinnedSeqNoOrphan {
+            seq_no: 777,
+            timestamp_ms: 1000,
+        });
+    db2.orphan_registry()
+        .register_checkpoint_sync(StateCheckpoint {
+            tx_id: TxId::new(888),
+            timestamp_ms: 2000,
+            namespace: Some("test".to_string()),
+        });
 
     #[allow(deprecated)]
     {
@@ -128,10 +124,11 @@ async fn test_custom_orphan_registry_path_config() {
         .await
         .expect("open with custom orphan registry path");
 
-    db.orphan_registry().register_orphan_sync(PinnedSeqNoOrphan {
-        seq_no: 999,
-        timestamp_ms: 5000,
-    });
+    db.orphan_registry()
+        .register_orphan_sync(PinnedSeqNoOrphan {
+            seq_no: 999,
+            timestamp_ms: 5000,
+        });
 
     assert!(
         custom_orphan_file.exists(),
