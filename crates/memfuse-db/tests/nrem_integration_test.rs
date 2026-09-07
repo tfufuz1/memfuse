@@ -36,6 +36,7 @@ async fn test_nrem_cycle_tombstones_duplicates() {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
         near_duplicate_cosine_threshold: 0.95,
+        ..Default::default()
     };
 
     let result = execute_nrem_cycle(&collection, &turns, &nrem_config)

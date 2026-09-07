@@ -169,6 +169,10 @@ pub struct ProvenanceRecord {
     /// INV-PROV-1: The sum of all rrf_contribution values equals the unboosted RRF score.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub signal_contributions: std::collections::HashMap<String, SignalContribution>,
+
+    /// Kohärenz-Bonus aus F-09 (0.0 wenn Feature inaktiv oder Dokument nur in einem Signal).
+    #[serde(default)]
+    pub coherence_bonus: f32,
 }
 
 impl ProvenanceRecord {
@@ -1984,6 +1988,7 @@ mod tests {
             source_collection: Some("test_col".to_string()),
             index_type: Some("hnsw".to_string()),
             signal_contributions: std::collections::HashMap::new(),
+            coherence_bonus: 0.0,
         };
         let json = serde_json::to_string(&p).expect("serialize");
         let back: ProvenanceRecord = serde_json::from_str(&json).expect("deserialize");
