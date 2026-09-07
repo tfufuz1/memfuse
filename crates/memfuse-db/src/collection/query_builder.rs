@@ -324,33 +324,6 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         #[cfg(not(feature = "reranking"))]
         let has_reranker = false;
 
-        let mult = self
-            .rerank_pool_multiplier
-            .unwrap_or(DEFAULT_RERANK_POOL_MULTIPLIER);
-        let max_pool = self.rerank_pool_max.unwrap_or(DEFAULT_RERANK_POOL_MAX);
-
-        let mut fetch_k = k;
-
-        if self.filter.is_some()
-            || self.memory_type_filter.is_some()
-            || self.filter_fn.is_some()
-        {
-            let filter_k = k.saturating_mul(5);
-            fetch_k = fetch_k.max(filter_k);
-        }
-
-        if has_reranker {
-            let rerank_k = k.saturating_mul(mult).min(max_pool);
-            fetch_k = fetch_k.max(rerank_k);
-        }
-
-        if !self.include_superseded {
-            let supersedes_k = k.saturating_mul(3);
-            fetch_k = fetch_k.max(supersedes_k);
-        }
-
-        let fetch_k = fetch_k.min(memfuse_core::MAX_SEARCH_K).max(k);
-
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
             vector_query: self.vector.clone(),
