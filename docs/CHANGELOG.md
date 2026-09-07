@@ -5,6 +5,7 @@
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
 | `TS:2026-09-07T12:00:00Z` | `crates/memfuse-db/src/temporal_filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bi-temporaler Validity-Filter für Post-RRF Fusion-Ergebnisse in Retrieval-Pipelines. |
+| `TS:2026-09-07T08:30:00Z` | `crates/memfuse-db/src/sleep_cycle_executor.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verbindet NREM-Phase-Ergebnisse mit der Collection-Mutation-API. |
 | `TS:2026-09-07T00:00:00Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cryptographic deletion proof for GDPR Article 17 compliance verification across storage layers. |
 | `TS:2026-09-06T11:18:35Z (SESSION: 820afd9c)` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
 | `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
