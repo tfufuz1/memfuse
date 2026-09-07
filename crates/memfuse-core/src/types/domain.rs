@@ -47,7 +47,13 @@ pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
 /// AGT-DB-003 — Boundary defence at Layer 2 against unbounded `k` from untrusted JSON-RPC.
 pub const MAX_SEARCH_K: usize = 1_000;
 
-/// Internal tenant identifier.
+/// Mandanten-Identifikator. Layer-0-Typ (memfuse-core).
+///
+/// LAYER-BEGRÜNDUNG: TenantId ist Abhängigkeit für KV-Cache-Isolation (Layer 4).
+/// In Layer 1+ definiert → zyklische Crate-Abhängigkeit unvermeidbar.
+///
+/// INVARIANTE INV-TENANT-1: TenantId(0) ist SYSTEM-reserviert.
+/// `TenantId::try_new(0)` → Err. Keine Ausnahmen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TenantId(pub u64);
@@ -60,16 +66,18 @@ impl TenantId {
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
 
-    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    /// Const-Konstruktor.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
-    /// Creates a new `TenantId`, ensuring `id != 0`.
+    /// Sicherer Konstruktor. Gibt Err wenn id == 0.
     pub fn try_new(id: u64) -> Result<Self> {
         if id == 0 {
-            Err(MemFuseError::InvalidInput("TenantId cannot be 0".to_string()))
+            Err(MemFuseError::InvalidInput(
+                "TenantId(0) is reserved for TenantId::SYSTEM".to_string(),
+            ))
         } else {
             Ok(Self(id))
         }
@@ -1840,6 +1848,14 @@ mod tests {
     fn test_tenant_id_system_constant() {
         assert_eq!(TenantId::SYSTEM.inner(), 0);
         assert!(TenantId::SYSTEM.is_system());
+    }
+
+    #[test]
+    fn test_tenant_id_serde_roundtrip() {
+        let t = TenantId::try_new(999).unwrap();
+        let json = serde_json::to_string(&t).unwrap();
+        let back: TenantId = serde_json::from_str(&json).unwrap();
+        assert_eq!(t, back);
     }
 }
 
