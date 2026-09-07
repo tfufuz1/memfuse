@@ -870,6 +870,17 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
+## ADR-063: TenantId-Typ als Layer-0 Fundament (ohne Durchsetzung von Zugriffsregeln)
+*   **Datum**: 2026-09-06
+*   **Status**: ✅ Final
+*   **Entscheidung**:
+    - Einführung des Typs `TenantId(pub u64)` in `crates/memfuse-core/src/types/domain.rs` inklusive `TenantId::DEFAULT = TenantId(0)`.
+    - Der Typ dient als typisiertes Layer-0-Fundament für künftige Mandantentrennung (RBAC, KV-Cache-Isolation, Orphan-Registry-Persistenzpfade) und ersetzt implizite String-Namensräumen.
+    - **Explizite Nicht-Zusicherung**: Die Einführung dieses Typs allein implementiert KEINE Zugriffskontrolle oder Mandantentrennung in bestehenden APIs. Volle Mandantentrennung bleibt Horizont-4-Arbeit und ist NICHT Bestandteil dieser Änderung.
+*   **Begründung**: Beseitigt die strukturelle Lücke fehlender Mandantenbezeichner auf Layer 0 und ermöglicht zukünftigen Features typsichere Referenzen ohne Breaking Changes.
+
+---
+
 ## ADR-063: Instance-scoped Orphan Registry Wiring
 *   **Datum**: 2026-09-06
 *   **Status**: ✅ Final
