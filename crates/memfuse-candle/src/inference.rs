@@ -83,8 +83,9 @@ impl CandleLlmClient {
                 "decoder": null,
                 "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
             }"#;
-            tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes())
-                .map_err(|e| MemFuseError::Internal(format!("Failed to parse default tokenizer: {e}")))?
+            tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).map_err(|e| {
+                MemFuseError::Internal(format!("Failed to parse default tokenizer: {e}"))
+            })?
         };
 
         let gguf_path = model_dir.join("model.gguf");

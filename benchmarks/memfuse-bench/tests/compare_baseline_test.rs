@@ -73,7 +73,10 @@ fn test_simulated_current_within_tolerance_passes() {
 
     let res = compare_metrics(&current, &baseline, 0.05);
 
-    assert!(!res.has_regression, "Slight drop within tolerance must pass");
+    assert!(
+        !res.has_regression,
+        "Slight drop within tolerance must pass"
+    );
     assert!(res.errors.is_empty());
     assert!(!res.pass_messages.is_empty());
 }
@@ -109,7 +112,10 @@ fn test_simulated_current_above_baseline_emits_info_no_regression() {
 
     assert!(!res.has_regression, "Improved results must pass");
     assert!(res.errors.is_empty());
-    assert!(!res.info_hints.is_empty(), "Info hints must be present when metrics exceed baseline");
+    assert!(
+        !res.info_hints.is_empty(),
+        "Info hints must be present when metrics exceed baseline"
+    );
     let hint = &res.info_hints[0];
     assert!(hint.contains("EXCEEDS baseline"));
     assert!(hint.contains("cargo run -p memfuse-bench -- --update-baseline"));

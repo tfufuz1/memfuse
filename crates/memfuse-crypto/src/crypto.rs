@@ -146,7 +146,9 @@ impl KeyManager {
             .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
 
         let mut sub_key = [0u8; 32];
-        let mut info = Vec::with_capacity(64 + model_fingerprint.model_id.len() + model_fingerprint.quantization.len());
+        let mut info = Vec::with_capacity(
+            64 + model_fingerprint.model_id.len() + model_fingerprint.quantization.len(),
+        );
         info.extend_from_slice(b"memfuse-kv-layer-v1:");
         info.extend_from_slice(&tenant_id.inner().to_le_bytes());
         info.extend_from_slice(&model_fingerprint.hash);
