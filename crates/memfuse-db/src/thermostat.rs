@@ -77,16 +77,14 @@ impl FreeEnergyThermostat {
     /// Berechnet aktuelle Systemtemperatur T(t) ∈ [0,1].
     #[inline]
     pub fn system_temperature(&self, inputs: &ThermostatInputs) -> f32 {
-        (inputs.w_tombstone * inputs.tombstone_ratio
-            + inputs.w_query * inputs.query_load_inverse)
+        (inputs.w_tombstone * inputs.tombstone_ratio + inputs.w_query * inputs.query_load_inverse)
             .clamp(0.0, 1.0)
     }
 
     /// Effektive Half-Life unter aktueller Temperatur.
     #[inline]
     pub fn effective_half_life(&self, temperature: f32) -> f32 {
-        self.config.base_half_life_tx as f32
-            * (1.0 + self.config.kappa * (1.0 - temperature))
+        self.config.base_half_life_tx as f32 * (1.0 + self.config.kappa * (1.0 - temperature))
     }
 
     /// Temperatur-adjustierter Score für einen Chunk.

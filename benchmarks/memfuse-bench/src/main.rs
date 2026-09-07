@@ -442,7 +442,11 @@ fn create_synthetic_corpus() -> (
     ]
 }
 
-fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, Vec<GroundTruthQuery>) {
+fn create_synthetic_corpus() -> (
+    Vec<SyntheticDocument>,
+    Vec<GroundTruthQuery>,
+    Vec<GroundTruthQuery>,
+) {
     const DIM: usize = 768;
 
     let docs = build_evaluation_corpus();
@@ -458,7 +462,9 @@ fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, 
         },
         GroundTruthQuery {
             query_id: "q_a_2".into(),
-            query_text: "Transformer architectures self-attention long-range dependencies Deep Learning".into(),
+            query_text:
+                "Transformer architectures self-attention long-range dependencies Deep Learning"
+                    .into(),
             query_embedding: pad_vector(&[0.10, 0.90, 0.0, 0.0], DIM),
             relevant_doc_ids: vec!["doc_ml_11".into()],
         },
@@ -513,7 +519,8 @@ fn create_synthetic_corpus() -> (Vec<SyntheticDocument>, Vec<GroundTruthQuery>, 
         },
         GroundTruthQuery {
             query_id: "q_b_5".into(),
-            query_text: "Wann erreichte das Römische Reich seine größte geografische Ausdehnung?".into(),
+            query_text: "Wann erreichte das Römische Reich seine größte geografische Ausdehnung?"
+                .into(),
             query_embedding: pad_vector(&[0.05, 0.05, 0.0, 0.90], DIM),
             relevant_doc_ids: vec!["doc_hist_41".into()],
         },

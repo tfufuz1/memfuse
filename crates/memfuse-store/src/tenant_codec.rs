@@ -110,6 +110,7 @@ mod tests {
     #[test]
     fn test_decode_invalid_key_returns_none() {
         assert!(TenantKeyCodec::decode_tenant_id(b"invalid").is_none());
-        assert!(TenantKeyCodec::decode_tenant_id(b"t:0:col:chunk:1").is_none()); // SYSTEM
+        assert!(TenantKeyCodec::decode_tenant_id(b"t:0:col:chunk:1").is_none());
+        // SYSTEM
     }
 }

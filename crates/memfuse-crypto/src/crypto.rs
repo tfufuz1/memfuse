@@ -148,8 +148,9 @@ impl KeyManager {
         let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
             .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
         let mut key = [0u8; 32];
-        hk.expand(b"deletion-proof", &mut key)
-            .map_err(|e| CryptoError::Crypto(format!("HKDF deletion proof key expansion failed: {}", e)))?;
+        hk.expand(b"deletion-proof", &mut key).map_err(|e| {
+            CryptoError::Crypto(format!("HKDF deletion proof key expansion failed: {}", e))
+        })?;
         Ok(key)
     }
 
