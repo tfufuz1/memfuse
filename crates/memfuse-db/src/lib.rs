@@ -99,7 +99,10 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
+pub mod thermostat;
 pub mod transaction;
+
+pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 

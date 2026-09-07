@@ -279,14 +279,7 @@ impl OnnxReranker {
 
         let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
-            Self::score_pairs_blocking(
-                &session,
-                &tokenizer,
-                &pairs,
-                max_length,
-                batch_size,
-                &calibration,
-            )
+            Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size, &calibration)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("Rerank task panicked: {e:?}")))?
@@ -325,8 +318,7 @@ impl OnnxReranker {
         let mut all_scores = Vec::with_capacity(pairs.len());
 
         for chunk in pairs.chunks(batch_size) {
-            let chunk_scores =
-                Self::score_batch(session, tokenizer, chunk, max_length, calibration)?;
+            let chunk_scores = Self::score_batch(session, tokenizer, chunk, max_length, calibration)?;
             all_scores.extend(chunk_scores);
         }
 
