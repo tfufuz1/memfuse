@@ -433,6 +433,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs hybrid search combining BM25, vector search, and graph traversal, followed by optional Cross-Encoder reranking.
+    /// Mindest-Kandidatenpool für Cross-Encoder-Reranking.
+    /// Wissenschaftliche Basis: arXiv:2604.01733 (T2-RAGBench).
+    /// k_pool=20 → Recall@5=0.458; k_pool=100 → Recall@5=0.888 (Qualitätsknie).
+    pub const DEFAULT_MIN_RERANK_CANDIDATES: usize = 100;
+
     #[cfg(feature = "reranking")]
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]

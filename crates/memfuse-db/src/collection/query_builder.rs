@@ -396,31 +396,43 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                     })
                     .collect();
 
-                match reranker.rerank(text_str, &candidate_texts).await {
-                    Ok(ranked) => {
-                        let mut reranked_results = Vec::with_capacity(k);
-                        for r in ranked.into_iter().take(k) {
-                            if let Some(mut result) = results.get(r.original_index).cloned() {
-                                if let Some(meta) = result.metadata.as_mut() {
-                                    if let Some(obj) = meta.as_object_mut() {
-                                        obj.insert("ce_score".to_string(), serde_json::json!(r.score));
-                                    }
-                                } else {
-                                    result.metadata = Some(serde_json::json!({ "ce_score": r.score }));
+                let rerank_deadline = std::time::Duration::from_millis(
+                    reranker.config().rerank_deadline_ms.unwrap_or(500),
+                );
+
+                let reranked = tokio::time::timeout(
+                    rerank_deadline,
+                    reranker.rerank(text_str, &candidate_texts),
+                )
+                .await
+                .map_err(|_| {
+                    tracing::warn!(
+                        deadline_ms = rerank_deadline.as_millis(),
+                        "Reranker deadline exceeded — falling back to RRF order"
+                    );
+                })
+                .and_then(|r| r.map_err(|e| { tracing::warn!("Reranking failed: {e}"); }));
+
+                if let Ok(ranked) = reranked {
+                    let mut reranked_results = Vec::with_capacity(k);
+                    for r in ranked.into_iter().take(k) {
+                        if let Some(mut result) = results.get(r.original_index).cloned() {
+                            if let Some(meta) = result.metadata.as_mut() {
+                                if let Some(obj) = meta.as_object_mut() {
+                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
                                 }
-                                result.score = r.score;
-                                if let Some(p) = result.provenance.as_mut() {
-                                    p.rerank_score = Some(r.score);
-                                }
-                                reranked_results.push(result);
+                            } else {
+                                result.metadata = Some(serde_json::json!({ "ce_score": r.score }));
                             }
+                            result.score = r.score;
+                            if let Some(p) = result.provenance.as_mut() {
+                                p.rerank_score = Some(r.score);
+                            }
+                            reranked_results.push(result);
                         }
-                        tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
-                        return Ok(reranked_results);
                     }
-                    Err(e) => {
-                        tracing::warn!("Reranking failed (using RRF order): {e}");
-                    }
+                    tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
+                    return Ok(reranked_results);
                 }
             }
         }
@@ -768,6 +780,55 @@ mod tests {
                 res[0].score >= res[1].score,
                 "Results must be sorted descending by rerank score"
             );
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
+    async fn test_reranker_deadline_falls_back() {
+        let (col, _dir) = create_test_collection("test_rerank_deadline").await;
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .unwrap(); // unwrap
+        col.insert(
+            "doc-2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(json!({"content": "python programming language"})),
+        )
+        .await
+        .unwrap(); // unwrap
+
+        let config = memfuse_embed::RerankConfig {
+            rerank_deadline_ms: Some(10),
+            simulate_delay_ms: Some(100),
+            ..Default::default()
+        };
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough_with_config(config);
+
+        let res = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .k(2)
+            .execute()
+            .await;
+
+        assert!(res.is_ok(), "Query must succeed even when reranker times out");
+        let results = res.unwrap(); // unwrap
+        assert_eq!(results.len(), 2);
+        for item in &results {
+            if let Some(meta) = &item.metadata {
+                assert!(
+                    meta.get("ce_score").is_none(),
+                    "ce_score should not be attached on timeout fallback"
+                );
+            }
         }
     }
 
