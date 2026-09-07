@@ -2515,8 +2515,8 @@ mod tests {
         assert_eq!(crates.len(), 15, "Expected 15 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
-            ("memfuse-crypto", 0),
-            ("memfuse-core", 1),
+            ("memfuse-core", 0),
+            ("memfuse-crypto", 1),
             ("memfuse-checkpoint", 2),
             ("memfuse-embed", 2),
             ("memfuse-graph", 2),
