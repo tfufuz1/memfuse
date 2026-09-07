@@ -8157,6 +8157,10 @@
   },
   {
     "file": "crates/memfuse-index/src/diskann.rs",
+    "hash": "384fc7d3f6974b1b"
+  },
+  {
+    "file": "crates/memfuse-index/src/diskann.rs",
     "hash": "39f36e00f59eea1e"
   },
   {
@@ -9065,6 +9069,22 @@
   },
   {
     "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "3c477824845fac1b"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "3e769cd472b07553"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "54845bed0bc0543d"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "643a56e3e8a67874"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
     "hash": "6f34e2c5449e5236"
   },
   {
@@ -9077,7 +9097,27 @@
   },
   {
     "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "994aa6e475f6801e"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "af13c26d52802b23"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "af80b00f234e9b77"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "c116adfb4b8aa380"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
     "hash": "cfd67d78fad71168"
+  },
+  {
+    "file": "crates/memfuse-index/tests/diskann_recall_test.rs",
+    "hash": "e5efb55b665945b3"
   },
   {
     "file": "crates/memfuse-index/tests/distance_determinism.rs",
