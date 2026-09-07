@@ -19,11 +19,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Per-dimension scaling improves recall by adapting to different value ranges.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScalarQuantizer {
-    pub mins: Vec<f32>,
-    pub maxes: Vec<f32>,
-    pub scales: Vec<f32>,
-    pub inv_scales: Vec<f32>,
-    pub dimension: usize,
+    pub(crate) mins: Vec<f32>,
+    pub(crate) maxes: Vec<f32>,
+    pub(crate) scales: Vec<f32>,
+    pub(crate) inv_scales: Vec<f32>,
+    pub(crate) dimension: usize,
     #[serde(skip, default)]
     pub(crate) total_queries: AtomicU64,
     #[serde(skip, default)]
@@ -138,15 +138,31 @@ impl ScalarQuantizer {
     }
 
     /// Returns a reference to per-dimension minimum values.
-    #[allow(dead_code)]
     pub fn mins(&self) -> &[f32] {
         &self.mins
     }
 
     /// Returns a reference to per-dimension maximum values.
-    #[allow(dead_code)]
     pub fn maxes(&self) -> &[f32] {
         &self.maxes
+    }
+
+    /// Returns a reference to per-dimension scale factors.
+    #[allow(dead_code)]
+    pub fn scales(&self) -> &[f32] {
+        &self.scales
+    }
+
+    /// Returns a reference to per-dimension inverse scale factors.
+    #[allow(dead_code)]
+    pub fn inv_scales(&self) -> &[f32] {
+        &self.inv_scales
+    }
+
+    /// Returns the target dimension of the quantizer.
+    #[allow(dead_code)]
+    pub fn dimension(&self) -> usize {
+        self.dimension
     }
 
     /// Calculates quantization drift as the fraction of dimensions falling outside \[mins\[i\], maxes\[i\]\].
@@ -190,10 +206,33 @@ impl ScalarQuantizer {
     }
 
     /// Quantizes an `f32` vector to `u8`.
-    pub fn quantize(&self, vector: &[f32]) -> Vec<u8> {
+    pub fn quantize(&self, vector: &[f32]) -> memfuse_core::Result<Vec<u8>> {
+        if self.mins.len() < self.dimension
+            || self.maxes.len() < self.dimension
+            || self.scales.len() < self.dimension
+        {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Quantizer internal state is corrupted or inconsistent with dimension",
+            ));
+        }
+
+        if vector.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Vector dimension mismatch: expected {}, got {}",
+                self.dimension,
+                vector.len()
+            )));
+        }
+
         let mut is_out = false;
         for (i, &v) in vector.iter().enumerate().take(self.dimension) {
-            if v < self.mins[i] || v > self.maxes[i] {
+            let min_v = self.mins.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer mins index out of bounds")
+            })?;
+            let max_v = self.maxes.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer maxes index out of bounds")
+            })?;
+            if v < min_v || v > max_v {
                 is_out = true;
                 break;
             }
@@ -215,25 +254,55 @@ impl ScalarQuantizer {
             );
         }
 
-        vector
-            .iter()
-            .enumerate()
-            .map(|(i, &v)| {
-                let clamped = v.clamp(self.mins[i], self.maxes[i]);
-                ((clamped - self.mins[i]) * self.scales[i])
-                    .round()
-                    .clamp(0.0, 255.0) as u8
-            })
-            .collect()
+        let mut quantized = Vec::with_capacity(self.dimension);
+        for (i, &v) in vector.iter().enumerate().take(self.dimension) {
+            let min_v = self.mins.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer mins index out of bounds")
+            })?;
+            let max_v = self.maxes.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer maxes index out of bounds")
+            })?;
+            let scale_v = self.scales.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer scales index out of bounds")
+            })?;
+            let clamped = v.clamp(min_v, max_v);
+            let byte_val = ((clamped - min_v) * scale_v)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            quantized.push(byte_val);
+        }
+
+        Ok(quantized)
     }
 
     /// Dequantizes a `u8` vector back to `f32`.
-    pub fn dequantize(&self, vector: &[u8]) -> Vec<f32> {
-        vector
-            .iter()
-            .enumerate()
-            .map(|(i, &v)| f32::from(v) * self.inv_scales[i] + self.mins[i])
-            .collect()
+    pub fn dequantize(&self, vector: &[u8]) -> memfuse_core::Result<Vec<f32>> {
+        if self.inv_scales.len() < self.dimension || self.mins.len() < self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(
+                "Quantizer internal state is corrupted or inconsistent with dimension",
+            ));
+        }
+
+        if vector.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Vector dimension mismatch: expected {}, got {}",
+                self.dimension,
+                vector.len()
+            )));
+        }
+
+        let mut dequantized = Vec::with_capacity(self.dimension);
+        for (i, &v) in vector.iter().enumerate().take(self.dimension) {
+            let inv_scale_v = self.inv_scales.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer inv_scales index out of bounds")
+            })?;
+            let min_v = self.mins.get(i).copied().ok_or_else(|| {
+                memfuse_core::MemFuseError::invalid_input("Quantizer mins index out of bounds")
+            })?;
+            dequantized.push(f32::from(v) * inv_scale_v + min_v);
+        }
+
+        Ok(dequantized)
     }
 
     /// Computes the asymmetric distance between an exact query and a quantized vector.
@@ -378,13 +447,65 @@ mod tests {
     }
 
     #[test]
+    fn test_corrupted_quantizer_returns_err_no_panic() {
+        let q = ScalarQuantizer {
+            mins: vec![0.0], // truncated mins
+            maxes: vec![1.0, 1.0, 1.0, 1.0],
+            scales: vec![255.0, 255.0, 255.0, 255.0],
+            inv_scales: vec![1.0, 1.0, 1.0, 1.0],
+            dimension: 4,
+            total_queries: AtomicU64::new(0),
+            out_of_range_queries: AtomicU64::new(0),
+        };
+
+        let vec_4d = vec![0.5, 0.5, 0.5, 0.5];
+        let res_quant = q.quantize(&vec_4d);
+        assert!(matches!(
+            res_quant,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+
+        let q_corrupt_dequant = ScalarQuantizer {
+            mins: vec![0.0, 0.0, 0.0, 0.0],
+            maxes: vec![1.0, 1.0, 1.0, 1.0],
+            scales: vec![255.0, 255.0, 255.0, 255.0],
+            inv_scales: vec![1.0], // truncated inv_scales
+            dimension: 4,
+            total_queries: AtomicU64::new(0),
+            out_of_range_queries: AtomicU64::new(0),
+        };
+        let u8_4d = vec![127u8, 127, 127, 127];
+
+        let res_dequant = q_corrupt_dequant.dequantize(&u8_4d);
+        assert!(matches!(
+            res_dequant,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
     fn test_dist_dimension_mismatch_returns_error() {
         let v1 = vec![0.0, 1.0];
         let v2 = vec![2.0, 3.0];
         let q = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 2);
 
         let query_3d = vec![1.0, 2.0, 3.0];
-        let quant_2d = q.quantize(&v1);
+        let quant_2d = q.quantize(&v1).expect("quantize");
+
+        // quantize dimension mismatch
+        let res_quant = q.quantize(&query_3d);
+        assert!(matches!(
+            res_quant,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
+
+        // dequantize dimension mismatch
+        let quant_3d = vec![1u8, 2, 3];
+        let res_dequant = q.dequantize(&quant_3d);
+        assert!(matches!(
+            res_dequant,
+            Err(memfuse_core::MemFuseError::InvalidInput(_))
+        ));
 
         // asymmetric_dist length mismatch
         let res_asym = q.asymmetric_dist(&query_3d, &quant_2d, DistanceMetric::Cosine);
@@ -394,7 +515,6 @@ mod tests {
         ));
 
         // symmetric_dist length mismatch
-        let quant_3d = vec![1u8, 2, 3];
         let res_sym = q.symmetric_dist(&quant_2d, &quant_3d, DistanceMetric::Euclidean);
         assert!(matches!(
             res_sym,
@@ -424,8 +544,8 @@ mod tests {
 
         let q = ScalarQuantizer::train(&[v1.as_slice(), v2.as_slice()], 4);
 
-        let quant = q.quantize(&v1);
-        let dequant = q.dequantize(&quant);
+        let quant = q.quantize(&v1).expect("quantize");
+        let dequant = q.dequantize(&quant).expect("dequantize");
 
         let mut max_err = 0.0_f32;
 
@@ -453,12 +573,12 @@ mod tests {
         let refs: Vec<&[f32]> = vectors.iter().map(|v| v.as_slice()).collect();
         let q = ScalarQuantizer::train(&refs, 128);
 
-        let q_vecs: Vec<Vec<u8>> = vectors.iter().map(|v| q.quantize(v)).collect();
+        let q_vecs: Vec<Vec<u8>> = vectors.iter().map(|v| q.quantize(v).unwrap()).collect();
 
         // Random queries
         for _ in 0..100 {
             let qv: Vec<f32> = (0..128).map(|_| rng.gen_range(-1.0..1.0)).collect();
-            let qq = q.quantize(&qv);
+            let qq = q.quantize(&qv).unwrap();
 
             let mut top = 0;
             let mut top_dist = f32::MAX;
@@ -483,7 +603,7 @@ mod tests {
         assert_eq!(q.dimension, 128);
 
         let v = vec![0.5; 128];
-        let quantized = q.quantize(&v);
+        let quantized = q.quantize(&v).expect("quantize");
         assert_eq!(quantized.len(), 128);
         for &val in &quantized {
             assert!(val > 120 && val < 135); // Close to 127
@@ -516,8 +636,8 @@ mod tests {
 
         // Probe vector: dim 0 has fine-grained variation (0.05), dim 1 is coarse.
         let probe = vec![0.05_f32, 50.0_f32];
-        let per_dim_quant = per_dim_q.quantize(&probe);
-        let per_dim_dequant = per_dim_q.dequantize(&per_dim_quant);
+        let per_dim_quant = per_dim_q.quantize(&probe).expect("quantize");
+        let per_dim_dequant = per_dim_q.dequantize(&per_dim_quant).expect("dequantize");
 
         // Compute per-dim MSE
         let per_dim_mse: f32 = probe
@@ -639,8 +759,8 @@ mod tests {
                 let probe = vec![p0, p1];
 
                 // Per-dim error
-                let per_dim_quant = per_dim_q.quantize(&probe);
-                let per_dim_dequant = per_dim_q.dequantize(&per_dim_quant);
+                let per_dim_quant = per_dim_q.quantize(&probe).expect("quantize");
+                let per_dim_dequant = per_dim_q.dequantize(&per_dim_quant).expect("dequantize");
                 let per_dim_mse: f32 = probe.iter().zip(per_dim_dequant.iter())
                     .map(|(o, r)| (o - r).powi(2)).sum::<f32>() / 2.0;
 
@@ -697,7 +817,7 @@ mod tests {
 
         let query = vec![5.0, 10.0, 50.0];
         let target_vec = vec![0.0, 0.0, 0.0];
-        let target_quant = q.quantize(&target_vec);
+        let target_quant = q.quantize(&target_vec).expect("quantize");
 
         // Test asymmetric distances
         let cos_dist = q
@@ -718,7 +838,7 @@ mod tests {
         assert_eq!(dot_dist, 0.0);
 
         // Test symmetric distances
-        let query_quant = q.quantize(&query);
+        let query_quant = q.quantize(&query).expect("quantize");
         let sym_cos = q
             .symmetric_dist(&query_quant, &target_quant, DistanceMetric::Cosine)
             .unwrap(); // unwrap
