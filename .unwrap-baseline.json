@@ -4720,6 +4720,78 @@
     "hash": "faefef6e5cf0aa5f"
   },
   {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "15027b41d302afec"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "212d277aaa53f40d"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "290cf831ad3befa8"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "2df972c9df65761c"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "44c383db446cceda"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "4f7fbbbdada35167"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "5031d5a2a240e4e5"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "53dff700765630de"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "863e889066b7084f"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "8970bedd8e1f787b"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "b595510eb92e0495"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "c23e47378e816736"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "cb0aa27bd89a8207"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "e0229d5afff2fa6b"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "e3802d25f0d94fda"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "e9b83ff4d6fc3780"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "e9bf03633a87d0f4"
+  },
+  {
+    "file": "crates/memfuse-db/tests/auto_community_detection_test.rs",
+    "hash": "f404246d1afa67c2"
+  },
+  {
     "file": "crates/memfuse-db/tests/checkpoint_layer_bounds.rs",
     "hash": "0970881d7f6e0dbe"
   },
