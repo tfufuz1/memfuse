@@ -22,10 +22,6 @@ serde_json = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
 
-[features]
-default = []
-physio-synaptic-edges = []
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 memfuse-store = { workspace = true }

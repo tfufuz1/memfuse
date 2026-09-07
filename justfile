@@ -188,6 +188,15 @@ debt-audit:
     fi
     echo ""; echo "✅ Debt-Audit PASSED"
 
+# Runs the LongMemEval regression benchmark suite and compares against baseline
+bench-regression:
+    #!/usr/bin/env bash
+    if command -v nix &> /dev/null && nix develop -c true &> /dev/null; then
+        nix develop -c cargo run -p memfuse-bench --release
+    else
+        cargo run -p memfuse-bench --release
+    fi
+
 # Bootstrap a new feature using the Micro-Spec Template
 spec NAME:
     #!/usr/bin/env bash
