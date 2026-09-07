@@ -207,7 +207,7 @@ pub fn group_turns_into_segments(
 /// Bei `similarity > threshold` wird der ÄLTERE Turn (kleinere `DocId` als Proxy für frühere Erstellung)
 /// als Duplikat markiert.
 ///
-/// AI-TAG[SLEEP][MINOR] DocId-Timestamp-Proxy Hinweis (ID: AGT-DB-660fbb5f)
+/// AI-TAG[SLEEP][MINOR] DocId-Timestamp-Proxy Hinweis (ID: AGT-DB-660fbb5f) (TS:2026-08-29T18:00:00Z) (SESSION:0dcb9f3b)
 /// Hinweis: Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert,
 /// sollte diese Funktion `TxId` oder explizite Timestamps als Parameter anstelle von `DocId` akzeptieren.
 ///
@@ -306,12 +306,13 @@ pub fn compact_segment_via_context_compactor(
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     fn make_embedding(base: f32, dim: usize) -> Vec<f32> {
         let mut v = vec![0.0f32; dim];
         if dim > 0 {
             v[0] = base;
-            for i in 1..dim {
-                v[i] = 0.1 * (i as f32);
+            for (i, slot) in v.iter_mut().enumerate().take(dim).skip(1) {
+                *slot = 0.1 * (i as f32);
             }
         }
         // Normalize

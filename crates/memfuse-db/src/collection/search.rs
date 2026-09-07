@@ -342,6 +342,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         continue;
                     };
                 let rank = (results.len() + 1) as u32;
+                let rrf_contrib = 1.0 / (60.0 + rank as f32);
                 let prov = crate::fusion::build_provenance(
                     Some(sd.score),
                     Some(rank),
@@ -356,6 +357,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     60.0,
                     Some(self.name.clone()),
                     Some("hnsw".to_string()),
+                    Some(rrf_contrib),
                 );
                 results.push(crate::SearchResult {
                     id,
