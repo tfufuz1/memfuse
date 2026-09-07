@@ -80,10 +80,15 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod sleep_cycle;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
+};
+pub use sleep_cycle::{
+    compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
+    run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
 };
 
 #[cfg(feature = "sandbox")]
