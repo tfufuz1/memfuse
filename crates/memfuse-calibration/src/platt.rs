@@ -58,6 +58,11 @@ impl PlattScaler {
         self.transform(raw_score)
     }
 
+    /// Alias für `transform(logit)`.
+    pub fn apply(&self, logit: f32) -> f32 {
+        self.transform(logit)
+    }
+
     /// Wendet das Platt-Scaling `sigmoid(A * logit + B)` an.
     pub fn transform(&self, logit: f32) -> f32 {
         if logit.is_nan() {
