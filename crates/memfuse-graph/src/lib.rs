@@ -31,6 +31,8 @@ pub mod immune;
 pub mod path_rag;
 pub mod ppr;
 pub mod session_dag;
+#[cfg(feature = "physio-synaptic-edges")]
+pub mod synaptic;
 
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 pub use csr::CsrGraph;
@@ -42,4 +44,9 @@ pub use path_rag::{EntityId, GraphPath, PathGraph, PathRAGEngine};
 pub use ppr::PprContext;
 pub use session_dag::{
     AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree,
+};
+#[cfg(feature = "physio-synaptic-edges")]
+pub use synaptic::{
+    apply_hebbian_update, apply_homeostatic_scaling, apply_pheromone_update, synaptic_score,
+    SynapticConfig,
 };
