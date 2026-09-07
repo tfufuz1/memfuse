@@ -266,9 +266,7 @@ impl ScalarQuantizer {
                 memfuse_core::MemFuseError::invalid_input("Quantizer scales index out of bounds")
             })?;
             let clamped = v.clamp(min_v, max_v);
-            let byte_val = ((clamped - min_v) * scale_v)
-                .round()
-                .clamp(0.0, 255.0) as u8;
+            let byte_val = ((clamped - min_v) * scale_v).round().clamp(0.0, 255.0) as u8;
             quantized.push(byte_val);
         }
 
@@ -294,7 +292,9 @@ impl ScalarQuantizer {
         let mut dequantized = Vec::with_capacity(self.dimension);
         for (i, &v) in vector.iter().enumerate().take(self.dimension) {
             let inv_scale_v = self.inv_scales.get(i).copied().ok_or_else(|| {
-                memfuse_core::MemFuseError::invalid_input("Quantizer inv_scales index out of bounds")
+                memfuse_core::MemFuseError::invalid_input(
+                    "Quantizer inv_scales index out of bounds",
+                )
             })?;
             let min_v = self.mins.get(i).copied().ok_or_else(|| {
                 memfuse_core::MemFuseError::invalid_input("Quantizer mins index out of bounds")

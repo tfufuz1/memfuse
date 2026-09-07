@@ -612,7 +612,8 @@ impl DiskAnnIndex {
             let mut keep = true;
 
             for p_v in &pruned_vecs {
-                let dist_p_cand = compute_distance(&cand_node_v, p_v, self.inner.config.distance_metric)?;
+                let dist_p_cand =
+                    compute_distance(&cand_node_v, p_v, self.inner.config.distance_metric)?;
                 if alpha * dist_p_cand < cand.distance {
                     keep = false;
                     break;
@@ -670,12 +671,7 @@ impl DiskAnnIndex {
             all_ids.push(*id);
         }
 
-        let entry_point = self
-            .inner
-            .header
-            .read()
-            .map(|h| h.entry_point)
-            .unwrap_or(0);
+        let entry_point = self.inner.header.read().map(|h| h.entry_point).unwrap_or(0);
         let alpha = 1.2f32;
 
         // Phase 2, 3 & 4: Inkrementelles Einfügen jedes neuen Vektors
@@ -709,10 +705,15 @@ impl DiskAnnIndex {
                     graph[neighbor_idx].push(new_node_idx);
                     if graph[neighbor_idx].len() > self.inner.config.max_degree {
                         let nbr_v = self.get_vec_mixed(neighbor, existing_count, new_vecs)?;
-                        let mut cand_vec: Vec<SearchCandidate> = Vec::with_capacity(graph[neighbor_idx].len());
+                        let mut cand_vec: Vec<SearchCandidate> =
+                            Vec::with_capacity(graph[neighbor_idx].len());
                         for &idx in &graph[neighbor_idx] {
                             let idx_v = self.get_vec_mixed(idx, existing_count, new_vecs)?;
-                            let dist = compute_distance(&nbr_v, &idx_v, self.inner.config.distance_metric)?;
+                            let dist = compute_distance(
+                                &nbr_v,
+                                &idx_v,
+                                self.inner.config.distance_metric,
+                            )?;
                             cand_vec.push(SearchCandidate {
                                 index: idx,
                                 distance: dist,
@@ -738,7 +739,8 @@ impl DiskAnnIndex {
             all_vecs.push(vec.clone());
         }
 
-        self.write_to_path(tmp_path, &graph, &all_vecs, &all_ids).await
+        self.write_to_path(tmp_path, &graph, &all_vecs, &all_ids)
+            .await
     }
 
     pub async fn build_to_path(
@@ -2073,7 +2075,11 @@ mod tests {
         for (id, vec) in &new_ids {
             let res = index.search(vec, 1).await?;
             assert!(!res.is_empty());
-            assert_eq!(res[0].doc_id, *id, "Newly inserted doc_id {:?} should be top search result", id);
+            assert_eq!(
+                res[0].doc_id, *id,
+                "Newly inserted doc_id {:?} should be top search result",
+                id
+            );
         }
 
         Ok(())

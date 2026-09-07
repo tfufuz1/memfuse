@@ -1,0 +1,25 @@
+[
+  {
+    "sample_id": "conv-1",
+    "qa": [
+      {
+        "question": "When did Alice visit Berlin?",
+        "answer": "May 2023",
+        "evidence": ["visited Berlin in May 2023"],
+        "category": 4
+      },
+      {
+        "question": "What is the capital of France?",
+        "answer": "Paris",
+        "evidence": ["Paris is capital"],
+        "category": 3
+      },
+      {
+        "question": "Adversarial trick question",
+        "adversarial_answer": "False premise",
+        "evidence": [],
+        "category": 5
+      }
+    ]
+  }
+]

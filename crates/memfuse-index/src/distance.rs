@@ -824,7 +824,12 @@ pub(crate) fn dot_product_f32_u8(a: &[f32], b: &[u8]) -> f32 {
 
 /// Computes the squared Euclidean distance between an f32 vector and a u8 vector
 /// performing inline dequantization with per-dimension scaling.
-pub(crate) fn euclidean_distance_sq_f32_u8(a: &[f32], b: &[u8], alphas: &[f32], mins: &[f32]) -> f32 {
+pub(crate) fn euclidean_distance_sq_f32_u8(
+    a: &[f32],
+    b: &[u8],
+    alphas: &[f32],
+    mins: &[f32],
+) -> f32 {
     a.iter()
         .zip(b.iter())
         .zip(alphas.iter())
