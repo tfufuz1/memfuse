@@ -62,7 +62,9 @@ pub struct ExactPredicateConflictDetector;
 
 impl ContradictionDetector for ExactPredicateConflictDetector {
     fn conflicts(&self, a: &EdgeAssertion, b: &EdgeAssertion) -> bool {
-        a.subject == b.subject && a.predicate_hash == b.predicate_hash && a.object_repr != b.object_repr
+        a.subject == b.subject
+            && a.predicate_hash == b.predicate_hash
+            && a.object_repr != b.object_repr
     }
 }
 
@@ -151,7 +153,10 @@ impl ImmunMemory {
     ///
     /// HINWEIS: Dies ist eine Passthrough-Funktion. Die Ausführung des Tombstoning (z. B. via
     /// `CsrGraph::remove_edge()`) obliegt ausschließlich dem Aufrufer (Trennung von Erkennung und Wirkung).
-    pub fn suggest_tombstone_candidates(&self, csr_edges_matching_pattern: &[EdgeId]) -> Vec<EdgeId> {
+    pub fn suggest_tombstone_candidates(
+        &self,
+        csr_edges_matching_pattern: &[EdgeId],
+    ) -> Vec<EdgeId> {
         csr_edges_matching_pattern.to_vec()
     }
 }
@@ -210,8 +215,14 @@ mod tests {
 
         mem.record_contradiction(hash2, TxId::new(1));
 
-        assert_eq!(mem.get_antibody(&hash1).map(|a| a.contradiction_count), Some(2));
-        assert_eq!(mem.get_antibody(&hash2).map(|a| a.contradiction_count), Some(1));
+        assert_eq!(
+            mem.get_antibody(&hash1).map(|a| a.contradiction_count),
+            Some(2)
+        );
+        assert_eq!(
+            mem.get_antibody(&hash2).map(|a| a.contradiction_count),
+            Some(1)
+        );
         assert!(!mem.is_suppressed(hash1));
         assert!(!mem.is_suppressed(hash2));
 

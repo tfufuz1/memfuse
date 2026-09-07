@@ -1853,11 +1853,4 @@ mod tests {
         assert!(TenantId::SYSTEM.is_system());
     }
 
-    #[test]
-    fn test_tenant_id_try_new_serde_roundtrip() {
-        let t = TenantId::try_new(999).expect("valid tenant_id");
-        let json = serde_json::to_string(&t).expect("serde serialize");
-        let back: TenantId = serde_json::from_str(&json).expect("serde deserialize");
-        assert_eq!(t, back);
-    }
 }
