@@ -1,6 +1,6 @@
 //! Profile definition for Small Language Models (SLMs) in MemFuse Router.
 
-use memfuse_core::{MemFuseError, Result, TokenBudget};
+use memfuse_core::{ConfigFingerprint, MemFuseError, Result, TokenBudget};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -18,6 +18,11 @@ pub struct SlmProfile {
     pub token_budget: TokenBudget,
     /// Minimum relevance threshold score required for routing candidates.
     pub min_relevance_score: f32,
+    /// P8-Pflicht: Fingerprint der LLM-Konfiguration bei der Kalibrierung.
+    /// None = noch nicht kalibriert / Fingerprint noch nicht gesetzt.
+    /// INVARIANTE INV-P8-1: Bei Fingerprint-Wechsel MUSS invalidate() aufgerufen werden.
+    #[serde(default)]
+    pub fingerprint: Option<ConfigFingerprint>,
 }
 
 impl SlmProfile {
@@ -35,7 +40,37 @@ impl SlmProfile {
             domain_communities: domain_communities.into_iter().collect(),
             token_budget,
             min_relevance_score,
+            fingerprint: None,
         }
+    }
+
+    /// Builder method to attach a specific `ConfigFingerprint` to this profile.
+    pub fn with_fingerprint(mut self, fingerprint: ConfigFingerprint) -> Self {
+        self.fingerprint = Some(fingerprint);
+        self
+    }
+
+    /// P8-Pflicht: Setzt Kalibrierungszustand zurück wenn Fingerprint sich ändert.
+    /// Gibt true zurück wenn eine Invalidierung stattgefunden hat.
+    pub fn invalidate_on_config_change(&mut self, new_fp: ConfigFingerprint) -> bool {
+        match &self.fingerprint {
+            Some(existing) if existing == &new_fp => false,
+            _ => {
+                tracing::warn!(
+                    "SlmProfile: ConfigFingerprint changed — invalidating calibration (P8)"
+                );
+                self.fingerprint = Some(new_fp);
+                // Kalibrierungsstatistiken zurücksetzen
+                self.reset_calibration_state();
+                true
+            }
+        }
+    }
+
+    fn reset_calibration_state(&mut self) {
+        // P8-Reset: Baseline configuration defaults reset where applicable
+        // Note: Dynamic runtime calibration statistics (ConformalCalibrator, times_selected, calibrated_min_score)
+        // are maintained in ProfileCalibrationState within RouterEngine.
     }
 
     /// Validates `SlmProfile` parameters.
@@ -188,6 +223,9 @@ pub struct ProfileCalibrationState {
     pub original_min_score: f32,
     /// Conformal calibrator for distribution-free threshold adaptation.
     pub conformal: ConformalCalibrator,
+    /// Configuration fingerprint under which calibration statistics were gathered.
+    #[serde(default)]
+    pub last_calibrated_fingerprint: Option<ConfigFingerprint>,
 }
 
 impl Default for ProfileCalibrationState {
@@ -198,6 +236,7 @@ impl Default for ProfileCalibrationState {
             calibrated_min_score: 0.5,
             original_min_score: 0.5,
             conformal: ConformalCalibrator::default(),
+            last_calibrated_fingerprint: None,
         }
     }
 }
@@ -210,7 +249,42 @@ impl ProfileCalibrationState {
             calibrated_min_score: original_min_score,
             original_min_score,
             conformal: ConformalCalibrator::new(0.05, 0.01, original_min_score),
+            last_calibrated_fingerprint: None,
         }
+    }
+
+    /// Checks active fingerprint against recorded calibration fingerprint.
+    /// Invalidates calibration stats immediately if active fingerprint is None or changed.
+    pub fn check_and_invalidate_fingerprint(&mut self, active_fp: Option<&ConfigFingerprint>) {
+        let Some(active_fp) = active_fp else {
+            if self.last_calibrated_fingerprint.is_some() || self.conformal.window_total > 0 {
+                self.reset();
+            }
+            self.last_calibrated_fingerprint = None;
+            return;
+        };
+
+        match &self.last_calibrated_fingerprint {
+            Some(cal_fp) if cal_fp == active_fp => {
+                // Fingerprint matches active execution configuration
+            }
+            _ => {
+                // Configuration shift detected (or initial sample under new fingerprint)
+                self.reset();
+                self.last_calibrated_fingerprint = Some(active_fp.clone());
+            }
+        }
+    }
+
+    /// Returns whether calibration is valid and active for the given active fingerprint.
+    pub fn is_calibrated(&self, active_fp: Option<&ConfigFingerprint>) -> bool {
+        let Some(active_fp) = active_fp else {
+            return false;
+        };
+        if self.conformal.window_total < crate::router::CALIBRATION_WARMUP_WINDOW as u64 {
+            return false;
+        }
+        self.last_calibrated_fingerprint.as_ref() == Some(active_fp)
     }
 
     /// Durchschnittliche Konfidenz über alle bisherigen Entscheidungen.
@@ -236,14 +310,13 @@ impl ProfileCalibrationState {
         adjusted
     }
 
-    // ADR-028: recalibrate() removed — only recalibrate_conformal() is authoritative
-
     /// Setzt Kalibrierungsstate vollständig zurück.
     pub fn reset(&mut self) {
         self.times_selected = 0;
         self.cumulative_confidence = 1.0;
         self.calibrated_min_score = self.original_min_score;
         self.conformal = ConformalCalibrator::new(0.05, 0.01, self.original_min_score);
+        self.last_calibrated_fingerprint = None;
     }
 }
 
@@ -264,6 +337,23 @@ mod serde_sorted_u64_set {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_slm_profile_fingerprint_change_triggers_invalidation() {
+        let mut profile = SlmProfile::new(
+            "test-slm",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::default(),
+            0.5,
+        );
+        let fp1 = ConfigFingerprint::new("m", "Q4_K_M", "t", 0.7);
+        let fp2 = ConfigFingerprint::new("m", "Q8_0", "t", 0.7); // andere Quantisierung
+
+        assert!(profile.invalidate_on_config_change(fp1.clone()));
+        assert!(!profile.invalidate_on_config_change(fp1.clone())); // gleicher FP → kein Reset
+        assert!(profile.invalidate_on_config_change(fp2)); // geändert → Reset
+    }
 
     #[test]
     fn test_conformal_calibrator_invariants() {

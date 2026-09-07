@@ -15,6 +15,41 @@ use std::sync::OnceLock;
 
 static SCORE_REGEX: OnceLock<Regex> = OnceLock::new();
 
+/// Confidence or parse status of an LLM importance rating.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Confidence {
+    /// Score was successfully parsed from the LLM output.
+    Parsed,
+    /// LLM output was unparseable; score defaulted to fallback value (0.5).
+    Unparseable,
+}
+
+/// Result of an LLM importance evaluation containing the score and parse confidence status.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ImportanceAssessment {
+    /// The normalized importance score (0.0 to 1.0).
+    pub score: ImportanceScore,
+    /// Confidence indicator describing whether the score was parsed or defaulted.
+    pub confidence: Confidence,
+}
+
+impl ImportanceAssessment {
+    /// Creates a new `ImportanceAssessment`.
+    pub fn new(score: ImportanceScore, confidence: Confidence) -> Self {
+        Self { score, confidence }
+    }
+
+    /// Helper returning the raw `f32` importance score value.
+    pub fn value(&self) -> f32 {
+        self.score.value()
+    }
+
+    /// Returns `true` if the score was parsed successfully from the LLM output.
+    pub fn is_parsed(&self) -> bool {
+        self.confidence == Confidence::Parsed
+    }
+}
+
 fn get_score_regex() -> Result<&'static Regex> {
     if let Some(re) = SCORE_REGEX.get() {
         return Ok(re);
@@ -34,13 +69,15 @@ fn get_score_regex() -> Result<&'static Regex> {
 ///
 /// # Errors
 /// - Returns `MemFuseError::InvalidInput` if `chunk_text` is empty.
-/// - Returns `MemFuseError::Internal` if LLM response cannot be parsed as a float.
 /// - Returns `MemFuseError::Storage` / `MemFuseError::Io` on network or Ollama API errors.
 // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee)
-// BEFUND: score_importance liefert ein punktuelles Rating (0.0 - 1.0) ohne Konfidenzintervall oder Modell-Provenienz.
+// BEFUND: score_importance liefert ein punktuelles Rating (0.0 - 1.0) mit expliziter Parse-Konfidenz (Confidence::Parsed / Confidence::Unparseable).
 // RISIKO: Bei Modellwechsel oder unparsbaren Antworten (Fallback 0.5) gehen Drift-Signale und Modellzuordnungen verloren.
 // EMPFEHLUNG: Kalibrierungs-Metadaten und Modell-ID in der ImportanceScore-Rückgabe verankern.
-pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result<ImportanceScore> {
+pub async fn score_importance(
+    client: &OllamaClient,
+    chunk_text: &str,
+) -> Result<ImportanceAssessment> {
     if chunk_text.trim().is_empty() {
         return Err(MemFuseError::InvalidInput(
             "chunk_text must not be empty".into(),
@@ -68,30 +105,43 @@ pub async fn score_importance(client: &OllamaClient, chunk_text: &str) -> Result
         .generate_text(&client.config().model, &prompt)
         .await?;
 
-    let score = parse_importance_score_response(&raw_response);
-    Ok(score)
+    let assessment = parse_importance_score_response(&raw_response);
+    if assessment.confidence == Confidence::Unparseable {
+        tracing::warn!(
+            model = %client.config().model,
+            "score_importance completed with Confidence::Unparseable fallback"
+        );
+    }
+    Ok(assessment)
 }
 
-/// Parses an ImportanceScore from raw LLM output, falling back cleanly to default (0.5) if unparseable.
-pub fn parse_importance_score_response(raw_response: &str) -> ImportanceScore {
+/// Parses an `ImportanceAssessment` from raw LLM output.
+/// Returns `Confidence::Parsed` on successful float extraction,
+/// or `Confidence::Unparseable` with default score (0.5) and a warning log if unparseable.
+pub fn parse_importance_score_response(raw_response: &str) -> ImportanceAssessment {
     let Ok(re) = get_score_regex() else {
-        tracing::warn!("SCORE_REGEX compilation failed, returning default ImportanceScore(0.5)");
-        return ImportanceScore::default();
+        let truncated: String = raw_response.chars().take(200).collect();
+        tracing::warn!(
+            raw_response = %truncated,
+            "SCORE_REGEX compilation failed, returning default ImportanceScore(0.5) with Confidence::Unparseable"
+        );
+        return ImportanceAssessment::new(ImportanceScore::default(), Confidence::Unparseable);
     };
 
     let trimmed = raw_response.trim();
     if let Some(m) = re.find(trimmed) {
         let matched = m.as_str();
         if let Ok(parsed) = matched.parse::<f32>() {
-            return ImportanceScore::new(parsed);
+            return ImportanceAssessment::new(ImportanceScore::new(parsed), Confidence::Parsed);
         }
     }
 
+    let truncated: String = raw_response.chars().take(200).collect();
     tracing::warn!(
-        raw_response = %raw_response,
-        "Failed to parse ImportanceScore float from LLM response, returning default ImportanceScore(0.5)"
+        raw_response = %truncated,
+        "Failed to parse ImportanceScore float from LLM response, returning default ImportanceScore(0.5) with Confidence::Unparseable"
     );
-    ImportanceScore::default()
+    ImportanceAssessment::new(ImportanceScore::default(), Confidence::Unparseable)
 }
 
 #[cfg(test)]
@@ -133,10 +183,12 @@ mod tests {
         });
 
         let client = OllamaClient::new(server_url);
-        let score = score_importance(&client, "User prefers dark mode.")
+        let assessment = score_importance(&client, "User prefers dark mode.")
             .await
             .unwrap(); // unwrap
-        assert_eq!(score.value(), 0.85);
+        assert_eq!(assessment.value(), 0.85);
+        assert_eq!(assessment.confidence, Confidence::Parsed);
+        assert!(assessment.is_parsed());
     }
 
     #[tokio::test]
@@ -169,7 +221,10 @@ mod tests {
         let client = OllamaClient::new(server_url);
         let res = score_importance(&client, "Some chunk text").await;
         assert!(res.is_ok());
-        assert_eq!(res.unwrap().value(), 0.5);
+        let assessment = res.unwrap(); // unwrap
+        assert_eq!(assessment.value(), 0.5);
+        assert_eq!(assessment.confidence, Confidence::Unparseable);
+        assert!(!assessment.is_parsed());
     }
 
     #[test]
@@ -186,21 +241,56 @@ mod tests {
     fn test_score_importance_regex_parsing_edge_cases() {
         let s1 = parse_importance_score_response("Based on analysis: 0.75");
         assert_eq!(s1.value(), 0.75);
+        assert_eq!(s1.confidence, Confidence::Parsed);
 
         let s2 = parse_importance_score_response("Score: 1.0");
         assert_eq!(s2.value(), 1.0);
+        assert_eq!(s2.confidence, Confidence::Parsed);
 
         let s3 = parse_importance_score_response("Rating is 0");
         assert_eq!(s3.value(), 0.0);
+        assert_eq!(s3.confidence, Confidence::Parsed);
 
         let s4 = parse_importance_score_response("Importance = .42 (Moderate)");
         assert_eq!(s4.value(), 0.42);
+        assert_eq!(s4.confidence, Confidence::Parsed);
 
         let s5 = parse_importance_score_response("Relevanz: 0.8/1.0");
         assert_eq!(s5.value(), 0.8);
+        assert_eq!(s5.confidence, Confidence::Parsed);
 
         let s6 = parse_importance_score_response("Unparseable garbage response text");
         assert_eq!(s6.value(), 0.5);
+        assert_eq!(s6.confidence, Confidence::Unparseable);
+    }
+
+    #[test]
+    fn test_unparseable_response_returns_unparseable_confidence() {
+        let res =
+            parse_importance_score_response("I cannot rate this memory text without context.");
+        assert_eq!(res.value(), 0.5);
+        assert_eq!(res.confidence, Confidence::Unparseable);
+        assert!(!res.is_parsed());
+    }
+
+    #[test]
+    fn test_parsed_0_5_score_returns_parsed_confidence() {
+        let res = parse_importance_score_response("Importance rating: 0.5");
+        assert_eq!(res.value(), 0.5);
+        assert_eq!(res.confidence, Confidence::Parsed);
+        assert!(res.is_parsed());
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_unparseable_response_logs_warning_with_raw_text() {
+        let raw = "Completely unparseable model response string";
+        let res = parse_importance_score_response(raw);
+        assert_eq!(res.confidence, Confidence::Unparseable);
+        assert!(logs_contain(
+            "Failed to parse ImportanceScore float from LLM response"
+        ));
+        assert!(logs_contain("Completely unparseable model response string"));
     }
 
     use proptest::prelude::*;
@@ -217,6 +307,7 @@ mod tests {
             let parsed = parse_importance_score_response(&llm_output);
             assert!(!parsed.value().is_nan());
             assert!((0.0..=1.0).contains(&parsed.value()));
+            assert_eq!(parsed.confidence, Confidence::Parsed);
         }
 
         #[test]
