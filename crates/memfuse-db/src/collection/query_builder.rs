@@ -411,7 +411,11 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                         "Reranker deadline exceeded — falling back to RRF order"
                     );
                 })
-                .and_then(|r| r.map_err(|e| { tracing::warn!("Reranking failed: {e}"); }));
+                .and_then(|r| {
+                    r.map_err(|e| {
+                        tracing::warn!("Reranking failed: {e}");
+                    })
+                });
 
                 if let Ok(ranked) = reranked {
                     let mut reranked_results = Vec::with_capacity(k);
@@ -652,9 +656,13 @@ mod tests {
             let id = format!("doc-{:03}", i);
             let text = format!("rust system engineering doc {:03}", i);
             let val = (i as f32 + 1.0) / 150.0;
-            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
-                .await
-                .unwrap();
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": text })),
+            )
+            .await
+            .unwrap();
         }
 
         let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
@@ -683,9 +691,13 @@ mod tests {
             let id = format!("doc-{:03}", i);
             let text = format!("benchmark item {:03}", i);
             let val = (i as f32 + 1.0) / 300.0;
-            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
-                .await
-                .unwrap();
+            col.insert(
+                &id,
+                &[val, 1.0 - val, 0.0, 0.0],
+                Some(json!({ "text": text })),
+            )
+            .await
+            .unwrap();
         }
 
         let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
@@ -716,7 +728,11 @@ mod tests {
             .unwrap();
 
         // Since fetch_k is capped at 50, top-30 query successfully completes and receives results
-        assert_eq!(res_custom_max.len(), 30, "k=30 requested with fetch_k capped at 50");
+        assert_eq!(
+            res_custom_max.len(),
+            30,
+            "k=30 requested with fetch_k capped at 50"
+        );
     }
 
     #[tokio::test]
@@ -818,7 +834,10 @@ mod tests {
             .execute()
             .await;
 
-        assert!(res.is_ok(), "Query must succeed even when reranker times out");
+        assert!(
+            res.is_ok(),
+            "Query must succeed even when reranker times out"
+        );
         let results = res.unwrap(); // unwrap
         assert_eq!(results.len(), 2);
         for item in &results {
