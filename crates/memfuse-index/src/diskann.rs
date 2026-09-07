@@ -20,19 +20,20 @@ use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
-const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DFTR";
-const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"MEMFUSE_DISKANN_INTEGRITY_KEY___";
-const DISKANN_VERSION: u16 = 1;
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"FOOT";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse-diskann-integrity-key-32";
-/// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
-/// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
-/// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
-/// innerhalb dieses 50-Insert-Fensters sind nicht-geflushte Vektoren unpersistent.
+const DISKANN_VERSION: u16 = 1;
+/// Pending-Threshold: nach 50 pending inserts → Trigger für persist_delta().
+/// Datenverlustrisiko im Absturzfall ist durch das WAL-rückgestützte
+/// `pending.wal` (siehe `recover_pending_delta()`) abgedeckt — ein Absturz
+/// innerhalb dieses Fensters führt zu Wiederherstellung beim nächsten Start,
+/// nicht zu Datenverlust. Der verbleibende Aspekt dieses Schwellwerts ist rein
+/// ein Latenz-Trigger (siehe `trigger_background_persist_delta()`), kein
+/// Korrektheitsrisiko mehr.
 const PENDING_FLUSH_THRESHOLD: u64 = 50;
 
 /// Header for DiskANN index file.
@@ -174,6 +175,7 @@ impl DiskAnnFooter {
         buf
     }
 
+    #[allow(dead_code)]
     fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < Self::SIZE {
             return Err(MemFuseError::Storage("DiskANN footer too small".into()));
@@ -286,6 +288,8 @@ struct DiskAnnIndexInner {
     pending_inserts: RwLock<Vec<(DocId, Vec<f32>)>>,
     /// Monotoner Zähler (AtomicU64 für Threshold-Check ohne Lock).
     pending_count: AtomicU64,
+    /// Flag um überlappende persist_delta-Hintergrundläufe zu verhindern.
+    flushing_in_progress: AtomicBool,
     hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
 }
 
@@ -320,9 +324,30 @@ impl DiskAnnIndex {
                 drift_warn_count: AtomicU64::new(0),
                 pending_inserts: RwLock::new(Vec::new()),
                 pending_count: AtomicU64::new(0),
+                flushing_in_progress: AtomicBool::new(false),
                 hnsw_fallback: RwLock::new(None),
             }),
         })
+    }
+
+    /// Stößt `persist_delta()` asynchron im Tokio-Hintergrund-Task an,
+    /// falls nicht bereits ein persist_delta-Lauf aktiv ist.
+    pub fn trigger_background_persist_delta(&self) {
+        if !self.inner.flushing_in_progress.swap(true, Ordering::AcqRel) {
+            let index_clone = self.clone();
+            tokio::spawn(async move {
+                struct FlushGuard(Arc<DiskAnnIndexInner>);
+                impl Drop for FlushGuard {
+                    fn drop(&mut self) {
+                        self.0.flushing_in_progress.store(false, Ordering::Release);
+                    }
+                }
+                let _guard = FlushGuard(Arc::clone(&index_clone.inner));
+                if let Err(e) = index_clone.persist_delta().await {
+                    tracing::error!(error = %e, "DiskANN Hintergrund-persist_delta fehlgeschlagen");
+                }
+            });
+        }
     }
 
     fn check_quantizer_drift(&self, vector: &[f32]) {
@@ -514,6 +539,7 @@ impl DiskAnnIndex {
                 break;
             }
             let mut vec = Vec::with_capacity(dim);
+            #[allow(clippy::chunks_exact_to_as_chunks)]
             for chunk in vec_bytes.chunks_exact(4) {
                 if let Ok(b) = chunk.try_into() {
                     vec.push(f32::from_le_bytes(b));
@@ -830,6 +856,7 @@ impl DiskAnnIndex {
         let mut graph: Vec<Vec<u32>> = vec![vec![]; total_nodes];
 
         // Phase 1: Adjazenzlisten bestehender Knoten aus Mmap laden
+        #[allow(clippy::needless_range_loop)]
         for i in 0..existing_count {
             let node = self.load_node(i as u32)?;
             graph[i] = node.neighbors;
@@ -1113,7 +1140,7 @@ impl DiskAnnIndex {
 
             if let Some(ref q) = quantizer_opt {
                 let qv = q.quantize(&vectors[i])?;
-                file.write_all(&qv).await.map_err(MemFuseError::Io)?;
+                node_buf.extend_from_slice(&qv);
             } else {
                 for &val in &vectors[i] {
                     node_buf.extend_from_slice(&val.to_le_bytes());
@@ -1182,7 +1209,7 @@ impl DiskAnnIndex {
 
         if index_exists {
             let inner = Arc::clone(&self.inner);
-            tokio::task::spawn_blocking(move || {
+            let load_res = tokio::task::spawn_blocking(move || {
                 use std::sync::atomic::Ordering;
 
                 // Clean up any orphaned temporary files from interrupted persist_delta or build calls
@@ -1255,13 +1282,24 @@ impl DiskAnnIndex {
                     .node_size_bytes
                     .store(node_size_bytes as u64, Ordering::SeqCst);
 
+                let file_len = mmap.len();
+                let sector_size = header.sector_size as usize;
+                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
+                let expected_min_size = start_offset.saturating_add(
+                    (header.node_count as usize).saturating_mul(node_size_bytes),
+                );
+                if file_len < expected_min_size {
+                    return Err(MemFuseError::Storage(format!(
+                        "DiskANN file truncated or corrupt node_count: file len {}, expected at least {}",
+                        file_len, expected_min_size
+                    )));
+                }
+
                 *inner.header.write() = Some(header);
                 *inner.mmap.write() = Some(mmap);
                 inner.cache.write().clear();
 
                 let mut ids = Vec::with_capacity(header.node_count as usize);
-                let sector_size = header.sector_size as usize;
-                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
                 let read_size = node_size_bytes;
                 if !read_size.is_multiple_of(sector_size) {
                     return Err(MemFuseError::Index(
@@ -1310,7 +1348,21 @@ impl DiskAnnIndex {
             .await
             .map_err(|e| {
                 MemFuseError::Storage(format!("Join error during DiskANN load: {}", e))
-            })??;
+            })?;
+
+            if let Err(e) = load_res {
+                if self.inner.config.fallback_policy == DiskAnnFallbackPolicy::UseHnswOnFailure {
+                    tracing::warn!(
+                        index_path = %self.inner.config.index_path.display(),
+                        error = %e,
+                        "DiskANN index file load failed — initializing HNSW fallback"
+                    );
+                    self.init_hnsw_fallback()?;
+                    return Ok(());
+                } else {
+                    return Err(e);
+                }
+            }
         }
 
         if wal_exists {
@@ -1627,6 +1679,11 @@ impl Clone for DiskAnnIndex {
 
 impl VectorIndex for DiskAnnIndex {
     async fn insert(&self, _tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.insert(_tx, id, embedding).await;
+        }
+
         self.check_quantizer_drift(embedding);
 
         let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
@@ -1639,7 +1696,7 @@ impl VectorIndex for DiskAnnIndex {
         };
 
         if count >= PENDING_FLUSH_THRESHOLD {
-            self.persist_delta().await?;
+            self.trigger_background_persist_delta();
         }
         Ok(())
     }
@@ -2394,6 +2451,95 @@ mod tests {
                 id
             );
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_returns_fast_even_at_flush_threshold() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let index_path = temp_dir.path().join("latency.idx");
+
+        let config = DiskAnnConfig {
+            index_path,
+            dimension: 16,
+            max_degree: 8,
+            beam_width: 8,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config)?;
+
+        // Fill pending buffer up to PENDING_FLUSH_THRESHOLD - 1 (49 items)
+        for i in 1..PENDING_FLUSH_THRESHOLD {
+            let id = DocId::from(i);
+            let v = vec![i as f32; 16];
+            index.insert(TxId(1), id, &v).await?;
+        }
+
+        // Measure time taken by the threshold-triggering 50th insert()
+        let triggering_id = DocId::from(PENDING_FLUSH_THRESHOLD);
+        let triggering_v = vec![PENDING_FLUSH_THRESHOLD as f32; 16];
+
+        let start = std::time::Instant::now();
+        index.insert(TxId(1), triggering_id, &triggering_v).await?;
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < std::time::Duration::from_millis(20),
+            "insert() took {:?}, exceeding the 20ms latency budget at flush threshold!",
+            elapsed
+        );
+
+        // Wait briefly for background flush task or call persist_delta() to clean up
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        index.persist_delta().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_no_concurrent_persist_delta_races() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let index_path = temp_dir.path().join("race_prevention.idx");
+
+        let config = DiskAnnConfig {
+            index_path,
+            dimension: 16,
+            max_degree: 8,
+            beam_width: 8,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config)?;
+
+        // Build initial index with 10 items
+        let base_vecs: Vec<Vec<f32>> = (0..10).map(|i| vec![i as f32; 16]).collect();
+        let base_ids: Vec<DocId> = (0..10).map(|i| DocId::from(i + 1)).collect();
+        index.build(&base_vecs, &base_ids).await?;
+
+        // Rapidly perform 60 inserts exceeding PENDING_FLUSH_THRESHOLD
+        for i in 11..=70 {
+            let id = DocId::from(i as u64);
+            let v = vec![i as f32; 16];
+            index.insert(TxId(1), id, &v).await?;
+        }
+
+        // Give background tasks time to process, then invoke persist_delta to flush remaining
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        index.persist_delta().await?;
+
+        // Verify that total node count is 70 and no file corruption occurred
+        assert_eq!(index.len().await, 70);
+
+        // Verify index reloading and search accuracy
+        index.load().await?;
+        let query = vec![65.0f32; 16];
+        let res = index.search(&query, 1).await?;
+        assert!(!res.is_empty());
+        assert_eq!(res[0].doc_id, DocId::from(65u64));
 
         Ok(())
     }
