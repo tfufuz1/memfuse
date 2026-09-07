@@ -116,14 +116,6 @@ impl TryFrom<u64> for TenantId {
     }
 }
 
-#[deprecated(
-    note = "Nutze TryFrom<u64> (fehlerbehaftet) statt From<u64> — From umgeht INV-TENANT-1 stillschweigend bei id=0."
-)]
-impl From<u64> for TenantId {
-    fn from(id: u64) -> Self {
-        Self(id)
-    }
-}
 
 impl std::fmt::Display for TenantId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

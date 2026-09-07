@@ -1064,11 +1064,96 @@ async fn run_locomo_cmd(
     Ok(())
 }
 
+async fn run_pathrag_sweep_cmd(
+    locomo_dataset_path: &Path,
+    output_json_path: &Path,
+    output_md_path: &Path,
+    thresholds: &[f64],
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use memfuse_bench::path_rag_sweep::{
+        run_pathrag_sweep_locomo, run_pathrag_sweep_long_mem_eval, PathRagSweepReport,
+    };
+
+    println!("=== Executing PathRAG Sufficiency Threshold Parameter Sweep ===");
+    println!("Thresholds: {:?}", thresholds);
+
+    let lme_sweep = run_pathrag_sweep_long_mem_eval(thresholds).await?;
+    println!("LongMemEval sweep completed.");
+
+    let locomo_sweep = run_pathrag_sweep_locomo(locomo_dataset_path, thresholds).await?;
+    println!("LoCoMo sweep completed.");
+
+    let report = PathRagSweepReport {
+        timestamp: "2026-09-07T00:00:00Z".to_string(),
+        long_mem_eval_sweep: lme_sweep,
+        locomo_sweep,
+    };
+
+    if let Some(parent) = output_json_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    let json_content = serde_json::to_string_pretty(&report)?;
+    fs::write(output_json_path, &json_content)?;
+    println!("Saved JSON report to `{}`.", output_json_path.display());
+
+    let mut md = String::new();
+    md.push_str("# PathRAG Sufficiency Threshold Sweep Results\n\n");
+    md.push_str("## LongMemEval Parameter Sweep\n\n");
+    md.push_str("| Threshold | Recall@5 | Recall@10 | Precision@5 | Precision@10 | Total Queries |\n");
+    md.push_str("|-----------|----------|-----------|-------------|--------------|---------------|\n");
+    for m in &report.long_mem_eval_sweep {
+        md.push_str(&format!(
+            "| {:.2} | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |\n",
+            m.threshold,
+            m.recall_at_5 * 100.0,
+            m.recall_at_10 * 100.0,
+            m.precision_at_5 * 100.0,
+            m.precision_at_10 * 100.0,
+            m.total_queries
+        ));
+    }
+
+    md.push_str("\n## LoCoMo Parameter Sweep\n\n");
+    md.push_str("| Threshold | Recall@5 | Recall@10 | Precision@5 | Precision@10 | Total Queries |\n");
+    md.push_str("|-----------|----------|-----------|-------------|--------------|---------------|\n");
+    for m in &report.locomo_sweep {
+        md.push_str(&format!(
+            "| {:.2} | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |\n",
+            m.threshold,
+            m.recall_at_5 * 100.0,
+            m.recall_at_10 * 100.0,
+            m.precision_at_5 * 100.0,
+            m.precision_at_10 * 100.0,
+            m.total_queries
+        ));
+    }
+
+    fs::write(output_md_path, &md)?;
+    println!("Saved Markdown report to `{}`.", output_md_path.display());
+    println!("\n{}", md);
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
-    if args.len() > 1 && (args[1] == "long-mem-eval" || args[1] == "long_mem_eval") {
+    if args.len() > 1 && (args[1] == "pathrag-sweep" || args[1] == "pathrag_sweep") {
+        let locomo_dataset_path =
+            PathBuf::from("benchmarks/memfuse-bench/tests/fixtures/locomo_fixture.json");
+        let sweep_output_path =
+            PathBuf::from("benchmarks/results/pathrag_sufficiency_sweep.json");
+        let sweep_md_path =
+            PathBuf::from("benchmarks/results/pathrag_sufficiency_sweep.md");
+
+        let thresholds = vec![0.01, 0.1, 0.3, 0.6];
+        run_pathrag_sweep_cmd(&locomo_dataset_path, &sweep_output_path, &sweep_md_path, &thresholds).await?;
+        return Ok(());
+    } else if args.len() > 1 && (args[1] == "long-mem-eval" || args[1] == "long_mem_eval") {
         let mut dataset_path =
             PathBuf::from("benchmarks/memfuse-bench/tests/fixtures/long_mem_eval_fixture.json");
         let mut output_path = PathBuf::from("benchmarks/results/long_mem_eval_results.json");

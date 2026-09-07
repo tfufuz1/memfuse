@@ -2409,6 +2409,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "d99803fdb2748f94"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "da1bfb7bf20263ef"
   },
   {
