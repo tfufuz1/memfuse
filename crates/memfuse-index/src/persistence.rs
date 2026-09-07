@@ -438,9 +438,10 @@ impl MmapIndex {
             let check_pos = current_pos.checked_add(4).ok_or_else(|| {
                 MemFuseError::Storage("Connection length position overflow".into())
             })?;
-            let len_bytes = self.mmap.get(current_pos..check_pos).ok_or_else(|| {
-                MemFuseError::Storage("Connection length out of bounds".into())
-            })?;
+            let len_bytes = self
+                .mmap
+                .get(current_pos..check_pos)
+                .ok_or_else(|| MemFuseError::Storage("Connection length out of bounds".into()))?;
             let len = u32::from_le_bytes(
                 len_bytes
                     .try_into()
@@ -462,9 +463,10 @@ impl MmapIndex {
         let check_pos = current_pos
             .checked_add(4)
             .ok_or_else(|| MemFuseError::Storage("Connection length position overflow".into()))?;
-        let len_bytes = self.mmap.get(current_pos..check_pos).ok_or_else(|| {
-            MemFuseError::Storage("Connection length out of bounds".into())
-        })?;
+        let len_bytes = self
+            .mmap
+            .get(current_pos..check_pos)
+            .ok_or_else(|| MemFuseError::Storage("Connection length out of bounds".into()))?;
 
         let len = u32::from_le_bytes(
             len_bytes
@@ -691,7 +693,11 @@ mod tests {
         let res = MmapIndex::open(&path);
         assert!(res.is_err(), "Expected error for invalid magic");
         if let Err(MemFuseError::Storage(msg)) = res {
-            assert!(msg.contains("bad magic"), "Unexpected error message: {}", msg);
+            assert!(
+                msg.contains("bad magic"),
+                "Unexpected error message: {}",
+                msg
+            );
         } else {
             panic!("Expected Storage error");
         }
@@ -711,7 +717,11 @@ mod tests {
         let res = MmapIndex::open(&path);
         assert!(res.is_err(), "Expected error for unsupported version");
         if let Err(MemFuseError::Storage(msg)) = res {
-            assert!(msg.contains("Unsupported HNSW version"), "Unexpected error message: {}", msg);
+            assert!(
+                msg.contains("Unsupported HNSW version"),
+                "Unexpected error message: {}",
+                msg
+            );
         } else {
             panic!("Expected Storage error");
         }
@@ -729,7 +739,11 @@ mod tests {
         let res = MmapIndex::open(&path);
         assert!(res.is_err(), "Expected error for truncated header");
         if let Err(MemFuseError::Storage(msg)) = res {
-            assert!(msg.contains("too small"), "Unexpected error message: {}", msg);
+            assert!(
+                msg.contains("too small"),
+                "Unexpected error message: {}",
+                msg
+            );
         } else {
             panic!("Expected Storage error");
         }
@@ -753,9 +767,16 @@ mod tests {
 
         let mmap_index = MmapIndex::open(&path)?;
         let res = mmap_index.get_connections(&record, 0);
-        assert!(res.is_err(), "Expected error for out-of-bounds connections_offset");
+        assert!(
+            res.is_err(),
+            "Expected error for out-of-bounds connections_offset"
+        );
         if let Err(MemFuseError::Storage(msg)) = res {
-            assert!(msg.contains("out of bounds"), "Unexpected error message: {}", msg);
+            assert!(
+                msg.contains("out of bounds"),
+                "Unexpected error message: {}",
+                msg
+            );
         } else {
             panic!("Expected Storage error");
         }
@@ -779,9 +800,16 @@ mod tests {
 
         let mmap_index = MmapIndex::open(&path)?;
         let res = mmap_index.get_vector(&record);
-        assert!(res.is_err(), "Expected error for out-of-bounds vector_offset");
+        assert!(
+            res.is_err(),
+            "Expected error for out-of-bounds vector_offset"
+        );
         if let Err(MemFuseError::Storage(msg)) = res {
-            assert!(msg.contains("out of bounds"), "Unexpected error message: {}", msg);
+            assert!(
+                msg.contains("out of bounds"),
+                "Unexpected error message: {}",
+                msg
+            );
         } else {
             panic!("Expected Storage error");
         }

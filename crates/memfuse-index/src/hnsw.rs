@@ -377,8 +377,14 @@ impl HnswIndex {
         }
     }
 
-    /// Returns a reference to the quantizer RwLock.
-    pub fn quantizer(&self) -> &RwLock<Option<crate::quantize::ScalarQuantizer>> {
+    /// Returns a snapshot clone of the current quantizer if trained.
+    pub fn quantizer(&self) -> Option<crate::quantize::ScalarQuantizer> {
+        self.inner.quantizer.read().clone()
+    }
+
+    /// Returns a reference to the quantizer RwLock for crate-internal access.
+    #[allow(dead_code)]
+    pub(crate) fn quantizer_lock(&self) -> &RwLock<Option<crate::quantize::ScalarQuantizer>> {
         &self.inner.quantizer
     }
 
@@ -409,6 +415,7 @@ impl HnswIndex {
                 .read()
                 .as_ref()
                 .map(|q| q.quantize(query))
+                .transpose()?
         } else {
             None
         };
@@ -1342,7 +1349,7 @@ impl HnswIndexCore {
             let mut q_guard = self.quantizer.write();
             if let Some(q) = q_guard.as_mut() {
                 q.expand_bounds_to_fit(vector);
-                VectorData::U8(q.quantize(vector))
+                VectorData::U8(q.quantize(vector)?)
             } else {
                 VectorData::F32(vector.to_vec())
             }
@@ -1759,7 +1766,7 @@ impl HnswIndexCore {
             for (_, vector, _) in active_nodes.iter().take(sample_size) {
                 match vector {
                     VectorData::F32(v) => train_data.push(v.clone()),
-                    VectorData::U8(v) => train_data.push(old_q.dequantize(v)),
+                    VectorData::U8(v) => train_data.push(old_q.dequantize(v)?),
                 }
             }
 
@@ -1783,7 +1790,7 @@ impl HnswIndexCore {
                         let q = quantizer_guard.as_ref().ok_or_else(|| {
                             MemFuseError::Index("Quantizer missing during rebuild".into())
                         })?;
-                        q.dequantize(&v)
+                        q.dequantize(&v)?
                     };
                     new_index.inner.do_insert(doc_id, &dequantized)?;
                 }
@@ -1856,7 +1863,7 @@ impl HnswIndexCore {
                                             .into(),
                                     )
                                 })?;
-                                q.dequantize(&v)
+                                q.dequantize(&v)?
                             }
                         };
 
@@ -2200,7 +2207,7 @@ impl VectorIndex for HnswIndex {
                 let mut nodes = self.inner.nodes.write();
                 for node in nodes.iter_mut() {
                     if let VectorData::F32(v) = &node.vector {
-                        node.vector = VectorData::U8(q.quantize(v));
+                        node.vector = VectorData::U8(q.quantize(v)?);
                     }
                 }
             }
@@ -2840,7 +2847,7 @@ mod tests {
 
         assert_eq!(index.len().await, 60);
         // Verify quantizer is trained
-        assert!(index.quantizer().read().is_some());
+        assert!(index.quantizer().is_some());
 
         // Delete some to lower connectivity and allow rebuild
         let tx2 = TxId::new(2);
@@ -2856,10 +2863,7 @@ mod tests {
 
         // Verify state after rebuild
         assert_eq!(index.len().await, 50);
-        assert!(
-            index.quantizer().read().is_some(),
-            "Quantizer must be preserved"
-        );
+        assert!(index.quantizer().is_some(), "Quantizer must be preserved");
 
         // Verify search still works
         let results = index
@@ -3461,7 +3465,7 @@ mod tests {
         index.commit(tx1).await.unwrap(); // unwrap
 
         // Verify quantizer is initialized with initial bounds
-        assert!(index.quantizer().read().is_some());
+        assert!(index.quantizer().is_some());
 
         // 2. Spawn multiple concurrent search tasks holding read lock on quantizer
         let mut tasks = Vec::new();
@@ -3490,8 +3494,8 @@ mod tests {
         }
 
         // 4. Verify check_drift for out_of_bounds_vector returns 0.0 (bounds were deterministically expanded)
-        let q_guard = index.quantizer().read();
-        let q = q_guard.as_ref().expect("Quantizer must be present"); // expect
+        let q_opt = index.quantizer();
+        let q = q_opt.as_ref().expect("Quantizer must be present"); // expect
         let drift = q.check_drift(&out_of_bounds_vector);
         assert_eq!(
             drift, 0.0,
@@ -3516,8 +3520,8 @@ mod tests {
         }
         index.commit(tx1).await.unwrap(); // unwrap
 
-        let initial_mins = index.quantizer().read().as_ref().unwrap().mins.clone(); // unwrap
-        let initial_maxes = index.quantizer().read().as_ref().unwrap().maxes.clone(); // unwrap
+        let initial_mins = index.quantizer().as_ref().unwrap().mins().to_vec(); // unwrap
+        let initial_maxes = index.quantizer().as_ref().unwrap().maxes().to_vec(); // unwrap
 
         // 2. Parallele search() und insert() Aufrufe via tokio::join!
         let out_of_bounds_vector = [1000.0, -1000.0, 500.0, -500.0];
@@ -3545,20 +3549,20 @@ mod tests {
         res_insert.unwrap(); // unwrap
 
         // 3. Verifiziere min/max Grenzen des Quantizers direkt
-        let q_guard = index.quantizer().read();
-        let q = q_guard.as_ref().expect("Quantizer must be present"); // expect
+        let q_opt = index.quantizer();
+        let q = q_opt.as_ref().expect("Quantizer must be present"); // expect
         assert!(
-            q.maxes[0] >= 1000.0,
+            q.maxes()[0] >= 1000.0,
             "maxes[0] was {}, expected >= 1000.0",
-            q.maxes[0]
+            q.maxes()[0]
         );
         assert!(
-            q.mins[1] <= -1000.0,
+            q.mins()[1] <= -1000.0,
             "mins[1] was {}, expected <= -1000.0",
-            q.mins[1]
+            q.mins()[1]
         );
-        assert!(q.maxes[0] > initial_maxes[0]);
-        assert!(q.mins[1] < initial_mins[1]);
+        assert!(q.maxes()[0] > initial_maxes[0]);
+        assert!(q.mins()[1] < initial_mins[1]);
     }
 
     #[tokio::test]

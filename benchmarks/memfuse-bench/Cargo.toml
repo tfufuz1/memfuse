@@ -6,6 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 description = "MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy"
 
+[lib]
+name = "memfuse_bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "memfuse-bench"
+path = "src/main.rs"
+
 [dependencies]
 memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
