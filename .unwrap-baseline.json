@@ -2205,6 +2205,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "37df2f174ebcd6e0"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "3b4832fdfc069492"
   },
   {
@@ -4714,6 +4718,26 @@
   {
     "file": "crates/memfuse-db/src/reaper.rs",
     "hash": "ef8c38b37cb5a4f9"
+  },
+  {
+    "file": "crates/memfuse-db/src/replicator.rs",
+    "hash": "05f830a0b449cd45"
+  },
+  {
+    "file": "crates/memfuse-db/src/replicator.rs",
+    "hash": "175070f2d59854c7"
+  },
+  {
+    "file": "crates/memfuse-db/src/replicator.rs",
+    "hash": "284817d69692dd74"
+  },
+  {
+    "file": "crates/memfuse-db/src/replicator.rs",
+    "hash": "b0ea015b0459a035"
+  },
+  {
+    "file": "crates/memfuse-db/src/replicator.rs",
+    "hash": "b829e8f4e8bb7e91"
   },
   {
     "file": "crates/memfuse-db/src/transaction.rs",
