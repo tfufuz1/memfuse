@@ -120,7 +120,6 @@ fn test_simd_vs_scalar_vs_f64_all_metrics() {
     println!("Max DotProduct Deviation vs f64: {max_dot_diff:.8e}");
 }
 
-
 #[test]
 fn test_extreme_and_special_values() {
     // 1. Zero vectors

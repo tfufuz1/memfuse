@@ -80,6 +80,18 @@ impl LyapunovDriftWatcher {
         }
     }
 
+    /// Fügt einen einzelnen Non-Conformity-Score zur Historie hinzu und aktualisiert den Drift-Status.
+    pub fn observe_score(&mut self, score: f32) -> LyapunovResult {
+        self.update(&[score])
+    }
+
+    /// Gibt das neueste Analyseergebnis der Lyapunov-Drift-Berechnung zurück.
+    pub fn analyze(&self) -> LyapunovResult {
+        self.latest_result
+            .clone()
+            .unwrap_or(LyapunovResult::InsufficientData)
+    }
+
     /// Setzt die Baseline-Verteilung der Non-Conformity-Scores aus dem Kalibrierungs-Warmup.
     pub fn set_baseline(&mut self, baseline_scores: &[f32]) {
         self.baseline_distribution = baseline_scores.to_vec();
