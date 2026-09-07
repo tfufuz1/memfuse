@@ -24,8 +24,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
-const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DFTR";
-const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"MEMFUSE_DISKANN_INTEGRITY_KEY___";
 const DISKANN_VERSION: u16 = 1;
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"FOOT";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse-diskann-integrity-key-32";

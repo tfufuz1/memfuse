@@ -16,7 +16,6 @@ memfuse-graph = { workspace = true }
 memfuse-ollama = { workspace = true }
 memfuse-calibration = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
-memfuse-calibration = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
