@@ -1,0 +1,13 @@
+{
+  "per_category_recall_at_5": {
+    "SingleHop": 1.0,
+    "OpenDomain": 1.0
+  },
+  "per_category_mrr": {
+    "SingleHop": 1.0,
+    "OpenDomain": 1.0
+  },
+  "overall_recall_at_5": 1.0,
+  "overall_mrr": 1.0,
+  "total_eval_cases": 2
+}

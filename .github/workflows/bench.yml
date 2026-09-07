@@ -65,3 +65,45 @@ jobs:
             benchmarks/results/results.json
             benchmarks/results/summary.md
             benchmarks/memfuse-bench/baseline_recall.json
+
+  benchmark-regression:
+    name: Retrieval Quality Regression Gate (LongMemEval & LoCoMo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Benchmark Harness and Comparison Tooling
+        run: cargo build --locked -p memfuse-bench --release
+
+      - name: Run LongMemEval Benchmark Execution
+        # NOTE: Executed against minimal test fixtures (parser/pipeline correctness).
+        # THIS IS NOT A FULL RECALL REGRESSION GATE until full external datasets
+        # are downloaded or fetched via Git-LFS in a follow-up pipeline setup.
+        run: |
+          cargo run --locked -p memfuse-bench --release -- long-mem-eval --dataset benchmarks/memfuse-bench/tests/fixtures/long_mem_eval_fixture.json --output benchmarks/results/long_mem_eval_results.json
+
+      - name: Run LoCoMo Benchmark Execution
+        # NOTE: Executed against minimal test fixtures (parser/pipeline correctness).
+        # THIS IS NOT A FULL RECALL REGRESSION GATE until full external datasets
+        # are downloaded or fetched via Git-LFS in a follow-up pipeline setup.
+        run: |
+          cargo run --locked -p memfuse-bench --release -- locomo --dataset benchmarks/memfuse-bench/tests/fixtures/locomo_fixture.json --output benchmarks/results/locomo_results.json
+
+      - name: Evaluate Metrics Against Versioned Baseline
+        run: |
+          cargo run --locked -p memfuse-bench --release --bin compare-baseline -- --current benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05
+
+      - name: Upload Retrieval Quality Regression Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-regression-metrics
+          path: |
+            benchmarks/results/
+            benchmarks/memfuse-bench/baseline_metrics.json
