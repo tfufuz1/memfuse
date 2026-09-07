@@ -1985,6 +1985,10 @@
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
+    "hash": "0ab42751c30eae2f"
+  },
+  {
+    "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "1d1356cd7249f120"
   },
   {
@@ -2014,6 +2018,10 @@
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "63c2de0328f50d90"
+  },
+  {
+    "file": "crates/memfuse-core/src/traits/mod.rs",
+    "hash": "6e4c6b3b4aa4c6b1"
   },
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
@@ -2062,10 +2070,6 @@
   {
     "file": "crates/memfuse-core/src/traits/mod.rs",
     "hash": "e997fa97a044afd7"
-  },
-  {
-    "file": "crates/memfuse-core/src/traits/mod.rs",
-    "hash": "fb9e81e2f911bb5d"
   },
   {
     "file": "crates/memfuse-core/src/tx_buffer.rs",

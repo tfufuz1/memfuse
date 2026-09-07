@@ -250,6 +250,14 @@ pub trait StorageEngine: Send + Sync + 'static {
 
     /// Wie `scan_prefix`, aber mit hartem Limit auf die Anzahl zurückgegebener Einträge und
     /// optionalem Cursor (letzter zurückgegebener Key aus dem vorherigen Aufruf) für Pagination.
+    ///
+    /// # Cursor-Semantik
+    /// Der Cursor dient als exklusive untere Schranke (`Bound::Excluded(cursor)`): Es werden nur Einträge
+    /// zurückgegeben, deren Key lexikographisch *strikt größer* als der `cursor` ist (`k > cursor`).
+    /// Falls der Cursor-Key nicht (mehr) im Datensatz existiert (z. B. durch Löschedits zwischen
+    /// paginierten Aufrufen), setzt die Pagination nahtlos ab dem nächstgrößeren Key fort,
+    /// anstatt ein leeres Ergebnis zurückzugeben.
+    ///
     /// Bevorzugt gegenüber `scan_prefix` für jeden neuen Call-Site, der potenziell große
     /// Ergebnismengen erwarten muss.
     #[allow(clippy::type_complexity)]
@@ -262,14 +270,12 @@ pub trait StorageEngine: Send + Sync + 'static {
         Box::pin(async move {
             let all = self.scan_prefix(prefix).await?;
             let mut results = Vec::new();
-            let mut skipping = cursor.is_some();
 
             for (k, v) in all {
-                if skipping {
-                    if k.as_slice() == cursor.unwrap() {
-                        skipping = false;
+                if let Some(cur_bytes) = cursor {
+                    if k.as_slice() <= cur_bytes {
+                        continue;
                     }
-                    continue;
                 }
                 results.push((k, v));
                 if results.len() == limit {
@@ -1291,6 +1297,156 @@ mod tests {
             }
             _ => panic!("Expected CapabilityUnsupported for scan_prefix_at"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_bounded_cursor_semantics() {
+        struct MemoryStorage {
+            data: Vec<(Vec<u8>, Vec<u8>)>,
+        }
+
+        impl StorageEngine for MemoryStorage {
+            fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
+            }
+            fn get_at_seq<'a>(
+                &'a self,
+                _: &'a [u8],
+                _: u64,
+            ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+                Box::pin(async move { Ok(None) })
+            }
+            fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+                Box::pin(async move {
+                    Ok(StorageStats {
+                        num_segments: 0,
+                        total_size_bytes: 0,
+                        memtable_size_bytes: 0,
+                    })
+                })
+            }
+            fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+                Box::pin(async move { Ok(0) })
+            }
+            fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+                Box::pin(async move { Ok(TxId(0)) })
+            }
+            fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+                Box::pin(async move { Ok(()) })
+            }
+            fn scan_prefix<'a>(
+                &'a self,
+                prefix: &'a [u8],
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move {
+                    let matching = self
+                        .data
+                        .iter()
+                        .filter(|(k, _)| k.starts_with(prefix))
+                        .cloned()
+                        .collect();
+                    Ok(matching)
+                })
+            }
+            fn scan<'a>(
+                &'a self,
+                _: std::ops::Bound<&'a [u8]>,
+                _: std::ops::Bound<&'a [u8]>,
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+                Box::pin(async move { Ok(vec![]) })
+            }
+        }
+
+        let dataset = MemoryStorage {
+            data: vec![
+                (b"pfx:1".to_vec(), b"v1".to_vec()),
+                (b"pfx:2".to_vec(), b"v2".to_vec()),
+                (b"pfx:3".to_vec(), b"v3".to_vec()),
+                (b"pfx:4".to_vec(), b"v4".to_vec()),
+                (b"pfx:5".to_vec(), b"v5".to_vec()),
+            ],
+        };
+
+        // 1. Valid cursor in dataset -> yields next page starting strictly after cursor
+        let (batch1, next_cur1) = dataset
+            .scan_prefix_bounded(b"pfx:", 2, Some(b"pfx:2"))
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(
+            batch1,
+            vec![
+                (b"pfx:3".to_vec(), b"v3".to_vec()),
+                (b"pfx:4".to_vec(), b"v4".to_vec()),
+            ]
+        );
+        assert_eq!(next_cur1, Some(b"pfx:4".to_vec()));
+
+        // 2. Cursor references key deleted between calls (e.g. b"pfx:2" deleted, cursor = b"pfx:2")
+        let dataset_after_delete = MemoryStorage {
+            data: vec![
+                (b"pfx:1".to_vec(), b"v1".to_vec()),
+                // pfx:2 was deleted!
+                (b"pfx:3".to_vec(), b"v3".to_vec()),
+                (b"pfx:4".to_vec(), b"v4".to_vec()),
+                (b"pfx:5".to_vec(), b"v5".to_vec()),
+            ],
+        };
+        let (batch2, next_cur2) = dataset_after_delete
+            .scan_prefix_bounded(b"pfx:", 2, Some(b"pfx:2"))
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(
+            batch2,
+            vec![
+                (b"pfx:3".to_vec(), b"v3".to_vec()),
+                (b"pfx:4".to_vec(), b"v4".to_vec()),
+            ]
+        );
+        assert_eq!(next_cur2, Some(b"pfx:4".to_vec()));
+
+        // 3. Cursor is None -> scans from beginning up to limit
+        let (batch3, next_cur3) = dataset
+            .scan_prefix_bounded(b"pfx:", 2, None)
+            .await
+            .unwrap(); // unwrap
+        assert_eq!(
+            batch3,
+            vec![
+                (b"pfx:1".to_vec(), b"v1".to_vec()),
+                (b"pfx:2".to_vec(), b"v2".to_vec()),
+            ]
+        );
+        assert_eq!(next_cur3, Some(b"pfx:2".to_vec()));
+
+        // 4. Empty scan result -> returns (vec![], None)
+        let empty_dataset = MemoryStorage { data: vec![] };
+        let (batch4, next_cur4) = empty_dataset
+            .scan_prefix_bounded(b"pfx:", 2, Some(b"pfx:1"))
+            .await
+            .unwrap(); // unwrap
+        assert!(batch4.is_empty());
+        assert_eq!(next_cur4, None);
     }
 
     #[tokio::test]
