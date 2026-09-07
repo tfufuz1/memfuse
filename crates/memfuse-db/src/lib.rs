@@ -82,6 +82,7 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod rem_phase;
 pub mod sleep_cycle;
 pub mod sleep_cycle_executor;
 pub mod temporal_filter;
@@ -90,11 +91,11 @@ pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
+pub use reaper::start_nrem_reaper;
 pub use sleep_cycle::{
     compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
     run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
 };
-pub use reaper::start_nrem_reaper;
 pub use sleep_cycle_executor::execute_nrem_cycle;
 
 #[cfg(feature = "sandbox")]
@@ -107,11 +108,13 @@ pub trait SandboxBridge: Send + Sync {
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
+pub mod homeostat;
 pub mod multistep;
 pub mod reaper;
 pub mod thermostat;
 pub mod transaction;
 
+pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
@@ -169,6 +172,10 @@ pub struct ProvenanceRecord {
     /// INV-PROV-1: The sum of all rrf_contribution values equals the unboosted RRF score.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub signal_contributions: std::collections::HashMap<String, SignalContribution>,
+
+    /// Kohärenz-Bonus aus F-09 (0.0 wenn Feature inaktiv oder Dokument nur in einem Signal).
+    #[serde(default)]
+    pub coherence_bonus: f32,
 }
 
 impl ProvenanceRecord {
@@ -1984,6 +1991,7 @@ mod tests {
             source_collection: Some("test_col".to_string()),
             index_type: Some("hnsw".to_string()),
             signal_contributions: std::collections::HashMap::new(),
+            coherence_bonus: 0.0,
         };
         let json = serde_json::to_string(&p).expect("serialize");
         let back: ProvenanceRecord = serde_json::from_str(&json).expect("deserialize");

@@ -639,6 +639,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             true,
+            None,
         );
 
         let mut boosted = self
@@ -676,17 +677,36 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_text_empty = text.trim().is_empty();
 
         // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
-        let mult = query
-            .rerank_pool_multiplier
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
-        let max_pool = query
-            .rerank_pool_max
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+        let rerank_k = if query.has_reranker {
+            let mult = query
+                .rerank_pool_multiplier
+                .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
+            let max_pool = query
+                .rerank_pool_max
+                .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+            k.saturating_mul(mult).min(max_pool)
+        } else {
+            k
+        };
 
         let mut candidate_k = k;
         if !query.include_superseded {
             candidate_k = candidate_k.max(k.saturating_mul(3));
         }
+        // PROPOSED INTEGRATION POINT (Feature F-08 & P11 Deadline):
+        // To enable P95 latency feedback-driven candidate pool regulation and hard deadlines,
+        // callers can optionally replace static `mult` / `max_pool` parameters with dynamic PID regulation:
+        // ```rust
+        // if let Some(ref mut pid_controller) = query.pid_controller {
+        //     let dynamic_k_pool = crate::homeostat::pid_regulated_candidate_pool(pid_controller, observed_p95_latency_ms);
+        //     candidate_k = candidate_k.max(dynamic_k_pool).min(memfuse_core::MAX_SEARCH_K).max(k);
+        // }
+        // if let Some(ref deadline) = query.deadline {
+        //     if deadline.deadline_exceeded(started_at) {
+        //         tracing::warn!("Rerank search deadline exceeded; aborting candidates phase early");
+        //     }
+        // }
+        // ```
         let rerank_k = k.saturating_mul(mult).min(max_pool);
         candidate_k = candidate_k
             .max(rerank_k)
@@ -808,7 +828,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .strip_prefix("EntityId(")
                     .and_then(|s| s.strip_suffix(')'))
                 {
-                    inner_str.parse::<u64>().ok().map(memfuse_core::EntityId::new)
+                    inner_str
+                        .parse::<u64>()
+                        .ok()
+                        .map(memfuse_core::EntityId::new)
                 } else {
                     memfuse_core::EntityId::from_key(start_node).ok()
                 };
@@ -914,6 +937,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             query.include_provenance,
+            None,
         );
 
         let mut fused_results = self

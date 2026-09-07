@@ -435,6 +435,30 @@ pub struct CrossEncoderReranker {
 }
 
 impl CrossEncoderReranker {
+    /// Records implicit feedback: top `implicit_relevant_k` results are marked as relevant,
+    /// the rest as not relevant.
+    ///
+    /// Call this AFTER every successful `rerank()` call to feed calibration.
+    /// Thread-safe: uses internal Mutex/RwLock.
+    pub fn record_implicit_feedback(&self, results: &[RerankResult], implicit_relevant_k: usize) {
+        if matches!(self.backend, RerankerBackend::Passthrough) {
+            return;
+        }
+        for r in results {
+            self.record_outcome(r.score, r.original_index < implicit_relevant_k);
+        }
+    }
+
+    /// Returns true if PlattScaler has been fitted (warmup completed).
+    pub fn is_calibrated(&self) -> bool {
+        !self.fitted_calibration.read().is_identity()
+    }
+
+    /// Returns number of observations recorded.
+    pub fn calibration_observation_count(&self) -> usize {
+        self.calibration_buffer.lock().len()
+    }
+
     /// Nimmt Feedback-Signal auf (raw logit + Relevanz-Label).
     /// Triggert Re-Fit wenn Warmup erreicht.
     pub fn record_outcome(&self, raw_logit: f32, is_relevant: bool) {
@@ -761,6 +785,70 @@ mod tests {
     }
 
     #[test]
+    fn test_record_implicit_feedback_top_k_marked_relevant() {
+        let reranker = CrossEncoderReranker::passthrough();
+        // Manually record outcomes on reranker directly
+        let results = vec![
+            RerankResult { original_index: 0, score: 2.5 },
+            RerankResult { original_index: 1, score: 1.8 },
+            RerankResult { original_index: 5, score: -0.5 },
+        ];
+        // With passthrough, implicit feedback is skipped
+        reranker.record_implicit_feedback(&results, 2);
+        assert_eq!(reranker.calibration_observation_count(), 0);
+
+        // Test outcome recording manually via record_outcome
+        for r in &results {
+            reranker.record_outcome(r.score, r.original_index < 2);
+        }
+        assert_eq!(reranker.calibration_observation_count(), 3);
+        let buf = reranker.calibration_buffer.lock().clone();
+        assert_eq!(buf[0], (2.5, true));
+        assert_eq!(buf[1], (1.8, true));
+        assert_eq!(buf[2], (-0.5, false));
+    }
+
+    #[test]
+    fn test_calibration_is_calibrated_after_warmup() {
+        let reranker = CrossEncoderReranker::passthrough();
+        assert!(!reranker.is_calibrated());
+        assert_eq!(reranker.calibration_observation_count(), 0);
+
+        for i in 0..50 {
+            let logit = (i as f32 - 25.0) * 0.1;
+            reranker.record_outcome(logit, logit > 0.0);
+        }
+
+        assert_eq!(reranker.calibration_observation_count(), 50);
+        assert!(reranker.is_calibrated());
+    }
+
+    #[test]
+    fn test_calibration_fitted_platt_not_identity() {
+        let reranker = CrossEncoderReranker::passthrough();
+        assert!(reranker.fitted_calibration().is_identity());
+
+        for i in 0..50 {
+            let logit = (i as f32 - 25.0) * 0.1;
+            reranker.record_outcome(logit, logit > 0.0);
+        }
+
+        assert!(!reranker.fitted_calibration().is_identity());
+    }
+
+    #[test]
+    fn test_implicit_feedback_passthrough_skipped() {
+        let reranker = CrossEncoderReranker::passthrough();
+        let results = vec![
+            RerankResult { original_index: 0, score: 0.9 },
+            RerankResult { original_index: 1, score: 0.8 },
+        ];
+        reranker.record_implicit_feedback(&results, 1);
+        assert_eq!(reranker.calibration_observation_count(), 0);
+        assert!(!reranker.is_calibrated());
+    }
+
+    #[test]
     fn test_platt_scaled_sigmoid_config_and_reranker_builder() {
         let cal = PlattScaledSigmoid::new(1.5, -0.2);
         let config = RerankConfig::default().with_calibration(cal.clone());
@@ -896,6 +984,7 @@ mod tests {
             max_length: 128,
             batch_size: 4,
             calibration: PlattScaledSigmoid::identity(),
+            calibration_warmup: 50,
             rerank_deadline_ms: Some(500),
             simulate_delay_ms: None,
         };

@@ -55,6 +55,7 @@ impl From<&StoredDocument> for StoredDocumentMeta {
 }
 
 /// Parses an LLM response string into an f32 importance score in `[0.0, 1.0]`.
+#[deprecated(note = "Use memfuse_ollama::parse_importance_score_response instead")]
 pub fn parse_importance_score(response: &str) -> f32 {
     for token in response.split_whitespace() {
         if let Ok(val) = token.parse::<f32>() {
@@ -257,7 +258,9 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             insert_lock: self.insert_lock.clone(),
             kv_locks: self.kv_locks.clone(),
             mutations_since_community_detection: self.mutations_since_community_detection.clone(),
-            community_detection_trigger_threshold: self.community_detection_trigger_threshold.clone(),
+            community_detection_trigger_threshold: self
+                .community_detection_trigger_threshold
+                .clone(),
         }
     }
 }

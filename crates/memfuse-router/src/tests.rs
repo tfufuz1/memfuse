@@ -2357,12 +2357,16 @@ mod tests {
                 assert!(lyapunov_exponent > 0.0);
                 assert!(reason.kl_divergence > 0.0);
             }
-            other => panic!("Expected DriftDetected after 10 outlier scores, got {:?}", other),
+            other => panic!(
+                "Expected DriftDetected after 10 outlier scores, got {:?}",
+                other
+            ),
         }
     }
 
     #[tokio::test]
-    async fn test_route_populates_drift_status_after_sufficient_data() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_route_populates_drift_status_after_sufficient_data(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir()?;
         let config = MemFuseConfig {
             dimension: 4,
@@ -2404,7 +2408,11 @@ mod tests {
         );
         let status = decision.drift_status.unwrap();
         assert!(
-            matches!(status, crate::lyapunov::LyapunovResult::Stable { .. } | crate::lyapunov::LyapunovResult::DriftDetected { .. }),
+            matches!(
+                status,
+                crate::lyapunov::LyapunovResult::Stable { .. }
+                    | crate::lyapunov::LyapunovResult::DriftDetected { .. }
+            ),
             "Expected Stable or DriftDetected, got {:?}",
             status
         );
