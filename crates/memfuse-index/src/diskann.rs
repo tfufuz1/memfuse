@@ -25,8 +25,11 @@ use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
-/// Pending-Threshold: nach 1000 pending inserts → auto-trigger persist_delta.
-const PENDING_FLUSH_THRESHOLD: u64 = 1000;
+/// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
+/// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
+/// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
+/// innerhalb dieses 50-Insert-Fensters sind nicht-geflushte Vektoren unpersistent.
+const PENDING_FLUSH_THRESHOLD: u64 = 50;
 
 /// Header for DiskANN index file.
 #[derive(Debug, Clone, Copy)]
@@ -399,6 +402,103 @@ impl DiskAnnIndex {
         Ok(pruned)
     }
 
+    async fn append_to_pending_wal(
+        path: &std::path::Path,
+        id: DocId,
+        embedding: &[f32],
+    ) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .await
+            .map_err(MemFuseError::Io)?;
+        file.write_all(&id.inner().to_le_bytes())
+            .await
+            .map_err(MemFuseError::Io)?;
+        file.write_all(&(embedding.len() as u32).to_le_bytes())
+            .await
+            .map_err(MemFuseError::Io)?;
+        for &val in embedding {
+            file.write_all(&val.to_le_bytes())
+                .await
+                .map_err(MemFuseError::Io)?;
+        }
+        file.sync_all().await.map_err(MemFuseError::Io)?;
+        Ok(())
+    }
+
+    fn read_pending_wal(path: &std::path::Path) -> Result<Vec<(DocId, Vec<f32>)>> {
+        use std::io::Read;
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let mut file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return Ok(Vec::new()),
+        };
+        let mut recovered = Vec::new();
+        let mut buf_id = [0u8; 8];
+        let mut buf_dim = [0u8; 4];
+        while file.read_exact(&mut buf_id).is_ok() {
+            if file.read_exact(&mut buf_dim).is_err() {
+                tracing::warn!("Truncated dim in pending.wal");
+                break;
+            }
+            let doc_id = DocId::from(u64::from_le_bytes(buf_id));
+            let dim = u32::from_le_bytes(buf_dim) as usize;
+            let mut vec_bytes = vec![0u8; dim * 4];
+            if file.read_exact(&mut vec_bytes).is_err() {
+                tracing::warn!("Truncated vector payload in pending.wal");
+                break;
+            }
+            let mut vec = Vec::with_capacity(dim);
+            for chunk in vec_bytes.chunks_exact(4) {
+                if let Ok(b) = chunk.try_into() {
+                    vec.push(f32::from_le_bytes(b));
+                }
+            }
+            recovered.push((doc_id, vec));
+        }
+        Ok(recovered)
+    }
+
+    /// Liest uncommittete Pending-Vektoren aus `pending.wal` und fügt sie in den Index ein.
+    pub fn recover_pending_delta(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize>> + Send + '_>> {
+        Box::pin(async move {
+            let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
+            if !pending_wal.exists() {
+                return Ok(0);
+            }
+            let path_clone = pending_wal.clone();
+            let recovered =
+                tokio::task::spawn_blocking(move || Self::read_pending_wal(&path_clone))
+                    .await
+                    .map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "Join error during pending.wal recovery: {e}"
+                        ))
+                    })??;
+            let count = recovered.len();
+            if count > 0 {
+                {
+                    let mut guard = self.inner.pending_inserts.write();
+                    self.inner
+                        .pending_count
+                        .store(count as u64, Ordering::Relaxed);
+                    *guard = recovered;
+                }
+                self.persist_delta().await?;
+            } else {
+                let _ = tokio::fs::remove_file(&pending_wal).await;
+            }
+            Ok(count)
+        })
+    }
+
     /// Mergt pending inserts in den On-Disk-Graphen.
     ///
     /// ALGORITHMUS (arXiv:2602.21514 §4 "Streaming DiskANN"):
@@ -415,6 +515,10 @@ impl DiskAnnIndex {
         };
 
         if pending.is_empty() {
+            let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
+            if pending_wal.exists() {
+                let _ = tokio::fs::remove_file(&pending_wal).await;
+            }
             return Ok(());
         }
 
@@ -459,6 +563,11 @@ impl DiskAnnIndex {
         })
         .await
         .map_err(|e| MemFuseError::Storage(format!("spawn_blocking: {e}")))??;
+
+        let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
+        if pending_wal.exists() {
+            let _ = tokio::fs::remove_file(&pending_wal).await;
+        }
 
         self.load().await // Mmap neu laden
     }
@@ -841,6 +950,11 @@ impl DiskAnnIndex {
             parent_dir.sync_all().await.map_err(MemFuseError::Io)?;
         }
 
+        let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
+        if pending_wal.exists() {
+            let _ = tokio::fs::remove_file(&pending_wal).await;
+        }
+
         self.load().await?;
         self.verify_graph_integrity_debug()?;
 
@@ -976,110 +1090,158 @@ impl DiskAnnIndex {
 
     /// Loads the index from the configured path.
     pub async fn load(&self) -> Result<()> {
-        let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || {
-            use std::sync::atomic::Ordering;
-            let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
-            // SAFETY: Invariant: `file` is a valid, read-only open handle to `index_path` and the underlying inode is immutable during read.
-            //         Guarantor: `std::fs::File::open` verifies file existence and access permissions prior to mapping.
-            //         Why: `write_to_file()` writes to `.tmp` then renames atomically; POSIX `rename()` guarantees existing readers see the old consistent inode while new loaders see the complete new file.
-            //         ADR-017: Memory mapping permitted in `diskann.rs`.
-            #[allow(unsafe_code)]
-            let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
+        let index_exists = self.inner.config.index_path.exists();
+        let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
+        let wal_exists = pending_wal.exists();
 
-            let header_slice = mmap
-                .get(0..DiskAnnHeader::SIZE)
-                .ok_or_else(|| MemFuseError::Storage("DiskANN file too small for header".into()))?;
-            let header = DiskAnnHeader::try_from_bytes(header_slice)?;
+        if !index_exists && !wal_exists {
+            return Err(MemFuseError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "DiskANN index file does not exist: {}",
+                    self.inner.config.index_path.display()
+                ),
+            )));
+        }
 
-            if inner.config.sector_size != header.sector_size as usize {
-                return Err(MemFuseError::Index(format!(
-                    "DiskANN-Index inkompatibel: Config-sector_size={} stimmt nicht mit \
-                     Header-sector_size={} überein. Index muss neu aufgebaut werden.",
-                    inner.config.sector_size, header.sector_size
-                )));
-            }
+        if index_exists {
+            let inner = Arc::clone(&self.inner);
+            tokio::task::spawn_blocking(move || {
+                use std::sync::atomic::Ordering;
 
-            if header.quantized != 0 {
-                let dim = header.dimension as usize;
-                let range = (header.q_max - header.q_min).max(1e-6);
-                *inner.quantizer.write() = Some(crate::quantize::ScalarQuantizer {
-                    mins: vec![header.q_min; dim],
-                    maxes: vec![header.q_max; dim],
-                    scales: vec![255.0 / range; dim],
-                    inv_scales: vec![range / 255.0; dim],
-                    dimension: dim,
-                    total_queries: std::sync::atomic::AtomicU64::new(0),
-                    out_of_range_queries: std::sync::atomic::AtomicU64::new(0),
-                });
-            }
+                // Clean up any orphaned temporary files from interrupted persist_delta or build calls
+                let delta_tmp = inner.config.index_path.with_extension("delta.tmp");
+                if delta_tmp.exists() {
+                    if let Err(e) = std::fs::remove_file(&delta_tmp) {
+                        tracing::warn!(
+                            "Failed to remove orphaned delta.tmp file {}: {e}",
+                            delta_tmp.display()
+                        );
+                    }
+                }
+                let idx_tmp = inner.config.index_path.with_extension("idx.tmp");
+                if idx_tmp.exists() {
+                    if let Err(e) = std::fs::remove_file(&idx_tmp) {
+                        tracing::warn!(
+                            "Failed to remove orphaned idx.tmp file {}: {e}",
+                            idx_tmp.display()
+                        );
+                    }
+                }
 
-            let vector_size = if header.quantized != 0 {
-                header.dimension as usize
-            } else {
-                header.dimension as usize * 4
-            };
-            let neighbors_size = 4 + (header.max_degree as usize * 4);
-            let doc_id_size = 8;
-            let raw_node_size = vector_size + neighbors_size + doc_id_size;
-            let node_size_bytes =
-                raw_node_size.div_ceil(header.sector_size as usize) * header.sector_size as usize;
-            inner
-                .node_size_bytes
-                .store(node_size_bytes as u64, Ordering::SeqCst);
+                let file =
+                    std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
+                // SAFETY: Invariant: `file` is a valid, read-only open handle to `index_path` and the underlying inode is immutable during read.
+                //         Guarantor: `std::fs::File::open` verifies file existence and access permissions prior to mapping.
+                //         Why: `write_to_file()` writes to `.tmp` then renames atomically; POSIX `rename()` guarantees existing readers see the old consistent inode while new loaders see the complete new file.
+                //         ADR-017: Memory mapping permitted in `diskann.rs`.
+                #[allow(unsafe_code)]
+                let mmap = unsafe { Mmap::map(&file).map_err(MemFuseError::Io)? }; // SAFETY: 1. Invariant: Valid file descriptor and immutable mapping. 2. Guarantor: std::fs::File & atomic rename. 3. Call-site verified. 4. ADR-017 mmap.
 
-            *inner.header.write() = Some(header);
-            *inner.mmap.write() = Some(mmap);
-            inner.cache.write().clear();
-
-            let mut ids = Vec::with_capacity(header.node_count as usize);
-            let sector_size = header.sector_size as usize;
-            let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
-            let read_size = node_size_bytes;
-            if !read_size.is_multiple_of(sector_size) {
-                return Err(MemFuseError::Index(
-                    "Read size must be a multiple of sector_size".into(),
-                ));
-            }
-
-            for i in 0..header.node_count as u32 {
-                let index_offset = (i as usize).checked_mul(node_size_bytes).ok_or_else(|| {
-                    MemFuseError::Index("Node offset multiplication overflow".into())
+                let header_slice = mmap.get(0..DiskAnnHeader::SIZE).ok_or_else(|| {
+                    MemFuseError::Storage("DiskANN file too small for header".into())
                 })?;
-                let offset = start_offset
-                    .checked_add(index_offset)
-                    .ok_or_else(|| MemFuseError::Index("Node offset addition overflow".into()))?;
-                if offset % sector_size != 0 {
+                let header = DiskAnnHeader::try_from_bytes(header_slice)?;
+
+                if inner.config.sector_size != header.sector_size as usize {
+                    return Err(MemFuseError::Index(format!(
+                        "DiskANN-Index inkompatibel: Config-sector_size={} stimmt nicht mit \
+                         Header-sector_size={} überein. Index muss neu aufgebaut werden.",
+                        inner.config.sector_size, header.sector_size
+                    )));
+                }
+
+                if header.quantized != 0 {
+                    let dim = header.dimension as usize;
+                    let range = (header.q_max - header.q_min).max(1e-6);
+                    *inner.quantizer.write() = Some(crate::quantize::ScalarQuantizer {
+                        mins: vec![header.q_min; dim],
+                        maxes: vec![header.q_max; dim],
+                        scales: vec![255.0 / range; dim],
+                        inv_scales: vec![range / 255.0; dim],
+                        dimension: dim,
+                        total_queries: std::sync::atomic::AtomicU64::new(0),
+                        out_of_range_queries: std::sync::atomic::AtomicU64::new(0),
+                    });
+                }
+
+                let vector_size = if header.quantized != 0 {
+                    header.dimension as usize
+                } else {
+                    header.dimension as usize * 4
+                };
+                let neighbors_size = 4 + (header.max_degree as usize * 4);
+                let doc_id_size = 8;
+                let raw_node_size = vector_size + neighbors_size + doc_id_size;
+                let node_size_bytes = raw_node_size.div_ceil(header.sector_size as usize)
+                    * header.sector_size as usize;
+                inner
+                    .node_size_bytes
+                    .store(node_size_bytes as u64, Ordering::SeqCst);
+
+                *inner.header.write() = Some(header);
+                *inner.mmap.write() = Some(mmap);
+                inner.cache.write().clear();
+
+                let mut ids = Vec::with_capacity(header.node_count as usize);
+                let sector_size = header.sector_size as usize;
+                let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
+                let read_size = node_size_bytes;
+                if !read_size.is_multiple_of(sector_size) {
                     return Err(MemFuseError::Index(
-                        "Read offset must be sector-aligned".into(),
+                        "Read size must be a multiple of sector_size".into(),
                     ));
                 }
-                let inner_mmap = inner.mmap.read();
-                let mmap_ref = inner_mmap
-                    .as_ref()
-                    .ok_or(MemFuseError::Index("Mmap failed".into()))?;
-                let doc_id_offset = offset
-                    .checked_add(vector_size)
-                    .and_then(|o| o.checked_add(neighbors_size))
-                    .ok_or_else(|| MemFuseError::Index("DocId offset overflow".into()))?;
-                let doc_id_end = doc_id_offset
-                    .checked_add(8)
-                    .ok_or_else(|| MemFuseError::Index("DocId end offset overflow".into()))?;
-                let doc_id_bytes = mmap_ref.get(doc_id_offset..doc_id_end).ok_or_else(|| {
-                    MemFuseError::Storage("DiskANN file truncated before doc_id".into())
-                })?;
-                let doc_id = u64::from_le_bytes(
-                    doc_id_bytes
-                        .try_into()
-                        .map_err(|_| MemFuseError::Index("Corrupt doc_id".into()))?,
-                );
-                ids.push(DocId::from(doc_id));
-            }
-            *inner.doc_ids.write() = ids;
-            Ok(())
-        })
-        .await
-        .map_err(|e| MemFuseError::Storage(format!("Join error during DiskANN load: {}", e)))?
+
+                for i in 0..header.node_count as u32 {
+                    let index_offset =
+                        (i as usize).checked_mul(node_size_bytes).ok_or_else(|| {
+                            MemFuseError::Index("Node offset multiplication overflow".into())
+                        })?;
+                    let offset = start_offset.checked_add(index_offset).ok_or_else(|| {
+                        MemFuseError::Index("Node offset addition overflow".into())
+                    })?;
+                    if offset % sector_size != 0 {
+                        return Err(MemFuseError::Index(
+                            "Read offset must be sector-aligned".into(),
+                        ));
+                    }
+                    let inner_mmap = inner.mmap.read();
+                    let mmap_ref = inner_mmap
+                        .as_ref()
+                        .ok_or(MemFuseError::Index("Mmap failed".into()))?;
+                    let doc_id_offset = offset
+                        .checked_add(vector_size)
+                        .and_then(|o| o.checked_add(neighbors_size))
+                        .ok_or_else(|| MemFuseError::Index("DocId offset overflow".into()))?;
+                    let doc_id_end = doc_id_offset
+                        .checked_add(8)
+                        .ok_or_else(|| MemFuseError::Index("DocId end offset overflow".into()))?;
+                    let doc_id_bytes =
+                        mmap_ref.get(doc_id_offset..doc_id_end).ok_or_else(|| {
+                            MemFuseError::Storage("DiskANN file truncated before doc_id".into())
+                        })?;
+                    let doc_id = u64::from_le_bytes(
+                        doc_id_bytes
+                            .try_into()
+                            .map_err(|_| MemFuseError::Index("Corrupt doc_id".into()))?,
+                    );
+                    ids.push(DocId::from(doc_id));
+                }
+                *inner.doc_ids.write() = ids;
+                Ok(())
+            })
+            .await
+            .map_err(|e| {
+                MemFuseError::Storage(format!("Join error during DiskANN load: {}", e))
+            })??;
+        }
+
+        if wal_exists {
+            self.recover_pending_delta().await?;
+        }
+
+        Ok(())
     }
 
     fn load_node(&self, index: u32) -> Result<CachedNode> {
@@ -1357,6 +1519,9 @@ impl VectorIndex for DiskAnnIndex {
     async fn insert(&self, _tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         self.check_quantizer_drift(embedding);
 
+        let pending_wal = self.inner.config.index_path.with_extension("pending.wal");
+        Self::append_to_pending_wal(&pending_wal, id, embedding).await?;
+
         let count = {
             let mut pending = self.inner.pending_inserts.write();
             pending.push((id, embedding.to_vec()));
@@ -1364,12 +1529,7 @@ impl VectorIndex for DiskAnnIndex {
         };
 
         if count >= PENDING_FLUSH_THRESHOLD {
-            let index_clone = self.clone();
-            tokio::spawn(async move {
-                if let Err(e) = index_clone.persist_delta().await {
-                    tracing::error!("DiskANN auto persist_delta failed: {e}");
-                }
-            });
+            self.persist_delta().await?;
         }
         Ok(())
     }
