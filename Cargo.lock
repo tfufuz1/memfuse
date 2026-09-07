@@ -3272,6 +3272,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "candle-transformers",
+ "memfuse-calibration",
  "memfuse-core",
  "serde",
  "sha2",

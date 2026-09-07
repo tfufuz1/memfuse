@@ -876,6 +876,31 @@ pub trait MemoryLifecycleManager: Send + Sync {
     ) -> impl Future<Output = Result<Vec<ConsolidationAction>>> + Send;
 }
 
+/// Result of a post-hoc grounding / attribution validation check.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GroundingAssessment {
+    /// Raw or calibrated confidence score in [0.0, 1.0] indicating attribution quality.
+    pub score: f32,
+    /// Indicates whether the grounding score meets the required threshold.
+    pub is_grounded: bool,
+    /// Optional detail explanation or ungrounded claims identified.
+    pub reason: Option<String>,
+}
+
+/// Abstract contract for post-hoc hallucination / grounding validation.
+pub trait GroundingValidator: Send + Sync {
+    /// Validates an LLM-generated response against retrieval context chunks.
+    ///
+    /// Returns `Ok(GroundingAssessment)` if confidence meets threshold,
+    /// or `Err(MemFuseError)` (e.g. `MemFuseError::PolicyViolation` or low-confidence signal)
+    /// on grounding failure or abstention.
+    fn validate_grounding<'a>(
+        &'a self,
+        response: &'a str,
+        context_chunks: &'a [ContextChunk],
+    ) -> BoxFuture<'a, Result<GroundingAssessment>>;
+}
+
 #[cfg(test)]
 mod dyn_safety {
     use super::*;
