@@ -936,6 +936,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     }
                 }
 
+                // Trigger cascading edge invalidation for the superseded document
+                if relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+                    memfuse_graph::cascade_invalidate_edges_for_superseded_doc(
+                        &self.graph_index,
+                        to,
+                        tx.inner(),
+                    )
+                    .await?;
+                }
+
                 // Commit transaction to persist the link updates
                 self.storage.commit(tx).await?;
             }

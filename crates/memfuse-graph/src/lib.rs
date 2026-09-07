@@ -25,6 +25,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cascade;
 pub mod community;
 pub mod csr;
 pub mod immune;
@@ -37,6 +38,7 @@ pub mod session_dag;
 #[cfg(feature = "physio-synaptic-edges")]
 pub mod synaptic;
 
+pub use cascade::{cascade_invalidate_edges_for_superseded_doc, CascadeInvalidationReport};
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
 pub use csr::CsrGraph;
 pub use immune::{
