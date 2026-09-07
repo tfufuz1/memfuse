@@ -140,6 +140,8 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
+    #[cfg(feature = "physio-replicator-weights")]
+    replicator_state: Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
     seq: Option<u64>,
@@ -167,6 +169,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
+            #[cfg(feature = "physio-replicator-weights")]
+            replicator_state: None,
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
             seq: None,
@@ -290,6 +294,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets an online adaptive replicator state for dynamic signal fusion weights.
+    #[cfg(feature = "physio-replicator-weights")]
+    pub fn replicator_state(
+        mut self,
+        state: std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>,
+    ) -> Self {
+        self.replicator_state = Some(state);
+        self
+    }
+
     /// Sets the candidate pool multiplier for pre-reranking candidate expansion.
     ///
     /// Default: 10 (`DEFAULT_RERANK_POOL_MULTIPLIER`), yielding ~100 candidates for `k=10`
@@ -369,6 +383,21 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         #[cfg(not(feature = "reranking"))]
         let _has_reranker = false;
 
+        let fusion_weights = {
+            #[cfg(feature = "physio-replicator-weights")]
+            {
+                if let Some(ref state) = self.replicator_state {
+                    state.read().fusion_weights()
+                } else {
+                    self.weights.unwrap_or_default()
+                }
+            }
+            #[cfg(not(feature = "physio-replicator-weights"))]
+            {
+                self.weights.unwrap_or_default()
+            }
+        };
+
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
             vector_query: self.vector.clone(),
@@ -382,7 +411,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 .as_ref()
                 .map(|s| s.to_graph_strategy())
                 .unwrap_or_default(),
-            fusion_weights: self.weights.unwrap_or_default(),
+            fusion_weights,
             filter: self.filter.clone(),
             memory_type_filter: self.memory_type_filter.clone(),
             same_community_as: self.same_community_as,
