@@ -23,7 +23,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-embed` | 1 | 1723 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7994 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-index` | 2 | 12538 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 2 | 12684 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3689 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15567 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-db` | 3 | 21756 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
