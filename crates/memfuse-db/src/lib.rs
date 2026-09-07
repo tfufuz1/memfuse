@@ -98,8 +98,11 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
+pub mod replicator;
 pub mod thermostat;
 pub mod transaction;
+
+pub use replicator::{apply_and_maybe_adapt, AdaptiveFusionWeights, FusionResult};
 
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
