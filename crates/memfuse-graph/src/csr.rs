@@ -418,6 +418,8 @@ pub struct CsrGraph {
     /// Optionales Antikörper-Register für Widerspruchsprävention (F-04/ADR-073).
     /// None = disabled (default, P1-safe).
     immune_memory: Option<RwLock<ImmunMemory>>,
+    /// Rückverfolgung DocId -> betroffene Kanten, für Cascading-Invalidation (INV-GRAPH-PROV-1).
+    pub doc_edge_index: crate::provenance::DocEdgeIndex,
 }
 
 impl CsrGraph {
@@ -434,6 +436,7 @@ impl CsrGraph {
             storage: None,
             last_tx_id: AtomicU64::new(0),
             immune_memory: None,
+            doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
     }
 
@@ -453,6 +456,7 @@ impl CsrGraph {
             storage: Some(storage),
             last_tx_id: AtomicU64::new(0),
             immune_memory: None,
+            doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
     }
 
@@ -464,7 +468,16 @@ impl CsrGraph {
             storage: None,
             last_tx_id: AtomicU64::new(0),
             immune_memory: Some(RwLock::new(ImmunMemory::new(suppression_threshold))),
+            doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
+    }
+
+    /// Tombstoniert eine Kante direkt für eine Transaktions-ID via Cascading-Invalidation (INV-GRAPH-PROV-1).
+    pub async fn tombstone_edge(&self, edge_id: crate::immune::EdgeId, tx: TxId) -> Result<()> {
+        let (from, to) = edge_id;
+        GraphIndex::remove_edge(self, tx, from, to).await?;
+        GraphIndex::commit(self, tx).await?;
+        Ok(())
     }
 
     pub(crate) fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
@@ -1222,6 +1235,10 @@ impl GraphIndex for CsrGraph {
             let mut inner = self.inner.write();
             let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
+            // Register source document provenance for cascading invalidation
+            self.doc_edge_index.record(memfuse_core::DocId(edge.from.inner()), (edge.from, edge.to));
+            self.doc_edge_index.record(memfuse_core::DocId(edge.to.inner()), (edge.from, edge.to));
+
             // Lazy index allocation: Store EntityIds directly in staged_edges.
             // Internal indices via get_or_create_index are allocated only during commit(),
             // ensuring rollback does not leak entity indices into id_map/reverse_map.
@@ -1941,6 +1958,15 @@ impl<'a> crate::path_rag::PathGraph for &'a CsrGraph {
     }
     fn predecessors_with_weights(&self, node: EntityId) -> Vec<(EntityId, f32)> {
         (*self).predecessors_with_weights(node)
+    }
+}
+
+impl crate::path_rag::PathGraph for Arc<CsrGraph> {
+    fn neighbors_with_weights(&self, node: EntityId) -> Vec<(EntityId, f32)> {
+        self.as_ref().neighbors_with_weights(node)
+    }
+    fn predecessors_with_weights(&self, node: EntityId) -> Vec<(EntityId, f32)> {
+        self.as_ref().predecessors_with_weights(node)
     }
 }
 

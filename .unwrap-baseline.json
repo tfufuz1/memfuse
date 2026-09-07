@@ -3533,6 +3533,14 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "66979dc996d2302c"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "75f043c2bb19bbfe"
   },
   {
@@ -6650,6 +6658,98 @@
   {
     "file": "crates/memfuse-db/tests/stress.rs",
     "hash": "aa29d3d04cdbf665"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "0982e0eb5bb9882a"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "4ebeb0964ac77c90"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "6f0c2b2bc70ce637"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "6fe6d9568f76f7c5"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "721ae9f4ebd068e3"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "7c142f2ea8aa2937"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "7f718b94b6157c79"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "8377b1c131a7ce52"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "93e4ebefcd83b4c6"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "95ce8da573a20d92"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "9779dc4e0a6f8384"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "98a57dd65cbe27ed"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "a652b06cfc8930f8"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "be77846c79c4b3bd"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "c868e3a63885c551"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "d3740b0a740fd869"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "d9a42f55b10ecd0f"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "e27b622fb49eddd2"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "ec09f05fd64dff1b"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "ee70f47e40771af4"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "f20f9ee355cd1198"
+  },
+  {
+    "file": "crates/memfuse-db/tests/supersedes_cascading_tombstone_test.rs",
+    "hash": "fb7363c9eb20ca78"
   },
   {
     "file": "crates/memfuse-db/tests/text_integration.rs",
