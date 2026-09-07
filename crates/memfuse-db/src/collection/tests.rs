@@ -725,7 +725,7 @@ async fn test_hybrid_search_k_clamping_boundaries() {
 
 #[tokio::test]
 async fn test_doc_id_collision_rejected() {
-    use memfuse_core::{BoxFuture, DocId, MemFuseError, StorageEngine, TxId};
+    use memfuse_core::{DocId, MemFuseError, StorageEngine, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1144,7 +1144,7 @@ async fn test_ttl_overflow_does_not_expire() {
 
 #[tokio::test]
 async fn test_migrate_doc_keys_v1() {
-    use memfuse_core::{BoxFuture, DocId, StorageEngine, TxId};
+    use memfuse_core::{DocId, StorageEngine, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1432,7 +1432,7 @@ async fn test_begin_transaction_returns_active_db_transaction() {
 
 #[tokio::test]
 async fn test_reaper_deletes_decayed_working_memory() {
-    use memfuse_core::{BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
+    use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1502,7 +1502,7 @@ async fn test_reaper_deletes_decayed_working_memory() {
 
 #[tokio::test]
 async fn test_reaper_never_deletes_semantic_no_decay() {
-    use memfuse_core::{BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
+    use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -1569,7 +1569,7 @@ async fn test_reaper_never_deletes_semantic_no_decay() {
 
 #[test]
 fn test_importance_metadata_integration_and_filtering() {
-    use memfuse_core::{BoxFuture, DecayFunction, ImportanceScore, MemoryImportance, TxId};
+    use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use serde_json::json;
 
     let created_tx = TxId::new(10);
@@ -1732,7 +1732,7 @@ async fn test_insert_typed_working_has_ttl_metadata() {
 #[tokio::test]
 #[cfg(feature = "experimental-diskann")]
 async fn test_collection_with_diskann_index_hybrid_search() {
-    use memfuse_core::{BoxFuture, DocId, StorageEngine, TextIndex};
+    use memfuse_core::{DocId, StorageEngine, TextIndex};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{DiskAnnConfig, DiskAnnIndex};
     use memfuse_store::LsmStorage;
@@ -1907,7 +1907,7 @@ async fn test_insert_backward_compatible_has_semantic_default() {
 
 #[tokio::test]
 async fn test_hybrid_search_with_query_memory_type_filter() {
-    use memfuse_core::{BoxFuture, HybridQuery, MemoryType};
+    use memfuse_core::{HybridQuery, MemoryType};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::{LsmConfig, LsmStorage};
@@ -2120,7 +2120,7 @@ async fn test_search_dimension_mismatch_rejected() {
 
 #[tokio::test]
 async fn test_concurrent_insert_many_collision_safety() {
-    use memfuse_core::{BoxFuture, DocId, MemFuseError, StorageEngine, TxId};
+    use memfuse_core::{DocId, MemFuseError, StorageEngine, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
@@ -2555,7 +2555,7 @@ async fn test_post_rrf_supersedes_displacement_truncation_preserves_k() -> memfu
 #[tokio::test]
 async fn test_query_builder_query_config_include_superseded_displacement(
 ) -> memfuse_core::Result<()> {
-    use memfuse_core::{BoxFuture, DocId, HybridQuery};
+    use memfuse_core::{DocId, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
     use memfuse_store::LsmStorage;
