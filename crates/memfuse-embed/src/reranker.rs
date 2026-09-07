@@ -161,6 +161,10 @@ pub struct RerankConfig {
     pub batch_size: usize,
     /// Optionale Platt-Scaling Kalibrierung für Roh-Logits
     pub calibration: PlattScaledSigmoid,
+    /// Maximum allowed execution time in milliseconds before timing out. Default: 500ms.
+    pub rerank_deadline_ms: Option<u64>,
+    /// Simulated delay in milliseconds for testing timeouts. Default: None.
+    pub simulate_delay_ms: Option<u64>,
 }
 
 impl Default for RerankConfig {
@@ -171,6 +175,8 @@ impl Default for RerankConfig {
             max_length: 512,
             batch_size: 8,
             calibration: PlattScaledSigmoid::identity(),
+            rerank_deadline_ms: Some(500),
+            simulate_delay_ms: None,
         }
     }
 }
@@ -278,6 +284,7 @@ impl OnnxReranker {
         let batch_size = self.config.batch_size;
         let calibration = self.config.calibration.clone();
 
+        let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
             Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size, &calibration)
         })
@@ -446,7 +453,12 @@ impl OnnxReranker {
             ));
         }
 
-        Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &PlattScaledSigmoid::identity())
+        Self::extract_scores_from_tensor_calibrated(
+            shape,
+            data,
+            b_size,
+            &PlattScaledSigmoid::identity(),
+        )
     }
 
     fn extract_scores_from_tensor_calibrated(
@@ -527,6 +539,19 @@ impl CrossEncoderReranker {
         }
     }
 
+    /// Erstellt einen Passthrough-CrossEncoderReranker mit einer benutzerdefinierten Konfiguration.
+    pub fn passthrough_with_config(config: RerankConfig) -> Self {
+        Self {
+            _config: config,
+            backend: RerankerBackend::Passthrough,
+        }
+    }
+
+    /// Returns a reference to the active `RerankConfig`.
+    pub fn config(&self) -> &RerankConfig {
+        &self._config
+    }
+
     /// Setzt ein gefittetes `PlattScaledSigmoid` Modell für den CrossEncoderReranker.
     pub fn with_calibration(mut self, calibration: PlattScaledSigmoid) -> Self {
         self._config.calibration = calibration;
@@ -564,6 +589,10 @@ impl CrossEncoderReranker {
                 candidates.len(),
                 MAX_CANDIDATES
             )));
+        }
+
+        if let Some(delay_ms) = self._config.simulate_delay_ms {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
 
         match &self.backend {
@@ -723,7 +752,10 @@ mod tests {
         assert!(!fitted.is_identity());
 
         let (a, _b) = fitted.params();
-        assert!(a > 0.0, "Scaling factor A should be positive for positively correlated logits");
+        assert!(
+            a > 0.0,
+            "Scaling factor A should be positive for positively correlated logits"
+        );
 
         // Verify that transform() provides sharper separation than identity sigmoid
         let identity = PlattScaledSigmoid::identity();
@@ -802,6 +834,7 @@ mod tests {
             tokenizer_path,
             max_length: 128,
             batch_size: 4,
+            calibration: PlattScaledSigmoid::identity(),
         };
 
         let res = CrossEncoderReranker::new(cfg);

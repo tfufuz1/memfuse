@@ -12,7 +12,7 @@
 | `docs/ARCHITECTURE.md` | Technische Ist-Architektur: DAG, Layer, Crate-Zweck | **Automatisch generiert** aus Cargo.toml + Tags |
 | `docs/SOURCE_OF_TRUTH.md` | Produktstrategie, Roadmap, Entscheidungskontext (WARUM) | Manuell (Strategie) + automatischer Inventar-Abschnitt |
 | `WORKING_STATE.md` | Nur Session-zu-Session-Handoff: was ist gerade offen | **Automatisch generiert** aus Tags, minimal manueller Zusatz |
-| `DECISIONS.md` | ADR-Log, chronologisch, append-only | Manuell |
+| `docs/decisions/` | ADR-Log in einzelnen Dateien | Manuell |
 | `docs/TYPE_REGISTRY.md` | Zentrales Typ- und Trait-Register (Kollisionsschutz) | Manuell + xtask-referenziert |
 | `.jules/AUDIT_INTAKE_PROTOCOL.md` | Protokoll zur Verifikation externer Audit-Befunde | Manuell |
 | `rules/*.md` | Domänenspezifische Detailregeln (SIMD, Crypto, Testing) | Manuell |
@@ -79,14 +79,14 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-core` | 0 | 9261 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-crypto` | 0 | 2425 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-checkpoint` | 1 | 5617 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-embed` | 1 | 1684 | 🧊 Optional |  |
+| `memfuse-embed` | 1 | 1435 | 🧊 Optional |  |
 | `memfuse-graph` | 1 | 7323 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-index` | 1 | 11898 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-store` | 1 | 15284 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-text` | 1 | 5355 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-db` | 2 | 20271 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-agent` | 3 | 5538 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-ollama` | 3 | 3351 | 🟢 Clean |  |
+| `memfuse-ollama` | 3 | 3395 | 🟢 Clean |  |
 | `memfuse-router` | 3 | 3388 | 🟢 Clean |  |
 | `memfuse-mcp` | 4 | 3808 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 5744 | 🟢 Clean |  |

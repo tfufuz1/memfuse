@@ -2,8 +2,7 @@
 // ZWECK: Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern.
 
 use memfuse_core::{
-    BoxFuture,
-    DocId, MemFuseError, Result, ScoredDocument, TxId, VectorIndex, VectorIndexStats,
+    BoxFuture, DocId, MemFuseError, Result, ScoredDocument, TxId, VectorIndex, VectorIndexStats,
 };
 use memfuse_db::{MemFuse, MemFuseConfig};
 use memfuse_graph::CsrGraph;

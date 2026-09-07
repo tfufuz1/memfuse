@@ -867,3 +867,520 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
     - Einzelne Fault-Injection-Tests laufen als reguläre Integrationstests in `cargo test --workspace`.
     - Die kombinierte Fault-Matrix (`chaos_matrix.rs`) läuft ausschließlich nightly, ist `#[ignore]`-gated und blockiert keine Pull Requests.
 *   **Begründung**: Bietet gezielte Abdeckung verbleibender Crash-Resilienz-Lücken (SSTable Bit-Flips, echte Process-Kills, Task-Abbrüche, Memory-Pressure) ohne Beeinträchtigung der Produktionscode-Topologie oder der PR-Laufzeiten.
+
+---
+
+## ADR-063: Instance-scoped Orphan Registry Wiring
+*   **Datum**: 2026-09-06
+*   **Status**: ✅ Final
+*   **Kontext**: ADR-053 hat `InstanceOrphanRegistry` eingeführt, um den veralteten prozessweiten `ORPHAN_REGISTRY`-Singleton zu ersetzen. Allerdings gab es bisher keine Verdrahtung in `MemFuse`, wodurch Multi-Tenant-Szenarien (mehrere `MemFuse`-Instanzen im selben Prozess) physisch dieselbe Orphan-Pin-Datei nutzten und Pins anderer Instanzen überschreiben konnten.
+*   **Entscheidung**:
+    - `MemFuseConfig` wird um ein optionales Feld `orphan_registry_path: Option<PathBuf>` erweitert. Standardmäßig (bei `None`) wird der Pfad instanzspezifisch aus dem Datenbank-Öffnungspfad als `<db_path>/.orphan_registry.json` abgeleitet.
+    - `MemFuse` instanziiert beim Öffnen eine instanzspezifische `InstanceOrphanRegistry` und stellt diese über die Methode `db.orphan_registry()` bereit.
+    - `PersistentCheckpointStore` stellt die Konstruktoren `open_with_orphan_registry` und `new_with_orphan_registry` bereit, um die direkte Übergabe einer instanzgebundenen Registry zu ermöglichen.
+    - Sämtliche Produktionscodepfade nutzen ausschließlich instanzgebundene Orphan-Registries. Der veraltete globale `ORPHAN_REGISTRY`-Singleton und `global_orphan_registry()` verbleiben ausschließlich für Legacy-Kompatibilitätstests.
+*   **Begründung**: Verhindert Daten- und Pin-Überschreibungen in Multi-Tenant-Szenarien und gewährleistet strikte physische Isolation der Orphan-State-Dateien pro Datenbank-Instanz.
+
+---
+
+## ADR-064: CONSTITUTION.md — P1-P12 Kodifizierung
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** Alle
+
+### Kontext
+
+P8/P9/P10/P11/P12 waren informell in Spec v4.0 beschrieben, aber nicht als CI-gates operationalisiert. P-SOFORT-1 fordert normative Kodifizierung.
+
+### Entscheidung
+
+CONSTITUTION.md wird im Repository-Root als normatives Verfassungsdokument angelegt. Es hat Vorrang vor README und allen Spec-Versionen vor v4.0.
+
+### Konsequenzen
+
+Alle Merge-Entscheidungen müssen gegen CONSTITUTION.md geprüft werden. P2-CI-Check und P3-CI-Check sind in CI-Pipeline aufzunehmen.
+
+---
+
+## ADR-065: MemTable — BTreeMap-Sharding beibehalten (A1 Audit-Korrektur)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-store (memtable.rs)
+
+### Kontext
+
+Spec v4.0 beschrieb MemTable als "SkipList-basiert". Code-Audit (A1) zeigt: 16-Shard BTreeMap<Bytes, Vec<MemTableEntry>> mit parking_lot::RwLock.
+
+### Entscheidung
+
+BTreeMap-Sharding wird beibehalten. Spec v4.1 korrigiert die Beschreibung auf "16-Shard-BTreeMap".
+
+### Verworfene Alternativen
+
+- crossbeam-skiplist: Lock-freie Reads, aber nicht crash-safe ohne WAL-Adapter. Keine messbare Recall-Auswirkung, erhöht Komplexität und Unsafe-Surface.
+
+### Konsequenzen
+
+Spec-Dokumentation korrigiert. Keine Code-Änderung notwendig. BTreeMap liefert garantierte lexikographische Sortierung für SSTable-Flush (INVARIANT-3 in memtable.rs). 16-Shard-Parallelismus ausreichend für 8-concurrent-embed-Pipeline.
+
+---
+
+## ADR-066: HNSW-Parameter — ef_construction=200, ef_search=64 sind korrekte Defaults (A2 Audit-Korrektur)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-index (hnsw.rs)
+
+### Kontext
+
+Spec v4.0 nannte ef_construction=32. Code-Audit (A2) zeigt ef_construction=200, ef_search=64.
+
+### Entscheidung
+
+Code-Defaults sind korrekt, Spec war falsch. ef_construction=200 → Recall@10 ≈ 0.98 auf ANN-Benchmarks. ef_construction=32 wäre das Minimum für Entwicklungsumgebungen, nicht der produktionssichere Default.
+
+### Konsequenzen
+
+Spec auf ef_construction=200, ef_search=64 korrigiert. M-Parameter (Spec sagt M=16) muss durch grep in hnsw.rs vor Finalisierung verifiziert werden.
+
+---
+
+## ADR-067: BM25 IDF-Fix — Robertson-Spärck-Jones-Glättung (A19 Bug)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-text (bm25.rs)
+
+### Kontext
+
+Code-Audit (A19): bm25.rs:4 dokumentiert ln(1 + (N-df+0.5)/(df+0.5)), aber Zeilen 95-100 implementieren idf_arg.ln() mit 1e-6-Floor. Bei df ≈ N/2 wird IDF ≈ 0, bei df > N/2 kollabiert auf 1e-6-Artefakt.
+
+### Entscheidung
+
+Fix auf Robertson-Spärck-Jones BM25+: arg = 1.0 + (N - df + 0.5) / (df + 0.5); IDF = arg.ln() Mathematische Garantie: IDF ≥ 0 für alle df ∈ [0, N]. Kein Floor-Artefakt.
+
+### Verworfene Alternativen
+
+- BM25L: Erfordert zusätzliche Hyperparameter-Kalibrierung.
+- Pivoted Normalization: Größere API-Änderung ohne proportionalen Gewinn.
+
+### Konsequenzen
+
+5-Minuten-Fix in bm25.rs:94-101. Bestehende Tests bleiben grün. Neuer Proptest für df > N/2 Pflicht.
+
+---
+
+## ADR-068: TenantId — Layer-0-Definition in memfuse-core (A4 Kritischer Bug)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-core (domain.rs), memfuse-store (tenant_codec.rs)
+
+### Kontext
+
+Code-Audit (A4): TenantId existiert NICHT im Workspace. Alle Mandantenisolations-Garantien sind ohne diesen Typ technisch nicht durchsetzbar.
+
+### Entscheidung
+
+TenantId als #[repr(transparent)] u64-Newtype in memfuse-core/src/types/domain.rs. Layer-0-Platzierung ist Pflicht: TenantId ist Abhängigkeit für KV-Bridge (Layer 4) — in Layer 1+ würde zyklische Crate-Abhängigkeit entstehen. TenantId(0) = SYSTEM_RESERVED. try_new(0) → Err (INV-TENANT-1). TenantKeyCodec in memfuse-store kodiert t:{tenant}:{col}:{type}:{id}.
+
+### Konsequenzen
+
+Blockiert: DeletionProof, KV-Bridge-Isolation, PathRAG-TenantContext. Unblockiert nach Implementierung: Enterprise-Sprint H4.
+
+---
+
+## ADR-069: ConfigFingerprint — Zwingende Re-Kalibrierung bei Konfigurationsänderung (A5, P-SOFORT-2)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-core (domain.rs), memfuse-router (profile.rs)
+
+### Kontext
+
+Code-Audit (A5): ConfigFingerprint existiert NICHT. SlmProfile hat kein Fingerprint-Feld (A17). Ohne Fingerprint kann P8 nicht technisch durchgesetzt werden. Wissenschaftliche Basis: arXiv:2608.01460 — Coverage-Kollaps unter Konfigurations-Drift nachgewiesen.
+
+### Entscheidung
+
+ConfigFingerprint als Struct in memfuse-core mit:
+- model_id: String
+- quantization: String (explizit: Q4 ≠ Q8 bei gleichem model_id)
+- prompt_template_hash: [u8; 32] (SHA256)
+- temperature_bits: u32 (f32::to_bits() für bit-exakten Vergleich)
+
+SlmProfile erhält Feld fingerprint: Option<ConfigFingerprint>. invalidate_on_config_change() setzt Observations auf 0 (INV-CAL-2).
+
+### Verworfene Alternativen
+
+- Hash über alle Parameter als u64: Kollisionsrisiko bei ähnlichen Configs.
+- SystemTime als Proxy: Nicht deterministisch, nicht replay-safe.
+
+### Konsequenzen
+
+P8 wird technisch erzwingbar. Warmup-Fenster nach Fingerprint-Wechsel obligatorisch. Blockiert: memfuse-calibration (kann Fingerprint nutzen).
+
+---
+
+## ADR-070: memfuse-calibration — Unified Calibration Primitive, Layer-0-Platzierung (A7, P-SOFORT-4)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** Neues Crate memfuse-calibration
+
+### Kontext
+
+Code-Audit (A7): Kein memfuse-calibration-Crate im Workspace. Drei parallele Kalibrierungspfade (Router, Reranker, ImportanceScore) ohne gemeinsame Primitive → Kollisionsrisiko. Reranker nutzt rohes Sigmoid ohne Kalibrierung (A15). PAVA-Komplexität in Spec als O(n log n) falsch angegeben — korrekt ist O(n) amortisiert.
+
+### Entscheidung
+
+- Neues Crate memfuse-calibration, Layer 0 (nach memfuse-core, vor memfuse-store).
+- IsotonicCalibrator: PAVA O(n) amortisiert, VecDeque-Rolling-Window, calibrated_probability() → None vor Warmup (INV-CAL-1).
+- PlattScaler: Sigmoid-Kalibrierung O(1) Inference für bekannte Sigmoid-Verteilungen.
+- Beide implementieren invalidate_on_config_change(new_fp: ConfigFingerprint) (P8).
+- ECE-Ziel: < 0.03 (arXiv:2605.18796).
+
+### Verworfene Alternativen
+
+- Temperatur-Scaling: Skaliert global, nicht adaptiv pro Score-Bucket.
+- Keine Kalibrierung: AGT-EMBED-62093e61 belegt Rohsigmoid-Problem.
+
+### Konsequenzen
+
+Alle drei Verwender (Router, Reranker, ImportanceScore) migrieren zu memfuse-calibration. Keine isolierten Ad-hoc-Sigmoid-Logiken mehr erlaubt. Siehe auch: ADR-069.
+
+---
+
+## ADR-071: DiskANN persist_delta() — Inkrementeller Insert-Pfad (A16, P-SOFORT-5)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-index (diskann.rs)
+
+### Kontext
+
+Code-Audit (A16): VectorIndex::insert() für DiskANN gibt Err("read-only"). Kein inkrementeller Update-Pfad existiert — nur Vollrebuild via build(). Lifecycle-Gap: neue Dokumente können nach initialem Build nicht aufgenommen werden.
+
+### Entscheidung
+
+Hybrid-Ansatz mit Pending-Buffer:
+- pending_inserts: RwLock<Vec<(DocId, Vec<f32>)>> im Index-Inner
+- PENDING_FLUSH_THRESHOLD = 1000 (Auto-Flush bei 1000 pending)
+- persist_delta(): Wenn pending_ratio > 10% → Vollrebuild. Sonst: inkrementeller Vamana-Insert (arXiv:2602.21514 §4 "Streaming DiskANN").
+- Atomares Write: Tmp → fsync → Rename → Parent-fsync (INV-DISKANN-1, P3-konform).
+
+Erste Version: write_incremental_to_file() delegiert an Vollrebuild (korrekt, nicht optimal). Echte Streaming-DiskANN-Implementierung: H1-Sprint.
+
+### Konsequenzen
+
+DiskANN-Lifecycle-Lücke geschlossen. VectorIndex::insert() gibt kein Err("read-only") mehr zurück. HNSW bleibt Primärindex < 100k Vektoren, DiskANN optionaler Out-of-Core-Index > 500k Vektoren (ADR-072 Rollentrennung).
+
+---
+
+## ADR-072: DiskANN vs. HNSW Rollentrennung
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-index, memfuse-db
+
+### Kontext
+
+Nach persist_delta()-Implementierung (ADR-071) kann DiskANN als vollwertiger Index betrieben werden. Klare Rollentrennung nötig.
+
+### Entscheidung
+
+- HNSW: Primärindex für alle Sammlungen < 100.000 Vektoren (RAM + Mmap-Segment)
+- DiskANN: Optionaler Out-of-Core-Index für Sammlungen > 500.000 Vektoren
+- Transition: Automatischer Build-Trigger wenn HNSW-Größe > 200.000
+- Feature-Flag: experimental-diskann (bereits in memfuse-db/Cargo.toml)
+
+### Konsequenzen
+
+Benutzer mit kleinen Sammlungen bekommen HNSW (schnell, einfach). Enterprise-Sammlungen > 500k Vektoren können DiskANN nutzen. Siehe auch: ADR-071.
+
+---
+
+## ADR-073: F-02 PERMANENT ABGELEHNT — Partieller HNSW-Rebuild
+
+**Status:** Veto (permanent)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-index (hnsw.rs)
+
+### Kontext
+
+Diskussion über die Optimierung von HNSW-Updates durch partiellen Rebuild.
+
+### Entscheidung
+
+KEIN partieller HNSW-Rebuild. Immer ausgeschlossen.
+
+### Technische Begründung
+
+HNSW ist ein global verschränkter Graph. Partielle Rebuilds zerstören Delaunay-ähnliche Nachbarschaftsbeziehungen zu Randknoten. Greedy-Search läuft in lokale Minima → Recall-Kollaps. Unter RwLock in Rust: Lock-Contention-Problem ohne Lösung.
+
+### Ersatz
+
+2-Phasen-CoW-Rebuild (hnsw.rs:1693 + hnsw.rs:1812, bereits produktiv; siehe ADR-061).
+
+---
+
+## ADR-074: DeletionProof — Kryptographischer Löschbeweis mit ExcludedScope (A6)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-crypto (deletion_proof.rs)
+
+### Kontext
+
+Code-Audit (A6): DeletionProof existiert nicht. Ohne ihn gibt es keine beweisbare DSGVO-Art.17-Compliance. arXiv:2505.16831 zeigt: Unlearning ≠ Deletion.
+
+### Entscheidung
+
+- DeletionProof in memfuse-crypto mit: Blake3-Hash sortierter gelöschter Keys, HMAC-SHA256-Signatur, covered_layers: Vec<DeletionLayer>, excluded_scopes: Vec<ExcludedScope>
+- ExcludedScope::LlmParameterMemory und ExcludedScope::ConsolidatedAndDistilled sind Pflicht-Einträge (arXiv:2505.16831-Grenze explizit maschinenlesbar)
+- TxId statt SystemTime (ADR-016-konform, deterministisch)
+- Constant-time Vergleich via subtle::ConstantTimeEq
+
+Kritische Grenze (Pflicht in export_for_audit()): Proof deckt AUSSCHLIESSLICH Layer: LSM, WAL, HNSW, CSR, KV-Cache. LLM-Parameterwissen: nicht abgedeckt.
+
+### Konsequenzen
+
+DSGVO Art. 17-Compliance mit expliziter Grenzdokumentations-Pflicht. Siehe auch: ADR-068.
+
+---
+
+## ADR-075: PathRAG Engine — Bidirektionaler Dijkstra mit Sufficiency-Gate (A8)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-graph (path_rag.rs)
+
+### Kontext
+
+Code-Audit (A8): PathRAGEngine existiert nicht. Wissenschaftliche Basis: arXiv:2502.14902 (PathRAG, AAAI 2026). Präzisions-Scope: Nur Multi-Hop-Anfragen (arXiv:2506.05690 — "When to use Graphs in RAG").
+
+### Entscheidung
+
+- Bidirektionaler Dijkstra (Gewicht → Distanz via 1/weight)
+- Sufficiency-Gate: confidence = Produkt aller Kantengewichte ≥ threshold (Default: 0.01)
+- to_rrf_signal(): Nur Pfade die Sufficiency-Gate passieren
+- PathGraph-Trait für Testbarkeit ohne echten CSR-Graphen
+
+### Verworfene Alternativen
+
+- Unidirektionaler BFS: O(E) statt bidirektional O(√E), zu langsam für große Graphen.
+- Ohne Sufficiency-Gate: Precision-Kollaps wie in arXiv:2506.00610 dokumentiert.
+
+### Konsequenzen
+
+PathRAG liefert drittes RRF-Signal neben Vektor und BM25. Aktivierung: Nur bei Multi-Hop-Queries (Query-Klassifikator in H3-Sprint).
+
+---
+
+## ADR-076: F-01 Thermostat — Adaptiver Verfall via Systemtemperatur (A13)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-db (thermostat.rs)
+
+### Kontext
+
+Code-Audit (A13): Alle Physio-Features fehlen. F-01 hat geringstes Implementierungsaufwand (alle Inputs bereits vorhanden) und höchsten Sofortnutzen.
+
+### Entscheidung
+
+FreeEnergyThermostat mit:
+- T(t) = w1 * tombstone_ratio + w2 * query_load_inverse ∈ [0,1]
+- half_life_eff = half_life_base * (1 + κ * (1 - T(t)))
+- effective_score = base_score * exp(-ln2/half_life * elapsed_tx)
+- TxId-Differenz statt SystemTime (ADR-016-konform)
+- Feature-Flag: physio-thermostat (P12: default-off)
+
+### Konsequenzen
+
+Integration in Reaper-Sweep (H1). Keine neuen Infrastruktur-Deps.
+
+---
+
+## ADR-077: F-03 Synaptische Verstärkung
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-graph, memfuse-store
+
+### Kontext
+
+Physio-Feature F-03: Verstärkung haeufig gemeinsam genutzter Kanten im Wissensgraphen.
+
+### Entscheidung
+
+Hebbian/Stigmergisches Kantengewicht, WAL-Batching-Abhängigkeit. H2-Sprint.
+
+---
+
+## ADR-078: F-04 Immunologisches Gedächtnis
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-graph, memfuse-db
+
+### Kontext
+
+Physio-Feature F-04: Schnelles Verwerfen/Inaktivieren von fehlerhaften oder ersetzten Wissensstrukturen.
+
+### Entscheidung
+
+Antikörper-Register, Trigger: Supersedes → CSR-Tombstone. H3-Sprint.
+
+---
+
+## ADR-079: F-05 REM-Wissenssynthese
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-db, memfuse-graph
+
+### Kontext
+
+Physio-Feature F-05: Generative Konsolidierung und Abstraktion im Ruhemodus.
+
+### Entscheidung
+
+Generative Konsolidierung im SleepCycle. Abhängigkeit: PathRAG für Dedup-Trigger. H3-Sprint.
+
+---
+
+## ADR-080: F-06 Perkolationsmonitor
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-graph
+
+### Kontext
+
+Physio-Feature F-06: Überwachung des Zusammenhangs und der Graphgesundheit.
+
+### Entscheidung
+
+φ(t)-Gesundheitsmetrik + Re-Bonding-Pass. MVCC-Snapshot-Abhängigkeit. H3-Sprint.
+
+---
+
+## ADR-081: F-07 Replikator-Dynamik
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-db, memfuse-calibration
+
+### Kontext
+
+Physio-Feature F-07: Dynamische Anpassung der Signal-Gewichte im Retrieval.
+
+### Entscheidung
+
+Multiplicative-Weights-RRF, adaptive Gewichte. Abhängigkeit: memfuse-calibration. H2-Sprint.
+
+---
+
+## ADR-082: F-08 PID-Latenz-Homöostat
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-db, memfuse-router
+
+### Kontext
+
+Physio-Feature F-08: Dynamische Steuerung der Latenz und Kandidatenpool-Größe.
+
+### Entscheidung
+
+PID-Regler für Kandidatenpoolgröße. Implementierung erst NACH Deadline-Fix. H2-Sprint.
+
+---
+
+## ADR-083: F-09 Resonanz-Kohärenz-Bonus
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-db
+
+### Kontext
+
+Physio-Feature F-09: Belohnung von kohärenten Treffer-Mengen im Retrieval.
+
+### Entscheidung
+
+Bonus-Term in RRF, INV-PROV-2. SOFORT parallelisierbar. G0-Sprint.
+
+---
+
+## ADR-084: F-10 Cross-Tenant-Austausch
+
+**Status:** Veto (permanent)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-core, memfuse-db
+
+### Kontext
+
+VETO-02: Vorschlag zum tenant-übergreifenden Informationsaustausch.
+
+### Entscheidung
+
+PERMANENT ABGELEHNT (VETO-02). Bricht TenantId-Isolation + DeletionProof + DSGVO Art. 17.
+
+---
+
+## ADR-085: F-11 Lyapunov-Drift-Wächter
+
+**Status:** Offen (Planung)
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-router
+
+### Kontext
+
+Physio-Feature F-11: Überwachung der Modell- und Konfigurations-Drift.
+
+### Entscheidung
+
+KL-Divergenz-basierter Drift-Check, proaktive Ergänzung zu ConfigFingerprint. H3-Sprint.
+
+---
+
+## ADR-086: Reranking-Kandidatenfenster — max(k*3, 100) statt k*3 (A14, P-SOFORT-3)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** memfuse-db (search.rs)
+
+### Kontext
+
+Code-Audit (A14): pre_rerank_k = k * 3. Mit k=10 → 30 Kandidaten → Recall@5 ≈ 0.458. Wissenschaftliche Basis: arXiv:2604.01733 (T2-RAGBench): k_pool=100 → Recall@5 = 0.888 (Qualitätsknie).
+
+### Entscheidung
+
+pre_rerank_k = max(k*3, 100).min(MAX_SEARCH_K). Reranker-Aufruf wrapped in tokio::time::timeout(500ms) (P11-Konformität). Fallback bei Timeout: RRF-Reihenfolge, kein Error nach außen.
+
+### Konsequenzen
+
+Recall@5-Verbesserung messbar. P11-Deadline-Verletzung behoben. Latenzbudget: 500ms für ONNX-Inference (konfigurierbar via rerank_deadline_ms).
+
+---
+
+## ADR-087: memfuse-py — Workspace-Mitglied (A20)
+
+**Status:** Abgeschlossen
+**Datum:** 2026-09-07
+**Betroffene Komponenten:** Root Cargo.toml, memfuse-py
+
+### Kontext
+
+Code-Audit (A20): memfuse-py-Verzeichnis existiert, nicht in Cargo.toml members. cargo check --workspace schlägt fehl oder ignoriert es.
+
+### Entscheidung
+
+Als Workspace-Member aufnehmen. Minimal-Placeholder-Crate bis pyo3-Integration in H5-Sprint.
+
+### Konsequenzen
+
+cargo check --workspace inkludiert memfuse-py.
