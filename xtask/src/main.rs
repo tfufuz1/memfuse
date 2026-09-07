@@ -2591,7 +2591,7 @@ mod tests {
     #[test]
     fn test_workspace_crate_layers_regression() {
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 15, "Expected 15 workspace crates");
+        assert_eq!(crates.len(), 16, "Expected 16 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),

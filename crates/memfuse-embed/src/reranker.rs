@@ -833,6 +833,7 @@ mod tests {
             tokenizer_path,
             max_length: 128,
             batch_size: 4,
+            calibration: PlattScaledSigmoid::identity(),
         };
 
         let res = CrossEncoderReranker::new(cfg);

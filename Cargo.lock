@@ -2677,6 +2677,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "memfuse-calibration"
+version = "0.1.0"
+dependencies = [
+ "memfuse-core",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "memfuse-checkpoint"
 version = "0.1.0"
 dependencies = [
