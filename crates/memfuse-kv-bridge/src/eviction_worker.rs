@@ -201,10 +201,7 @@ mod tests {
             !remaining_ids.contains(&20),
             "Segment B (least recently used) must be evicted"
         );
-        assert!(
-            remaining_ids.contains(&30),
-            "Segment C must be retained"
-        );
+        assert!(remaining_ids.contains(&30), "Segment C must be retained");
     }
 
     #[test]
