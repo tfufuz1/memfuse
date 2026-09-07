@@ -1,4 +1,4 @@
-use memfuse_core::{BoxFuture, DistanceMetric, FilterExpr, HybridQuery};
+use memfuse_core::{DistanceMetric, FilterExpr, HybridQuery};
 use memfuse_db::{Collection, Language};
 use memfuse_graph::CsrGraph;
 use memfuse_index::{HnswConfig, HnswIndex};

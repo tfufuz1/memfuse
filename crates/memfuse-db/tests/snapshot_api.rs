@@ -161,7 +161,7 @@ async fn test_create_snapshot_equals_last_committed_seq() {
 /// executes snapshot-isolated queries without returning `CapabilityUnsupported`.
 #[tokio::test]
 async fn test_vector_and_graph_search_at_returns_adr024_capability_unsupported() {
-    use memfuse_core::{BoxFuture, GraphIndex, VectorIndex};
+    use memfuse_core::{GraphIndex, VectorIndex};
 
     let (db, _tmp) = test_db(4).await;
     let col = db.collection("isolation_policy").await.expect("col");

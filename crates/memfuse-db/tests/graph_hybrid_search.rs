@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use memfuse_core::{BoxFuture, Edge, Entity, EntityId, GraphIndex, TxId};
+use memfuse_core::{Edge, Entity, EntityId, GraphIndex, TxId};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
@@ -141,7 +141,7 @@ async fn test_relate_updates_graph_index_and_affects_hybrid_search() {
 #[tokio::test]
 #[allow(deprecated)]
 async fn test_hybrid_search_with_ppr_strategy() {
-    use memfuse_core::{BoxFuture, GraphTraversalStrategy, PprConfig};
+    use memfuse_core::{GraphTraversalStrategy, PprConfig};
 
     let tmp = TempDir::new().expect("temp dir");
     let config = MemFuseConfig {

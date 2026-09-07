@@ -65,6 +65,10 @@ impl TenantId {
     pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
+    /// Default tenant identifier (`0`).
+    pub const DEFAULT: Self = Self(0);
+    /// SYSTEM tenant identifier (`0`).
+    pub const SYSTEM: Self = Self(0);
 
     /// Const-Konstruktor.
     #[inline]
@@ -132,7 +136,9 @@ impl CollectionId {
     /// Creates a new `CollectionId`, ensuring `id != 0`.
     pub fn try_new(id: u64) -> Result<Self> {
         if id == 0 {
-            Err(MemFuseError::InvalidInput("CollectionId cannot be 0".to_string()))
+            Err(MemFuseError::InvalidInput(
+                "CollectionId cannot be 0".to_string(),
+            ))
         } else {
             Ok(Self(id))
         }
@@ -1000,7 +1006,8 @@ mod tests {
         let serialized = serde_json::to_string(&tenant).expect("TenantId serialization failed");
         assert_eq!(serialized, "987654321");
 
-        let deserialized: TenantId = serde_json::from_str(&serialized).expect("TenantId deserialization failed");
+        let deserialized: TenantId =
+            serde_json::from_str(&serialized).expect("TenantId deserialization failed");
         assert_eq!(tenant, deserialized);
     }
 
