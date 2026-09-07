@@ -384,7 +384,10 @@ mod tests {
         let emb = vec![1.0, 0.0, 0.0, 0.0];
         // Chronologically first turn (position 0) has a HIGHER numerical DocId (9999)
         // than the second turn (position 1, DocId 100).
-        let turns = vec![(DocId::new(9999), emb.clone()), (DocId::new(100), emb.clone())];
+        let turns = vec![
+            (DocId::new(9999), emb.clone()),
+            (DocId::new(100), emb.clone()),
+        ];
 
         let pairs = detect_near_duplicates(&turns, 0.95);
         assert_eq!(pairs.len(), 1);
