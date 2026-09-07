@@ -207,7 +207,7 @@ pub fn group_turns_into_segments(
 /// Bei `similarity > threshold` wird der ÄLTERE Turn (kleinere `DocId` als Proxy für frühere Erstellung)
 /// als Duplikat markiert.
 ///
-/// TODO: Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert,
+/// AI-TAG[DEBT][LOW] Falls `DocId` in zukünftigen Speichermodellen nicht streng monoton mit der Erstellungszeit korreliert (TS: 2026-09-07T06:40:00Z) (SESSION: fix-todo-tag)
 /// sollte diese Funktion `TxId` oder explizite Timestamps als Parameter anstelle von `DocId` akzeptieren.
 ///
 /// RÜCKGABE: `Vec<(DocId /* zu tombstonen: älterer Turn */, DocId /* Original: neuerer/wichtigerer Turn */)>`
