@@ -67,8 +67,7 @@
 // SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
 pub use memfuse_core::TextEmbeddingEngine;
-use memfuse_core::{
-    DocId, Result, StorageEngine, TxId};
+use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -353,8 +352,9 @@ impl MemFuse {
             .orphan_registry_path
             .clone()
             .unwrap_or_else(|| path.as_ref().join(".orphan_registry.json"));
-        let orphan_registry =
-            Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(&orphan_path));
+        let orphan_registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(
+            &orphan_path,
+        ));
 
         let db = Self {
             storage,

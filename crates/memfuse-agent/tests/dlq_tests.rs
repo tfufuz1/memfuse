@@ -1,15 +1,14 @@
 use memfuse_agent::{
     AgentContext, AgentTool, DeadLetterReason, NodeType, OrchestratorEngine, StateGraph, StepResult,
 };
-use memfuse_core::{
-    BoxFuture, MemFuseError, Result, TokenBudget};
+use memfuse_core::{BoxFuture, MemFuseError, Result, TokenBudget};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_tool_timeout_creates_dead_letter() -> Result<()> {
     struct HangingTool;
-        impl AgentTool for HangingTool {
+    impl AgentTool for HangingTool {
         fn name(&self) -> &str {
             "hanging"
         }
@@ -98,7 +97,7 @@ async fn test_tool_retry_succeeds_on_second_attempt() -> Result<()> {
     struct FlakeyTool {
         attempt: AtomicU32,
     }
-        impl AgentTool for FlakeyTool {
+    impl AgentTool for FlakeyTool {
         fn name(&self) -> &str {
             "flakey"
         }

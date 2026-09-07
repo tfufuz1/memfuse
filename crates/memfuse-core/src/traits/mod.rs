@@ -61,7 +61,10 @@ pub trait CheckpointCoordinator: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Self::Meta>> + Send;
 
     /// Restores database state to a named checkpoint.
-    fn restore_named_checkpoint(&self, name: &str) -> impl Future<Output = Result<Self::Meta>> + Send;
+    fn restore_named_checkpoint(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = Result<Self::Meta>> + Send;
 
     /// Deletes a checkpoint by name.
     fn drop_named_checkpoint(&self, name: &str) -> impl Future<Output = Result<()>> + Send;
@@ -240,8 +243,10 @@ pub trait StorageEngine: Send + Sync + 'static {
     ///
     /// Für neue Call-Sites bevorzuge `scan_prefix_bounded` — lädt unbegrenzt und kann bei großen Prefixes das Speicherbudget sprengen.
     #[allow(clippy::type_complexity)]
-    fn scan_prefix<'a>(&'a self, prefix: &'a [u8])
-        -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 
     /// Wie `scan_prefix`, aber mit hartem Limit auf die Anzahl zurückgegebener Einträge und
     /// optionalem Cursor (letzter zurückgegebener Key aus dem vorherigen Aufruf) für Pagination.
@@ -323,7 +328,12 @@ pub trait StorageEngine: Send + Sync + 'static {
 /// Verwendet native `async fn` (AFIT) für statischen Dispatch.
 pub trait VectorIndex: Send + Sync + 'static {
     /// Inserts a vector with an associated document ID.
-    fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> impl Future<Output = Result<()>> + Send;
+    fn insert(
+        &self,
+        tx: TxId,
+        id: DocId,
+        embedding: &[f32],
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Returns all active (non-deleted) document IDs in the index.
     fn all_doc_ids(&self) -> impl Future<Output = Result<Vec<DocId>>> + Send {
@@ -331,7 +341,11 @@ pub trait VectorIndex: Send + Sync + 'static {
     }
 
     /// Inserts multiple vectors with associated document IDs.
-    fn insert_batch(&self, tx: TxId, vectors: &[(DocId, &[f32])]) -> impl Future<Output = Result<()>> + Send {
+    fn insert_batch(
+        &self,
+        tx: TxId,
+        vectors: &[(DocId, &[f32])],
+    ) -> impl Future<Output = Result<()>> + Send {
         async move {
             for (id, embedding) in vectors {
                 self.insert(tx, *id, embedding).await?;
@@ -341,7 +355,11 @@ pub trait VectorIndex: Send + Sync + 'static {
     }
 
     /// Searches for the k nearest neighbors to a query vector.
-    fn search(&self, query: &[f32], k: usize) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send;
+    fn search(
+        &self,
+        query: &[f32],
+        k: usize,
+    ) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send;
 
     /// Searches for the k nearest neighbors to a query vector at a specific sequence number.
     ///
@@ -470,7 +488,11 @@ pub struct TextIndexStats {
 /// Verwendet native `async fn` (AFIT) für statischen Dispatch.
 pub trait TextIndex: Send + Sync + 'static {
     /// Searches for documents matching the query.
-    fn search(&self, query: &str, k: usize) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send;
+    fn search(
+        &self,
+        query: &str,
+        k: usize,
+    ) -> impl Future<Output = Result<Vec<ScoredDocument>>> + Send;
 
     /// Searches for documents matching the query at a specific sequence number.
     ///
@@ -741,10 +763,7 @@ pub trait GraphIndex: Send + Sync + 'static {
     fn rollback<'a>(&'a self, tx: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Rolls back the entire graph state to a specific transaction ID.
-    fn rollback_to_tx<'a>(
-        &'a self,
-        tx_id: crate::types::TxId,
-    ) -> BoxFuture<'a, crate::Result<()>>;
+    fn rollback_to_tx<'a>(&'a self, tx_id: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>>;
 
     /// Returns the last transaction ID processed by the index.
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, crate::Result<crate::types::TxId>>;
@@ -834,7 +853,10 @@ pub trait MemoryLifecycleManager: Send + Sync {
 
     /// Plans consolidation of similar entries (Mem0 ADD/UPDATE/NOOP pattern).
     /// Returns an action plan without performing automatic execution.
-    fn plan_consolidation(&self, candidates: &[DocId]) -> impl Future<Output = Result<Vec<ConsolidationAction>>> + Send;
+    fn plan_consolidation(
+        &self,
+        candidates: &[DocId],
+    ) -> impl Future<Output = Result<Vec<ConsolidationAction>>> + Send;
 }
 
 #[cfg(test)]
@@ -862,7 +884,7 @@ mod capability_coverage {
     #[tokio::test]
     async fn test_hnsw_search_at_capability() {
         struct VectorIndexPlaceholder;
-                impl VectorIndex for VectorIndexPlaceholder {
+        impl VectorIndex for VectorIndexPlaceholder {
             async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> {
                 Ok(())
             }
@@ -916,7 +938,11 @@ mod capability_coverage {
     async fn test_csr_graph_capability() {
         struct GraphIndexPlaceholder;
         impl GraphIndex for GraphIndexPlaceholder {
-            fn traverse<'a>(&'a self, _: EntityId, _: usize) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
+            fn traverse<'a>(
+                &'a self,
+                _: EntityId,
+                _: usize,
+            ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }
             fn traverse_at<'a>(
@@ -1012,7 +1038,7 @@ mod capability_coverage {
     #[tokio::test]
     async fn test_text_index_search_at_capability() {
         struct TextIndexPlaceholder;
-                impl TextIndex for TextIndexPlaceholder {
+        impl TextIndex for TextIndexPlaceholder {
             async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
                 Ok(vec![])
             }
@@ -1065,7 +1091,11 @@ mod capability_coverage {
             fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
                 Box::pin(async move { Ok(None) })
             }
-            fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            fn get_at_seq<'a>(
+                &'a self,
+                _: &'a [u8],
+                _: u64,
+            ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
                 Box::pin(async move { Ok(None) })
             }
             fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
@@ -1107,7 +1137,10 @@ mod capability_coverage {
             fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
                 Box::pin(async move { Ok(()) })
             }
-            fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            fn scan_prefix<'a>(
+                &'a self,
+                _: &'a [u8],
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }
             fn scan<'a>(
@@ -1173,10 +1206,19 @@ mod tests {
             fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
                 Box::pin(async move { Ok(None) })
             }
-            fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            fn get_at_seq<'a>(
+                &'a self,
+                _: &'a [u8],
+                _: u64,
+            ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
                 Box::pin(async move { Ok(None) })
             }
-            fn put<'a>(&'a self, _: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            fn put<'a>(
+                &'a self,
+                _: TxId,
+                key: &'a [u8],
+                value: &'a [u8],
+            ) -> BoxFuture<'a, Result<()>> {
                 Box::pin(async move {
                     self.0.lock().unwrap().push((key.to_vec(), value.to_vec()));
                     Ok(())
@@ -1218,7 +1260,10 @@ mod tests {
             fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
                 Box::pin(async move { Ok(()) })
             }
-            fn scan_prefix<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            fn scan_prefix<'a>(
+                &'a self,
+                _: &'a [u8],
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }
             fn scan<'a>(
@@ -1259,10 +1304,19 @@ mod tests {
             fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
                 Box::pin(async move { Ok(self.data.lock().unwrap().get(key).cloned()) })
             }
-            fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            fn get_at_seq<'a>(
+                &'a self,
+                _: &'a [u8],
+                _: u64,
+            ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
                 Box::pin(async move { Ok(None) })
             }
-            fn put<'a>(&'a self, _: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            fn put<'a>(
+                &'a self,
+                _: TxId,
+                key: &'a [u8],
+                value: &'a [u8],
+            ) -> BoxFuture<'a, Result<()>> {
                 Box::pin(async move {
                     self.data
                         .lock()
@@ -1312,7 +1366,10 @@ mod tests {
             fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
                 Box::pin(async move { Ok(()) })
             }
-            fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            fn scan_prefix<'a>(
+                &'a self,
+                prefix: &'a [u8],
+            ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move {
                     let map = self.data.lock().unwrap();
                     let mut res = Vec::new();
@@ -1355,7 +1412,7 @@ mod tests {
     #[tokio::test]
     async fn test_vector_index_defaults() {
         struct MockIndex(std::sync::atomic::AtomicUsize);
-                impl VectorIndex for MockIndex {
+        impl VectorIndex for MockIndex {
             async fn insert(&self, _: TxId, _: DocId, _: &[f32]) -> Result<()> {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
@@ -1426,7 +1483,7 @@ mod tests {
     #[tokio::test]
     async fn test_text_index_defaults() {
         struct MockTextIndex;
-                impl TextIndex for MockTextIndex {
+        impl TextIndex for MockTextIndex {
             async fn search(&self, _: &str, _: usize) -> Result<Vec<ScoredDocument>> {
                 Ok(vec![])
             }
@@ -1502,7 +1559,10 @@ mod tests {
             fn rollback<'a>(&'a self, _: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>> {
                 Box::pin(async move { Ok(()) })
             }
-            fn rollback_to_tx<'a>(&'a self, _: crate::types::TxId) -> BoxFuture<'a, crate::Result<()>> {
+            fn rollback_to_tx<'a>(
+                &'a self,
+                _: crate::types::TxId,
+            ) -> BoxFuture<'a, crate::Result<()>> {
                 Box::pin(async move { Ok(()) })
             }
             fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, crate::Result<crate::types::TxId>> {
