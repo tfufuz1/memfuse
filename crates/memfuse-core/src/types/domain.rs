@@ -832,6 +832,63 @@ impl Default for PprConfig {
     }
 }
 
+/// Konfigurations-Fingerabdruck für P8-Kalibrierungs-Integrität.
+///
+/// INVARIANTE INV-P8-1: Jede Änderung an einem der Felder MUSS
+/// `IsotonicCalibrator::invalidate_on_config_change()` auslösen.
+/// Kein Warmup-Fenster darf nach Fingerprint-Wechsel übersprungen werden.
+///
+/// BEGRÜNDUNG: arXiv:2608.01460 — Coverage-Kollaps unter Konfigurations-Drift.
+/// Q4 und Q8 bei identischem model_id erzeugen unterschiedliche Score-Verteilungen.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ConfigFingerprint {
+    /// LLM-Modell-ID (z.B. "llama-3.2-3b-instruct")
+    pub model_id: String,
+    /// Quantisierungsgrad als String: "Q4_K_M", "Q8_0", "F16", "BF16".
+    /// EXPLIZIT Teil des Fingerprints — Q4 ≠ Q8 bei gleichem model_id.
+    pub quantization: String,
+    /// SHA256 des Prompt-Templates (nicht der Inhalt — nur der Hash).
+    /// Verhindert stille Kalibrierungs-Invalidierung bei Template-Drift.
+    pub prompt_template_hash: [u8; 32],
+    /// Temperatur als Bits für bit-exakten Vergleich (kein float-Gleichheitstest).
+    /// `temperature_bits = temperature.to_bits()`
+    pub temperature_bits: u32,
+}
+
+impl ConfigFingerprint {
+    /// Erstellt einen neuen `ConfigFingerprint`.
+    pub fn new(
+        model_id: impl Into<String>,
+        quantization: impl Into<String>,
+        prompt_template: &str,
+        temperature: f32,
+    ) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(prompt_template.as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+
+        Self {
+            model_id: model_id.into(),
+            quantization: quantization.into(),
+            prompt_template_hash: hash,
+            temperature_bits: temperature.to_bits(),
+        }
+    }
+
+    /// Extrahiert Temperatur als f32 (verlustfrei da via to_bits gespeichert).
+    #[inline]
+    pub fn temperature(&self) -> f32 {
+        f32::from_bits(self.temperature_bits)
+    }
+}
+
+impl Default for ConfigFingerprint {
+    fn default() -> Self {
+        Self::new("default", "F16", "", 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
