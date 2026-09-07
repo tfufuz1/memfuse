@@ -81,6 +81,7 @@ pub mod collection;
 pub mod context;
 pub mod context_compaction;
 pub mod sleep_cycle;
+pub mod temporal_filter;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
@@ -103,13 +104,12 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
-pub mod sleep_cycle;
 pub mod thermostat;
 pub mod transaction;
 
 pub use sleep_cycle::{
-    run_rem_phase, run_rem_phase_with_tx, CommunityStabilityTracker, MetaChunk, RemConfig,
-    RemPhaseResult,
+    run_nrem_phase as run_rem_phase, run_nrem_phase as run_rem_phase_with_tx,
+    NremConfig as RemConfig, NremPhaseResult as RemPhaseResult,
 };
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
