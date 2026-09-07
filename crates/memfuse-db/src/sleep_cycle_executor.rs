@@ -11,7 +11,7 @@ use crate::sleep_cycle::{
     compute_community_hash, run_nrem_phase, run_rem_phase, CommunityStabilityTracker,
     NremConfig, NremPhaseResult, RemConfig, RemPhaseResult,
 };
-use memfuse_core::traits::{LlmTextGenerator, StorageEngine};
+use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
 use memfuse_graph::{detect_communities, CommunityDetectionConfig};
 use std::collections::{HashMap, HashSet};
