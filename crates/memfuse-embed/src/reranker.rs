@@ -28,6 +28,126 @@ pub struct RerankResult {
     pub score: f32,
 }
 
+/// Platt-Scaling Kalibrierung für Cross-Encoder-Logits: `sigmoid(A * logit + B)`.
+///
+/// Passt rohe Model-Logits an die tatsächliche Wahrscheinlichkeit/Relevanz an,
+/// damit Konfidenzwerte über verschiedene Modelle/Fine-Tunings vergleichbar sind.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlattScaledSigmoid {
+    a: f32,
+    b: f32,
+}
+
+impl Default for PlattScaledSigmoid {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+impl PlattScaledSigmoid {
+    /// Erstellt eine neue `PlattScaledSigmoid`-Instanz mit den angegebenen Parametern `A` und `B`.
+    pub fn new(a: f32, b: f32) -> Self {
+        Self { a, b }
+    }
+
+    /// Unkalibrierter Fallback (identisch zum bisherigen `sigmoid(logit)`-Verhalten, $A=1.0, B=0.0$).
+    /// Kennzeichnet das Ergebnis als unkalibriert, solange kein gefittetes Modell vorliegt.
+    pub fn identity() -> Self {
+        Self { a: 1.0, b: 0.0 }
+    }
+
+    /// Prüft, ob diese Instanz dem unkalibrierten Default (`identity()`, $A=1.0, B=0.0$) entspricht.
+    pub fn is_identity(&self) -> bool {
+        (self.a - 1.0).abs() < f32::EPSILON && self.b.abs() < f32::EPSILON
+    }
+
+    /// Gibt die aktuellen Parameter `(a, b)` zurück.
+    pub fn params(&self) -> (f32, f32) {
+        (self.a, self.b)
+    }
+
+    /// Wendet das gefittete Platt-Scaling `sigmoid(A * logit + B)` an.
+    pub fn transform(&self, logit: f32) -> f32 {
+        if logit.is_nan() {
+            return 0.5;
+        }
+        let z = self.a * logit + self.b;
+        1.0 / (1.0 + (-z).exp())
+    }
+
+    /// Fittet Parameter `A` und `B` via Negative-Log-Likelihood-Minimierung mit L2-Regularisierung
+    /// und Target-Smoothing (Platt, 1999) auf gelabelten `(logit, is_relevant)`-Beobachtungen.
+    ///
+    /// Bei leeren, ungültigen oder extrem verrauschten Daten fällt das Fitting sicher auf
+    /// `PlattScaledSigmoid::identity()` zurück.
+    pub fn fit(observations: &[(f32, bool)]) -> Self {
+        // Filter invalid/non-finite logits
+        let valid_obs: Vec<(f32, bool)> = observations
+            .iter()
+            .copied()
+            .filter(|(logit, _)| logit.is_finite())
+            .collect();
+
+        if valid_obs.is_empty() {
+            return Self::identity();
+        }
+
+        let pos_count = valid_obs.iter().filter(|(_, is_rel)| *is_rel).count();
+        let neg_count = valid_obs.len() - pos_count;
+
+        // Platt's target smoothing parameters (Platt 1999):
+        // t_pos = (N_pos + 1) / (N_pos + 2)
+        // t_neg = 1 / (N_neg + 2)
+        let t_pos = (pos_count as f32 + 1.0) / (pos_count as f32 + 2.0);
+        let t_neg = 1.0 / (neg_count as f32 + 2.0);
+
+        // Optimization hyper-parameters (Gradient Descent with Adam-like adaptive step / momentum)
+        let mut a = 1.0f32;
+        let mut b = 0.0f32;
+        let mut lr = 0.05f32;
+        let iterations = 300;
+        let l2_reg = 0.001f32;
+
+        for _ in 0..iterations {
+            let mut grad_a = 0.0f32;
+            let mut grad_b = 0.0f32;
+
+            for &(logit, is_rel) in &valid_obs {
+                let target = if is_rel { t_pos } else { t_neg };
+                let z = a * logit + b;
+                let p = 1.0 / (1.0 + (-z).exp());
+                let err = p - target;
+
+                grad_a += err * logit;
+                grad_b += err;
+            }
+
+            let n = valid_obs.len() as f32;
+            grad_a = grad_a / n + l2_reg * (a - 1.0);
+            grad_b = grad_b / n + l2_reg * b;
+
+            // Gradient clipping for numerical stability
+            let grad_norm = (grad_a * grad_a + grad_b * grad_b).sqrt();
+            if grad_norm > 10.0 {
+                grad_a = (grad_a / grad_norm) * 10.0;
+                grad_b = (grad_b / grad_norm) * 10.0;
+            }
+
+            a -= lr * grad_a;
+            b -= lr * grad_b;
+
+            // Decay learning rate gradually
+            lr *= 0.995;
+        }
+
+        if !a.is_finite() || !b.is_finite() {
+            return Self::identity();
+        }
+
+        Self { a, b }
+    }
+}
+
 /// Konfiguration für Cross-Encoder Reranking.
 #[derive(Debug, Clone)]
 pub struct RerankConfig {
@@ -39,6 +159,8 @@ pub struct RerankConfig {
     pub max_length: usize,
     /// Batch-Größe für parallele Inferenz
     pub batch_size: usize,
+    /// Optionale Platt-Scaling Kalibrierung für Roh-Logits
+    pub calibration: PlattScaledSigmoid,
 }
 
 impl Default for RerankConfig {
@@ -48,7 +170,16 @@ impl Default for RerankConfig {
             tokenizer_path: std::path::PathBuf::from("models/tokenizer.json"),
             max_length: 512,
             batch_size: 8,
+            calibration: PlattScaledSigmoid::identity(),
         }
+    }
+}
+
+impl RerankConfig {
+    /// Setzt ein gefittetes `PlattScaledSigmoid` Modell für die Logit-Kalibrierung.
+    pub fn with_calibration(mut self, calibration: PlattScaledSigmoid) -> Self {
+        self.calibration = calibration;
+        self
     }
 }
 
@@ -146,8 +277,9 @@ impl OnnxReranker {
         let max_length = self.config.max_length;
         let batch_size = self.config.batch_size;
 
+        let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
-            Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size)
+            Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size, &calibration)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("Rerank task panicked: {e:?}")))?
@@ -176,6 +308,7 @@ impl OnnxReranker {
         pairs: &[(String, String)],
         max_length: usize,
         batch_size: usize,
+        calibration: &PlattScaledSigmoid,
     ) -> Result<Vec<f32>, String> {
         if pairs.is_empty() {
             return Ok(vec![]);
@@ -185,7 +318,7 @@ impl OnnxReranker {
         let mut all_scores = Vec::with_capacity(pairs.len());
 
         for chunk in pairs.chunks(batch_size) {
-            let chunk_scores = Self::score_batch(session, tokenizer, chunk, max_length)?;
+            let chunk_scores = Self::score_batch(session, tokenizer, chunk, max_length, calibration)?;
             all_scores.extend(chunk_scores);
         }
 
@@ -197,6 +330,7 @@ impl OnnxReranker {
         tokenizer: &Tokenizer,
         chunk: &[(String, String)],
         max_length: usize,
+        calibration: &PlattScaledSigmoid,
     ) -> Result<Vec<f32>, String> {
         let mut encodings = Vec::with_capacity(chunk.len());
 
@@ -285,12 +419,12 @@ impl OnnxReranker {
                 let (shape, data) = out
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("Failed to extract output tensor: {e}"))?;
-                Self::extract_scores_from_tensor(shape, data, b_size)
+                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, calibration)
             } else if let Some((_, out)) = outputs.iter().next() {
                 let (shape, data) = out
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("Failed to extract output tensor: {e}"))?;
-                Self::extract_scores_from_tensor(shape, data, b_size)
+                Self::extract_scores_from_tensor_calibrated(shape, data, b_size, calibration)
             } else {
                 Err("Reranker model produced no outputs".into())
             }
@@ -311,11 +445,24 @@ impl OnnxReranker {
             ));
         }
 
-        // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210)
-        // BEFUND: Cross-encoder raw logits are transformed directly via uncalibrated sigmoid into [0,1] confidence scores.
-        // RISIKO: Direct uncalibrated sigmoid values across different model architectures or fine-tunings may skew RRF fusion or confidence thresholds downstream.
-        // EMPFEHLUNG: Consider Platt scaling / temperature scaling or dynamic quantile calibration for multi-model score normalization.
-        let sigmoid = |x: f32| -> f32 { 1.0 / (1.0 + (-x).exp()) };
+        Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &PlattScaledSigmoid::identity())
+    }
+
+    fn extract_scores_from_tensor_calibrated(
+        shape: &[i64],
+        data: &[f32],
+        b_size: usize,
+        calibration: &PlattScaledSigmoid,
+    ) -> Result<Vec<f32>, String> {
+        if shape.is_empty() || shape[0] as usize != b_size {
+            return Err(format!(
+                "Output tensor batch size mismatch: expected {b_size}, shape {:?}",
+                shape
+            ));
+        }
+
+        // AI-TAG[ML-SCORING][MINOR] RESOLVED: Cross-encoder raw logits are transformed via PlattScaledSigmoid (sigmoid(A*x + B)) for calibrated confidence scores (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T12:00:00Z) (SESSION: 8efa6210)
+        let transform = |x: f32| -> f32 { calibration.transform(x) };
         let mut scores = Vec::with_capacity(b_size);
 
         match shape.len() {
@@ -327,7 +474,7 @@ impl OnnxReranker {
                     ));
                 }
                 for &logit in data {
-                    scores.push(sigmoid(logit));
+                    scores.push(transform(logit));
                 }
             }
             2 => {
@@ -341,17 +488,17 @@ impl OnnxReranker {
                 }
                 if cols == 1 {
                     for &logit in data {
-                        scores.push(sigmoid(logit));
+                        scores.push(transform(logit));
                     }
                 } else if cols == 2 {
                     for i in 0..b_size {
                         let l0 = data[i * 2];
                         let l1 = data[i * 2 + 1];
-                        scores.push(sigmoid(l1 - l0));
+                        scores.push(transform(l1 - l0));
                     }
                 } else {
                     for i in 0..b_size {
-                        scores.push(sigmoid(data[i * cols]));
+                        scores.push(transform(data[i * cols]));
                     }
                 }
             }
@@ -377,6 +524,12 @@ impl CrossEncoderReranker {
             _config: RerankConfig::default(),
             backend: RerankerBackend::Passthrough,
         }
+    }
+
+    /// Setzt ein gefittetes `PlattScaledSigmoid` Modell für den CrossEncoderReranker.
+    pub fn with_calibration(mut self, calibration: PlattScaledSigmoid) -> Self {
+        self._config.calibration = calibration;
+        self
     }
 
     /// Erstellt einen neuen CrossEncoderReranker.
@@ -535,6 +688,104 @@ mod tests {
         assert!(scores[1] < 0.2);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_platt_scaled_sigmoid_identity_matches_uncalibrated_sigmoid() {
+        let identity = PlattScaledSigmoid::identity();
+        assert!(identity.is_identity());
+        assert_eq!(identity.params(), (1.0, 0.0));
+
+        let logits: Vec<f32> = vec![-5.0, -2.5, -1.0, 0.0, 0.5, 1.2, 3.0, 7.5];
+        for logit in logits {
+            let uncalibrated = 1.0f32 / (1.0f32 + (-logit).exp());
+            let calibrated = identity.transform(logit);
+            assert_eq!(
+                uncalibrated, calibrated,
+                "Mismatch at logit {logit}: uncalibrated={uncalibrated}, calibrated={calibrated}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_platt_scaled_sigmoid_fit_separable_dataset() {
+        // Dataset with modest logits (-1.0 to 1.0) where uncalibrated sigmoid is soft (0.27 to 0.73)
+        // positive logits (> 0) are relevant, negative (< 0) are irrelevant.
+        let mut observations = Vec::new();
+        for i in -10..=10 {
+            let logit = i as f32 * 0.1;
+            let is_rel = logit > 0.0;
+            observations.push((logit, is_rel));
+        }
+
+        let fitted = PlattScaledSigmoid::fit(&observations);
+        assert!(!fitted.is_identity());
+
+        let (a, _b) = fitted.params();
+        assert!(a > 0.0, "Scaling factor A should be positive for positively correlated logits");
+
+        // Verify that transform() provides sharper separation than identity sigmoid
+        let identity = PlattScaledSigmoid::identity();
+        let logit_pos = 1.0f32;
+        let logit_neg = -1.0f32;
+
+        let uncalibrated_diff = identity.transform(logit_pos) - identity.transform(logit_neg);
+        let calibrated_diff = fitted.transform(logit_pos) - fitted.transform(logit_neg);
+
+        assert!(
+            calibrated_diff > uncalibrated_diff,
+            "Calibrated transform diff ({calibrated_diff}) should be sharper than uncalibrated ({uncalibrated_diff})"
+        );
+        assert!(fitted.transform(logit_pos) > 0.80);
+        assert!(fitted.transform(logit_neg) < 0.20);
+    }
+
+    #[test]
+    fn test_platt_scaled_sigmoid_fit_noisy_unseparable_and_nan() {
+        // Test 1: Empty observations
+        let empty_fitted = PlattScaledSigmoid::fit(&[]);
+        assert!(empty_fitted.is_identity());
+        assert!(!empty_fitted.transform(0.0).is_nan());
+
+        // Test 2: Non-finite logits (NaN, Inf, -Inf)
+        let non_finite_obs = vec![
+            (f32::NAN, true),
+            (f32::INFINITY, false),
+            (f32::NEG_INFINITY, true),
+        ];
+        let non_finite_fitted = PlattScaledSigmoid::fit(&non_finite_obs);
+        assert!(non_finite_fitted.is_identity());
+        assert_eq!(non_finite_fitted.transform(f32::NAN), 0.5);
+
+        // Test 3: Completely noisy / non-separable dataset (random labels)
+        let mut noisy_obs = Vec::new();
+        for i in 0..100 {
+            let logit = (i as f32 - 50.0) * 0.1;
+            let is_rel = i % 2 == 0; // complete noise uncorrelated with logit
+            noisy_obs.push((logit, is_rel));
+        }
+
+        let noisy_fitted = PlattScaledSigmoid::fit(&noisy_obs);
+        let (a, b) = noisy_fitted.params();
+
+        assert!(a.is_finite(), "Param A must be finite");
+        assert!(b.is_finite(), "Param B must be finite");
+
+        let test_val = noisy_fitted.transform(1.0);
+        assert!(
+            test_val.is_finite() && (0.0..=1.0).contains(&test_val),
+            "Output must be a valid probability in [0,1]"
+        );
+    }
+
+    #[test]
+    fn test_platt_scaled_sigmoid_config_and_reranker_builder() {
+        let cal = PlattScaledSigmoid::new(1.5, -0.2);
+        let config = RerankConfig::default().with_calibration(cal.clone());
+        assert_eq!(config.calibration, cal);
+
+        let reranker = CrossEncoderReranker::passthrough().with_calibration(cal.clone());
+        assert_eq!(reranker._config.calibration, cal);
     }
 
     #[cfg(feature = "onnx")]

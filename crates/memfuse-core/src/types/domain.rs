@@ -109,6 +109,52 @@ impl std::fmt::Display for DocId {
     }
 }
 
+/// Eindeutiger Mandanten-Bezeichner. Layer-0-Typ ohne Abhängigkeit zu Storage/Networking —
+/// dient als gemeinsames Fundament für zukünftige Mandantentrennung (RBAC, KV-Cache-Isolation,
+/// Orphan-Registry-Persistenzpfade). Die Einführung dieses Typs allein implementiert KEINE
+/// Zugriffskontrolle — sie schafft nur den typisierten Bezeichner, den spätere Isolationsmechanismen
+/// referenzieren können, statt auf impliziten String-Namensräumen aufzubauen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct TenantId(pub u64);
+
+impl TenantId {
+    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    /// MUSS für Rückwärtskompatibilität mit allen bisherigen Daten verwendet werden, die
+    /// vor Einführung dieses Typs geschrieben wurden (kein impliziter Migrations-Bruch).
+    pub const DEFAULT: TenantId = TenantId(0);
+
+    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    #[inline]
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Returns the inner raw `u64` identifier.
+    #[inline]
+    pub const fn inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for TenantId {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl From<u64> for TenantId {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl std::fmt::Display for TenantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TenantId({})", self.0)
+    }
+}
+
 /// Internal entity identifier for graph nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
@@ -786,10 +832,113 @@ impl Default for PprConfig {
     }
 }
 
+/// Konfigurations-Fingerabdruck für P8-Kalibrierungs-Integrität.
+///
+/// INVARIANTE INV-P8-1: Jede Änderung an einem der Felder MUSS
+/// `IsotonicCalibrator::invalidate_on_config_change()` auslösen.
+/// Kein Warmup-Fenster darf nach Fingerprint-Wechsel übersprungen werden.
+///
+/// BEGRÜNDUNG: arXiv:2608.01460 — Coverage-Kollaps unter Konfigurations-Drift.
+/// Q4 und Q8 bei identischem model_id erzeugen unterschiedliche Score-Verteilungen.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ConfigFingerprint {
+    /// LLM-Modell-ID (z.B. "llama-3.2-3b-instruct")
+    pub model_id: String,
+    /// Quantisierungsgrad als String: "Q4_K_M", "Q8_0", "F16", "BF16".
+    /// EXPLIZIT Teil des Fingerprints — Q4 ≠ Q8 bei gleichem model_id.
+    pub quantization: String,
+    /// SHA256 des Prompt-Templates (nicht der Inhalt — nur der Hash).
+    /// Verhindert stille Kalibrierungs-Invalidierung bei Template-Drift.
+    pub prompt_template_hash: [u8; 32],
+    /// Temperatur als Bits für bit-exakten Vergleich (kein float-Gleichheitstest).
+    /// `temperature_bits = temperature.to_bits()`
+    pub temperature_bits: u32,
+}
+
+impl ConfigFingerprint {
+    /// Erstellt einen neuen `ConfigFingerprint`.
+    pub fn new(
+        model_id: impl Into<String>,
+        quantization: impl Into<String>,
+        prompt_template: &str,
+        temperature: f32,
+    ) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(prompt_template.as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+
+        Self {
+            model_id: model_id.into(),
+            quantization: quantization.into(),
+            prompt_template_hash: hash,
+            temperature_bits: temperature.to_bits(),
+        }
+    }
+
+    /// Extrahiert Temperatur als f32 (verlustfrei da via to_bits gespeichert).
+    #[inline]
+    pub fn temperature(&self) -> f32 {
+        f32::from_bits(self.temperature_bits)
+    }
+}
+
+impl Default for ConfigFingerprint {
+    fn default() -> Self {
+        Self::new("default", "F16", "", 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::{prop_assert, prop_assert_eq};
+
+    #[test]
+    fn test_tenant_id_defaults_and_constants() {
+        let default_tenant = TenantId::default();
+        assert_eq!(default_tenant, TenantId::DEFAULT);
+        assert_eq!(default_tenant.inner(), 0);
+        assert_eq!(TenantId::new(42).inner(), 42);
+        assert_eq!(TenantId::from(100u64), TenantId::new(100));
+        assert_eq!(format!("{default_tenant}"), "TenantId(0)");
+    }
+
+    #[test]
+    fn test_tenant_id_collections_hashmap_btreemap() {
+        use std::collections::{BTreeMap, HashMap};
+
+        let t0 = TenantId::DEFAULT;
+        let t1 = TenantId::new(1);
+        let t2 = TenantId::new(2);
+
+        // HashMap key test
+        let mut map = HashMap::new();
+        map.insert(t0, "default_tenant");
+        map.insert(t1, "tenant_one");
+        assert_eq!(map.get(&TenantId::default()), Some(&"default_tenant"));
+        assert_eq!(map.get(&t1), Some(&"tenant_one"));
+        assert_eq!(map.get(&t2), None);
+
+        // BTreeMap key test (testing Ord / PartialOrd)
+        let mut bmap = BTreeMap::new();
+        bmap.insert(t2, "tenant_two");
+        bmap.insert(t0, "tenant_zero");
+        bmap.insert(t1, "tenant_one");
+
+        let keys: Vec<TenantId> = bmap.keys().copied().collect();
+        assert_eq!(keys, vec![t0, t1, t2]);
+    }
+
+    #[test]
+    fn test_tenant_id_serde_roundtrip() {
+        let tenant = TenantId::new(987654321);
+        let serialized = serde_json::to_string(&tenant).expect("TenantId serialization failed");
+        assert_eq!(serialized, "987654321");
+
+        let deserialized: TenantId = serde_json::from_str(&serialized).expect("TenantId deserialization failed");
+        assert_eq!(tenant, deserialized);
+    }
 
     #[test]
     fn test_expiry_metadata_key_constant() {

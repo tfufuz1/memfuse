@@ -99,7 +99,10 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
+pub mod thermostat;
 pub mod transaction;
+
+pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
@@ -236,6 +239,9 @@ pub struct MemFuseConfig {
     pub encryption_passphrase: Option<String>,
     /// Interval for periodic expiry reaper background tasks.
     pub expiry_reaper_interval: std::time::Duration,
+    /// Optional custom persistence path for the instance-scoped orphan registry.
+    /// If `None`, defaults to `<db_path>/.orphan_registry.json` when the database is opened.
+    pub orphan_registry_path: Option<std::path::PathBuf>,
 }
 
 impl Default for MemFuseConfig {
@@ -247,6 +253,7 @@ impl Default for MemFuseConfig {
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
             expiry_reaper_interval: std::time::Duration::from_secs(60),
+            orphan_registry_path: None,
         }
     }
 }
@@ -282,6 +289,8 @@ pub struct MemFuse {
     task_tracker: tokio_util::task::TaskTracker,
     /// Global text embedder for default collection.
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
+    /// Instance-scoped orphan registry for sequence pins and checkpoints (ADR-053).
+    orphan_registry: Arc<memfuse_checkpoint::InstanceOrphanRegistry>,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
@@ -343,6 +352,13 @@ impl MemFuse {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let task_tracker = tokio_util::task::TaskTracker::new();
 
+        let orphan_path = config
+            .orphan_registry_path
+            .clone()
+            .unwrap_or_else(|| path.as_ref().join(".orphan_registry.json"));
+        let orphan_registry =
+            Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(&orphan_path));
+
         let db = Self {
             storage,
             next_tx,
@@ -352,6 +368,7 @@ impl MemFuse {
             cancel_token,
             task_tracker,
             embedder: parking_lot::RwLock::new(None),
+            orphan_registry,
         };
 
         // Initialize already existing collections from storage
@@ -1108,6 +1125,11 @@ impl MemFuse {
             *guard = Some(embedder);
         }
         Ok(())
+    }
+
+    /// Liefert die instanzgebundene Orphan Registry für diese MemFuse-Instanz.
+    pub fn orphan_registry(&self) -> &Arc<memfuse_checkpoint::InstanceOrphanRegistry> {
+        &self.orphan_registry
     }
 }
 
