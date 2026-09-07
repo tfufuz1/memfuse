@@ -82,6 +82,7 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod rem_phase;
 pub mod sleep_cycle;
 pub mod sleep_cycle_executor;
 pub mod temporal_filter;

@@ -3454,6 +3454,7 @@ dependencies = [
  "futures-util",
  "memfuse-calibration",
  "memfuse-core",
+ "memfuse-db",
  "memfuse-embed",
  "parking_lot",
  "proptest",

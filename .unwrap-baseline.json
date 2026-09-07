@@ -10789,6 +10789,10 @@
   },
   {
     "file": "crates/memfuse-ollama/src/client.rs",
+    "hash": "17090d5d1bf068aa"
+  },
+  {
+    "file": "crates/memfuse-ollama/src/client.rs",
     "hash": "19d1d6670a727bb6"
   },
   {
