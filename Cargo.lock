@@ -2682,6 +2682,7 @@ version = "0.1.0"
 dependencies = [
  "memfuse-core",
  "parking_lot",
+ "proptest",
  "serde",
  "serde_json",
  "tracing",
@@ -2751,6 +2752,7 @@ name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "memfuse-calibration",
  "memfuse-checkpoint",
  "memfuse-core",
  "memfuse-embed",
