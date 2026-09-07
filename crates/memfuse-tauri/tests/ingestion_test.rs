@@ -196,10 +196,7 @@ async fn test_ingestion_creates_graph_entities() {
         .await
         .expect("open db");
 
-    let collection = db
-        .collection("test-col-graph")
-        .await
-        .expect("collection");
+    let collection = db.collection("test-col-graph").await.expect("collection");
 
     let embedder = Arc::new(DummyEmbedder { dim: 4 });
     let pipeline = IngestionPipeline::new(embedder);
@@ -244,10 +241,7 @@ async fn test_cooccurrence_edges_capped_for_large_entity_count() {
         .await
         .expect("open db");
 
-    let collection = db
-        .collection("cap-edges-test")
-        .await
-        .expect("collection");
+    let collection = db.collection("cap-edges-test").await.expect("collection");
 
     let embedder = Arc::new(DummyEmbedder { dim: 4 });
     let pipeline = IngestionPipeline::new(embedder);
@@ -272,8 +266,8 @@ async fn test_cooccurrence_edges_capped_for_large_entity_count() {
     let graph = collection.graph_index();
     let total_edges = graph.stats().await.expect("graph stats").num_edges;
 
-    let max_cooccurrence_directional_edges = MAX_COOCCURRENCE_ENTITIES_PER_CHUNK
-        * (MAX_COOCCURRENCE_ENTITIES_PER_CHUNK - 1);
+    let max_cooccurrence_directional_edges =
+        MAX_COOCCURRENCE_ENTITIES_PER_CHUNK * (MAX_COOCCURRENCE_ENTITIES_PER_CHUNK - 1);
 
     // Total edges = cooccurrence_edges (capped at MAX_COOCCURRENCE * (MAX_COOCCURRENCE - 1)) + contains_edges + mentioned_in_edges
     // For 15 entities, contains + mentioned_in = 30 edges.
@@ -340,7 +334,10 @@ async fn test_ingestion_with_entity_extraction_disabled_skips_graph_writes() {
         .await
         .expect("search");
 
-    assert!(!results.is_empty(), "Search should still return vector/text results");
+    assert!(
+        !results.is_empty(),
+        "Search should still return vector/text results"
+    );
 }
 
 #[tokio::test]

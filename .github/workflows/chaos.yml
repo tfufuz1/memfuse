@@ -1,0 +1,65 @@
+name: Nightly Chaos Matrix Tests
+on:
+  schedule:
+    # Täglich um 02:00 UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  chaos-matrix:
+    name: Chaos Matrix Fault-Injection Suite
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install just runner
+        run: which just || cargo install just --cheap-only || true
+      - name: Run Chaos Matrix Tests
+        run: |
+          if command -v just &> /dev/null; then
+            just chaos-test
+          else
+            cargo test -p memfuse-store --test chaos_matrix -- --ignored --test-threads=1
+          fi
+      - name: Report Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🚨 Chaos Matrix Test Failure (${new Date().toISOString().slice(0, 10)})`;
+            const body = `## Chaos Matrix Fault-Injection Failure Detected
+
+The scheduled or dispatched Chaos Matrix test suite encountered a failure.
+
+### Details
+- **Workflow Run:** [View Run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+- **Trigger:** ${context.eventName}
+- **Commit:** ${context.sha}
+
+Please review the workflow logs for the logged \`CHAOS_SEED\` value to reproduce and resolve this failure locally:
+\`\`\`bash
+CHAOS_SEED=<seed_from_logs> cargo test -p memfuse-store --test chaos_matrix -- --ignored --test-threads=1
+\`\`\`
+`;
+            if (context.eventName === 'schedule') {
+              try {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: title,
+                  body: body,
+                  labels: ["bug", "chaos-testing"]
+                });
+              } catch (err) {
+                console.log("Could not auto-create issue:", err.message);
+              }
+            }
+            core.setFailed("Chaos Matrix test execution failed.");

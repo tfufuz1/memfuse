@@ -358,7 +358,9 @@ impl IngestionPipeline {
                                         )
                                         .await
                                     {
-                                        tracing::warn!("Edge-Insert (contains) fehlgeschlagen: {e}");
+                                        tracing::warn!(
+                                            "Edge-Insert (contains) fehlgeschlagen: {e}"
+                                        );
                                     }
                                     if let Err(e) = graph
                                         .add_edge(

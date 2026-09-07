@@ -29,4 +29,5 @@ Diese Testsuite darf ausschließlich `tests/` und `examples/` in `crates/memfuse
 ## CI-Ausführung
 
 - Einzeltests (`chaos_power_cut`, `chaos_task_massacre`, `chaos_bitflip_sstable`, `chaos_dropped_write`, `chaos_memory_pressure`) laufen als reguläre Integrationstests bei jedem `cargo test --workspace`.
-- Die kombinierte Fault-Matrix (`chaos_matrix.rs`) ist `#[ignore]`-gated, wird über `just chaos-test` aufgerufen und läuft ausschließlich im nightly CI-Workflow (`.github/workflows/chaos.yml`). Sie blockiert keine PRs.
+- Die kombinierte Fault-Matrix (`crates/memfuse-store/tests/chaos_matrix.rs`) ist `#[ignore]`-gated, wird über `just chaos-test` aufgerufen und läuft ausschließlich im nightly/schedule CI-Workflow (`.github/workflows/chaos.yml`) sowie bei manuellem Triggern via `workflow_dispatch`. Sie blockiert keine PRs.
+- Bei lokaler Reproduktion eines CI-Fehlschlags wird der geloggte Seed übergeben: `CHAOS_SEED=<seed> just chaos-test`.

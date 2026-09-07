@@ -36,6 +36,11 @@ check-core:
 check-store:
     nix develop -c cargo check -p memfuse-store || cargo check -p memfuse-store
 
+# Runs the chaos matrix fault-injection integration test suite
+chaos-test:
+    nix develop -c cargo test -p memfuse-store --test chaos_matrix -- --ignored --test-threads=1 || \
+    cargo test -p memfuse-store --test chaos_matrix -- --ignored --test-threads=1
+
 # Modular check for memfuse-index
 check-index:
     nix develop -c cargo check -p memfuse-index || cargo check -p memfuse-index
