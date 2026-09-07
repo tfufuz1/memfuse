@@ -112,7 +112,6 @@ pub mod fusion;
 pub mod homeostat;
 pub mod multistep;
 pub mod reaper;
-pub mod replicator;
 pub mod thermostat;
 pub mod transaction;
 
