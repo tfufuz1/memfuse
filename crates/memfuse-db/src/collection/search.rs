@@ -808,7 +808,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .strip_prefix("EntityId(")
                     .and_then(|s| s.strip_suffix(')'))
                 {
-                    inner_str.parse::<u64>().ok().map(memfuse_core::EntityId::new)
+                    inner_str
+                        .parse::<u64>()
+                        .ok()
+                        .map(memfuse_core::EntityId::new)
                 } else {
                     memfuse_core::EntityId::from_key(start_node).ok()
                 };

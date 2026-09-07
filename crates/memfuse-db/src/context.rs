@@ -103,11 +103,11 @@ impl ContextManager {
         // Filter by relevance threshold
         chunks.retain(|c| c.relevance >= self.relevance_threshold);
 
-        // Sort by relevance descending
+        // Sort by relevance descending with deterministic doc_id tiebreaker
         chunks.sort_by(|a, b| {
             b.relevance
-                .partial_cmp(&a.relevance)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .total_cmp(&a.relevance)
+                .then_with(|| a.doc_id.inner().cmp(&b.doc_id.inner()))
         });
 
         // Truncate to token budget
@@ -387,6 +387,57 @@ mod tests {
         assert!(window.total_tokens <= 10);
         assert!(window.total_tokens > 0);
         assert!(!window.chunks[0].content.is_empty());
+    }
+
+    #[test]
+    fn test_prepare_context_equal_scores_deterministic() {
+        let budget = TokenBudget::new(10000, 0);
+        let mgr = ContextManager::new(budget);
+
+        // Erstelle 20 Chunks mit identischen relevance-Scores aber verschiedenen, ungeordneten doc_ids
+        let raw_ids = vec![
+            105, 42, 12, 99, 1, 700, 30, 88, 5, 200, 15, 60, 400, 3, 22, 111, 7, 50, 80, 120,
+        ];
+        let chunks: Vec<ContextChunk> = raw_ids
+            .into_iter()
+            .map(|id| ContextChunk {
+                doc_id: DocId::new(id),
+                content: format!("Content for chunk {id}"),
+                relevance: 0.85,
+                token_count: 5,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            })
+            .collect();
+
+        let mut previous_doc_ids: Option<Vec<u64>> = None;
+
+        // Rufe prepare_context 10× auf
+        for _ in 0..10 {
+            let window = mgr
+                .prepare_context(chunks.clone())
+                .expect("prepare_context succeeded");
+            let current_doc_ids: Vec<u64> =
+                window.chunks.iter().map(|c| c.doc_id.inner()).collect();
+
+            // Assert: Die Reihenfolge der doc_ids ist in allen 10 Aufrufen identisch
+            if let Some(ref prev) = previous_doc_ids {
+                assert_eq!(
+                    prev, &current_doc_ids,
+                    "Sorting order must be deterministic across calls"
+                );
+            } else {
+                // Assert: Aufsteigend sortiert (kleinste doc_id zuerst bei gleichem Score)
+                let mut sorted_ids = current_doc_ids.clone();
+                sorted_ids.sort_unstable();
+                assert_eq!(
+                    current_doc_ids, sorted_ids,
+                    "Doc IDs must be strictly sorted in ascending order"
+                );
+                previous_doc_ids = Some(current_doc_ids);
+            }
+        }
     }
 }
 
