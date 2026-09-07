@@ -64,11 +64,7 @@ pub fn scan_file_for_duplicate_symbols(path: &Path) -> Result<Vec<DuplicateSymbo
         let is_inside_string = in_str || in_raw_str.is_some();
 
         // Only top-level declarations (brace_depth == 0, not in string, no leading indentation)
-        if brace_depth == 0
-            && !is_inside_string
-            && !line.is_empty()
-            && line.trim_start() == *line
-        {
+        if brace_depth == 0 && !is_inside_string && !line.is_empty() && line.trim_start() == *line {
             if let Some(caps) = decl_re.captures(line) {
                 let symbol_kind = caps[3].to_string();
                 let symbol_name = caps[4].to_string();
@@ -160,7 +156,10 @@ pub fn scan_file_for_duplicate_symbols(path: &Path) -> Result<Vec<DuplicateSymbo
             // Group occurrences by cfg attribute
             let mut cfg_groups: HashMap<Option<String>, Vec<usize>> = HashMap::new();
             for occ in occ_list {
-                cfg_groups.entry(occ.cfg_attr).or_default().push(occ.line_number);
+                cfg_groups
+                    .entry(occ.cfg_attr)
+                    .or_default()
+                    .push(occ.line_number);
             }
 
             for (_cfg, lines) in cfg_groups {

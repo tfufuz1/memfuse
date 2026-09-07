@@ -146,7 +146,11 @@ async fn test_regression_suite_baseline_count_and_execution() -> Result<()> {
 
     let report = suite.run_against_collection(&col).await?;
     assert_eq!(report.total_scenarios, suite.scenarios.len());
-    assert!(report.recall_at_5 >= 0.8, "Baseline Recall@5 should be high (>= 80%), got {:.3}", report.recall_at_5);
+    assert!(
+        report.recall_at_5 >= 0.8,
+        "Baseline Recall@5 should be high (>= 80%), got {:.3}",
+        report.recall_at_5
+    );
 
     Ok(())
 }

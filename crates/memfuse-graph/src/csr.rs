@@ -1236,8 +1236,10 @@ impl GraphIndex for CsrGraph {
             let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
             // Register source document provenance for cascading invalidation
-            self.doc_edge_index.record(memfuse_core::DocId(edge.from.inner()), (edge.from, edge.to));
-            self.doc_edge_index.record(memfuse_core::DocId(edge.to.inner()), (edge.from, edge.to));
+            self.doc_edge_index
+                .record(memfuse_core::DocId(edge.from.inner()), (edge.from, edge.to));
+            self.doc_edge_index
+                .record(memfuse_core::DocId(edge.to.inner()), (edge.from, edge.to));
 
             // Lazy index allocation: Store EntityIds directly in staged_edges.
             // Internal indices via get_or_create_index are allocated only during commit(),

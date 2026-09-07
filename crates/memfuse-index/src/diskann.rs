@@ -1252,11 +1252,11 @@ impl DiskAnnIndex {
                 let header = DiskAnnHeader::try_from_bytes(header_slice)?;
 
                 // Verify HMAC integrity footer
-                let footer_slice = mmap
-                    .get(mmap.len() - DiskAnnFooter::SIZE..)
-                    .ok_or_else(|| {
-                        MemFuseError::Storage("DiskANN file too small for footer".into())
-                    })?;
+                let footer_slice =
+                    mmap.get(mmap.len() - DiskAnnFooter::SIZE..)
+                        .ok_or_else(|| {
+                            MemFuseError::Storage("DiskANN file too small for footer".into())
+                        })?;
                 let footer = DiskAnnFooter::try_from_bytes(footer_slice)?;
 
                 let payload = mmap
@@ -1265,14 +1265,14 @@ impl DiskAnnIndex {
                         MemFuseError::Storage("DiskANN payload slice out of bounds".into())
                     })?;
 
-                let mut hmac =
-                    memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+                let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
                 hmac.update(payload);
                 let computed_hmac = hmac.finalize();
 
                 if footer.hmac != computed_hmac {
                     return Err(MemFuseError::Storage(
-                        "DiskANN index file HMAC integrity validation failed: checksum mismatch".into(),
+                        "DiskANN index file HMAC integrity validation failed: checksum mismatch"
+                            .into(),
                     ));
                 }
 
@@ -1315,9 +1315,8 @@ impl DiskAnnIndex {
                 let file_len = mmap.len();
                 let sector_size = header.sector_size as usize;
                 let start_offset = DiskAnnHeader::SIZE.div_ceil(sector_size) * sector_size;
-                let expected_min_size = start_offset.saturating_add(
-                    (header.node_count as usize).saturating_mul(node_size_bytes),
-                );
+                let expected_min_size = start_offset
+                    .saturating_add((header.node_count as usize).saturating_mul(node_size_bytes));
                 if file_len < expected_min_size {
                     return Err(MemFuseError::Storage(format!(
                         "DiskANN file truncated or corrupt node_count: file len {}, expected at least {}",

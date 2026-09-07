@@ -122,17 +122,30 @@ pub struct RegressionReport {
 
 /// Compares a current regression report against a stored baseline file.
 /// Returns an error if Recall@5 drops by more than 3 percentage points (0.03).
-pub fn check_regression(current: &RegressionReport, baseline_path: &Path) -> std::result::Result<(), String> {
+pub fn check_regression(
+    current: &RegressionReport,
+    baseline_path: &Path,
+) -> std::result::Result<(), String> {
     if !baseline_path.exists() {
         return Err(format!(
             "Baseline report file not found at {}. Generate it using baseline creation.",
             baseline_path.display()
         ));
     }
-    let content = std::fs::read_to_string(baseline_path)
-        .map_err(|e| format!("Failed to read baseline file {}: {}", baseline_path.display(), e))?;
-    let baseline: RegressionReport = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse baseline report from {}: {}", baseline_path.display(), e))?;
+    let content = std::fs::read_to_string(baseline_path).map_err(|e| {
+        format!(
+            "Failed to read baseline file {}: {}",
+            baseline_path.display(),
+            e
+        )
+    })?;
+    let baseline: RegressionReport = serde_json::from_str(&content).map_err(|e| {
+        format!(
+            "Failed to parse baseline report from {}: {}",
+            baseline_path.display(),
+            e
+        )
+    })?;
 
     let delta = baseline.recall_at_5 - current.recall_at_5;
     if delta > 0.03 {
@@ -440,7 +453,8 @@ impl RegressionSuite {
                     timestamp_ms: 14000,
                     turns: vec![SessionTurn {
                         speaker: "User".into(),
-                        text: "Updated contact info: The new 24/7 hotline is +1-888-555-0199.".into(),
+                        text: "Updated contact info: The new 24/7 hotline is +1-888-555-0199."
+                            .into(),
                         doc_id: "doc_sup_10_new".into(),
                     }],
                 },
@@ -684,7 +698,9 @@ impl RegressionSuite {
                     timestamp_ms: 9000,
                     turns: vec![SessionTurn {
                         speaker: "User".into(),
-                        text: "Replaced brake fluid and front pads at 52,000 km service in September.".into(),
+                        text:
+                            "Replaced brake fluid and front pads at 52,000 km service in September."
+                                .into(),
                         doc_id: "doc_multi_18_2".into(),
                     }],
                 },
@@ -742,7 +758,8 @@ impl RegressionSuite {
                     timestamp_ms: 11000,
                     turns: vec![SessionTurn {
                         speaker: "User".into(),
-                        text: "Critical allergy alert: Patient has severe Penicillin drug allergy.".into(),
+                        text: "Critical allergy alert: Patient has severe Penicillin drug allergy."
+                            .into(),
                         doc_id: "doc_multi_20_2".into(),
                     }],
                 },
@@ -782,7 +799,8 @@ impl RegressionSuite {
                 timestamp_ms: 1000,
                 turns: vec![SessionTurn {
                     speaker: "User".into(),
-                    text: "My workstation workstation runs Fedora Workstation Linux 40 with GNOME.".into(),
+                    text: "My workstation workstation runs Fedora Workstation Linux 40 with GNOME."
+                        .into(),
                     doc_id: "doc_single_22".into(),
                 }],
             }],
@@ -800,7 +818,8 @@ impl RegressionSuite {
                 timestamp_ms: 1000,
                 turns: vec![SessionTurn {
                     speaker: "User".into(),
-                    text: "My favorite science fiction author of all time is Ursula K. Le Guin.".into(),
+                    text: "My favorite science fiction author of all time is Ursula K. Le Guin."
+                        .into(),
                     doc_id: "doc_single_23".into(),
                 }],
             }],
@@ -854,7 +873,8 @@ impl RegressionSuite {
                 timestamp_ms: 1000,
                 turns: vec![SessionTurn {
                     speaker: "User".into(),
-                    text: "Daily engineering standup is scheduled at 09:30 AM UTC every morning.".into(),
+                    text: "Daily engineering standup is scheduled at 09:30 AM UTC every morning."
+                        .into(),
                     doc_id: "doc_single_26".into(),
                 }],
             }],
@@ -890,7 +910,8 @@ impl RegressionSuite {
                 timestamp_ms: 1000,
                 turns: vec![SessionTurn {
                     speaker: "User".into(),
-                    text: "I type on a split ergonomic keyboard using the Colemak-DH layout.".into(),
+                    text: "I type on a split ergonomic keyboard using the Colemak-DH layout."
+                        .into(),
                     doc_id: "doc_single_28".into(),
                 }],
             }],
@@ -911,7 +932,8 @@ impl RegressionSuite {
                 timestamp_ms: 1000,
                 turns: vec![SessionTurn {
                     speaker: "User".into(),
-                    text: "Discussion about standard database backup credentials and OAuth tokens.".into(),
+                    text: "Discussion about standard database backup credentials and OAuth tokens."
+                        .into(),
                     doc_id: "doc_abs_29".into(),
                 }],
             }],
@@ -947,7 +969,8 @@ impl RegressionSuite {
                 timestamp_ms: 1000,
                 turns: vec![SessionTurn {
                     speaker: "User".into(),
-                    text: "Discussed team performance reviews and quarterly goal achievements.".into(),
+                    text: "Discussed team performance reviews and quarterly goal achievements."
+                        .into(),
                     doc_id: "doc_abs_31".into(),
                 }],
             }],
@@ -1001,7 +1024,9 @@ impl RegressionSuite {
             if scenario.question_type == LongMemEvalQuestionType::Abstention {
                 // For abstention, the specific expected doc is empty or top results don't match irrelevant query
                 let is_hit = res.is_empty()
-                    || res.iter().all(|r| r.score < 0.1 || !r.id.contains("nuclear") && !r.id.contains("Mars"));
+                    || res.iter().all(|r| {
+                        r.score < 0.1 || !r.id.contains("nuclear") && !r.id.contains("Mars")
+                    });
                 if is_hit {
                     hits_5 += 1;
                     hits_10 += 1;
@@ -1056,8 +1081,16 @@ impl RegressionSuite {
         }
 
         let total = self.scenarios.len();
-        let recall_at_5 = if total > 0 { hits_5 as f64 / total as f64 } else { 0.0 };
-        let recall_at_10 = if total > 0 { hits_10 as f64 / total as f64 } else { 0.0 };
+        let recall_at_5 = if total > 0 {
+            hits_5 as f64 / total as f64
+        } else {
+            0.0
+        };
+        let recall_at_10 = if total > 0 {
+            hits_10 as f64 / total as f64
+        } else {
+            0.0
+        };
         let overall_accuracy = recall_at_5;
 
         Ok(RegressionReport {

@@ -1800,7 +1800,12 @@ fn main() {
                         for d in &duplicates {
                             eprintln!(
                                 "  {}:{} und {}:{} — doppeltes {} '{}'",
-                                d.file, d.first_line, d.file, d.duplicate_line, d.symbol_kind, d.symbol_name
+                                d.file,
+                                d.first_line,
+                                d.file,
+                                d.duplicate_line,
+                                d.symbol_kind,
+                                d.symbol_name
                             );
                         }
                         process::exit(1);
@@ -2671,7 +2676,7 @@ mod tests {
             ("memfuse-crypto", 1),
             ("memfuse-kv-bridge", 1),
             ("memfuse-graph", 1),
-        ("memfuse-kv-bridge", 1),
+            ("memfuse-kv-bridge", 1),
             ("memfuse-text", 1),
             ("memfuse-embed", 2),
             ("memfuse-index", 2),

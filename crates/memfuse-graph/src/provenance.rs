@@ -51,7 +51,10 @@ impl DocEdgeIndex {
     pub fn record_provenance(&self, provenance: &EdgeProvenance) {
         let mut guard = self.index.write();
         for &doc_id in &provenance.source_doc_ids {
-            guard.entry(doc_id.inner()).or_default().insert(provenance.edge_id);
+            guard
+                .entry(doc_id.inner())
+                .or_default()
+                .insert(provenance.edge_id);
         }
     }
 

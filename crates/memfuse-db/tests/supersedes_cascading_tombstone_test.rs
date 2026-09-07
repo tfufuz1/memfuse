@@ -1,8 +1,8 @@
 #![allow(deprecated)]
 
 use memfuse_core::types::domain::{DocId, EntityId, LinkRelation};
-use memfuse_graph::PathRAGEngine;
 use memfuse_db::MemFuse;
+use memfuse_graph::PathRAGEngine;
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -49,7 +49,10 @@ async fn test_supersedes_triggers_edge_tombstone() {
     // Verify PathRAG initially finds path
     let engine = PathRAGEngine::with_defaults(col.graph_index());
     let path_before = engine.find_path(eid_a, eid_b);
-    assert!(path_before.is_some(), "Path should exist before superseding doc_a");
+    assert!(
+        path_before.is_some(),
+        "Path should exist before superseding doc_a"
+    );
 
     // 3. doc_b supersedes doc_a
     col.link_memories(doc_b_id, doc_a_id, LinkRelation::Supersedes)
@@ -73,18 +76,34 @@ async fn test_pathrag_ignores_superseded_edges() {
     let dummy_emb = vec![0.1f32; 768];
 
     // Multi-hop pipeline: doc-1 -> doc-2 -> doc-3
-    db.insert("doc-1", &dummy_emb, Some(serde_json::json!({"text": "Doc 1"})))
-        .await
-        .unwrap();
-    db.insert("doc-2", &dummy_emb, Some(serde_json::json!({"text": "Doc 2"})))
-        .await
-        .unwrap();
-    db.insert("doc-3", &dummy_emb, Some(serde_json::json!({"text": "Doc 3"})))
-        .await
-        .unwrap();
-    db.insert("doc-4", &dummy_emb, Some(serde_json::json!({"text": "Doc 4"})))
-        .await
-        .unwrap();
+    db.insert(
+        "doc-1",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc 1"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-2",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc 2"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-3",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc 3"})),
+    )
+    .await
+    .unwrap();
+    db.insert(
+        "doc-4",
+        &dummy_emb,
+        Some(serde_json::json!({"text": "Doc 4"})),
+    )
+    .await
+    .unwrap();
 
     let _doc1_id = DocId::from_key("doc-1").unwrap();
     let doc2_id = DocId::from_key("doc-2").unwrap();

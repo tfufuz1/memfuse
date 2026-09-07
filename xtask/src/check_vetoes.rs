@@ -103,10 +103,7 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
     Ok(entries)
 }
 
-pub fn check_conditional_review_deadlines_at(
-    entries: &[VetoEntry],
-    today: &str,
-) -> Vec<String> {
+pub fn check_conditional_review_deadlines_at(entries: &[VetoEntry], today: &str) -> Vec<String> {
     let mut warnings = Vec::new();
     for entry in entries {
         if entry.status == "conditionally_accepted" {
@@ -137,8 +134,8 @@ pub fn check_vetoes() -> Result<(), String> {
     println!("=== Running xtask check-vetoes ===");
     let root = crate::find_root_dir();
     let vetoes_path = root.join("VETOES.md");
-    let vetoes_content =
-        fs::read_to_string(&vetoes_path).map_err(|e| format!("VETOES.md ({}) nicht lesbar: {e}", vetoes_path.display()))?;
+    let vetoes_content = fs::read_to_string(&vetoes_path)
+        .map_err(|e| format!("VETOES.md ({}) nicht lesbar: {e}", vetoes_path.display()))?;
 
     let entries = parse_vetoes(&vetoes_content)?;
 
@@ -206,7 +203,10 @@ reason: >
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].feature_id, "F-02");
         assert_eq!(entries[0].status, "conditionally_accepted");
-        assert_eq!(entries[0].conditional_review_due.as_deref(), Some("2026-10-07"));
+        assert_eq!(
+            entries[0].conditional_review_due.as_deref(),
+            Some("2026-10-07")
+        );
         assert_eq!(
             entries[0].keywords,
             vec![

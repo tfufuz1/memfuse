@@ -896,7 +896,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let baseline_path = Path::new("benchmarks/memfuse-bench/baseline_recall.json");
     let cli_args: Vec<String> = std::env::args().collect();
-    let update_baseline = cli_args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
+    let update_baseline =
+        cli_args.iter().any(|a| a == "--update-baseline") || !baseline_path.exists();
 
     if update_baseline {
         let baseline_json = serde_json::to_string_pretty(&reg_report)?;
