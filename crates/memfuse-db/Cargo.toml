@@ -16,7 +16,6 @@ memfuse-graph = { workspace = true }
 memfuse-ollama = { workspace = true }
 memfuse-calibration = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
-memfuse-calibration = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -38,7 +37,8 @@ sandbox = []
 experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 physio-features = []
-physio-replicator-weights = ["dep:memfuse-calibration", "memfuse-calibration/physio-replicator-weights"]
+physio-percolation = ["memfuse-graph/physio-percolation"]
+physio-replicator-weights = ["memfuse-calibration/physio-replicator-weights"]
 
 [[bench]]
 name = "migration_benchmarks"
