@@ -1,7 +1,7 @@
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
 use crate::outcome::{DecisionId, RoutingOutcome};
-use crate::profile::{ProfileCalibrationState, SlmProfile};
+use crate::profile::{ProfileCalibrationState, QuantizationLevel, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
 use memfuse_store::LsmStorage;
