@@ -2278,14 +2278,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_lyapunov_drift_status_integration() {
-        let dir = tempfile::tempdir().unwrap();
+    async fn test_lyapunov_drift_status_integration() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
 
         let profile = SlmProfile::new(
             "test-slm",
@@ -2306,5 +2306,6 @@ mod tests {
 
         // Status before route call
         assert_eq!(router.drift_status("test-slm"), None);
+        Ok(())
     }
 }
