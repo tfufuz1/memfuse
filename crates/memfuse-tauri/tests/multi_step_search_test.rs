@@ -7,12 +7,12 @@
 //! Note: Qualitative evaluation of whether multi-step search yields better precision/recall
 //! for real-world agent queries is a follow-up evaluation task, not part of this integration test.
 
-use memfuse_core::Result;
+use memfuse_core::{BoxFuture, Result};
 use memfuse_db::{MultiStepConfig, MultiStepEngine, QueryRewriter, SearchResult};
 use tempfile::tempdir;
 
 struct DummyTestRewriter {
-    sub_queries: Vec<String>,
+    sub_queries: std::sync::Mutex<Vec<Vec<String>>>,
 }
 
 impl QueryRewriter for DummyTestRewriter {
@@ -20,9 +20,14 @@ impl QueryRewriter for DummyTestRewriter {
         &'a self,
         _original_query: &'a str,
         _current_results: &'a [SearchResult],
-    ) -> memfuse_core::BoxFuture<'a, Result<Vec<String>>> {
+    ) -> BoxFuture<'a, Result<Vec<String>>> {
         Box::pin(async move {
-            Ok(self.sub_queries.clone())
+            let mut guard = self.sub_queries.lock().unwrap();
+            if !guard.is_empty() {
+                Ok(guard.remove(0))
+            } else {
+                Ok(vec![])
+            }
         })
     }
 }
@@ -79,7 +84,7 @@ async fn test_multi_step_search_execution_and_dto_shape() -> Result<()> {
     };
     let single_engine = MultiStepEngine::new(collection.clone(), single_config);
     let rewriter = DummyTestRewriter {
-        sub_queries: vec!["Tokio task".to_string()],
+        sub_queries: std::sync::Mutex::new(vec![vec!["Tokio task".to_string()]]),
     };
 
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
@@ -99,8 +104,12 @@ async fn test_multi_step_search_execution_and_dto_shape() -> Result<()> {
     };
     let multi_engine = MultiStepEngine::new(collection.clone(), multi_config);
 
+    let rewriter_multi = DummyTestRewriter {
+        sub_queries: std::sync::Mutex::new(vec![vec!["Tokio task".to_string()]]),
+    };
+
     let multi_result = multi_engine
-        .search("Rust concurrency", &query_vector, 5, Some(&rewriter))
+        .search("Rust concurrency", &query_vector, 5, Some(&rewriter_multi))
         .await?;
 
     assert_eq!(multi_result.rounds_executed, 2);

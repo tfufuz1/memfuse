@@ -870,11 +870,13 @@ Dieses Dokument erfasst alle grundlegenden Architekturentscheidungen. Bei Widers
 
 ---
 
-## ADR-063: TenantId-Typ als Layer-0 Fundament (ohne Durchsetzung von Zugriffsregeln)
+## ADR-063: Instance-scoped Orphan Registry Wiring
 *   **Datum**: 2026-09-06
 *   **Status**: ✅ Final
+*   **Kontext**: ADR-053 hat `InstanceOrphanRegistry` eingeführt, um den veralteten prozessweiten `ORPHAN_REGISTRY`-Singleton zu ersetzen. Allerdings gab es bisher keine Verdrahtung in `MemFuse`, wodurch Multi-Tenant-Szenarien (mehrere `MemFuse`-Instanzen im selben Prozess) physisch dieselbe Orphan-Pin-Datei nutzten und Pins anderer Instanzen überschreiben konnten.
 *   **Entscheidung**:
-    - Einführung des Typs `TenantId(pub u64)` in `crates/memfuse-core/src/types/domain.rs` inklusive `TenantId::DEFAULT = TenantId(0)`.
-    - Der Typ dient als typisiertes Layer-0-Fundament für künftige Mandantentrennung (RBAC, KV-Cache-Isolation, Orphan-Registry-Persistenzpfade) und ersetzt implizite String-Namensräume.
-    - **Explizite Nicht-Zusicherung**: Die Einführung dieses Typs allein implementiert KEINE Zugriffskontrolle oder Mandantentrennung in bestehenden APIs. Volle Mandantentrennung bleibt Horizont-4-Arbeit und ist NICHT Bestandteil dieser Änderung.
-*   **Begründung**: Beseitigt die strukturelle Lücke fehlender Mandantenbezeichner auf Layer 0 und ermöglicht zukünftigen Features typsichere Referenzen ohne Breaking Changes.
+    - `MemFuseConfig` wird um ein optionales Feld `orphan_registry_path: Option<PathBuf>` erweitert. Standardmäßig (bei `None`) wird der Pfad instanzspezifisch aus dem Datenbank-Öffnungspfad als `<db_path>/.orphan_registry.json` abgeleitet.
+    - `MemFuse` instanziiert beim Öffnen eine instanzspezifische `InstanceOrphanRegistry` und stellt diese über die Methode `db.orphan_registry()` bereit.
+    - `PersistentCheckpointStore` stellt die Konstruktoren `open_with_orphan_registry` und `new_with_orphan_registry` bereit, um die direkte Übergabe einer instanzgebundenen Registry zu ermöglichen.
+    - Sämtliche Produktionscodepfade nutzen ausschließlich instanzgebundene Orphan-Registries. Der veraltete globale `ORPHAN_REGISTRY`-Singleton und `global_orphan_registry()` verbleiben ausschließlich für Legacy-Kompatibilitätstests.
+*   **Begründung**: Verhindert Daten- und Pin-Überschreibungen in Multi-Tenant-Szenarien und gewährleistet strikte physische Isolation der Orphan-State-Dateien pro Datenbank-Instanz.

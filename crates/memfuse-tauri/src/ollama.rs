@@ -56,34 +56,34 @@ impl memfuse_db::QueryRewriter for OllamaBridge {
         current_results: &'a [memfuse_db::SearchResult],
     ) -> memfuse_core::BoxFuture<'a, Result<Vec<String>>> {
         Box::pin(async move {
-        let prompt = format!(
-            "Die ursprüngliche Suchanfrage war: \"{}\".\n\
-             Bisher wurden {} Ergebnisse gefunden, die möglicherweise unvollständig sind.\n\
-             Generiere bis zu 2 alternative, präzisere Suchbegriffe oder Teilfragen.\n\
-             Gib NUR die Suchanfragen zurück, jeweils eine pro Zeile, ohne Aufzählungszeichen.",
-            original_query,
-            current_results.len()
-        );
+            let prompt = format!(
+                "Die ursprüngliche Suchanfrage war: \"{}\".\n\
+                 Bisher wurden {} Ergebnisse gefunden, die möglicherweise unvollständig sind.\n\
+                 Generiere bis zu 2 alternative, präzisere Suchbegriffe oder Teilfragen.\n\
+                 Gib NUR die Suchanfragen zurück, jeweils eine pro Zeile, ohne Aufzählungszeichen.",
+                original_query,
+                current_results.len()
+            );
 
-        match self.client.generate_text(&self.model, &prompt).await {
-            Ok(response) => {
-                let sub_queries: Vec<String> = response
-                    .lines()
-                    .map(|l| {
-                        l.trim()
-                            .trim_start_matches(|c: char| {
-                                c.is_ascii_digit() || c == '.' || c == '-' || c == '*'
-                            })
-                            .trim()
-                            .to_string()
-                    })
-                    .filter(|l| !l.is_empty() && l != original_query)
-                    .take(2)
-                    .collect();
-                Ok(sub_queries)
+            match self.client.generate_text(&self.model, &prompt).await {
+                Ok(response) => {
+                    let sub_queries: Vec<String> = response
+                        .lines()
+                        .map(|l| {
+                            l.trim()
+                                .trim_start_matches(|c: char| {
+                                    c.is_ascii_digit() || c == '.' || c == '-' || c == '*'
+                                })
+                                .trim()
+                                .to_string()
+                        })
+                        .filter(|l| !l.is_empty() && l != original_query)
+                        .take(2)
+                        .collect();
+                    Ok(sub_queries)
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
-        }
         })
     }
 }
