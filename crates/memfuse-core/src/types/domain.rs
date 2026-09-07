@@ -47,25 +47,37 @@ pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
 /// AGT-DB-003 — Boundary defence at Layer 2 against unbounded `k` from untrusted JSON-RPC.
 pub const MAX_SEARCH_K: usize = 1_000;
 
-/// Internal tenant identifier.
+/// Mandanten-Identifikator. Layer-0-Typ (memfuse-core).
+///
+/// LAYER-BEGRÜNDUNG: TenantId ist Abhängigkeit für KV-Cache-Isolation (Layer 4).
+/// In Layer 1+ definiert → zyklische Crate-Abhängigkeit unvermeidbar.
+///
+/// INVARIANTE INV-TENANT-1: TenantId(0) ist SYSTEM-reserviert.
+/// `TenantId::try_new(0)` → Err. Keine Ausnahmen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct TenantId(pub u64);
 
 impl TenantId {
+    /// SYSTEM tenant identifier (`0`).
+    pub const SYSTEM: Self = Self(0);
+    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
+    pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
 
-    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
+    /// Const-Konstruktor.
     #[inline]
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
-    /// Creates a new `TenantId`, ensuring `id != 0`.
+    /// Sicherer Konstruktor. Gibt Err wenn id == 0.
     pub fn try_new(id: u64) -> Result<Self> {
         if id == 0 {
-            Err(MemFuseError::InvalidInput("TenantId cannot be 0".to_string()))
+            Err(MemFuseError::InvalidInput(
+                "TenantId(0) is reserved for TenantId::SYSTEM".to_string(),
+            ))
         } else {
             Ok(Self(id))
         }
@@ -75,6 +87,18 @@ impl TenantId {
     #[inline]
     pub const fn inner(self) -> u64 {
         self.0
+    }
+
+    /// Returns `true` if this tenant ID is `SYSTEM` (0).
+    #[inline]
+    pub fn is_system(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl Default for TenantId {
+    fn default() -> Self {
+        Self::DEFAULT
     }
 }
 
@@ -192,52 +216,6 @@ impl From<u64> for DocId {
 impl std::fmt::Display for DocId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "DocId({})", self.0)
-    }
-}
-
-/// Eindeutiger Mandanten-Bezeichner. Layer-0-Typ ohne Abhängigkeit zu Storage/Networking —
-/// dient als gemeinsames Fundament für zukünftige Mandantentrennung (RBAC, KV-Cache-Isolation,
-/// Orphan-Registry-Persistenzpfade). Die Einführung dieses Typs allein implementiert KEINE
-/// Zugriffskontrolle — sie schafft nur den typisierten Bezeichner, den spätere Isolationsmechanismen
-/// referenzieren können, statt auf impliziten String-Namensräumen aufzubauen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[repr(transparent)]
-pub struct TenantId(pub u64);
-
-impl TenantId {
-    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
-    /// MUSS für Rückwärtskompatibilität mit allen bisherigen Daten verwendet werden, die
-    /// vor Einführung dieses Typs geschrieben wurden (kein impliziter Migrations-Bruch).
-    pub const DEFAULT: TenantId = TenantId(0);
-
-    /// Creates a new `TenantId` wrapping the provided `u64` identifier.
-    #[inline]
-    pub const fn new(id: u64) -> Self {
-        Self(id)
-    }
-
-    /// Returns the inner raw `u64` identifier.
-    #[inline]
-    pub const fn inner(self) -> u64 {
-        self.0
-    }
-}
-
-impl Default for TenantId {
-    fn default() -> Self {
-        Self::DEFAULT
-    }
-}
-
-impl From<u64> for TenantId {
-    fn from(id: u64) -> Self {
-        Self(id)
-    }
-}
-
-impl std::fmt::Display for TenantId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TenantId({})", self.0)
     }
 }
 
@@ -1881,84 +1859,3 @@ mod tests {
     }
 }
 
-/// Collection-Identifikator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-pub struct CollectionId(pub u64);
-
-impl CollectionId {
-    /// Creates a new `CollectionId`.
-    #[inline]
-    pub const fn new(id: u64) -> Self {
-        Self(id)
-    }
-
-    /// Returns the inner raw `u64` identifier.
-    #[inline]
-    pub const fn inner(self) -> u64 {
-        self.0
-    }
-}
-
-impl From<u64> for CollectionId {
-    fn from(id: u64) -> Self {
-        Self(id)
-    }
-}
-
-impl std::fmt::Display for CollectionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CollectionId({})", self.0)
-    }
-}
-
-/// Mandanten-Identifikator. Layer-0-Typ (memfuse-core).
-///
-/// LAYER-BEGRÜNDUNG: TenantId ist Abhängigkeit für KV-Cache-Isolation (Layer 4).
-/// In Layer 1+ definiert → zyklische Crate-Abhängigkeit unvermeidbar.
-///
-/// INVARIANTE INV-TENANT-1: TenantId(0) ist SYSTEM-reserviert.
-/// `TenantId::try_new(0)` → Err. Keine Ausnahmen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(transparent)]
-pub struct TenantId(pub u64);
-
-impl TenantId {
-    /// SYSTEM tenant identifier (0).
-    pub const SYSTEM: TenantId = TenantId(0);
-
-    /// Const-Konstruktor. Panics bei id == 0 (compile-time-safe für Literals).
-    #[inline]
-    pub const fn new(id: u64) -> Self {
-        assert!(id != 0, "TenantId(0) is reserved for SYSTEM");
-        Self(id)
-    }
-
-    /// Sicherer Konstruktor. Gibt Err wenn id == 0.
-    pub fn try_new(id: u64) -> Result<Self> {
-        if id == 0 {
-            return Err(MemFuseError::InvalidInput(
-                "TenantId(0) is reserved for TenantId::SYSTEM".to_string(),
-            ));
-        }
-        Ok(Self(id))
-    }
-
-    /// Returns the inner raw `u64` identifier.
-    #[inline]
-    pub const fn inner(self) -> u64 {
-        self.0
-    }
-
-    /// Returns `true` if this tenant ID is `SYSTEM` (0).
-    #[inline]
-    pub fn is_system(self) -> bool {
-        self.0 == 0
-    }
-}
-
-impl std::fmt::Display for TenantId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TenantId({})", self.0)
-    }
-}
