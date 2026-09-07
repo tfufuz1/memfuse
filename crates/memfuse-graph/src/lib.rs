@@ -29,6 +29,7 @@ pub mod community;
 pub mod csr;
 pub mod immune;
 pub mod path_rag;
+pub mod percolation;
 pub mod ppr;
 pub mod session_dag;
 

@@ -52,8 +52,12 @@ pub async fn execute_nrem_cycle<S: StorageEngine>(
         };
 
         match collection.delete(&user_id).await {
-            Ok(_) => tracing::debug!(doc_id = ?doc_id, user_id = %user_id, "NREM: duplicate tombstoned"),
-            Err(e) => tracing::warn!(doc_id = ?doc_id, user_id = %user_id, error = %e, "NREM: tombstone failed"),
+            Ok(_) => {
+                tracing::debug!(doc_id = ?doc_id, user_id = %user_id, "NREM: duplicate tombstoned")
+            }
+            Err(e) => {
+                tracing::warn!(doc_id = ?doc_id, user_id = %user_id, error = %e, "NREM: tombstone failed")
+            }
         }
     }
 
