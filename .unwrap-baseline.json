@@ -5716,6 +5716,50 @@
     "hash": "ff5813e4bc84f1be"
   },
   {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "06199e513da6dc42"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "23021dd90b4e86f9"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "25ae9ee641b6abc6"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "3c477824845fac1b"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "9ae7286224542e05"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "9f7ea28b91c9eacf"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "a4a144e75629d9bb"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "cf0ce9e68003cc0e"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "d675a945b5f484a6"
+  },
+  {
+    "file": "crates/memfuse-db/tests/nrem_integration_test.rs",
+    "hash": "fef3a7436b631dfb"
+  },
+  {
     "file": "crates/memfuse-db/tests/semantic_recall.rs",
     "hash": "1e2e1487534a04f6"
   },
