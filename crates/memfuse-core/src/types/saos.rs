@@ -228,6 +228,15 @@ pub struct HybridQuery {
     /// Controls whether ProvenanceRecord is attached to SearchResult output. Default: false.
     #[serde(default)]
     pub include_provenance: bool,
+    /// Candidate pool multiplier for pre-reranking retrieval (default: 10).
+    /// Grounded in empirical evaluation from T2-RAGBench (arXiv:2604.01733), showing Recall@5 = 0.888
+    /// with ~100 candidate items compared to 0.458 with only 20 candidates.
+    #[serde(default)]
+    pub rerank_pool_multiplier: Option<usize>,
+    /// Upper bound cap for pre-reranking candidate pool expansion (default: 200).
+    /// Prevents retrieval cost explosion for large k queries.
+    #[serde(default)]
+    pub rerank_pool_max: Option<usize>,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -252,6 +261,8 @@ pub struct HybridQueryBuilder {
     memory_type_filter: Option<Vec<MemoryType>>,
     include_superseded: bool,
     include_provenance: bool,
+    rerank_pool_multiplier: Option<usize>,
+    rerank_pool_max: Option<usize>,
     k: Option<usize>,
 }
 
@@ -321,6 +332,18 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets the candidate pool multiplier for pre-reranking retrieval.
+    pub fn with_rerank_pool_multiplier(mut self, multiplier: usize) -> Self {
+        self.rerank_pool_multiplier = Some(multiplier);
+        self
+    }
+
+    /// Sets the upper bound cap for pre-reranking candidate pool expansion.
+    pub fn with_rerank_pool_max(mut self, max: usize) -> Self {
+        self.rerank_pool_max = Some(max);
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -351,6 +374,8 @@ impl HybridQueryBuilder {
             memory_type_filter: self.memory_type_filter,
             include_superseded: self.include_superseded,
             include_provenance: self.include_provenance,
+            rerank_pool_multiplier: self.rerank_pool_multiplier,
+            rerank_pool_max: self.rerank_pool_max,
             k: self.k.unwrap_or(10),
         })
     }

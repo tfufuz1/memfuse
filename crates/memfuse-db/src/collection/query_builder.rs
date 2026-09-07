@@ -91,6 +91,17 @@ impl From<GraphTraversalStrategy> for SearchStrategy {
     }
 }
 
+/// Default candidate pool expansion multiplier for Cross-Encoder reranking (10x requested k).
+///
+/// Grounded in empirical evaluation from T2-RAGBench (arXiv:2604.01733), showing Recall@5 = 0.888
+/// with ~100 candidate items compared to 0.458 with only 20 candidates.
+pub const DEFAULT_RERANK_POOL_MULTIPLIER: usize = 10;
+
+/// Default upper cap for pre-reranking candidate pool expansion (200 candidates).
+///
+/// Prevents retrieval cost explosion for queries with large `k`.
+pub const DEFAULT_RERANK_POOL_MAX: usize = 200;
+
 /// Fluent query builder for unifying vector, text, graph, and hybrid search operations.
 pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     collection: &'a Collection<S, V>,
@@ -108,6 +119,8 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
+    rerank_pool_multiplier: Option<usize>,
+    rerank_pool_max: Option<usize>,
     seq: Option<u64>,
 }
 
@@ -130,6 +143,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
+            rerank_pool_multiplier: None,
+            rerank_pool_max: None,
             seq: None,
         }
     }
@@ -248,6 +263,23 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
+    /// Sets the candidate pool multiplier for pre-reranking candidate expansion.
+    ///
+    /// Default: 10 (`DEFAULT_RERANK_POOL_MULTIPLIER`), yielding ~100 candidates for `k=10`
+    /// per T2-RAGBench empirical recall optimization.
+    pub fn rerank_pool_multiplier(mut self, multiplier: usize) -> Self {
+        self.rerank_pool_multiplier = Some(multiplier);
+        self
+    }
+
+    /// Sets the upper cap for pre-reranking candidate pool expansion.
+    ///
+    /// Default: 200 (`DEFAULT_RERANK_POOL_MAX`), capping pre-retrieval pool size for large `k`.
+    pub fn rerank_pool_max(mut self, max: usize) -> Self {
+        self.rerank_pool_max = Some(max);
+        self
+    }
+
     /// Sets snapshot sequence number for MVCC snapshot-isolated queries.
     pub fn seq(mut self, seq_no: u64) -> Self {
         self.seq = Some(seq_no);
@@ -274,6 +306,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self.memory_type_filter = query.memory_type_filter.clone();
         self.include_superseded = query.include_superseded;
         self.include_provenance = query.include_provenance;
+        self.rerank_pool_multiplier = query.rerank_pool_multiplier;
+        self.rerank_pool_max = query.rerank_pool_max;
         self.k = Some(query.k);
         self
     }
@@ -289,17 +323,6 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         let has_reranker = self.reranker.is_some();
         #[cfg(not(feature = "reranking"))]
         let has_reranker = false;
-
-        let fetch_k = if self.filter.is_some()
-            || self.memory_type_filter.is_some()
-            || self.filter_fn.is_some()
-        {
-            (k * 5).min(memfuse_core::MAX_SEARCH_K).max(k)
-        } else if has_reranker {
-            (k * 3).min(memfuse_core::MAX_SEARCH_K).max(k)
-        } else {
-            k
-        };
 
         let hybrid_query = memfuse_core::HybridQuery {
             text_query: self.text.clone(),
@@ -320,7 +343,9 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             same_community_as: self.same_community_as,
             include_superseded: self.include_superseded,
             include_provenance: self.include_provenance,
-            k: fetch_k,
+            rerank_pool_multiplier: self.rerank_pool_multiplier,
+            rerank_pool_max: self.rerank_pool_max,
+            k,
         };
 
         #[allow(deprecated)]
@@ -371,35 +396,43 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                     })
                     .collect();
 
-                match reranker.rerank(text_str, &candidate_texts).await {
-                    Ok(ranked) => {
-                        let mut reranked_results = Vec::with_capacity(k);
-                        for r in ranked.into_iter().take(k) {
-                            if let Some(mut result) = results.get(r.original_index).cloned() {
-                                if let Some(meta) = result.metadata.as_mut() {
-                                    if let Some(obj) = meta.as_object_mut() {
-                                        obj.insert(
-                                            "ce_score".to_string(),
-                                            serde_json::json!(r.score),
-                                        );
-                                    }
-                                } else {
-                                    result.metadata =
-                                        Some(serde_json::json!({ "ce_score": r.score }));
+                let rerank_deadline = std::time::Duration::from_millis(
+                    reranker.config().rerank_deadline_ms.unwrap_or(500),
+                );
+
+                let reranked = tokio::time::timeout(
+                    rerank_deadline,
+                    reranker.rerank(text_str, &candidate_texts),
+                )
+                .await
+                .map_err(|_| {
+                    tracing::warn!(
+                        deadline_ms = rerank_deadline.as_millis(),
+                        "Reranker deadline exceeded — falling back to RRF order"
+                    );
+                })
+                .and_then(|r| r.map_err(|e| { tracing::warn!("Reranking failed: {e}"); }));
+
+                if let Ok(ranked) = reranked {
+                    let mut reranked_results = Vec::with_capacity(k);
+                    for r in ranked.into_iter().take(k) {
+                        if let Some(mut result) = results.get(r.original_index).cloned() {
+                            if let Some(meta) = result.metadata.as_mut() {
+                                if let Some(obj) = meta.as_object_mut() {
+                                    obj.insert("ce_score".to_string(), serde_json::json!(r.score));
                                 }
-                                result.score = r.score;
-                                if let Some(p) = result.provenance.as_mut() {
-                                    p.rerank_score = Some(r.score);
-                                }
-                                reranked_results.push(result);
+                            } else {
+                                result.metadata = Some(serde_json::json!({ "ce_score": r.score }));
                             }
+                            result.score = r.score;
+                            if let Some(p) = result.provenance.as_mut() {
+                                p.rerank_score = Some(r.score);
+                            }
+                            reranked_results.push(result);
                         }
-                        tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
-                        return Ok(reranked_results);
                     }
-                    Err(e) => {
-                        tracing::warn!("Reranking failed (using RRF order): {e}");
-                    }
+                    tracing::debug!("Reranking applied: {} candidates", reranked_results.len());
+                    return Ok(reranked_results);
                 }
             }
         }
@@ -612,6 +645,82 @@ mod tests {
 
     #[tokio::test]
     #[cfg(feature = "reranking")]
+    async fn test_rerank_candidate_pool_size_k10_fetches_100_candidates() {
+        let (col, _dir) = create_test_collection("test_rerank_pool_100").await;
+        // Populate 150 documents
+        for i in 0..150 {
+            let id = format!("doc-{:03}", i);
+            let text = format!("rust system engineering doc {:03}", i);
+            let val = (i as f32 + 1.0) / 150.0;
+            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
+                .await
+                .unwrap();
+        }
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
+        let res = col
+            .query()
+            .text("rust system")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .k(10)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 10, "Final results truncated to k=10");
+        // Verify that candidates retrieved before truncation had ce_score attached to 100 items (or top k items returned with ce_score)
+        // With passthrough reranker, ce_score is attached to top k items from the 100 candidates
+        assert!(res[0].metadata.as_ref().unwrap().get("ce_score").is_some());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
+    async fn test_rerank_candidate_pool_max_cap_k100_capped_at_200() {
+        let (col, _dir) = create_test_collection("test_rerank_pool_max_200").await;
+        // Populate 300 documents
+        for i in 0..300 {
+            let id = format!("doc-{:03}", i);
+            let text = format!("benchmark item {:03}", i);
+            let val = (i as f32 + 1.0) / 300.0;
+            col.insert(&id, &[val, 1.0 - val, 0.0, 0.0], Some(json!({ "text": text })))
+                .await
+                .unwrap();
+        }
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough();
+
+        // Query with k=100 and default pool settings (mult=10, max=200) -> fetch_k = min(100*10, 200) = 200
+        let res_default = col
+            .query()
+            .text("benchmark item")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .k(100)
+            .execute()
+            .await
+            .unwrap();
+
+        assert_eq!(res_default.len(), 100);
+
+        // Custom settings test: rerank_pool_max(50)
+        let res_custom_max = col
+            .query()
+            .text("benchmark item")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .rerank_pool_max(50)
+            .k(30)
+            .execute()
+            .await
+            .unwrap();
+
+        // Since fetch_k is capped at 50, top-30 query successfully completes and receives results
+        assert_eq!(res_custom_max.len(), 30, "k=30 requested with fetch_k capped at 50");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
     async fn test_query_builder_reranking_with_text_and_reranker() {
         let (col, _dir) = create_test_collection("test_rerank_builder").await;
         col.insert(
@@ -670,6 +779,55 @@ mod tests {
                 res[0].score >= res[1].score,
                 "Results must be sorted descending by rerank score"
             );
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "reranking")]
+    async fn test_reranker_deadline_falls_back() {
+        let (col, _dir) = create_test_collection("test_rerank_deadline").await;
+        col.insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "rust programming language"})),
+        )
+        .await
+        .unwrap(); // unwrap
+        col.insert(
+            "doc-2",
+            &[0.9, 0.1, 0.0, 0.0],
+            Some(json!({"content": "python programming language"})),
+        )
+        .await
+        .unwrap(); // unwrap
+
+        let config = memfuse_embed::RerankConfig {
+            rerank_deadline_ms: Some(10),
+            simulate_delay_ms: Some(100),
+            ..Default::default()
+        };
+
+        let reranker = memfuse_embed::CrossEncoderReranker::passthrough_with_config(config);
+
+        let res = col
+            .query()
+            .text("rust")
+            .embedding([1.0, 0.0, 0.0, 0.0])
+            .reranker(&reranker)
+            .k(2)
+            .execute()
+            .await;
+
+        assert!(res.is_ok(), "Query must succeed even when reranker times out");
+        let results = res.unwrap(); // unwrap
+        assert_eq!(results.len(), 2);
+        for item in &results {
+            if let Some(meta) = &item.metadata {
+                assert!(
+                    meta.get("ce_score").is_none(),
+                    "ce_score should not be attached on timeout fallback"
+                );
+            }
         }
     }
 

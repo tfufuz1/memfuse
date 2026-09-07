@@ -161,6 +161,10 @@ pub struct RerankConfig {
     pub batch_size: usize,
     /// Optionale Platt-Scaling Kalibrierung für Roh-Logits
     pub calibration: PlattScaledSigmoid,
+    /// Maximum allowed execution time in milliseconds before timing out. Default: 500ms.
+    pub rerank_deadline_ms: Option<u64>,
+    /// Simulated delay in milliseconds for testing timeouts. Default: None.
+    pub simulate_delay_ms: Option<u64>,
 }
 
 impl Default for RerankConfig {
@@ -171,6 +175,8 @@ impl Default for RerankConfig {
             max_length: 512,
             batch_size: 8,
             calibration: PlattScaledSigmoid::identity(),
+            rerank_deadline_ms: Some(500),
+            simulate_delay_ms: None,
         }
     }
 }
@@ -276,17 +282,11 @@ impl OnnxReranker {
         let tokenizer = std::sync::Arc::clone(&self.tokenizer);
         let max_length = self.config.max_length;
         let batch_size = self.config.batch_size;
+        let calibration = self.config.calibration.clone();
 
         let calibration = self.config.calibration.clone();
         let scores = tokio::task::spawn_blocking(move || {
-            Self::score_pairs_blocking(
-                &session,
-                &tokenizer,
-                &pairs,
-                max_length,
-                batch_size,
-                &calibration,
-            )
+            Self::score_pairs_blocking(&session, &tokenizer, &pairs, max_length, batch_size, &calibration)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("Rerank task panicked: {e:?}")))?
@@ -325,8 +325,7 @@ impl OnnxReranker {
         let mut all_scores = Vec::with_capacity(pairs.len());
 
         for chunk in pairs.chunks(batch_size) {
-            let chunk_scores =
-                Self::score_batch(session, tokenizer, chunk, max_length, calibration)?;
+            let chunk_scores = Self::score_batch(session, tokenizer, chunk, max_length, calibration)?;
             all_scores.extend(chunk_scores);
         }
 
@@ -539,6 +538,19 @@ impl CrossEncoderReranker {
         }
     }
 
+    /// Erstellt einen Passthrough-CrossEncoderReranker mit einer benutzerdefinierten Konfiguration.
+    pub fn passthrough_with_config(config: RerankConfig) -> Self {
+        Self {
+            _config: config,
+            backend: RerankerBackend::Passthrough,
+        }
+    }
+
+    /// Returns a reference to the active `RerankConfig`.
+    pub fn config(&self) -> &RerankConfig {
+        &self._config
+    }
+
     /// Setzt ein gefittetes `PlattScaledSigmoid` Modell für den CrossEncoderReranker.
     pub fn with_calibration(mut self, calibration: PlattScaledSigmoid) -> Self {
         self._config.calibration = calibration;
@@ -576,6 +588,10 @@ impl CrossEncoderReranker {
                 candidates.len(),
                 MAX_CANDIDATES
             )));
+        }
+
+        if let Some(delay_ms) = self._config.simulate_delay_ms {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
 
         match &self.backend {
