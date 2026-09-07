@@ -40,119 +40,94 @@ Layer 5 — Peripherie:     memfuse-bench 9-Dokument-Synthetik-Korpus (statistis
 
 | Komponente | Status | Datei |
 |---|---|---|
-| WAL v3 HMAC-Chain | ✅ Produktionsreif | `wal.rs:45-80` |
-| HNSW 2-Phasen-CoW-Rebuild | ✅ Produktionsreif | `hnsw.rs:1693, 1812` |
-| NodesGuard Lock-Reihenfolge | ✅ Typ-erzwungen | `session_dag.rs:29` |
-| Label-Propagation deterministische RNG | ✅ LCG fester Seed | `community.rs:55` |
-| PPR damping=0.85 | ✅ Korrekt | `ppr.rs:133,343` |
-| DiskANN Vamana 2-Pass Build | ✅ Atomares Write | `diskann.rs` |
+| Compile check | `cargo check --workspace --exclude memfuse-tauri` | |
+| Test suite | `cargo test --workspace --exclude memfuse-tauri` | Before every commit |
+| Lint + format | `just check` | Clippy + rustfmt — all style rules live here |
+| Flaky detection | `just triple-test` | Runs test suite 3× |
+| DAG enforcement | `just dag-check` | Layer dependency validation |
+| Debt scan | `just debt-audit` | Scans unwrap/expect/std::fs |
+| Cross-platform CI | GitHub Actions (`test-cross-platform`) | Informativer Check auf Windows/macOS für Kern-Crates; blockiert PRs nicht, bei Rot manuell prüfen vor Release-Tag |
 
----
+> **Hinweis:** Alle `just`-Rezepte funktionieren sowohl mit als auch ohne installiertes `nix` — bei fehlendem `nix` wird automatisch auf direkte `cargo`-Aufrufe zurückgefallen.
 
-## Was FEHLT und gebaut werden muss
+## 3. Workspace Inventory (15 Crates)
 
-| Komponente | Kritikalität | ADR | Sprint |
-|---|---|---|---|
-| `TenantId` Typ in memfuse-core | KRITISCH | ADR-066 | G0 |
-| `ConfigFingerprint` in memfuse-core | KRITISCH | ADR-067 | G0 |
-| `DeletionProof` in memfuse-crypto | KRITISCH | ADR-072 | G0 |
-| `memfuse-calibration` Crate | KRITISCH | ADR-068 | G0 |
-| BM25 IDF-Fix (bm25.rs:95-100) | SOFORT | ADR-065 | G0 |
-| Reranking-Fenster max(k*3,100) | SOFORT | ADR-084 | G0 |
-| DiskANN persist_delta() | SOFORT | ADR-069 | G0 |
-| PathRAG Engine | Hoch | ADR-073 | H1 |
-| F-01 Thermostat | Mittel | ADR-074 | H1 |
-| ImportanceClassifier | Hoch | — | H1 |
-| memfuse-kv-bridge | Hoch | — | H2 |
-| memfuse-candle | Hoch | — | H2 |
-| SleepCycle (F-05) | Mittel | ADR-077 | H3 |
+MemFuse besteht aus 15 Workspace-Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`) in einer 5-Schichten-Architektur (Layer 0–4).
 
----
+Die vollständige, automatisch aktuell gehaltene Crate-Tabelle und DAG-Topologie ist in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dokumentiert.
 
-## Bekannte Bugs (verifiziert)
+## 4. Non-Obvious Decisions (would cause wrong code without this knowledge)
 
-### BUG-01: BM25 IDF-Implementierung (A19) — SOFORT
-**Datei:** `crates/memfuse-text/src/bm25.rs:95-100`
-**Problem:** `idf_arg.ln()` mit `1e-6`-Floor statt `ln(1 + (N-df+0.5)/(df+0.5))`.
-**Auswirkung:** IDF ≈ 0 bei häufigen Termen. Suchresultate degenerieren.
-**Fix:** Einzeiler. Keine API-Änderung.
+- **TxId generation**: ALWAYS `collection.allocate_tx()` — NEVER `SystemTime::as_nanos()`
+- **fsync errors**: ALWAYS propagate with `?` — NEVER `let _ = dir.sync_all()`
+- **unsafe scope**: ONLY in `memfuse-index/src/distance.rs` (SIMD, ADR-017/ADR-034), `memfuse-index/src/diskann.rs` (Mmap, ADR-017) and `memfuse-index/src/persistence.rs` (Mmap, ADR-017). Exception: test-only unsafe in `memfuse-crypto/src/anti_tamper.rs` exclusively for Zeroize drop-semantics verification via raw pointer inspection. Production builds are unsafe-free via `#![cfg_attr(not(test), forbid(unsafe_code))]`.
+- **AI-TAG[SMELL][CRITICAL]**: ALWAYS fix immediately — never just comment
+- **Document chunking**: ALWAYS use `MarkdownChunker` — NEVER embed entire text as 1 vector
+- **MCP transport**: stdio JSON-RPC 2.0 ONLY — axum was removed (ADR-010)
+- **WAL HMAC key**: ALWAYS via `load_or_create_integrity_key()` — NEVER hardcoded
+- **AI-TAG & ID Schema**: Alle neuen Tags verwenden das hash-basierte Schema `AGT-<CRATE>-<8-hex-hash>` (z.B. `AGT-STORE-a3f29c1d`). Bestehende `AGT-<CRATE>-NNN` IDs haben Bestandsschutz.
+- **Tag-Zeitstempel- & Session-Pflicht**: Alle `AI-TAG`, `ANCHOR` und `REVIEW-PASS` Kommentare tragen zwingend sekundengenaue ISO-8601-UTC-Zeitstempel im Format `(TS: YYYY-MM-DDTHH:MM:SSZ)` und das `(SESSION: <8-hex-hash>)` Token (siehe `rules/tag_taxonomy.md`).
+- **Trait-Default-Pflichttest**: Für jedes `pub trait` mit einer Default-Methode-Implementierung MUSS im selben PR, der einen neuen Implementor dieses Traits hinzufügt, ein Integrationstest existieren, der beweist, dass die Default-Implementierung NICHT still greift (entweder weil sie explizit überschrieben wurde, oder weil ein Test explizit den Default-Fehlerpfad als erwartetes, dokumentiertes Verhalten prüft). Referenz im Code: `capability_coverage` in `crates/memfuse-core/src/traits.rs` (prüft z.B. `VectorIndex::search_at` & `GraphIndex::traverse_at`).
+- **Typ-Dopplungs-Prävention**: Vor Anlegen eines neuen Typs oder Traits: `docs/TYPE_REGISTRY.md` nach ähnlichem Namen/Zweck durchsuchen. Bei Kollision: bestehenden Typ erweitern statt Duplikat anlegen, oder Kollision explizit per ADR begründen.
+- **Audit-Finding-Verifikation**: Jeder Finding aus einem extern zugelieferten Audit-Dokument oder Prompt MUSS vor Implementierung am AKTUELLEN Quellcode gegengelesen werden (siehe `.jules/AUDIT_INTAKE_PROTOCOL.md`). Falls der Finding nicht mehr zutrifft (Code bereits geändert, Test existiert bereits, Fix bereits gemerged): Finding im PR-Kommentar/Log explizit als "entkräftet" markieren mit Begründung — NICHT stillschweigend ignorieren und NICHT blind implementieren.
+- **Sync-Docs Nix-Fallback**: `just sync-docs` verwendet `nix develop -c` — bei fehlendem Nix direkt `cargo xtask sync-docs` aufrufen. Beide Pfade sind in der justfile mit `||`-Fallback abgesichert.
+- **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
+- **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
+- **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `ls docs/decisions/ | grep -oP '(?<=ADR-)\d+' | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
 
-### BUG-02: Reranking-Kandidatenfenster (A14) — SOFORT
-**Datei:** `crates/memfuse-db/src/collection/search.rs:450`
-**Problem:** `k * 3` statt `max(k * 3, 100)`. Mit k=10 → 30 Kandidaten → Recall@5 ≈ 0.458.
-**Fix:** Einzeiler + Timeout-Wrapper.
+## 5. Judgment Boundaries
 
-### BUG-03: DiskANN read-only (A16) — SOFORT
-**Datei:** `crates/memfuse-index/src/diskann.rs:990`
-**Problem:** `VectorIndex::insert()` gibt `Err("read-only")`. Kein inkrementeller Pfad.
-**Fix:** Pending-Buffer + persist_delta() (ADR-069).
+**ALWAYS** (no confirmation needed):
+- Check ADR list for conflicts before any code change
+- After every session: update `WORKING_STATE.md`
+- Propagate all errors — never swallow with `let _ =`
+- Read nearest crate-level `AGENTS.md` before editing a crate
 
-### BUG-04: Reranker unkalibriert (A15) — G0
-**Datei:** `crates/memfuse-embed/src/reranker.rs:314`
-**Problem:** Rohes Sigmoid ohne Platt-/Isotonische Kalibrierung.
-**Fix:** PlattScaler aus memfuse-calibration (nach ADR-068).
+**ASK** (require human confirmation):
+- Add new external dependencies
+- Write or supersede an ADR
+- Change public API signatures
+- Add `unsafe` code (except in approved files above)
 
----
+**NEVER**:
+- `let _ =` for IO ops (`sync_all`, `flush`, `write`)
+- `SystemTime` for TxId generation
+- HTTP in `memfuse-mcp` (stdio only, ADR-010)
+- `.expect()` in production code (not `#[cfg(test)]`)
+- Codebase-wide refactorings without explicit ADR
 
-## Architekturprinzipien (für AI-Assistenten: Pflicht bei jeder Änderung)
+## 6. Session Protocol
 
-**P1:** Kein Import über Layer-Grenzen. `cargo xtask check-dag` vor jedem Commit.
-**P2:** `unsafe` NUR in distance.rs (SIMD), diskann.rs + persistence.rs (Mmap). Immer `// SAFETY:`.
-**P3:** WAL-Commit VOR MemTable. Kein `let _ = sync_all()`.
-**P8:** ConfigFingerprint-Änderung → sofortiger Kalibrierungs-Reset. Kein Warmup-Skip.
-**P9:** KV-Cache-Segmente nie unverschlüsselt auf persistentem Speicher. Zeroize-on-Evict.
-**P11:** Hot-Path-Operationen haben Timeout. Kein unbeschränktes Warten.
-**P12:** Physio-Features per Feature-Flag deaktivierbar. Default: off.
+Jede Sitzung MUSS mit folgendem beginnen (Environment-Skript liefert dies
+bereits in der Setup-Ausgabe, siehe `[9/9] Session Context Digest` und `[10/10] Session identity`):
+0. (Pre-Step) `.jules/SESSION_BOOTSTRAP.md` vollständig ausführen.
+   Bei fehlendem Environment-Setup-Skript: SESSION_HASH manuell generieren
+   via `date -u +%Y%m%d%H%M%S | sha256sum | head -c 8`.
+1. SESSION-Hash aus Environment-Setup (`SESSION:<hash>`) übernehmen und für alle Tags dieser Sitzung konsistent verwenden.
+2. Session-Digest aus Environment-Setup lesen (offene BLOCKER/CRITICAL Tags,
+   offene ANCHORs, letzte 3 ADRs, WORKING_STATE.md-Tail)
+2. Falls Digest nicht sichtbar (z.B. bei nachträglichem Reconnect):
+   manuell `just session-context` ausführen (siehe justfile)
 
-**VETO (nie implementieren):**
-- F-02: Partieller HNSW-Rebuild (Recall-Kollaps, Lock-Contention)
-- F-10: Cross-Tenant-Wissensaustausch (bricht TenantId-Isolation + DSGVO Art. 17)
+Jede Sitzung MUSS mit folgendem enden — VOR dem letzten Commit:
+0. `cargo fmt --all` ausführen (nicht nur `--check`) — der Pre-Commit-Hook tut dies automatisch, aber bei Hook-Bypass (`git commit --no-verify`) MUSS dieser Schritt manuell nachgeholt werden, bevor der PR geöffnet wird.
+1. `just sync-docs` ausführen (`WORKING_STATE.md`, `docs/CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/SOURCE_OF_TRUTH.md` werden vollständig aus Inline-Tags & Cargo-Topologie generiert).
+2. `WORKING_STATE.md` enthält NULL manuell editierten Text mehr. Bei Git-Merge-Konflikten in `WORKING_STATE.md`: stets durch `just sync-docs` auflösen.
+3. Falls diese Sitzung eine REINE REVIEW-Sitzung war (kein eigener Code-Beitrag, nur Prüfung fremder Arbeit): mindestens einen `REVIEW-PASS`-Eintrag mit `PRÜFER-KONTEXT: FRESH` hinterlassen, bevor `just sync-docs` läuft.
+4. `just sync-docs-check` als letzten Schritt — muss grün sein, sonst ist
+   der Commit nicht vollständig
 
----
+## 7. Governance Documents (on-demand, not ambient)
 
-## Invarianten (bei Verletzung: Bug, kein Design)
-
-| Invariante | Beschreibung |
+| Document | Read when |
 |---|---|
-| **INV-P3-1** | WAL-Commit VOR MemTable-Update |
-| **INV-P8-1** | Fingerprint-Änderung → Kalibrierungs-Reset |
-| **INV-CAL-1** | calibrated_probability() → None vor Warmup. KEIN 0.5-Fallback |
-| **INV-CAL-2** | invalidate_on_config_change() setzt observations auf 0 |
-| **INV-PROV-1** | sum(rrf_contributions) ≈ rrf_score (\|Δ\| < 1e-6) |
-| **INV-PROV-2** | coherence_bonus immer separates Feld, nie in rrf_score gefaltet |
-| **INV-TENANT-1** | TenantId(0) = SYSTEM_RESERVED, try_new(0) → Err |
-| **INV-TENANT-2** | scan_prefix() gibt nur Keys dieses Tenants zurück |
-| **INV-HNSW-1** | ef_construction >= M, sonst HnswConfig::validate() → Err |
-| **INV-DISKANN-1** | persist_delta() behält atomares Rename-Muster |
-| **INV-DELETION-1** | DeletionProof::create() nur nach physischer Layer-Bereinigung |
-
----
-
-## Latenzbudgets (Hot-Path, P11)
-
-| Operation | Budget | Fallback |
-|---|---|---|
-| Reranker ONNX-Inference | 500ms | RRF-Reihenfolge |
-| BM25-Scoring | 50ms | Timeout + Warning |
-| HNSW ef_search | 200ms | Abort + Error |
-| ImportanceClassifier | 100ms | Heuristik |
-
----
-
-## Verworfene Features (nicht vorschlagen)
-
-Diese Features werden **nie** implementiert:
-- F-02 Partieller HNSW-Rebuild: Recall-Kollaps, Lock-Contention unlösbar
-- F-10 Cross-Tenant-Austausch: DSGVO-Compliance-Risiko, technisch unmöglich
-- LLM-Importance-Score im Hot-Path: 970ms P50 vs. 58ms mit ImportanceClassifier
-- Genetische Algorithmen für Hyperparameter: redundant zu F-07+F-08
-
----
-
-## Nächste Prioritäten (Stand G0-Sprint)
-
-1. `cargo test --workspace` grün halten
-2. BUG-01 (BM25) + BUG-02 (Reranking) + BUG-03 (DiskANN) beheben
-3. TenantId + ConfigFingerprint in memfuse-core anlegen
-4. memfuse-calibration Crate erstellen
-5. CONSTITUTION.md + DECISIONS.md auf aktuellem Stand halten
+| `CONSTITUTION.md` | Writing ADR, API design, security changes, exit criteria |
+| `docs/SOURCE_OF_TRUTH.md` | Checking crate status, inventory, architecture topology |
+| `docs/ARCHITECTURE.md` | Understanding layer boundaries, invariant status |
+| `docs/decisions/` | Before any architectural change |
+| `docs/TYPE_REGISTRY.md` | Register central domain types & traits before creating new ones |
+| `.jules/AUDIT_INTAKE_PROTOCOL.md` | Verifying incoming external audit findings before implementation |
+| `.jules/SESSION_BOOTSTRAP.md` | Maschinenausführbare Session-Checkliste | Immer zu Beginn |
+| `.jules/COMMON_LLM_ERRORS.md` | Häufige LLM-Fehler und Korrekturen | Bei Unsicherheit über Korrektheit |
+| `.jules/JULES_CONTEXT.md` | Freshness automatisch geprüft via `xtask check-jules-context-freshness` (Gate 10) |
+| `rules/*.md` | Domain-specific rules (SIMD safety, WAL crypto, testing, chaos testing, etc.) |
