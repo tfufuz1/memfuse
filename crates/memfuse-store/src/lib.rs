@@ -26,8 +26,10 @@ pub mod compaction;
 pub mod lsm;
 pub mod memtable;
 pub mod sstable;
+pub mod tenant_codec;
 pub(crate) mod util;
 pub mod wal;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
 pub use lsm::{LsmConfig, LsmStorage};
+pub use tenant_codec::TenantKeyCodec;
