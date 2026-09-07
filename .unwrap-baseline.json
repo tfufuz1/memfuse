@@ -10873,6 +10873,10 @@
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "3c2b13dd5b713e8f"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
     "hash": "43a9dd1465adc3af"
   },
   {
@@ -10986,6 +10990,10 @@
   {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "9403d4e791678250"
+  },
+  {
+    "file": "crates/memfuse-router/src/tests.rs",
+    "hash": "94f1da1c0bd8af0f"
   },
   {
     "file": "crates/memfuse-router/src/tests.rs",
