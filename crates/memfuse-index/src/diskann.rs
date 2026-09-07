@@ -25,6 +25,8 @@ use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
+const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
+const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
 /// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta.
 /// RISIKO-FENSTER: Maximal 50 ungeflushte Vektoren befinden sich vor einem synchronen persist_delta()
 /// ausschließlich im In-Memory pending_inserts Buffer. Bei einem unvorhergesehenen Absturz / OOM
@@ -282,6 +284,7 @@ struct DiskAnnIndexInner {
     pending_inserts: RwLock<Vec<(DocId, Vec<f32>)>>,
     /// Monotoner Zähler (AtomicU64 für Threshold-Check ohne Lock).
     pending_count: AtomicU64,
+    pub(crate) hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
 }
 
 impl DiskAnnIndex {
@@ -315,6 +318,7 @@ impl DiskAnnIndex {
                 drift_warn_count: AtomicU64::new(0),
                 pending_inserts: RwLock::new(Vec::new()),
                 pending_count: AtomicU64::new(0),
+                hnsw_fallback: RwLock::new(None),
             }),
         })
     }

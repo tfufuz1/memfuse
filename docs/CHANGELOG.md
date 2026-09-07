@@ -39,6 +39,7 @@
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Exportiert Bm25Scorer, InvertedIndex, Morphologie-Tools und BM25-Modelle für DB-Hybrid-Suche. |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/morphology.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Umlaut-Normalisierung (ä->ae, ö->oe, ü->ue, ß->ss) und Zerlegung deutscher Zusammensetzungen. |
 | `TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
+| `TS:2026-08-30T22:00:00Z` | `crates/memfuse-db/src/homeostat.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | P95 retrieval latency feedback-regulated PID controller and hard deadline management (Feature F-08 & P11 requirement). |
 | `TS:2026-08-30T21:55:29Z (SESSION: 10569099)` | `crates/memfuse-index/src/quantize.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | 8-Bit Skalare Quantisierung (SQ8) mit pro-Dimension Min/Max Skalierung. |
 | `TS:2026-08-30T21:15:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/search.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Suchoperationen (Vector-, Text-, Graph- & Hybrid-Retrieval) für Collection. |
 | `TS:2026-08-30T21:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/query_builder.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fluent HybridQueryBuilder Fassade für Konsolidierung aller Search-Signaturen. |
@@ -108,6 +109,7 @@
 | `2026-08-31T00:00:00Z` | `crates/memfuse-index/src/distance.rs` | `AI-TAG` | `AGT-INDEX-005` | `a3f29c1d` | `RESOLVED` | `0` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: AGT-INDEX-005 — Dimension check in cosine_distance, euclidean_distance, dot_product_distance returns MemFuseError::EmbeddingDimensionMismatch (ADR-034). Testbeweis: test_cosine_distance_mismatch_returns_error etc. (TS:2026-08-31T00:00:00Z) (SESSION: a3f29c1d) |
 | `2026-08-31` | `crates/memfuse-embed/tests/reranker_adversarial_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantitativer Test- & Benchmark-Suite für Cross-Encoder Reranker Adversarial Attacks. |
 | `2026-08-30T22:01:55Z` | `crates/memfuse-text/src/morphology.rs` | `ANCHOR` | `TEST:TXT-001` | `cf1f75c6` | `DONE` | `6` | // ANCHOR[TEST:TXT-001] STATUS:DONE — Recall-Evaluation für deutsche Zusammensetzungen (TS:2026-08-30T22:01:55Z) (SESSION:cf1f75c6) |
+| `2026-08-30T22:00:00Z` | `crates/memfuse-db/src/replicator.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Adaptives Signal-Gewichtungssystem basierend auf zeitdiskreter Replikatordynamik. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische unified MemFuseError Enum für den gesamten Workspace. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error_dto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028). |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/traits/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0. |
@@ -201,10 +203,14 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
 | `` | `crates/memfuse-db/src/sleep_cycle.rs` | `AI-TAG` | `AGT-DB-660fbb5f` | `-` | `RESOLVED` | `0` | /// AI-TAG[SLEEP][MINOR] RESOLVED: AGT-DB-660fbb5f — Position im turns-Slice wird anstelle des |
+| `` | `crates/memfuse-db/tests/diskann_collection_fallback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection Integration Fallback Test (Pflichttest 3). |
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-index/tests/diskann_corruption_fallback_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Corruption detection and DiskAnnFallbackPolicy test (Pflichttest 2). |
+| `` | `crates/memfuse-index/tests/diskann_fault_injection_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fault-Injection Test for DiskANN rebuild failures (Pflichttest 1). |
 | `` | `crates/memfuse-store/examples/chaos_writer.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/util.rs` | `FILE-CONTEXT` | `-` | `8f882f1f` | `-` | `-` |  |
 | `` | `crates/memfuse-store/tests/chaos_dropped_write.rs` | `FILE-CONTEXT` | `-` | `283abf0f` | `-` | `-` |  |
+| `` | `crates/memfuse-store/tests/chaos_matrix.rs` | `FILE-CONTEXT` | `-` | `283abf0f` | `-` | `-` |  |
 | `` | `crates/memfuse-store/tests/chaos_power_cut.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |
 | `` | `crates/memfuse-store/tests/chaos_task_massacre.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
