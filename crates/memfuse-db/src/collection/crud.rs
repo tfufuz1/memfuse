@@ -282,7 +282,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let db_tx = self.begin_transaction()?;
 
         match self.insert_op(&db_tx, id, embedding, metadata).await {
-            Ok(_) => db_tx.commit().await,
+            Ok(_) => {
+                db_tx.commit().await?;
+                self.check_and_trigger_community_detection(1);
+                Ok(())
+            }
             Err(e) => {
                 if let Err(rollback_err) = db_tx.rollback().await {
                     tracing::error!("[INV-DB-3] Failed to rollback insert: {}", rollback_err);
@@ -454,7 +458,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 return Err(e);
             }
         }
-        db_tx.commit().await
+        db_tx.commit().await?;
+        self.check_and_trigger_community_detection(docs.len());
+        Ok(())
     }
 
     /// Upserts a document (inserts if missing, updates if exists) atomically.
@@ -488,7 +494,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let result = self.update_op(&db_tx, id, embedding, metadata).await;
 
         match result {
-            Ok(_) => db_tx.commit().await,
+            Ok(_) => {
+                db_tx.commit().await?;
+                self.check_and_trigger_community_detection(1);
+                Ok(())
+            }
             Err(e) => {
                 if let Err(rollback_err) = db_tx.rollback().await {
                     tracing::error!("[INV-DB-3] Failed to rollback upsert: {}", rollback_err);
@@ -553,7 +563,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 return Err(e);
             }
         }
-        db_tx.commit().await
+        db_tx.commit().await?;
+        self.check_and_trigger_community_detection(docs.len());
+        Ok(())
     }
 
     // AI-TAG[CONVENTION-DRIFT][MAJOR] RESOLVED: AGT-DB-001 — snapshot_seq() now propagates storage errors (TS:2026-08-25T00:00:00Z)
@@ -610,7 +622,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let db_tx = self.begin_transaction()?;
 
         match self.update_op(&db_tx, id, embedding, metadata).await {
-            Ok(_) => db_tx.commit().await,
+            Ok(_) => {
+                db_tx.commit().await?;
+                self.check_and_trigger_community_detection(1);
+                Ok(())
+            }
             Err(e) => {
                 if let Err(rollback_err) = db_tx.rollback().await {
                     tracing::error!("[INV-DB-3] Failed to rollback update: {}", rollback_err);
@@ -719,7 +735,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut db_tx = self.begin_transaction()?;
 
         match self.delete_op(&mut db_tx, id).await {
-            Ok(_) => db_tx.commit().await,
+            Ok(_) => {
+                db_tx.commit().await?;
+                self.check_and_trigger_community_detection(1);
+                Ok(())
+            }
             Err(e) => {
                 if let Err(rollback_err) = db_tx.rollback().await {
                     tracing::error!("[INV-DB-3] Failed to rollback delete: {}", rollback_err);
