@@ -17,8 +17,8 @@
 
 use crate::immune::{EdgeAssertion, ImmunMemory};
 use memfuse_core::{
-    BoxFuture, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine,
-    TxId,
+    BoxFuture, DocId, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
+    StorageEngine, TxId,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -84,6 +84,8 @@ pub struct PersistedEdgePayload {
     pub business_valid_from: Option<i64>,
     #[serde(default)]
     pub business_valid_to: Option<i64>,
+    #[serde(default)]
+    pub source_doc_id: Option<DocId>,
 }
 
 /// Score decay factor per hop (0.7^hop).
@@ -207,6 +209,7 @@ struct EdgePayload {
     tx_valid_to: Option<TxId>,
     business_valid_from: Option<i64>,
     business_valid_to: Option<i64>,
+    source_doc_id: Option<DocId>,
 }
 
 /// Staging representation of an edge before index allocation at commit time.
@@ -218,6 +221,7 @@ struct StagedEdgePayload {
     tx_valid_to: Option<TxId>,
     business_valid_from: Option<i64>,
     business_valid_to: Option<i64>,
+    source_doc_id: Option<DocId>,
 }
 
 /// Inner state of the CsrGraph to manage contiguous storage.
@@ -248,6 +252,11 @@ pub(crate) struct GraphInner {
     pub(crate) business_valid_froms: Vec<Option<i64>>,
     /// CSR business_valid_to array: contiguous list of business_valid_to timestamps (ms).
     pub(crate) business_valid_tos: Vec<Option<i64>>,
+    /// CSR source_doc_id array: contiguous list of optional source document IDs.
+    pub(crate) source_doc_ids: Vec<Option<DocId>>,
+
+    /// Reverse lookup index mapping DocId to Set of EdgeId (EntityId, EntityId)
+    pub(crate) doc_to_edges: ahash::AHashMap<DocId, HashSet<(EntityId, EntityId)>>,
 
     /// Staging for entities not yet committed, grouped by TxId.
     staged_entities: HashMap<TxId, HashMap<EntityId, Entity>>,
@@ -280,6 +289,8 @@ impl GraphInner {
             tx_valid_tos: Vec::new(),
             business_valid_froms: Vec::new(),
             business_valid_tos: Vec::new(),
+            source_doc_ids: Vec::new(),
+            doc_to_edges: ahash::AHashMap::new(),
             staged_entities: HashMap::new(),
             staged_edges: HashMap::new(),
             staged_removals: HashMap::new(),
@@ -358,6 +369,7 @@ impl GraphInner {
                         tx_valid_to: self.tx_valid_tos.get(j).copied().flatten(),
                         business_valid_from: self.business_valid_froms.get(j).copied().flatten(),
                         business_valid_to: self.business_valid_tos.get(j).copied().flatten(),
+                        source_doc_id: self.source_doc_ids.get(j).copied().flatten(),
                     });
                 }
             }
@@ -476,6 +488,97 @@ impl CsrGraph {
         self.storage = Some(storage);
     }
 
+    /// Returns a reference to the optional persistent storage handle.
+    pub fn storage(&self) -> Option<Arc<dyn StorageEngine>> {
+        self.storage.clone()
+    }
+
+    /// Returns the optional source document ID from which the edge (from, to) was derived.
+    pub fn source_doc_id_at(&self, from: EntityId, to: EntityId) -> Option<DocId> {
+        let inner = self.inner.read();
+        let from_idx = *inner.id_map.get(&from)?;
+        let to_idx = *inner.id_map.get(&to)?;
+
+        if let Some(pending) = inner.pending_edges.get(&from_idx) {
+            if let Some(edge) = pending.iter().find(|e| e.target == to_idx) {
+                return edge.source_doc_id;
+            }
+        }
+
+        if from_idx < inner.offsets.len() - 1 {
+            let start = inner.offsets[from_idx];
+            let end = inner.offsets[from_idx + 1];
+            for j in start..end {
+                if inner.targets.get(j) == Some(&to_idx) {
+                    return inner.source_doc_ids.get(j).copied().flatten();
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Atomically tombstones a list of edges with WAL sequence provenance (INV-GRAPH-PROV-1),
+    /// returning newly tombstoned edges and affected node IDs.
+    pub(crate) fn tombstone_edges_direct(
+        &self,
+        edges: &[(EntityId, EntityId)],
+        wal_tx: TxId,
+    ) -> Result<(usize, Vec<(EntityId, EntityId)>, Vec<EntityId>)> {
+        let mut inner = self.inner.write();
+        let mut newly_tombstoned = Vec::new();
+        let mut affected_nodes_set = HashSet::new();
+
+        for &(from_id, to_id) in edges {
+            let from_idx = inner.id_map.get(&from_id).copied();
+            let to_idx = inner.id_map.get(&to_id).copied();
+
+            if let (Some(f_idx), Some(t_idx)) = (from_idx, to_idx) {
+                if inner.tombstoned_edges.insert((f_idx, t_idx)) {
+                    // Record WAL transaction invalidation provenance on pending edge payloads
+                    if let Some(pending) = inner.pending_edges.get_mut(&f_idx) {
+                        for edge in pending.iter_mut() {
+                            if edge.target == t_idx {
+                                edge.tx_valid_to = Some(wal_tx);
+                            }
+                        }
+                    }
+                    // Record WAL transaction invalidation provenance on compacted CSR arrays
+                    if f_idx < inner.offsets.len() - 1 {
+                        let start = inner.offsets[f_idx];
+                        let end = inner.offsets[f_idx + 1];
+                        for j in start..end {
+                            if inner.targets.get(j) == Some(&t_idx) {
+                                if let Some(tx_to) = inner.tx_valid_tos.get_mut(j) {
+                                    *tx_to = Some(wal_tx);
+                                }
+                            }
+                        }
+                    }
+                    inner.is_dirty = true;
+                    newly_tombstoned.push((from_id, to_id));
+                    affected_nodes_set.insert(from_id);
+                    affected_nodes_set.insert(to_id);
+                }
+            }
+        }
+
+        let mut affected_node_ids: Vec<EntityId> = affected_nodes_set.into_iter().collect();
+        affected_node_ids.sort();
+
+        Ok((newly_tombstoned.len(), newly_tombstoned, affected_node_ids))
+    }
+
+    /// Returns all edge IDs derived from the given source `DocId`.
+    pub fn edges_for_doc(&self, doc_id: DocId) -> Vec<(EntityId, EntityId)> {
+        let inner = self.inner.read();
+        inner
+            .doc_to_edges
+            .get(&doc_id)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
     /// Directly inserts an entity into the CSR graph without staging.
     pub fn insert_entity_direct(&self, entity: Entity) -> Result<()> {
         let mut inner = self.inner.write();
@@ -498,6 +601,7 @@ impl CsrGraph {
         tx_valid_to: Option<TxId>,
         business_valid_from: Option<i64>,
         business_valid_to: Option<i64>,
+        source_doc_id: Option<DocId>,
         predicate_hash: Option<[u8; 32]>,
         object_repr: Option<Vec<u8>>,
     ) -> Result<()> {
@@ -549,6 +653,7 @@ impl CsrGraph {
                     tx_valid_to,
                     business_valid_from,
                     business_valid_to,
+                    source_doc_id,
                 });
             inner.pending_edge_count += 1;
             inner.is_dirty = true;
@@ -571,7 +676,7 @@ impl CsrGraph {
         to: EntityId,
         weight: f32,
     ) -> Result<()> {
-        self.add_edge(from, to, weight, None, None, None, None, None, None)
+        self.add_edge(from, to, weight, None, None, None, None, None, None, None)
             .await
     }
 
@@ -599,6 +704,7 @@ impl CsrGraph {
             None,
             None,
             None,
+            None,
         )
         .await
     }
@@ -614,6 +720,7 @@ impl CsrGraph {
         tx_valid_to: Option<TxId>,
         business_valid_from: Option<i64>,
         business_valid_to: Option<i64>,
+        source_doc_id: Option<DocId>,
     ) -> Result<()> {
         self.add_edge(
             from,
@@ -623,6 +730,7 @@ impl CsrGraph {
             tx_valid_to,
             business_valid_from,
             business_valid_to,
+            source_doc_id,
             None,
             None,
         )
@@ -652,6 +760,7 @@ impl CsrGraph {
         tx_valid_to: Option<TxId>,
         business_valid_from: Option<i64>,
         business_valid_to: Option<i64>,
+        source_doc_id: Option<DocId>,
     ) -> Result<()> {
         if !weight.is_finite() || weight < 0.0 {
             return Err(MemFuseError::InvalidInput(format!(
@@ -661,6 +770,9 @@ impl CsrGraph {
         let mut inner = self.inner.write();
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
+        if let Some(doc_id) = source_doc_id {
+            inner.doc_to_edges.entry(doc_id).or_default().insert((from, to));
+        }
         inner
             .pending_edges
             .entry(from_idx)
@@ -672,6 +784,7 @@ impl CsrGraph {
                 tx_valid_to,
                 business_valid_from,
                 business_valid_to,
+                source_doc_id,
             });
         inner.pending_edge_count += 1;
         inner.is_dirty = true;
@@ -748,7 +861,7 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let (weight, tx_valid_from, tx_valid_to, business_valid_from, business_valid_to) =
+            let (weight, tx_valid_from, tx_valid_to, business_valid_from, business_valid_to, source_doc_id) =
                 if let Ok(p) = bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
                     (
                         p.weight,
@@ -756,32 +869,57 @@ impl CsrGraph {
                         p.tx_valid_to,
                         p.business_valid_from,
                         p.business_valid_to,
+                        p.source_doc_id,
                     )
                 } else {
-                    // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
+                    // Backward compatibility fallback for legacy 5-field PersistedEdgePayload
                     #[derive(Deserialize)]
-                    struct LegacyPersistedEdgePayloadV1 {
+                    struct LegacyPersistedEdgePayloadV2 {
                         weight: f32,
                         valid_from: Option<TxId>,
                         valid_to: Option<TxId>,
+                        business_valid_from: Option<i64>,
+                        business_valid_to: Option<i64>,
                     }
 
-                    if let Ok(legacy) =
-                        bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
+                    if let Ok(legacy2) =
+                        bincode::deserialize::<LegacyPersistedEdgePayloadV2>(&raw_value)
                     {
                         (
-                            legacy.weight,
-                            legacy.valid_from,
-                            legacy.valid_to,
-                            None,
+                            legacy2.weight,
+                            legacy2.valid_from,
+                            legacy2.valid_to,
+                            legacy2.business_valid_from,
+                            legacy2.business_valid_to,
                             None,
                         )
                     } else {
-                        // Backward compatibility fallback for legacy raw f32 weight values
-                        let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
-                            MemFuseError::Internal(format!("graph edge deserialize: {e}"))
-                        })?;
-                        (w, None, None, None, None)
+                        // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
+                        #[derive(Deserialize)]
+                        struct LegacyPersistedEdgePayloadV1 {
+                            weight: f32,
+                            valid_from: Option<TxId>,
+                            valid_to: Option<TxId>,
+                        }
+
+                        if let Ok(legacy) =
+                            bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
+                        {
+                            (
+                                legacy.weight,
+                                legacy.valid_from,
+                                legacy.valid_to,
+                                None,
+                                None,
+                                None,
+                            )
+                        } else {
+                            // Backward compatibility fallback for legacy raw f32 weight values
+                            let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                                MemFuseError::Internal(format!("graph edge deserialize: {e}"))
+                            })?;
+                            (w, None, None, None, None, None)
+                        }
                     }
                 };
 
@@ -804,6 +942,7 @@ impl CsrGraph {
                     tx_valid_to,
                     business_valid_from,
                     business_valid_to,
+                    source_doc_id,
                 )?;
                 edge_count += 1;
             } else {
@@ -1238,6 +1377,7 @@ impl GraphIndex for CsrGraph {
                     tx_valid_to: edge.tx_valid_to,
                     business_valid_from: edge.business_valid_from,
                     business_valid_to: edge.business_valid_to,
+                    source_doc_id: edge.source_doc_id,
                 });
             Ok(())
         })
@@ -1625,6 +1765,7 @@ impl GraphIndex for CsrGraph {
                                     tx_valid_to: edge.tx_valid_to,
                                     business_valid_from: edge.business_valid_from,
                                     business_valid_to: edge.business_valid_to,
+                                    source_doc_id: edge.source_doc_id,
                                 },
                             ));
                         }
@@ -1677,6 +1818,9 @@ impl GraphIndex for CsrGraph {
                     let mut converted_edges = Vec::with_capacity(edges.len());
                     for edge in edges {
                         let to_idx = inner.get_or_create_index(edge.target);
+                        if let Some(doc_id) = edge.source_doc_id {
+                            inner.doc_to_edges.entry(doc_id).or_default().insert((from_id, edge.target));
+                        }
                         converted_edges.push(EdgePayload {
                             target: to_idx,
                             weight: edge.weight,
@@ -1684,6 +1828,7 @@ impl GraphIndex for CsrGraph {
                             tx_valid_to: edge.tx_valid_to,
                             business_valid_from: edge.business_valid_from,
                             business_valid_to: edge.business_valid_to,
+                            source_doc_id: edge.source_doc_id,
                         });
                     }
                     let count = converted_edges.len();
@@ -3501,6 +3646,7 @@ mod tests {
             tx_valid_to: None,
             business_valid_from: None,
             business_valid_to: None,
+            source_doc_id: None,
         };
 
         // Persist entity & edge directly
@@ -3548,6 +3694,7 @@ mod tests {
             tx_valid_to: None,
             business_valid_from: None,
             business_valid_to: None,
+            source_doc_id: None,
         };
         let payload_val = bincode::serialize(&payload).unwrap(); // unwrap allowed
         storage.put(tx, invalid_key, &payload_val).await.unwrap(); // unwrap allowed
@@ -3664,6 +3811,7 @@ mod tests {
             tx_valid_to: Some(TxId::new(20)),
             business_valid_from: Some(1000),
             business_valid_to: Some(2000),
+            source_doc_id: None,
         };
 
         let serialized = bincode::serialize(&payload).unwrap(); // unwrap allowed
@@ -3941,6 +4089,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 Some(pred_hash),
                 Some(object_repr.clone()),
             )
@@ -3957,6 +4106,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 Some(pred_hash),
                 Some(object_repr.clone()),
             )
@@ -3969,6 +4119,7 @@ mod tests {
                 from,
                 to,
                 1.0,
+                None,
                 None,
                 None,
                 None,
@@ -4004,6 +4155,7 @@ mod tests {
                     from,
                     to,
                     1.0,
+                    None,
                     None,
                     None,
                     None,

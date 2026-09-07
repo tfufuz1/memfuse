@@ -712,6 +712,9 @@ pub struct Edge {
     /// End of business validity (business time in Unix ms); None = currently valid business state.
     #[serde(default)]
     pub business_valid_to: Option<i64>,
+    /// Optional source document ID from which this edge was derived.
+    #[serde(default)]
+    pub source_doc_id: Option<DocId>,
 }
 
 impl Edge {
@@ -726,7 +729,14 @@ impl Edge {
             tx_valid_to: None,
             business_valid_from: None,
             business_valid_to: None,
+            source_doc_id: None,
         }
+    }
+
+    /// Sets the source document ID from which this edge was derived.
+    pub fn with_source_doc_id(mut self, doc_id: DocId) -> Self {
+        self.source_doc_id = Some(doc_id);
+        self
     }
 
     /// Creates a new `Edge`, validating non-empty label and finite non-negative weight.
@@ -759,6 +769,7 @@ impl Edge {
             tx_valid_to: None,
             business_valid_from: None,
             business_valid_to: None,
+            source_doc_id: None,
         })
     }
 
