@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+default-run = "memfuse-bench"
 description = "MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy"
 
 [lib]
@@ -13,6 +14,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "memfuse-bench"
 path = "src/main.rs"
+
+[[bin]]
+name = "compare-baseline"
+path = "src/bin/compare_baseline.rs"
 
 [dependencies]
 memfuse-core = { workspace = true }
