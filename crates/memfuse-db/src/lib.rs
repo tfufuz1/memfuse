@@ -103,14 +103,9 @@ pub mod filter;
 pub mod fusion;
 pub mod multistep;
 pub mod reaper;
-pub mod sleep_cycle;
+pub mod temporal_filter;
 pub mod thermostat;
 pub mod transaction;
-
-pub use sleep_cycle::{
-    run_rem_phase, run_rem_phase_with_tx, CommunityStabilityTracker, MetaChunk, RemConfig,
-    RemPhaseResult,
-};
 pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
