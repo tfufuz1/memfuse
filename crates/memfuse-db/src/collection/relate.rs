@@ -49,7 +49,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         db_tx.stage_graph_edge(edge);
 
         match db_tx.commit().await {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.check_and_trigger_community_detection(1);
+                Ok(())
+            }
             Err(e) => Err(e),
         }
     }

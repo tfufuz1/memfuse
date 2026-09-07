@@ -149,7 +149,7 @@ async fn test_add_edge_median_latency_10k_nodes_100k_edges() {
 
         let t0 = Instant::now();
         graph
-            .add_edge(src, dst, 0.8, None, None, None, None)
+            .add_edge(src, dst, 0.8, None, None, None, None, None, None)
             .await
             .unwrap();
         let elapsed_nanos = t0.elapsed().as_nanos() as u64;

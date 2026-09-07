@@ -5,6 +5,7 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 use super::{extract_text, parse_importance_score, Collection, StoredDocument, StoredDocumentMeta};
+use crate::thermostat::{FreeEnergyThermostat, ThermostatInputs};
 use memfuse_core::{
     DocId, EntityId, GraphIndex, LlmTextGenerator, MemFuseError, Result, StorageEngine, TextIndex,
     TxId, VectorIndex, EXPIRY_METADATA_KEY,
@@ -13,6 +14,88 @@ use memfuse_graph::{detect_communities, CommunityAssignment, CommunityDetectionC
 use std::sync::atomic::Ordering;
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
+    /// Führt einen thermostat-gesteuerten Importance-Score-Sweep durch.
+    /// Evictet Chunks deren effective_score unter eviction_threshold liegt.
+    /// Gibt Anzahl der evictierten Dokumente zurück.
+    #[tracing::instrument(level = "trace", skip(self, thermostat))]
+    pub async fn reap_by_thermostat(
+        &self,
+        thermostat: &FreeEnergyThermostat,
+        max_per_tick: usize,
+    ) -> Result<usize> {
+        let tombstone_ratio = self
+            .index
+            .stats()
+            .await
+            .map(|s| s.deleted_ratio as f32)
+            .unwrap_or(0.0);
+
+        let inputs = ThermostatInputs {
+            tombstone_ratio,
+            ..ThermostatInputs::default()
+        };
+
+        let current_tx = self.next_tx.load(Ordering::SeqCst);
+        let docs = self.scan_prefix("").await?;
+        let mut evicted_ids = Vec::new();
+
+        for (id, val) in docs {
+            if evicted_ids.len() >= max_per_tick {
+                break;
+            }
+
+            if self.name == "default" && id.starts_with("__") {
+                continue;
+            }
+
+            let meta_obj = val
+                .get("metadata")
+                .and_then(|m| m.as_object())
+                .or_else(|| val.as_object());
+
+            if let Some(obj) = meta_obj {
+                if let Some(imp_val) = obj.get("importance") {
+                    let (base_score, created_tx) = if let Ok(imp) =
+                        serde_json::from_value::<memfuse_core::MemoryImportance>(imp_val.clone())
+                    {
+                        (imp.base_score.value(), imp.created_at_tx.inner())
+                    } else if let Some(raw_f64) = imp_val.as_f64() {
+                        let created =
+                            obj.get("created_at_tx").and_then(|v| v.as_u64()).unwrap_or(0);
+                        (raw_f64 as f32, created)
+                    } else {
+                        continue;
+                    };
+
+                    let elapsed_tx = current_tx.saturating_sub(created_tx);
+
+                    if thermostat.should_evict(base_score, elapsed_tx, &inputs) {
+                        evicted_ids.push(id);
+                    }
+                }
+            }
+        }
+
+        let count = evicted_ids.len();
+        for id in &evicted_ids {
+            tracing::info!(
+                collection = %self.name,
+                id = %id,
+                "Thermostat reaper evicting document"
+            );
+            if let Err(e) = self.delete(id).await {
+                tracing::error!(
+                    collection = %self.name,
+                    id = %id,
+                    error = %e,
+                    "Thermostat reaper failed to delete document"
+                );
+            }
+        }
+
+        Ok(count)
+    }
+
     /// Repairs the index by re-syncing with the storage.
     ///
     /// Scans the storage for any documents that are missing from the index
