@@ -3525,6 +3525,14 @@
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "660fbb5f23cc27c4"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "66979dc996d2302c"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "75f043c2bb19bbfe"
   },
   {
@@ -10514,6 +10522,34 @@
   {
     "file": "crates/memfuse-index/tests/simd_numerical_audit.rs",
     "hash": "fc77be40e09863d8"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "25085c32fe5c7879"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "5bf7eada6d89c49f"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
+    "hash": "b6d9bbff2c8bc5d7"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/segment.rs",
+    "hash": "bb1365364ea0bdb3"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/store.rs",
+    "hash": "75c00d97bb5a0d61"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/store.rs",
+    "hash": "c0dbf5da2d9ef8c9"
+  },
+  {
+    "file": "crates/memfuse-kv-bridge/src/store.rs",
+    "hash": "fd67501a323e0302"
   },
   {
     "file": "crates/memfuse-mcp/src/prompt_injection.rs",
