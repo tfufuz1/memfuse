@@ -10,7 +10,6 @@
 use memfuse_core::{DocId, LlmTextGenerator, Result, TxId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
 
 /// Configuration for the REM phase of sleep cycle processing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -144,7 +143,7 @@ pub async fn run_rem_phase_with_tx(
         let mut prompt_content = String::new();
         for doc_id in members {
             if let Some(text) = source_texts.get(doc_id) {
-                let _ = writeln!(prompt_content, "- Chunk [DocId: {}]: {}", doc_id.0, text);
+                prompt_content.push_str(&format!("- Chunk [DocId: {}]: {}\n", doc_id.0, text));
             }
         }
 
