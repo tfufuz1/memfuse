@@ -2608,26 +2608,27 @@ mod tests {
     #[test]
     fn test_workspace_crate_layers_regression() {
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 17, "Expected 17 workspace crates");
+        assert_eq!(crates.len(), 18, "Expected 18 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),
-            ("memfuse-calibration", 0),
+            ("memfuse-calibration", 1),
+            ("memfuse-candle", 1),
+            ("memfuse-checkpoint", 1),
             ("memfuse-crypto", 1),
-            ("memfuse-checkpoint", 2),
+            ("memfuse-graph", 1),
+            ("memfuse-kv-bridge", 1),
+            ("memfuse-text", 1),
             ("memfuse-embed", 2),
-            ("memfuse-graph", 2),
+            ("memfuse-index", 2),
             ("memfuse-ollama", 2),
             ("memfuse-store", 2),
-            ("memfuse-text", 2),
-            ("memfuse-candle", 3),
-            ("memfuse-index", 3),
-            ("memfuse-db", 4),
-            ("memfuse-bench", 5),
-            ("memfuse-router", 5),
-            ("memfuse-tauri", 5),
-            ("memfuse-agent", 6),
-            ("memfuse-mcp", 7),
+            ("memfuse-db", 3),
+            ("memfuse-bench", 4),
+            ("memfuse-router", 4),
+            ("memfuse-tauri", 4),
+            ("memfuse-agent", 5),
+            ("memfuse-mcp", 6),
         ]
         .into_iter()
         .collect();
