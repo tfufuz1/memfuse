@@ -2397,6 +2397,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "f331a4a5b2c4290b"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "f4491b19aac0df2d"
   },
   {
@@ -3470,6 +3474,10 @@
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
     "hash": "66979dc996d2302c"
+  },
+  {
+    "file": "crates/memfuse-db/src/collection/query_builder.rs",
+    "hash": "725e5eb648e3aa8f"
   },
   {
     "file": "crates/memfuse-db/src/collection/query_builder.rs",
