@@ -4,9 +4,12 @@
 // NICHT-OFFENSICHTLICH: Orphan Reaper triggert bei HNSW-Indextrennung automatischen Rebuild mit Timeout.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
-use crate::collection::Collection;
-use memfuse_core::traits::{StorageEngine, VectorIndex};
+use crate::collection::{Collection, StoredDocument};
+use crate::sleep_cycle::NremConfig;
+use crate::sleep_cycle_executor::execute_nrem_cycle;
+use memfuse_core::traits::StorageEngine;
 use memfuse_core::tx_buffer::TxBuffer;
+use memfuse_core::DocId;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,6 +22,88 @@ pub const MAX_ORPHANS_PER_TICK: usize = 100;
 
 /// Maximum number of expired documents processed in a single expiry reaper tick.
 pub const MAX_EXPIRED_PER_TICK: usize = 100;
+
+/// Starts a background task for periodic NREM consolidation.
+pub fn start_nrem_reaper<S: StorageEngine>(
+    collection: Arc<Collection<S>>,
+    nrem_config: NremConfig,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        tracing::info!(
+            collection = %collection.name(),
+            interval = ?interval,
+            "NREM reaper task started"
+        );
+
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    // Extract turns from collection (chronologically sorted)
+                    let user_key_prefix = collection.user_key_prefix();
+                    let entries = match collection.storage().scan_prefix(&user_key_prefix).await {
+                        Ok(entries) => entries,
+                        Err(err) => {
+                            tracing::error!(
+                                collection = %collection.name(),
+                                error = %err,
+                                "NREM reaper: failed to scan collection"
+                            );
+                            continue;
+                        }
+                    };
+
+                    let mut turns: Vec<(DocId, Vec<f32>)> = Vec::new();
+                    for (k, v) in entries {
+                        if collection.name() == "default" && k.starts_with(b"__") {
+                            continue;
+                        }
+                        if let Ok(stored) = serde_json::from_slice::<StoredDocument>(&v) {
+                            if let Ok(doc_id) = DocId::from_key(&stored.id) {
+                                turns.push((doc_id, stored.embedding));
+                            }
+                        }
+                    }
+
+                    if turns.is_empty() {
+                        continue;
+                    }
+
+                    match execute_nrem_cycle(&collection, &turns, &nrem_config).await {
+                        Ok(res) => {
+                            if !res.duplicates_tombstoned.is_empty() {
+                                tracing::info!(
+                                    collection = %collection.name(),
+                                    tombstoned = res.duplicates_tombstoned.len(),
+                                    segments = res.segments_created,
+                                    "NREM reaper: consolidated duplicate turns"
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                collection = %collection.name(),
+                                error = %err,
+                                "NREM reaper: cycle execution failed"
+                            );
+                        }
+                    }
+                }
+                _ = cancel_token.cancelled() => {
+                    tracing::info!(
+                        collection = %collection.name(),
+                        "NREM reaper task shutting down via token"
+                    );
+                    break;
+                }
+            }
+        }
+    })
+}
 
 /// Starts a background task to periodically clean up expired documents with TTL.
 pub fn start_expiry_reaper<S: StorageEngine>(

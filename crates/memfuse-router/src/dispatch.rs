@@ -154,6 +154,7 @@ mod tests {
             },
             confidence: None,
             decision_id: crate::DecisionId::new(),
+            drift_status: None,
         };
 
         let result = dispatch_to_slm(&decision).await;
