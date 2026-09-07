@@ -5521,6 +5521,10 @@
   },
   {
     "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
+    "hash": "02290942c9ab7df1"
+  },
+  {
+    "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
     "hash": "038e5de26380735d"
   },
   {
@@ -5597,6 +5601,10 @@
   },
   {
     "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
+    "hash": "92ab3c88d588d277"
+  },
+  {
+    "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
     "hash": "9bc3aa767060f9af"
   },
   {
@@ -5613,6 +5621,10 @@
   },
   {
     "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
+    "hash": "c298d0ca235ce7f5"
+  },
+  {
+    "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
     "hash": "d472b39fb6eaf47b"
   },
   {
@@ -5621,11 +5633,19 @@
   },
   {
     "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
+    "hash": "e57c5725416dfcfe"
+  },
+  {
+    "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
     "hash": "e7d72f2c001679cc"
   },
   {
     "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
     "hash": "f19ac6471e423ed8"
+  },
+  {
+    "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
+    "hash": "f3e812d8c496e251"
   },
   {
     "file": "crates/memfuse-db/tests/graph_hybrid_search.rs",
