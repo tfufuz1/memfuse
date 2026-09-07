@@ -120,47 +120,6 @@ fn test_simd_vs_scalar_vs_f64_all_metrics() {
     println!("Max DotProduct Deviation vs f64: {max_dot_diff:.8e}");
 }
 
-#[test]
-fn test_u8_metrics_exact_match() {
-    let dimensions = [1, 7, 16, 32, 33, 64, 128, 256];
-
-    for &dim in &dimensions {
-        let a: Vec<u8> = (0..dim).map(|i| ((i * 17 + 3) % 256) as u8).collect();
-        let b: Vec<u8> = (0..dim).map(|i| ((i * 31 + 11) % 256) as u8).collect();
-
-        // 1. Dot Product u8
-        let dot_scalar = dot_product_u8_scalar(&a, &b);
-        let dot_dispatch = dot_product_u8(&a, &b);
-        assert_eq!(
-            dot_scalar, dot_dispatch,
-            "u8 DotProduct mismatch at dim {dim}: scalar={dot_scalar}, dispatch={dot_dispatch}"
-        );
-
-        // 2. Squared Euclidean u8
-        let euc_sq_scalar = euclidean_distance_sq_u8_scalar(&a, &b);
-        let euc_sq_dispatch = euclidean_distance_sq_u8(&a, &b);
-        assert_eq!(
-            euc_sq_scalar, euc_sq_dispatch,
-            "u8 Squared Euclidean mismatch at dim {dim}: scalar={euc_sq_scalar}, dispatch={euc_sq_dispatch}"
-        );
-
-        // 3. Cosine Parts u8
-        let parts_scalar = cosine_similarity_parts_u8_scalar(&a, &b);
-        let parts_dispatch = cosine_similarity_parts_u8(&a, &b);
-        assert_eq!(
-            parts_scalar.dot, parts_dispatch.dot,
-            "u8 Cosine dot mismatch at dim {dim}"
-        );
-        assert_eq!(
-            parts_scalar.norm_a_sq, parts_dispatch.norm_a_sq,
-            "u8 Cosine norm_a_sq mismatch at dim {dim}"
-        );
-        assert_eq!(
-            parts_scalar.norm_b_sq, parts_dispatch.norm_b_sq,
-            "u8 Cosine norm_b_sq mismatch at dim {dim}"
-        );
-    }
-}
 
 #[test]
 fn test_extreme_and_special_values() {

@@ -32,10 +32,7 @@ async fn test_quantizer_recalibration() {
     index.commit(TxId(1)).await.unwrap();
 
     // Verify initial quantizer state
-    let q_before = {
-        let guard = index.quantizer().read();
-        guard.as_ref().unwrap().clone()
-    };
+    let q_before = index.quantizer().expect("Quantizer must be trained");
     for &m in q_before.maxes() {
         assert!(m <= 1.05);
     }
@@ -52,10 +49,7 @@ async fn test_quantizer_recalibration() {
     index.rebuild().await.unwrap();
 
     // Verify new quantizer state
-    let q_after = {
-        let guard = index.quantizer().read();
-        guard.as_ref().unwrap().clone()
-    };
+    let q_after = index.quantizer().expect("Quantizer must be trained");
     // The new quantizer maxes should adapt to include 150.0
     assert!(q_after.maxes()[0] > 100.0);
 
