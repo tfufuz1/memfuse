@@ -14,7 +14,6 @@ parking_lot = { workspace = true }
 rand = { workspace = true }
 roaring = { workspace = true }
 tokio = { workspace = true }
-async-trait = { workspace = true }
 tracing = { workspace = true }
 memmap2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -23,6 +22,7 @@ serde = { workspace = true, features = ["derive"] }
 default = []
 graph = ["dep:memfuse-graph"]
 experimental-diskann = []
+physio-nucleation = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

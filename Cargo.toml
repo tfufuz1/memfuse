@@ -10,12 +10,14 @@ members = [
     "crates/memfuse-crypto",
     "crates/memfuse-graph",
     "crates/memfuse-embed",
-    "crates/memfuse-py",
     "crates/memfuse-tauri",
     "crates/memfuse-mcp",
     "crates/memfuse-agent",
     "crates/memfuse-ollama",
     "crates/memfuse-router",
+    "crates/memfuse-calibration",
+    "benchmarks/memfuse-bench",
+    "crates/memfuse-candle",
     "xtask",
 ]
 
@@ -37,7 +39,6 @@ flatbuffers = "24.3"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
-async-trait = "0.1"
 
 # Data structures
 bytes = "1"
@@ -73,12 +74,13 @@ memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
 memfuse-crypto = { path = "crates/memfuse-crypto" }
 memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-embed = { path = "crates/memfuse-embed" }
-memfuse-py    = { path = "crates/memfuse-py" }
 memfuse-tauri = { path = "crates/memfuse-tauri" }
 memfuse-mcp   = { path = "crates/memfuse-mcp" }
 memfuse-agent = { path = "crates/memfuse-agent" }
 memfuse-ollama = { path = "crates/memfuse-ollama" }
 memfuse-router = { path = "crates/memfuse-router" }
+memfuse-calibration = { path = "crates/memfuse-calibration" }
+memfuse-candle = { path = "crates/memfuse-candle" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────
 # memfuse-cluster, memfuse-sandbox, memfuse-saos-agent wurden in Phase 0 ausgelagert.

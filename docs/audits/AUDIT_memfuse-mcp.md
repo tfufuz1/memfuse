@@ -215,6 +215,32 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
 
 ---
 
+## 14. Session Audit Log (2026-09-06 / Session: 31d12757)
+
+**Datum**: 2026-09-06
+**Session**: 31d12757
+**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
+
+### Durchgeführte Aktionen:
+1. **Schritt 0 — Inventar-Realitätsabgleich**:
+   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 7 Dateien: `bin/memfuse-mcp-server.rs`, `config.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
+   - **Befund**: `Inventar-Drift: Datei crates/memfuse-mcp/src/config.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst` und `Inventar-Drift: Datei crates/memfuse-mcp/src/tests.rs im Prompter-Inventar vom 2026-09-03 nicht erfasst`.
+2. **Tier 1 Concurrency & Stress Verification**:
+   - Concurrency Rauchtest durchgeführt: 5 aufeinanderfolgende Test-Läufe mit `--test-threads=8` (`cargo test -p memfuse-mcp -- --test-threads=8`). Ergebnis: 0 Fehlschläge, 0 Panics, 0 Deadlocks across all runs.
+   - Slowloris & Stdio Stress tests (`test_slowloris_stdio_attack_simulation`, `test_max_rpc_bytes_overflow_and_line_draining_stdio`) verifiziert: Line-Draining und `MAX_RPC_BYTES` (4 MB) schützen vor Memory Exhaustion und Buffer Pollution.
+3. **Protokoll- & Sicherheits-Audit (APM-27 & APM-38)**:
+   - APM-27 (RPC Message Bounds & Event Flooding): `read_line_bounded` beschränkt den Input pro Zeile strikt auf 4 MB und konsumiert bei Überlänge verbleibende Bytes bis `\n`, um Stream-Korruption zu verhindern.
+   - APM-38 (Request ID & Sequence Tracking): JSON-RPC 2.0 Request-ID Preservation verifiziert für Einzel-Requests, Notifications und Batch Arrays (`handle_value`).
+   - Sandbox & Zeroization: `McpSandbox` schützt volatile Ergebnisse mittels AES-256-GCM-SIV Encrypted Buffers (`Zeroizing<Vec<u8>>`) und führt bei Drop ein Emergency Wipe des Sitzungsschlüssels durch.
+   - Content Provenance: `memfuse_search` und `memfuse_get` taggen abgerufene Dokumente mit `content_provenance: "retrieved_untrusted_data"` und leiten sie zur Prompt-Injection-Prüfung an `PromptInjectionGuard` weiter.
+4. **Gate-Verifikation**:
+   - `cargo check -p memfuse-mcp` -> 0 Fehler, 0 Warnungen
+   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
+   - `cargo fmt --check -p memfuse-mcp` -> OK
+   - `cargo test -p memfuse-mcp` -> 34 unit tests passed, 26 integration tests passed
+
+---
+
 ## 12. Session Audit Log (2026-09-02 / Session: 4e4bb530)
 
 **Datum**: 2026-09-02

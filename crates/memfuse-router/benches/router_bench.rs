@@ -59,7 +59,7 @@ fn bench_router_engine(c: &mut Criterion) {
             ));
         }
 
-        let router = Arc::new(RouterEngine::new(collection.clone(), profiles));
+        let router = Arc::new(RouterEngine::new(collection.clone(), profiles, None));
 
         c.bench_function(&format!("router_route_{}_profiles", profile_count), |b| {
             b.to_async(&rt).iter(|| {

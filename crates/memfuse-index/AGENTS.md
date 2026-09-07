@@ -22,6 +22,9 @@ bzw. memory-mapped geladen (via `persistence::MmapIndex`).
 | `persistence.rs` | `MmapIndex`, `HnswHeader`, Binärformat-Serialisierung & Memory-Mapping |
 | `diskann.rs` | DiskANN Out-of-Core-Suche (hinter `experimental-diskann` Feature-Gate) |
 
+> `experimental-diskann` is opt-in. Enable with `features = ["experimental-diskann"]`.
+> Do NOT add it to `default` — it remains experimental by definition.
+
 ## 3. Kritische Invarianten
 
 ### SIMD-Hardware-Dispatch

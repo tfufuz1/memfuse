@@ -1,3 +1,22 @@
+"""
+FFI Panic Isolation Tests & Regression Guards for memfuse-py in Release Builds.
+
+BEFORE / AFTER CONTRAST:
+------------------------
+BEFORE (Workspace Cargo.toml with global `panic = "abort"` in [profile.release]):
+  When memfuse-py was part of the main workspace, Cargo forced `panic = "abort"`
+  on all release artifacts (`maturin build --release`).
+  In release builds, `std::panic::catch_unwind` inside `run_blocking_ffi` was WIRKUNGSLOS:
+  any Rust panic immediately aborted the CPython process via SIGABRT (exit code 134 / signal 6)
+  before catch_unwind could intercept it.
+
+AFTER (Standalone Workspace in `crates/memfuse-py` with `panic = "unwind"` in [profile.release]):
+  `crates/memfuse-py` is decoupled as an independent workspace with its own [profile.release]
+  defining `panic = "unwind"`. `std::panic::catch_unwind` in `run_blocking_ffi` cleanly catches
+  Rust panics across FFI boundaries in both debug and release builds, raising a catchable
+  `PyRuntimeError` in Python without process termination.
+"""
+
 import sys
 import subprocess
 import pytest
@@ -6,6 +25,9 @@ from memfuse import _memfuse
 def test_rust_panic_converted_to_pyruntimeerror():
     """Verifies that a Rust panic triggered inside FFI is converted to PyRuntimeError
     and caught as a standard Python exception without crashing the host process.
+
+    This test confirms that `panic = "unwind"` is active in release mode so that
+    `std::panic::catch_unwind` intercepts the Rust panic at the FFI boundary.
     """
     with pytest.raises(RuntimeError) as excinfo:
         _memfuse._trigger_panic_for_test("Custom test panic message")

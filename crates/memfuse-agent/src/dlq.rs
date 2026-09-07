@@ -3,7 +3,9 @@
 // INVARIANTEN: Key prefix "dlq:" for LSM prefix isolation; atomic put/delete operations.
 // NICHT-OFFENSICHTLICH: drain reads all DLQ entries and deletes them atomically in a single batch transaction.
 // HOTSPOTS: push (ll. 25-45), drain (ll. 50-80).
-// STAND: TS:2026-09-03T00:00:00Z
+// STAND: TS:2026-09-06T11:18:35Z (SESSION: 820afd9c)
+
+// AI-TAG[INVENTORY-DRIFT][MINOR] RESOLVED: AGT-AGENT-0399362d — Documented dlq.rs inventory drift in audit report. (TS: 2026-09-06T11:18:35Z) (SESSION: 820afd9c)
 
 //! Persistent Dead-Letter-Queue for failed agent step executions.
 

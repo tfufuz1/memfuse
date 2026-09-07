@@ -338,6 +338,46 @@ impl<T: Clone> TxBuffer<T> {
     }
 }
 
+impl TxBuffer<(Vec<u8>, Vec<u8>)> {
+    /// Checks if a key is currently staged in any active transaction in the buffer.
+    /// Returns `Some(true)` if staged for insertion, `Some(false)` if staged for deletion,
+    /// or `None` if not staged in any transaction.
+    pub fn staged_status(&self, key: &[u8]) -> Option<bool> {
+        let mut max_tx: Option<TxId> = None;
+        let mut status: Option<bool> = None;
+
+        for shard_lock in &self.shards {
+            let shard = shard_lock.read();
+            for (tx_id, (ops, _instant)) in &shard.ops {
+                for op in ops {
+                    let (op_key, is_insert) = match op {
+                        IndexOp::Insert { data, .. } => (&data.0[..], true),
+                        IndexOp::Delete { data: Some(d), .. } => (&d.0[..], false),
+                        IndexOp::Delete { data: None, .. } => continue,
+                    };
+                    if op_key == key {
+                        match max_tx {
+                            None => {
+                                max_tx = Some(*tx_id);
+                                status = Some(is_insert);
+                            }
+                            Some(m) if *tx_id > m => {
+                                max_tx = Some(*tx_id);
+                                status = Some(is_insert);
+                            }
+                            Some(m) if *tx_id == m => {
+                                status = Some(is_insert);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        status
+    }
+}
+
 impl<T: Clone> Default for TxBuffer<T> {
     fn default() -> Self {
         Self::new()

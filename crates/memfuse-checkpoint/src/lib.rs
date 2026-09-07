@@ -23,8 +23,7 @@
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
 // SIEHE AUCH:  ADR-011
 
-use async_trait::async_trait;
-use memfuse_core::{MemFuseError, Result, TxId, WorkflowState};
+use memfuse_core::{BoxFuture, MemFuseError, Result, TxId, WorkflowState};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -770,11 +769,10 @@ impl<S: memfuse_core::StorageEngine> Drop for CheckpointGuard<S> {
 }
 
 /// Trait für die Checkpoint-Verwaltung.
-#[async_trait]
 pub trait CheckpointRegistry: memfuse_core::traits::Checkpoint + Send + Sync {
-    async fn save_checkpoint(&self, meta: CheckpointMeta) -> Result<()>;
-    async fn load_checkpoint(&self, seq_no: u64) -> Result<Option<CheckpointMeta>>;
-    async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>>;
+    fn save_checkpoint<'a>(&'a self, meta: CheckpointMeta) -> BoxFuture<'a, Result<()>>;
+    fn load_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<Option<CheckpointMeta>>>;
+    fn list_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<CheckpointMeta>>>;
 }
 
 /// Counter metadata persisted to guarantee TxId monotonicity across restarts.
@@ -836,6 +834,18 @@ pub struct PersistentCheckpointStore<S: memfuse_core::StorageEngine> {
 impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     /// Öffnet einen PersistentCheckpointStore asynchron mit Rekonstruktion und Monotonie-Garantie.
     pub async fn open(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
+        let ns = namespace.into();
+        let orphan_path = std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
+        Self::open_with_orphan_registry(storage, ns, orphan_registry).await
+    }
+
+    /// Öffnet einen PersistentCheckpointStore mit einer spezifischen instanzgebundenen Orphan Registry.
+    pub async fn open_with_orphan_registry(
+        storage: Arc<S>,
+        namespace: impl Into<String>,
+        orphan_registry: Arc<InstanceOrphanRegistry>,
+    ) -> Result<Self> {
         let namespace = namespace.into();
 
         // 1. Scan store for highest existing TxId under namespace
@@ -896,10 +906,6 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
         let initial_hwm = persisted_val.unwrap_or_else(|| scanned_max_raw.unwrap_or(0));
 
-        let orphan_path =
-            std::path::PathBuf::from(format!("{namespace}_orphaned_checkpoints.json"));
-        let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
-
         // 5. Recover orphaned sequence pins on startup (ADR-052)
         let orphans = orphan_registry.get_orphan_pins();
         for orphan in orphans {
@@ -930,19 +936,41 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
 
     pub fn new(storage: Arc<S>, namespace: impl Into<String>) -> Result<Self> {
         let ns = namespace.into();
+        let orphan_path = std::path::PathBuf::from(format!("{ns}_orphaned_checkpoints.json"));
+        let orphan_registry = Arc::new(InstanceOrphanRegistry::new(&orphan_path));
+        Self::new_with_orphan_registry(storage, ns, orphan_registry)
+    }
+
+    pub fn new_with_orphan_registry(
+        storage: Arc<S>,
+        namespace: impl Into<String>,
+        orphan_registry: Arc<InstanceOrphanRegistry>,
+    ) -> Result<Self> {
+        let ns = namespace.into();
         let storage_clone = storage.clone();
         let ns_clone = ns.clone();
+        let orphan_reg_clone = orphan_registry.clone();
 
         let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
-                tokio::task::block_in_place(|| handle.block_on(Self::open(storage_clone, ns_clone)))
+                tokio::task::block_in_place(|| {
+                    handle.block_on(Self::open_with_orphan_registry(
+                        storage_clone,
+                        ns_clone,
+                        orphan_reg_clone,
+                    ))
+                })
             } else {
                 std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .map_err(|e| MemFuseError::Internal(e.to_string()))?;
-                    rt.block_on(Self::open(storage_clone, ns_clone))
+                    rt.block_on(Self::open_with_orphan_registry(
+                        storage_clone,
+                        ns_clone,
+                        orphan_reg_clone,
+                    ))
                 })
                 .join()
                 .map_err(|_| {
@@ -959,7 +987,11 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
                 .map_err(|e| {
                     MemFuseError::Internal(format!("Failed to create Tokio runtime: {e}"))
                 })?;
-            rt.block_on(Self::open(storage_clone, ns_clone))
+            rt.block_on(Self::open_with_orphan_registry(
+                storage_clone,
+                ns_clone,
+                orphan_reg_clone,
+            ))
         };
 
         res.map_err(|e| {
@@ -1368,30 +1400,30 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
     }
 }
 
-#[async_trait]
 impl<S: memfuse_core::StorageEngine> CheckpointRegistry for PersistentCheckpointStore<S> {
-    async fn save_checkpoint(&self, meta: CheckpointMeta) -> Result<()> {
-        let _guard = self.write_lock.lock().await;
-        self.save_checkpoint_internal(meta).await
+    fn save_checkpoint<'a>(&'a self, meta: CheckpointMeta) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let _guard = self.write_lock.lock().await;
+            self.save_checkpoint_internal(meta).await
+        })
     }
 
-    async fn load_checkpoint(&self, seq_no: u64) -> Result<Option<CheckpointMeta>> {
-        // Erst In-Memory prüfen
-        if let Some(meta) = self.checkpoints.read().get(&seq_no) {
-            return Ok(Some(meta.clone()));
-        }
+    fn load_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<Option<CheckpointMeta>>> {
+        Box::pin(async move {
+            if let Some(meta) = self.checkpoints.read().get(&seq_no) {
+                return Ok(Some(meta.clone()));
+            }
 
-        // Dann Storage via Scan (da Key auf Name basiert)
-        let all = self.list_checkpoints().await?;
-        Ok(all.into_iter().find(|c| c.seq_no == seq_no))
+            let all = self.list_checkpoints().await?;
+            Ok(all.into_iter().find(|c| c.seq_no == seq_no))
+        })
     }
 
-    async fn list_checkpoints(&self) -> Result<Vec<CheckpointMeta>> {
-        self.list_checkpoints().await
+    fn list_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<CheckpointMeta>>> {
+        Box::pin(async move { self.list_checkpoints().await })
     }
 }
 
-#[async_trait]
 impl<S: memfuse_core::StorageEngine> memfuse_core::traits::CheckpointCoordinator
     for PersistentCheckpointStore<S>
 {
@@ -1422,29 +1454,32 @@ impl<S: memfuse_core::StorageEngine> memfuse_core::traits::CheckpointCoordinator
     }
 }
 
-#[async_trait]
 impl<S: memfuse_core::StorageEngine> memfuse_core::traits::Checkpoint
     for PersistentCheckpointStore<S>
 {
-    async fn take_snapshot(&self, tx: TxId) -> Result<WorkflowState> {
-        let seq_no = self.storage.last_seq_no().await?;
-        Ok(WorkflowState {
-            tx,
-            graph_hash: format!("seq-{}", seq_no),
+    fn take_snapshot<'a>(&'a self, tx: TxId) -> BoxFuture<'a, Result<WorkflowState>> {
+        Box::pin(async move {
+            let seq_no = self.storage.last_seq_no().await?;
+            Ok(WorkflowState {
+                tx,
+                graph_hash: format!("seq-{}", seq_no),
+            })
         })
     }
 
-    async fn restore(&self, state: &WorkflowState) -> Result<()> {
-        self.storage.rollback_to_tx(state.tx).await?;
-        self.list_checkpoints().await?;
-        Ok(())
+    fn restore<'a>(&'a self, state: &'a WorkflowState) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.storage.rollback_to_tx(state.tx).await?;
+            self.list_checkpoints().await?;
+            Ok(())
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memfuse_core::{Result, StorageEngine, StorageStats};
+    use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats};
     use parking_lot::Mutex;
     use std::collections::HashSet;
 
@@ -1466,75 +1501,100 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl StorageEngine for MockStorage {
-        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            Ok(self.data.lock().get(key).cloned())
+        fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { Ok(self.data.lock().get(key).cloned()) })
         }
-        async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
-            self.get(key).await
+        fn get_at_seq<'a>(
+            &'a self,
+            key: &'a [u8],
+            _seq: u64,
+        ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { self.get(key).await })
         }
-        async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            if let Some(fail_key) = self.fail_on_put.lock().as_ref() {
-                if key == fail_key {
-                    return Err(MemFuseError::Internal("Mock Storage Error".to_string()));
+        fn put<'a>(
+            &'a self,
+            _tx_id: TxId,
+            key: &'a [u8],
+            value: &'a [u8],
+        ) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                if let Some(fail_key) = self.fail_on_put.lock().as_ref() {
+                    if key == fail_key {
+                        return Err(MemFuseError::Internal("Mock Storage Error".to_string()));
+                    }
                 }
-            }
-            self.data.lock().insert(key.to_vec(), value.to_vec());
-            Ok(())
-        }
-        async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-            self.data.lock().remove(key);
-            Ok(())
-        }
-        async fn commit(&self, _tx_id: TxId) -> Result<()> {
-            Ok(())
-        }
-        async fn rollback(&self, _tx_id: TxId) -> Result<()> {
-            Ok(())
-        }
-        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
-            self.rolled_back_tx.lock().push(tx_id);
-            Ok(())
-        }
-        async fn last_seq_no(&self) -> Result<u64> {
-            Ok(0)
-        }
-        async fn last_tx_id(&self) -> Result<TxId> {
-            Ok(TxId::new(0))
-        }
-        async fn flush(&self) -> Result<()> {
-            Ok(())
-        }
-        async fn stats(&self) -> Result<StorageStats> {
-            Ok(StorageStats {
-                num_segments: 0,
-                total_size_bytes: 0,
-                memtable_size_bytes: 0,
+                self.data.lock().insert(key.to_vec(), value.to_vec());
+                Ok(())
             })
         }
-        async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().insert(seq_no);
-            Ok(())
+        fn delete<'a>(&'a self, _tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.data.lock().remove(key);
+                Ok(())
+            })
         }
-        async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.pinned.lock().remove(&seq_no);
-            Ok(())
+        fn commit<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
         }
-        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            let data = self.data.lock();
-            Ok(data
-                .iter()
-                .filter(|(k, _)| k.starts_with(prefix))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect())
+        fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
         }
-        async fn scan(
-            &self,
-            _s: std::ops::Bound<&[u8]>,
-            _e: std::ops::Bound<&[u8]>,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            Ok(Vec::new())
+        fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.rolled_back_tx.lock().push(tx_id);
+                Ok(())
+            })
+        }
+        fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+            Box::pin(async move { Ok(0) })
+        }
+        fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+            Box::pin(async move { Ok(TxId::new(0)) })
+        }
+        fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+            Box::pin(async move {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            })
+        }
+        fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.pinned.lock().insert(seq_no);
+                Ok(())
+            })
+        }
+        fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.pinned.lock().remove(&seq_no);
+                Ok(())
+            })
+        }
+        fn scan_prefix<'a>(
+            &'a self,
+            prefix: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
+                let data = self.data.lock();
+                Ok(data
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(prefix))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect())
+            })
+        }
+        fn scan<'a>(
+            &'a self,
+            _s: std::ops::Bound<&'a [u8]>,
+            _e: std::ops::Bound<&'a [u8]>,
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { Ok(Vec::new()) })
         }
     }
 
@@ -1546,7 +1606,10 @@ mod tests {
             .create_checkpoint("cp1", "c1", 1, TxId::new(1), serde_json::json!({}))
             .await
             .unwrap(); // unwrap
-        let loaded = store.load_checkpoint(1).await.unwrap().unwrap(); // unwrap
+        let loaded = CheckpointRegistry::load_checkpoint(&store, 1)
+            .await
+            .unwrap()
+            .unwrap(); // unwrap
         assert_eq!(loaded, meta);
     }
 

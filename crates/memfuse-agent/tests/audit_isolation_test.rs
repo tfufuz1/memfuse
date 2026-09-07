@@ -1,6 +1,11 @@
 use memfuse_agent::audit::{migrate_legacy_audit_entries, AuditEntry, AuditLog};
-use memfuse_core::{DocId, MemFuseError, Result, StorageEngine, VectorIndex};
-use memfuse_db::{MemFuse, MemFuseConfig};
+use memfuse_core::{
+    DocId, MemFuseError, Result, ScoredDocument, StorageEngine, TxId, VectorIndex, VectorIndexStats,
+};
+use memfuse_db::{Collection, MemFuse, MemFuseConfig};
+use memfuse_graph::CsrGraph;
+use memfuse_index::{HnswConfig, HnswIndex};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -185,11 +190,12 @@ async fn test_migration_removes_legacy_zero_vectors_from_hnsw() -> Result<()> {
     assert_eq!(col.len().await, 12);
 
     // 3. Run migration tool
-    let migrated_count = migrate_legacy_audit_entries(&col).await?;
+    let stats = migrate_legacy_audit_entries(&col).await?;
     assert_eq!(
-        migrated_count, 10,
+        stats.migrated, 10,
         "Should migrate all 10 legacy audit entries"
     );
+    assert_eq!(stats.failed, 0, "Zero entries should fail during migration");
 
     // 4. Verify HNSW index node count is restored to 2!
     assert_eq!(
@@ -203,6 +209,181 @@ async fn test_migration_removes_legacy_zero_vectors_from_hnsw() -> Result<()> {
     let replayed = audit_log.replay_task("mig-task").await?;
     assert_eq!(replayed.len(), 10);
     assert_eq!(replayed[0].node_id, "legacy_node");
+
+    Ok(())
+}
+
+struct FaultyVectorIndex {
+    inner: HnswIndex,
+    fail_doc_ids: HashSet<DocId>,
+}
+
+impl VectorIndex for FaultyVectorIndex {
+    async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
+        self.inner.insert(tx, id, embedding).await
+    }
+
+    async fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
+        self.inner.search(query, k).await
+    }
+
+    async fn search_at(&self, query: &[f32], k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
+        self.inner.search_at(query, k, seq_no).await
+    }
+
+    async fn search_filtered(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
+    ) -> Result<Vec<ScoredDocument>> {
+        self.inner.search_filtered(query, k, filter).await
+    }
+
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        if self.fail_doc_ids.contains(&id) {
+            return Err(MemFuseError::Internal(format!(
+                "Simulated HNSW deletion failure for doc_id {:?}",
+                id
+            )));
+        }
+        self.inner.delete(tx, id).await
+    }
+
+    async fn commit(&self, tx: TxId) -> Result<()> {
+        self.inner.commit(tx).await
+    }
+
+    async fn rollback(&self, tx: TxId) -> Result<()> {
+        self.inner.rollback(tx).await
+    }
+
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        self.inner.rollback_to_tx(tx_id).await
+    }
+
+    async fn len(&self) -> usize {
+        self.inner.len().await
+    }
+
+    async fn last_tx_id(&self) -> Result<TxId> {
+        self.inner.last_tx_id().await
+    }
+
+    async fn stats(&self) -> Result<VectorIndexStats> {
+        self.inner.stats().await
+    }
+}
+
+#[tokio::test]
+async fn test_migration_hnsw_delete_failure_prevents_orphan_state() -> Result<()> {
+    let tmp = TempDir::new().expect("temp dir");
+    let config = MemFuseConfig {
+        dimension: 4,
+        ..Default::default()
+    };
+    let db = Arc::new(MemFuse::open_with_config(tmp.path(), config).await?);
+    let real_col = db.collection("faulty_mig_col").await?;
+
+    let fail_key = "audit:fail-task:step:1";
+    let fail_doc_id = DocId::from_key(fail_key)?;
+
+    let mut fail_set = HashSet::new();
+    fail_set.insert(fail_doc_id);
+
+    let inner_hnsw = HnswIndex::try_new(HnswConfig {
+        dimension: 4,
+        ..Default::default()
+    })
+    .expect("HnswIndex creation");
+
+    let faulty_index = Arc::new(FaultyVectorIndex {
+        inner: inner_hnsw,
+        fail_doc_ids: fail_set,
+    });
+
+    let graph_index = Arc::new(CsrGraph::new());
+    let next_tx = Arc::new(std::sync::atomic::AtomicU64::new(1));
+
+    let col = Collection::new(
+        "faulty_mig_col".to_string(),
+        real_col.storage().clone(),
+        faulty_index,
+        graph_index,
+        next_tx,
+        4,
+        memfuse_text::Language::English,
+    );
+
+    // Inject 3 legacy zero-vector audit entries (step 0: ok, step 1: fail delete, step 2: ok)
+    let zero_vec = vec![0.0f32; 4];
+    for i in 0..3 {
+        let key = format!("audit:fail-task:step:{i}");
+        let entry = AuditEntry {
+            task_id: "fail-task".to_string(),
+            step_count: i,
+            node_id: format!("node_{i}"),
+            tokens_consumed: 10,
+            payload: serde_json::json!({"step": i}),
+            error: None,
+        };
+        let doc_id = DocId::from_key(&key)?;
+        let tx = col.allocate_tx()?;
+
+        let stored = serde_json::json!({
+            "id": key,
+            "embedding": zero_vec,
+            "metadata": serde_json::to_value(&entry)?
+        });
+        let meta_only = serde_json::json!({
+            "id": key,
+            "metadata": serde_json::to_value(&entry)?
+        });
+
+        let user_key = col.namespaced_key(key.as_bytes(), 0);
+        let doc_key = col.namespaced_key(&doc_id.inner().to_le_bytes(), 1);
+
+        col.storage()
+            .put(tx, &user_key, &serde_json::to_vec(&stored)?)
+            .await?;
+        col.storage()
+            .put(tx, &doc_key, &serde_json::to_vec(&meta_only)?)
+            .await?;
+        col.vector_index().insert(tx, doc_id, &zero_vec).await?;
+        col.storage().commit(tx).await?;
+        col.vector_index().commit(tx).await?;
+    }
+
+    assert_eq!(col.len().await, 3);
+
+    // Execute migration
+    let stats = migrate_legacy_audit_entries(&col).await?;
+
+    assert_eq!(stats.migrated, 2, "2 entries should succeed");
+    assert_eq!(stats.failed, 1, "1 entry should fail");
+
+    // Check that the failed entry (step 1) retained its legacy doc_key mapping and user_key StoredDocument embedding
+    let doc_key_1 = col.namespaced_key(&fail_doc_id.inner().to_le_bytes(), 1);
+    let doc_key_val = col.storage().get(&doc_key_1).await?;
+    assert!(
+        doc_key_val.is_some(),
+        "Legacy doc_key mapping for failed entry must NOT be deleted"
+    );
+
+    let user_key_1 = col.namespaced_key(fail_key.as_bytes(), 0);
+    let user_key_val = col
+        .storage()
+        .get(&user_key_1)
+        .await?
+        .expect("user_key exists");
+    let val_json: serde_json::Value = serde_json::from_slice(&user_key_val)?;
+    assert!(
+        val_json.as_object().unwrap().contains_key("embedding"),
+        "Failed entry must remain in legacy StoredDocument format with embedding, not converted to pure KV"
+    );
+
+    // Verify HNSW count is 1 (the failed entry remaining in HNSW)
+    assert_eq!(col.len().await, 1);
 
     Ok(())
 }

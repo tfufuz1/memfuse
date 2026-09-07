@@ -286,3 +286,36 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 | OOM / Backpressure | OK | Monotonic TxId allocation & bounded heap allocation in RRF | — |
 | Concurrency Smoke | OK | 3/3 iterations of multithreaded test suites passed without deadlock/panic | — |
 | Snapshot Isolation | OK | Snapshot recovery & cross-signal isolation tests passed 100% | — |
+
+
+## 11. Tier-1 Concurrency & Tiefen-Audit (2026-09-06)
+
+**Datum:** 06. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: dccf31c7)
+**Aktion:** Tier-1 Tiefen-Audit, Inventar-Realitätsabgleich & Concurrency/Fault-Injection-Prüfung auf `memfuse-db`
+
+### Inventar-Realitätsabgleich (Stand: 2026-09-06):
+- **Befund:** Prompter-Inventar vom 2026-09-03 erfasste 8 Quellcode-Dateien. Tatsächliches Repository enthält 18 Quellcode-Dateien in `crates/memfuse-db/src/`.
+- **Inventar-Drift:** 10 neue / feingranulare Dateien identifiziert und auditierbar erfasst: `chunker.rs`, `collection/crud.rs`, `collection/kv_lock.rs`, `collection/maintenance.rs`, `collection/query_builder.rs`, `collection/tests.rs`, `collection/tx.rs`, `context.rs`, `filter.rs`, `reaper.rs`.
+
+### Codebase & Invarianten-Analyse:
+1. **Lock-Hierarchie & Synchronisation (APM-12, APM-41):**
+   - Strikte Einhaltung der Top-Down-Lock-Reihenfolge `MemFuse::collections` (`tokio::sync::RwLock`) -> `Collection::insert_lock` (`tokio::sync::Mutex`) -> `Collection/MemFuse::embedder` (`parking_lot::RwLock`).
+   - Keine zyklischen Lock-Anforderungen in async .await-Blöcken identifiziert.
+2. **4-Signal-Fusion & Provenance (APM-14, APM-16):**
+   - Weighted Reciprocal Rank Fusion (RRF) in `fusion.rs` schützt gegen NaN/Inf-Scores.
+   - Herkunftsnachweis Invariante **INV-PROV-1** (`sum(signal_contributions[*].rrf_contribution) ≈ rrf_score`) verifiziert.
+3. **2PC Transaction & Crash Recovery:**
+   - Transaktions-Staging (LSM -> HNSW -> BM25 -> CSR Graph) und Phase 2 Commit-Reihenfolge eingehalten.
+   - `repair_on_open()` löst unerledigte `CommitIntent::Pending` Transaktionsabsichten beim Systemstart sicher auf.
+4. **Feature-Gate Code Smell (AI-TAG[SMELL][MAJOR]):**
+   - `crates/memfuse-db/src/collection/query_builder.rs`: AI-TAG `AGT-DB-8ddf8937` dokumentiert (Variable `text_str` ungebunden in feature="reranking" Block).
+
+### Concurrency & Fault-Injection Testergebnisse (5-Pass Multi-Thread Runs):
+
+| Szenario / Testsuite | Threads | Läufe | Ergebnis | Befund |
+|---|:---:|:---:|:---:|---|
+| `fault_injection_2pc` (2PC Failure, Staging/Commit Rollbacks, repair_on_open) | 8 | 5 | OK | 0 Phantom Hits, 0 Split-Brains |
+| `cross_signal_isolation_test` (Snapshot Isolation under high write concurrency) | 8 | 5 | OK | 0 Isolation Anomalien |
+| `snapshot_recovery` (Snapshot Persistence, Flush Survival, MVCC Consistency) | 8 | 5 | OK | 100% Konsistenz |
+| `zettelkasten_links_test` (Zettelkasten Memory Links, Cycle Detection) | 8 | 5 | OK | Zyklusprävention wirksam |

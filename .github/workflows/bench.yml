@@ -41,3 +41,26 @@ jobs:
           path: |
             target/criterion
             benches/results/scale_rss.csv
+
+  retrieval-accuracy-bench:
+    name: Retrieval Accuracy Benchmark (memfuse-bench)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Retrieval Accuracy Benchmark Harness
+        run: cargo run --locked -p memfuse-bench --release
+
+      - name: Upload Retrieval Accuracy Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-accuracy-benchmark-results
+          path: |
+            benchmarks/results/results.json
+            benchmarks/results/summary.md

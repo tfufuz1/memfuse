@@ -1,27 +1,8 @@
+mod support;
+
 use memfuse_core::{Result, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
-use std::fs;
 use tempfile::TempDir;
-
-fn get_open_fd_count() -> usize {
-    if let Ok(entries) = fs::read_dir("/proc/self/fd") {
-        entries.filter_map(|e| e.ok()).count()
-    } else {
-        0
-    }
-}
-
-fn get_rss_bytes() -> usize {
-    if let Ok(statm) = fs::read_to_string("/proc/self/statm") {
-        let parts: Vec<&str> = statm.split_whitespace().collect();
-        if parts.len() >= 2 {
-            if let Ok(pages) = parts[1].parse::<usize>() {
-                return pages * 4096; // 4KB page size
-            }
-        }
-    }
-    0
-}
 
 #[tokio::test]
 async fn test_file_descriptor_leak_on_repeated_open_close() -> Result<()> {
@@ -40,7 +21,7 @@ async fn test_file_descriptor_leak_on_repeated_open_close() -> Result<()> {
         storage.force_flush().await?;
     }
 
-    let baseline_fds = get_open_fd_count();
+    let baseline_fds = support::get_open_fd_count();
     println!("Baseline Open File Descriptors: {}", baseline_fds);
 
     // 1000 Open / Read / Close cycles
@@ -58,7 +39,7 @@ async fn test_file_descriptor_leak_on_repeated_open_close() -> Result<()> {
         drop(storage);
     }
 
-    let final_fds = get_open_fd_count();
+    let final_fds = support::get_open_fd_count();
     println!(
         "Final Open File Descriptors after 1000 cycles: {}",
         final_fds
@@ -88,7 +69,7 @@ async fn test_memory_rss_footprint_under_continuous_load() -> Result<()> {
     };
     let storage = LsmStorage::new(config).await?;
 
-    let initial_rss = get_rss_bytes();
+    let initial_rss = support::get_rss_bytes();
     println!("Initial RSS: {} MB", initial_rss / (1024 * 1024));
 
     // Sustained load: 10,000 writes with frequent flushes
@@ -105,7 +86,7 @@ async fn test_memory_rss_footprint_under_continuous_load() -> Result<()> {
         }
     }
 
-    let final_rss = get_rss_bytes();
+    let final_rss = support::get_rss_bytes();
     println!("Final RSS after 10k ops: {} MB", final_rss / (1024 * 1024));
 
     if initial_rss > 0 {

@@ -6,12 +6,15 @@ license.workspace = true
 
 [dependencies]
 memfuse-core = { workspace = true }
+memfuse-db = { workspace = true }
+memfuse-calibration = { workspace = true }
+parking_lot = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-async-trait = { workspace = true }
 tracing = { workspace = true }
+futures = "0.3"
 futures-util = "0.3"
 rand = { workspace = true }
 regex = { workspace = true }
@@ -20,3 +23,4 @@ quick-xml = "0.41"
 [dev-dependencies]
 proptest = "1.4"
 memfuse-embed = { workspace = true }
+tracing-test = "0.2"

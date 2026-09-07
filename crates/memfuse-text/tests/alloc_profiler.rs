@@ -2,7 +2,7 @@
 //! Measures heap allocation count, bytes allocated, execution time, and throughput
 //! for 10,000 documents (~500 words per document) across German and English workloads.
 
-use memfuse_core::{DocId, StorageEngine, TextIndex, TxId};
+use memfuse_core::{BoxFuture, DocId, StorageEngine, TextIndex, TxId};
 use memfuse_text::inverted::{InvertedIndex, Language};
 use memfuse_text::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -17,16 +17,29 @@ static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
 static DEALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
 static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 
+// SAFETY: `CountingAllocator` implements `GlobalAlloc` by delegating directly to `std::alloc::System`.
+// Invariants & Safety Proof:
+// 1. Thread Safety: Atomic counter increments (`ALLOC_COUNT`, `DEALLOC_COUNT`, `ALLOC_BYTES`) use relaxed atomic operations, preserving `Sync` safety.
+// 2. Memory Safety: All heap allocations and deallocations are forwarded unchanged to `std::alloc::System`.
+// 3. Trait Contract: `alloc` and `dealloc` obey all layout and pointer invariants required by the `GlobalAlloc` contract.
 unsafe impl GlobalAlloc for CountingAllocator {
+    // SAFETY: Thread-safe delegation to System allocator.
+    // SAFETY: Layout invariants (size, alignment) are guaranteed by the `GlobalAlloc` contract caller.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: Layout verified by GlobalAlloc caller.
         ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        System.alloc(layout)
+        // SAFETY: `layout` is guaranteed valid by caller of `GlobalAlloc::alloc`, forwarded directly to `System.alloc`.
+        let ptr = unsafe { System.alloc(layout) }; // SAFETY: Forward layout to System allocator.
+        ptr
     }
 
+    // SAFETY: Pointer and layout invariants are guaranteed by the `GlobalAlloc` contract caller (`ptr` was allocated by `alloc` with matching `layout`).
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: Pointer and layout verified by GlobalAlloc caller.
         DEALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        System.dealloc(ptr, layout);
+        // SAFETY: `ptr` and `layout` are guaranteed valid by caller of `GlobalAlloc::dealloc`, forwarded directly to `System.dealloc`.
+        unsafe { System.dealloc(ptr, layout) }; // SAFETY: Forward ptr and layout to System allocator.
     }
 }
 
@@ -61,75 +74,98 @@ impl FastRamStorage {
     }
 }
 
-#[async_trait::async_trait]
 impl StorageEngine for FastRamStorage {
-    async fn get(&self, key: &[u8]) -> memfuse_core::Result<Option<Vec<u8>>> {
-        Ok(self.store.read().get(key).cloned())
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, memfuse_core::Result<Option<Vec<u8>>>> {
+        Box::pin(async move { Ok(self.store.read().get(key).cloned()) })
     }
-    async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> memfuse_core::Result<()> {
-        self.store.write().insert(key.to_vec(), value.to_vec());
-        Ok(())
-    }
-    async fn delete(&self, _tx_id: TxId, key: &[u8]) -> memfuse_core::Result<()> {
-        self.store.write().remove(key);
-        Ok(())
-    }
-    async fn commit(&self, _tx_id: TxId) -> memfuse_core::Result<()> {
-        Ok(())
-    }
-    async fn rollback(&self, _tx_id: TxId) -> memfuse_core::Result<()> {
-        Ok(())
-    }
-    async fn rollback_to_tx(&self, _tx_id: TxId) -> memfuse_core::Result<()> {
-        Ok(())
-    }
-    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> memfuse_core::Result<Option<Vec<u8>>> {
-        Ok(self.store.read().get(key).cloned())
-    }
-    async fn last_seq_no(&self) -> memfuse_core::Result<u64> {
-        Ok(1)
-    }
-    async fn last_tx_id(&self) -> memfuse_core::Result<TxId> {
-        Ok(TxId::new(1))
-    }
-    async fn flush(&self) -> memfuse_core::Result<()> {
-        Ok(())
-    }
-    async fn stats(&self) -> memfuse_core::Result<memfuse_core::StorageStats> {
-        Ok(memfuse_core::StorageStats {
-            num_segments: 1,
-            total_size_bytes: 0,
-            memtable_size_bytes: 0,
+    fn put<'a>(
+        &'a self,
+        _tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move {
+            self.store.write().insert(key.to_vec(), value.to_vec());
+            Ok(())
         })
     }
-    async fn pin_checkpoint(&self, _id: u64) -> memfuse_core::Result<()> {
-        Ok(())
+    fn delete<'a>(
+        &'a self,
+        _tx_id: TxId,
+        key: &'a [u8],
+    ) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move {
+            self.store.write().remove(key);
+            Ok(())
+        })
     }
-    async fn unpin_checkpoint(&self, _id: u64) -> memfuse_core::Result<()> {
-        Ok(())
+    fn commit<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn scan(
-        &self,
-        _start: std::ops::Bound<&[u8]>,
-        _end: std::ops::Bound<&[u8]>,
-    ) -> memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        Ok(Vec::new())
+    fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn scan_prefix(&self, prefix: &[u8]) -> memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let guard = self.store.read();
-        let res = guard
-            .range(prefix.to_vec()..)
-            .take_while(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        Ok(res)
+    fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn scan_prefix_at(
-        &self,
-        prefix: &[u8],
+    fn get_at_seq<'a>(
+        &'a self,
+        key: &'a [u8],
+        _seq: u64,
+    ) -> BoxFuture<'a, memfuse_core::Result<Option<Vec<u8>>>> {
+        Box::pin(async move { Ok(self.store.read().get(key).cloned()) })
+    }
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<u64>> {
+        Box::pin(async move { Ok(1) })
+    }
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<TxId>> {
+        Box::pin(async move { Ok(TxId::new(1)) })
+    }
+    fn flush<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move { Ok(()) })
+    }
+    fn stats<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<memfuse_core::StorageStats>> {
+        Box::pin(async move {
+            Ok(memfuse_core::StorageStats {
+                num_segments: 1,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
+        })
+    }
+    fn pin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move { Ok(()) })
+    }
+    fn unpin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, memfuse_core::Result<()>> {
+        Box::pin(async move { Ok(()) })
+    }
+    fn scan<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
+            let guard = self.store.read();
+            let res = guard
+                .range(prefix.to_vec()..)
+                .take_while(|(k, _)| k.starts_with(prefix))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            Ok(res)
+        })
+    }
+    fn scan_prefix_at<'a>(
+        &'a self,
+        prefix: &'a [u8],
         _seq_no: u64,
-    ) -> memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        self.scan_prefix(prefix).await
+    ) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { self.scan_prefix(prefix).await })
     }
 }
 

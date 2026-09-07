@@ -191,3 +191,25 @@ Für die Test-Suite wurden folgende synthetische Test-Dateien und Generatoren er
   - `cargo fmt --check -p memfuse-tauri` -> 0 Diffs.
   - `cargo test -p memfuse-tauri --all-features` -> 83/83 Tests grün (0 failed).
 - **Invarianz-Status**: Zero Panic outside test blocks, full path traversal IPC protection, strict 100 MB ingestion payload guards, no workspace regressions.
+
+---
+
+## 14. Audit-Sitzung: Inventar-Drift-Reconciliation & Upstream-Breaking-Change-Analyse (TS: 2026-09-06T11:20:31Z) (SESSION: 96c44961)
+
+### Inventar-Drift
+- **Befund (Schritt 0)**: Das Prompter-Inventar vom 2026-09-03 verzeichnete 6 Dateien (`lib.rs`, `state.rs`, `ingestion/pdf.rs`, `docx.rs`, `email.rs`, `ollama.rs`). Der reale Repository-Zustand umfasst **17 Rust-Quellcodedateien** in `crates/memfuse-tauri/src/`.
+- **Festgestellte Abweichungen**:
+  - `commands/mod.rs`, `collections.rs`, `ingest.rs`, `search.rs`, `chat.rs`, `transform.rs`
+  - `ingestion/mod.rs`, `entities.rs`, `pipeline.rs`, `progress.rs`
+  - `main.rs`
+- **Bewertung**: Alle 17 Dateien wurden in dieser Sitzung vollständig gelesen und auditspezifisch nach APM-Gefahrenprofilen analysiert.
+
+### Upstream Breaking Change (Blocker)
+- **Befund (BUG-TAURI-002)**: Upstream-Commit #1598 erweiterte `SearchResultDto` in `commands/search.rs` um das Feld `pub provenance: Option<ProvenanceDto>`. Während `hybrid_search` angepasst wurde, verblieb die Initialisierung in `multi_step_search` im alten Zustand ohne `provenance`.
+- **Auswirkung**: `cargo check -p memfuse-tauri` schlägt fehl (`error[E0063]: missing field 'provenance' in initializer of 'SearchResultDto'`).
+- **Maßnahme**: Inline-Befund `AI-TAG[BLOCKER][BUG]` mit ID `AGT-TAURI-96c44961` in `crates/memfuse-tauri/src/commands/search.rs` hinterlegt. Der funktionale Fix ist gemäß Auditor-Rollensperre Gegenstand eines separaten Fix-Auftrags.
+
+### Invarianten & Parser-Sicherheitsnachweis
+- **Path Traversal Guard**: IPC-Befehle `ingest_file` und `ingest_folder` erzwingen kanonische Pfadprüfung via `validate_path_within_base`.
+- **Zip-Bomb & Payload Limits**: DOCX-Dekomprimierung prüft Kompressionsraten und Gesamtkapazität (`DocxConfig`), Ingestion begrenzt Dateigröße strikt auf `MAX_INGEST_FILE_SIZE_BYTES = 100 MB`.
+- **ReDoS Protection**: `regex_semaphore` begrenzt synchrone Transformationen auf `MAX_CONCURRENT_REGEX_OPS = 8` Permits zur Vermeidung von Tokio-Blocking-Thread-Pool-Erschöpfung.

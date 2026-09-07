@@ -13,15 +13,19 @@ use tempfile::tempdir;
 /// zufällig — sonst wäre der Vektor-Signal-Test bedeutungslos).
 struct KeywordEmbedder;
 
-#[async_trait::async_trait]
 impl TextEmbeddingEngine for KeywordEmbedder {
-    async fn embed(&self, text: &str) -> memfuse_core::Result<Vec<f32>> {
-        let lower = text.to_lowercase();
-        let dim_urlaub = if lower.contains("urlaub") { 1.0 } else { 0.0 };
-        let dim_gehalt = if lower.contains("gehalt") { 1.0 } else { 0.0 };
-        let dim_lager = if lower.contains("lager") { 1.0 } else { 0.0 };
-        let dim_generic = 0.1;
-        Ok(vec![dim_urlaub, dim_gehalt, dim_lager, dim_generic])
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<Vec<f32>>> {
+        Box::pin(async move {
+            let lower = text.to_lowercase();
+            let dim_urlaub = if lower.contains("urlaub") { 1.0 } else { 0.0 };
+            let dim_gehalt = if lower.contains("gehalt") { 1.0 } else { 0.0 };
+            let dim_lager = if lower.contains("lager") { 1.0 } else { 0.0 };
+            let dim_generic = 0.1;
+            Ok(vec![dim_urlaub, dim_gehalt, dim_lager, dim_generic])
+        })
     }
 }
 

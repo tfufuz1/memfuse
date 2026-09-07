@@ -1,14 +1,40 @@
 # AUDIT REPORT: `memfuse-text` Crate
 
-**Datum:** 3. September 2026
-**Session:** `87124619`
+**Datum:** 6. September 2026
+**Session:** `9fd3f17f`
 **Auditor:** Senior Rust NLP-Engineer (BM25, Morphologie, UTF-8-Sicherheit)
 **Ziel-Crate:** `crates/memfuse-text` (Volltextsuche-Signal / Signal 2 der 4-Signal-Fusion)
 **Ziel-Repository:** MemFuse (`https://github.com/tfufuz1/memfuse`)
 
 ---
 
-## 0. Re-Audit Snapshot & Session Summary (`2026-09-03T19:36:00Z`)
+## 0. Re-Audit Snapshot & Session Summary (`2026-09-06T11:17:24Z`)
+
+Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Tiefen-Auditsession (Session `9fd3f17f`) wurde das Crate `memfuse-text` erneut verifiziert:
+
+1. **Gate-Stack Verification:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **76 passed, 0 failed** (alle Unit- & Integrationstests grün)
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
+
+2. **Inventar-Realitätsabgleich (Schritt 0):**
+   - 5/5 Quellcodedateien im Repo bestätigt: `bm25.rs`, `inverted.rs`, `lib.rs`, `morphology.rs`, `tokenizer.rs`.
+   - **Ergebnis:** Inventarabgleich bestanden (keine Abweichung zum Stand 2026-09-03).
+
+3. **Unsafe-Code, Slicing & Tier-2 Concurrency Stichprobe:**
+   - `#![forbid(unsafe_code)]` in `lib.rs` ist strikt aktiv. Exactly **0** `unsafe`-Blöcke.
+   - APM-7 (String-Slicing Safety): Alle String-Slices in `morphology.rs` und `tokenizer.rs` sind durch `is_char_boundary()`-Prüfungen abgesichert.
+   - Tier-2 Concurrency Stichprobe: `test_concurrent_upserts_stats_eventual_count`, `test_concurrent_upserts_no_panic` & `test_sequential_large_batch_stats_correct` in 3/3 aufeinanderfolgenden Durchläufen mit 8 Threads mit 100% Determinismus und 0 Race-Conditions/Deadlocks bestanden.
+
+4. **KMU Compound Splitter Recall Evaluation:**
+   - `test_kmu_55_compounds_suite` evaluiert 55 KMU-Fachbegriffe mit Fugenlauten.
+   - Trefferquote: **98.2% (54 / 55 passed)**, deutlich über dem Akzeptanzkriterium von $\ge 90\%$.
+
+---
+
+## 0b. Historischer Re-Audit Snapshot (`2026-09-03T19:36:00Z`)
 
 Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Chaos-Engineering-Auditsession (Session `87124619`) wurde das Crate `memfuse-text` erneut verifiziert:
 

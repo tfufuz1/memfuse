@@ -273,18 +273,24 @@ impl IngestionPipeline {
                         created += 1;
 
                         if self.extract_entities {
-                            // Extrahiere Entitäten aus dem Chunk-Text
-                            let extracted_entities =
+                            // Extrahiere Entitäten aus dem Chunk-Text mit Konfidenz-Scores
+                            let extracted_tuples =
                                 crate::ingestion::entities::SimpleEntityExtractor::extract(
                                     &raw_content,
                                 );
+
+                            // Filter Entitäten mit Mindestkonfidenz >= 0.3
+                            let extracted_entities: Vec<(EntityId, f32)> = extracted_tuples
+                                .into_iter()
+                                .filter(|(_, conf)| *conf >= 0.3)
+                                .collect();
 
                             if !extracted_entities.is_empty() {
                                 let graph_arc = collection.graph_index();
                                 let graph: &dyn GraphIndex = graph_arc.as_ref();
                                 let tx = collection.allocate_tx()?;
 
-                                for entity_id in &extracted_entities {
+                                for (entity_id, _conf) in &extracted_entities {
                                     let entity =
                                         Entity::new(*entity_id, "ExtractedTerm", "ExtractedTerm");
                                     if let Err(e) = graph.add_entity(tx, entity).await {
@@ -305,15 +311,15 @@ impl IngestionPipeline {
 
                                 for i in 0..cooccurrence_entities.len() {
                                     for j in (i + 1)..cooccurrence_entities.len() {
+                                        let (id_i, conf_i) = cooccurrence_entities[i];
+                                        let (id_j, conf_j) = cooccurrence_entities[j];
+                                        let co_weight = (0.5 * conf_i * conf_j).clamp(0.01, 1.0);
+
                                         if let Err(e) = graph
                                             .add_edge(
                                                 tx,
-                                                Edge::new(
-                                                    cooccurrence_entities[i],
-                                                    cooccurrence_entities[j],
-                                                    "co_occurrence",
-                                                )
-                                                .with_weight(0.5),
+                                                Edge::new(id_i, id_j, "co_occurrence")
+                                                    .with_weight(co_weight),
                                             )
                                             .await
                                         {
@@ -324,12 +330,8 @@ impl IngestionPipeline {
                                         if let Err(e) = graph
                                             .add_edge(
                                                 tx,
-                                                Edge::new(
-                                                    cooccurrence_entities[j],
-                                                    cooccurrence_entities[i],
-                                                    "co_occurrence",
-                                                )
-                                                .with_weight(0.5),
+                                                Edge::new(id_j, id_i, "co_occurrence")
+                                                    .with_weight(co_weight),
                                             )
                                             .await
                                         {
@@ -349,12 +351,13 @@ impl IngestionPipeline {
                                     );
                                 }
 
-                                for term_id in &extracted_entities {
+                                for (term_id, conf) in &extracted_entities {
+                                    let rel_weight = (0.8 * conf).clamp(0.01, 1.0);
                                     if let Err(e) = graph
                                         .add_edge(
                                             tx,
                                             Edge::new(doc_entity_id, *term_id, "contains")
-                                                .with_weight(0.8),
+                                                .with_weight(rel_weight),
                                         )
                                         .await
                                     {
@@ -366,7 +369,7 @@ impl IngestionPipeline {
                                         .add_edge(
                                             tx,
                                             Edge::new(*term_id, doc_entity_id, "mentioned_in")
-                                                .with_weight(0.8),
+                                                .with_weight(rel_weight),
                                         )
                                         .await
                                     {
@@ -547,14 +550,15 @@ mod tests {
         fail_on_even: bool,
     }
 
-    #[async_trait::async_trait]
     impl TextEmbeddingEngine for MockEmbedder {
-        async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-            if self.fail_on_even && text.contains("Even") {
-                Err(MemFuseError::Internal("Mock embedder failure".into()))
-            } else {
-                Ok(vec![0.1; 768])
-            }
+        fn embed<'a>(&'a self, text: &'a str) -> memfuse_core::BoxFuture<'a, Result<Vec<f32>>> {
+            Box::pin(async move {
+                if self.fail_on_even && text.contains("Even") {
+                    Err(MemFuseError::Internal("Mock embedder failure".into()))
+                } else {
+                    Ok(vec![0.1; 768])
+                }
+            })
         }
     }
 

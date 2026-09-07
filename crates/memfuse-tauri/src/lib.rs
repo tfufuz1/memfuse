@@ -44,11 +44,16 @@ pub fn run() {
             commands::ingest_file,
             commands::ingest_folder,
             commands::hybrid_search,
+            commands::multi_step_search,
             commands::chat_with_rag,
             commands::list_ollama_models,
             commands::run_regex_transform,
             commands::run_bulk_regex_transform,
             commands::validate_regex_pattern,
+            commands::list_branches,
+            commands::create_branch,
+            commands::switch_branch,
+            commands::get_branch_history,
         ])
         .run(tauri::generate_context!());
 

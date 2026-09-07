@@ -1,5 +1,6 @@
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
+use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
 use crate::outcome::{DecisionId, RoutingOutcome};
 use crate::profile::{ProfileCalibrationState, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
@@ -12,10 +13,10 @@ use std::sync::Arc;
 
 /// Mindestanzahl Calibration-Samples für verlässliche Conformal-Quantile.
 /// Unterhalb dieses Wertes gelten alle Konfidenzmetriken als "unkalibriert".
-const CALIBRATION_WARMUP_WINDOW: u32 = 30;
+pub(crate) const CALIBRATION_WARMUP_WINDOW: u32 = 30;
 
 /// Calibrated confidence metrics for a routing decision.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConfidenceMetrics {
     /// Lower bound of the confidence interval (None when not calibrated).
     pub score_lower: Option<f32>,
@@ -42,6 +43,8 @@ pub struct RoutingDecision {
     pub confidence: Option<ConfidenceMetrics>,
     /// Eindeutige ID dieser Routing-Entscheidung.
     pub decision_id: DecisionId,
+    /// Lyapunov-Drift-Status zum Zeitpunkt der Entscheidung (None wenn InsufficientData).
+    pub drift_status: Option<LyapunovResult>,
 }
 
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
@@ -50,12 +53,17 @@ pub struct RouterEngine {
     profiles: RwLock<Vec<SlmProfile>>,
     pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
     pending_decisions: RwLock<HashMap<DecisionId, String>>,
+    lyapunov_watchers: RwLock<HashMap<String, LyapunovDriftWatcher>>,
 }
 
 impl RouterEngine {
     /// Creates a new `RouterEngine` instance.
-    pub fn new(collection: Arc<Collection<LsmStorage>>, profiles: Vec<SlmProfile>) -> Self {
-        let calibration: HashMap<String, ProfileCalibrationState> = profiles
+    pub fn new(
+        collection: Arc<Collection<LsmStorage>>,
+        profiles: Vec<SlmProfile>,
+        calibration_store_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        let mut calibration: HashMap<String, ProfileCalibrationState> = profiles
             .iter()
             .map(|p| {
                 (
@@ -64,11 +72,36 @@ impl RouterEngine {
                 )
             })
             .collect();
+
+        let lyapunov_watchers = RwLock::new(
+            profiles
+                .iter()
+                .map(|p| (p.name.clone(), LyapunovDriftWatcher::default()))
+                .collect(),
+        );
+
+        if let Some(ref path) = calibration_store_path {
+            if let Ok(bytes) = std::fs::read(path) {
+                if let Ok(persisted) =
+                    serde_json::from_slice::<HashMap<String, ProfileCalibrationState>>(&bytes)
+                {
+                    // Merge persisted state into defaults (persisted wins for known profiles)
+                    for (name, state) in persisted {
+                        if calibration.contains_key(&name) {
+                            calibration.insert(name, state);
+                        }
+                        // Unknown profiles (removed from config) are silently dropped
+                    }
+                }
+            }
+        }
+
         Self {
             collection,
             profiles: RwLock::new(profiles),
             calibration: RwLock::new(calibration),
             pending_decisions: RwLock::new(HashMap::new()),
+            lyapunov_watchers,
         }
     }
 
@@ -76,11 +109,12 @@ impl RouterEngine {
     pub fn try_new(
         collection: Arc<Collection<LsmStorage>>,
         profiles: Vec<SlmProfile>,
+        calibration_store_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
         for p in &profiles {
             p.validate()?;
         }
-        Ok(Self::new(collection, profiles))
+        Ok(Self::new(collection, profiles, calibration_store_path))
     }
 
     /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
@@ -89,13 +123,25 @@ impl RouterEngine {
         let new_cal: HashMap<String, ProfileCalibrationState> = new_profiles
             .iter()
             .map(|p| {
-                let state = cal
+                let mut state = cal
                     .remove(&p.name)
                     .unwrap_or_else(|| ProfileCalibrationState::new(p.min_relevance_score));
+                state.check_and_invalidate_fingerprint(p.fingerprint.as_ref());
                 (p.name.clone(), state)
             })
             .collect();
         *cal = new_cal;
+
+        let mut watchers = self.lyapunov_watchers.write();
+        let new_watchers: HashMap<String, LyapunovDriftWatcher> = new_profiles
+            .iter()
+            .map(|p| {
+                let watcher = watchers.remove(&p.name).unwrap_or_default();
+                (p.name.clone(), watcher)
+            })
+            .collect();
+        *watchers = new_watchers;
+
         *self.profiles.write() = new_profiles;
     }
 
@@ -125,6 +171,25 @@ impl RouterEngine {
         }
     }
 
+    /// Gibt den aktuellen Lyapunov-Drift-Status für ein Profil zurück.
+    pub fn drift_status(&self, profile_name: &str) -> Option<LyapunovResult> {
+        self.lyapunov_watchers
+            .read()
+            .get(profile_name)
+            .and_then(|w| w.latest_result.clone())
+    }
+
+    /// Setzt die Baseline für den Lyapunov-Drift-Wächter eines bestimmten Profils.
+    pub fn set_lyapunov_baseline(&self, profile_name: &str, baseline: &[f32]) -> bool {
+        let mut watchers = self.lyapunov_watchers.write();
+        if let Some(watcher) = watchers.get_mut(profile_name) {
+            watcher.set_baseline(baseline);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
     /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
     /// mit einem echten Ground-Truth-Signal.
@@ -143,17 +208,27 @@ impl RouterEngine {
             }
         };
 
+        let active_fp = self
+            .profiles
+            .read()
+            .iter()
+            .find(|p| p.name == profile_name)
+            .and_then(|p| p.fingerprint.clone());
+
         let non_conformity = outcome.non_conformity_score();
 
         let mut cal = self.calibration.write();
         if let Some(state) = cal.get_mut(&profile_name) {
-            state.recalibrate_conformal(non_conformity);
-            tracing::debug!(
-                profile = %profile_name,
-                ?outcome,
-                non_conformity,
-                "Router outcome recorded"
-            );
+            state.check_and_invalidate_fingerprint(active_fp.as_ref());
+            if active_fp.is_some() {
+                state.recalibrate_conformal(non_conformity);
+                tracing::debug!(
+                    profile = %profile_name,
+                    ?outcome,
+                    non_conformity,
+                    "Router outcome recorded"
+                );
+            }
         }
         true
     }
@@ -236,8 +311,11 @@ impl RouterEngine {
                 .iter()
                 .map(|p| {
                     let mut ep = p.clone();
-                    if let Some(state) = cal.get(&p.name) {
-                        ep.min_relevance_score = state.calibrated_min_score;
+                    if let Some(state) = cal.get_mut(&p.name) {
+                        state.check_and_invalidate_fingerprint(p.fingerprint.as_ref());
+                        if state.is_calibrated(p.fingerprint.as_ref()) {
+                            ep.min_relevance_score = state.calibrated_min_score;
+                        }
                     }
                     ep
                 })
@@ -245,7 +323,7 @@ impl RouterEngine {
 
             // 2. Scoring + Cascade Selection
             let (selected_idx, selected_profile, _) =
-                self.select_profile_cascade(&chunks, &effective_profiles, &cal)?;
+                self.select_profile_cascade(&chunks, &effective_profiles, &mut cal)?;
 
             let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
@@ -281,7 +359,11 @@ impl RouterEngine {
                     } else {
                         None
                     },
-                    score_upper: None,
+                    score_upper: if calibrated {
+                        Some(best_score * (1.0 + state.conformal.alpha))
+                    } else {
+                        None
+                    },
                     calibrated,
                     quantile_threshold: state.conformal.quantile_threshold,
                     non_conformity_score: non_conformity,
@@ -299,20 +381,51 @@ impl RouterEngine {
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
+
+        // 5. Update Lyapunov Drift Watcher with non-conformity score
+        let non_conformity_score = confidence_metrics
+            .as_ref()
+            .map(|m| m.non_conformity_score)
+            .unwrap_or(1.0);
+
+        let drift_status = {
+            let mut watchers = self.lyapunov_watchers.write();
+            if let Some(watcher) = watchers.get_mut(&selected_profile.name) {
+                watcher.observe_score(non_conformity_score);
+                let res = watcher.analyze();
+
+                if let LyapunovResult::DriftDetected {
+                    lyapunov_exponent,
+                    ref reason,
+                } = res
+                {
+                    tracing::warn!(
+                        profile = %selected_profile.name,
+                        lambda = lyapunov_exponent,
+                        kl_divergence = reason.kl_divergence,
+                        "Lyapunov drift detected — conformal calibration may be stale"
+                    );
+                }
+
+                match res {
+                    LyapunovResult::InsufficientData => None,
+                    status => Some(status),
+                }
+            } else {
+                None
+            }
+        };
+
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
         context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
         let context_window = context_mgr.prepare_context(raw_chunks)?;
-
-        let decision_id = DecisionId::new();
-        self.pending_decisions
-            .write()
-            .insert(decision_id, selected_profile.name.clone());
 
         Ok(RoutingDecision {
             profile: selected_profile,
             context: context_window,
             confidence: confidence_metrics,
             decision_id,
+            drift_status,
         })
     }
 
@@ -324,11 +437,11 @@ impl RouterEngine {
     ///    - Berechne Aggregat-Score der Chunks (existing logic)
     ///    - Hole ConformalCalibrator für dieses Profil aus self.calibration
     ///    - Prüfe: score >= calibrator.quantile_threshold (oder profile.min_relevance_score)
-    ///      JA: Dieses Profil nehmen, ConfidenceMetrics.calibrated = true
+    ///      JA: Dieses Profil nehmen, ConfidenceMetrics::Calibrated
     ///      NEIN: Weiter zum nächsten Profil (Kaskade)
     /// 3. Falls kein Profil den kalibrierten Schwellenwert erfüllt:
     ///    - Nehme das letzte (geringstes min_relevance_score) als sicheren Fallback
-    ///    - ConfidenceMetrics.calibrated = false, tracing::warn! ausgeben
+    ///    - ConfidenceMetrics::Uncalibrated, tracing::warn! ausgeben
     ///
     /// # Returns
     /// (profil_index, SlmProfile, ConfidenceMetrics)
@@ -336,7 +449,7 @@ impl RouterEngine {
         &self,
         chunks: &[(ContextChunk, Option<u64>)],
         profiles: &[SlmProfile],
-        calibration: &HashMap<String, ProfileCalibrationState>,
+        calibration: &mut HashMap<String, ProfileCalibrationState>,
     ) -> Result<(usize, SlmProfile, ConfidenceMetrics)> {
         if chunks.is_empty() {
             return Err(MemFuseError::NotFound(
@@ -394,24 +507,36 @@ impl RouterEngine {
         // 2. Cascade evaluation in descending min_relevance_score order
         for &(orig_idx, profile) in &sorted_profiles {
             let score = compute_profile_score(profile, chunks);
-            let state = calibration.get(&profile.name);
+            let state = calibration.get_mut(&profile.name);
 
-            // AI-TAG[LOGIC][MAJOR] RESOLVED: AGT-ROUTER-2db4f208 (TS: 2026-09-03T19:29:29Z) (SESSION: 570a3395)
-            // BEFUND: Unified calibration warmup window threshold using CALIBRATION_WARMUP_WINDOW = 30 across route() and select_profile_cascade().
             let (threshold, is_calibrated) = match state {
-                Some(st) if st.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64 => {
-                    (st.calibrated_min_score, true)
+                Some(st) => {
+                    st.check_and_invalidate_fingerprint(profile.fingerprint.as_ref());
+                    if st.is_calibrated(profile.fingerprint.as_ref()) {
+                        (st.calibrated_min_score, true)
+                    } else {
+                        (profile.min_relevance_score, false)
+                    }
                 }
-                _ => (profile.min_relevance_score, false),
+                None => (profile.min_relevance_score, false),
             };
 
             if score >= threshold {
-                let q_threshold = state
+                let q_threshold = calibration
+                    .get(&profile.name)
                     .map(|st| st.conformal.quantile_threshold)
                     .unwrap_or(profile.min_relevance_score);
                 let confidence = ConfidenceMetrics {
-                    score_lower: Some(score * 0.9),
-                    score_upper: Some(score * 1.1),
+                    score_lower: if is_calibrated {
+                        Some(score * 0.9)
+                    } else {
+                        None
+                    },
+                    score_upper: if is_calibrated {
+                        Some(score * 1.1)
+                    } else {
+                        None
+                    },
                     calibrated: is_calibrated,
                     quantile_threshold: q_threshold,
                     non_conformity_score: 0.0,
@@ -618,7 +743,7 @@ mod tests {
             0.8,
         );
 
-        let router = RouterEngine::new(collection, vec![profile1, profile2]);
+        let router = RouterEngine::new(collection, vec![profile1, profile2], None);
         let stats = router.calibration_stats();
         assert_eq!(stats.len(), 2);
         assert_eq!(stats["p1"].times_selected, 0);
@@ -661,7 +786,7 @@ mod tests {
             0.5,
         );
 
-        let router = RouterEngine::new(collection, vec![profile]);
+        let router = RouterEngine::new(collection, vec![profile], None);
         {
             let mut cal = router.calibration.write();
             if let Some(state) = cal.get_mut("p1") {

@@ -1,0 +1,25 @@
+[
+  {
+    "question_id": "test_q1",
+    "question_type": "single-session-user",
+    "question": "What is Alice's favorite drink?",
+    "answer": "Earl Grey tea",
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I really love Earl Grey tea in the morning."},
+        {"role": "assistant", "content": "Noted! Earl Grey tea is great."}
+      ]
+    ]
+  },
+  {
+    "question_id": "test_q2_abs",
+    "question_type": "abstention",
+    "question": "What is Bob's secret passcode?",
+    "answer": "Unknown",
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "Hello world!"}
+      ]
+    ]
+  }
+]

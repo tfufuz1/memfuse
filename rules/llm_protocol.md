@@ -45,11 +45,11 @@ graph TD
 *   **Sofort-Auslöser**: Jedes Major-Bump einer Abhängigkeit, jede Toolchain-Änderung und jede neue Crate lösen einen sofortigen Drift-Audit aus.
 
 ### Schleife 6: ADR-Pflicht
-*   **ADR in DECISIONS.md**: Jede nicht-triviale Architekturentscheidung muss in `DECISIONS.md` dokumentiert werden (mit Datum, Status, Alternativen, Begründung), bevor mit der Umsetzung begonnen wird. Dies verhindert wiederholte Diskussionen oder Fehlklassifizierungen bewusster Abweichungen.
+*   **ADR in docs/decisions/**: Jede nicht-triviale Architekturentscheidung muss in `docs/decisions/` dokumentiert werden (mit Datum, Status, Alternativen, Begründung), bevor mit der Umsetzung begonnen wird. Dies verhindert wiederholte Diskussionen oder Fehlklassifizierungen bewusster Abweichungen.
 
 ### Schleife 7: Rollentrennung Planer/Implementierer
 *   **Phasen-Trennung**: Planung, Code-Generierung und Validierung sind strikt getrennt.
-    1.  **Planer**: Dokumentiert nicht-triviale Entscheidungen in `DECISIONS.md` (ADR) und wartet auf Genehmigung.
+    1.  **Planer**: Dokumentiert nicht-triviale Entscheidungen in `docs/decisions/` (ADR) und wartet auf Genehmigung.
     2.  **Implementierer**: Arbeitet den priorisierten Backlog aus `docs/SOURCE_OF_TRUTH.md` ab.
     3.  **Verifizierer**: Führt `just triple-test` aus und aktualisiert den Status in `docs/SOURCE_OF_TRUTH.md`.
 

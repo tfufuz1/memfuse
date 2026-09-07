@@ -19,14 +19,13 @@
 #![deny(unsafe_code)]
 
 #[cfg(feature = "onnx")]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 #[cfg(feature = "onnx")]
 use std::sync::Arc;
 
 #[cfg(feature = "onnx")]
-use async_trait::async_trait;
 #[cfg(feature = "onnx")]
-use memfuse_core::{EmbeddingError, EmbeddingProvider, MemFuseError, Result};
+use memfuse_core::{BoxFuture, EmbeddingError, EmbeddingProvider, MemFuseError, Result};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
 #[cfg(feature = "onnx")]
@@ -34,10 +33,13 @@ use tokenizers::Tokenizer;
 #[cfg(feature = "onnx")]
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "onnx")]
 pub mod reranker;
+pub use reranker::{CrossEncoderReranker, PlattScaledSigmoid, RerankConfig, RerankResult};
+
+/// Counter tracking the number of ONNX session load operations (for test verification).
 #[cfg(feature = "onnx")]
-pub use reranker::{CrossEncoderReranker, RerankConfig, RerankResult};
+pub static SESSION_LOAD_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// Conservative default. Override via `TextEmbedderConfig::max_batch_size`.
 /// At 1536D × 512 × f32 = ~3 MB input tensor; safe within 128 MB memory budgets.
@@ -78,10 +80,10 @@ pub type OnnxEmbedder = TextEmbedder;
 /// thread pool, preventing Tokio runtime starvation. A [`tokio::sync::Semaphore`]
 /// limits the number of concurrent inference operations.
 #[cfg(feature = "onnx")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TextEmbedder {
-    /// Path to model directory or model.onnx file.
-    session_path: PathBuf,
+    /// Shared ONNX session (thread-safe via `Arc<Mutex>`).
+    session: Arc<parking_lot::Mutex<ort::session::Session>>,
     /// Shared tokenizer instance (thread-safe via `Arc`).
     tokenizer: Arc<Tokenizer>,
     /// Semaphore limiting parallel ONNX inference threads.
@@ -93,33 +95,47 @@ pub struct TextEmbedder {
 }
 
 #[cfg(feature = "onnx")]
-#[async_trait]
+impl std::fmt::Debug for TextEmbedder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextEmbedder")
+            .field("config", &self.config)
+            .field("expected_dim", &self.expected_dim)
+            .finish()
+    }
+}
+
+#[cfg(feature = "onnx")]
 impl EmbeddingProvider for TextEmbedder {
     fn provider_name(&self) -> &str {
         "onnx"
     }
 
-    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
-        let max_len = self.config.max_sequence_length;
-        if let Ok(encoding) = self.tokenizer.encode(text, true) {
-            let len = encoding.get_ids().len();
-            if len > max_len {
-                return Err(EmbeddingError::InputTooLong { len, max: max_len });
-            }
-        }
-        self.embed_async(text).await.map_err(|e| match e {
-            MemFuseError::InvalidInput(msg)
-                if msg.contains("too long") || msg.contains("exceeds") =>
-            {
-                EmbeddingError::InputTooLong {
-                    len: text.len(),
-                    max: max_len,
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
+        Box::pin(async move {
+            let max_len = self.config.max_sequence_length;
+            if let Ok(encoding) = self.tokenizer.encode(text, true) {
+                let len = encoding.get_ids().len();
+                if len > max_len {
+                    return Err(EmbeddingError::InputTooLong { len, max: max_len });
                 }
             }
-            MemFuseError::InvalidInput(msg) | MemFuseError::NotFound(msg) => {
-                EmbeddingError::Unavailable(msg)
-            }
-            other => EmbeddingError::ComputationFailed(other.to_string()),
+            self.embed_async(text).await.map_err(|e| match e {
+                MemFuseError::InvalidInput(msg)
+                    if msg.contains("too long") || msg.contains("exceeds") =>
+                {
+                    EmbeddingError::InputTooLong {
+                        len: text.len(),
+                        max: max_len,
+                    }
+                }
+                MemFuseError::InvalidInput(msg) | MemFuseError::NotFound(msg) => {
+                    EmbeddingError::Unavailable(msg)
+                }
+                other => EmbeddingError::ComputationFailed(other.to_string()),
+            })
         })
     }
 
@@ -127,51 +143,53 @@ impl EmbeddingProvider for TextEmbedder {
         self.expected_dim.unwrap_or(0)
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[&str],
-    ) -> std::result::Result<Vec<Vec<f32>>, EmbeddingError> {
-        let limit = self.config.max_batch_size;
-        if texts.len() > limit {
-            return Err(EmbeddingError::Unavailable(format!(
-                "Batch size {} exceeds max_batch_size {}. Split into smaller batches.",
-                texts.len(),
-                limit
-            )));
-        }
+    fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [&'a str],
+    ) -> BoxFuture<'a, std::result::Result<Vec<Vec<f32>>, EmbeddingError>> {
+        Box::pin(async move {
+            let limit = self.config.max_batch_size;
+            if texts.len() > limit {
+                return Err(EmbeddingError::Unavailable(format!(
+                    "Batch size {} exceeds max_batch_size {}. Split into smaller batches.",
+                    texts.len(),
+                    limit
+                )));
+            }
 
-        let mut handles = Vec::with_capacity(texts.len());
-        for text in texts {
-            let text_owned = text.to_string();
-            let embedder = self.clone();
-            handles.push(tokio::spawn(
-                async move { embedder.embed(&text_owned).await },
-            ));
-        }
+            let mut handles = Vec::with_capacity(texts.len());
+            for text in texts {
+                let text_owned = text.to_string();
+                let embedder = self.clone();
+                handles.push(tokio::spawn(
+                    async move { embedder.embed(&text_owned).await },
+                ));
+            }
 
-        let mut results = Vec::with_capacity(texts.len());
-        let mut parallel_failed = false;
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(res)) => results.push(res),
-                Ok(Err(e)) => return Err(e),
-                Err(_) => {
-                    parallel_failed = true;
-                    break;
+            let mut results = Vec::with_capacity(texts.len());
+            let mut parallel_failed = false;
+            for handle in handles {
+                match handle.await {
+                    Ok(Ok(res)) => results.push(res),
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        parallel_failed = true;
+                        break;
+                    }
                 }
             }
-        }
 
-        if !parallel_failed && results.len() == texts.len() {
-            return Ok(results);
-        }
+            if !parallel_failed && results.len() == texts.len() {
+                return Ok(results);
+            }
 
-        // Sequential fallback path
-        let mut seq_results = Vec::with_capacity(texts.len());
-        for text in texts {
-            seq_results.push(self.embed(text).await?);
-        }
-        Ok(seq_results)
+            // Sequential fallback path
+            let mut seq_results = Vec::with_capacity(texts.len());
+            for text in texts {
+                seq_results.push(self.embed(text).await?);
+            }
+            Ok(seq_results)
+        })
     }
 }
 
@@ -222,10 +240,23 @@ impl TextEmbedder {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| MemFuseError::Internal(format!("Failed to load tokenizer: {}", e)))?;
 
+        info!("Loading ONNX model session from {:?}", model_path);
+        let session = ort::session::Session::builder()
+            .map_err(|e| MemFuseError::Internal(format!("Failed to build ONNX session: {}", e)))?
+            .commit_from_file(&model_path)
+            .map_err(|e| {
+                MemFuseError::Internal(format!(
+                    "Failed to load ONNX model from {:?}: {}",
+                    model_path, e
+                ))
+            })?;
+
+        SESSION_LOAD_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let pool_size = config.pool_size;
         let expected_dim = config.expected_dim;
         Ok(Self {
-            session_path: model_path,
+            session: Arc::new(parking_lot::Mutex::new(session)),
             tokenizer: Arc::new(tokenizer),
             semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
             config,
@@ -251,17 +282,13 @@ impl TextEmbedder {
             .map_err(|_| MemFuseError::Internal("Semaphore closed".into()))?;
 
         let text = text.to_string();
-        let session_path = self.session_path.clone();
+        let session = self.session.clone();
         let tokenizer = self.tokenizer.clone();
         let max_sequence_length = self.config.max_sequence_length;
 
         let output = tokio::task::spawn_blocking(move || {
-            let mut session = ort::session::Session::builder()
-                .map_err(|e| MemFuseError::Internal(format!("Session builder: {}", e)))?
-                .commit_from_file(&session_path)
-                .map_err(|e| MemFuseError::Internal(format!("Model load: {}", e)))?;
-
-            Self::run_inference(&mut session, &tokenizer, &text, max_sequence_length)
+            let mut guard = session.lock();
+            Self::run_inference(&mut guard, &tokenizer, &text, max_sequence_length)
         })
         .await
         .map_err(|e| MemFuseError::Internal(format!("spawn_blocking join: {}", e)))??;
@@ -475,14 +502,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_embedding_engine() -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use async_trait::async_trait;
-        use memfuse_core::{Result, TextEmbeddingEngine};
+        use memfuse_core::{BoxFuture, Result, TextEmbeddingEngine};
 
         struct MockEngine;
-        #[async_trait]
         impl TextEmbeddingEngine for MockEngine {
-            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-                Ok(vec![text.len() as f32])
+            fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
+                Box::pin(async move { Ok(vec![text.len() as f32]) })
             }
         }
 
@@ -495,25 +520,25 @@ mod tests {
     #[tokio::test]
     async fn test_embed_batch_ordering_and_fallback(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        use async_trait::async_trait;
-        use memfuse_core::{MemFuseError, Result, TextEmbeddingEngine};
+        use memfuse_core::{BoxFuture, MemFuseError, Result, TextEmbeddingEngine};
 
         struct MockOrderedEngine {
             fail_on: Option<String>,
         }
 
-        #[async_trait]
         impl TextEmbeddingEngine for MockOrderedEngine {
-            async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-                if let Some(ref fail) = self.fail_on {
-                    if text == fail {
-                        return Err(MemFuseError::InvalidInput(format!("Failed on {text}")));
+            fn embed<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<Vec<f32>>> {
+                Box::pin(async move {
+                    if let Some(ref fail) = self.fail_on {
+                        if text == fail {
+                            return Err(MemFuseError::InvalidInput(format!("Failed on {text}")));
+                        }
                     }
-                }
-                Ok(vec![
-                    text.len() as f32,
-                    (text.chars().next().unwrap_or('a') as u32) as f32,
-                ])
+                    Ok(vec![
+                        text.len() as f32,
+                        (text.chars().next().unwrap_or('a') as u32) as f32,
+                    ])
+                })
             }
         }
 
@@ -542,29 +567,18 @@ mod tests {
     async fn test_embed_batch_oversized_limit(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use memfuse_core::EmbeddingProvider;
+        use std::path::PathBuf;
 
-        let dir = tempdir()?;
-        File::create(dir.path().join("model.onnx"))?;
-        File::create(dir.path().join("tokenizer.json"))?;
-
-        let tokenizer_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("fixtures")
-            .join("tokenizer.json");
+            .join("model.onnx");
 
-        let tokenizer = if tokenizer_path.exists() {
-            Tokenizer::from_file(tokenizer_path).unwrap()
-        } else {
+        if !fixture_path.exists() {
             return Ok(());
-        };
+        }
 
-        let embedder = TextEmbedder {
-            session_path: dir.path().join("model.onnx"),
-            tokenizer: Arc::new(tokenizer),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            config: TextEmbedderConfig::default(),
-            expected_dim: None,
-        };
+        let embedder = TextEmbedder::from_path(&fixture_path)?;
 
         let large_texts: Vec<&str> = vec!["text"; MAX_EMBED_BATCH_SIZE + 1];
         let res = EmbeddingProvider::embed_batch(&embedder, &large_texts).await;

@@ -39,5 +39,3 @@ impl KvKeyLocks {
         self.shards[idx].lock().await
     }
 }
-
-pub(crate) static GLOBAL_KV_LOCKS: KvKeyLocks = KvKeyLocks::new();

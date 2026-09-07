@@ -1,15 +1,15 @@
-//! Contract tests for WP-5.3 Acceptance Criteria.
-//!
-//! AC-1: Checkpoint before every step
-//! AC-2: Replay from checkpoint
-//! AC-3: Immutable audit log
-//! Bonus: Token budget exhaustion
+// Contract tests for WP-5.3 Acceptance Criteria.
+//
+// AC-1: Checkpoint before every step
+// AC-2: Replay from checkpoint
+// AC-3: Immutable audit log
+// Bonus: Token budget exhaustion
 
 use memfuse_agent::audit::AuditLog;
 use memfuse_agent::step::StepResult;
 use memfuse_agent::{AgentContext, AgentTool, NodeType, OrchestratorEngine, StateGraph};
 use memfuse_core::traits::StorageEngine;
-use memfuse_core::TokenBudget;
+use memfuse_core::{BoxFuture, TokenBudget};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use std::sync::Arc;
@@ -30,22 +30,23 @@ impl TokenTool {
     }
 }
 
-#[async_trait::async_trait]
 impl AgentTool for TokenTool {
     fn name(&self) -> &str {
         &self.name
     }
 
-    async fn execute(
-        &self,
-        _ctx: &AgentContext,
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a AgentContext,
         _input: serde_json::Value,
-    ) -> memfuse_core::Result<StepResult> {
-        Ok(StepResult {
-            node_id: self.name.clone(),
-            output: json!({"tool": self.name, "status": "ok"}),
-            tokens_consumed: self.tokens,
-            next_edge: None,
+    ) -> BoxFuture<'a, memfuse_core::Result<StepResult>> {
+        Box::pin(async move {
+            Ok(StepResult {
+                node_id: self.name.clone(),
+                output: json!({"tool": self.name, "status": "ok"}),
+                tokens_consumed: self.tokens,
+                next_edge: None,
+            })
         })
     }
 }

@@ -188,7 +188,7 @@ impl OrchestratorEngine {
                                         break 'retry;
                                     }
                                     Ok(Err(e)) => {
-                                        let err_msg = e.to_string();
+                                        let err_msg: String = e.to_string();
                                         execution_res = Err(e);
                                         if !tool.is_retriable() {
                                             if let Some(ref dlq) = self.dead_letter_queue {

@@ -143,6 +143,17 @@ impl KeyManager {
         Ok(key)
     }
 
+    /// Derives a deletion proof signing key for cryptographic deletion verification.
+    pub fn derive_deletion_proof_key(&self) -> Result<[u8; 32]> {
+        let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
+            .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
+        let mut key = [0u8; 32];
+        hk.expand(b"deletion-proof", &mut key).map_err(|e| {
+            CryptoError::Crypto(format!("HKDF deletion proof key expansion failed: {}", e))
+        })?;
+        Ok(key)
+    }
+
     /// Encrypts a block of data with an automatically generated random nonce.
     /// Returns the ciphertext and the full 12-byte nonce used.
     pub fn encrypt_auto_nonce(&self, data: &[u8]) -> Result<(Vec<u8>, [u8; 12])> {
@@ -275,6 +286,16 @@ mod tests {
 
         // Ensure key is zero after wipe
         assert_eq!(km.inspect_key_bytes_for_test(), &[0u8; 32]);
+    }
+
+    #[test]
+    fn test_derive_deletion_proof_key() {
+        let km = KeyManager::try_new("passphrase", b"salt").unwrap();
+        let deletion_key = km.derive_deletion_proof_key().unwrap();
+        assert_ne!(deletion_key, [0u8; 32]);
+
+        let integrity_key = km.integrity_key().unwrap();
+        assert_ne!(deletion_key, integrity_key);
     }
 
     #[test]
@@ -486,6 +507,9 @@ mod tests {
     // REVIEW-PASS[5/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-02T08:16:22Z) (SESSION: 881ec05e)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified zero-panic, zero-unsafe, and 85/85 tests green in memfuse-crypto audit session.
+    // REVIEW-PASS[6/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-06T11:17:31Z) (SESSION: 8157a40e)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Re-verified zero-panic, zero-unsafe, and full Tier-1 audit pass in memfuse-crypto depth-audit session.
     #[test]
     fn test_befund_1_nonce_uniqueness_and_envelope_format() {
         let km = KeyManager::try_new("nonce-uniqueness-secret", b"salt-123456").expect("km");

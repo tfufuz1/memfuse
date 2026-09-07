@@ -83,31 +83,38 @@ fn child_truncation_runner() {
 
     rt.block_on(async {
         use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
+        #[cfg(feature = "experimental-diskann")]
         use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
         use memfuse_index::hnsw::{HnswConfig, HnswIndex};
         use memfuse_index::persistence::MmapIndex;
 
         let temp_dir = tempfile::tempdir().unwrap();
+        #[cfg(feature = "experimental-diskann")]
         let diskann_path = temp_dir.path().join("diskann_trunc.idx");
         let hnsw_path = temp_dir.path().join("hnsw_trunc.hnsw");
 
-        // 1. Build DiskANN
         let dim = 128;
         let n = 1000;
-        let config = DiskAnnConfig {
-            index_path: diskann_path.clone(),
-            dimension: dim,
-            max_degree: 32,
-            beam_width: 16,
-            sector_size: 4096,
-            distance_metric: DistanceMetric::Euclidean,
-            quantize: false,
-            ..Default::default()
-        };
-        let diskann = DiskAnnIndex::try_new(config).unwrap();
         let vectors: Vec<Vec<f32>> = (0..n).map(|i| vec![i as f32; dim]).collect();
         let ids: Vec<DocId> = (0..n).map(|i| DocId::from(i as u64)).collect();
-        diskann.build(&vectors, &ids).await.unwrap();
+
+        // 1. Build DiskANN
+        #[cfg(feature = "experimental-diskann")]
+        let diskann = {
+            let config = DiskAnnConfig {
+                index_path: diskann_path.clone(),
+                dimension: dim,
+                max_degree: 32,
+                beam_width: 16,
+                sector_size: 4096,
+                distance_metric: DistanceMetric::Euclidean,
+                quantize: false,
+                ..Default::default()
+            };
+            let diskann = DiskAnnIndex::try_new(config).unwrap();
+            diskann.build(&vectors, &ids).await.unwrap();
+            diskann
+        };
 
         // 2. Build HNSW
         let hnsw_config = HnswConfig {
@@ -134,12 +141,15 @@ fn child_truncation_runner() {
 
         // 3. Truncate files in-place
         println!("Truncating DiskANN and HNSW files to 10 bytes in-place...");
-        let f1 = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&diskann_path)
-            .unwrap();
-        f1.set_len(10).unwrap();
-        drop(f1);
+        #[cfg(feature = "experimental-diskann")]
+        {
+            let f1 = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&diskann_path)
+                .unwrap();
+            f1.set_len(10).unwrap();
+            drop(f1);
+        }
 
         let f2 = std::fs::OpenOptions::new()
             .write(true)
@@ -152,9 +162,12 @@ fn child_truncation_runner() {
         // 4. Access mmap memory post-truncation -> Trigger SIGBUS
         let query = vec![500.0f32; dim];
 
-        // Accessing DiskANN or HNSW mmap memory
-        println!("Executing DiskANN search_internal...");
-        let _ = diskann.search(&query, 10).await;
+        #[cfg(feature = "experimental-diskann")]
+        {
+            // Accessing DiskANN or HNSW mmap memory
+            println!("Executing DiskANN search_internal...");
+            let _ = diskann.search(&query, 10).await;
+        }
 
         println!("Executing HNSW search...");
         let _ = hnsw_mmap.search(&query, 10).await;
@@ -176,29 +189,36 @@ fn child_deletion_runner() {
 
     rt.block_on(async {
         use memfuse_core::{DistanceMetric, DocId, TxId, VectorIndex};
+        #[cfg(feature = "experimental-diskann")]
         use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
         use memfuse_index::hnsw::{HnswConfig, HnswIndex};
 
         let temp_dir = tempfile::tempdir().unwrap();
+        #[cfg(feature = "experimental-diskann")]
         let diskann_path = temp_dir.path().join("diskann_del.idx");
         let hnsw_path = temp_dir.path().join("hnsw_del.hnsw");
 
         let dim = 128;
         let n = 100;
-        let config = DiskAnnConfig {
-            index_path: diskann_path.clone(),
-            dimension: dim,
-            max_degree: 16,
-            beam_width: 8,
-            sector_size: 4096,
-            distance_metric: DistanceMetric::Euclidean,
-            quantize: false,
-            ..Default::default()
-        };
-        let diskann = DiskAnnIndex::try_new(config).unwrap();
         let vectors: Vec<Vec<f32>> = (0..n).map(|i| vec![i as f32; dim]).collect();
         let ids: Vec<DocId> = (0..n).map(|i| DocId::from(i as u64)).collect();
-        diskann.build(&vectors, &ids).await.unwrap();
+
+        #[cfg(feature = "experimental-diskann")]
+        let diskann = {
+            let config = DiskAnnConfig {
+                index_path: diskann_path.clone(),
+                dimension: dim,
+                max_degree: 16,
+                beam_width: 8,
+                sector_size: 4096,
+                distance_metric: DistanceMetric::Euclidean,
+                quantize: false,
+                ..Default::default()
+            };
+            let diskann = DiskAnnIndex::try_new(config).unwrap();
+            diskann.build(&vectors, &ids).await.unwrap();
+            diskann
+        };
 
         let hnsw_config = HnswConfig {
             dimension: dim,
@@ -219,18 +239,23 @@ fn child_deletion_runner() {
         hnsw_mmap.load_mmap(&hnsw_path).await.unwrap();
 
         println!("Deleting index files from filesystem...");
-        std::fs::remove_file(&diskann_path).unwrap();
+        #[cfg(feature = "experimental-diskann")]
+        {
+            std::fs::remove_file(&diskann_path).unwrap();
+            assert!(!diskann_path.exists());
+        }
         std::fs::remove_file(&hnsw_path).unwrap();
-
-        assert!(!diskann_path.exists());
         assert!(!hnsw_path.exists());
         println!("Files unlinked successfully.");
 
         println!("Querying mmap'd indexes post-deletion...");
         let query = vec![50.0f32; dim];
 
-        let res_diskann = diskann.search(&query, 5).await.unwrap();
-        assert_eq!(res_diskann.len(), 5);
+        #[cfg(feature = "experimental-diskann")]
+        {
+            let res_diskann = diskann.search(&query, 5).await.unwrap();
+            assert_eq!(res_diskann.len(), 5);
+        }
 
         let res_hnsw = hnsw_mmap.search(&query, 5).await.unwrap();
         assert_eq!(res_hnsw.len(), 5);

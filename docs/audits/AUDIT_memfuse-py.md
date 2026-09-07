@@ -37,6 +37,30 @@ The current audit verified:
 
 ---
 
+## Audit Findings in Session `831f9286` (TS: 2026-09-06T11:19:12Z)
+
+| ID | Kategorie | Severity | Datei | Zeile | Beschreibung |
+|---|---|---|---|---|---|
+| `AGT-PY-d5d2be30` | SECURITY | MAJOR | `crates/memfuse-py/src/lib.rs` | 293 | `panic = "abort"` in workspace `Cargo.toml` release profile disables `catch_unwind` panic containment in release builds |
+
+### Detailed Analysis (`AGT-PY-d5d2be30`)
+- **Befund:** `run_blocking_ffi` uses `std::panic::catch_unwind` to contain Rust panics at the FFI boundary. However, the workspace root `Cargo.toml` sets `panic = "abort"` in `[profile.release]`.
+- **Risiko:** In release builds (`maturin develop --release` or release wheel builds), Rust panics immediately terminate the CPython process via `SIGABRT` (exit code 134) rather than being caught by `catch_unwind` and converted to a `PyRuntimeError`.
+- **Empfehlung:** Configure `panic = "unwind"` for the PyO3 `cdylib` crate or document release profile unwinding requirements for Python extension builds.
+
+---
+
+## Tiefen-Audit 2026-09-06
+
+### Summary of Tier 1 Verification
+- **Rust Unit & Sanity Checks**: `cargo check -p memfuse-py --all-features` (0 errors, 0 warnings).
+- **Clippy Analysis**: `cargo clippy -p memfuse-py --no-deps -- -D warnings` (0 findings).
+- **Rust Integration Test Suite**: `cargo test -p memfuse-py --all-features` (100% passed).
+- **Tier 1 Concurrency Verification**: 5 consecutive runs of `cargo test -p memfuse-py --all-features -- --test-threads=8` executed with 0 failures and 0 panics.
+- **Python FFI / Integration Suite**: `pytest` executed 50 test cases with 100% pass rate in dev mode (including GIL release, sub-interpreter rejection, panic containment, MCP stub/real, and WAL recovery).
+
+---
+
 ## Audit Findings in Session `94a6a82c` (TS: 2026-09-03T19:29:58Z)
 
 | ID | Kategorie | Severity | Datei | Zeile | Beschreibung |

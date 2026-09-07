@@ -23,6 +23,13 @@ pub enum GraphTraversalStrategy {
     },
     /// Personalized PageRank power iteration starting from seed nodes.
     PersonalizedPageRank(PprConfig),
+    /// PathRAG bidirectional Dijkstra traversal with sufficiency filtering.
+    PathRag {
+        /// Maximum traversal hop depth.
+        max_hops: usize,
+        /// Sufficiency threshold for filtering low-confidence paths (default 0.1).
+        sufficiency_threshold: f64,
+    },
 }
 
 impl Default for GraphTraversalStrategy {
@@ -43,12 +50,8 @@ pub struct FusionWeights {
 
 impl Default for FusionWeights {
     fn default() -> Self {
-        Self {
-            vector: 1.0,
-            text: 0.0,
-            graph: 0.0,
-            metadata: 0.0,
-        }
+        FusionWeights::new(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
+            .expect("1/3 + 1/3 + 1/3 must be valid FusionWeights")
     }
 }
 
@@ -228,6 +231,19 @@ pub struct HybridQuery {
     /// Controls whether ProvenanceRecord is attached to SearchResult output. Default: false.
     #[serde(default)]
     pub include_provenance: bool,
+    /// Candidate pool multiplier for pre-reranking retrieval (default: 10).
+    /// Grounded in empirical evaluation from T2-RAGBench (arXiv:2604.01733), showing Recall@5 = 0.888
+    /// with ~100 candidate items compared to 0.458 with only 20 candidates.
+    #[serde(default)]
+    pub rerank_pool_multiplier: Option<usize>,
+    /// Upper bound cap for pre-reranking candidate pool expansion (default: 200).
+    /// Prevents retrieval cost explosion for large k queries.
+    #[serde(default)]
+    pub rerank_pool_max: Option<usize>,
+    /// Whether a cross-encoder reranker is attached to this query.
+    /// Controls candidate pool expansion: only expand when true.
+    #[serde(default)]
+    pub has_reranker: bool,
     /// Maximum number of search results to return.
     pub k: usize,
 }
@@ -252,6 +268,8 @@ pub struct HybridQueryBuilder {
     memory_type_filter: Option<Vec<MemoryType>>,
     include_superseded: bool,
     include_provenance: bool,
+    rerank_pool_multiplier: Option<usize>,
+    rerank_pool_max: Option<usize>,
     k: Option<usize>,
 }
 
@@ -321,6 +339,18 @@ impl HybridQueryBuilder {
         self
     }
 
+    /// Sets the candidate pool multiplier for pre-reranking retrieval.
+    pub fn with_rerank_pool_multiplier(mut self, multiplier: usize) -> Self {
+        self.rerank_pool_multiplier = Some(multiplier);
+        self
+    }
+
+    /// Sets the upper bound cap for pre-reranking candidate pool expansion.
+    pub fn with_rerank_pool_max(mut self, max: usize) -> Self {
+        self.rerank_pool_max = Some(max);
+        self
+    }
+
     /// Sets the top-K limit for the query.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = Some(k);
@@ -337,20 +367,15 @@ impl HybridQueryBuilder {
             vector_query: self.vector_query,
             graph_start_node: self.graph_start_node,
             graph_strategy: self.graph_strategy.unwrap_or_default(),
-            fusion_weights: self.fusion_weights.unwrap_or(
-                // Use a known-safe default to avoid unwrap()
-                FusionWeights {
-                    vector: 1.0,
-                    text: 0.0,
-                    graph: 0.0,
-                    metadata: 0.0,
-                },
-            ),
+            fusion_weights: self.fusion_weights.unwrap_or_default(),
             filter: self.filter,
             same_community_as: self.same_community_as,
             memory_type_filter: self.memory_type_filter,
             include_superseded: self.include_superseded,
             include_provenance: self.include_provenance,
+            rerank_pool_multiplier: self.rerank_pool_multiplier,
+            rerank_pool_max: self.rerank_pool_max,
+            has_reranker: false,
             k: self.k.unwrap_or(10),
         })
     }
@@ -380,6 +405,37 @@ mod tests {
     }
 
     #[test]
+    fn test_fusion_weights_default_is_balanced() {
+        let w = FusionWeights::default();
+        let eps = 1e-5f32;
+        assert!(
+            (w.vector() - 1.0 / 3.0).abs() < eps,
+            "Default vector weight must be 1/3"
+        );
+        assert!(
+            (w.text() - 1.0 / 3.0).abs() < eps,
+            "Default text weight must be 1/3"
+        );
+        assert!(
+            (w.graph() - 1.0 / 3.0).abs() < eps,
+            "Default graph weight must be 1/3"
+        );
+    }
+
+    #[test]
+    fn test_hybrid_query_builder_default_uses_balanced_weights() {
+        let query = HybridQueryBuilder::new()
+            .with_text_query("test query")
+            .with_k(10)
+            .build()
+            .unwrap();
+        let eps = 1e-5f32;
+        assert!((query.fusion_weights.vector() - 1.0 / 3.0).abs() < eps);
+        assert!((query.fusion_weights.text() - 1.0 / 3.0).abs() < eps);
+        assert!((query.fusion_weights.graph() - 1.0 / 3.0).abs() < eps);
+    }
+
+    #[test]
     fn test_hybrid_query_builder_happy_path() {
         let query = HybridQuery::builder()
             .with_text_query("test query")
@@ -391,8 +447,11 @@ mod tests {
         assert_eq!(query.text_query.unwrap(), "test query"); // unwrap
         assert_eq!(query.vector_query.unwrap(), vec![0.1, 0.2]); // unwrap
         assert_eq!(query.k, 5);
-        // Default weights: vector=1.0, others=0.0
-        assert_eq!(query.fusion_weights.vector(), 1.0);
+        // Default weights: balanced 1/3 each
+        let eps = 1e-5f32;
+        assert!((query.fusion_weights.vector() - 1.0 / 3.0).abs() < eps);
+        assert!((query.fusion_weights.text() - 1.0 / 3.0).abs() < eps);
+        assert!((query.fusion_weights.graph() - 1.0 / 3.0).abs() < eps);
     }
 
     #[test]
@@ -410,7 +469,10 @@ mod tests {
     fn test_hybrid_query_builder_defaults() {
         let query = HybridQuery::builder().build().unwrap(); // unwrap
         assert_eq!(query.k, 10);
-        assert_eq!(query.fusion_weights.vector(), 1.0);
+        let eps = 1e-5f32;
+        assert!((query.fusion_weights.vector() - 1.0 / 3.0).abs() < eps);
+        assert!((query.fusion_weights.text() - 1.0 / 3.0).abs() < eps);
+        assert!((query.fusion_weights.graph() - 1.0 / 3.0).abs() < eps);
         assert!(query.text_query.is_none());
         assert!(query.vector_query.is_none());
     }

@@ -13,6 +13,7 @@
 //! to preserve the LLM context window.
 
 use crate::collection::Collection;
+use crate::ProvenanceRecord;
 use memfuse_core::{
     ContextChunk, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine, TokenBudget, TxId,
     VectorIndex,
@@ -189,6 +190,11 @@ impl ContextCompactor {
             "source_doc_count".to_string(),
             serde_json::Value::Number(chunks.len().into()),
         );
+
+        let prov = ProvenanceRecord::synthesized_from(&source_doc_ids);
+        if let Ok(prov_val) = serde_json::to_value(&prov) {
+            combined_metadata.insert("provenance".to_string(), prov_val);
+        }
 
         // Generate a distinct deterministic DocId from the combination of source doc_ids
         let synthesized_doc_id = {
@@ -636,6 +642,7 @@ pub async fn cleanup_orphaned_consolidation_intents<S: StorageEngine>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_core::BoxFuture;
 
     fn make_chunk(id: u64, content: &str, relevance: f32, is_tool: bool) -> ContextChunk {
         let metadata = if is_tool {
@@ -752,13 +759,14 @@ mod tests {
     }
 
     struct UnreachableLlmGenerator;
-    #[async_trait::async_trait]
     impl LlmTextGenerator for UnreachableLlmGenerator {
-        async fn generate(&self, _prompt: &str) -> Result<String> {
-            Err(MemFuseError::Io(std::io::Error::new(
-                std::io::ErrorKind::ConnectionRefused,
-                "Unreachable LLM generator",
-            )))
+        fn generate<'a>(&'a self, _prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+            Box::pin(async move {
+                Err(MemFuseError::Io(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    "Unreachable LLM generator",
+                )))
+            })
         }
     }
 
@@ -802,6 +810,54 @@ mod tests {
         assert!(empty_ctx.source_doc_ids.is_empty());
     }
 
+    struct MockLlmGenerator;
+    impl LlmTextGenerator for MockLlmGenerator {
+        fn generate<'a>(&'a self, _prompt: &'a str) -> BoxFuture<'a, Result<String>> {
+            Box::pin(async move { Ok("Zusammenfassung der 3 Quelldokumente".to_string()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_consolidate_via_llm_provenance_3_source_docs() {
+        let budget = TokenBudget::new(1000, 0);
+        let compactor = ContextCompactor::new(budget, CompactionStrategy::Summarize);
+        let mock_llm = MockLlmGenerator;
+
+        let chunks = vec![
+            make_chunk(10, "Erstes Quelldokument", 0.9, false),
+            make_chunk(20, "Zweites Quelldokument", 0.8, false),
+            make_chunk(30, "Drittes Quelldokument", 0.7, false),
+        ];
+
+        let compacted = compactor
+            .consolidate_via_llm(&chunks, &mock_llm, "mock-model")
+            .await
+            .expect("Consolidation should succeed");
+
+        assert_eq!(compacted.source_doc_ids.len(), 3);
+        assert_eq!(compacted.retained_chunks.len(), 1);
+
+        let chunk = &compacted.retained_chunks[0];
+        let meta = chunk.metadata.as_ref().expect("Metadata must be present");
+        let prov_val = meta
+            .get("provenance")
+            .expect("Provenance must be present in metadata");
+        let prov: ProvenanceRecord =
+            serde_json::from_value(prov_val.clone()).expect("Valid ProvenanceRecord");
+
+        assert_eq!(prov.index_type.as_deref(), Some("consolidated"));
+        assert_eq!(prov.signal_ranks.len(), 3);
+        assert!(prov
+            .signal_ranks
+            .contains_key(&DocId::new(10).0.to_string()));
+        assert!(prov
+            .signal_ranks
+            .contains_key(&DocId::new(20).0.to_string()));
+        assert!(prov
+            .signal_ranks
+            .contains_key(&DocId::new(30).0.to_string()));
+    }
+
     #[test]
     fn test_compact_empty_chunks_returns_empty_compacted_context() {
         let budget = TokenBudget::new(100, 0);
@@ -826,83 +882,96 @@ mod tests {
         fail_delete: Arc<AtomicBool>,
     }
 
-    #[async_trait::async_trait]
     impl StorageEngine for FaultyDeleteStorage {
-        async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            self.inner.get(key).await
+        fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { self.inner.get(key).await })
         }
 
-        async fn get_at_seq(&self, key: &[u8], seq: u64) -> Result<Option<Vec<u8>>> {
-            self.inner.get_at_seq(key, seq).await
+        fn get_at_seq<'a>(
+            &'a self,
+            key: &'a [u8],
+            seq: u64,
+        ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { self.inner.get_at_seq(key, seq).await })
         }
 
-        async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-            self.inner.put(tx_id, key, value).await
+        fn put<'a>(
+            &'a self,
+            tx_id: TxId,
+            key: &'a [u8],
+            value: &'a [u8],
+        ) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.put(tx_id, key, value).await })
         }
 
-        async fn delete(&self, tx_id: TxId, key: &[u8]) -> Result<()> {
-            if self.fail_delete.load(Ordering::SeqCst) {
-                return Err(memfuse_core::MemFuseError::Transaction(
-                    "INJECTED FAULT: Storage delete failure".into(),
-                ));
-            }
-            self.inner.delete(tx_id, key).await
+        fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                if self.fail_delete.load(Ordering::SeqCst) {
+                    return Err(memfuse_core::MemFuseError::Transaction(
+                        "INJECTED FAULT: Storage delete failure".into(),
+                    ));
+                }
+                self.inner.delete(tx_id, key).await
+            })
         }
 
-        async fn commit(&self, tx_id: TxId) -> Result<()> {
-            self.inner.commit(tx_id).await
+        fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.commit(tx_id).await })
         }
 
-        async fn rollback(&self, tx_id: TxId) -> Result<()> {
-            self.inner.rollback(tx_id).await
+        fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.rollback(tx_id).await })
         }
 
-        async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
-            self.inner.rollback_to_tx(tx_id).await
+        fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.rollback_to_tx(tx_id).await })
         }
 
-        async fn flush(&self) -> Result<()> {
-            self.inner.flush().await
+        fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.flush().await })
         }
 
-        async fn stats(&self) -> Result<StorageStats> {
-            self.inner.stats().await
+        fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+            Box::pin(async move { self.inner.stats().await })
         }
 
-        async fn last_seq_no(&self) -> Result<u64> {
-            self.inner.last_seq_no().await
+        fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+            Box::pin(async move { self.inner.last_seq_no().await })
         }
 
-        async fn last_tx_id(&self) -> Result<TxId> {
-            self.inner.last_tx_id().await
+        fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+            Box::pin(async move { self.inner.last_tx_id().await })
         }
 
-        async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.inner.pin_checkpoint(seq_no).await
+        fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.pin_checkpoint(seq_no).await })
         }
 
-        async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-            self.inner.unpin_checkpoint(seq_no).await
+        fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { self.inner.unpin_checkpoint(seq_no).await })
         }
 
-        async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            self.inner.scan_prefix(prefix).await
+        fn scan_prefix<'a>(
+            &'a self,
+            prefix: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { self.inner.scan_prefix(prefix).await })
         }
 
-        async fn scan_prefix_at(
-            &self,
-            prefix: &[u8],
+        fn scan_prefix_at<'a>(
+            &'a self,
+            prefix: &'a [u8],
             seq_no: u64,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            self.inner.scan_prefix_at(prefix, seq_no).await
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { self.inner.scan_prefix_at(prefix, seq_no).await })
         }
 
-        async fn scan(
-            &self,
-            start: std::ops::Bound<&[u8]>,
-            end: std::ops::Bound<&[u8]>,
-        ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-            self.inner.scan(start, end).await
+        fn scan<'a>(
+            &'a self,
+            start: std::ops::Bound<&'a [u8]>,
+            end: std::ops::Bound<&'a [u8]>,
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { self.inner.scan(start, end).await })
         }
     }
 

@@ -11,7 +11,7 @@
 //! [`AgentTool`] trait to participate in the orchestration loop.
 
 use crate::context::AgentContext;
-use memfuse_core::Result;
+use memfuse_core::{BoxFuture, Result};
 use serde::{Deserialize, Serialize};
 
 /// Ein fehlgeschlagener Agent-Schritt der für spätere Analyse persistiert wird.
@@ -53,7 +53,6 @@ pub struct StepResult {
     pub next_edge: Option<String>,
 }
 
-#[async_trait::async_trait]
 pub trait AgentTool: Send + Sync {
     fn name(&self) -> &str;
 
@@ -64,7 +63,11 @@ pub trait AgentTool: Send + Sync {
         0
     }
 
-    async fn execute(&self, ctx: &AgentContext, input: serde_json::Value) -> Result<StepResult>;
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a AgentContext,
+        input: serde_json::Value,
+    ) -> BoxFuture<'a, Result<StepResult>>;
 
     /// Maximale Ausführungszeit dieses Tools in Millisekunden.
     /// Standard: 30 Sekunden. Überschreibe für langläufige Tools.

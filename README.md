@@ -18,15 +18,16 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
 - **Contextual Retrieval** — Automatisches Anreichern zerschnittener Chunks durch ein
-  LLM-generiertes Kontext-Präfix (Anthropic Pattern, 49% weniger Retrieval-Fehler)*
+  LLM-generiertes Kontext-Präfix (Anthropic Pattern) [FREMDREFERENZ: Anthropic 2024 — nicht an MemFuse validiert]
 - **Cross-Encoder Reranking** — Post-RRF Neuordnung via lokalem ONNX Cross-Encoder
-  (optionales Feature, 67% weniger Fehler kombiniert)*
+  (optionales Feature) [FREMDREFERENZ: Anthropic 2024 — nicht an MemFuse validiert]
 - **Multi-Step Query Engine** — Iteratives Query-Rewriting für komplexe
   Agenten-Abfragen (OpenAI o-series Pattern, bis zu 3 Runden)
 - **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
   (Anthropic Containment Pattern)
 - **Session DAG** — Grok-Pattern: Konversationsverzweigung als persistierter,
-  azyklischer Graph (Native Pure-Rust)
+  azyklischer Graph mit vollständiger Tauri-UI-Anbindung (Erstellen von Branches ab
+  jeder Nachricht, Umschalten des aktiven Branches & Historien-Navigation)
 - **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
   "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
 - **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
@@ -57,8 +58,7 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 
 ## Architektur
 
-MemFuse implementiert eine mehrstufige RAG-Pipeline:
-Contextual Ingestion → 4-Signal Hybrid Index → Multi-Step Retrieval → Cross-Encoder Reranking → Context Compaction
+MemFuse ist ein Workspace mit 15 Rust-Crates in 5 Layern.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -79,19 +79,49 @@ Contextual Ingestion → 4-Signal Hybrid Index → Multi-Step Retrieval → Cros
             Alles lokal. Nichts verlässt den Rechner.
 ```
 
+### Produktionsreif ✅
+| Crate | Funktion |
+|---|---|
+| memfuse-core | Typen, Traits, Domain-Modell |
+| memfuse-crypto | WAL v3 HMAC-Chain, Kryptographie |
+| memfuse-store | LSM-Storage, 16-Shard MemTable, SSTable-Compaction |
+| memfuse-index | HNSW (2-Phasen-CoW-Rebuild), DiskANN (Build) |
+| memfuse-text | BM25-Volltextsuche, Deutsche Morphologie |
+| memfuse-embed | Embeddings (ONNX), Cross-Encoder Reranker |
+| memfuse-graph | CSR-Graph, PPR, Community Detection, Session-DAG |
+| memfuse-router | Conformal Router, SlmProfile-basiertes Routing |
+| memfuse-db | Kernoperationen, Fusion, Search-Pipeline |
+| memfuse-agent | Agent Workflow Engine |
+| memfuse-ollama | Ollama Client & Embeddings |
+| memfuse-mcp | MCP Server |
+| memfuse-tauri | Desktop App Shell |
+| memfuse-checkpoint | Backup & Snapshot Management |
+| memfuse-bench | Synthetic Benchmark Harness |
+
+### In aktiver Entwicklung ⚙️
+| Crate | Status |
+|---|---|
+| memfuse-calibration | G0-Sprint: IsotonicCalibrator + PlattScaler |
+| memfuse-kv-bridge | H2-Sprint: KV-Cache-Bridge mit Tenant-Isolation |
+| memfuse-candle | H2-Sprint: Native GGUF-Inferenz (Datenhoheit) |
+
+> **Hinweis für Entwickler:** Die verifizierte Crate-Topologie und der tatsächliche Codestand sind in `AGENTS.md` dokumentiert.
+> Bei Widerspruch zwischen README und AGENTS.md: AGENTS.md hat Vorrang.
+
 ### Grounding & Quellenattribuierung (RAG Grounding)
 
 RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** auf Basis der im `<context>`-Block bereitgestellten Informationen zu formulieren und Fakten mit Quellenangaben im Format `[Dateiname]` oder `[Dateiname, Abschnitt]` zu belegen. Wenn eine Information nicht im Kontext enthalten ist, antwortet das Modell mit der festen Fallback-Phrase: *"Diese Information ist in den importierten Dokumenten nicht enthalten."*
 
 > ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
-## Workspace Crates (15 Active Crates)
+## Workspace Crates (16 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
 - **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
-- **Layer 3**: `memfuse-py` (Python PyO3 Bindings), `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
+- **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
 - **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell)
+- **Layer 5**: `memfuse-bench` (Reproduzierbarer Benchmark-Harness für Retrieval-Genauigkeit)
 
 ## Für Entwickler: Rust-Crates
 
@@ -116,7 +146,10 @@ let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).awai
 
 ## MCP-Server (für Claude Desktop & andere MCP-Clients)
 
-Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`):
+Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-010) (`memfuse_search`, `memfuse_insert`, `memfuse_get`, `memfuse_collections`).
+
+> 📖 **Vollständige MCP-Dokumentation & Konfigurationsanweisung:**
+> Siehe [crates/memfuse-mcp/README.md](crates/memfuse-mcp/README.md) für Installation, Claude-Desktop-Konfiguration (`claude_desktop_config.json`), Schritt-für-Schritt Demo und Troubleshooting.
 
 ```bash
 # Standardmäßig im Read-Only-Modus (Schreibzugriff gesperrt):
@@ -184,7 +217,7 @@ MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LL
 | Session DAG | ✅ | ❌ | ❌ | ❌ |
 | Kein Docker | ✅ | ❌ | ❌ | ❌ |
 
-*\*Hinweis: Alle Positionierungsclaims und Fehlerreduktions-Prozentangaben (Anthropic Pattern) sind fremdreferenzierte Forschungswerte bzw. architektonisch begründet, empirisch an MemFuse selbst jedoch noch nicht validiert.*
+*\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Zitierte Fehlerreduktions-Prozentangaben entstammen der Fachliteratur [FREMDREFERENZ: Anthropic 2024 — nicht an MemFuse validiert]. MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes Benchmark-Harness auf einem 9-Dokumenten Synthetik-Korpus bereit (Details in [`benchmarks/README.md`](benchmarks/README.md)).*
 
 ## Lizenz
 

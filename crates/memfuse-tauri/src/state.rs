@@ -1,6 +1,8 @@
 use crate::ingestion::IngestProgressConfig;
 use memfuse_db::MemFuse;
+use memfuse_graph::SessionBranchTree;
 use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -26,6 +28,8 @@ pub struct AppState {
     pub regex_semaphore: Arc<Semaphore>,
     /// Konfiguration für Throttling/Batching von Ingestion-Fortschrittsevents.
     pub ingest_progress_config: RwLock<IngestProgressConfig>,
+    /// In-Memory Registry für aktive Session-DAGs (Session ID -> SessionBranchTree).
+    pub sessions: RwLock<HashMap<String, Arc<SessionBranchTree>>>,
 }
 
 impl AppState {
@@ -35,6 +39,7 @@ impl AppState {
             db_path: RwLock::new(None),
             regex_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_REGEX_OPS)),
             ingest_progress_config: RwLock::new(IngestProgressConfig::default()),
+            sessions: RwLock::new(HashMap::new()),
         }
     }
 }

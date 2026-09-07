@@ -5,7 +5,7 @@
 // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:CKPT-001) (TS:2026-09-02T23:18:12Z) (SESSION: 2155aaa2) PRÜFER-KONTEXT: FRESH - Confirmed concurrent stress test, cache hit/miss reloading, and unpinning lifecycle.
 
 use memfuse_checkpoint::PersistentCheckpointStore;
-use memfuse_core::{Result, StorageEngine, StorageStats, TxId};
+use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -27,73 +27,102 @@ impl TrackingMockStorage {
     }
 }
 
-#[async_trait::async_trait]
 impl StorageEngine for TrackingMockStorage {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        *self.get_count.lock() += 1;
-        Ok(self.data.lock().get(key).cloned())
-    }
-    async fn put(&self, _tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()> {
-        self.data.lock().insert(key.to_vec(), value.to_vec());
-        Ok(())
-    }
-    async fn delete(&self, _tx_id: TxId, key: &[u8]) -> Result<()> {
-        self.data.lock().remove(key);
-        Ok(())
-    }
-    async fn commit(&self, _tx_id: TxId) -> Result<()> {
-        Ok(())
-    }
-    async fn rollback(&self, _tx_id: TxId) -> Result<()> {
-        Ok(())
-    }
-    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
-        Ok(())
-    }
-    async fn flush(&self) -> Result<()> {
-        Ok(())
-    }
-    async fn stats(&self) -> Result<StorageStats> {
-        Ok(StorageStats {
-            num_segments: 0,
-            total_size_bytes: 0,
-            memtable_size_bytes: 0,
+    fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
+            *self.get_count.lock() += 1;
+            Ok(self.data.lock().get(key).cloned())
         })
     }
-    async fn pin_checkpoint(&self, seq_no: u64) -> Result<()> {
-        self.pinned.lock().insert(seq_no);
-        Ok(())
+    fn put<'a>(
+        &'a self,
+        _tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.data.lock().insert(key.to_vec(), value.to_vec());
+            Ok(())
+        })
     }
-    async fn unpin_checkpoint(&self, seq_no: u64) -> Result<()> {
-        self.pinned.lock().remove(&seq_no);
-        Ok(())
+    fn delete<'a>(&'a self, _tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.data.lock().remove(key);
+            Ok(())
+        })
     }
-    async fn get_at_seq(&self, key: &[u8], _seq: u64) -> Result<Option<Vec<u8>>> {
-        self.get(key).await
+    fn commit<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn last_seq_no(&self) -> Result<u64> {
-        Ok(0)
+    fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn last_tx_id(&self) -> Result<TxId> {
-        Ok(TxId::new(0))
+    fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn scan(
-        &self,
-        _start: std::ops::Bound<&[u8]>,
-        _end: std::ops::Bound<&[u8]>,
-    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        Ok(Vec::new())
+    fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { Ok(()) })
     }
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let data = self.data.lock();
-        Ok(data
-            .iter()
-            .filter(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect())
+    fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+        Box::pin(async move {
+            Ok(StorageStats {
+                num_segments: 0,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
+        })
     }
-    async fn scan_prefix_at(&self, prefix: &[u8], _seq_no: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        self.scan_prefix(prefix).await
+    fn pin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.pinned.lock().insert(seq_no);
+            Ok(())
+        })
+    }
+    fn unpin_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.pinned.lock().remove(&seq_no);
+            Ok(())
+        })
+    }
+    fn get_at_seq<'a>(
+        &'a self,
+        key: &'a [u8],
+        _seq: u64,
+    ) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move { self.get(key).await })
+    }
+    fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+        Box::pin(async move { Ok(0) })
+    }
+    fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+        Box::pin(async move { Ok(TxId::new(0)) })
+    }
+    fn scan<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move {
+            let data = self.data.lock();
+            Ok(data
+                .iter()
+                .filter(|(k, _)| k.starts_with(prefix))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect())
+        })
+    }
+    fn scan_prefix_at<'a>(
+        &'a self,
+        prefix: &'a [u8],
+        _seq_no: u64,
+    ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+        Box::pin(async move { self.scan_prefix(prefix).await })
     }
 }
 

@@ -66,6 +66,8 @@
 // HOTSPOTS:    hybrid_search(), insert(), relate()
 // SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
+#[cfg(feature = "sandbox")]
+use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{DocId, Result, StorageEngine, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
@@ -80,26 +82,41 @@ pub mod chunker;
 pub mod collection;
 pub mod context;
 pub mod context_compaction;
+pub mod rem_phase;
+pub mod sleep_cycle;
+pub mod sleep_cycle_executor;
+pub mod temporal_filter;
 
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
+pub use reaper::start_nrem_reaper;
+pub use sleep_cycle::{
+    compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
+    run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
+};
+pub use sleep_cycle_executor::execute_nrem_cycle;
 
 #[cfg(feature = "sandbox")]
-#[async_trait::async_trait]
 pub trait SandboxBridge: Send + Sync {
-    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>>;
-    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()>;
-    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
+    fn db_search<'a>(&'a self, query: &'a [u8], k: usize) -> BoxFuture<'a, Result<Vec<u8>>>;
+    fn db_insert<'a>(&'a self, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>>;
+    fn db_get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>>;
 }
 
 // mod Collection is used via pub mod collection
 pub mod filter;
 pub mod fusion;
+pub mod homeostat;
 pub mod multistep;
 pub mod reaper;
+pub mod replicator;
+pub mod thermostat;
 pub mod transaction;
+
+pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
+pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
@@ -156,6 +173,10 @@ pub struct ProvenanceRecord {
     /// INV-PROV-1: The sum of all rrf_contribution values equals the unboosted RRF score.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub signal_contributions: std::collections::HashMap<String, SignalContribution>,
+
+    /// Kohärenz-Bonus aus F-09 (0.0 wenn Feature inaktiv oder Dokument nur in einem Signal).
+    #[serde(default)]
+    pub coherence_bonus: f32,
 }
 
 impl ProvenanceRecord {
@@ -223,6 +244,22 @@ pub struct DbStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
+/// Configuration for auto-triggered community detection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommunityDetectionConfig {
+    /// Anzahl Graph-Mutationen, die eine neue Community Detection triggern. Default: 100.
+    /// 0 = deaktiviert (manuell).
+    pub auto_trigger_threshold: u64,
+}
+
+impl Default for CommunityDetectionConfig {
+    fn default() -> Self {
+        Self {
+            auto_trigger_threshold: 100,
+        }
+    }
+}
+
 /// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
@@ -236,6 +273,11 @@ pub struct MemFuseConfig {
     pub encryption_passphrase: Option<String>,
     /// Interval for periodic expiry reaper background tasks.
     pub expiry_reaper_interval: std::time::Duration,
+    /// Optional custom persistence path for the instance-scoped orphan registry.
+    /// If `None`, defaults to `<db_path>/.orphan_registry.json` when the database is opened.
+    pub orphan_registry_path: Option<std::path::PathBuf>,
+    /// Configuration for auto-triggered community detection.
+    pub community_detection: CommunityDetectionConfig,
 }
 
 impl Default for MemFuseConfig {
@@ -247,6 +289,8 @@ impl Default for MemFuseConfig {
             distance_metric: memfuse_core::DistanceMetric::Cosine,
             encryption_passphrase: None,
             expiry_reaper_interval: std::time::Duration::from_secs(60),
+            orphan_registry_path: None,
+            community_detection: CommunityDetectionConfig::default(),
         }
     }
 }
@@ -276,12 +320,15 @@ pub struct MemFuse {
     next_tx: Arc<AtomicU64>,
     dimension: usize,
     expiry_reaper_interval: std::time::Duration,
+    community_detection_threshold: u64,
     collections:
         tokio::sync::RwLock<std::collections::HashMap<String, Arc<Collection<LsmStorage>>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
     /// Global text embedder for default collection.
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
+    /// Instance-scoped orphan registry for sequence pins and checkpoints (ADR-053).
+    orphan_registry: Arc<memfuse_checkpoint::InstanceOrphanRegistry>,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
@@ -343,15 +390,25 @@ impl MemFuse {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let task_tracker = tokio_util::task::TaskTracker::new();
 
+        let orphan_path = config
+            .orphan_registry_path
+            .clone()
+            .unwrap_or_else(|| path.as_ref().join(".orphan_registry.json"));
+        let orphan_registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(
+            &orphan_path,
+        ));
+
         let db = Self {
             storage,
             next_tx,
             dimension: config.dimension,
             expiry_reaper_interval: config.expiry_reaper_interval,
+            community_detection_threshold: config.community_detection.auto_trigger_threshold,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
             cancel_token,
             task_tracker,
             embedder: parking_lot::RwLock::new(None),
+            orphan_registry,
         };
 
         // Initialize already existing collections from storage
@@ -581,6 +638,7 @@ impl MemFuse {
             self.dimension,
             language,
         );
+        col.set_community_detection_trigger_threshold(self.community_detection_threshold);
 
         // Inherit global embedder if set
         if let Some(emb) = self.embedder.read().as_ref() {
@@ -1109,6 +1167,11 @@ impl MemFuse {
         }
         Ok(())
     }
+
+    /// Liefert die instanzgebundene Orphan Registry für diese MemFuse-Instanz.
+    pub fn orphan_registry(&self) -> &Arc<memfuse_checkpoint::InstanceOrphanRegistry> {
+        &self.orphan_registry
+    }
 }
 
 // Re-export for convenience
@@ -1125,53 +1188,58 @@ impl MemFuse {
 }
 
 #[cfg(feature = "sandbox")]
-#[async_trait::async_trait]
 impl SandboxBridge for MemFuse {
-    async fn db_search(&self, query: &[u8], k: usize) -> Result<Vec<u8>> {
-        // Assume query is a binary f32 array (little endian)
-        let f32_count = query.len() / 4;
-        let mut vector = Vec::with_capacity(f32_count);
-        for i in 0..f32_count {
-            let start = i * 4;
-            let bits = u32::from_le_bytes(
-                query
-                    .get(start..start + 4)
-                    .ok_or_else(|| {
-                        memfuse_core::MemFuseError::Serialization("Query too short".into())
-                    })?
-                    .try_into()
-                    .map_err(|_| {
-                        memfuse_core::MemFuseError::Serialization("Invalid slice".into())
-                    })?,
-            );
-            vector.push(f32::from_bits(bits));
-        }
-
-        let results: Vec<SearchResult> = self.search(&vector, k).await?;
-        Ok(serde_json::to_vec(&results)
-            .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?)
-    }
-
-    async fn db_insert(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let id = String::from_utf8_lossy(key).to_string();
-        // Assume value is a JSON representing (embedding, metadata) or just value
-        let val_json: Value = serde_json::from_slice(value)
-            .unwrap_or(serde_json::json!({ "raw_data": String::from_utf8_lossy(value) }));
-
-        self.insert(&id, &[], Some(val_json)).await
-    }
-
-    async fn db_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let id = String::from_utf8_lossy(key).to_string();
-        let doc = self.get(&id).await?;
-        match doc {
-            Some(d) => {
-                Ok(Some(serde_json::to_vec(&d).map_err(|e| {
-                    memfuse_core::MemFuseError::Internal(e.to_string())
-                })?))
+    fn db_search<'a>(&'a self, query: &'a [u8], k: usize) -> BoxFuture<'a, Result<Vec<u8>>> {
+        Box::pin(async move {
+            // Assume query is a binary f32 array (little endian)
+            let f32_count = query.len() / 4;
+            let mut vector = Vec::with_capacity(f32_count);
+            for i in 0..f32_count {
+                let start = i * 4;
+                let bits = u32::from_le_bytes(
+                    query
+                        .get(start..start + 4)
+                        .ok_or_else(|| {
+                            memfuse_core::MemFuseError::Serialization("Query too short".into())
+                        })?
+                        .try_into()
+                        .map_err(|_| {
+                            memfuse_core::MemFuseError::Serialization("Invalid slice".into())
+                        })?,
+                );
+                vector.push(f32::from_bits(bits));
             }
-            None => Ok(None),
-        }
+
+            let results: Vec<SearchResult> = self.search(&vector, k).await?;
+            Ok(serde_json::to_vec(&results)
+                .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?)
+        })
+    }
+
+    fn db_insert<'a>(&'a self, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let id = String::from_utf8_lossy(key).to_string();
+            // Assume value is a JSON representing (embedding, metadata) or just value
+            let val_json: Value = serde_json::from_slice(value)
+                .unwrap_or(serde_json::json!({ "raw_data": String::from_utf8_lossy(value) }));
+
+            self.insert(&id, &[], Some(val_json)).await
+        })
+    }
+
+    fn db_get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+        Box::pin(async move {
+            let id = String::from_utf8_lossy(key).to_string();
+            let doc = self.get(&id).await?;
+            match doc {
+                Some(d) => {
+                    Ok(Some(serde_json::to_vec(&d).map_err(|e| {
+                        memfuse_core::MemFuseError::Internal(e.to_string())
+                    })?))
+                }
+                None => Ok(None),
+            }
+        })
     }
 }
 
@@ -1924,6 +1992,7 @@ mod tests {
             source_collection: Some("test_col".to_string()),
             index_type: Some("hnsw".to_string()),
             signal_contributions: std::collections::HashMap::new(),
+            coherence_bonus: 0.0,
         };
         let json = serde_json::to_string(&p).expect("serialize");
         let back: ProvenanceRecord = serde_json::from_str(&json).expect("deserialize");
