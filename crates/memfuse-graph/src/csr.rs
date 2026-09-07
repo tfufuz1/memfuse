@@ -17,11 +17,57 @@
 
 use crate::immune::{EdgeAssertion, ImmunMemory};
 use memfuse_core::{
-    BoxFuture, Edge, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
+    BoxFuture, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
     StorageEngine, TxId,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+
+/// Edge type representation for CSR edges.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum EdgeType {
+    #[default]
+    Default,
+    Custom(String),
+}
+
+impl From<&str> for EdgeType {
+    fn from(s: &str) -> Self {
+        EdgeType::Custom(s.to_string())
+    }
+}
+
+impl From<String> for EdgeType {
+    fn from(s: String) -> Self {
+        EdgeType::Custom(s)
+    }
+}
+
+/// Edge structure in CSR graph representation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Edge {
+    pub target: EntityId,
+    pub weight: f32,
+    pub edge_type: EdgeType,
+    #[cfg(feature = "physio-synaptic-edges")]
+    pub hebbian_weight: f32, // w_ij, initialisiert mit 0.0
+    #[cfg(feature = "physio-synaptic-edges")]
+    pub pheromone: f32, // τ_ij, initialisiert mit 0.0
+}
+
+impl Edge {
+    pub fn new(target: EntityId, weight: f32) -> Self {
+        Self {
+            target,
+            weight,
+            edge_type: EdgeType::Default,
+            #[cfg(feature = "physio-synaptic-edges")]
+            hebbian_weight: 0.0,
+            #[cfg(feature = "physio-synaptic-edges")]
+            pheromone: 0.0,
+        }
+    }
+}
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -1126,7 +1172,7 @@ impl GraphIndex for CsrGraph {
         })
     }
 
-    fn add_edge<'a>(&'a self, tx: TxId, edge: Edge) -> BoxFuture<'a, Result<()>> {
+    fn add_edge<'a>(&'a self, tx: TxId, edge: memfuse_core::Edge) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             debug_assert!(
             tx != TxId::INVALID && tx.is_valid_origin(),
@@ -1715,8 +1761,8 @@ impl GraphIndex for CsrGraph {
         label: &'a str,
     ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-            self.add_edge(tx, Edge::new(from, to, label)).await?;
-            self.add_edge(tx, Edge::new(to, from, label)).await?;
+            self.add_edge(tx, memfuse_core::Edge::new(from, to, label)).await?;
+            self.add_edge(tx, memfuse_core::Edge::new(to, from, label)).await?;
             Ok(())
         })
     }
@@ -1899,6 +1945,7 @@ impl<'a> crate::path_rag::PathGraph for &'a CsrGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_core::Edge;
 
     async fn setup_test_graph() -> CsrGraph {
         let graph = CsrGraph::new();

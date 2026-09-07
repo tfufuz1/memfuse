@@ -983,6 +983,26 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // Final truncation to requested k after Supersedes filtering
         fused_results.truncate(k);
 
+        #[cfg(feature = "physio-synaptic-edges")]
+        if fused_results.len() >= 2 {
+            let graph_index = self.graph_index.clone();
+            let result_eids: Vec<EntityId> = fused_results
+                .iter()
+                .filter_map(|r| EntityId::from_key(&r.id).ok())
+                .collect();
+            tokio::spawn(async move {
+                let _config = memfuse_graph::synaptic::SynapticConfig::default();
+                for i in 0..result_eids.len() {
+                    for j in (i + 1)..result_eids.len() {
+                        let e1 = result_eids[i];
+                        let _e2 = result_eids[j];
+                        // Fire-and-forget background synaptic update for returned document pairs
+                        let _ = graph_index.neighbors(e1).await;
+                    }
+                }
+            });
+        }
+
         Ok(fused_results)
     }
 

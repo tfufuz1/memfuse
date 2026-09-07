@@ -115,15 +115,20 @@ pub enum SignalKind {
     Text,
     /// Graph (traversal / PageRank) search signal.
     Graph,
+    #[cfg(feature = "physio-synaptic-edges")]
+    /// Synaptic/Hebbian edge weight signal (F-03).
+    Synaptic,
 }
 
 impl SignalKind {
-    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph").
+    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph", "synaptic").
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "vector" | "vec" => Some(SignalKind::Vector),
             "text" | "bm25" | "keyword" => Some(SignalKind::Text),
             "graph" => Some(SignalKind::Graph),
+            #[cfg(feature = "physio-synaptic-edges")]
+            "synaptic" | "hebbian" => Some(SignalKind::Synaptic),
             _ => None,
         }
     }
@@ -442,6 +447,12 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                     }
                     if entry.3.index_type.is_none() {
                         entry.3.index_type = Some("graph".to_string());
+                    }
+                }
+                #[cfg(feature = "physio-synaptic-edges")]
+                Some(SignalKind::Synaptic) => {
+                    if entry.3.index_type.is_none() {
+                        entry.3.index_type = Some("synaptic".to_string());
                     }
                 }
                 None => {}
