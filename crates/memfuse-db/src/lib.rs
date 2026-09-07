@@ -96,7 +96,8 @@ pub use sleep_cycle::{
     compact_segment_via_context_compactor, detect_near_duplicates, group_turns_into_segments,
     run_nrem_phase, NremConfig, NremPhaseResult, TurnSegment,
 };
-pub use sleep_cycle_executor::execute_nrem_cycle;
+pub use sleep_cycle_executor::{execute_nrem_cycle, execute_sleep_cycle};
+pub use memfuse_core::SegmentSynthesizer;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
@@ -119,6 +120,10 @@ pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
+#[cfg(feature = "physio-percolation")]
+pub use collection::maintenance::PercolationResult;
+#[cfg(feature = "physio-percolation")]
+pub use memfuse_graph::percolation::PercolationConfig;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]

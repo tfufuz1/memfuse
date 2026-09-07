@@ -29,6 +29,7 @@ pub mod community;
 pub mod csr;
 pub mod immune;
 pub mod path_rag;
+#[cfg(feature = "physio-percolation")]
 pub mod percolation;
 pub mod ppr;
 pub mod session_dag;
@@ -42,6 +43,11 @@ pub use immune::{
     ImmunMemory,
 };
 pub use path_rag::{EntityId, GraphPath, PathGraph, PathRAGEngine};
+#[cfg(feature = "physio-percolation")]
+pub use percolation::{
+    compute_percolation_health, find_rebonding_candidates, should_trigger_rebonding,
+    PercolationConfig,
+};
 pub use ppr::PprContext;
 pub use session_dag::{
     AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree,

@@ -32,10 +32,7 @@ pub struct SynthesizedChunk {
 }
 
 /// Trait-Abstraktion für den LLM-Synthesizer (testbar via Mock).
-pub trait SegmentSynthesizer: Send + Sync {
-    fn synthesize_segment<'a>(&'a self, segment_texts: &'a [&'a str]) -> BoxFuture<'a, Result<String>>;
-    fn model_id(&self) -> &str;
-}
+pub use memfuse_core::SegmentSynthesizer;
 
 /// Führt die REM-Phase aus: synthetisiert pro Segment einen abstrakten Chunk.
 ///

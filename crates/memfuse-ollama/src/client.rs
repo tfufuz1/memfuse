@@ -208,7 +208,7 @@ pub fn is_transient_error(e: &MemFuseError) -> bool {
     }
 }
 
-impl memfuse_db::rem_phase::SegmentSynthesizer for OllamaClient {
+impl memfuse_core::SegmentSynthesizer for OllamaClient {
     fn synthesize_segment<'a>(
         &'a self,
         segment_texts: &'a [&'a str],
@@ -1126,7 +1126,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_segment_synthesizer_implementation() {
-        use memfuse_db::rem_phase::SegmentSynthesizer;
+        use memfuse_core::SegmentSynthesizer;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
