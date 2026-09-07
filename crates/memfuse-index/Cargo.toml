@@ -8,7 +8,9 @@ description = "HNSW vector index with SIMD distance computation for MemFuse"
 
 [dependencies]
 memfuse-core = { workspace = true }
+memfuse-crypto = { workspace = true }
 memfuse-graph = { path = "../memfuse-graph", optional = true }
+subtle = "2.6"
 ahash = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
@@ -46,6 +48,14 @@ harness = false
 [[bench]]
 name = "audit_benchmarks"
 harness = false
+
+[[test]]
+name = "diskann_fault_injection_test"
+required-features = ["experimental-diskann"]
+
+[[test]]
+name = "diskann_corruption_fallback_test"
+required-features = ["experimental-diskann"]
 
 [[test]]
 name = "diskann_recall_test"
