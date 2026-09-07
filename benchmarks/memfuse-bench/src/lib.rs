@@ -5,3 +5,4 @@
 pub mod compare;
 pub mod locomo;
 pub mod long_mem_eval;
+pub mod path_rag_sweep;

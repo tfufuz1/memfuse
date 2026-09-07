@@ -32,6 +32,12 @@ pub trait PathGraph: Send + Sync {
     fn predecessors_with_weights(&self, node: EntityId) -> Vec<(EntityId, f32)>;
 }
 
+/// Normativer Default-Schwellenwert für das Sufficiency-Gate (ADR-067).
+///
+/// Pfade mit Konfidenz < 0.10 werden verworfen, um Precision-Kollaps durch
+/// Rauschen bei tiefen Multi-Hop-Traversierungen zu verhindern (arXiv:2506.00610).
+pub const DEFAULT_SUFFICIENCY_THRESHOLD: f64 = 0.1;
+
 pub struct PathRAGEngine<G: PathGraph> {
     graph: G,
     /// Maximale Suchtiefe (Hop-Limit).
@@ -50,7 +56,7 @@ impl<G: PathGraph> PathRAGEngine<G> {
     }
 
     pub fn with_defaults(graph: G) -> Self {
-        Self::new(graph, 4, 0.01)
+        Self::new(graph, 4, DEFAULT_SUFFICIENCY_THRESHOLD)
     }
 
     /// Findet den optimalen Pfad zwischen source und target via bidirektionalem Dijkstra.
@@ -379,5 +385,23 @@ mod tests {
         let signal = engine.to_rrf_signal(&paths);
         assert_eq!(signal.len(), 1);
         assert_eq!(signal[0].0, DocId(2));
+    }
+
+    #[test]
+    fn test_default_sufficiency_threshold_meets_minimum_bound() {
+        // REGRESSION TEST (ADR-067 / arXiv:2506.00610):
+        // Verhindert, dass der Default-Schwellenwert versehentlich unter 0.10 fällt (z.B. auf 0.01),
+        // was Precision-Kollaps durch ungefilterte, verrauschte Multi-Hop-Pfade auslösen würde.
+        assert!(
+            DEFAULT_SUFFICIENCY_THRESHOLD >= 0.10,
+            "DEFAULT_SUFFICIENCY_THRESHOLD must be >= 0.10 to prevent precision collapse (got {})",
+            DEFAULT_SUFFICIENCY_THRESHOLD
+        );
+
+        let engine = PathRAGEngine::with_defaults(TestGraph::new(vec![]));
+        assert_eq!(
+            engine.sufficiency_threshold, DEFAULT_SUFFICIENCY_THRESHOLD,
+            "with_defaults() must construct PathRAGEngine using DEFAULT_SUFFICIENCY_THRESHOLD"
+        );
     }
 }
