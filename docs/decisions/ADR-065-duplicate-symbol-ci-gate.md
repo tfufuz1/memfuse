@@ -1,4 +1,4 @@
-# ADR-064: Duplicate Symbol CI-Gate zur Prävention von Merge-Kollisionen
+# ADR-065: Duplicate Symbol CI-Gate zur Prävention von Merge-Kollisionen
 
 * **Status:** Akzeptiert
 * **Datum:** 2026-09-07
