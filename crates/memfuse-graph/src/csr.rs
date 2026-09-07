@@ -17,8 +17,8 @@
 
 use crate::immune::{EdgeAssertion, ImmunMemory};
 use memfuse_core::{
-    BoxFuture, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
-    StorageEngine, TxId,
+    BoxFuture, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result, StorageEngine,
+    TxId,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -1761,8 +1761,10 @@ impl GraphIndex for CsrGraph {
         label: &'a str,
     ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-            self.add_edge(tx, memfuse_core::Edge::new(from, to, label)).await?;
-            self.add_edge(tx, memfuse_core::Edge::new(to, from, label)).await?;
+            self.add_edge(tx, memfuse_core::Edge::new(from, to, label))
+                .await?;
+            self.add_edge(tx, memfuse_core::Edge::new(to, from, label))
+                .await?;
             Ok(())
         })
     }

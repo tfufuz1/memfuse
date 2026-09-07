@@ -2439,7 +2439,10 @@ async fn test_run_percolation_check_rebonding() -> memfuse_core::Result<()> {
     assert!(result.new_edges_added > 0);
 
     // Verify rebonded relationship now exists in graph
-    let neighbors = col.graph_index.neighbors(EntityId::from_key("doc_0")?).await?;
+    let neighbors = col
+        .graph_index
+        .neighbors(EntityId::from_key("doc_0")?)
+        .await?;
     assert!(neighbors.contains(&EntityId::from_key("doc_1")?));
 
     Ok(())

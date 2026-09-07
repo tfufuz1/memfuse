@@ -1514,9 +1514,10 @@ impl DiskAnnIndex {
         let query_vec = query.to_vec();
         let self_clone = self.clone();
 
-        let search_res = tokio::task::spawn_blocking(move || self_clone.search_blocking(&query_vec, k, header))
-            .await
-            .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?;
+        let search_res =
+            tokio::task::spawn_blocking(move || self_clone.search_blocking(&query_vec, k, header))
+                .await
+                .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?;
 
         match search_res {
             Ok(res) => Ok(res),
