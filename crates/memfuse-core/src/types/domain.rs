@@ -65,10 +65,6 @@ impl TenantId {
     pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
-    /// Der implizite Default-Mandant für alle bestehenden Single-Tenant-Deployments.
-    pub const DEFAULT: Self = Self(0);
-    /// SYSTEM tenant identifier (0).
-    pub const SYSTEM: Self = Self(0);
 
     /// Const-Konstruktor.
     #[inline]
