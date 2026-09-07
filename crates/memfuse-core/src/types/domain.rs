@@ -108,9 +108,11 @@ impl Default for TenantId {
     }
 }
 
-impl From<u64> for TenantId {
-    fn from(id: u64) -> Self {
-        Self(id)
+impl TryFrom<u64> for TenantId {
+    type Error = MemFuseError;
+
+    fn try_from(id: u64) -> Result<Self> {
+        Self::try_new(id)
     }
 }
 

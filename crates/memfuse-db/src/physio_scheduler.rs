@@ -67,7 +67,9 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
 
     /// Verringert die Anzahl aktiver Agenten-Sessions.
     pub fn decrement_active_sessions(&self) -> usize {
-        self.active_sessions.fetch_sub(1, Ordering::SeqCst).saturating_sub(1)
+        self.active_sessions
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1)
     }
 
     /// Startet den PhysioScheduler in einem eigenen Tokio-Task.
@@ -145,7 +147,11 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
         if self.config.percolation_enabled && self.active_agent_sessions() == 0 {
             #[cfg(feature = "physio-percolation")]
             {
-                match self.collection.run_percolation_check(&self.config.percolation).await {
+                match self
+                    .collection
+                    .run_percolation_check(&self.config.percolation)
+                    .await
+                {
                     Ok(res) => {
                         if res.rebonding_triggered {
                             tracing::info!(
@@ -190,7 +196,12 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
         // Step f: SleepCycle-Trigger
         if self.config.sleep_cycle_enabled && self.active_agent_sessions() == 0 {
             let user_key_prefix = self.collection.user_key_prefix();
-            match self.collection.storage().scan_prefix(&user_key_prefix).await {
+            match self
+                .collection
+                .storage()
+                .scan_prefix(&user_key_prefix)
+                .await
+            {
                 Ok(entries) => {
                     let mut turns: Vec<(DocId, Vec<f32>)> = Vec::new();
                     for (k, v) in entries {
@@ -205,7 +216,13 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                     }
 
                     if turns.len() >= self.config.sleep_episode_threshold {
-                        match execute_nrem_cycle(self.collection.as_ref(), &turns, &self.nrem_config).await {
+                        match execute_nrem_cycle(
+                            self.collection.as_ref(),
+                            &turns,
+                            &self.nrem_config,
+                        )
+                        .await
+                        {
                             Ok(res) => {
                                 if !res.duplicates_tombstoned.is_empty() {
                                     tracing::info!(
@@ -260,7 +277,10 @@ async fn write_tick_intent<S: StorageEngine, V: VectorIndex>(
             .map(|d| d.as_millis())
             .unwrap_or(0),
     }))?;
-    collection.storage().put(tx, b"__physio_intent:tick", &payload).await?;
+    collection
+        .storage()
+        .put(tx, b"__physio_intent:tick", &payload)
+        .await?;
     collection.storage().commit(tx).await?;
     Ok(tx)
 }
@@ -276,7 +296,10 @@ async fn complete_tick_intent<S: StorageEngine, V: VectorIndex>(
             .map(|d| d.as_millis())
             .unwrap_or(0),
     }))?;
-    collection.storage().put(tx, b"__physio_intent:tick", &payload).await?;
+    collection
+        .storage()
+        .put(tx, b"__physio_intent:tick", &payload)
+        .await?;
     collection.storage().commit(tx).await?;
     Ok(())
 }
@@ -331,7 +354,11 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(config, col.clone(), NremConfig::default()));
+        let scheduler = Arc::new(PhysioScheduler::new(
+            config,
+            col.clone(),
+            NremConfig::default(),
+        ));
 
         // Run single tick manually
         scheduler.run_tick().await;
@@ -356,7 +383,11 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(config, col.clone(), NremConfig::default()));
+        let scheduler = Arc::new(PhysioScheduler::new(
+            config,
+            col.clone(),
+            NremConfig::default(),
+        ));
 
         // Run tick - thermostat step executes without error even on empty collection
         scheduler.run_tick().await;

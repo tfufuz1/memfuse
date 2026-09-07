@@ -114,7 +114,9 @@ pub fn create_embedding_provider(
             })?;
             let quantization = memfuse_candle::model_registry::CandleQuantization::Q4KM;
             let embedder = memfuse_candle::CandleEmbedClient::from_dir(model_dir, quantization)
-                .map_err(|e| MemFuseError::Internal(format!("Failed to load Candle embed model: {e}")))?;
+                .map_err(|e| {
+                    MemFuseError::Internal(format!("Failed to load Candle embed model: {e}"))
+                })?;
             Ok(Arc::new(embedder))
         }
         #[cfg(not(feature = "candle"))]
@@ -169,8 +171,8 @@ impl LlmConfig {
         let ollama_url = std::env::var("MEMFUSE_OLLAMA_URL")
             .unwrap_or_else(|_| memfuse_ollama::DEFAULT_BASE_URL.to_string());
 
-        let llm_model = std::env::var("MEMFUSE_LLM_MODEL")
-            .unwrap_or_else(|_| "llama3.2:3b".to_string());
+        let llm_model =
+            std::env::var("MEMFUSE_LLM_MODEL").unwrap_or_else(|_| "llama3.2:3b".to_string());
 
         let candle_model_dir = std::env::var("MEMFUSE_CANDLE_MODEL_DIR")
             .ok()
@@ -220,7 +222,9 @@ pub fn create_llm_text_generator(
             })?;
             let quantization = memfuse_candle::model_registry::CandleQuantization::Q4KM;
             let generator = memfuse_candle::CandleLlmClient::from_dir(model_dir, quantization)
-                .map_err(|e| MemFuseError::Internal(format!("Failed to load Candle LLM model: {e}")))?;
+                .map_err(|e| {
+                    MemFuseError::Internal(format!("Failed to load Candle LLM model: {e}"))
+                })?;
             Ok(Arc::new(generator))
         }
         #[cfg(not(feature = "candle"))]
@@ -280,26 +284,48 @@ mod tests {
 
     #[test]
     fn test_create_embedding_provider_mock() {
-        let provider = create_embedding_provider("mock", "http://localhost:11434", "nomic-embed-text", None, None).unwrap();
+        let provider = create_embedding_provider(
+            "mock",
+            "http://localhost:11434",
+            "nomic-embed-text",
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(provider.provider_name(), "mock");
         assert_eq!(provider.embedding_dim(), 768);
     }
 
     #[test]
     fn test_create_embedding_provider_ollama() {
-        let provider = create_embedding_provider("ollama", "http://localhost:11434", "nomic-embed-text", None, None).unwrap();
+        let provider = create_embedding_provider(
+            "ollama",
+            "http://localhost:11434",
+            "nomic-embed-text",
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(provider.provider_name(), "ollama");
     }
 
     #[test]
     fn test_create_embedding_provider_unknown_error() {
-        let res = create_embedding_provider("invalid_provider", "http://localhost:11434", "nomic-embed-text", None, None);
+        let res = create_embedding_provider(
+            "invalid_provider",
+            "http://localhost:11434",
+            "nomic-embed-text",
+            None,
+            None,
+        );
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
     #[test]
     fn test_create_llm_generator_mock() {
-        let generator = create_llm_text_generator("mock", "http://localhost:11434", "llama3.2:3b", None).unwrap();
+        let generator =
+            create_llm_text_generator("mock", "http://localhost:11434", "llama3.2:3b", None)
+                .unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let response = rt.block_on(generator.generate("hello")).unwrap();
         assert!(response.contains("[Mock LLM response for: hello]"));
@@ -307,13 +333,19 @@ mod tests {
 
     #[test]
     fn test_create_llm_generator_ollama() {
-        let generator = create_llm_text_generator("ollama", "http://localhost:11434", "llama3.2:3b", None);
+        let generator =
+            create_llm_text_generator("ollama", "http://localhost:11434", "llama3.2:3b", None);
         assert!(generator.is_ok());
     }
 
     #[test]
     fn test_create_llm_generator_unknown_error() {
-        let res = create_llm_text_generator("invalid_provider", "http://localhost:11434", "llama3.2:3b", None);
+        let res = create_llm_text_generator(
+            "invalid_provider",
+            "http://localhost:11434",
+            "llama3.2:3b",
+            None,
+        );
         assert!(matches!(res, Err(MemFuseError::InvalidInput(_))));
     }
 
@@ -321,14 +353,27 @@ mod tests {
     #[test]
     fn test_create_embedding_provider_candle_success() {
         let tmp = tempfile::tempdir().unwrap();
-        let provider = create_embedding_provider("candle", "http://localhost:11434", "embed_model", None, Some(tmp.path())).unwrap();
+        let provider = create_embedding_provider(
+            "candle",
+            "http://localhost:11434",
+            "embed_model",
+            None,
+            Some(tmp.path()),
+        )
+        .unwrap();
         assert_eq!(provider.provider_name(), "candle");
     }
 
     #[cfg(feature = "candle")]
     #[test]
     fn test_create_embedding_provider_candle_missing_dir_error() {
-        let res = create_embedding_provider("candle", "http://localhost:11434", "embed_model", None, None);
+        let res = create_embedding_provider(
+            "candle",
+            "http://localhost:11434",
+            "embed_model",
+            None,
+            None,
+        );
         match res {
             Err(err) => {
                 assert!(matches!(err, MemFuseError::InvalidInput(_)));
@@ -341,15 +386,30 @@ mod tests {
     #[cfg(not(feature = "candle"))]
     #[test]
     fn test_create_embedding_provider_candle_unsupported_error() {
-        let res = create_embedding_provider("candle", "http://localhost:11434", "embed_model", None, None);
-        assert!(matches!(res, Err(MemFuseError::CapabilityUnsupported { .. })));
+        let res = create_embedding_provider(
+            "candle",
+            "http://localhost:11434",
+            "embed_model",
+            None,
+            None,
+        );
+        assert!(matches!(
+            res,
+            Err(MemFuseError::CapabilityUnsupported { .. })
+        ));
     }
 
     #[cfg(feature = "candle")]
     #[test]
     fn test_create_llm_generator_candle_success() {
         let tmp = tempfile::tempdir().unwrap();
-        let generator = create_llm_text_generator("candle", "http://localhost:11434", "llama3.2:3b", Some(tmp.path())).unwrap();
+        let generator = create_llm_text_generator(
+            "candle",
+            "http://localhost:11434",
+            "llama3.2:3b",
+            Some(tmp.path()),
+        )
+        .unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let response = rt.block_on(generator.generate("hello")).unwrap();
         assert!(response.contains("[Candle] Response for prompt: hello"));
@@ -358,7 +418,8 @@ mod tests {
     #[cfg(feature = "candle")]
     #[test]
     fn test_create_llm_generator_candle_missing_dir_error() {
-        let res = create_llm_text_generator("candle", "http://localhost:11434", "llama3.2:3b", None);
+        let res =
+            create_llm_text_generator("candle", "http://localhost:11434", "llama3.2:3b", None);
         match res {
             Err(err) => {
                 assert!(matches!(err, MemFuseError::InvalidInput(_)));
@@ -371,7 +432,11 @@ mod tests {
     #[cfg(not(feature = "candle"))]
     #[test]
     fn test_create_llm_generator_candle_unsupported_error() {
-        let res = create_llm_text_generator("candle", "http://localhost:11434", "llama3.2:3b", None);
-        assert!(matches!(res, Err(MemFuseError::CapabilityUnsupported { .. })));
+        let res =
+            create_llm_text_generator("candle", "http://localhost:11434", "llama3.2:3b", None);
+        assert!(matches!(
+            res,
+            Err(MemFuseError::CapabilityUnsupported { .. })
+        ));
     }
 }

@@ -8,8 +8,8 @@
 
 use crate::collection::{Collection, StoredDocumentMeta};
 use crate::sleep_cycle::{
-    compute_community_hash, run_nrem_phase, run_rem_phase, CommunityStabilityTracker,
-    NremConfig, NremPhaseResult, RemConfig, RemPhaseResult,
+    compute_community_hash, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, NremConfig,
+    NremPhaseResult, RemConfig, RemPhaseResult,
 };
 use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
@@ -93,15 +93,20 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
     let nrem_result = execute_nrem_cycle(collection, turns, nrem_config).await?;
 
     let rem_result = if let (Some(rem_cfg), Some(llm_gen)) = (rem_config, llm) {
-        let assignments =
-            detect_communities(&collection.graph_index, &CommunityDetectionConfig::default())
-                .await?;
+        let assignments = detect_communities(
+            &collection.graph_index,
+            &CommunityDetectionConfig::default(),
+        )
+        .await?;
 
         // Group entities by community_id
         let mut comm_map: HashMap<u64, Vec<DocId>> = HashMap::new();
         for assignment in assignments {
             let doc_id = DocId::new(assignment.entity_id.inner());
-            comm_map.entry(assignment.community_id).or_default().push(doc_id);
+            comm_map
+                .entry(assignment.community_id)
+                .or_default()
+                .push(doc_id);
         }
 
         let mut currently_observed = HashSet::new();

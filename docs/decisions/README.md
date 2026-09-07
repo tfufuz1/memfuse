@@ -70,3 +70,5 @@ Gemäß Governance (`CONSTITUTION.md`) ist `docs/decisions/` der alleinige kanon
 | [ADR-063](ADR-063-f02-nucleation-tombstone-pruning-vs-ursprungliches-veto.md) | F-02 Nucleation Tombstone-Pruning vs. ursprüngliches Veto | - | Final |
 | [ADR-064](ADR-064-memfuse-py-separater-workspace-panic-strategie.md) | memfuse-py als separater Cargo-Workspace (Panic-Strategie-Isolation) | 2026-09-07 | Final |
 | [ADR-065](ADR-065-duplicate-symbol-ci-gate.md) | Duplicate Symbol CI-Gate zur Prävention von Merge-Kollisionen | 2026-09-07 | Final |
+| [ADR-066](ADR-066-physio-resonance-fusion-feature-flag-aktivierung.md) | Physio Resonance Fusion Feature-Flag Aktivierung | 2026-09-07 | Final |
+| [ADR-067](ADR-067-pathrag-sufficiency-threshold-calibration.md) | Normative Kalibrierung des PathRAG Sufficiency-Gate Thresholds | 2026-09-07 | Final |

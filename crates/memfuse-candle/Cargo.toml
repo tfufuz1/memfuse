@@ -16,11 +16,13 @@ tokio = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 memfuse-core = { workspace = true }
+memfuse-calibration = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
 [features]
 default = []
+candle = []
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
