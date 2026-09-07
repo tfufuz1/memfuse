@@ -7,10 +7,10 @@ use memfuse_core::{MemFuseError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
+use std::future::Future;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::pin::Pin;
-use std::future::Future;
 
 /// Alias for an owned Send BoxFuture.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -53,7 +53,11 @@ impl std::fmt::Display for LongMemEvalQuestionType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LongMemEvalCase {
     pub question_id: String,
-    pub session_history: Vec<(String /* speaker/role */, String /* utterance */, u64 /* session_idx */)>,
+    pub session_history: Vec<(
+        String, /* speaker/role */
+        String, /* utterance */
+        u64,    /* session_idx */
+    )>,
     pub question: String,
     pub expected_answer: String,
     pub question_type: LongMemEvalQuestionType,
@@ -246,7 +250,9 @@ where
         let is_correct = if case.question_type == LongMemEvalQuestionType::Abstention {
             // For abstention, search result scores should be low or empty
             search_results.is_empty()
-                || search_results.iter().all(|c| c.score < 0.1 || c.text.is_empty())
+                || search_results
+                    .iter()
+                    .all(|c| c.score < 0.1 || c.text.is_empty())
         } else {
             let lower_answer = case.expected_answer.to_lowercase();
             search_results.iter().any(|chunk| {

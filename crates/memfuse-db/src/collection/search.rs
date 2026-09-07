@@ -639,6 +639,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             true,
+            None,
         );
 
         let mut boosted = self
@@ -676,12 +677,18 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let is_text_empty = text.trim().is_empty();
 
         // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
-        let mult = query
-            .rerank_pool_multiplier
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER);
-        let max_pool = query
-            .rerank_pool_max
-            .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX);
+        let (mult, max_pool) = if query.has_reranker {
+            (
+                query
+                    .rerank_pool_multiplier
+                    .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER),
+                query
+                    .rerank_pool_max
+                    .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX),
+            )
+        } else {
+            (1, k)
+        };
 
         let mut candidate_k = k;
         if !query.include_superseded {
@@ -808,7 +815,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .strip_prefix("EntityId(")
                     .and_then(|s| s.strip_suffix(')'))
                 {
-                    inner_str.parse::<u64>().ok().map(memfuse_core::EntityId::new)
+                    inner_str
+                        .parse::<u64>()
+                        .ok()
+                        .map(memfuse_core::EntityId::new)
                 } else {
                     memfuse_core::EntityId::from_key(start_node).ok()
                 };
@@ -914,6 +924,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             usize::MAX,
             crate::fusion::MetadataMergePriority::default(),
             query.include_provenance,
+            None,
         );
 
         let mut fused_results = self

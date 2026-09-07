@@ -208,6 +208,27 @@ pub fn is_transient_error(e: &MemFuseError) -> bool {
     }
 }
 
+impl memfuse_core::SegmentSynthesizer for OllamaClient {
+    fn synthesize_segment<'a>(
+        &'a self,
+        segment_texts: &'a [&'a str],
+    ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<String>> {
+        Box::pin(async move {
+            let combined = segment_texts.join("\n---\n");
+            let prompt = format!(
+                "Fasse die folgenden verwandten Erinnerungen zu einer einzigen, prägnanten \
+                 abstrakten Wissensaussage zusammen (max. 2 Sätze, keine Detailwiederholungen):\n\n\
+                 {combined}\n\nAbstrakte Zusammenfassung:"
+            );
+            self.generate_text(&self.config().model, &prompt).await
+        })
+    }
+
+    fn model_id(&self) -> &str {
+        &self.config().model
+    }
+}
+
 impl OllamaClient {
     /// Creates a new `OllamaClient` with the specified base URL and default timeout config.
     pub fn new(base_url: impl Into<String>) -> Self {
@@ -1101,6 +1122,43 @@ mod tests {
         let client = OllamaClient::new("http://localhost:11434");
         let res = client.generate_text("llama3.2", "Hello").await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_segment_synthesizer_implementation() {
+        use memfuse_core::SegmentSynthesizer;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_url = format!("http://{}", addr);
+
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let body = serde_json::json!({
+                    "message": {
+                        "role": "assistant",
+                        "content": "Synthetisierte Zusammenfassung"
+                    }
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.ok();
+            }
+        });
+
+        let client = OllamaClient::new(server_url);
+        assert_eq!(client.model_id(), DEFAULT_EMBED_MODEL);
+
+        let texts = vec!["Erinnerung 1", "Erinnerung 2"];
+        let res = client.synthesize_segment(&texts).await.unwrap();
+        assert_eq!(res, "Synthetisierte Zusammenfassung");
     }
 
     #[tokio::test]

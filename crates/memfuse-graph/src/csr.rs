@@ -1844,7 +1844,10 @@ impl crate::path_rag::PathGraph for CsrGraph {
             for edge_idx in start_edge..end_edge {
                 let neighbor_idx = inner.targets[edge_idx];
                 if !inner.tombstoned_edges.contains(&(node_idx, neighbor_idx))
-                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if seen.insert(id) {
@@ -1859,7 +1862,10 @@ impl crate::path_rag::PathGraph for CsrGraph {
             for edge in pending {
                 let neighbor_idx = edge.target;
                 if !inner.tombstoned_edges.contains(&(node_idx, neighbor_idx))
-                    && inner.entities.get(neighbor_idx).is_some_and(|e| e.is_some())
+                    && inner
+                        .entities
+                        .get(neighbor_idx)
+                        .is_some_and(|e| e.is_some())
                 {
                     if let Some(&id) = inner.reverse_map.get(neighbor_idx) {
                         if seen.insert(id) {
