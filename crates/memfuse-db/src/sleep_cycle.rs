@@ -165,31 +165,30 @@ pub fn group_turns_into_segments(
         return Vec::new();
     }
 
-    // Merging-Pass für Mikro-Segmente unter min_turns_per_segment
+    // Pass 1: Forward-Merge — zu-kleines Segment wird in VORHERIGES gemergt (wenn möglich)
     let mut merged: Vec<WorkingSegment> = Vec::new();
-
     for seg in raw_segments {
-        if let Some(last) = merged.last_mut() {
-            if last.turns.len() < config.min_turns_per_segment {
-                // Letztes Segment ist zu klein -> verschmelze aktuelles Segment hinein
+        if merged.is_empty() {
+            merged.push(seg);
+            continue;
+        }
+        // Wenn das aktuelle Segment zu klein ist: in Vorgänger mergen
+        if seg.turns.len() < config.min_turns_per_segment {
+            if let Some(last) = merged.last_mut() {
                 for (id, emb) in seg.turns {
                     last.add_turn(id, emb);
                 }
-                continue;
             }
+        } else {
+            merged.push(seg);
         }
-        merged.push(seg);
     }
 
-    // Prüfe abschließend das letzte Segment in merged
-    if merged.len() > 1 {
-        let last_idx = merged.len() - 1;
-        if merged[last_idx].turns.len() < config.min_turns_per_segment {
-            let last_seg = merged.remove(last_idx);
-            let prev = &mut merged[last_idx - 1];
-            for (id, emb) in last_seg.turns {
-                prev.add_turn(id, emb);
-            }
+    // Pass 2: Backward-Merge — erstes Segment zu klein → in NÄCHSTES mergen
+    if merged.len() >= 2 && merged[0].turns.len() < config.min_turns_per_segment {
+        let first = merged.remove(0);
+        for (id, emb) in first.turns {
+            merged[0].add_turn(id, emb);
         }
     }
 
@@ -384,7 +383,10 @@ mod tests {
         let emb = vec![1.0, 0.0, 0.0, 0.0];
         // Chronologically first turn (position 0) has a HIGHER numerical DocId (9999)
         // than the second turn (position 1, DocId 100).
-        let turns = vec![(DocId::new(9999), emb.clone()), (DocId::new(100), emb.clone())];
+        let turns = vec![
+            (DocId::new(9999), emb.clone()),
+            (DocId::new(100), emb.clone()),
+        ];
 
         let pairs = detect_near_duplicates(&turns, 0.95);
         assert_eq!(pairs.len(), 1);
@@ -444,5 +446,58 @@ mod tests {
             "Segment under min_turns_per_segment must be merged into neighboring segment"
         );
         assert_eq!(segments[0].turn_ids.len(), 6);
+    }
+
+    #[test]
+    fn test_first_segment_too_small_merged_into_next() {
+        // Segment 1: 1 Turn (< min=3) → soll in Segment 2 (5 Turns) gemergt werden
+        let emb_a = vec![1.0f32, 0.0, 0.0, 0.0];
+        let emb_b = vec![0.0f32, 1.0, 0.0, 0.0];
+        let mut turns = vec![(DocId::new(1), emb_b.clone())]; // Outlier am Anfang
+        for i in 2..=6 {
+            turns.push((DocId::new(i), emb_a.clone()));
+        }
+
+        let config = NremConfig {
+            min_turns_per_segment: 3,
+            max_turns_per_segment: 20,
+            near_duplicate_cosine_threshold: 0.90,
+        };
+        let segments = group_turns_into_segments(&turns, &config);
+        assert_eq!(
+            segments.len(),
+            1,
+            "Small first segment must merge into next"
+        );
+        assert_eq!(segments[0].turn_ids.len(), 6);
+    }
+
+    #[test]
+    fn test_intermediate_small_segment_not_orphaned() {
+        // Drei Cluster: 5 / 1 / 5 Turns — der mittlere (1) muss gemergt werden
+        let emb_a = vec![1.0f32, 0.0, 0.0, 0.0];
+        let emb_b = vec![0.0f32, 1.0, 0.0, 0.0];
+        let emb_c = vec![0.0f32, 0.0, 1.0, 0.0];
+        let mut turns = Vec::new();
+        for i in 1..=5 {
+            turns.push((DocId::new(i), emb_a.clone()));
+        }
+        turns.push((DocId::new(6), emb_b.clone())); // 1-Turn-Segment
+        for i in 7..=11 {
+            turns.push((DocId::new(i), emb_c.clone()));
+        }
+
+        let config = NremConfig {
+            min_turns_per_segment: 3,
+            max_turns_per_segment: 20,
+            near_duplicate_cosine_threshold: 0.90,
+        };
+        let segments = group_turns_into_segments(&turns, &config);
+        assert!(
+            segments
+                .iter()
+                .all(|s| s.turn_ids.len() >= config.min_turns_per_segment),
+            "No segment must have fewer than min_turns_per_segment turns"
+        );
     }
 }
