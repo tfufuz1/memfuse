@@ -24,7 +24,10 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 const DISKANN_MAGIC: &[u8; 4] = b"DANN";
-const DISKANN_VERSION: u16 = 1;
+const DISKANN_VERSION: u16 = 2;
+const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DONE";
+/// Static key used for DiskANN index integrity HMAC verification.
+const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_v2_key";
 
 /// Header for DiskANN index file.
 #[derive(Debug, Clone, Copy)]
@@ -148,6 +151,57 @@ impl DiskAnnHeader {
     }
 }
 
+/// Footer for DiskANN index file (36 bytes: 4 bytes DISKANN_FOOTER_MAGIC + 32 bytes HMAC).
+#[derive(Debug, Clone, Copy)]
+struct DiskAnnFooter {
+    magic: [u8; 4],
+    hmac: [u8; 32],
+}
+
+impl DiskAnnFooter {
+    const SIZE: usize = 36;
+
+    fn to_bytes(self) -> [u8; Self::SIZE] {
+        let mut buf = [0u8; Self::SIZE];
+        buf[0..4].copy_from_slice(&self.magic);
+        buf[4..36].copy_from_slice(&self.hmac);
+        buf
+    }
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() < Self::SIZE {
+            return Err(MemFuseError::Storage("DiskANN footer too small".into()));
+        }
+        let magic_bytes = bytes
+            .get(0..4)
+            .ok_or_else(|| MemFuseError::Storage("DiskANN footer magic out of bounds".into()))?;
+        if magic_bytes != DISKANN_FOOTER_MAGIC {
+            return Err(MemFuseError::Storage(
+                "Invalid DiskANN file: missing or incomplete build_complete footer".into(),
+            ));
+        }
+        let hmac: [u8; 32] = bytes
+            .get(4..36)
+            .ok_or_else(|| MemFuseError::Storage("DiskANN footer HMAC out of bounds".into()))?
+            .try_into()
+            .map_err(|_| MemFuseError::Storage("Invalid DiskANN footer HMAC length".into()))?;
+        Ok(Self {
+            magic: *DISKANN_FOOTER_MAGIC,
+            hmac,
+        })
+    }
+}
+
+/// Fallback behavior policy when DiskANN loading, integrity checks, or reads fail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DiskAnnFallbackPolicy {
+    /// Transparently fall back to in-memory HNSW index on load failure or detected corruption.
+    #[default]
+    UseHnswOnFailure,
+    /// Immediately return a typed error on load failure or index corruption.
+    FailFast,
+}
+
 /// Configuration for DiskANN index.
 #[derive(Debug, Clone)]
 pub struct DiskAnnConfig {
@@ -167,6 +221,8 @@ pub struct DiskAnnConfig {
     pub distance_metric: DistanceMetric,
     /// Whether to use SQ8 quantization.
     pub quantize: bool,
+    /// Fallback policy when index file loading or integrity validation fails.
+    pub fallback_policy: DiskAnnFallbackPolicy,
 }
 
 impl Default for DiskAnnConfig {
@@ -180,6 +236,7 @@ impl Default for DiskAnnConfig {
             memory_budget: 128 * 1024 * 1024, // 128MB
             distance_metric: DistanceMetric::Cosine,
             quantize: false,
+            fallback_policy: DiskAnnFallbackPolicy::default(),
         }
     }
 }
@@ -218,6 +275,7 @@ struct DiskAnnIndexInner {
     doc_ids: RwLock<Vec<DocId>>,
     quantizer: RwLock<Option<crate::quantize::ScalarQuantizer>>,
     drift_warn_count: AtomicU64,
+    hnsw_fallback: RwLock<Option<Arc<crate::hnsw::HnswIndex>>>,
 }
 
 impl DiskAnnIndex {
@@ -249,6 +307,7 @@ impl DiskAnnIndex {
                 doc_ids: RwLock::new(Vec::new()),
                 quantizer: RwLock::new(None),
                 drift_warn_count: AtomicU64::new(0),
+                hnsw_fallback: RwLock::new(None),
             }),
         })
     }
@@ -504,7 +563,6 @@ impl DiskAnnIndex {
     ) -> Result<()> {
         use std::sync::atomic::Ordering;
         use tokio::fs::OpenOptions;
-        use tokio::io::AsyncSeekExt;
         use tokio::io::AsyncWriteExt;
 
         let n = vectors.len();
@@ -541,7 +599,11 @@ impl DiskAnnIndex {
             q_max,
         };
 
-        file.write_all(&header.to_bytes())
+        let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+
+        let header_bytes = header.to_bytes();
+        hmac.update(&header_bytes);
+        file.write_all(&header_bytes)
             .await
             .map_err(MemFuseError::Io)?;
         let padding = vec![
@@ -549,48 +611,49 @@ impl DiskAnnIndex {
             self.inner.config.sector_size
                 - (DiskAnnHeader::SIZE % self.inner.config.sector_size)
         ];
+        hmac.update(&padding);
         file.write_all(&padding).await.map_err(MemFuseError::Io)?;
 
         for i in 0..n {
-            let start_pos = file.stream_position().await.map_err(MemFuseError::Io)?;
+            let mut node_buf = Vec::new();
 
             if let Some(ref q) = quantizer_opt {
                 let qv = q.quantize(&vectors[i]);
-                file.write_all(&qv).await.map_err(MemFuseError::Io)?;
+                node_buf.extend_from_slice(&qv);
             } else {
                 for &val in &vectors[i] {
-                    file.write_all(&val.to_le_bytes())
-                        .await
-                        .map_err(MemFuseError::Io)?;
+                    node_buf.extend_from_slice(&val.to_le_bytes());
                 }
             }
 
             let neighbors = &graph[i];
-            file.write_all(&(neighbors.len() as u32).to_le_bytes())
-                .await
-                .map_err(MemFuseError::Io)?;
+            node_buf.extend_from_slice(&(neighbors.len() as u32).to_le_bytes());
             for &neighbor in neighbors {
-                file.write_all(&neighbor.to_le_bytes())
-                    .await
-                    .map_err(MemFuseError::Io)?;
+                node_buf.extend_from_slice(&neighbor.to_le_bytes());
             }
             let padding_count = self.inner.config.max_degree - neighbors.len();
-            file.write_all(&vec![0u8; padding_count * 4])
-                .await
-                .map_err(MemFuseError::Io)?;
-            file.write_all(&ids[i].inner().to_le_bytes())
-                .await
-                .map_err(MemFuseError::Io)?;
+            node_buf.extend_from_slice(&vec![0u8; padding_count * 4]);
+            node_buf.extend_from_slice(&ids[i].inner().to_le_bytes());
 
-            let end_pos = file.stream_position().await.map_err(MemFuseError::Io)?;
-            let used = (end_pos - start_pos) as usize;
+            let used = node_buf.len();
             let node_size = self.inner.node_size_bytes.load(Ordering::SeqCst) as usize;
             if used < node_size {
-                file.write_all(&vec![0u8; node_size - used])
-                    .await
-                    .map_err(MemFuseError::Io)?;
+                node_buf.extend_from_slice(&vec![0u8; node_size - used]);
             }
+
+            hmac.update(&node_buf);
+            file.write_all(&node_buf).await.map_err(MemFuseError::Io)?;
         }
+
+        let computed_hmac = hmac.finalize();
+        let footer = DiskAnnFooter {
+            magic: *DISKANN_FOOTER_MAGIC,
+            hmac: computed_hmac,
+        };
+        file.write_all(&footer.to_bytes())
+            .await
+            .map_err(MemFuseError::Io)?;
+
         file.sync_all().await.map_err(MemFuseError::Io)?;
         drop(file);
         tokio::fs::rename(&tmp_path, &self.inner.config.index_path)
@@ -607,10 +670,22 @@ impl DiskAnnIndex {
         Ok(())
     }
 
+    fn init_hnsw_fallback(&self) -> Result<Arc<crate::hnsw::HnswIndex>> {
+        let hnsw_config = crate::hnsw::HnswConfig {
+            dimension: self.inner.config.dimension,
+            distance_metric: self.inner.config.distance_metric,
+            quantize: self.inner.config.quantize,
+            ..crate::hnsw::HnswConfig::default()
+        };
+        let hnsw = Arc::new(crate::hnsw::HnswIndex::try_new(hnsw_config)?);
+        *self.inner.hnsw_fallback.write() = Some(hnsw.clone());
+        Ok(hnsw)
+    }
+
     /// Loads the index from the configured path.
     pub async fn load(&self) -> Result<()> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || {
+        let res = tokio::task::spawn_blocking(move || {
             use std::sync::atomic::Ordering;
             let file = std::fs::File::open(&inner.config.index_path).map_err(MemFuseError::Io)?;
             // SAFETY: Invariant: `file` is a valid, read-only open handle to `index_path` and the underlying inode is immutable during read.
@@ -631,6 +706,34 @@ impl DiskAnnIndex {
                      Header-sector_size={} überein. Index muss neu aufgebaut werden.",
                     inner.config.sector_size, header.sector_size
                 )));
+            }
+
+            if header.version == DISKANN_VERSION {
+                if mmap.len() < DiskAnnHeader::SIZE + DiskAnnFooter::SIZE {
+                    return Err(MemFuseError::Storage(
+                        "DiskANN file truncated: missing build_complete footer".into(),
+                    ));
+                }
+                let footer_start = mmap.len() - DiskAnnFooter::SIZE;
+                let footer_slice = mmap
+                    .get(footer_start..)
+                    .ok_or_else(|| MemFuseError::Storage("DiskANN footer out of bounds".into()))?;
+                let footer = DiskAnnFooter::try_from_bytes(footer_slice)?;
+
+                let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+                let payload = mmap
+                    .get(0..footer_start)
+                    .ok_or_else(|| MemFuseError::Storage("DiskANN payload out of bounds".into()))?;
+                hmac.update(payload);
+                let computed_hmac = hmac.finalize();
+
+                use subtle::ConstantTimeEq;
+                if computed_hmac.ct_eq(&footer.hmac).unwrap_u8() != 1 {
+                    return Err(MemFuseError::Storage(
+                        "DiskANN index integrity validation failed: HMAC checksum mismatch or corrupt index file"
+                            .into(),
+                    ));
+                }
             }
 
             if header.quantized != 0 {
@@ -711,7 +814,23 @@ impl DiskAnnIndex {
             Ok(())
         })
         .await
-        .map_err(|e| MemFuseError::Storage(format!("Join error during DiskANN load: {}", e)))?
+        .map_err(|e| MemFuseError::Storage(format!("Join error during DiskANN load: {}", e)))?;
+
+        match res {
+            Ok(()) => Ok(()),
+            Err(err) => match self.inner.config.fallback_policy {
+                DiskAnnFallbackPolicy::UseHnswOnFailure => {
+                    tracing::error!(
+                        index_path = %self.inner.config.index_path.display(),
+                        error = %err,
+                        "DiskANN load failed or index corrupted — transparently falling back to HNSW in-memory index."
+                    );
+                    let _ = self.init_hnsw_fallback()?;
+                    Ok(())
+                }
+                DiskAnnFallbackPolicy::FailFast => Err(err),
+            },
+        }
     }
 
     fn load_node(&self, index: u32) -> Result<CachedNode> {
@@ -876,11 +995,27 @@ impl DiskAnnIndex {
                 memfuse_core::MAX_SEARCH_K
             )));
         }
-        let header = {
-            let guard = self.inner.header.read();
-            *guard
-                .as_ref()
-                .ok_or_else(|| MemFuseError::Index("Index not loaded".into()))?
+
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.search(query, k).await;
+        }
+
+        let header_opt = *self.inner.header.read();
+        let header = match header_opt {
+            Some(h) => h,
+            None => {
+                if self.inner.config.fallback_policy == DiskAnnFallbackPolicy::UseHnswOnFailure {
+                    tracing::error!(
+                        index_path = %self.inner.config.index_path.display(),
+                        "DiskANN index not loaded or header missing — using HNSW fallback"
+                    );
+                    let hnsw = self.init_hnsw_fallback()?;
+                    return hnsw.search(query, k).await;
+                } else {
+                    return Err(MemFuseError::Index("Index not loaded".into()));
+                }
+            }
         };
 
         if header.node_count == 0 {
@@ -889,12 +1024,29 @@ impl DiskAnnIndex {
 
         self.check_quantizer_drift(query);
 
-        let query = query.to_vec();
+        let query_vec = query.to_vec();
         let self_clone = self.clone();
 
-        tokio::task::spawn_blocking(move || self_clone.search_blocking(&query, k, header))
+        let search_res = tokio::task::spawn_blocking(move || self_clone.search_blocking(&query_vec, k, header))
             .await
-            .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?
+            .map_err(|e| MemFuseError::Index(format!("Join error: {}", e)))?;
+
+        match search_res {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                if self.inner.config.fallback_policy == DiskAnnFallbackPolicy::UseHnswOnFailure {
+                    tracing::error!(
+                        index_path = %self.inner.config.index_path.display(),
+                        error = %err,
+                        "DiskANN search failed — falling back to HNSW"
+                    );
+                    let hnsw = self.init_hnsw_fallback()?;
+                    hnsw.search(query, k).await
+                } else {
+                    Err(err)
+                }
+            }
+        }
     }
 
     fn search_blocking(
@@ -986,8 +1138,12 @@ impl Clone for DiskAnnIndex {
 }
 
 impl VectorIndex for DiskAnnIndex {
-    async fn insert(&self, _tx: TxId, _id: DocId, embedding: &[f32]) -> Result<()> {
+    async fn insert(&self, tx: TxId, id: DocId, embedding: &[f32]) -> Result<()> {
         self.check_quantizer_drift(embedding);
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.insert(tx, id, embedding).await;
+        }
         Err(MemFuseError::InvalidInput(
             "DiskAnn is a read-only out-of-core index. Use build() for batch creation.".to_string(),
         ))
@@ -997,25 +1153,45 @@ impl VectorIndex for DiskAnnIndex {
         self.search_internal(query, k).await
     }
 
-    async fn delete(&self, _tx: TxId, _id: DocId) -> Result<()> {
+    async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.delete(tx, id).await;
+        }
         Err(MemFuseError::InvalidInput(
             "DiskAnn is a read-only out-of-core index.".to_string(),
         ))
     }
 
-    async fn commit(&self, _tx: TxId) -> Result<()> {
-        Ok(())
-    }
-    async fn rollback(&self, _tx: TxId) -> Result<()> {
+    async fn commit(&self, tx: TxId) -> Result<()> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.commit(tx).await;
+        }
         Ok(())
     }
 
-    async fn rollback_to_tx(&self, _tx_id: TxId) -> Result<()> {
-        // DiskAnn is read-only, so rollback is always a no-op (it's already at a fixed state)
+    async fn rollback(&self, tx: TxId) -> Result<()> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.rollback(tx).await;
+        }
+        Ok(())
+    }
+
+    async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.rollback_to_tx(tx_id).await;
+        }
         Ok(())
     }
 
     async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.all_doc_ids().await;
+        }
         Ok(self.inner.doc_ids.read().clone())
     }
 
@@ -1024,6 +1200,10 @@ impl VectorIndex for DiskAnnIndex {
     }
 
     async fn len(&self) -> usize {
+        let fallback_opt = self.inner.hnsw_fallback.read().clone();
+        if let Some(hnsw) = fallback_opt {
+            return hnsw.len().await;
+        }
         let guard = self.inner.header.read();
         guard.as_ref().map(|h| h.node_count as usize).unwrap_or(0)
     }
@@ -1237,11 +1417,22 @@ mod tests {
         data[neighbor_count_offset..neighbor_count_offset + 4]
             .copy_from_slice(&corrupt_count.to_le_bytes());
 
+        // Recompute HMAC for the modified payload so header & footer integrity passes, allowing load_node to test node parsing
+        let mut hmac = memfuse_crypto::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY).unwrap();
+        let footer_start = data.len() - DiskAnnFooter::SIZE;
+        hmac.update(&data[..footer_start]);
+        let computed = hmac.finalize();
+        data[footer_start + 4..].copy_from_slice(&computed);
+
         tokio::fs::write(&index_path, &data)
             .await
             .expect("write corrupt file"); // expect
 
-        let reloaded_index = DiskAnnIndex::try_new(config).expect("valid config"); // expect
+        let reloaded_config = DiskAnnConfig {
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
+            ..config
+        };
+        let reloaded_index = DiskAnnIndex::try_new(reloaded_config).expect("valid config"); // expect
         reloaded_index.load().await.expect("Load header & mmap"); // expect
 
         let result = reloaded_index.load_node(0);
@@ -1264,6 +1455,7 @@ mod tests {
             dimension: 8,
             max_degree: 4,
             distance_metric: DistanceMetric::Euclidean,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
             ..DiskAnnConfig::default()
         };
 
@@ -1300,6 +1492,7 @@ mod tests {
             dimension: 8,
             max_degree: 4,
             distance_metric: DistanceMetric::Euclidean,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
             ..DiskAnnConfig::default()
         };
 
@@ -1382,6 +1575,7 @@ mod tests {
             max_degree: 4,
             sector_size: 2048,
             distance_metric: DistanceMetric::Euclidean,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
             ..DiskAnnConfig::default()
         };
 
@@ -1440,6 +1634,7 @@ mod tests {
                 dimension: 8,
                 max_degree: 4,
                 sector_size: 4096,
+                fallback_policy: DiskAnnFallbackPolicy::FailFast,
                 ..DiskAnnConfig::default()
             };
             let index = DiskAnnIndex::try_new(config).unwrap();
@@ -1489,7 +1684,11 @@ mod tests {
         data[6..14].copy_from_slice(&corrupt_count.to_le_bytes());
         tokio::fs::write(&index_path, &data).await.unwrap();
 
-        let reloaded = DiskAnnIndex::try_new(config).unwrap();
+        let reloaded_config = DiskAnnConfig {
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
+            ..config
+        };
+        let reloaded = DiskAnnIndex::try_new(reloaded_config).unwrap();
 
         let reloaded_clone = reloaded.clone();
         let spawn_res = tokio::spawn(async move { reloaded_clone.load().await }).await;

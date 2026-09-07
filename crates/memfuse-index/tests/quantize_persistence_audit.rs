@@ -7,7 +7,7 @@
 use memfuse_core::traits::VectorIndex;
 use memfuse_core::types::{DistanceMetric, DocId, TxId};
 use memfuse_core::MemFuseError;
-use memfuse_index::diskann::{DiskAnnConfig, DiskAnnIndex};
+use memfuse_index::diskann::{DiskAnnConfig, DiskAnnFallbackPolicy, DiskAnnIndex};
 use memfuse_index::hnsw::{HnswConfig, HnswIndex};
 use memfuse_index::persistence::MmapIndex;
 use memfuse_index::quantize::ScalarQuantizer;
@@ -305,6 +305,7 @@ async fn test_corrupted_mmap_file_handling() {
         .unwrap();
     let diskann = DiskAnnIndex::try_new(DiskAnnConfig {
         index_path: bad_diskann_path,
+        fallback_policy: DiskAnnFallbackPolicy::FailFast,
         ..Default::default()
     })
     .unwrap();
@@ -315,7 +316,7 @@ async fn test_corrupted_mmap_file_handling() {
     let trunc_diskann_path = temp_dir.path().join("truncated_body.idx");
     let header_bytes = [
         b'D', b'A', b'N', b'N', // magic
-        1u8, 0u8, // version 1
+        2u8, 0u8, // version 2
         100u8, 0, 0, 0, 0, 0, 0, 0, // node_count = 100
         128u8, 0, 0, 0, // dimension = 128
         64u8, 0, 0, 0, // max_degree = 64
@@ -335,6 +336,7 @@ async fn test_corrupted_mmap_file_handling() {
         index_path: trunc_diskann_path,
         dimension: 128,
         sector_size: 4096,
+        fallback_policy: DiskAnnFallbackPolicy::FailFast,
         ..Default::default()
     })
     .unwrap();

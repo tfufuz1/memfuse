@@ -61,5 +61,9 @@ name = "quickstart"
 [[example]]
 name = "hybrid_search"
 
+[[test]]
+name = "diskann_collection_fallback"
+required-features = ["experimental-diskann"]
+
 [[example]]
 name = "collections"
