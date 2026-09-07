@@ -8,86 +8,56 @@
 
 Stand letzter Prüfung: 2026-09-07
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **3 offene Tags**
+Ergebnis: **2 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
 | `crates/memfuse-ollama/src/context_prefixer.rs` | 99 | `AGT-OLLAMA-47e6619b` | `TESTING` | `MINOR` | `2026-09-06T11:20:14Z` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
-| `crates/memfuse-ollama/src/importance.rs` | 39 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
+| `crates/memfuse-ollama/src/importance.rs` | 73 | `AGT-OLLAMA-14c0c140` | `ML-SCORING` | `MAJOR` | `2026-09-06T11:20:14Z` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9261 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-crypto` | 0 | 2425 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-checkpoint` | 1 | 5617 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-embed` | 1 | 1435 | 🧊 Optional |  |
-| `memfuse-graph` | 1 | 7323 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-index` | 1 | 11898 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-store` | 1 | 15284 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-text` | 1 | 5355 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-db` | 2 | 20271 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-agent` | 3 | 5538 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-ollama` | 3 | 3395 | 🟢 Clean |  |
-| `memfuse-router` | 3 | 3388 | 🟢 Clean |  |
-| `memfuse-mcp` | 4 | 3808 | 🟢 Clean |  |
-| `memfuse-tauri` | 4 | 5744 | 🟢 Clean |  |
-| `memfuse-bench` | 5 | 578 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-core` | 0 | 9632 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-calibration` | 1 | 536 | 🟢 Clean |  |
+| `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-crypto` | 1 | 2836 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-embed` | 1 | 1723 | 🧊 Optional |  |
+| `memfuse-graph` | 1 | 7686 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-ollama` | 1 | 3499 | 🟢 Clean |  |
+| `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-index` | 2 | 12109 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-store` | 2 | 15559 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-db` | 3 | 21167 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 4 | 912 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-router` | 4 | 3865 | 🟢 Clean |  |
+| `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
+| `memfuse-agent` | 5 | 5530 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-mcp` | 6 | 3800 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
 
 ```
-Layer 0:  memfuse-crypto — Encryption at Rest utilities for MemFuse
-Layer 1:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-crypto)
-Layer 2:  memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
+Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
+Layer 1:  memfuse-calibration —  (deps: memfuse-core)
+          memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
+          memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
           memfuse-embed —  (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
           memfuse-ollama —  (deps: memfuse-core)
-          memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
-Layer 3:  memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
-Layer 4:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
-Layer 5:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
+Layer 2:  memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-graph)
+          memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
+Layer 3:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
+Layer 4:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
           memfuse-tauri —  (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
-Layer 6:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
-Layer 7:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
+Layer 5:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
+Layer 6:  memfuse-mcp —  (deps: memfuse-agent, memfuse-core, memfuse-crypto, memfuse-db, memfuse-embed, memfuse-ollama)
 ```
 
-**Aktiver Workspace-Build**: 15 Workspace Crates (14 Kern-Crates + 1 optionales Crate `memfuse-embed`).
+**Aktiver Workspace-Build**: 16 Workspace Crates (15 Kern-Crates + 1 optionales Crate `memfuse-embed`).
 <!-- AUTOGENERATED:END:FULL -->
-
----
-
-## Stand 2026-09-07 — Code-Audit G0
-
-### Audit-Ergebnisse (HEAD `36ad007a`)
-
-**Kritische Befunde (sofort zu beheben):**
-- A4: TenantId fehlt im gesamten Workspace
-- A5: ConfigFingerprint fehlt im gesamten Workspace
-- A6: DeletionProof fehlt in memfuse-crypto
-- A7: memfuse-calibration Crate fehlt
-
-**Sofort-Bugs:**
-- A14: Reranking-Pool k*3=30 → Recall@5 ≈ 0.458 (search.rs:450)
-- A15: Reranker unkalibriert, rohes Sigmoid (reranker.rs:314)
-- A16: DiskANN insert() gibt Err("read-only") (diskann.rs:990)
-- A19: BM25 IDF-Glättung fehlt, 1e-6-Floor-Artefakt (bm25.rs:95-100)
-
-**Spec-Korrekturen (Code hat Recht):**
-- A1: MemTable ist BTreeMap, kein SkipList — Code korrekt, Spec korrigiert
-- A2: HNSW ef_construction=200 (nicht 32) — Code korrekt, Spec korrigiert
-- A3: async_trait nur 1× (nicht 125×) — bereits behoben
-
-**Gut implementiert (nicht anfassen):**
-- WAL v3 HMAC-Chain (A21) ✅
-- HNSW 2-Phasen-CoW-Rebuild (A22) ✅
-- NodesGuard Lock-Reihenfolge (A23) ✅
-
-### Aktiver Sprint: G0
-Ziel: Alle P-SOFORT-Maßnahmen abschließen bevor neue Features beginnen.
-Tracking: Siehe offene Issues / PRs mit Label `G0-sprint`.

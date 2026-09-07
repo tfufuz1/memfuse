@@ -4,6 +4,8 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-07T12:00:00Z` | `crates/memfuse-db/src/temporal_filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bi-temporaler Validity-Filter für Post-RRF Fusion-Ergebnisse in Retrieval-Pipelines. |
+| `TS:2026-09-07T00:00:00Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cryptographic deletion proof for GDPR Article 17 compliance verification across storage layers. |
 | `TS:2026-09-06T11:18:35Z (SESSION: 820afd9c)` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
 | `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
@@ -63,7 +65,6 @@
 | `2026-09-06T11:20:14Z` | `crates/memfuse-ollama/src/context_prefixer.rs` | `AI-TAG` | `AGT-OLLAMA-47e6619b` | `e4f906ee` | `OPEN` | `0` | // AI-TAG[TESTING][MINOR] Max-Prefix-Char-Approximation Mutationsabdeckung (ID: AGT-OLLAMA-47e6619b) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 | `2026-09-06T11:20:14Z` | `crates/memfuse-ollama/src/importance.rs` | `AI-TAG` | `AGT-OLLAMA-14c0c140` | `e4f906ee` | `OPEN` | `0` | // AI-TAG[ML-SCORING][MAJOR] Score-Konfidenz ohne Kalibrierungsnachweis & Provenienzverlust (APM-22 / APM-24) (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-06T11:20:14Z) (SESSION: e4f906ee) |
 | `2026-09-06T11:19:12Z` | `crates/memfuse-py/src/lib.rs` | `AI-TAG` | `AGT-PY-d5d2be30` | `831f9286` | `RESOLVED` | `0` | // AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286) |
-| `2026-09-06T11:19:00Z` | `crates/memfuse-embed/src/reranker.rs` | `AI-TAG` | `AGT-EMBED-62093e61` | `8efa6210` | `OPEN` | `0` | // AI-TAG[ML-SCORING][MINOR] Score confidence without calibration proof (APM-22) (ID: AGT-EMBED-62093e61) (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) |
 | `2026-09-06T11:19:00Z` | `crates/memfuse-embed/src/reranker.rs` | `REVIEW-PASS` | `-` | `8efa6210` | `PASS` | `-` | // REVIEW-PASS[2/2] STATUS:PASS (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) PRÜFER-KONTEXT: FRESH - Verified ML domain APM alignment (APM-22, APM-23, APM-24), zero-unsafe in production, and hermetic feature isolation. |
 | `2026-09-06T11:18:35Z` | `crates/memfuse-agent/src/dlq.rs` | `AI-TAG` | `AGT-AGENT-0399362d` | `820afd9c` | `RESOLVED` | `0` | // AI-TAG[INVENTORY-DRIFT][MINOR] RESOLVED: AGT-AGENT-0399362d — Documented dlq.rs inventory drift in audit report. (TS: 2026-09-06T11:18:35Z) (SESSION: 820afd9c) |
 | `2026-09-06T11:17:31Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `8157a40e` | `PASS` | `5` | // REVIEW-PASS[6/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-06T11:17:31Z) (SESSION: 8157a40e) |
