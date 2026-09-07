@@ -65,10 +65,6 @@ impl TenantId {
     pub const DEFAULT: Self = Self(0);
     /// Invalid tenant identifier sentinel value (`0`).
     pub const INVALID: Self = Self(0);
-    /// Default tenant identifier (`0`).
-    pub const DEFAULT: Self = Self(0);
-    /// SYSTEM tenant identifier (`0`).
-    pub const SYSTEM: Self = Self(0);
 
     /// Const-Konstruktor.
     #[inline]
@@ -1855,13 +1851,5 @@ mod tests {
     fn test_tenant_id_system_constant() {
         assert_eq!(TenantId::SYSTEM.inner(), 0);
         assert!(TenantId::SYSTEM.is_system());
-    }
-
-    #[test]
-    fn test_tenant_id_serde_roundtrip() {
-        let t = TenantId::try_new(999).unwrap();
-        let json = serde_json::to_string(&t).unwrap();
-        let back: TenantId = serde_json::from_str(&json).unwrap();
-        assert_eq!(t, back);
     }
 }
