@@ -2,8 +2,7 @@
 //! Measures heap allocation count, bytes allocated, execution time, and throughput
 //! for 10,000 documents (~500 words per document) across German and English workloads.
 
-use memfuse_core::{
-    BoxFuture, DocId, StorageEngine, TextIndex, TxId};
+use memfuse_core::{BoxFuture, DocId, StorageEngine, TextIndex, TxId};
 use memfuse_text::inverted::{InvertedIndex, Language};
 use memfuse_text::tokenizer::{DefaultTokenizer, GermanMorphTokenizer, Tokenizer};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -72,97 +71,90 @@ impl FastRamStorage {
     }
 }
 
-
 impl StorageEngine for FastRamStorage {
     fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, memfuse_core::Result<Option<Vec<u8>>>> {
+        Box::pin(async move { Ok(self.store.read().get(key).cloned()) })
+    }
+    fn put<'a>(
+        &'a self,
+        _tx_id: TxId,
+        key: &'a [u8],
+        value: &'a [u8],
+    ) -> BoxFuture<'a, memfuse_core::Result<()>> {
         Box::pin(async move {
-        Ok(self.store.read().get(key).cloned())
+            self.store.write().insert(key.to_vec(), value.to_vec());
+            Ok(())
         })
     }
-    fn put<'a>(&'a self, _tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, memfuse_core::Result<()>> {
+    fn delete<'a>(
+        &'a self,
+        _tx_id: TxId,
+        key: &'a [u8],
+    ) -> BoxFuture<'a, memfuse_core::Result<()>> {
         Box::pin(async move {
-        self.store.write().insert(key.to_vec(), value.to_vec());
-        Ok(())
-        })
-    }
-    fn delete<'a>(&'a self, _tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        self.store.write().remove(key);
-        Ok(())
+            self.store.write().remove(key);
+            Ok(())
         })
     }
     fn commit<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn rollback<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn rollback_to_tx<'a>(&'a self, _tx_id: TxId) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
-    fn get_at_seq<'a>(&'a self, key: &'a [u8], _seq: u64) -> BoxFuture<'a, memfuse_core::Result<Option<Vec<u8>>>> {
-        Box::pin(async move {
-        Ok(self.store.read().get(key).cloned())
-        })
+    fn get_at_seq<'a>(
+        &'a self,
+        key: &'a [u8],
+        _seq: u64,
+    ) -> BoxFuture<'a, memfuse_core::Result<Option<Vec<u8>>>> {
+        Box::pin(async move { Ok(self.store.read().get(key).cloned()) })
     }
     fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<u64>> {
-        Box::pin(async move {
-        Ok(1)
-        })
+        Box::pin(async move { Ok(1) })
     }
     fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<TxId>> {
-        Box::pin(async move {
-        Ok(TxId::new(1))
-        })
+        Box::pin(async move { Ok(TxId::new(1)) })
     }
     fn flush<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn stats<'a>(&'a self) -> BoxFuture<'a, memfuse_core::Result<memfuse_core::StorageStats>> {
         Box::pin(async move {
-        Ok(memfuse_core::StorageStats {
-            num_segments: 1,
-            total_size_bytes: 0,
-            memtable_size_bytes: 0,
-        })
+            Ok(memfuse_core::StorageStats {
+                num_segments: 1,
+                total_size_bytes: 0,
+                memtable_size_bytes: 0,
+            })
         })
     }
     fn pin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn unpin_checkpoint<'a>(&'a self, _id: u64) -> BoxFuture<'a, memfuse_core::Result<()>> {
-        Box::pin(async move {
-        Ok(())
-        })
+        Box::pin(async move { Ok(()) })
     }
     fn scan<'a>(
         &'a self,
         _start: std::ops::Bound<&'a [u8]>,
         _end: std::ops::Bound<&'a [u8]>,
     ) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        Ok(Vec::new())
-        })
+        Box::pin(async move { Ok(Vec::new()) })
     }
-    fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+    fn scan_prefix<'a>(
+        &'a self,
+        prefix: &'a [u8],
+    ) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-        let guard = self.store.read();
-        let res = guard
-            .range(prefix.to_vec()..)
-            .take_while(|(k, _)| k.starts_with(prefix))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        Ok(res)
+            let guard = self.store.read();
+            let res = guard
+                .range(prefix.to_vec()..)
+                .take_while(|(k, _)| k.starts_with(prefix))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            Ok(res)
         })
     }
     fn scan_prefix_at<'a>(
@@ -170,9 +162,7 @@ impl StorageEngine for FastRamStorage {
         prefix: &'a [u8],
         _seq_no: u64,
     ) -> BoxFuture<'a, memfuse_core::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move {
-        self.scan_prefix(prefix).await
-        })
+        Box::pin(async move { self.scan_prefix(prefix).await })
     }
 }
 

@@ -1,6 +1,5 @@
 use super::{crud::validate_doc_id, Collection};
-use memfuse_core::{
-    DocId, Result, StorageEngine, VectorIndex};
+use memfuse_core::{DocId, Result, StorageEngine, VectorIndex};
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z)

@@ -266,7 +266,8 @@ mod tests {
 
     #[test]
     fn test_unparseable_response_returns_unparseable_confidence() {
-        let res = parse_importance_score_response("I cannot rate this memory text without context.");
+        let res =
+            parse_importance_score_response("I cannot rate this memory text without context.");
         assert_eq!(res.value(), 0.5);
         assert_eq!(res.confidence, Confidence::Unparseable);
         assert!(!res.is_parsed());
@@ -286,7 +287,9 @@ mod tests {
         let raw = "Completely unparseable model response string";
         let res = parse_importance_score_response(raw);
         assert_eq!(res.confidence, Confidence::Unparseable);
-        assert!(logs_contain("Failed to parse ImportanceScore float from LLM response"));
+        assert!(logs_contain(
+            "Failed to parse ImportanceScore float from LLM response"
+        ));
         assert!(logs_contain("Completely unparseable model response string"));
     }
 

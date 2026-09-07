@@ -452,7 +452,12 @@ impl OnnxReranker {
             ));
         }
 
-        Self::extract_scores_from_tensor_calibrated(shape, data, b_size, &PlattScaledSigmoid::identity())
+        Self::extract_scores_from_tensor_calibrated(
+            shape,
+            data,
+            b_size,
+            &PlattScaledSigmoid::identity(),
+        )
     }
 
     fn extract_scores_from_tensor_calibrated(
@@ -746,7 +751,10 @@ mod tests {
         assert!(!fitted.is_identity());
 
         let (a, _b) = fitted.params();
-        assert!(a > 0.0, "Scaling factor A should be positive for positively correlated logits");
+        assert!(
+            a > 0.0,
+            "Scaling factor A should be positive for positively correlated logits"
+        );
 
         // Verify that transform() provides sharper separation than identity sigmoid
         let identity = PlattScaledSigmoid::identity();

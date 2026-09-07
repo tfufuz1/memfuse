@@ -453,8 +453,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 mod tests {
     use super::*;
     use crate::{Collection, DistanceMetric, Language};
-    use memfuse_core::{
-    BoxFuture, FilterExpr, HybridQuery};
+    use memfuse_core::{BoxFuture, FilterExpr, HybridQuery};
     use memfuse_graph::CsrGraph;
     use memfuse_index::{HnswConfig, HnswIndex};
     use memfuse_store::{LsmConfig, LsmStorage};
