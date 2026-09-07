@@ -489,24 +489,256 @@ impl DiskAnnIndex {
         Ok((all_vecs, all_ids))
     }
 
-    /// Inkrementeller Vamana-Insert für neue Vektoren.
-    /// Für jeden neuen Vektor: Beam-Search → RNG-Pruning → Rückwärts-Kanten.
-    /// Schreibt das erweiterte Graphformat in tmp_path.
+    fn get_dist_mixed(
+        &self,
+        query: &[f32],
+        idx: u32,
+        existing_count: usize,
+        new_vecs: &[(DocId, Vec<f32>)],
+    ) -> Result<f32> {
+        if (idx as usize) < existing_count {
+            self.get_dist_to_query(query, idx)
+        } else {
+            let new_idx = idx as usize - existing_count;
+            compute_distance(
+                query,
+                &new_vecs[new_idx].1,
+                self.inner.config.distance_metric,
+            )
+        }
+    }
+
+    fn get_vec_mixed(
+        &self,
+        idx: u32,
+        existing_count: usize,
+        new_vecs: &[(DocId, Vec<f32>)],
+    ) -> Result<Vec<f32>> {
+        if (idx as usize) < existing_count {
+            let node = self.load_node(idx)?;
+            match node.vector {
+                VectorData::F32(v) => Ok(v),
+                VectorData::U8(v) => {
+                    let q_guard = self.inner.quantizer.read();
+                    let q = q_guard
+                        .as_ref()
+                        .ok_or_else(|| MemFuseError::Index("Quantizer missing".into()))?;
+                    Ok(q.dequantize(&v))
+                }
+            }
+        } else {
+            Ok(new_vecs[idx as usize - existing_count].1.clone())
+        }
+    }
+
+    fn search_streaming(
+        &self,
+        query: &[f32],
+        graph: &[Vec<u32>],
+        existing_count: usize,
+        new_vecs: &[(DocId, Vec<f32>)],
+        entry_point: u32,
+        beam_width: usize,
+    ) -> Result<Vec<SearchCandidate>> {
+        let mut visited = HashSet::new();
+        let mut candidates = BinaryHeap::new();
+        let mut results = BinaryHeap::new();
+
+        let ep_dist = self.get_dist_mixed(query, entry_point, existing_count, new_vecs)?;
+
+        let initial = SearchCandidate {
+            index: entry_point,
+            distance: ep_dist,
+        };
+        candidates.push(Reverse(initial.clone()));
+        results.push(initial);
+        visited.insert(entry_point);
+
+        while let Some(Reverse(current)) = candidates.pop() {
+            if let Some(worst) = results.peek() {
+                if current.distance > worst.distance && results.len() >= beam_width {
+                    break;
+                }
+            }
+
+            for &neighbor in &graph[current.index as usize] {
+                if !visited.insert(neighbor) {
+                    continue;
+                }
+                let dist = self.get_dist_mixed(query, neighbor, existing_count, new_vecs)?;
+                let cand = SearchCandidate {
+                    index: neighbor,
+                    distance: dist,
+                };
+
+                if results.len() < beam_width
+                    || results.peek().map(|w| dist < w.distance).unwrap_or(true)
+                {
+                    candidates.push(Reverse(cand.clone()));
+                    results.push(cand);
+                    if results.len() > beam_width {
+                        results.pop();
+                    }
+                }
+            }
+        }
+        Ok(results.into_vec())
+    }
+
+    fn prune_streaming(
+        &self,
+        cand_idx: u32,
+        candidates: &mut [SearchCandidate],
+        existing_count: usize,
+        new_vecs: &[(DocId, Vec<f32>)],
+        max_degree: usize,
+        alpha: f32,
+    ) -> Result<Vec<u32>> {
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+        candidates.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+
+        let mut pruned = Vec::with_capacity(max_degree);
+        let mut pruned_vecs: Vec<Vec<f32>> = Vec::with_capacity(max_degree);
+        let _cand_v = self.get_vec_mixed(cand_idx, existing_count, new_vecs)?;
+
+        for cand in candidates.iter() {
+            if pruned.len() >= max_degree {
+                break;
+            }
+
+            let cand_node_v = self.get_vec_mixed(cand.index, existing_count, new_vecs)?;
+            let mut keep = true;
+
+            for p_v in &pruned_vecs {
+                let dist_p_cand = compute_distance(&cand_node_v, p_v, self.inner.config.distance_metric)?;
+                if alpha * dist_p_cand < cand.distance {
+                    keep = false;
+                    break;
+                }
+            }
+
+            if keep {
+                pruned.push(cand.index);
+                pruned_vecs.push(cand_node_v);
+            }
+        }
+        Ok(pruned)
+    }
+
+    /// Inkrementeller Vamana-Insert für neue Vektoren (Streaming DiskANN; arXiv:2602.21514 §4).
+    ///
+    /// Phase 1: Lade bestehende Graph-Topologie read-only aus Mmap via `load_node`.
+    /// Phase 2: Für jeden neuen Vektor: Greedy Beam-Search über den aktuellen Graphen.
+    /// Phase 3: RNG-Pruning (α = 1.2) zur Auswahl von maximal `max_degree` Nachbarn.
+    /// Phase 4: Rückwärts-Kanten hinzufügen und ggf. Nachbarschaft überschrittener Nachbarn re-prunen.
+    /// Phase 5: Geänderte Graph-Struktur und neue Knoten atomar auf Disk schreiben.
+    ///
+    /// AI-TAG[RESOLVED] Echte inkrementelle Streaming-DiskANN Implementierung mit Beam-Search, RNG-Pruning und Rückwärts-Kanten-Kompression. (TS:2026-09-07T06:15:00Z) (SESSION: f04imm01)
     async fn write_incremental_to_file(
         &self,
         tmp_path: &std::path::Path,
         new_vecs: &[(DocId, Vec<f32>)],
     ) -> Result<()> {
-        // Implementation: Lade bestehenden Graphen aus Mmap, füge neue Knoten hinzu
-        // via Greedy-Search (wie build() aber nur für neue Knoten), schreibe komplett neu.
-        // Vereinfachung für erste Version: delegiere an build() mit allen Vektoren.
-        // AI-TAG[DEBT][LOW] H1: Echte inkrementelle Implementierung (Streaming-DiskANN). (TS:2026-09-07T01:30:00Z) (SESSION: f04imm01)
-        let (mut all_vecs, mut all_ids) = self.load_all_vectors_from_mmap().await?;
-        for (id, vec) in new_vecs {
-            all_vecs.push(vec.clone());
+        if new_vecs.is_empty() {
+            return Ok(());
+        }
+
+        let existing_count = self.len().await;
+        if existing_count == 0 {
+            let mut all_vecs = Vec::with_capacity(new_vecs.len());
+            let mut all_ids = Vec::with_capacity(new_vecs.len());
+            for (id, vec) in new_vecs {
+                all_vecs.push(vec.clone());
+                all_ids.push(*id);
+            }
+            return self.build_to_path(tmp_path, &all_vecs, &all_ids).await;
+        }
+
+        let total_nodes = existing_count + new_vecs.len();
+        let mut graph: Vec<Vec<u32>> = vec![vec![]; total_nodes];
+
+        // Phase 1: Adjazenzlisten bestehender Knoten aus Mmap laden
+        for i in 0..existing_count {
+            let node = self.load_node(i as u32)?;
+            graph[i] = node.neighbors;
+        }
+
+        let mut all_ids = self.inner.doc_ids.read().clone();
+        for (id, _) in new_vecs {
             all_ids.push(*id);
         }
-        self.build_to_path(tmp_path, &all_vecs, &all_ids).await
+
+        let entry_point = self
+            .inner
+            .header
+            .read()
+            .map(|h| h.entry_point)
+            .unwrap_or(0);
+        let alpha = 1.2f32;
+
+        // Phase 2, 3 & 4: Inkrementelles Einfügen jedes neuen Vektors
+        for (j, (_id, vec)) in new_vecs.iter().enumerate() {
+            let new_node_idx = (existing_count + j) as u32;
+
+            // Phase 2: Beam-Search über den bisherigen Graphen (0..new_node_idx)
+            let mut candidates = self.search_streaming(
+                vec,
+                &graph,
+                existing_count,
+                new_vecs,
+                entry_point,
+                self.inner.config.beam_width,
+            )?;
+
+            // Phase 3: RNG-Pruning
+            let pruned = self.prune_streaming(
+                new_node_idx,
+                &mut candidates,
+                existing_count,
+                new_vecs,
+                self.inner.config.max_degree,
+                alpha,
+            )?;
+
+            // Phase 4: Rückwärts-Kanten & Re-Pruning bei Grad-Überschreitung
+            for &neighbor in &pruned {
+                let neighbor_idx = neighbor as usize;
+                if !graph[neighbor_idx].contains(&new_node_idx) {
+                    graph[neighbor_idx].push(new_node_idx);
+                    if graph[neighbor_idx].len() > self.inner.config.max_degree {
+                        let nbr_v = self.get_vec_mixed(neighbor, existing_count, new_vecs)?;
+                        let mut cand_vec: Vec<SearchCandidate> = Vec::with_capacity(graph[neighbor_idx].len());
+                        for &idx in &graph[neighbor_idx] {
+                            let idx_v = self.get_vec_mixed(idx, existing_count, new_vecs)?;
+                            let dist = compute_distance(&nbr_v, &idx_v, self.inner.config.distance_metric)?;
+                            cand_vec.push(SearchCandidate {
+                                index: idx,
+                                distance: dist,
+                            });
+                        }
+                        graph[neighbor_idx] = self.prune_streaming(
+                            neighbor,
+                            &mut cand_vec,
+                            existing_count,
+                            new_vecs,
+                            self.inner.config.max_degree,
+                            alpha,
+                        )?;
+                    }
+                }
+            }
+            graph[new_node_idx as usize] = pruned;
+        }
+
+        // Phase 5: Vektoren für alle Knoten zusammenstellen und in tmp_path serialisieren
+        let (mut all_vecs, _) = self.load_all_vectors_from_mmap().await?;
+        for (_, vec) in new_vecs {
+            all_vecs.push(vec.clone());
+        }
+
+        self.write_to_path(tmp_path, &graph, &all_vecs, &all_ids).await
     }
 
     pub async fn build_to_path(
@@ -1756,6 +1988,90 @@ mod tests {
             loaded_ids, expected_ids,
             "Loaded doc_ids must exactly match original doc_ids (regression for D-2.1 offset bug)"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_diskann_incremental_insert_connectivity_and_searchability() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let index_path = temp_dir.path().join("connectivity.idx");
+
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 16,
+            max_degree: 8,
+            beam_width: 16,
+            distance_metric: DistanceMetric::Euclidean,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config)?;
+
+        // 1. Build initial index with 100 vectors
+        let base_n = 100;
+        let mut base_vecs = Vec::with_capacity(base_n);
+        let mut base_ids = Vec::with_capacity(base_n);
+        for i in 0..base_n {
+            let mut v = vec![0.0f32; 16];
+            v[0] = i as f32;
+            base_vecs.push(v);
+            base_ids.push(DocId::from(i as u64 + 1));
+        }
+        index.build(&base_vecs, &base_ids).await?;
+
+        // 2. Incrementally insert 5 new vectors (pending_ratio = 5/105 < 0.10, so incremental path is triggered)
+        let new_n = 5;
+        let mut new_ids = Vec::with_capacity(new_n);
+        for i in 0..new_n {
+            let id = DocId::from((base_n + i + 1) as u64);
+            let mut v = vec![0.0f32; 16];
+            v[0] = (base_n + i) as f32 + 0.5;
+            index.insert(TxId(1), id, &v).await?;
+            new_ids.push((id, v));
+        }
+
+        index.persist_delta().await?;
+
+        // 3. Verify total node count
+        assert_eq!(index.len().await, base_n + new_n);
+
+        // 4. Verify graph connectivity: newly inserted nodes must be in the graph and reachable
+        let ep = {
+            let header = index.inner.header.read().unwrap();
+            header.entry_point
+        };
+
+        // BFS / Greedy reachability check from entry_point
+        let mut visited = HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(ep);
+        visited.insert(ep);
+
+        while let Some(curr) = queue.pop_front() {
+            let node = index.load_node(curr)?;
+            for &nbr in &node.neighbors {
+                if visited.insert(nbr) {
+                    queue.push_back(nbr);
+                }
+            }
+        }
+
+        for idx in 0..(base_n + new_n) as u32 {
+            assert!(
+                visited.contains(&idx),
+                "Node {} (newly inserted or base) is not reachable from entry_point {}!",
+                idx,
+                ep
+            );
+        }
+
+        // 5. Verify searchability of all new vectors
+        for (id, vec) in &new_ids {
+            let res = index.search(vec, 1).await?;
+            assert!(!res.is_empty());
+            assert_eq!(res[0].doc_id, *id, "Newly inserted doc_id {:?} should be top search result", id);
+        }
+
         Ok(())
     }
 }
