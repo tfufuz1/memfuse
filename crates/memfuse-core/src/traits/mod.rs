@@ -1426,10 +1426,7 @@ mod tests {
         assert_eq!(next_cur2, Some(b"pfx:4".to_vec()));
 
         // 3. Cursor is None -> scans from beginning up to limit
-        let (batch3, next_cur3) = dataset
-            .scan_prefix_bounded(b"pfx:", 2, None)
-            .await
-            .unwrap(); // unwrap
+        let (batch3, next_cur3) = dataset.scan_prefix_bounded(b"pfx:", 2, None).await.unwrap(); // unwrap
         assert_eq!(
             batch3,
             vec![
