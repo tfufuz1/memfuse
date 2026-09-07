@@ -1230,7 +1230,10 @@ mod tests {
         );
 
         assert_eq!(fused.len(), 1);
-        let prov = fused[0].provenance.as_ref().expect("provenance present");
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
         assert!(
             prov.coherence_bonus > 0.0,
             "coherence_bonus must be > 0.0 for multi-signal document"
@@ -1262,7 +1265,10 @@ mod tests {
         );
 
         assert_eq!(fused.len(), 1);
-        let prov = fused[0].provenance.as_ref().expect("provenance present");
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
         assert!((prov.coherence_bonus - 0.3).abs() < 1e-6);
     }
 
@@ -1302,7 +1308,10 @@ mod tests {
         );
 
         let res = &fused[0];
-        let prov = res.provenance.as_ref().expect("provenance present");
+        let prov = match res.provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
 
         let unboosted_sum: f32 = prov
             .signal_contributions
@@ -1376,7 +1385,10 @@ mod tests {
         assert_eq!(fused.len(), 2);
 
         for res in &fused {
-            let prov = res.provenance.as_ref().expect("Provenance must be present");
+            let prov = match res.provenance.as_ref() {
+                Some(p) => p,
+                None => panic!("Provenance must be present"),
+            };
             assert!(!prov.signal_contributions.is_empty());
             let sum_contrib: f32 = prov
                 .signal_contributions
