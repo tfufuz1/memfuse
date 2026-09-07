@@ -11,15 +11,21 @@ struct CountingAllocator;
 static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
 static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 
+// SAFETY: CountingAllocator forwards all memory allocation requests directly to `System.alloc`/`System.dealloc`
+// while safely recording allocation counts and byte sizes via atomic counters.
 unsafe impl GlobalAlloc for CountingAllocator {
+    // SAFETY: Invariant: `layout` is valid and non-zero size as required by `System.alloc`.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        System.alloc(layout)
+        // SAFETY: Delegated directly to System allocator with caller's valid layout.
+        unsafe { System.alloc(layout) }
     }
 
+    // SAFETY: Invariant: `ptr` was previously allocated by `System.alloc` with matching `layout`.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout);
+        // SAFETY: Delegated directly to System deallocator with valid ptr and layout.
+        unsafe { System.dealloc(ptr, layout) };
     }
 }
 

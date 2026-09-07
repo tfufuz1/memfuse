@@ -72,6 +72,8 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
                         use std::os::unix::ffi::OsStrExt;
                         let path_c =
                             std::ffi::CString::new(wal_path.as_os_str().as_bytes()).unwrap();
+                        // SAFETY: libc open/dup2/close system calls are used exclusively in Linux chaos integration tests
+                        // to atomically replace open file descriptors with read-only equivalents. `path_c` is a valid null-terminated CString.
                         unsafe {
                             let ro_fd = open(path_c.as_ptr(), 0); // O_RDONLY = 0
                             if ro_fd >= 0 {
@@ -137,6 +139,8 @@ async fn test_chaos_dropped_write_error_propagation_and_recovery() {
                         use std::os::unix::ffi::OsStrExt;
                         let path_c =
                             std::ffi::CString::new(wal_path.as_os_str().as_bytes()).unwrap();
+                        // SAFETY: libc open/dup2/close system calls are used exclusively in Linux chaos integration tests
+                        // to restore write permissions and re-open descriptors. `path_c` is a valid null-terminated CString.
                         unsafe {
                             let rw_fd = open(path_c.as_ptr(), 2 | 1024); // O_RDWR | O_APPEND
                             if rw_fd >= 0 {
