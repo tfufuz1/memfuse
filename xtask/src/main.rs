@@ -1987,6 +1987,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-duplicate-intent" => {
+            if let Err(e) = check_duplicate_intent::check_duplicate_intent() {
+                eprintln!("❌ check-duplicate-intent failed: {}", e);
+                process::exit(1);
+            }
+        }
         "check-commit-messages" => {
             if let Err(e) = check_commit_messages::check_commit_messages() {
                 eprintln!("❌ check-commit-messages failed: {}", e);

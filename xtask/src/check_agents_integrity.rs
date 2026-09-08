@@ -41,11 +41,14 @@ pub fn run_check_agents_integrity() -> bool {
     };
 
     // 3. Check for types/crates erroneously listed as missing ("FEHLT") when they are implemented
-    if let Some(fehlt_start) = agents_content.find("### Fehlt / Nicht integriert") {
+    let header_marker = "### Fehlt / Nicht integriert";
+    if let Some(fehlt_start) = agents_content.find(header_marker) {
         let fehlt_section = &agents_content[fehlt_start..];
-        let section_end = fehlt_section
-            .find("###")
-            .unwrap_or_else(|| fehlt_section.len());
+        let after_header = &fehlt_section[header_marker.len()..];
+        let section_end = header_marker.len()
+            + after_header
+                .find("###")
+                .unwrap_or_else(|| after_header.len());
         let fehlt_table = &fehlt_section[..section_end];
 
         for line in fehlt_table.lines() {
