@@ -19,6 +19,10 @@ use tokio::sync::Semaphore;
 pub const MAX_CONCURRENT_REGEX_OPS: usize = 8;
 
 /// Globaler App-Zustand: hält die aktuell geöffnete lokale Datenbank und Konfigurationen.
+#[deprecated(
+    since = "0.1.0",
+    note = "memfuse-tauri wird gemäß ADR-077 am 2026-11-07 entfernt. Migriere auf memfuse-py."
+)]
 pub struct AppState {
     pub db: RwLock<Option<Arc<MemFuse>>>,
     pub db_path: RwLock<Option<PathBuf>>,

@@ -12,11 +12,13 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 parking_lot = { workspace = true }
+memfuse-candle = { workspace = true, optional = true }
 
 # Optional — nur mit Feature-Flag aktiv
 [features]
 default = []
 onnx = ["ort", "tokenizers", "ndarray"]
+candle-backend = ["dep:memfuse-candle"]
 
 [dependencies.ort]
 version = "2.0.0-rc.12"

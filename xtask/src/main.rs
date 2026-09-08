@@ -37,6 +37,7 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod bench_gate;
 mod check_agents_integrity;
 mod check_commit_messages;
 mod check_duplicate_intent;
@@ -568,14 +569,14 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
         .filter(|o| o.status.success() && !o.stdout.is_empty())
         .or_else(|| {
             std::process::Command::new("git")
-                .args(["log", "-1", "main", "--format=%h%x09%s"])
+                .args(["-C", git_root_str, "log", "-1", "main", "--format=%h%x09%s"])
                 .output()
                 .ok()
                 .filter(|o| o.status.success() && !o.stdout.is_empty())
         })
         .or_else(|| {
             std::process::Command::new("git")
-                .args(["log", "-1", "--format=%h%x09%s"])
+                .args(["-C", git_root_str, "log", "-1", "--format=%h%x09%s"])
                 .output()
                 .ok()
                 .filter(|o| o.status.success() && !o.stdout.is_empty())
@@ -585,7 +586,7 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
 
     let git_available = last_commit_opt.is_some();
 
-    if let Some(last_commit) = &last_commit_opt {
+    if let Some(ref last_commit) = last_commit_opt {
         let parts: Vec<&str> = last_commit.split('\t').collect();
         let (hash, subject, date) = if parts.len() >= 3 {
             (parts[0].trim(), parts[1].trim(), parts[2].trim())
@@ -605,7 +606,7 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
     // Änderungsbereich via git diff-tree
     if git_available {
         let diff_files_opt = std::process::Command::new("git")
-            .args(["diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"])
+            .args(["-C", git_root_str, "diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"])
             .output()
             .ok()
             .filter(|o| o.status.success())
@@ -2210,6 +2211,13 @@ fn main() {
                 process::exit(1);
             }
         }
+        "bench-gate" => {
+            let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
+            let success = bench_gate::run_bench_gate(extra_args);
+            if !success {
+                process::exit(1);
+            }
+        }
         "claim" => {
             let success = claim::run_claim(&args[2..]);
             if !success {
@@ -2218,7 +2226,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
             process::exit(1);
         }
     }

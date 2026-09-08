@@ -12,6 +12,7 @@
 //! Cache-Projektionen) ist ein separates, zukünftiges Vorhaben und NICHT Gegenstand dieser Erstfassung.
 
 pub mod embedding;
+pub mod embedding_provider;
 pub mod gguf_loader;
 pub mod inference;
 pub mod model_registry;
@@ -20,6 +21,7 @@ pub mod model_registry;
 pub mod gasp;
 
 pub use embedding::CandleEmbedClient;
+pub use embedding_provider::MAX_CANDLE_EMBED_BATCH_SIZE;
 pub use inference::CandleLlmClient;
 pub use model_registry::{compute_fingerprint, CandleQuantization, ModelFingerprint};
 

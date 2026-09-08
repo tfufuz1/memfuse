@@ -145,7 +145,9 @@ pub async fn drop_collection(
             )
         })?
     };
-    db.drop_collection(&name)
+    let tenant_id = memfuse_core::TenantId::try_new(1)
+        .map_err(|e| MemFuseErrorDto::new("InvalidInput", e.to_string()))?;
+    db.drop_collection(&name, tenant_id, &[0u8; 32])
         .await
         .map_err(|e| MemFuseErrorDto::from(&e))?;
     Ok(())

@@ -1,7 +1,7 @@
 {
   "per_category_accuracy": {
-    "SingleSessionUser": 0.0,
-    "Abstention": 1.0
+    "Abstention": 1.0,
+    "SingleSessionUser": 0.0
   },
   "overall_accuracy": 0.5,
   "total_cases": 2
