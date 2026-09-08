@@ -583,7 +583,7 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
 
     let git_available = last_commit_opt.is_some();
 
-    if let Some(last_commit) = last_commit_opt {
+    if let Some(ref last_commit) = last_commit_opt {
         let parts: Vec<&str> = last_commit.split('\t').collect();
         let (hash, subject, date) = if parts.len() >= 3 {
             (parts[0].trim(), parts[1].trim(), parts[2].trim())
