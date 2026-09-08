@@ -243,6 +243,10 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
           <div class="chip" onclick="resetProjectData()">Auf Beispieldaten zurücksetzen</div>
         </div>
         <div class="inv-result" id="data-result"></div>
+        <div id="session-kontinuität" style="margin-top:8px;padding:8px 10px;border-radius:7px;border:1.5px solid var(--b1);background:var(--s2);font-family:monospace;font-size:9.5px;color:var(--tx)">
+          <strong>Session-Kontinuität:</strong>
+          <span id="last-merge-display" style="color:var(--ac2)">nicht verfügbar (cargo xtask gen-prompter-data ausführen)</span>
+        </div>
         <details style="margin-top:8px">
           <summary style="cursor:pointer;font-size:10px;color:var(--muted)">Erwartetes JSON-Schema / Beispiel-Export-Skript</summary>
           <pre style="font-size:9px;overflow-x:auto;margin-top:6px;color:var(--muted)">{
@@ -3329,6 +3333,34 @@ function selLoop(v) { SS.loop = v; ['on','off'].forEach(x => document.getElement
 function selGithub(v) { SS.github = v; ['on','off'].forEach(x => document.getElementById('gh-'+x).classList.toggle('on', x===v)); generate(); }
 function selMaxLoop(v) { SS.maxLoop = v; ['3','5','8'].forEach(x => document.getElementById('ml-'+x).classList.toggle('on', x===v)); generate(); }
 
+function generateTaskId(taskTitle) {
+  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const slug = (taskTitle || '').replace(/[^a-zA-Z0-9]/g,'').slice(0,6).toUpperCase();
+  return `JULES-${date}-${slug || 'TASK'}`;
+}
+
+function getSelectedCrate() {
+  return SS.crate || '';
+}
+
+function MANDATORY_BOOTSTRAP_BLOCK(crate, taskTitle) {
+  const claimCrate = crate || '${CLAIM_CRATE}';
+  const taskId = generateTaskId(taskTitle);
+  return `---MANDATORY BOOTSTRAP (nicht überspringen, nicht kürzen)---
+[SCHRITT 0 — Inventar-Realitätsabgleich, IMMER ZUERST]
+1. read_file("AGENTS.md") — vollständig lesen
+2. read_file(".jules/SESSION_BOOTSTRAP.md") — vollständig lesen
+3. run_in_bash_session("head -80 WORKING_STATE.md") — Crate-Stand prüfen
+4. run_in_bash_session("cargo xtask claim --crate ${claimCrate} --issue ${taskId}")
+   — CLAIM_CRATE und TASK_ID aus dem Task-Kontext unten bestimmen
+   — Bei Claim-Konflikt: STOP. Nicht fortfahren. Meldung ausgeben.
+5. run_in_bash_session("cargo run -p xtask -- jules-preflight --fast")
+   — Bei Failure: Befund lesen, beheben, dann fortfahren
+---END MANDATORY BOOTSTRAP---
+
+`;
+}
+
 function generate() {
   if (!SS.task) return;
 
@@ -3671,6 +3703,14 @@ function loadProjectDataFile(file) {
     INVENTORY_SOURCE = 'imported';
     INVENTORY_FILENAME = file.name;
     INVENTORY_DATE = (data.generated_at || '').slice(0, 10) || INVENTORY_DATE;
+    const lastMergeEl = document.getElementById('last-merge-display');
+    if (lastMergeEl) {
+      if (data.working_state_snapshot && data.working_state_snapshot.last_merge) {
+        lastMergeEl.textContent = data.working_state_snapshot.last_merge;
+      } else {
+        lastMergeEl.textContent = 'nicht verfügbar (cargo xtask gen-prompter-data ausführen)';
+      }
+    }
     initCrates();
     if (SS.crate) initComponents(SS.crate);
     renderComponents();
