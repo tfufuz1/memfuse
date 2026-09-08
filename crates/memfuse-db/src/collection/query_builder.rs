@@ -491,7 +491,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         if let Some(reranker) = self.reranker {
             let text_str = self.text.as_deref().unwrap_or("");
             if !results.is_empty() && !text_str.is_empty() {
-                let current_pool = results.len();
+                let _current_pool = results.len();
                 let start_time = std::time::Instant::now();
 
                 let candidate_texts: Vec<String> = results
@@ -528,10 +528,10 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                 });
 
                 if let Ok(ranked) = reranked {
-                    let elapsed = start_time.elapsed();
+                    let _elapsed = start_time.elapsed();
                     #[cfg(feature = "adaptive-candidate-pool-sizing")]
                     if let Some(ref pid) = self.pid_controller {
-                        pid.lock().update(current_pool, elapsed.as_millis() as f32);
+                        pid.lock().update(_current_pool, _elapsed.as_millis() as f32);
                     }
 
                     // Implizites Calibration-Feedback (k=5 als Relevanz-Cutoff)
