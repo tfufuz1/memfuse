@@ -2,22 +2,22 @@ use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::BoxFuture;
 use memfuse_core::DocId;
 use memfuse_db::{
-    execute_nrem_cycle, execute_sleep_cycle, CommunityStabilityTracker, ConsolidationConfig,
-    MaintenanceConfig, MaintenanceScheduler, MemFuse, MemFuseConfig, NremConfig, RemConfig,
+    execute_consolidation_pass, execute_sleep_cycle, start_consolidation_reaper,
+    CommunityStabilityTracker, ConsolidationConfig, MemFuse, MemFuseConfig, SynthesisConfig,
 };
 use std::time::Duration;
 use tempfile::tempdir;
 use tokio::time::sleep;
 
 #[tokio::test]
-async fn test_nrem_cycle_tombstones_duplicates() {
+async fn test_consolidation_pass_tombstones_duplicates() {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-    let collection = db.collection("nrem_test").await.unwrap();
+    let collection = db.collection("consolidation_test").await.unwrap();
 
     let duplicate_emb = vec![1.0, 0.0, 0.0, 0.0];
 
@@ -35,7 +35,7 @@ async fn test_nrem_cycle_tombstones_duplicates() {
 
     assert_eq!(collection.len().await, 10);
 
-    let nrem_config = NremConfig {
+    let consolidation_config = ConsolidationConfig {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
         segment_cohesion_threshold: 0.70,
@@ -43,7 +43,7 @@ async fn test_nrem_cycle_tombstones_duplicates() {
         ..Default::default()
     };
 
-    let result = execute_nrem_cycle(&collection, &turns, &nrem_config)
+    let result = execute_consolidation_pass(&collection, &turns, &consolidation_config)
         .await
         .unwrap();
 
@@ -56,14 +56,14 @@ async fn test_nrem_cycle_tombstones_duplicates() {
 }
 
 #[tokio::test]
-async fn test_consolidation_scheduler_periodic_execution_and_cancellation() {
+async fn test_consolidation_reaper_periodic_execution_and_cancellation() {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-    let collection = db.collection("consolidation_scheduler_test").await.unwrap();
+    let collection = db.collection("consolidation_reaper_test").await.unwrap();
 
     let duplicate_emb = vec![0.0, 1.0, 0.0, 0.0];
 
@@ -79,20 +79,14 @@ async fn test_consolidation_scheduler_periodic_execution_and_cancellation() {
     assert_eq!(collection.len().await, 10);
 
     let cancel_token = tokio_util::sync::CancellationToken::new();
-    let scheduler = std::sync::Arc::new(MaintenanceScheduler::new(
-        MaintenanceConfig {
-            tick_interval_secs: 1,
-            thermostat_enabled: false,
-            sleep_cycle_enabled: true,
-            sleep_episode_threshold: 1,
-            ..Default::default()
-        },
+    let handle = start_consolidation_reaper(
         collection.clone(),
         ConsolidationConfig::default(),
-    ));
-    let handle = scheduler.start(cancel_token.clone());
+        Duration::from_millis(20),
+        cancel_token.clone(),
+    );
 
-    // Wait for the scheduler ticker to execute consolidation
+    // Wait for the reaper ticker to execute consolidation
     let mut consolidated = false;
     for _ in 0..50 {
         sleep(Duration::from_millis(20)).await;
@@ -105,10 +99,10 @@ async fn test_consolidation_scheduler_periodic_execution_and_cancellation() {
     cancel_token.cancel();
     let handle_res = handle.await;
 
-    assert!(handle_res.is_ok(), "Scheduler task should exit cleanly");
+    assert!(handle_res.is_ok(), "Reaper task should exit cleanly");
     assert!(
         consolidated,
-        "Consolidation scheduler should consolidate duplicate chunks down to 1"
+        "Consolidation reaper should consolidate duplicate chunks down to 1"
     );
 }
 
@@ -126,14 +120,14 @@ impl LlmTextGenerator for TestLlmGenerator {
 }
 
 #[tokio::test]
-async fn test_execute_sleep_cycle_with_rem_phase() {
+async fn test_execute_sleep_cycle_with_synthesis_pass() {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-    let collection = db.collection("rem_test").await.unwrap();
+    let collection = db.collection("synthesis_test").await.unwrap();
 
     let emb_a = vec![1.0, 0.0, 0.0, 0.0];
     let mut turns = Vec::new();
@@ -165,14 +159,14 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
             .unwrap();
     }
 
-    let nrem_config = NremConfig {
+    let consolidation_config = ConsolidationConfig {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
         segment_cohesion_threshold: 0.70,
-        near_duplicate_cosine_threshold: 0.99, // high so turns aren't tombstoned in NREM
+        near_duplicate_cosine_threshold: 0.99, // high so turns aren't tombstoned in consolidation pass
     };
 
-    let rem_config = RemConfig {
+    let synthesis_config = SynthesisConfig {
         min_community_size: 3,
         stability_cycles_required: 2,
         max_llm_calls_per_cycle: 5,
@@ -181,46 +175,46 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
     let llm = TestLlmGenerator;
     let mut tracker = CommunityStabilityTracker::new();
 
-    // First sleep cycle: stability count = 1 (< required 2)
-    let (nrem_res_1, rem_res_1) = execute_sleep_cycle(
+    // First cycle: stability count = 1 (< required 2)
+    let (consolidation_res_1, synthesis_res_1) = execute_sleep_cycle(
         &collection,
         &turns,
-        &nrem_config,
-        Some(&rem_config),
+        &consolidation_config,
+        Some(&synthesis_config),
         Some(&llm),
         Some(&mut tracker),
     )
     .await
     .unwrap();
 
-    assert_eq!(nrem_res_1.segments_created, 1);
-    let rem_1 = rem_res_1.expect("REM phase result should be present");
+    assert_eq!(consolidation_res_1.segments_created, 1);
+    let synth_1 = synthesis_res_1.expect("Synthesis result should be present");
     assert_eq!(
-        rem_1.synthesized.len(),
+        synth_1.synthesized.len(),
         0,
         "Community observed once < stability_cycles_required=2, so 0 synthesized"
     );
 
-    // Second sleep cycle: stability count = 2 (>= required 2)
-    let (_nrem_res_2, rem_res_2) = execute_sleep_cycle(
+    // Second cycle: stability count = 2 (>= required 2)
+    let (_consolidation_res_2, synthesis_res_2) = execute_sleep_cycle(
         &collection,
         &turns,
-        &nrem_config,
-        Some(&rem_config),
+        &consolidation_config,
+        Some(&synthesis_config),
         Some(&llm),
         Some(&mut tracker),
     )
     .await
     .unwrap();
 
-    let rem_2 = rem_res_2.expect("REM phase result should be present");
+    let synth_2 = synthesis_res_2.expect("Synthesis result should be present");
     assert_eq!(
-        rem_2.synthesized.len(),
+        synth_2.synthesized.len(),
         1,
         "Stable community should now be synthesized"
     );
 
-    let meta_chunk = &rem_2.synthesized[0];
+    let meta_chunk = &synth_2.synthesized[0];
     assert!(meta_chunk.content.starts_with("[SYNTHESIZED FROM"));
     assert_eq!(meta_chunk.abstracts_from.len(), 5);
 

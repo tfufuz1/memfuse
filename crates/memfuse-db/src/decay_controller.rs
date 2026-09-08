@@ -1,6 +1,6 @@
-//! Freie-Energie-Thermostat (F-01) — Adaptiver Verfall.
+//! Adaptive Decay Controller (Cache-Eviction mit Time-Weighted Decay) (F-01).
 //!
-//! FEATURE-FLAG: `physio-features` (default-off in P1-safe Config).
+//! FEATURE-FLAG: `background-maintenance` (default-off in P1-safe Config).
 //! KEINE neuen Infrastruktur-Abhängigkeiten — alle Inputs sind bereits vorhanden:
 //! - tombstone_ratio: HnswIndex::tombstone_ratio()
 //! - query_load_inverse: AtomicU64-Zähler in LsmStorage
@@ -15,9 +15,9 @@
 //! Niedrige T (freier Speicher) → lange Half-Life → längeres Behalten.
 //! ADR-016: TxId-Differenz statt SystemTime (deterministisch, replay-safe).
 
-/// Thermostat-Inputs aus bestehenden System-Metriken.
+/// Inputs for Adaptive Decay Controller (Cache-Eviction mit Time-Weighted Decay) aus bestehenden System-Metriken.
 #[derive(Debug, Clone, Copy)]
-pub struct ThermostatInputs {
+pub struct DecaySignalInputs {
     /// HNSW-Tombstone-Ratio ∈ [0,1]. Quelle: HnswIndex::tombstone_ratio().
     pub tombstone_ratio: f32,
     /// Normalisierte inverse Query-Rate ∈ [0,1].
@@ -28,7 +28,7 @@ pub struct ThermostatInputs {
     pub w_query: f32,
 }
 
-impl Default for ThermostatInputs {
+impl Default for DecaySignalInputs {
     fn default() -> Self {
         Self {
             tombstone_ratio: 0.0,
@@ -39,9 +39,9 @@ impl Default for ThermostatInputs {
     }
 }
 
-/// Konfiguration für den Thermostat (via PhysioConfig).
+/// Konfiguration für Adaptive Decay Controller (Cache-Eviction mit Time-Weighted Decay) (via MaintenanceConfig).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ThermostatConfig {
+pub struct DecayControllerConfig {
     /// Verstärkungsfaktor κ. Default: 2.0.
     pub kappa: f32,
     /// Basis-Half-Life in TxId-Einheiten. Default: 10_000.
@@ -50,7 +50,7 @@ pub struct ThermostatConfig {
     pub eviction_threshold: f32,
 }
 
-impl Default for ThermostatConfig {
+impl Default for DecayControllerConfig {
     fn default() -> Self {
         Self {
             kappa: 2.0,
@@ -61,25 +61,22 @@ impl Default for ThermostatConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct FreeEnergyThermostat {
-    config: ThermostatConfig,
+pub struct AdaptiveDecayController {
+    config: DecayControllerConfig,
 }
 
-/// Backwards compatibility alias / P1 architecture name
-pub type AdaptiveDecayController = FreeEnergyThermostat;
-
-impl FreeEnergyThermostat {
-    pub fn new(config: ThermostatConfig) -> Self {
+impl AdaptiveDecayController {
+    pub fn new(config: DecayControllerConfig) -> Self {
         Self { config }
     }
 
     pub fn with_defaults() -> Self {
-        Self::new(ThermostatConfig::default())
+        Self::new(DecayControllerConfig::default())
     }
 
     /// Berechnet aktuelle Systemtemperatur T(t) ∈ [0,1].
     #[inline]
-    pub fn system_temperature(&self, inputs: &ThermostatInputs) -> f32 {
+    pub fn system_temperature(&self, inputs: &DecaySignalInputs) -> f32 {
         (inputs.w_tombstone * inputs.tombstone_ratio + inputs.w_query * inputs.query_load_inverse)
             .clamp(0.0, 1.0)
     }
@@ -97,7 +94,7 @@ impl FreeEnergyThermostat {
         &self,
         base_score: f32,
         elapsed_tx: u64,
-        inputs: &ThermostatInputs,
+        inputs: &DecaySignalInputs,
     ) -> f32 {
         let temperature = self.system_temperature(inputs);
         let half_life = self.effective_half_life(temperature);
@@ -113,7 +110,7 @@ impl FreeEnergyThermostat {
         &self,
         base_score: f32,
         elapsed_tx: u64,
-        inputs: &ThermostatInputs,
+        inputs: &DecaySignalInputs,
     ) -> bool {
         self.effective_score(base_score, elapsed_tx, inputs) < self.config.eviction_threshold
     }
@@ -125,8 +122,8 @@ mod tests {
 
     #[test]
     fn test_temperature_clamp() {
-        let t = FreeEnergyThermostat::with_defaults();
-        let inputs = ThermostatInputs {
+        let t = AdaptiveDecayController::with_defaults();
+        let inputs = DecaySignalInputs {
             tombstone_ratio: 1.0,
             query_load_inverse: 1.0,
             ..Default::default()
@@ -140,13 +137,13 @@ mod tests {
 
     #[test]
     fn test_high_temperature_shorter_half_life() {
-        let t = FreeEnergyThermostat::with_defaults();
-        let hot = ThermostatInputs {
+        let t = AdaptiveDecayController::with_defaults();
+        let hot = DecaySignalInputs {
             tombstone_ratio: 1.0,
             query_load_inverse: 1.0,
             ..Default::default()
         };
-        let cold = ThermostatInputs {
+        let cold = DecaySignalInputs {
             tombstone_ratio: 0.0,
             query_load_inverse: 0.0,
             ..Default::default()
@@ -163,8 +160,8 @@ mod tests {
 
     #[test]
     fn test_effective_score_decays_over_time() {
-        let t = FreeEnergyThermostat::with_defaults();
-        let inputs = ThermostatInputs::default();
+        let t = AdaptiveDecayController::with_defaults();
+        let inputs = DecaySignalInputs::default();
         let early = t.effective_score(1.0, 100, &inputs);
         let late = t.effective_score(1.0, 10_000, &inputs);
         assert!(
@@ -175,8 +172,8 @@ mod tests {
 
     #[test]
     fn test_effective_score_non_negative() {
-        let t = FreeEnergyThermostat::with_defaults();
-        let inputs = ThermostatInputs {
+        let t = AdaptiveDecayController::with_defaults();
+        let inputs = DecaySignalInputs {
             tombstone_ratio: 1.0,
             ..Default::default()
         };
@@ -187,8 +184,8 @@ mod tests {
 
     #[test]
     fn test_should_evict_low_score_high_temp() {
-        let t = FreeEnergyThermostat::with_defaults();
-        let hot = ThermostatInputs {
+        let t = AdaptiveDecayController::with_defaults();
+        let hot = DecaySignalInputs {
             tombstone_ratio: 1.0,
             query_load_inverse: 1.0,
             ..Default::default()
@@ -199,8 +196,8 @@ mod tests {
 
     #[test]
     fn test_should_not_evict_fresh_chunk() {
-        let t = FreeEnergyThermostat::with_defaults();
-        let inputs = ThermostatInputs::default();
+        let t = AdaptiveDecayController::with_defaults();
+        let inputs = DecaySignalInputs::default();
         // Frischer Chunk (elapsed_tx=0) → kein Evict
         assert!(!t.should_evict(1.0, 0, &inputs));
     }

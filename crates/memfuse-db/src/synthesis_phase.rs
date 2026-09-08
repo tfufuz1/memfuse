@@ -1,19 +1,15 @@
-//! REM Phase (Rapid Eye Movement) — Generative Memory Synthesis.
+//! Generative Synthesis Pass — LLM-basierte, stochastische Wissenssynthese pro konsolidiertem Segment.
+//! Bewusst getrennt vom Structural Consolidation Pass, da hier LLM-API-Abhängigkeiten bestehen, die dort verboten sind.
 //!
-//! ARCHITEKTUR-HINWEIS: Diese Phase ist BEWUSST von der NREM-Phase getrennt (eigenes Modul),
-//! da sie LLM-API-Abhängigkeiten hat (memfuse-ollama), die in der NREM-Phase verboten sind.
-//! NREM → statisch, deterministisch, kein LLM
-//! REM  → generativ, LLM-abhängig, stochastisch
-//!
-//! SEGMENT-LEVEL (nicht Turn-Level): Jeder REM-Synthesized-Chunk abstrahiert ein ganzes
-//! TurnSegment aus der NREM-Phase. Dies entspricht LycheeMemory V2 (arXiv:2608.12990).
+//! SEGMENT-LEVEL (nicht Turn-Level): Jeder SynthesizedChunk abstrahiert ein ganzes
+//! TurnSegment aus dem Structural Consolidation Pass. Dies entspricht LycheeMemory V2 (arXiv:2608.12990).
 
-use crate::sleep_cycle::TurnSegment;
-use memfuse_core::{BoxFuture, DocId, Result};
+use crate::memory_consolidation::TurnSegment;
+use memfuse_core::{DocId, SegmentSynthesizer};
 
-/// Ergebnis der REM-Konsolidierungsphase.
+/// Ergebnis des Generative Synthesis Pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemPhaseResult {
+pub struct SynthesisPhaseResult {
     /// Neu synthetisierte Chunks (einer pro konsolidiertem Segment).
     pub synthesized_chunks: Vec<SynthesizedChunk>,
     /// Anzahl der Segmente, für die keine Synthese möglich war (LLM-Fehler / zu kurz).
@@ -32,24 +28,24 @@ pub struct SynthesizedChunk {
 }
 
 /// Trait-Abstraktion für den LLM-Synthesizer (testbar via Mock).
-pub use memfuse_core::SegmentSynthesizer;
+pub use memfuse_core::SegmentSynthesizer as TraitSegmentSynthesizer;
 
-/// Führt die REM-Phase aus: synthetisiert pro Segment einen abstrakten Chunk.
+/// Führt den Generative Synthesis Pass aus: synthetisiert pro Segment einen abstrakten Chunk.
 ///
 /// # Fehlerverhalten
 /// Einzelne Segment-Fehler werden übersprungen (`skipped_segments` inkrementiert),
 /// nie als Err propagiert. Globale Fehler (Trait-Fehler im Setup) propagieren als Err.
-pub async fn run_rem_phase(
+pub async fn run_synthesis_pass(
     segments: &[TurnSegment],
     segment_texts: &[Vec<String>], // Texte der Turns pro Segment
     synthesizer: &dyn SegmentSynthesizer,
-    min_turns_for_rem: usize, // Default: 3 — kurze Segmente überspringen
-) -> RemPhaseResult {
+    min_turns_for_synthesis: usize, // Default: 3 — kurze Segmente überspringen
+) -> SynthesisPhaseResult {
     let mut synthesized_chunks = Vec::new();
     let mut skipped_segments = 0;
 
     for (i, segment) in segments.iter().enumerate() {
-        if segment.turn_ids.len() < min_turns_for_rem {
+        if segment.turn_ids.len() < min_turns_for_synthesis {
             skipped_segments += 1;
             continue;
         }
@@ -81,14 +77,14 @@ pub async fn run_rem_phase(
                 tracing::warn!(
                     segment_idx = i,
                     error = %e,
-                    "REM phase segment synthesis failed; skipping segment"
+                    "Generative synthesis pass segment synthesis failed; skipping segment"
                 );
                 skipped_segments += 1;
             }
         }
     }
 
-    RemPhaseResult {
+    SynthesisPhaseResult {
         synthesized_chunks,
         skipped_segments,
     }
@@ -97,6 +93,7 @@ pub async fn run_rem_phase(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use memfuse_core::{BoxFuture, Result};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     struct MockSynthesizer {
@@ -135,31 +132,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rem_phase_empty_segments_returns_empty() {
+    async fn test_synthesis_pass_empty_segments_returns_empty() {
         let synthesizer = MockSynthesizer::new("test-model", false);
-        let res = run_rem_phase(&[], &[], &synthesizer, 3).await;
+        let res = run_synthesis_pass(&[], &[], &synthesizer, 3).await;
 
         assert_eq!(res.synthesized_chunks.len(), 0);
         assert_eq!(res.skipped_segments, 0);
     }
 
     #[tokio::test]
-    async fn test_rem_phase_too_short_segments_skipped() {
+    async fn test_synthesis_pass_too_short_segments_skipped() {
         let synthesizer = MockSynthesizer::new("test-model", false);
         let segment = TurnSegment {
-            turn_ids: vec![DocId::new(1), DocId::new(2)], // 2 turns < min_turns_for_rem=3
+            turn_ids: vec![DocId::new(1), DocId::new(2)], // 2 turns < min_turns_for_synthesis=3
             representative_embedding: vec![1.0, 0.0],
         };
         let texts = vec![vec!["text 1".to_string(), "text 2".to_string()]];
 
-        let res = run_rem_phase(&[segment], &texts, &synthesizer, 3).await;
+        let res = run_synthesis_pass(&[segment], &texts, &synthesizer, 3).await;
 
         assert_eq!(res.synthesized_chunks.len(), 0);
         assert_eq!(res.skipped_segments, 1);
     }
 
     #[tokio::test]
-    async fn test_rem_phase_llm_error_increments_skipped_not_err() {
+    async fn test_synthesis_pass_llm_error_increments_skipped_not_err() {
         let synthesizer = MockSynthesizer::new("test-model", true); // should_fail = true
         let segment = TurnSegment {
             turn_ids: vec![DocId::new(1), DocId::new(2), DocId::new(3)],
@@ -171,14 +168,14 @@ mod tests {
             "text 3".to_string(),
         ]];
 
-        let res = run_rem_phase(&[segment], &texts, &synthesizer, 3).await;
+        let res = run_synthesis_pass(&[segment], &texts, &synthesizer, 3).await;
 
         assert_eq!(res.synthesized_chunks.len(), 0);
         assert_eq!(res.skipped_segments, 1);
     }
 
     #[tokio::test]
-    async fn test_rem_phase_synthesized_chunk_has_correct_source_ids() {
+    async fn test_synthesis_pass_synthesized_chunk_has_correct_source_ids() {
         let synthesizer = MockSynthesizer::new("test-model", false);
         let segment = TurnSegment {
             turn_ids: vec![DocId::new(10), DocId::new(20), DocId::new(30)],
@@ -186,7 +183,7 @@ mod tests {
         };
         let texts = vec![vec!["A".to_string(), "B".to_string(), "C".to_string()]];
 
-        let res = run_rem_phase(&[segment], &texts, &synthesizer, 3).await;
+        let res = run_synthesis_pass(&[segment], &texts, &synthesizer, 3).await;
 
         assert_eq!(res.synthesized_chunks.len(), 1);
         assert_eq!(res.skipped_segments, 0);

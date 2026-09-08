@@ -1,15 +1,15 @@
 // FILE-CONTEXT
-// ZWECK: Sleep-Cycle-Architecture - NREM-Phase (Non-REM: Strukturierte Gedächtniskonsolidierung, Near-Duplicate-Detection & Segmentation).
-// INVARIANTEN: Strikte Trennung von NREM (strukturierte statische/statistische Konsolidierung) und REM (generative Wissenssynthese).
-//              Keine LLM-API-Aufrufe in der NREM-Phase. Keine Abhängigkeit zu memfuse-graph (P1-DAG-Integrität).
+// ZWECK: Structural Consolidation Pass & Generative Synthesis Pass Architecture — Memory Consolidation (Near-Duplicate-Detection & Segmentation).
+// INVARIANTEN: Strikte Trennung von Structural Consolidation Pass (strukturierte statische/statistische Konsolidierung) und Generative Synthesis Pass (generative Wissenssynthese).
+//              Keine LLM-API-Aufrufe im Structural Consolidation Pass. Keine Abhängigkeit zu memfuse-graph (P1-DAG-Integrität).
 // STAND: TS:2026-08-29T18:00:00Z
 
-//! NREM Phase (Non-Rapid Eye Movement) Memory Consolidation.
+//! Structural Consolidation Pass — deterministische, LLM-freie Bereinigung (Near-Duplicate-Detection, Sliding-Window-Clustering, verwaiste Kanten identifizieren). Analog zu Garbage Collection / Index Compaction.
 //!
-//! # Architektur-Hinweis (REM vs. NREM)
-//! Die REM-Phase (generative Wissenssynthese via LLM) ist **NICHT** Teil dieses Moduls
-//! und wird in einer separaten Komponente/Prompt implementiert.
-//! Dieses Modul deckt ausschließlich die NREM-Phase ab:
+//! # Architektur-Hinweis (Generative Synthesis Pass vs. Structural Consolidation Pass)
+//! Der Generative Synthesis Pass (generative Wissenssynthese via LLM) ist **NICHT** Teil dieses Moduls
+//! und wird in einer separaten Komponente implementiert.
+//! Dieses Modul deckt ausschließlich den Structural Consolidation Pass ab:
 //! - Sequenzielles Sliding-Window-Clustering zeitlich benachbarter Turn-Embeddings.
 //! - Segmentlokale Near-Duplicate-Detection (O(n²) nur innerhalb eines Segments).
 //! - Identifikation verwaister Graph-Kanten zur kaskadierenden Bereinigung.
@@ -19,7 +19,7 @@ use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::{ContextChunk, DocId, TxId};
 use std::collections::HashSet;
 
-/// Konfiguration für die Gedächtniskonsolidierungsphase (ConsolidationConfig / NremConfig).
+/// Konfiguration für den Structural Consolidation Pass.
 #[derive(Debug, Clone)]
 pub struct ConsolidationConfig {
     /// Mindestanzahl von Turns pro Segment (Default: 3).
@@ -47,9 +47,6 @@ impl Default for ConsolidationConfig {
     }
 }
 
-/// Backwards compatibility alias
-pub type NremConfig = ConsolidationConfig;
-
 /// Repräsentiert ein semantisch zusammenhängendes Segment aus aufeinanderfolgenden Turns.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnSegment {
@@ -61,9 +58,9 @@ pub struct TurnSegment {
     pub representative_embedding: Vec<f32>,
 }
 
-/// Ergebnis der NREM-Konsolidierungsphase.
+/// Ergebnis des Structural Consolidation Pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NremPhaseResult {
+pub struct ConsolidationPhaseResult {
     /// Anzahl der erzeugten Segmente.
     pub segments_created: usize,
     /// Liste aller DocIds, die als Duplikate markiert/tombstoned wurden.
@@ -137,7 +134,7 @@ impl WorkingSegment {
 /// sondern mit dem Nachbarsegment zusammengeführt (vorrangig mit dem vorausgehenden, andernfalls mit dem nachfolgenden).
 pub fn group_turns_into_segments(
     turns: &[(DocId, Vec<f32>)],
-    config: &NremConfig,
+    config: &ConsolidationConfig,
 ) -> Vec<TurnSegment> {
     if turns.is_empty() {
         return Vec::new();
@@ -252,16 +249,16 @@ pub fn detect_near_duplicates(turns: &[(DocId, Vec<f32>)], threshold: f32) -> Ve
     pairs
 }
 
-/// Orchestriert die NREM-Phase (Segmentierung & Near-Duplicate-Detection).
+/// Orchestriert den Structural Consolidation Pass (Segmentierung & Near-Duplicate-Detection).
 ///
 /// **Vorbedingung / Invariante:**
 /// Das übergebene `turns`-Slice MUSS in chronologischer Reihenfolge vorliegen (frühere Turns zuerst).
 /// Die Segmentierung und Near-Duplicate-Detection stützen sich auf die zeitliche Abfolge der Slice-Indizes.
 ///
-/// Führt KEINE LLM-API-Aufrufe durch (NREM ist rein strukturell/statistisch).
-pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremPhaseResult {
+/// Führt KEINE LLM-API-Aufrufe durch (Structural Consolidation Pass ist rein strukturell/statistisch).
+pub fn run_consolidation_pass(turns: &[(DocId, Vec<f32>)], config: &ConsolidationConfig) -> ConsolidationPhaseResult {
     if turns.is_empty() {
-        return NremPhaseResult {
+        return ConsolidationPhaseResult {
             segments_created: 0,
             duplicates_tombstoned: Vec::new(),
             cascade_edge_tombstones_needed: Vec::new(),
@@ -293,25 +290,25 @@ pub fn run_nrem_phase(turns: &[(DocId, Vec<f32>)], config: &NremConfig) -> NremP
 
     let cascade_edge_tombstones_needed = duplicates.clone();
 
-    NremPhaseResult {
+    ConsolidationPhaseResult {
         segments_created: segments.len(),
         duplicates_tombstoned: duplicates,
         cascade_edge_tombstones_needed,
     }
 }
 
-/// Konfiguration für die REM-Konsolidierungsphase (Rapid Eye Movement).
+/// Konfiguration für den Generative Synthesis Pass.
 #[derive(Debug, Clone)]
-pub struct RemConfig {
+pub struct SynthesisConfig {
     /// Mindestanzahl von Chunks/Dokumenten in einer Community (Default: 4).
     pub min_community_size: usize,
     /// Anzahl aufeinanderfolgender Beobachtungen, bis eine Community als stabil gilt (Default: 3).
     pub stability_cycles_required: u32,
-    /// Maximale Anzahl von LLM-Aufrufen pro Sleep-Cycle (Default: 10, P12-Kostenschutz).
+    /// Maximale Anzahl von LLM-Aufrufen pro Consolidation-Cycle (Default: 10, P12-Kostenschutz).
     pub max_llm_calls_per_cycle: u32,
 }
 
-impl Default for RemConfig {
+impl Default for SynthesisConfig {
     fn default() -> Self {
         Self {
             min_community_size: 4,
@@ -348,7 +345,7 @@ impl CommunityStabilityTracker {
     }
 }
 
-/// Ein generativ synthetisierter Wissens-Chunk (MetaChunk) aus der REM-Phase.
+/// Ein generativ synthetisierter Wissens-Chunk (MetaChunk) aus dem Generative Synthesis Pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaChunk {
     /// Der synthetisierte, abstrakte Inhalt (MUSS mit `[SYNTHESIZED FROM {n} SOURCES] ` beginnen).
@@ -363,9 +360,9 @@ pub struct MetaChunk {
     pub llm_model_id: String,
 }
 
-/// Ergebnis der REM-Konsolidierungsphase.
+/// Ergebnis des Generative Synthesis Pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemPhaseResult {
+pub struct SynthesisPhaseResult {
     /// Neu generierte MetaChunks.
     pub synthesized: Vec<MetaChunk>,
     /// Hashes von qualifizierten Communities, deren Synthese wegen `max_llm_calls_per_cycle` verschoben wurde.
@@ -386,15 +383,15 @@ pub fn compute_community_hash(member_doc_ids: &[DocId]) -> u64 {
     u64::from_le_bytes(hash_bytes)
 }
 
-/// Führt die REM-Phase (generative Wissenssynthese) über stabile Graph-Communities aus.
-pub async fn run_rem_phase(
+/// Führt den Generative Synthesis Pass (generative Wissenssynthese) über stabile Graph-Communities aus.
+pub async fn run_synthesis_pass(
     stable_communities: &[(u64, Vec<DocId>)],
     source_texts: &std::collections::HashMap<DocId, String>,
     llm: &dyn LlmTextGenerator,
-    config: &RemConfig,
-) -> memfuse_core::Result<RemPhaseResult> {
+    config: &SynthesisConfig,
+) -> memfuse_core::Result<SynthesisPhaseResult> {
     if stable_communities.is_empty() {
-        return Ok(RemPhaseResult {
+        return Ok(SynthesisPhaseResult {
             synthesized: Vec::new(),
             deferred_community_hashes: Vec::new(),
         });
@@ -407,7 +404,7 @@ pub async fn run_rem_phase(
         .collect();
 
     if qualified.is_empty() {
-        return Ok(RemPhaseResult {
+        return Ok(SynthesisPhaseResult {
             synthesized: Vec::new(),
             deferred_community_hashes: Vec::new(),
         });
@@ -465,13 +462,13 @@ pub async fn run_rem_phase(
                 tracing::error!(
                     community_hash = comm_hash,
                     error = %e,
-                    "REM phase community LLM synthesis failed; skipping community"
+                    "Generative synthesis pass community LLM synthesis failed; skipping community"
                 );
             }
         }
     }
 
-    Ok(RemPhaseResult {
+    Ok(SynthesisPhaseResult {
         synthesized,
         deferred_community_hashes,
     })
@@ -533,7 +530,7 @@ mod tests {
             turns.push((DocId::new(i), emb_b.clone()));
         }
 
-        let config = NremConfig {
+        let config = ConsolidationConfig {
             min_turns_per_segment: 3,
             max_turns_per_segment: 20,
             segment_cohesion_threshold: 0.70,
@@ -603,8 +600,8 @@ mod tests {
 
     #[test]
     fn test_empty_input_no_panic() {
-        let config = NremConfig::default();
-        let res = run_nrem_phase(&[], &config);
+        let config = ConsolidationConfig::default();
+        let res = run_consolidation_pass(&[], &config);
         assert_eq!(res.segments_created, 0);
         assert!(res.duplicates_tombstoned.is_empty());
         assert!(res.cascade_edge_tombstones_needed.is_empty());
@@ -622,7 +619,7 @@ mod tests {
         let emb_b = vec![0.0, 1.0, 0.0, 0.0];
         turns.push((DocId::new(6), emb_b));
 
-        let config = NremConfig {
+        let config = ConsolidationConfig {
             min_turns_per_segment: 3,
             max_turns_per_segment: 20,
             segment_cohesion_threshold: 0.70,
@@ -655,7 +652,7 @@ mod tests {
             (DocId::new(1), emb_a.clone()),
             (DocId::new(2), emb_b.clone()),
         ];
-        let config = NremConfig {
+        let config = ConsolidationConfig {
             min_turns_per_segment: 1,
             max_turns_per_segment: 20,
             segment_cohesion_threshold: 0.70,
@@ -689,7 +686,7 @@ mod tests {
                 }
             })
             .collect();
-        let config = NremConfig::default();
+        let config = ConsolidationConfig::default();
         let segments = group_turns_into_segments(&turns, &config);
         assert_eq!(
             segments.len(),
@@ -721,11 +718,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rem_phase_community_under_min_size_ignored() {
+    async fn test_run_synthesis_pass_community_under_min_size_ignored() {
         let llm = MockLlmGenerator {
             fail_community_contains: None,
         };
-        let config = RemConfig {
+        let config = SynthesisConfig {
             min_community_size: 4,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
@@ -737,9 +734,9 @@ mod tests {
         let stable_communities = vec![(hash, members)];
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
-            .expect("run_rem_phase should succeed");
+            .expect("run_synthesis_pass should succeed");
 
         assert_eq!(res.synthesized.len(), 0);
         assert_eq!(res.deferred_community_hashes.len(), 0);
@@ -769,11 +766,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rem_phase_max_llm_calls_per_cycle_limits_and_defers() {
+    async fn test_run_synthesis_pass_max_llm_calls_per_cycle_limits_and_defers() {
         let llm = MockLlmGenerator {
             fail_community_contains: None,
         };
-        let config = RemConfig {
+        let config = SynthesisConfig {
             min_community_size: 2,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
@@ -789,9 +786,9 @@ mod tests {
 
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
-            .expect("run_rem_phase should succeed");
+            .expect("run_synthesis_pass should succeed");
 
         assert_eq!(
             res.synthesized.len(),
@@ -806,11 +803,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rem_phase_meta_chunk_has_required_prefix_and_abstracts_from() {
+    async fn test_run_synthesis_pass_meta_chunk_has_required_prefix_and_abstracts_from() {
         let llm = MockLlmGenerator {
             fail_community_contains: None,
         };
-        let config = RemConfig {
+        let config = SynthesisConfig {
             min_community_size: 2,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
@@ -825,9 +822,9 @@ mod tests {
         source_texts.insert(DocId::new(20), "Text B".to_string());
         source_texts.insert(DocId::new(30), "Text C".to_string());
 
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
-            .expect("run_rem_phase should succeed");
+            .expect("run_synthesis_pass should succeed");
 
         assert_eq!(res.synthesized.len(), 1);
         let chunk = &res.synthesized[0];
@@ -841,11 +838,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rem_phase_error_on_one_community_continues_others() {
+    async fn test_run_synthesis_pass_error_on_one_community_continues_others() {
         let llm = MockLlmGenerator {
             fail_community_contains: Some("DocId 21".to_string()),
         };
-        let config = RemConfig {
+        let config = SynthesisConfig {
             min_community_size: 2,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
@@ -863,9 +860,9 @@ mod tests {
 
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_rem_phase(&stable_communities, &source_texts, &llm, &config)
+        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
-            .expect("run_rem_phase should not fail even if one community errors out");
+            .expect("run_synthesis_pass should not fail even if one community errors out");
 
         assert_eq!(
             res.synthesized.len(),

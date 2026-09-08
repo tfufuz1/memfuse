@@ -37,7 +37,9 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_commit_messages;
 mod check_duplicate_symbols;
+mod check_placeholder_refs;
 mod check_vetoes;
 
 use chrono::{NaiveDate, NaiveDateTime};
@@ -1788,6 +1790,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-commit-messages" => {
+            if let Err(e) = check_commit_messages::check_commit_messages() {
+                eprintln!("❌ check-commit-messages failed: {}", e);
+                process::exit(1);
+            }
+        }
         "check-duplicate-symbols" => {
             let changed_files = get_changed_rs_files_from_git_diff().unwrap_or_default();
             match check_duplicate_symbols::check_duplicate_symbols(&changed_files) {
@@ -1816,6 +1824,12 @@ fn main() {
                     eprintln!("❌ check-duplicate-symbols failed: {}", e);
                     process::exit(1);
                 }
+            }
+        }
+        "check-placeholder-refs" => {
+            if let Err(e) = check_placeholder_refs::run() {
+                eprintln!("❌ check-placeholder-refs failed: {}", e);
+                process::exit(1);
             }
         }
         "check-vetoes" => {
@@ -1880,7 +1894,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }

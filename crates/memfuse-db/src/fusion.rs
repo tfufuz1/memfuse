@@ -38,8 +38,8 @@ impl Default for ResonanceConfig {
 /// INVARIANTE INV-PROV-2: `signal_contributions` bleiben unverändert (unboosted).
 /// `coherence_bonus` wird in `provenance.coherence_bonus` geschrieben.
 ///
-/// Feature-Flag: Nur aufrufen wenn `physio-resonance-fusion` aktiv.
-#[cfg(feature = "physio-resonance-fusion")]
+/// Feature-Flag: Nur aufrufen wenn `coherence-bonus-fusion` aktiv.
+#[cfg(feature = "coherence-bonus-fusion")]
 pub fn apply_resonance_bonus(
     results: Vec<SearchResult>,
     total_signal_count: usize,
@@ -116,7 +116,7 @@ pub enum SignalKind {
     /// Graph (traversal / PageRank) search signal.
     Graph,
     #[cfg(feature = "physio-synaptic-edges")]
-    /// Synaptic/Hebbian edge weight signal (F-03).
+    /// Edge-reinforcement weight signal (F-03).
     Synaptic,
 }
 
@@ -573,7 +573,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         .map(|e| e.result)
         .collect();
 
-    #[cfg(feature = "physio-resonance-fusion")]
+    #[cfg(feature = "coherence-bonus-fusion")]
     let results = if let Some(cfg) = resonance_config {
         apply_resonance_bonus(results, total_signal_count, cfg)
     } else {
@@ -1151,7 +1151,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "physio-resonance-fusion")]
+    #[cfg(feature = "coherence-bonus-fusion")]
     fn test_resonance_bonus_multi_signal_beats_single_signal() {
         let doc_multi = |score: f32| SearchResult {
             id: "doc_multi".to_string(),
@@ -1206,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "physio-resonance-fusion")]
+    #[cfg(feature = "coherence-bonus-fusion")]
     fn test_resonance_bonus_provenance_coherence_set() {
         let set1 = (
             "vector".to_string(),
@@ -1252,7 +1252,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "physio-resonance-fusion")]
+    #[cfg(feature = "coherence-bonus-fusion")]
     fn test_resonance_bonus_single_signal_no_boost() {
         let set1 = (
             "vector".to_string(),
@@ -1287,7 +1287,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "physio-resonance-fusion")]
+    #[cfg(feature = "coherence-bonus-fusion")]
     fn test_inv_prov2_signal_contributions_unchanged() {
         let set1 = (
             "vector".to_string(),

@@ -83,37 +83,24 @@ pub mod collection;
 pub mod consolidation_executor;
 pub mod context;
 pub mod context_compaction;
-pub mod decay_controller;
-pub mod maintenance_config;
-pub mod maintenance_scheduler;
 pub mod memory_consolidation;
-pub mod rem_phase;
+pub mod synthesis_phase;
 pub mod temporal_filter;
 
-// Aliases for backwards compatibility
-pub mod sleep_cycle { pub use crate::memory_consolidation::*; }
-pub mod sleep_cycle_executor { pub use crate::consolidation_executor::*; }
-pub mod physio_config { pub use crate::maintenance_config::*; }
-pub mod physio_scheduler { pub use crate::maintenance_scheduler::*; }
-pub mod thermostat { pub use crate::decay_controller::*; }
-
-pub use consolidation_executor::{execute_consolidation_pass, execute_nrem_cycle, execute_sleep_cycle};
+pub use consolidation_executor::{execute_consolidation_pass, execute_sleep_cycle};
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
-pub use decay_controller::{AdaptiveDecayController, FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
-pub use maintenance_config::{MaintenanceConfig, PhysioConfig};
-pub use maintenance_scheduler::{MaintenanceScheduler, PhysioScheduler};
+pub use memfuse_core::SegmentSynthesizer;
 pub use memory_consolidation::{
     compact_segment_via_context_compactor, compute_community_hash, detect_near_duplicates,
-    group_turns_into_segments, run_nrem_phase, run_rem_phase, CommunityStabilityTracker,
-    ConsolidationConfig, MetaChunk, NremConfig, NremPhaseResult, RemConfig, RemPhaseResult, TurnSegment,
+    group_turns_into_segments, run_consolidation_pass, CommunityStabilityTracker,
+    ConsolidationConfig, ConsolidationPhaseResult, MetaChunk, SynthesisConfig,
+    SynthesisPhaseResult, TurnSegment,
 };
-pub use memfuse_core::SegmentSynthesizer;
-
-// Reaper-Funktionen mit eigenständigem Zweck (Expiry, Orphan). Für Thermostat und Konsolidierungsdurchläufe ist MaintenanceScheduler::start() der kanonische Einstiegspunkt — siehe maintenance_scheduler.rs.
-pub use reaper::{start_expiry_reaper, start_orphan_reaper};
+pub use reaper::start_consolidation_reaper;
+pub use synthesis_phase::run_synthesis_pass;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
@@ -123,18 +110,24 @@ pub trait SandboxBridge: Send + Sync {
 }
 
 // mod Collection is used via pub mod collection
+pub mod decay_controller;
 pub mod filter;
 pub mod fusion;
 pub mod homeostat;
+pub mod maintenance_config;
+pub mod maintenance_scheduler;
 pub mod multistep;
 pub mod reaper;
 pub mod transaction;
 
+pub use decay_controller::{AdaptiveDecayController, DecayControllerConfig, DecaySignalInputs};
 pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
+pub use maintenance_config::MaintenanceConfig;
+pub use maintenance_scheduler::MaintenanceScheduler;
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 pub use collection::maintenance::PercolationResult;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
@@ -142,7 +135,7 @@ pub use collection::Collection;
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 use memfuse_core::FilterExpr;
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 pub use memfuse_graph::percolation::PercolationConfig;
 pub use memfuse_text::Language;
 
