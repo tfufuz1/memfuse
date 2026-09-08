@@ -115,20 +115,22 @@ pub enum SignalKind {
     Text,
     /// Graph (traversal / PageRank) search signal.
     Graph,
-    #[cfg(feature = "physio-synaptic-edges")]
+    #[cfg(feature = "edge-reinforcement-learning")]
     /// Edge-reinforcement weight signal (F-03).
-    Synaptic,
+    EdgeReinforcement,
 }
 
 impl SignalKind {
-    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph", "synaptic").
+    /// Identifies `SignalKind` from a signal name string (e.g. "vector", "text", "graph", "edge-reinforcement").
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "vector" | "vec" => Some(SignalKind::Vector),
             "text" | "bm25" | "keyword" => Some(SignalKind::Text),
             "graph" => Some(SignalKind::Graph),
-            #[cfg(feature = "physio-synaptic-edges")]
-            "synaptic" | "hebbian" => Some(SignalKind::Synaptic),
+            #[cfg(feature = "edge-reinforcement-learning")]
+            "edge-reinforcement" | "cooccurrence" | "traversal-reinforcement" | "synaptic" | "hebbian" => {
+                Some(SignalKind::EdgeReinforcement)
+            }
             _ => None,
         }
     }
@@ -449,10 +451,13 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                         entry.3.index_type = Some("graph".to_string());
                     }
                 }
-                #[cfg(feature = "physio-synaptic-edges")]
-                Some(SignalKind::Synaptic) => {
+                #[cfg(feature = "edge-reinforcement-learning")]
+                Some(SignalKind::EdgeReinforcement) => {
+                    if entry.3.graph_score.is_none() {
+                        entry.3.graph_score = Some(doc.score);
+                    }
                     if entry.3.index_type.is_none() {
-                        entry.3.index_type = Some("synaptic".to_string());
+                        entry.3.index_type = Some("edge-reinforcement".to_string());
                     }
                 }
                 None => {}

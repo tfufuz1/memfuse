@@ -970,7 +970,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // Final truncation to requested k after Supersedes filtering
         fused_results.truncate(k);
 
-        #[cfg(feature = "physio-synaptic-edges")]
+        #[cfg(feature = "edge-reinforcement-learning")]
         if fused_results.len() >= 2 {
             let graph_index = self.graph_index.clone();
             let result_eids: Vec<EntityId> = fused_results
@@ -978,7 +978,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 .filter_map(|r| EntityId::from_key(&r.id).ok())
                 .collect();
             tokio::spawn(async move {
-                let _config = memfuse_graph::synaptic::SynapticConfig::default();
+                let _config = memfuse_graph::edge_reinforcement::EdgeReinforcementConfig::default();
                 for i in 0..result_eids.len() {
                     for j in (i + 1)..result_eids.len() {
                         let e1 = result_eids[i];
