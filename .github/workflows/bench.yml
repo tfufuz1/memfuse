@@ -54,16 +54,63 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Run Retrieval Accuracy Benchmark Harness
+      - name: Cache LongMemEval Dataset
+        id: cache-longmemeval
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/memfuse-bench/tests/data/
+          key: longmemeval-dataset-v1-${{ hashFiles('benchmarks/memfuse-bench/src/long_mem_eval.rs') }}
+          restore-keys: |
+            longmemeval-dataset-v1-
+
+      - name: Download LongMemEval Dataset (if cache miss)
+        if: steps.cache-longmemeval.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p benchmarks/memfuse-bench/tests/data/
+          pip install huggingface_hub --quiet
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          import shutil, os
+          path = hf_hub_download(
+              repo_id='xiaowu0162/longmemeval',
+              filename='longmemeval_s.jsonl',
+              repo_type='dataset'
+          )
+          shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl')
+          print(f'LongMemEval-S downloaded successfully: {os.path.getsize(path)} Bytes')
+          " || echo "⚠️ HuggingFace download failed — fixture fallback active"
+
+      - name: Run LongMemEval Benchmark Execution
+        run: |
+          DATASET="benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl"
+          FIXTURE="benchmarks/memfuse-bench/tests/fixtures/long_mem_eval_fixture.json"
+          [ -f "$DATASET" ] && ACTUAL="$DATASET" || ACTUAL="$FIXTURE"
+          echo "Using Dataset: $ACTUAL ($(wc -c < $ACTUAL) Bytes)"
+          cargo run --locked -p memfuse-bench --release -- long-mem-eval \
+            --dataset "$ACTUAL" \
+            --output benchmarks/results/long_mem_eval_results.json
+
+      - name: Run Synthetic Retrieval Accuracy Benchmark Harness
         run: cargo run --locked -p memfuse-bench --release
 
+      - name: Evaluate Benchmark Regression Gate (xtask)
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "Updating baseline on main branch..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --update
+          else
+            echo "Evaluating regression gate against main baseline..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json
+          fi
+
       - name: Upload Retrieval Accuracy Benchmark Results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: retrieval-accuracy-benchmark-results
           path: |
-            benchmarks/results/results.json
-            benchmarks/results/summary.md
+            benchmarks/results/
+            benchmarks/memfuse-bench/baseline_metrics.json
             benchmarks/memfuse-bench/baseline_recall.json
 
   benchmark-regression:
@@ -151,7 +198,13 @@ jobs:
 
       - name: Evaluate Metrics Against Versioned Baseline
         run: |
-          cargo run --locked -p memfuse-bench --release --bin compare-baseline -- --current benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "Updating baseline on main branch..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05 --update
+          else
+            echo "Evaluating regression gate against main baseline..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05
+          fi
 
       - name: Upload Retrieval Quality Regression Artifacts
         if: always()
