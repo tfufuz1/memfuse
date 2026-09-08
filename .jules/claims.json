@@ -6,6 +6,13 @@
       "timestamp": "2026-09-08T21:50:44.781466215+00:00",
       "session_id": "6558016856048513528",
       "active": true
+    },
+    {
+      "krate": "memfuse-tauri",
+      "issue": "ADR077-DEPRECATION-MARKER",
+      "timestamp": "2026-09-08T23:16:34.515682512+00:00",
+      "session_id": "8107571721804661471",
+      "active": true
     }
   ]
 }
