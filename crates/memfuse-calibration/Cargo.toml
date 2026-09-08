@@ -16,3 +16,6 @@ proptest = "1.4"
 [features]
 default = []
 replicator-dynamics-weights = []
+
+# Deprecated alias for backward compatibility
+physio-replicator-weights = ["replicator-dynamics-weights"]

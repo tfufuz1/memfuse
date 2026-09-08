@@ -1,7 +1,8 @@
 //! MemFuse Graph — CSR-Graph for Entity-Relation Traversal & Session DAG.
 //!
-//! This crate provides the graph signal (Signal 3) for the 4-Signal Fusion
-//! architecture. It implements a Compressed Sparse Row (CSR) graph for
+//! This crate provides the graph signal (Signal 3) for the 5-Signal Fusion
+//! architecture (optional: Edge-Reinforcement-Signal hinter `edge-reinforcement-learning`-Flag).
+//! It implements a Compressed Sparse Row (CSR) graph for
 //! memory-efficient BFS traversal with score-decay, and a Session-DAG for
 //! agent state branching (MemFuse Session-DAG Pattern).
 //!
@@ -21,7 +22,7 @@
 //!   `nodes` MUST be acquired before `edges` or `active_head` to prevent deadlocks. No locks are
 //!   held across `.await` storage calls.
 
-// INVARIANT: CSR-Graph für 4-Signal Fusion (WP-6.1)
+// INVARIANT: CSR-Graph für 5-Signal Fusion (WP-6.1)
 
 #![forbid(unsafe_code)]
 
@@ -31,6 +32,8 @@ pub mod consistency_enforcement;
 pub mod csr;
 #[cfg(feature = "edge-reinforcement-learning")]
 pub mod edge_reinforcement;
+#[cfg(feature = "edge-reinforcement-learning")]
+pub mod edge_reinforcement_buffer;
 pub mod path_rag;
 #[cfg(feature = "graph-connectivity-health")]
 pub mod percolation;
@@ -49,6 +52,10 @@ pub use csr::CsrGraph;
 pub use edge_reinforcement::{
     apply_cooccurrence_reinforcement, apply_traversal_reinforcement, apply_weight_normalization,
     compute_edge_weight, EdgeReinforcementConfig,
+};
+#[cfg(feature = "edge-reinforcement-learning")]
+pub use edge_reinforcement_buffer::edge_reinforcement_buffer::{
+    CooccurrenceSignal, EdgeReinforcementBuffer, TraversalSignal,
 };
 pub use path_rag::{EntityId, GraphPath, PathGraph, PathRAGEngine};
 #[cfg(feature = "graph-connectivity-health")]
