@@ -8,8 +8,12 @@ description = "CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fus
 
 [features]
 default = []
-physio-percolation = []
-physio-synaptic-edges = []
+graph-connectivity-health = []
+edge-reinforcement-learning = []
+
+# Deprecated alias features for backward compatibility with memfuse-db
+physio-percolation = ["graph-connectivity-health"]
+physio-synaptic-edges = ["edge-reinforcement-learning"]
 
 [dependencies]
 memfuse-core = { workspace = true }

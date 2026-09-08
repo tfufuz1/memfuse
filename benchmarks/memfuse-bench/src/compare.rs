@@ -63,7 +63,8 @@ pub fn compare_metrics(
             );
         } else {
             has_regression = true;
-            errors.push("Missing 'long_mem_eval' metrics in current evaluation output.".to_string());
+            errors
+                .push("Missing 'long_mem_eval' metrics in current evaluation output.".to_string());
         }
     }
 
@@ -189,10 +190,20 @@ pub fn compare_metrics_files(
     let baseline_content = fs::read_to_string(baseline_path)
         .map_err(|e| format!("Failed to read {}: {}", baseline_path.display(), e))?;
 
-    let current: CombinedMetrics = serde_json::from_str(&current_content)
-        .map_err(|e| format!("Failed to parse current JSON {}: {}", current_path.display(), e))?;
-    let baseline: CombinedMetrics = serde_json::from_str(&baseline_content)
-        .map_err(|e| format!("Failed to parse baseline JSON {}: {}", baseline_path.display(), e))?;
+    let current: CombinedMetrics = serde_json::from_str(&current_content).map_err(|e| {
+        format!(
+            "Failed to parse current JSON {}: {}",
+            current_path.display(),
+            e
+        )
+    })?;
+    let baseline: CombinedMetrics = serde_json::from_str(&baseline_content).map_err(|e| {
+        format!(
+            "Failed to parse baseline JSON {}: {}",
+            baseline_path.display(),
+            e
+        )
+    })?;
 
     Ok(compare_metrics(&current, &baseline, threshold))
 }

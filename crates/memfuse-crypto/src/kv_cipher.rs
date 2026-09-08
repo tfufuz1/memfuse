@@ -40,7 +40,11 @@ pub struct ModelFingerprint {
 
 impl ModelFingerprint {
     /// Creates a new `ModelFingerprint`.
-    pub fn new(hash: [u8; 32], model_id: impl Into<String>, quantization: impl Into<String>) -> Self {
+    pub fn new(
+        hash: [u8; 32],
+        model_id: impl Into<String>,
+        quantization: impl Into<String>,
+    ) -> Self {
         Self {
             hash,
             model_id: model_id.into(),
@@ -89,7 +93,9 @@ impl KvSegmentCipher {
         model_fingerprint: ModelFingerprint,
         plaintext: &[u8],
     ) -> Result<EncryptedKvLayer> {
-        let sub_km = self.key_manager.derive_kv_key(tenant_id, &model_fingerprint)?;
+        let sub_km = self
+            .key_manager
+            .derive_kv_key(tenant_id, &model_fingerprint)?;
         let (ciphertext, nonce) = sub_km.encrypt_auto_nonce(plaintext)?;
 
         Ok(EncryptedKvLayer {

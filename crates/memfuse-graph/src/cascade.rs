@@ -73,17 +73,39 @@ mod tests {
         let node2 = EntityId::new(200);
         let node3 = EntityId::new(300);
 
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node1, "n1", "Node")).await.unwrap();
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node2, "n2", "Node")).await.unwrap();
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node3, "n3", "Node")).await.unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node1, "n1", "Node"),
+        )
+        .await
+        .unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node2, "n2", "Node"),
+        )
+        .await
+        .unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node3, "n3", "Node"),
+        )
+        .await
+        .unwrap();
 
         // Edge 1 derived from Doc A
         let edge1 = Edge::new(node1, node2, "rel_a").with_source_doc_id(doc_a);
         // Edge 2 derived from Doc B
         let edge2 = Edge::new(node2, node3, "rel_b").with_source_doc_id(doc_b);
 
-        GraphIndex::add_edge(graph.as_ref(), tx1, edge1).await.unwrap();
-        GraphIndex::add_edge(graph.as_ref(), tx1, edge2).await.unwrap();
+        GraphIndex::add_edge(graph.as_ref(), tx1, edge1)
+            .await
+            .unwrap();
+        GraphIndex::add_edge(graph.as_ref(), tx1, edge2)
+            .await
+            .unwrap();
         GraphIndex::commit(graph.as_ref(), tx1).await.unwrap();
 
         assert_eq!(graph.neighbors(node1).await.unwrap().len(), 1);
@@ -113,11 +135,25 @@ mod tests {
         let node1 = EntityId::new(100);
         let node2 = EntityId::new(200);
 
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node1, "n1", "Node")).await.unwrap();
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node2, "n2", "Node")).await.unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node1, "n1", "Node"),
+        )
+        .await
+        .unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node2, "n2", "Node"),
+        )
+        .await
+        .unwrap();
 
         let edge = Edge::new(node1, node2, "rel").with_source_doc_id(doc_a);
-        GraphIndex::add_edge(graph.as_ref(), tx1, edge).await.unwrap();
+        GraphIndex::add_edge(graph.as_ref(), tx1, edge)
+            .await
+            .unwrap();
         GraphIndex::commit(graph.as_ref(), tx1).await.unwrap();
 
         // First call
@@ -143,11 +179,25 @@ mod tests {
         let node1 = EntityId::new(10);
         let node2 = EntityId::new(20);
 
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node1, "n1", "Node")).await.unwrap();
-        GraphIndex::add_entity(graph.as_ref(), tx1, memfuse_core::Entity::new(node2, "n2", "Node")).await.unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node1, "n1", "Node"),
+        )
+        .await
+        .unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node2, "n2", "Node"),
+        )
+        .await
+        .unwrap();
 
         let edge = Edge::new(node1, node2, "derived").with_source_doc_id(doc_a);
-        GraphIndex::add_edge(graph.as_ref(), tx1, edge).await.unwrap();
+        GraphIndex::add_edge(graph.as_ref(), tx1, edge)
+            .await
+            .unwrap();
         GraphIndex::commit(graph.as_ref(), tx1).await.unwrap();
 
         let engine = PathRAGEngine::new(graph.as_ref(), 3, 0.5);

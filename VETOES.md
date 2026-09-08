@@ -1,6 +1,7 @@
 # MemFuse — Feature-Veto-Register
 > Maschinenlesbar. Wird von `.jules/`-Bootstrap-Sequenz eingelesen und von
 > `xtask check-vetoes` gegen neue Commits geprüft (siehe Aufgabe 2).
+> Fristen in `conditional_review_due` werden aktiv im CI überwacht (Warnung 7 Tage vor Ablauf, harter Fehler bei Fristüberschreitung).
 > Änderung nur via ADR unter `docs/decisions/` mit explizitem Bezug auf den Veto-Eintrag.
 
 ## Format

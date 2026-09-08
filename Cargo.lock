@@ -3272,6 +3272,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "candle-transformers",
+ "memfuse-calibration",
  "memfuse-core",
  "serde",
  "sha2",
@@ -3430,6 +3431,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "memfuse-core",
+ "memfuse-crypto",
  "parking_lot",
  "tokio",
  "tracing",

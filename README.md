@@ -18,14 +18,14 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
 - **Contextual Retrieval** — Automatisches Anreichern zerschnittener Chunks durch ein
-  LLM-generiertes Kontext-Präfix (Anthropic Pattern) [FREMDREFERENZ: Anthropic 2024 — nicht an MemFuse validiert]
+  LLM-generiertes Kontext-Präfix (MemFuse Contextual Chunk Prefixing) [Referenzwert aus Fachliteratur zu Contextual-Retrieval-Verfahren — nicht am MemFuse-Korpus validiert]
 - **Cross-Encoder Reranking** — Post-RRF Neuordnung via lokalem ONNX Cross-Encoder
-  (optionales Feature) [FREMDREFERENZ: Anthropic 2024 — nicht an MemFuse validiert]
+  (optionales Feature) [Referenzwert aus Fachliteratur — nicht am MemFuse-Korpus validiert]
 - **Multi-Step Query Engine** — Iteratives Query-Rewriting für komplexe
-  Agenten-Abfragen (OpenAI o-series Pattern, bis zu 3 Runden)
+  Agenten-Abfragen (MemFuse Iterative Multi-Step Retrieval, bis zu 3 Runden)
 - **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
-  (Anthropic Containment Pattern)
-- **Session DAG** — Grok-Pattern: Konversationsverzweigung als persistierter,
+  (MemFuse Volatile-Output Isolation)
+- **Session DAG** — MemFuse Session-DAG Pattern: Konversationsverzweigung als persistierter,
   azyklischer Graph mit vollständiger Tauri-UI-Anbindung (Erstellen von Branches ab
   jeder Nachricht, Umschalten des aktiven Branches & Historien-Navigation)
 - **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
@@ -169,12 +169,12 @@ MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- -
 - [x] BM25-Volltextsuche mit deutscher Morphologie
 - [x] CSR-Wissensgraph mit LSM-Persistenz
 - [x] 4-Signal-Fusion (Vektor + BM25 + Wissensgraph + Metadaten)
-- [x] Contextual Retrieval (Anthropic Pattern)
+- [x] Contextual Retrieval (MemFuse Contextual Chunk Prefixing)
 - [x] Cross-Encoder Reranking (ONNX, optional)
-- [x] Multi-Step Query Engine (OpenAI o-series Pattern)
-- [x] Context Compaction (Grok Pattern)
-- [x] Session DAG Branching (Grok Pattern)
-- [x] MCP Sandbox Isolation (Anthropic Containment)
+- [x] Multi-Step Query Engine (MemFuse Iterative Multi-Step Retrieval)
+- [x] Context Compaction (MemFuse Context-Window Compaction)
+- [x] Session DAG Branching (MemFuse Session-DAG Pattern)
+- [x] MCP Sandbox Isolation (MemFuse Volatile-Output Isolation)
 - [x] Desktop-App (memfuse-tauri), MCP-Server, Python-Bindings
 
 ### 🔄 Phase 2: Cognitive Memory (Teilweise implementiert, Q4 2026)
@@ -217,7 +217,7 @@ MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LL
 | Session DAG | ✅ | ❌ | ❌ | ❌ |
 | Kein Docker | ✅ | ❌ | ❌ | ❌ |
 
-*\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Zitierte Fehlerreduktions-Prozentangaben entstammen der Fachliteratur [FREMDREFERENZ: Anthropic 2024 — nicht an MemFuse validiert]. MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes Benchmark-Harness auf einem 9-Dokumenten Synthetik-Korpus bereit (Details in [`benchmarks/README.md`](benchmarks/README.md)).*
+*\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Zitierte Fehlerreduktions-Prozentangaben entstammen der Fachliteratur [Referenzwert aus Fachliteratur zu Contextual-Retrieval-Verfahren — nicht am MemFuse-Korpus validiert]. MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes Benchmark-Harness auf einem 9-Dokumenten Synthetik-Korpus bereit (Details in [`benchmarks/README.md`](benchmarks/README.md)).*
 
 ## Lizenz
 

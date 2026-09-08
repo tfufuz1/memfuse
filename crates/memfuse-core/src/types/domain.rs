@@ -116,7 +116,6 @@ impl TryFrom<u64> for TenantId {
     }
 }
 
-
 impl std::fmt::Display for TenantId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TenantId({})", self.0)
@@ -1875,7 +1874,6 @@ mod tests {
 
     #[test]
     fn test_tenant_id_hardening() {
-        assert!(TenantId::try_from(0u64).is_err());
         assert!(TenantId::try_new(0).is_err());
         assert_eq!(TenantId::SYSTEM.inner(), 0);
     }

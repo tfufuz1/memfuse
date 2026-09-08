@@ -2,8 +2,8 @@ use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::BoxFuture;
 use memfuse_core::DocId;
 use memfuse_db::{
-    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, CommunityStabilityTracker,
-    MemFuse, MemFuseConfig, NremConfig, RemConfig,
+    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, CommunityStabilityTracker, MemFuse,
+    MemFuseConfig, NremConfig, RemConfig,
 };
 use std::time::Duration;
 use tempfile::tempdir;
@@ -109,11 +109,13 @@ async fn test_nrem_reaper_periodic_execution_and_cancellation() {
 struct TestLlmGenerator;
 
 impl LlmTextGenerator for TestLlmGenerator {
-    fn generate<'a>(
-        &'a self,
-        prompt: &'a str,
-    ) -> BoxFuture<'a, memfuse_core::Result<String>> {
-        Box::pin(async move { Ok(format!("Synthesized summary from prompt of length {}", prompt.len())) })
+    fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, memfuse_core::Result<String>> {
+        Box::pin(async move {
+            Ok(format!(
+                "Synthesized summary from prompt of length {}",
+                prompt.len()
+            ))
+        })
     }
 }
 
@@ -148,7 +150,11 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
     // Connect nodes into a graph cluster
     for i in 1..5 {
         collection
-            .relate(&format!("turn_{}", i), &format!("turn_{}", i + 1), "connected")
+            .relate(
+                &format!("turn_{}", i),
+                &format!("turn_{}", i + 1),
+                "connected",
+            )
             .await
             .unwrap();
     }
@@ -218,5 +224,8 @@ async fn test_execute_sleep_cycle_with_rem_phase() {
     assert!(kv_val.is_some());
     let doc_meta = kv_val.unwrap();
     assert_eq!(doc_meta["rem_synthesized"], true);
-    assert_eq!(doc_meta["source_community_hash"], meta_chunk.source_community_hash);
+    assert_eq!(
+        doc_meta["source_community_hash"],
+        meta_chunk.source_community_hash
+    );
 }

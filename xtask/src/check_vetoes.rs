@@ -1,5 +1,19 @@
+// MemFuse — Feature-Veto-Register & CI Gate
+//
+// Modul zur Überprüfung von `VETOES.md` im CI-Workflow.
+//
+// Prüflogik:
+// 1. Permanent Rejected: Durchsucht die letzten 50 Git-Commits nach Schlüsselwörtern abgelehnter Features.
+// 2. Conditionally Accepted: Überwacht `conditional_review_due` Fristen.
+//    - Frist in der Vergangenheit (< 0 Tage): Harter CI-Fehler (Exit-Code != 0) mit Referenz auf `adr_ref`.
+//    - Frist innerhalb von CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS (7 Tage): Warnung zur rechtzeitigen Review.
+//    - Frist weit in der Zukunft (> 7 Tage): Kein Hinweis.
+
+use chrono::NaiveDate;
 use std::fs;
 use std::process::Command;
+
+pub const CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS: i64 = 7;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VetoEntry {
@@ -7,6 +21,7 @@ pub struct VetoEntry {
     pub status: String,
     pub keywords: Vec<String>,
     pub reason: Option<String>,
+    pub adr_ref: Option<String>,
     pub conditional_review_due: Option<String>,
 }
 
@@ -34,6 +49,7 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
         let mut feature_id = String::new();
         let mut status = String::new();
         let mut keywords = Vec::new();
+        let mut adr_ref = None;
         let mut conditional_review_due = None;
         let mut reason_lines = Vec::new();
         let mut parsing_reason = false;
@@ -55,6 +71,12 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
                 if !due.is_empty() {
                     conditional_review_due = Some(due);
                 }
+            } else if trimmed.starts_with("adr_ref:") {
+                parsing_reason = false;
+                let ar = trimmed.trim_start_matches("adr_ref:").trim().to_string();
+                if !ar.is_empty() && ar != "null" {
+                    adr_ref = Some(ar);
+                }
             } else if trimmed.starts_with("keywords:") {
                 parsing_reason = false;
                 let kw_str = trimmed.trim_start_matches("keywords:").trim();
@@ -74,7 +96,6 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
                     reason_lines.push(rest.to_string());
                 }
             } else if trimmed.starts_with("scope_note:")
-                || trimmed.starts_with("adr_ref:")
                 || trimmed.starts_with("last_verified:")
             {
                 parsing_reason = false;
@@ -95,6 +116,7 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
                 status,
                 keywords,
                 reason,
+                adr_ref,
                 conditional_review_due,
             });
         }
@@ -103,29 +125,57 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
     Ok(entries)
 }
 
-pub fn check_conditional_review_deadlines_at(entries: &[VetoEntry], today: &str) -> Vec<String> {
-    let mut warnings = Vec::new();
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct DeadlineCheckResult {
+    pub warnings: Vec<String>,
+    pub errors: Vec<String>,
+}
+
+pub fn check_conditional_review_deadlines_at(
+    entries: &[VetoEntry],
+    today_str: &str,
+) -> DeadlineCheckResult {
+    let mut result = DeadlineCheckResult::default();
+    let today = match NaiveDate::parse_from_str(today_str, "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => return result,
+    };
+
     for entry in entries {
         if entry.status == "conditionally_accepted" {
-            if let Some(due) = &entry.conditional_review_due {
-                if today >= due.as_str() {
-                    warnings.push(format!(
-                        "⚠️  VETO {} ('{}'): Review-Frist {} erreicht/überschritten seit {} — \
-                         bewusste Neubewertung erforderlich (endgültig freigeben, \
-                         verlängern mit neuem Datum, oder auf permanent_rejected setzen).",
-                        entry.feature_id,
-                        entry.reason_summary(),
-                        due,
-                        today
-                    ));
+            if let Some(due_str) = &entry.conditional_review_due {
+                if let Ok(due_date) = NaiveDate::parse_from_str(due_str, "%Y-%m-%d") {
+                    let days_until_due = (due_date - today).num_days();
+                    let adr = entry.adr_ref.as_deref().unwrap_or("keine ADR angegeben");
+
+                    if days_until_due < 0 {
+                        result.errors.push(format!(
+                            "❌ HARTER CI-FEHLER: VETO {} ('{}'): Review-Frist {} ist am {} verstrichen. Erforderliche Anschluss-Entscheidung siehe adr_ref: {}",
+                            entry.feature_id,
+                            entry.reason_summary(),
+                            due_str,
+                            today_str,
+                            adr
+                        ));
+                    } else if days_until_due <= CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS {
+                        result.warnings.push(format!(
+                            "⚠️ WARNUNG: VETO {} ('{}'): Review-Frist {} laeuft in {} Tag(en) ab — rechtzeitige Review erforderlich (adr_ref: {}).",
+                            entry.feature_id,
+                            entry.reason_summary(),
+                            due_str,
+                            days_until_due,
+                            adr
+                        ));
+                    }
                 }
             }
         }
     }
-    warnings
+
+    result
 }
 
-pub fn check_conditional_review_deadlines(entries: &[VetoEntry]) -> Vec<String> {
+pub fn check_conditional_review_deadlines(entries: &[VetoEntry]) -> DeadlineCheckResult {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     check_conditional_review_deadlines_at(entries, &today)
 }
@@ -159,17 +209,27 @@ pub fn check_vetoes() -> Result<(), String> {
         }
     }
 
-    let deadline_warnings = check_conditional_review_deadlines(&entries);
-    warnings.extend(deadline_warnings);
+    let deadline_res = check_conditional_review_deadlines(&entries);
+    warnings.extend(deadline_res.warnings);
 
     if !warnings.is_empty() {
         for w in &warnings {
             eprintln!("{w}");
         }
-        // Kein Err() -- bewusst nur Warnung, kein Hard-Fail (False-Positive-Risiko)
-    } else {
+    } else if deadline_res.errors.is_empty() {
         println!("✅ Keine Veto-Keyword-Treffer in den letzten 50 Commits.");
     }
+
+    if !deadline_res.errors.is_empty() {
+        for err in &deadline_res.errors {
+            eprintln!("{err}");
+        }
+        return Err(format!(
+            "Veto conditional review check failed with {} error(s)",
+            deadline_res.errors.len()
+        ));
+    }
+
     Ok(())
 }
 
@@ -232,53 +292,126 @@ reason: >
     }
 
     #[test]
-    fn test_conditional_review_deadline_warning_when_overdue() {
+    fn test_conditional_review_deadline_expired_hard_error() {
         let entries = vec![VetoEntry {
             feature_id: "F-02".to_string(),
             status: "conditionally_accepted".to_string(),
             keywords: vec![],
             reason: Some("Test reason".to_string()),
+            adr_ref: Some("docs/decisions/ADR-0XX-test.md".to_string()),
             conditional_review_due: Some("2026-10-07".to_string()),
         }];
 
-        let warnings = check_conditional_review_deadlines_at(&entries, "2026-10-08");
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("F-02"));
-        assert!(warnings[0].contains("2026-10-07"));
-        assert!(warnings[0].contains("2026-10-08"));
+        let res = check_conditional_review_deadlines_at(&entries, "2026-10-08");
+        assert!(res.warnings.is_empty());
+        assert_eq!(res.errors.len(), 1);
+        assert!(res.errors[0].contains("F-02"));
+        assert!(res.errors[0].contains("2026-10-07"));
+        assert!(res.errors[0].contains("ADR-0XX-test.md"));
     }
 
     #[test]
-    fn test_no_warning_when_deadline_not_yet_reached() {
+    fn test_conditional_review_deadline_warning_within_threshold() {
         let entries = vec![VetoEntry {
             feature_id: "F-02".to_string(),
             status: "conditionally_accepted".to_string(),
             keywords: vec![],
             reason: Some("Test reason".to_string()),
+            adr_ref: Some("docs/decisions/ADR-0XX-test.md".to_string()),
             conditional_review_due: Some("2026-10-07".to_string()),
         }];
 
-        let warnings = check_conditional_review_deadlines_at(&entries, "2026-09-15");
-        assert!(warnings.is_empty());
+        // 5 days before due date (within 7-day threshold)
+        let res = check_conditional_review_deadlines_at(&entries, "2026-10-02");
+        assert_eq!(res.warnings.len(), 1);
+        assert!(res.errors.is_empty());
+        assert!(res.warnings[0].contains("F-02"));
+        assert!(res.warnings[0].contains("2026-10-07"));
+        assert!(res.warnings[0].contains("5 Tag(en)"));
     }
 
     #[test]
-    fn test_no_warning_for_permanent_rejected_entries() {
+    fn test_conditional_review_deadline_far_future_no_warning_no_error() {
+        let entries = vec![VetoEntry {
+            feature_id: "F-02".to_string(),
+            status: "conditionally_accepted".to_string(),
+            keywords: vec![],
+            reason: Some("Test reason".to_string()),
+            adr_ref: Some("docs/decisions/ADR-0XX-test.md".to_string()),
+            conditional_review_due: Some("2026-10-07".to_string()),
+        }];
+
+        // 22 days before due date (> 7 days)
+        let res = check_conditional_review_deadlines_at(&entries, "2026-09-15");
+        assert!(res.warnings.is_empty());
+        assert!(res.errors.is_empty());
+    }
+
+    #[test]
+    fn test_no_warning_or_error_for_permanent_rejected_entries() {
         let entries = vec![VetoEntry {
             feature_id: "F-10".to_string(),
             status: "permanent_rejected".to_string(),
             keywords: vec![],
             reason: Some("Permanent rejected reason".to_string()),
+            adr_ref: None,
             conditional_review_due: Some("2026-09-01".to_string()),
         }];
 
-        let warnings = check_conditional_review_deadlines_at(&entries, "2026-10-08");
-        assert!(warnings.is_empty());
+        let res = check_conditional_review_deadlines_at(&entries, "2026-10-08");
+        assert!(res.warnings.is_empty());
+        assert!(res.errors.is_empty());
     }
 
     #[test]
-    fn test_check_vetoes_exit_code_zero_despite_overdue_warning() {
-        // Calling check_vetoes() against VETOES.md should return Ok(()) regardless of warnings.
+    fn test_synthetic_vetoes_fixture_all_three_codepaths() {
+        let fixture = r#"
+## VETO-F01
+feature_id: F-01
+status: conditionally_accepted
+conditional_review_due: 2026-08-01
+adr_ref: docs/decisions/ADR-001.md
+reason: >
+  Expired entry
+
+## VETO-F02
+feature_id: F-02
+status: conditionally_accepted
+conditional_review_due: 2026-08-30
+adr_ref: docs/decisions/ADR-002.md
+reason: >
+  Warning window entry
+
+## VETO-F03
+feature_id: F-03
+status: conditionally_accepted
+conditional_review_due: 2026-10-15
+adr_ref: docs/decisions/ADR-003.md
+reason: >
+  Far future entry
+"#;
+        let entries = parse_vetoes(fixture).unwrap();
+        assert_eq!(entries.len(), 3);
+
+        // Assume build date is 2026-08-25:
+        // F-01 (due 2026-08-01): 24 days overdue -> HARTER FEHLER
+        // F-02 (due 2026-08-30): 5 days left -> WARNUNG
+        // F-03 (due 2026-10-15): 51 days left -> KEIN HINWEIS
+        let res = check_conditional_review_deadlines_at(&entries, "2026-08-25");
+
+        assert_eq!(res.errors.len(), 1);
+        assert!(res.errors[0].contains("F-01"));
+        assert!(res.errors[0].contains("2026-08-01"));
+        assert!(res.errors[0].contains("docs/decisions/ADR-001.md"));
+
+        assert_eq!(res.warnings.len(), 1);
+        assert!(res.warnings[0].contains("F-02"));
+        assert!(res.warnings[0].contains("2026-08-30"));
+        assert!(res.warnings[0].contains("5 Tag(en)"));
+    }
+
+    #[test]
+    fn test_check_vetoes_against_current_repo_state() {
         let result = check_vetoes();
         assert!(result.is_ok());
     }

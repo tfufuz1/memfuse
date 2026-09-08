@@ -15,7 +15,7 @@
 //                       aufrufen — nur eines zu tun bricht Graph-Traversal (crates/memfuse-db/AGENTS.md).
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
-use crate::immune::{EdgeAssertion, ImmunMemory};
+use crate::consistency_enforcement::{ConsistencyEnforcer, EdgeAssertion};
 use memfuse_core::{
     BoxFuture, DocId, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
     StorageEngine, TxId,
@@ -49,10 +49,10 @@ pub struct Edge {
     pub target: EntityId,
     pub weight: f32,
     pub edge_type: EdgeType,
-    #[cfg(feature = "physio-synaptic-edges")]
-    pub hebbian_weight: f32, // w_ij, initialisiert mit 0.0
-    #[cfg(feature = "physio-synaptic-edges")]
-    pub pheromone: f32, // τ_ij, initialisiert mit 0.0
+    #[cfg(feature = "edge-reinforcement-learning")]
+    pub cooccurrence_weight: f32, // w_ij, initialisiert mit 0.0
+    #[cfg(feature = "edge-reinforcement-learning")]
+    pub traversal_weight: f32, // τ_ij, initialisiert mit 0.0
 }
 
 impl Edge {
@@ -61,10 +61,10 @@ impl Edge {
             target,
             weight,
             edge_type: EdgeType::Default,
-            #[cfg(feature = "physio-synaptic-edges")]
-            hebbian_weight: 0.0,
-            #[cfg(feature = "physio-synaptic-edges")]
-            pheromone: 0.0,
+            #[cfg(feature = "edge-reinforcement-learning")]
+            cooccurrence_weight: 0.0,
+            #[cfg(feature = "edge-reinforcement-learning")]
+            traversal_weight: 0.0,
         }
     }
 }
@@ -427,9 +427,9 @@ pub struct CsrGraph {
     /// Optionaler Persistenz-Handle. None = reiner In-Memory-Modus (z.B. Tests).
     storage: Option<Arc<dyn StorageEngine>>,
     last_tx_id: AtomicU64,
-    /// Optionales Antikörper-Register für Widerspruchsprävention (F-04/ADR-073).
+    /// Optionales Register für Widerspruchsprävention/Consistency-Enforcement (F-04/ADR-073).
     /// None = disabled (default, P1-safe).
-    immune_memory: Option<RwLock<ImmunMemory>>,
+    consistency_enforcer: Option<RwLock<ConsistencyEnforcer>>,
     /// Rückverfolgung DocId -> betroffene Kanten, für Cascading-Invalidation (INV-GRAPH-PROV-1).
     pub doc_edge_index: crate::provenance::DocEdgeIndex,
 }
@@ -447,7 +447,7 @@ impl CsrGraph {
             inner: RwLock::new(GraphInner::new()),
             storage: None,
             last_tx_id: AtomicU64::new(0),
-            immune_memory: None,
+            consistency_enforcer: None,
             doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
     }
@@ -467,25 +467,25 @@ impl CsrGraph {
             inner: RwLock::new(GraphInner::new()),
             storage: Some(storage),
             last_tx_id: AtomicU64::new(0),
-            immune_memory: None,
+            consistency_enforcer: None,
             doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
     }
 
-    /// Erstellt CsrGraph mit aktiviertem Antikörper-Register für Widerspruchsprävention (F-04/ADR-073).
-    pub fn with_immune_memory(suppression_threshold: u32) -> Self {
+    /// Erstellt CsrGraph mit aktiviertem ConsistencyEnforcer für Widerspruchsprävention (F-04/ADR-073).
+    pub fn with_consistency_enforcer(suppression_threshold: u32) -> Self {
         Self {
             config: CsrGraphConfig::default(),
             inner: RwLock::new(GraphInner::new()),
             storage: None,
             last_tx_id: AtomicU64::new(0),
-            immune_memory: Some(RwLock::new(ImmunMemory::new(suppression_threshold))),
+            consistency_enforcer: Some(RwLock::new(ConsistencyEnforcer::new(suppression_threshold))),
             doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
     }
 
     /// Tombstoniert eine Kante direkt für eine Transaktions-ID via Cascading-Invalidation (INV-GRAPH-PROV-1).
-    pub async fn tombstone_edge(&self, edge_id: crate::immune::EdgeId, tx: TxId) -> Result<()> {
+    pub async fn tombstone_edge(&self, edge_id: crate::consistency_enforcement::EdgeId, tx: TxId) -> Result<()> {
         let (from, to) = edge_id;
         GraphIndex::remove_edge(self, tx, from, to).await?;
         GraphIndex::commit(self, tx).await?;
@@ -624,28 +624,28 @@ impl CsrGraph {
             )));
         }
 
-        // Immune-Check wenn aktiviert
-        if let Some(ref immune_lock) = self.immune_memory {
+        // Consistency-Check wenn aktiviert
+        if let Some(ref enforcer_lock) = self.consistency_enforcer {
             if let (Some(pred_hash), Some(obj)) = (predicate_hash, object_repr.as_ref()) {
                 let assertion = EdgeAssertion {
                     subject: from.inner(),
                     predicate_hash: pred_hash,
                     object_repr: obj.clone(),
                 };
-                let mut immune = immune_lock.write();
-                if let Some(antibody) = immune.check_before_insert(&assertion) {
-                    if antibody.suppressed {
+                let mut enforcer = enforcer_lock.write();
+                if let Some(pattern) = enforcer.check_before_insert(&assertion) {
+                    if pattern.suppressed {
                         // Widerspruch unterdrückt — Einfügen blockiert
                         tracing::warn!(
-                            suppression_count = antibody.contradiction_count,
-                            "ImmunMemory: edge insertion suppressed by antibody"
+                            suppression_count = pattern.contradiction_count,
+                            "ConsistencyEnforcer: edge insertion suppressed by conflict pattern"
                         );
                         return Err(MemFuseError::PolicyViolation(
-                            "Contradictory edge suppressed by immune memory".to_string(),
+                            "Contradictory edge suppressed by consistency enforcer".to_string(),
                         ));
                     }
                     // Widerspruch erkannt aber noch nicht suppressed — loggen, trotzdem einfügen
-                    tracing::warn!("ImmunMemory: contradictory edge detected (not yet suppressed)");
+                    tracing::warn!("ConsistencyEnforcer: contradictory edge detected (not yet suppressed)");
                 }
             }
         }
@@ -784,7 +784,11 @@ impl CsrGraph {
         let from_idx = inner.get_or_create_index(from);
         let to_idx = inner.get_or_create_index(to);
         if let Some(doc_id) = source_doc_id {
-            inner.doc_to_edges.entry(doc_id).or_default().insert((from, to));
+            inner
+                .doc_to_edges
+                .entry(doc_id)
+                .or_default()
+                .insert((from, to));
         }
         inner
             .pending_edges
@@ -874,67 +878,73 @@ impl CsrGraph {
         let edge_entries = storage.scan_prefix(GRAPH_EDGE_PREFIX).await?;
         let mut edge_count = 0usize;
         for (raw_key, raw_value) in edge_entries {
-            let (weight, tx_valid_from, tx_valid_to, business_valid_from, business_valid_to, source_doc_id) =
-                if let Ok(p) = bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+            let (
+                weight,
+                tx_valid_from,
+                tx_valid_to,
+                business_valid_from,
+                business_valid_to,
+                source_doc_id,
+            ) = if let Ok(p) = bincode::deserialize::<PersistedEdgePayload>(&raw_value) {
+                (
+                    p.weight,
+                    p.tx_valid_from,
+                    p.tx_valid_to,
+                    p.business_valid_from,
+                    p.business_valid_to,
+                    p.source_doc_id,
+                )
+            } else {
+                // Backward compatibility fallback for legacy 5-field PersistedEdgePayload
+                #[derive(Deserialize)]
+                struct LegacyPersistedEdgePayloadV2 {
+                    weight: f32,
+                    valid_from: Option<TxId>,
+                    valid_to: Option<TxId>,
+                    business_valid_from: Option<i64>,
+                    business_valid_to: Option<i64>,
+                }
+
+                if let Ok(legacy2) =
+                    bincode::deserialize::<LegacyPersistedEdgePayloadV2>(&raw_value)
+                {
                     (
-                        p.weight,
-                        p.tx_valid_from,
-                        p.tx_valid_to,
-                        p.business_valid_from,
-                        p.business_valid_to,
-                        p.source_doc_id,
+                        legacy2.weight,
+                        legacy2.valid_from,
+                        legacy2.valid_to,
+                        legacy2.business_valid_from,
+                        legacy2.business_valid_to,
+                        None,
                     )
                 } else {
-                    // Backward compatibility fallback for legacy 5-field PersistedEdgePayload
+                    // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
                     #[derive(Deserialize)]
-                    struct LegacyPersistedEdgePayloadV2 {
+                    struct LegacyPersistedEdgePayloadV1 {
                         weight: f32,
                         valid_from: Option<TxId>,
                         valid_to: Option<TxId>,
-                        business_valid_from: Option<i64>,
-                        business_valid_to: Option<i64>,
                     }
 
-                    if let Ok(legacy2) =
-                        bincode::deserialize::<LegacyPersistedEdgePayloadV2>(&raw_value)
+                    if let Ok(legacy) =
+                        bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
                     {
                         (
-                            legacy2.weight,
-                            legacy2.valid_from,
-                            legacy2.valid_to,
-                            legacy2.business_valid_from,
-                            legacy2.business_valid_to,
+                            legacy.weight,
+                            legacy.valid_from,
+                            legacy.valid_to,
+                            None,
+                            None,
                             None,
                         )
                     } else {
-                        // Backward compatibility fallback for legacy 3-field PersistedEdgePayload
-                        #[derive(Deserialize)]
-                        struct LegacyPersistedEdgePayloadV1 {
-                            weight: f32,
-                            valid_from: Option<TxId>,
-                            valid_to: Option<TxId>,
-                        }
-
-                        if let Ok(legacy) =
-                            bincode::deserialize::<LegacyPersistedEdgePayloadV1>(&raw_value)
-                        {
-                            (
-                                legacy.weight,
-                                legacy.valid_from,
-                                legacy.valid_to,
-                                None,
-                                None,
-                                None,
-                            )
-                        } else {
-                            // Backward compatibility fallback for legacy raw f32 weight values
-                            let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
-                                MemFuseError::Internal(format!("graph edge deserialize: {e}"))
-                            })?;
-                            (w, None, None, None, None, None)
-                        }
+                        // Backward compatibility fallback for legacy raw f32 weight values
+                        let w: f32 = bincode::deserialize(&raw_value).map_err(|e| {
+                            MemFuseError::Internal(format!("graph edge deserialize: {e}"))
+                        })?;
+                        (w, None, None, None, None, None)
                     }
-                };
+                }
+            };
 
             // Key-Format: "__graph:edge:{from_id}:{to_id}"
             let key_payload = raw_key
@@ -1348,26 +1358,26 @@ impl GraphIndex for CsrGraph {
                 )));
             }
 
-            // Immune-Check wenn aktiviert
-            if let Some(ref immune_lock) = self.immune_memory {
+            // Consistency-Check wenn aktiviert
+            if let Some(ref enforcer_lock) = self.consistency_enforcer {
                 let pred_hash = *blake3::hash(edge.label.as_bytes()).as_bytes();
                 let assertion = EdgeAssertion {
                     subject: edge.from.inner(),
                     predicate_hash: pred_hash,
                     object_repr: edge.to.as_bytes(),
                 };
-                let mut immune = immune_lock.write();
-                if let Some(antibody) = immune.check_before_insert(&assertion) {
-                    if antibody.suppressed {
+                let mut enforcer = enforcer_lock.write();
+                if let Some(pattern) = enforcer.check_before_insert(&assertion) {
+                    if pattern.suppressed {
                         tracing::warn!(
-                            suppression_count = antibody.contradiction_count,
-                            "ImmunMemory: edge insertion suppressed by antibody"
+                            suppression_count = pattern.contradiction_count,
+                            "ConsistencyEnforcer: edge insertion suppressed by conflict pattern"
                         );
                         return Err(MemFuseError::PolicyViolation(
-                            "Contradictory edge suppressed by immune memory".to_string(),
+                            "Contradictory edge suppressed by consistency enforcer".to_string(),
                         ));
                     }
-                    tracing::warn!("ImmunMemory: contradictory edge detected (not yet suppressed)");
+                    tracing::warn!("ConsistencyEnforcer: contradictory edge detected (not yet suppressed)");
                 }
             }
 
@@ -1838,7 +1848,11 @@ impl GraphIndex for CsrGraph {
                     for edge in edges {
                         let to_idx = inner.get_or_create_index(edge.target);
                         if let Some(doc_id) = edge.source_doc_id {
-                            inner.doc_to_edges.entry(doc_id).or_default().insert((from_id, edge.target));
+                            inner
+                                .doc_to_edges
+                                .entry(doc_id)
+                                .or_default()
+                                .insert((from_id, edge.target));
                         }
                         converted_edges.push(EdgePayload {
                             target: to_idx,
@@ -4100,8 +4114,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_immune_memory_contradiction_suppression() {
-        let graph = Arc::new(CsrGraph::with_immune_memory(3));
+    async fn test_consistency_enforcer_contradiction_suppression() {
+        let graph = Arc::new(CsrGraph::with_consistency_enforcer(3));
         let from = EntityId::new(10);
         let to = EntityId::new(20);
         let pred_hash = [7u8; 32];
@@ -4158,25 +4172,25 @@ mod tests {
             .await;
         assert!(
             res3.is_err(),
-            "Third insertion should fail due to immune memory contradiction suppression"
+            "Third insertion should fail due to consistency enforcer contradiction suppression"
         );
         let err = res3.unwrap_err();
         assert!(
-            matches!(err, MemFuseError::PolicyViolation(ref msg) if msg.contains("Contradictory edge suppressed by immune memory")),
+            matches!(err, MemFuseError::PolicyViolation(ref msg) if msg.contains("Contradictory edge suppressed by consistency enforcer")),
             "Expected policy violation error, got: {:?}",
             err
         );
     }
 
     #[tokio::test]
-    async fn test_default_csr_graph_no_immune_check() {
+    async fn test_default_csr_graph_no_consistency_check() {
         let graph = Arc::new(CsrGraph::new());
         let from = EntityId::new(100);
         let to = EntityId::new(200);
         let pred_hash = [9u8; 32];
         let object_repr = b"SomeValue".to_vec();
 
-        // Standard CsrGraph::new() has immune_memory = None, so insertion never blocks
+        // Standard CsrGraph::new() has consistency_enforcer = None, so insertion never blocks
         for i in 1..=5 {
             let res = graph
                 .add_edge(
@@ -4194,7 +4208,7 @@ mod tests {
                 .await;
             assert!(
                 res.is_ok(),
-                "Insertion {i} on default CsrGraph without immune memory should always succeed"
+                "Insertion {i} on default CsrGraph without consistency enforcer should always succeed"
             );
         }
     }

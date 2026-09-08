@@ -24,7 +24,9 @@ pub const MAX_ORPHANS_PER_TICK: usize = 100;
 pub const MAX_EXPIRED_PER_TICK: usize = 100;
 
 /// Starts a background task for periodic NREM consolidation.
-#[deprecated(note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt.")]
+#[deprecated(
+    note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt."
+)]
 pub fn start_nrem_reaper<S: StorageEngine>(
     collection: Arc<Collection<S>>,
     nrem_config: NremConfig,
@@ -157,7 +159,9 @@ pub fn start_expiry_reaper<S: StorageEngine>(
 /// Starts a background task for thermostat-driven importance-score eviction.
 /// Nur aktiv wenn `physio-features` Feature-Flag gesetzt.
 #[cfg(feature = "physio-features")]
-#[deprecated(note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt.")]
+#[deprecated(
+    note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt."
+)]
 pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
     collection: Arc<Collection<S, V>>,
     thermostat_config: ThermostatConfig,
