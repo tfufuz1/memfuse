@@ -6,6 +6,20 @@
       "timestamp": "2026-09-08T21:50:44.781466215+00:00",
       "session_id": "6558016856048513528",
       "active": true
+    },
+    {
+      "krate": "memfuse-candle",
+      "issue": "CANDLE-EMBEDDING-PROVIDER",
+      "timestamp": "2026-09-08T23:18:26.140062951+00:00",
+      "session_id": "11474266591536647553",
+      "active": true
+    },
+    {
+      "krate": "memfuse-embed",
+      "issue": "CANDLE-EMBEDDING-PROVIDER",
+      "timestamp": "2026-09-08T23:18:26.464686110+00:00",
+      "session_id": "11474266591536647553",
+      "active": true
     }
   ]
 }
