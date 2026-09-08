@@ -1197,6 +1197,25 @@ fn parse_question_type(qtype_str: &str, qid: &str) -> LongMemEvalQuestionType {
     }
 }
 
+fn json_val_to_string(val: Option<serde_json::Value>) -> Option<String> {
+    match val? {
+        serde_json::Value::String(s) => Some(s),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        serde_json::Value::Array(arr) => Some(
+            arr.into_iter()
+                .filter_map(|v| match v {
+                    serde_json::Value::String(s) => Some(s),
+                    serde_json::Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+        _ => None,
+    }
+}
+
 fn parse_raw_item(item: RawLongMemEvalItem) -> Option<LongMemEvalCase> {
     let qid = item
         .question_id
@@ -1204,7 +1223,9 @@ fn parse_raw_item(item: RawLongMemEvalItem) -> Option<LongMemEvalCase> {
         .unwrap_or_else(|| "unknown_qid".to_string());
 
     let question = item.question?;
-    let expected_answer = item.answer.or(item.expected_answer).unwrap_or_default();
+    let expected_answer = json_val_to_string(item.answer)
+        .or_else(|| json_val_to_string(item.expected_answer))
+        .unwrap_or_default();
 
     let qtype_str = item.question_type.unwrap_or_default();
     let question_type = parse_question_type(&qtype_str, &qid);
@@ -1222,7 +1243,9 @@ fn parse_raw_item(item: RawLongMemEvalItem) -> Option<LongMemEvalCase> {
                 .role
                 .or(turn.speaker)
                 .unwrap_or_else(|| "user".to_string());
-            let utterance = turn.content.or(turn.text).unwrap_or_default();
+            let utterance = json_val_to_string(turn.content)
+                .or_else(|| json_val_to_string(turn.text))
+                .unwrap_or_default();
             session_history.push((role, utterance, sess_idx as u64));
         }
     }
@@ -1241,8 +1264,8 @@ fn parse_raw_item(item: RawLongMemEvalItem) -> Option<LongMemEvalCase> {
 struct RawTurn {
     role: Option<String>,
     speaker: Option<String>,
-    content: Option<String>,
-    text: Option<String>,
+    content: Option<serde_json::Value>,
+    text: Option<serde_json::Value>,
 }
 
 /// Internal JSON evaluation instance for LongMemEval.
@@ -1252,8 +1275,8 @@ struct RawLongMemEvalItem {
     id: Option<String>,
     question_type: Option<String>,
     question: Option<String>,
-    answer: Option<String>,
-    expected_answer: Option<String>,
+    answer: Option<serde_json::Value>,
+    expected_answer: Option<serde_json::Value>,
     haystack_sessions: Option<Vec<Vec<RawTurn>>>,
     sessions: Option<Vec<Vec<RawTurn>>>,
     session_history: Option<Vec<Vec<RawTurn>>>,

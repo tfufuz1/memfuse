@@ -1,13 +1,17 @@
 {
   "per_category_recall_at_5": {
-    "SingleHop": 1.0,
-    "OpenDomain": 1.0
+    "Temporal": 0.003115264797507788,
+    "MultiHop": 0.0,
+    "OpenDomain": 0.0,
+    "SingleHop": 0.007134363852556481
   },
   "per_category_mrr": {
-    "SingleHop": 1.0,
-    "OpenDomain": 1.0
+    "MultiHop": 0.0,
+    "Temporal": 0.0006230529595015577,
+    "OpenDomain": 0.0,
+    "SingleHop": 0.0038644470868014267
   },
-  "overall_recall_at_5": 1.0,
-  "overall_mrr": 1.0,
-  "total_eval_cases": 2
+  "overall_recall_at_5": 0.004545454545454545,
+  "overall_mrr": 0.0022402597402597403,
+  "total_eval_cases": 1540
 }
