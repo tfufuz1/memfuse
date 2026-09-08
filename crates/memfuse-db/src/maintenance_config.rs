@@ -40,7 +40,10 @@ pub struct MaintenanceConfig {
     #[serde(flatten)]
     pub thermostat: DecayControllerConfig,
 
-    // F-03-Felder werden in einem separaten Schritt ergänzt (siehe synaptic.rs)
+    // --- F-03 Edge Reinforcement ---
+    /// Edge-Reinforcement-Konfiguration (η, δ, W_max, ρ, Q, α).
+    #[cfg(feature = "edge-reinforcement-learning")]
+    pub edge_reinforcement: memfuse_graph::EdgeReinforcementConfig,
 
     // --- F-06 Perkolation ---
     /// Ob Perkolations-Gesundheitsprüfungen aktiviert sind. Default: true.
@@ -72,6 +75,8 @@ impl Default for MaintenanceConfig {
             tick_interval_secs: 60,
             thermostat_enabled: true,
             thermostat: DecayControllerConfig::default(),
+            #[cfg(feature = "edge-reinforcement-learning")]
+            edge_reinforcement: memfuse_graph::EdgeReinforcementConfig::default(),
             percolation_enabled: true,
             percolation: PercolationConfig::default(),
             replicator_enabled: true,

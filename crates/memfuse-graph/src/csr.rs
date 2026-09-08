@@ -272,6 +272,8 @@ pub(crate) struct GraphInner {
     pending_edge_count: usize,
     /// Flag indicating if there are uncompacted pending edges or modifications.
     is_dirty: bool,
+    #[cfg(feature = "edge-reinforcement-learning")]
+    pub(crate) edge_store: HashMap<EntityId, Vec<Edge>>,
 }
 
 impl GraphInner {
@@ -298,6 +300,8 @@ impl GraphInner {
             tombstoned_edges: HashSet::new(),
             pending_edge_count: 0,
             is_dirty: false,
+            #[cfg(feature = "edge-reinforcement-learning")]
+            edge_store: HashMap::new(),
         }
     }
 
@@ -418,6 +422,145 @@ impl GraphInner {
     }
 }
 
+#[cfg(feature = "edge-reinforcement-learning")]
+impl GraphInner {
+    pub(crate) fn find_edge_mut_by_entities(
+        &mut self,
+        from: EntityId,
+        to: EntityId,
+    ) -> Option<&mut Edge> {
+        let from_idx = *self.id_map.get(&from)?;
+        let to_idx = *self.id_map.get(&to)?;
+
+        let exists_pending = self
+            .pending_edges
+            .get(&from_idx)
+            .is_some_and(|edges| edges.iter().any(|e| e.target == to_idx));
+
+        let exists_csr = if from_idx < self.offsets.len() - 1 {
+            let start = self.offsets[from_idx];
+            let end = self.offsets[from_idx + 1];
+            self.targets[start..end].contains(&to_idx)
+        } else {
+            false
+        };
+
+        if !exists_pending && !exists_csr {
+            return None;
+        }
+
+        let vec = self.edge_store.entry(from).or_default();
+        if !vec.iter().any(|e| e.target == to) {
+            let current_weight = if let Some(pending) = self.pending_edges.get(&from_idx) {
+                pending.iter().find(|e| e.target == to_idx).map(|e| e.weight)
+            } else {
+                None
+            }
+            .unwrap_or_else(|| {
+                if from_idx < self.offsets.len() - 1 {
+                    let start = self.offsets[from_idx];
+                    let end = self.offsets[from_idx + 1];
+                    for j in start..end {
+                        if self.targets[j] == to_idx {
+                            return self.weights[j];
+                        }
+                    }
+                }
+                1.0
+            });
+
+            vec.push(Edge::new(to, current_weight));
+        }
+
+        self.edge_store
+            .get_mut(&from)?
+            .iter_mut()
+            .find(|e| e.target == to)
+    }
+
+    pub(crate) fn all_entity_ids(&self) -> Vec<EntityId> {
+        self.reverse_map.clone()
+    }
+
+    pub(crate) fn outgoing_edges_mut(&mut self, entity_id: EntityId) -> &mut [Edge] {
+        if let Some(from_idx) = self.id_map.get(&entity_id).copied() {
+            let mut target_ids = Vec::new();
+            if let Some(pending) = self.pending_edges.get(&from_idx) {
+                for p in pending {
+                    if let Some(&t_id) = self.reverse_map.get(p.target) {
+                        target_ids.push((t_id, p.weight));
+                    }
+                }
+            }
+            if from_idx < self.offsets.len() - 1 {
+                let start = self.offsets[from_idx];
+                let end = self.offsets[from_idx + 1];
+                for j in start..end {
+                    let t_idx = self.targets[j];
+                    if let Some(&t_id) = self.reverse_map.get(t_idx) {
+                        target_ids.push((t_id, self.weights[j]));
+                    }
+                }
+            }
+
+            let vec = self.edge_store.entry(entity_id).or_default();
+            for (t_id, w) in target_ids {
+                if !vec.iter().any(|e| e.target == t_id) {
+                    vec.push(Edge::new(t_id, w));
+                }
+            }
+        }
+
+        self.edge_store
+            .get_mut(&entity_id)
+            .map(|v| v.as_mut_slice())
+            .unwrap_or(&mut [])
+    }
+
+    pub(crate) fn sync_edge_reinforcement_weights(
+        &mut self,
+        config: &crate::edge_reinforcement::EdgeReinforcementConfig,
+    ) {
+        use crate::edge_reinforcement::compute_edge_weight;
+
+        for (&from_id, edges) in &self.edge_store {
+            let Some(&from_idx) = self.id_map.get(&from_id) else {
+                continue;
+            };
+
+            for edge in edges {
+                let new_weight = compute_edge_weight(
+                    edge.cooccurrence_weight,
+                    edge.traversal_weight,
+                    config.alpha,
+                );
+
+                if let Some(&to_idx) = self.id_map.get(&edge.target) {
+                    // Update in pending_edges
+                    if let Some(pending) = self.pending_edges.get_mut(&from_idx) {
+                        for p_edge in pending.iter_mut() {
+                            if p_edge.target == to_idx {
+                                p_edge.weight = new_weight;
+                            }
+                        }
+                    }
+
+                    // Update in CSR arrays
+                    if from_idx < self.offsets.len() - 1 {
+                        let start = self.offsets[from_idx];
+                        let end = self.offsets[from_idx + 1];
+                        for j in start..end {
+                            if self.targets[j] == to_idx {
+                                self.weights[j] = new_weight;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Compressed Sparse Row graph for entity-relation traversal.
 ///
 /// Implements `GraphIndex` trait as Signal 3 in the 4-Signal Fusion architecture.
@@ -494,6 +637,10 @@ impl CsrGraph {
 
     pub(crate) fn inner_read(&self) -> parking_lot::RwLockReadGuard<'_, GraphInner> {
         self.inner.read()
+    }
+
+    pub(crate) fn inner_write(&self) -> parking_lot::RwLockWriteGuard<'_, GraphInner> {
+        self.inner.write()
     }
 
     /// Sets or replaces the persistent storage handle.

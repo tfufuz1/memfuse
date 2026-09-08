@@ -9,8 +9,9 @@
 //! Update erfolgt asynchron NACH dem Retrieval, nie während.
 
 use crate::csr::Edge;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EdgeReinforcementConfig {
     /// Co-occurrence reinforcement rate η. Default: 0.01.
     pub eta: f32,

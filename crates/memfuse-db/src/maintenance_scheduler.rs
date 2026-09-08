@@ -23,6 +23,8 @@ pub struct MaintenanceScheduler<S: StorageEngine, V: VectorIndex = memfuse_index
     config: MaintenanceConfig,
     collection: Arc<Collection<S, V>>,
     consolidation_config: ConsolidationConfig,
+    #[cfg(feature = "edge-reinforcement-learning")]
+    edge_reinforcement_buffer: Option<Arc<memfuse_graph::EdgeReinforcementBuffer>>,
     #[cfg(feature = "replicator-dynamics-weights")]
     replicator_state: Option<Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     active_sessions: Arc<AtomicUsize>,
@@ -39,10 +41,22 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
             config,
             collection,
             consolidation_config,
+            #[cfg(feature = "edge-reinforcement-learning")]
+            edge_reinforcement_buffer: None,
             #[cfg(feature = "replicator-dynamics-weights")]
             replicator_state: None,
             active_sessions: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    /// Setzt den optionalen `EdgeReinforcementBuffer` für F-03.
+    #[cfg(feature = "edge-reinforcement-learning")]
+    pub fn with_edge_reinforcement_buffer(
+        mut self,
+        buffer: Arc<memfuse_graph::EdgeReinforcementBuffer>,
+    ) -> Self {
+        self.edge_reinforcement_buffer = Some(buffer);
+        self
     }
 
     /// Setzt den optionalen `ReplicatorState` für F-07.
@@ -136,10 +150,17 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
             }
         }
 
-        // Step c: Edge-Reinforcement / SynapticUpdateBuffer.flush_to_csr()
-        #[cfg(feature = "physio-synaptic-edges")]
-        {
-            // Placeholder: Hook wird in Prompt 5 ergänzt
+        // Step c: F-03 Edge-Reinforcement Flush (edge-reinforcement-learning)
+        // Wendet alle gepufferten Co-Occurrence- und Traversal-Signale aus
+        // dem letzten Scheduler-Takt auf den CSR-Graphen an.
+        #[cfg(feature = "edge-reinforcement-learning")]
+        if let Some(ref buffer) = self.edge_reinforcement_buffer {
+            let graph = self.collection.graph_index();
+            buffer.flush_to_graph(&graph, &self.config.edge_reinforcement);
+            tracing::debug!(
+                collection = %self.collection.name(),
+                "MaintenanceScheduler: F-03 Edge-Reinforcement Flush abgeschlossen"
+            );
         }
 
         // Step d: F-06 Perkolation
