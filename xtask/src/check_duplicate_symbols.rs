@@ -192,7 +192,7 @@ pub fn check_duplicate_symbols(files: &[String]) -> Result<Vec<DuplicateSymbol>,
         let mut all_rs = Vec::new();
         for entry in WalkDir::new("crates")
             .into_iter()
-            .chain(WalkDir::new("xtask").into_iter())
+            .chain(WalkDir::new("xtask"))
             .filter_map(|e| e.ok())
         {
             let p = entry.path();

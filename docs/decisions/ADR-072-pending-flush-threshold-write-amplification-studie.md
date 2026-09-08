@@ -1,4 +1,4 @@
-# ADR-072: Studie zur DiskANN PENDING_FLUSH_THRESHOLD Write-Amplification und Empfehlung für adaptiven Schwellenwert
+# ADR-068: Studie zur DiskANN PENDING_FLUSH_THRESHOLD Write-Amplification und Empfehlung für adaptiven Schwellenwert
 
 * **Status:** Akzeptiert (Empfehlung normativ festgehalten, Implementierung folgt in separatem Task)
 * **Datum:** 2026-09-07

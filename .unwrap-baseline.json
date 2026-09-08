@@ -4916,6 +4916,30 @@
     "hash": "e26d2f319087b2e4"
   },
   {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "1535566a058031ad"
+  },
+  {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "2c35aa47d85cb7b2"
+  },
+  {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "389f9e290fde05f8"
+  },
+  {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "5a74af88fa0fe745"
+  },
+  {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "6e3fbb566a157be2"
+  },
+  {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "dbc548e863b1c991"
+  },
+  {
     "file": "crates/memfuse-db/tests/atomic_commit.rs",
     "hash": "053e36fa50b4efa2"
   },
