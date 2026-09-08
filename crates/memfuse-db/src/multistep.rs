@@ -5,7 +5,7 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // memfuse-db/src/multistep.rs
-// Multi-Step Iterative Retrieval Engine (OpenAI o-series Pattern)
+// Multi-Step Iterative Retrieval Engine (MemFuse Iterative Multi-Step Retrieval)
 
 use crate::{Collection, SearchResult};
 use memfuse_core::{BoxFuture, Result, StorageEngine};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 /// Konfiguration für Multi-Step Retrieval.
 #[derive(Debug, Clone)]
 pub struct MultiStepConfig {
-    /// Maximale Iterationsrunden (OpenAI-Pattern: 3).
+    /// Maximale Iterationsrunden (Standard: 3).
     pub max_rounds: usize,
     /// Mindest-Score-Schwellenwert: unter diesem Wert gilt Runde als unzureichend.
     pub quality_threshold: f32,

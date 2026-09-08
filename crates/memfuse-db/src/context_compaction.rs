@@ -5,9 +5,9 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 // memfuse-db/src/context_compaction.rs
-// Context Compaction Engine (Grok Pattern)
+// Context Compaction Engine (MemFuse Context-Window Compaction)
 
-//! Context Compaction Engine (Grok Pattern)
+//! Context Compaction Engine (MemFuse Context-Window Compaction)
 //!
 //! Replaces stale tool outputs and long conversation histories with compact status tokens
 //! to preserve the LLM context window.

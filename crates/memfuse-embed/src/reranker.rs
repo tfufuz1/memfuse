@@ -7,7 +7,7 @@
 
 //! Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 //!
-//! Implementiert das OpenAI/Cohere Reranking-Pattern: nach RRF-Fusion
+//! Implementiert MemFuse Post-Fusion Cross-Encoder Reranking: nach RRF-Fusion
 //! werden die Top-K Kandidaten durch ein lokales ONNX Cross-Encoder-Modell
 //! neu bewertet.
 //!

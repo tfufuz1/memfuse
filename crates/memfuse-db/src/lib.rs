@@ -57,7 +57,8 @@
 //! # }
 //! ```
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "volatile-vault"), forbid(unsafe_code))]
+#![cfg_attr(feature = "volatile-vault", deny(unsafe_code))]
 
 // FILE-CONTEXT
 // STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
@@ -80,25 +81,27 @@ use std::sync::Arc;
 
 pub mod chunker;
 pub mod collection;
+pub mod consolidation_executor;
 pub mod context;
 pub mod context_compaction;
-pub mod rem_phase;
-pub mod sleep_cycle;
-pub mod sleep_cycle_executor;
+pub mod memory_consolidation;
+pub mod synthesis_phase;
 pub mod temporal_filter;
 
+pub use consolidation_executor::{execute_consolidation_pass, execute_sleep_cycle};
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
 pub use memfuse_core::SegmentSynthesizer;
-pub use reaper::start_nrem_reaper;
-pub use sleep_cycle::{
+pub use memory_consolidation::{
     compact_segment_via_context_compactor, compute_community_hash, detect_near_duplicates,
-    group_turns_into_segments, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, MetaChunk,
-    NremConfig, NremPhaseResult, RemConfig, RemPhaseResult, TurnSegment,
+    group_turns_into_segments, run_consolidation_pass, CommunityStabilityTracker,
+    ConsolidationConfig, ConsolidationPhaseResult, MetaChunk, SynthesisConfig,
+    SynthesisPhaseResult, TurnSegment,
 };
-pub use sleep_cycle_executor::{execute_nrem_cycle, execute_sleep_cycle};
+pub use reaper::start_consolidation_reaper;
+pub use synthesis_phase::run_synthesis_pass;
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
@@ -108,24 +111,33 @@ pub trait SandboxBridge: Send + Sync {
 }
 
 // mod Collection is used via pub mod collection
+pub mod decay_controller;
 pub mod filter;
 pub mod fusion;
 pub mod homeostat;
+pub mod maintenance_config;
+pub mod maintenance_scheduler;
 pub mod multistep;
-pub mod physio_config;
-pub mod physio_scheduler;
 pub mod reaper;
-pub mod thermostat;
 pub mod transaction;
 
+// Jarvis-Erweiterungs-Module (Feature-gated)
+#[cfg(feature = "volatile-vault")]
+pub mod volatile_vault;
+#[cfg(feature = "volatile-vault")]
+pub use volatile_vault::{
+    VolatileContextVault, VaultChunk, VaultChunkMetadata, VaultConfig,
+    VaultError, PurgeReceipt, CommitReceipt, SignalModality,
+};
+
+pub use decay_controller::{AdaptiveDecayController, DecayControllerConfig, DecaySignalInputs};
 pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
-pub use physio_config::PhysioConfig;
-pub use physio_scheduler::PhysioScheduler;
-pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
+pub use maintenance_config::MaintenanceConfig;
+pub use maintenance_scheduler::MaintenanceScheduler;
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 pub use collection::maintenance::PercolationResult;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
@@ -133,7 +145,7 @@ pub use collection::Collection;
 pub use filter::MetadataFilter;
 pub use memfuse_checkpoint;
 use memfuse_core::FilterExpr;
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 pub use memfuse_graph::percolation::PercolationConfig;
 pub use memfuse_text::Language;
 

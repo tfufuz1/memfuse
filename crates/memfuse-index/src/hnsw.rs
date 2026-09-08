@@ -100,7 +100,7 @@ pub struct HnswConfig {
     /// Default is 10,000 to balance speed and accuracy.
     pub quantizer_recalibration_sample_size: usize,
     /// Nucleation configuration for hot-path local rebuilds (F-02).
-    #[cfg(feature = "physio-nucleation")]
+    #[cfg(feature = "partial-index-rebuild")]
     pub nucleation_config: crate::nucleation::NucleationConfig,
 }
 
@@ -117,7 +117,7 @@ impl Default for HnswConfig {
             rebuild_threshold: 1.0 - HNSW_REBUILD_DELETION_RATIO,
             quantize: false,
             quantizer_recalibration_sample_size: 10_000,
-            #[cfg(feature = "physio-nucleation")]
+            #[cfg(feature = "partial-index-rebuild")]
             nucleation_config: crate::nucleation::NucleationConfig::default(),
         }
     }
@@ -228,7 +228,7 @@ impl HnswConfigBuilder {
     }
 
     /// Sets the nucleation configuration for local hot-path rebuilds (F-02).
-    #[cfg(feature = "physio-nucleation")]
+    #[cfg(feature = "partial-index-rebuild")]
     pub fn nucleation_config(mut self, config: crate::nucleation::NucleationConfig) -> Self {
         self.config.nucleation_config = config;
         self
@@ -323,7 +323,7 @@ pub struct HnswIndexCore {
     seq_log: RwLock<memfuse_core::SequenceLog>,
     pub rebuild_count: AtomicU64,
     pub visited_dead_nodes: AtomicU64,
-    #[cfg(feature = "physio-nucleation")]
+    #[cfg(feature = "partial-index-rebuild")]
     pub traversal_tracker: RwLock<crate::nucleation::TraversalTracker>,
 }
 
@@ -334,7 +334,7 @@ impl HnswIndex {
         let ml = 1.0 / (config.m as f64).ln();
         Ok(Self {
             inner: std::sync::Arc::new(HnswIndexCore {
-                #[cfg(feature = "physio-nucleation")]
+                #[cfg(feature = "partial-index-rebuild")]
                 traversal_tracker: RwLock::new(crate::nucleation::TraversalTracker::new(
                     config.nucleation_config.clone(),
                 )),
@@ -371,7 +371,7 @@ impl HnswIndex {
         let ml = 1.0 / (config.m as f64).ln();
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
-                #[cfg(feature = "physio-nucleation")]
+                #[cfg(feature = "partial-index-rebuild")]
                 traversal_tracker: RwLock::new(crate::nucleation::TraversalTracker::new(
                     config.nucleation_config.clone(),
                 )),
@@ -652,7 +652,7 @@ impl HnswIndex {
 
     /// Checks if nucleation should be triggered for oversaturated hot-path regions
     /// and spawns an async partial rebuild if so.
-    #[cfg(feature = "physio-nucleation")]
+    #[cfg(feature = "partial-index-rebuild")]
     pub fn check_and_trigger_nucleation(&self) -> Option<tokio::task::JoinHandle<Result<()>>> {
         let global_tombstone_ratio = self.deleted_ratio() as f32;
         let tracker = self.inner.traversal_tracker.read();
@@ -1210,12 +1210,12 @@ impl HnswIndexCore {
         let mut candidates = BinaryHeap::new();
         let mut results = BinaryHeap::new();
 
-        #[cfg(feature = "physio-nucleation")]
+        #[cfg(feature = "partial-index-rebuild")]
         let mut visited_node_ids = Vec::new();
 
         for &ep in entry_points {
             if visited.insert(ep) {
-                #[cfg(feature = "physio-nucleation")]
+                #[cfg(feature = "partial-index-rebuild")]
                 visited_node_ids.push(ep as u64);
 
                 let dist = self.resolve_dist(ep, query, query_quantized, &ctx)?;
@@ -1246,7 +1246,7 @@ impl HnswIndexCore {
                     has_dead_neighbors = true;
                 }
                 if visited.insert(neighbor) {
-                    #[cfg(feature = "physio-nucleation")]
+                    #[cfg(feature = "partial-index-rebuild")]
                     visited_node_ids.push(neighbor as u64);
 
                     let dist = self.resolve_dist(neighbor, query, query_quantized, &ctx)?;
@@ -1282,7 +1282,7 @@ impl HnswIndexCore {
                 }
             }
         }
-        #[cfg(feature = "physio-nucleation")]
+        #[cfg(feature = "partial-index-rebuild")]
         if layer == 0 && !visited_node_ids.is_empty() {
             self.traversal_tracker
                 .write()
@@ -2445,7 +2445,7 @@ impl VectorIndex for HnswIndex {
             self.trigger_rebuild_async();
         }
 
-        #[cfg(feature = "physio-nucleation")]
+        #[cfg(feature = "partial-index-rebuild")]
         self.check_and_trigger_nucleation();
 
         self.inner.last_tx_id.store(tx.inner(), Ordering::SeqCst);
@@ -3931,7 +3931,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "physio-nucleation")]
+    #[cfg(feature = "partial-index-rebuild")]
     async fn test_hnsw_nucleation_integration() {
         let nucleation_config = crate::nucleation::NucleationConfig {
             critical_ratio: 2.0,

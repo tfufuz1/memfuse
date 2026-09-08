@@ -1,13 +1,13 @@
 // FILE-CONTEXT
 // STAND: 2026-08-30T18:54:39Z (SESSION: ed7b7b38)
-// ZWECK: Anthropic Contextual Retrieval — LLM-basierte Präfix-Generierung für Chunks
+// ZWECK: MemFuse Contextual Chunk Prefixing — LLM-basierte Präfix-Generierung für Chunks
 // INVARIANTEN: XML-Escaping vor Prompt-Bau; Truncation wahrt Unicode-Codepoint- & Wortgrenzen
 // NICHT-OFFENSICHTLICH: Document-Exzerpt wird vor Prefix-Erzeugung hard auf max_document_chars gekürzt
 // HOTSPOTS: generate_prefix, truncate_prefix, truncate_chars
 
-//! Anthropic Contextual Retrieval: LLM-generierte Kontext-Präfixe für Chunks.
+//! MemFuse Contextual Chunk Prefixing: LLM-generierte Kontext-Präfixe für Chunks.
 //!
-//! Implementiert das Contextual Retrieval Pattern von Anthropic (2024):
+//! Implementiert das MemFuse Contextual-Chunk-Prefixing-Verfahren (angelehnt an etablierte Contextual-Retrieval-Methodik aus der Fachliteratur):
 //! Jeder Chunk erhält vor BM25/Embedding ein dokumentenbezogenes Kurzpräfix.
 //!
 //! Empirisch: 49% weniger Retrieval-Fehler vs. naïves Chunking.
@@ -28,7 +28,7 @@ pub struct ContextPrefixConfig {
     /// Standard: 8000 Zeichen ≈ 2000 Tokens.
     pub max_document_chars: usize,
     /// Maximale Länge des generierten Präfixes in Tokens (Schätzwert).
-    /// Anthropic empfiehlt 50-100 Tokens. Standard: 80.
+    /// Empfohlener Bereich laut Fachliteratur: 50-100 Tokens. Standard: 80.
     pub max_prefix_tokens: usize,
 }
 
@@ -68,7 +68,7 @@ impl ContextPrefixEngine {
 
     /// Generiert ein Kontext-Präfix für einen einzelnen Chunk.
     ///
-    /// Der Prompt folgt dem Anthropic-Pattern:
+    /// Der Prompt folgt dem MemFuse-Contextual-Chunk-Prefixing-Schema:
     /// "Describe this chunk in context of the full document (1-2 sentences)."
     ///
     /// # Fehler

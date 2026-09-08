@@ -1,4 +1,4 @@
-# ADR-067: Additive Härtung der TenantId-Konstruktoren zur Erzwingung von INV-TENANT-1
+# ADR-071: Additive Härtung der TenantId-Konstruktoren zur Erzwingung von INV-TENANT-1
 
 * **Status:** Akzeptiert
 * **Datum:** 2026-09-07
