@@ -1,3 +1,6 @@
+# Context Integrity Gates Workflow
+# Enforces context integrity, DAG structure, tag grammar, and preflight checks (including Gate 14 Jules Preflight Aggregator).
+
 name: Context Integrity Gates
 
 on: [push, pull_request]
@@ -19,7 +22,7 @@ jobs:
 
       - name: "Gate 12: Duplicate-PR-Intent-Detection"
         env:
-          MEMFUSE_PR_BODY: ${{ github.event.pull_request.body }}
+          MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: cargo run -p xtask -- check-duplicate-intent
 
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
@@ -118,3 +121,10 @@ jobs:
             fi
           done
           echo "✅ Alle AGENTS.md Dateien entsprechen dem 8-Sektionen-Template"
+
+      - name: "Gate 14: Jules Preflight Aggregator"
+        env:
+          MEMFUSE_CI: "true"
+        run: |
+          cargo run -p xtask -- jules-preflight --fast
+          echo "✅ Jules Preflight: alle Checks bestanden"
