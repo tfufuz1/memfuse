@@ -23,7 +23,7 @@ Ergebnis: **0 offene Tags**
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 9881 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 1 | 1025 | 🟢 Clean |  |
+| `memfuse-calibration` | 1 | 1034 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 3142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
 | `memfuse-graph` | 1 | 9353 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |

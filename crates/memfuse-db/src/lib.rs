@@ -57,7 +57,8 @@
 //! # }
 //! ```
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "volatile-vault"), forbid(unsafe_code))]
+#![cfg_attr(feature = "volatile-vault", deny(unsafe_code))]
 
 // FILE-CONTEXT
 // STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
@@ -119,6 +120,15 @@ pub mod maintenance_scheduler;
 pub mod multistep;
 pub mod reaper;
 pub mod transaction;
+
+// Jarvis-Erweiterungs-Module (Feature-gated)
+#[cfg(feature = "volatile-vault")]
+pub mod volatile_vault;
+#[cfg(feature = "volatile-vault")]
+pub use volatile_vault::{
+    VolatileContextVault, VaultChunk, VaultChunkMetadata, VaultConfig,
+    VaultError, PurgeReceipt, CommitReceipt, SignalModality,
+};
 
 pub use decay_controller::{AdaptiveDecayController, DecayControllerConfig, DecaySignalInputs};
 pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
