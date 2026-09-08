@@ -1,0 +1,425 @@
+# Tier/Risk/Focus — werden von `cargo xtask gen-prompter-data` mit den
+# automatisch erhobenen Fakten (LOC, Layer, Datei-Existenz) gemerged.
+# Diese Datei ändert sich NUR bei echten Architekturentscheidungen,
+# nicht bei jedem Commit.
+
+# Crate Overrides (Tier / Risk)
+[crate_overrides.memfuse-core]
+tier = "1"
+risk = "none"
+
+[crate_overrides.memfuse-crypto]
+tier = "1"
+risk = "sec"
+
+[crate_overrides.memfuse-store]
+tier = "1"
+risk = "crash"
+
+[crate_overrides.memfuse-index]
+tier = "1"
+risk = "simd"
+
+[crate_overrides.memfuse-graph]
+tier = "2"
+risk = "none"
+
+[crate_overrides.memfuse-text]
+tier = "2"
+risk = "utf8"
+
+[crate_overrides.memfuse-checkpoint]
+tier = "2"
+risk = "none"
+
+[crate_overrides.memfuse-db]
+tier = "1"
+risk = "fusion"
+
+[crate_overrides.memfuse-embed]
+tier = "3"
+risk = "gate"
+
+[crate_overrides.memfuse-ollama]
+tier = "3"
+risk = "inj"
+
+[crate_overrides.memfuse-agent]
+tier = "2"
+risk = "budget"
+
+[crate_overrides.memfuse-py]
+tier = "1"
+risk = "ffi"
+
+[crate_overrides.memfuse-router]
+tier = "3"
+risk = "nan"
+
+[crate_overrides.memfuse-mcp]
+tier = "1"
+risk = "proto"
+
+[crate_overrides.memfuse-tauri]
+tier = "2"
+risk = "parse"
+
+[crate_overrides.memfuse-calibration]
+tier = "3"
+risk = "calib"
+
+[crate_overrides.memfuse-candle]
+tier = "3"
+risk = "candle"
+
+[crate_overrides.memfuse-kv-bridge]
+tier = "3"
+risk = "bridge"
+
+# Zielarchitektur-Mapping (§3, Anhang A der Zielarchitektur v8.0)
+[target_architecture]
+"memfuse-core" = "memfuse-foundation"
+"memfuse-crypto" = "memfuse-security"
+"memfuse-kv-bridge" = "memfuse-security"
+"memfuse-store" = "memfuse-persistence"
+"memfuse-checkpoint" = "memfuse-persistence"
+"memfuse-index" = "memfuse-retrieval"
+"memfuse-graph" = "memfuse-retrieval"
+"memfuse-text" = "memfuse-retrieval"
+"memfuse-db" = "memfuse-orchestrator"
+"memfuse-calibration" = "memfuse-inference"
+"memfuse-router" = "memfuse-inference"
+"memfuse-ollama" = "memfuse-inference"
+"memfuse-candle" = "memfuse-inference"
+"memfuse-embed" = "memfuse-inference"
+"memfuse-agent" = "memfuse-agentic"
+"memfuse-mcp" = "memfuse-mcp"
+"memfuse-py" = "memfuse-bindings"
+"memfuse-tauri" = "memfuse-bindings"
+
+# Komponenten-Fokus-Notizen (redaktionell, per Datei)
+[component_focus."memfuse-core"."lib.rs"]
+desc = "Modulstruktur, pub-Exports, Re-Exports der Kern-Traits"
+focus = "Prüfe bei jeder Änderung, ob neue pub-Exports das DAG-Prinzip verletzen (memfuse-core darf keine memfuse-*-Abhängigkeit referenzieren)."
+
+[component_focus."memfuse-core"."error.rs / error_dto.rs"]
+risk = "FFI"
+desc = "MemFuseError-Enum + serialisierbares FFI-DTO-Mapping"
+focus = "JEDE MemFuseError-Variante muss eine korrespondierende MemFuseErrorDto-Variante besitzen — fehlende Zuordnung bricht memfuse-py und memfuse-mcp stillschweigend an der FFI-Grenze."
+
+[component_focus."memfuse-core"."types/domain.rs"]
+risk = "TxId"
+desc = "Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, Edge, Entity) — TxId::MAX_COLLECTION_SEQUENCE/INTERNAL_BASE-Trennung (ADR-028)"
+focus = "Niemals SystemTime für TxId verwenden. Die Grenze zwischen Collection- und System-TxId-Bereich (INTERNAL_BASE = u64::MAX - 1_000_000) ist eine architektonische Invariante — jede Änderung hier erfordert einen ADR. [KORR v22: Datei hieß im Prompter zuvor fälschlich types/tx.rs — TxId liegt tatsächlich in types/domain.rs, es gibt keine eigene tx.rs.]"
+
+[component_focus."memfuse-core"."types/budget.rs"]
+risk = "Budget"
+desc = "TokenBudget, consume()/available() — bewusst non-atomare Read-Modify-Write-Semantik"
+focus = "consume() ist heute durch &mut self (Borrow-Checker) vor Nebenläufigkeit geschützt — dokumentiere explizit jede Änderung, die diese Annahme berührt (z.B. Arc<Mutex<>>-Kapselung)."
+
+[component_focus."memfuse-core"."snapshot.rs"]
+risk = "Concurrency"
+desc = "SnapshotRegistry + SnapshotGuard — Pin/Unpin-Verwaltung, Schutz gepinnter Snapshots vor GC"
+focus = "Das Pin-vs-GC-Race ist der bekannt sensibelste Pfad dieser Datei: jede Änderung an pin_snapshot()/unpin() erfordert einen begleitenden Concurrency-Test mit mind. 8 parallelen Threads. [KORR v22: Datei hieß zuvor snapshot_registry.rs — tatsächlicher Dateiname ist snapshot.rs.]"
+
+[component_focus."memfuse-core"."tx_buffer.rs"]
+risk = "Concurrency"
+desc = "TxBuffer-Sharding, Lock-Granularität, Kapazitätsgrenze"
+focus = "Prüfe Lock-Granularität pro Shard — ein zu grobes Locking erzeugt Starvation unter hoher TX-Last, ein zu feines gefährdet Konsistenz zwischen Shards."
+
+[component_focus."memfuse-core"."traits.rs"]
+risk = "Trait-Default"
+desc = "Kern-Traits (VectorIndex, GraphIndex, capability_coverage) inkl. Default-Methoden"
+focus = "Trait-Default-Pflichttest (AGENTS.md §4) beachten: neuer Implementor eines Traits mit Default-Methode benötigt im selben PR einen Test, der beweist, dass der Default NICHT unbeabsichtigt greift."
+
+[component_focus."memfuse-crypto"."lib.rs"]
+desc = "Modul-Exports der Krypto-Primitiven"
+focus = "Stelle sicher, dass ausschließlich geprüfte Primitiven exportiert werden — kein Ad-hoc-Crypto-Code außerhalb dieses Crates darf entstehen (Krypto-Isolation)."
+
+[component_focus."memfuse-crypto"."crypto.rs"]
+risk = "RFC 8452/5869/4231"
+desc = "KeyManager — AES-256-GCM-SIV encrypt/decrypt + Nonce-Konstruktion, HKDF Key Derivation, HMAC-SHA256 (alle drei Primitiven in EINER Datei, Größenklasse L)"
+focus = "Nonce = 4B Instanz-Präfix (OsRng) + 8B per-Call OsRng-Suffix — jede Änderung an der Nonce-Konstruktion erfordert eine erneute Kollisionswahrscheinlichkeits-Betrachtung (Referenz p≈2.71e-8 bei 10⁶ Nonces). Jeder neue abgeleitete Schlüsseltyp braucht einen eigenen, disjunkten HKDF-Domain-Separator-String. Jeder Tag-/MAC-Vergleich MUSS über subtle::ConstantTimeEq laufen. [KORR v22: Es gibt KEINE separaten Dateien aes_gcm_siv.rs/hkdf.rs/hmac.rs — alle drei Primitiven sind im KeyManager in crypto.rs konsolidiert.]"
+
+[component_focus."memfuse-crypto"."wal_crypto.rs"]
+risk = "HMAC-Chain"
+desc = "WAL-HMAC-Chaining v3 — kryptographische Integritätskette über das gesamte WAL"
+focus = "Byte-Reihenfolge ist bindend: domain-separator → prev_hmac → seq_no → tx_id → op_type+kv. Jede Abweichung bricht die Chain rückwirkend. Änderungen hier erfordern Regressionstests gegen die bestehende v3-Testvektor-Suite UND explizite Versionierung (nie v3 stillschweigend überschreiben)."
+
+[component_focus."memfuse-crypto"."anti_tamper.rs"]
+risk = "Zeroize"
+desc = "IntegrityVerifier, VolatileEncryptionKey (#[zeroize(drop)]) & Zeroize-Drop-Semantik-Verifikation"
+focus = "Test-only unsafe hier ist explizit erlaubt (AGENTS.md-Ausnahme) — ausschließlich zur Verifikation der Zeroize-Drop-Semantik via Raw-Pointer-Inspektion, niemals für Produktionslogik. JEDES neue Struct mit Schlüsselmaterial MUSS ZeroizeOnDrop implementieren — lückenlos, keine Ausnahme. [KORR v22: Es gibt keine eigene zeroize_types.rs — VolatileEncryptionKey lebt bereits hier in anti_tamper.rs.]"
+
+[component_focus."memfuse-store"."lib.rs"]
+desc = "Modul-Exports, Storage-Engine-Einstiegspunkt"
+focus = "Prüfe öffentliche API-Oberfläche auf versehentliche Lecks interner LSM-Implementierungsdetails."
+
+[component_focus."memfuse-store"."wal.rs"]
+risk = "Crash-Safety"
+desc = "Write-Ahead-Log — fsync-Disziplin, HMAC-Bindung, höchstes Crash-Safety-Risiko im gesamten Workspace"
+focus = "sync_all() MUSS vor jeder Ok-Rückgabe aus append() erfolgen. Sequenznummer UND Datei-ID müssen in die HMAC-Berechnung eingebunden sein (nicht nur Payload). Jede Änderung braucht einen begleitenden Crash-Mid-Write-Fault-Injection-Test."
+
+[component_focus."memfuse-store"."memtable.rs"]
+desc = "In-Memory-Puffer vor Flush auf SSTable"
+focus = "Prüfe Flush-Trigger-Schwellwerte und das Race-Window zwischen Flush-Start und neuen konkurrierenden Writes (ADR-043-Kontext)."
+
+[component_focus."memfuse-store"."sstable.rs"]
+risk = "Atomarität"
+desc = "SSTable-Format, atomare Datei-Erstellung"
+focus = "APM-1 gilt hier absolut: tmp-Datei → sync_all → rename → fsync_parent_dir. Kein direktes tokio::fs::write ohne dieses Muster."
+
+[component_focus."memfuse-store"."compaction.rs"]
+risk = "Crash-Safety"
+desc = "Compaction-Logik, Tombstone-Handling unter gepinnten Snapshots"
+focus = "Ein gepinnter Snapshot MUSS Tombstones/Daten, die er referenziert, vor Compaction-GC schützen. Jede Änderung an der Compaction-Reihenfolge braucht einen Test mit aktiv gehaltenem Snapshot-Pin während laufender Compaction."
+
+[component_focus."memfuse-store"."lsm.rs"]
+risk = "Locking"
+desc = "LsmStorage — StorageEngine-Trait-Implementierung, commit_mutex-Verwaltung, rollback_to_tx (größte Einzeldatei des Crates — Größenklasse XL)"
+focus = "rollback_to_tx darf niemals innerhalb eines bereits gehaltenen commit_mutex erneut aufgerufen werden (Deadlock-Risiko, APM-3-Kontext). [KORR v22: Es gibt keine commit.rs — diese Logik liegt in lsm.rs, das zuvor komplett im Komponenten-Inventar fehlte, obwohl es als architektonisch zentralste Datei des Crates gilt. Höchste Sorgfaltspflicht gilt hier uneingeschränkt.]"
+
+[component_focus."memfuse-store"."checkpoint.rs"]
+risk = "DAG"
+desc = "pub(crate)-Checkpoint-Interna der Storage-Engine"
+focus = "Diese Datei ist bewusst pub(crate) — memfuse-checkpoint (eigenes Crate, Layer 1) darf sie NICHT importieren. Jede Sichtbarkeitsänderung hier ist ein Architektur-Vorfall."
+
+[component_focus."memfuse-index"."lib.rs"]
+desc = "Modul-Exports des HNSW-Index"
+focus = "Prüfe Feature-Gate-Konsistenz für experimental-diskann."
+
+[component_focus."memfuse-index"."hnsw.rs"]
+risk = "APM-2/3"
+desc = "HNSW-Graph-Kern — Suche, Insert, Tombstone-Handling, SQ8-Bound-Expansion"
+focus = "search_filtered(): Tombstone-Prüfung MUSS unconditional VOR jedem Custom-Filter erfolgen (zwei separate if-Blöcke, kein if/else-if — APM-2). SQ8-Bound-Expansion in do_insert() MUSS über write() laufen, nicht try_write() (APM-3) — sonst lastabhängige, stille Präzisionsverluste."
+
+[component_focus."memfuse-index"."distance.rs"]
+risk = "SIMD/unsafe"
+desc = "SIMD-Distanzfunktionen (AVX2/NEON), einziger regulär erlaubter unsafe-Ort neben diskann.rs/persistence.rs"
+focus = "JEDER unsafe-Block muss direkt von is_x86_feature_detected!(\"avx2\") (bzw. äquivalent für NEON) umschlossen sein. SIMD-Pfad und Scalar-Fallback müssen identische Semantik haben (beide sqrt oder beide squared) — sonst schleichende Ranking-Divergenz."
+
+[component_focus."memfuse-index"."quantize.rs"]
+risk = "Precision"
+desc = "ScalarQuantizer (SQ8) — per-Dimension Min/Max-Skalierung von Vektoren"
+focus = "Prüfe Rundungsverhalten an den Quantisierungsgrenzen — Bound-Expansion in hnsw.rs hängt direkt von der hier definierten Skalierung ab. [KORR v22: Datei hieß zuvor quantization.rs — tatsächlicher Dateiname ist quantize.rs.]"
+
+[component_focus."memfuse-index"."diskann.rs"]
+risk = "unsafe/Mmap"
+desc = "Experimentelles DiskANN, Out-of-Core, hinter Feature-Flag experimental-diskann"
+focus = "unsafe hier ist erlaubt (Mmap, ADR-017), aber ausschließlich innerhalb dieses Feature-Gates. Noch nicht produktionsreif — jede Änderung explizit als experimentell kennzeichnen."
+
+[component_focus."memfuse-index"."persistence.rs"]
+risk = "unsafe/TOCTOU"
+desc = "Mmap-basierte Persistenz des Index"
+focus = "TOCTOU-Risiko: Datei kann zwischen Öffnen und aktivem Mmap verkürzt/gelöscht werden → SIGBUS. Prüfe Dateigrößen-Validierung vor jedem Mmap-Zugriff."
+
+[component_focus."memfuse-graph"."lib.rs"]
+desc = "Modul-Exports des CSR-Graphen"
+focus = "Prüfe, dass keine petgraph-Abhängigkeit eingeführt wurde (ADR-004, Pure-Rust-Policy)."
+
+[component_focus."memfuse-graph"."csr.rs"]
+risk = "Invariante/DoS"
+desc = "CSR-Graph-Kern — offsets/reverse_map, compact(), rollback(), traverse()/traverse_at() Multi-Hop-BFS mit Hub-Node-Branching-Limit"
+focus = "offsets.len() == reverse_map.len() + 1 MUSS immer gelten, auch bei entity-only-Commits ohne Kanten — compact() darf das offsets-Padding in diesem Fall nicht überspringen. rollback() MUSS id_map UND reverse_map bereinigen, nicht nur staged_edges. Ein Knoten mit sehr vielen Kanten (Hub) darf die Traversal-Queue nicht explodieren lassen — MAX_VISITED_NODES-Limit muss PER LEVEL greifen, nicht nur als globales Ergebnis-Limit. [KORR v22: Es gibt keine eigene bfs.rs — die komplette Traversal-Logik (traverse/traverse_at/traverse_at_bitemporal) lebt bereits in dieser Datei.]"
+
+[component_focus."memfuse-graph"."ppr.rs"]
+risk = "Numerik"
+desc = "Personalized PageRank — Power-Iteration, Dangling-Node-Handling"
+focus = "Summe aller PPR-Scores muss exakt 1.0 sein (Mass-Conservation) — auch bei Dangling Nodes, deren Teleportation-Mass korrekt redistributiert werden muss."
+
+[component_focus."memfuse-graph"."community.rs"]
+risk = "Determinismus"
+desc = "Label-Propagation Community-Detection"
+focus = "Muss deterministisch sein (ADR-027) — identischer Input-Graph erzeugt identische Community-Zuordnung über mehrere Läufe."
+
+[component_focus."memfuse-graph"."session_dag.rs"]
+risk = "Concurrency"
+desc = "SessionBranchTree — Konversationsverzweigung als persistierter DAG"
+focus = "Kein Lock darf über einen .await-Punkt gehalten werden — Lock-Scopes methodenlokal und minimal halten."
+
+[component_focus."memfuse-text"."lib.rs"]
+desc = "Modul-Exports von BM25 und Tokenizer"
+focus = "#[forbid(unsafe_code)] gilt für dieses Crate vollständig — 0 unsafe-Vorkommen erlaubt."
+
+[component_focus."memfuse-text"."bm25.rs"]
+risk = "Numerik"
+desc = "BM25-Scoring, IDF-Berechnung"
+focus = "ln(idf_arg) wird bei df>N/2 negativ — prüfe den IDF-Floor-Mechanismus (z.B. 1e-6 statt hartem 0), da ein harter 0-Floor Stoppwörter künstlich einfärbt."
+
+[component_focus."memfuse-text"."inverted.rs"]
+risk = "Konsistenz"
+desc = "Postings-Listen, Update/Delete-Pfad"
+focus = "DF-Zähler MUSS bei jedem Update/Delete korrekt dekrementiert werden — sonst Ghost-Terms in den Postings, die Suchqualität schleichend verfälschen. [KORR v22: Datei hieß zuvor inverted_index.rs — tatsächlicher Dateiname ist inverted.rs.]"
+
+[component_focus."memfuse-text"."tokenizer.rs"]
+risk = "Performance"
+desc = "GermanMorphTokenizer, Trie-basierte Kompositazerlegung"
+focus = "Der Trie darf nicht bei jedem Aufruf neu aufgebaut werden — prüfe OnceLock<Arc<Trie>>-Caching. Fehlendes Caching ist ein Performance-kritischer Befund."
+
+[component_focus."memfuse-text"."morphology.rs"]
+risk = "DoS"
+desc = "Deutscher Compound-Splitter, rekursive Wortzerlegung"
+focus = "Rekursion ohne Memoization für lange Komposita = O(2^n)-Laufzeitrisiko (DoS-Vektor). Jede Änderung an der Rekursionslogik braucht einen Worst-Case-Laufzeittest mit pathologisch langen Eingaben."
+
+[component_focus."memfuse-checkpoint"."lib.rs"]
+risk = "RAII/Time-Travel"
+desc = "GESAMTER Crate in einer Datei: CheckpointGuard (RAII, non-Clone, pin-before-save, Drop-Handling), CheckpointRegistry-Trait, PersistentCheckpointStore, Time-Travel-Rollback"
+focus = "APM-8 kritisch: niemals tokio::spawn() im Drop-Handler — das bricht die RAII-Garantie (Task kann vor Completion gecancelled werden). Pin-before-Save-Reihenfolge (ADR-011) ist bindend: Snapshot muss gepinnt sein, BEVOR der Checkpoint gespeichert wird. Rollback zu Checkpoint X muss bytegenau den State nach X wiederherstellen — verifiziere dies mit einem Byte-Vergleich, nicht nur mit einem Existenz-Check. [KORR v22: Es gibt keine separate registry.rs — der komplette Crate (inkl. Registry/Time-Travel) ist eine einzige Datei; Größenklasse deshalb XL statt L, höchste Sorgfaltspflicht bei jeder Änderung.]"
+
+[component_focus."memfuse-db"."lib.rs"]
+desc = "MemFuse-Orchestrator-Einstiegspunkt"
+focus = "Prüfe die öffentliche API auf Konsistenz mit README.md-Beispielen."
+
+[component_focus."memfuse-db"."fusion.rs"]
+risk = "APM-5"
+desc = "reciprocal_rank_fusion() / weighted_reciprocal_rank_fusion() — Kern der 4-Signal-Fusion"
+focus = "RRF nutzt AUSSCHLIESSLICH die Rang-Position, nicht den Score-Wert — jede score *= boost-Modifikation VOR der Fusion hat NULLEFFEKT (APM-5). Boosts müssen POST-RRF angewendet werden. Beachte zusätzlich: weighted_reciprocal_rank_fusion() materialisiert und sortiert VOLLSTÄNDIG (O(U log U)) — jede neue Aufruferstelle muss MAX_SEARCH_K respektieren."
+
+[component_focus."memfuse-db"."collection/search.rs"]
+risk = "Snapshot"
+desc = "hybrid_search() — Orchestrierung aller 4 Signale"
+focus = "LSM/BM25/Metadaten binden an seq_no, HNSW und CSR-Graph lesen unpinnten Live-State — verlasse dich in neuem Code NIE auf implizite Snapshot-Konsistenz von HNSW/Graph; nachgelagerte Filterung muss veraltete/gelöschte Treffer aktiv verwerfen."
+
+[component_focus."memfuse-db"."collection/relate.rs"]
+risk = "Zyklen"
+desc = "Zettelkasten-Traversierung über ContextChunk.links"
+focus = "Relation A→B→A erfordert Visited-Set UND Timeout/Tiefenlimit — ohne beides Endlosschleifen-Risiko bei zyklischen Link-Strukturen."
+
+[component_focus."memfuse-db"."collection/mod.rs"]
+risk = "Locking"
+desc = "Collection-API, Lock-Hierarchie"
+focus = "Lock-Reihenfolge ist bindend: collections → embedder → insert_lock — IMMER in dieser Reihenfolge, jede Abweichung ist ein Deadlock-Risiko."
+
+[component_focus."memfuse-db"."transaction.rs"]
+risk = "2PC"
+desc = "2PC-Koordination über alle 4 Sub-Engines, repair_on_open()"
+focus = "Bei Fehler nach Commit von Signal N müssen die Signale N..4 vollständig zurückgerollt werden. repair_on_open() muss CommitIntent::Pending nach Crash forward-committen, nicht verwerfen."
+
+[component_focus."memfuse-db"."multistep.rs"]
+desc = "MultiStepEngine — iteratives Query-Rewriting (bis 3 Runden)"
+focus = "Prüfe die Abbruchbedingung bei Konvergenz vs. hartem Runden-Limit — beide müssen greifen können."
+
+[component_focus."memfuse-db"."context_compaction.rs"]
+desc = "ContextCompactor + ConsolidationSession — StatusToken-Ersetzung veralteter Tool-Outputs"
+focus = "Prüfe, dass komprimierte Historie für nachgelagerte Agent-Schritte semantisch äquivalent bleibt (kein Informationsverlust an kritischen Entscheidungspunkten). [KORR v22: Datei hieß zuvor compactor.rs — tatsächlicher Dateiname ist context_compaction.rs; Größenklasse auf L korrigiert (ursprünglich fälschlich als M eingeschätzt).]"
+
+[component_focus."memfuse-embed"."lib.rs"]
+risk = "Feature-Gate"
+desc = "Feature-Gate-Wurzel (default=[])"
+focus = "cargo check --no-default-features MUSS 0 Fehler ergeben — dies ist die zentrale Hermetizitäts-Garantie des optionalen Crates."
+
+[component_focus."memfuse-embed"."reranker.rs"]
+risk = "Blocking/Sichtbarkeit"
+desc = "CrossEncoderReranker UND OnnxSessionPool (bewusst pub(crate), nicht exportiert) — beides in derselben Datei"
+focus = "ONNX-Inferenz blockiert den Thread — spawn_blocking ist Pflicht, sonst Stall des Tokio-Executors. Score-Ties müssen stabil sortiert werden, Richtung höher=besser verifizieren. Für Modul-externe Nutzung des SessionPool einen eigenen Pool halten statt Sichtbarkeit zu erweitern (Planungsdokument-Blueprint-Korrektur #1). [KORR v22: Es gibt keine eigene session_pool.rs — der Crate besteht nur aus lib.rs + reranker.rs, OnnxSessionPool ist Teil von reranker.rs.]"
+
+[component_focus."memfuse-ollama"."lib.rs"]
+desc = "Modul-Exports des Ollama-Clients"
+focus = "Prüfe, dass keine Business-Logik hier landet, die eigentlich in client.rs gehört."
+
+[component_focus."memfuse-ollama"."context_prefixer.rs"]
+desc = "ContextPrefixEngine — 50-100-Token-Kontext-Präfix-Generierung"
+focus = "Prüfe Verhalten bei nicht erreichbarer Ollama-Instanz — kontrollierter Fehler, kein Hang. [KORR v22: Datei hieß zuvor context_prefix.rs — tatsächlicher Dateiname ist context_prefixer.rs.]"
+
+[component_focus."memfuse-ollama"."embedding.rs"]
+risk = "Konsistenz"
+desc = "OllamaEmbedder — Embedding-Erzeugung"
+focus = "Vektor-Dimension muss über alle Aufrufe und Modelle hinweg konsistent bleiben — Dimensionswechsel ohne Fehler ist ein kritischer Befund. [KORR v22: Datei hieß zuvor embedder.rs — tatsächlicher Dateiname ist embedding.rs.]"
+
+[component_focus."memfuse-ollama"."importance.rs / model_info.rs"]
+desc = "Bisher NICHT im Inventar erfasste Dateien: Importance-Scoring bzw. Ollama-Modell-Metadaten"
+focus = "Neu ergänzt in v22 — noch keine vertiefte Fokus-Analyse hinterlegt; bei erster Bearbeitung dieser Dateien vollständige Lektüre vor Änderung durchführen und Fokus-Notiz hier nachtragen."
+
+[component_focus."memfuse-agent"."lib.rs"]
+desc = "Modul-Exports der Agent-Workflow-Engine"
+focus = "Prüfe Konsistenz der öffentlichen State-Machine-API mit ARCHITECTURE.md."
+
+[component_focus."memfuse-agent"."engine.rs"]
+risk = "APM-4"
+desc = "State-Machine — checkpoint → execute → commit → audit"
+focus = "Budget-Check MUSS VOR tool.execute() erfolgen (APM-4 kritisch) — niemals execute() → consume() → check(), da das Tool dann bereits Seiteneffekte ausgeführt hat, bevor der Budget-Fehler erkannt wird. Exactly-Once: Crash zwischen execute und commit darf nach Recovery weder Doppel- noch Nichtausführung erzeugen."
+
+[component_focus."memfuse-agent"."context.rs"]
+risk = "Performance"
+desc = "AgentContext — events-Verwaltung"
+focus = "events als Vec mit remove(0) ist O(N) bei häufigem Front-Dequeue — bei Performance-Änderungen VecDeque erwägen. Identifier-Ambiguität beachten: Knotenname \"1\" darf nicht als Schrittnummer fehlinterpretiert werden."
+
+[component_focus."memfuse-agent"."audit.rs"]
+risk = "Integrität"
+desc = "Append-only Audit-Log"
+focus = "Es darf KEINE öffentliche API zum nachträglichen Ändern oder Löschen von Einträgen geben — jede solche Erweiterung ist ein Integritätsverstoß. [KORR v22: Datei hieß zuvor audit_log.rs — tatsächlicher Dateiname ist audit.rs.]"
+
+[component_focus."memfuse-agent"."event_source.rs / graph.rs / step.rs"]
+desc = "Bisher NICHT im Inventar erfasste Dateien: Event-Quelle der State-Machine, Workflow-Graph-Struktur, Step-Definitionen"
+focus = "Neu ergänzt in v22 — noch keine vertiefte Fokus-Analyse hinterlegt; bei erster Bearbeitung dieser Dateien vollständige Lektüre vor Änderung durchführen und Fokus-Notiz hier nachtragen."
+
+[component_focus."memfuse-py"."lib.rs"]
+risk = "FFI/Panic"
+desc = "PyO3-Bindings — einzige Datei des Crates, Zero-Panic-Boundary"
+focus = "JEDER Panic in einer PyO3-Methode crasht den Python-Prozess (segfault-artig) — 0 .unwrap()/.expect() außerhalb von Tests. block_on() OHNE py.allow_threads() blockiert den Python-Interpreter. OnceLock-Runtime-Initialisierung muss race-sicher exakt 1 Runtime erzeugen, auch wenn 2 Python-Threads gleichzeitig initialisieren. MemFuseError→PyErr-Mapping muss lückenlos sein — fehlende Variante crasht statt Exception zu werfen."
+
+[component_focus."memfuse-router"."lib.rs"]
+desc = "Modul-Exports der Routing-Engine"
+focus = "Prüfe, dass memfuse-mcp (Layer 4) hier nicht importiert wird (DAG-Verletzung, ADR-045-Kontext)."
+
+[component_focus."memfuse-router"."router.rs"]
+risk = "NaN"
+desc = "SLM-Routing-Logik"
+focus = "f32::max(0.0, NaN) = NaN → Routing wird nicht-deterministisch. Bei dieser Dateigröße ist 100%-Branch-Coverage (cargo llvm-cov --branch) das realistische und verbindliche Ziel — jede neue Branch braucht einen dedizierten Test."
+
+[component_focus."memfuse-router"."profile.rs"]
+risk = "NaN"
+desc = "SlmProfile::new() / try_new()"
+focus = "SlmProfile::new() akzeptiert derzeit NaN, wodurch score >= NaN immer false ist und kein Routing mehr stattfindet — try_new() mit is_finite() && >= 0.0-Check ist der korrekte Pfad für neue Nutzung."
+
+[component_focus."memfuse-mcp"."lib.rs"]
+risk = "Protokoll/DoS/Injection"
+desc = "McpServer — stdio JSON-RPC 2.0 Server-Loop UND memfuse_search/insert/get/collections-Tool-Dispatch in EINER Datei (größte Datei des Crates)"
+focus = "ADR-010: AUSSCHLIESSLICH stdio — kein axum/TcpListener/HTTP, jeder Rest davon ist ein kritischer Architektur-Befund. Grenzwerte MAX_RPC_BYTES=16MB / MAX_SEARCH_QUERY=64KB an n-1/n/n+1 Bytes testen. Prüfe Inaktivitäts-Timeout (Slowloris-Schutz) für sehr langsame Clients. Prüfe zusätzlich, dass interne Pfade/Stacktraces niemals in Fehlermeldungen an den Client durchsickern (Informations-Leck-Risiko). [KORR v22: Es gibt keine separaten server.rs/tools.rs — Server-Loop UND Tool-Dispatch liegen beide in lib.rs; Größenklasse deshalb XL statt S/L.]"
+
+[component_focus."memfuse-mcp"."protocol.rs"]
+desc = "JsonRpcResponse-Hilfsfunktionen (response_from_error etc.)"
+focus = "Reine Serialisierungs-Helfer — Fehler-Codes müssen exakt der JSON-RPC-2.0-Spec entsprechen (kein Custom-Errorcode-Schema)."
+
+[component_focus."memfuse-mcp"."prompt_injection.rs"]
+risk = "Injection"
+desc = "Prompt-Injection-Erkennung/-Abwehr für Tool-Outputs"
+focus = "Neu ergänzt in v22 — diese Datei fehlte bisher VOLLSTÄNDIG im Komponenten-Inventar, obwohl sie mit direktem Injection-Bezug zu den sicherheitskritischsten Dateien des gesamten Crates zählt. Bei jeder Änderung: keine Denylist-basierte Erkennung als alleinige Verteidigungslinie akzeptieren (gleiche Grundregel wie bei memfuse-ollama::client.rs)."
+
+[component_focus."memfuse-mcp"."sandbox.rs"]
+risk = "Krypto"
+desc = "McpSandbox — Tool-Output-Isolation"
+focus = "Tool-Outputs müssen AES-256-GCM-SIV-verschlüsselt und bei Verwerfen ge-zeroized werden (Anthropic-Containment-Pattern) — prüfe SandboxPolicy-Defaults (DB-Reads erlaubt, DB-Writes/Code-Execution opt-in)."
+
+[component_focus."memfuse-mcp"."bin/memfuse-mcp-server.rs"]
+desc = "Binary-Einstiegspunkt — startet McpServer::run_stdio(), Logs ausschließlich nach stderr"
+focus = "Neu ergänzt in v22. stdout ist für JSON-RPC reserviert — JEDE println!/log-Ausgabe hierhin bricht das Protokoll; nur eprintln!/tracing-nach-stderr ist zulässig."
+
+[component_focus."memfuse-tauri"."lib.rs"]
+desc = "Tauri-App-Einstiegspunkt"
+focus = "Prüfe IPC-Command-Registrierung auf vollständige Fehlerbehandlung."
+
+[component_focus."memfuse-tauri"."state.rs"]
+risk = "Concurrency"
+desc = "AppState — geteilter Zustand über Tauri-Commands"
+focus = "Tauri-Commands laufen parallel — jeder Zugriff auf AppState braucht korrekte Synchronisation (RwLock/Arc/Mutex); prüfe explizit auf Data-Races bei gleichzeitigen Commands."
+
+[component_focus."memfuse-tauri"."ingestion/pdf.rs"]
+risk = "Sicherheit/Parser"
+desc = "PDF-Parser für externe, nicht-vertrauenswürdige Nutzerdateien"
+focus = "Eingebettetes PDF-JavaScript MUSS ignoriert, niemals ausgeführt werden. Leere/trunkierte/falsch benannte Dateien → kontrollierter Err, kein Panic. Fehlendes Größenlimit ist ein DoS-Risiko (RAM-Erschöpfung)."
+
+[component_focus."memfuse-tauri"."ingestion/docx.rs"]
+risk = "Sicherheit/Parser"
+desc = "DOCX-Parser für externe Nutzerdateien"
+focus = "Gleiche Robustheitsanforderungen wie pdf.rs: leere/trunkierte Datei → Err, kein Panic. Geparste Inhalte landen später im RAG-Kontext — Prompt-Injection-Bewusstsein wie bei memfuse-ollama."
+
+[component_focus."memfuse-tauri"."ingestion/email.rs"]
+risk = "Sicherheit/Parser"
+desc = "E-Mail-Parser für externe Nutzerdateien"
+focus = "Gleiche Robustheitsanforderungen wie pdf.rs/docx.rs. Zusätzlich: Header-Injection und verschachtelte MIME-Strukturen als Fuzzing-Ziel betrachten."
+
+[component_focus."memfuse-tauri"."ollama.rs"]
+risk = "Duplikation"
+desc = "OllamaBridge — Desktop-App-seitige Ollama-Anbindung"
+focus = "Prüfe auf Logik-Duplikation gegenüber memfuse-ollama::client.rs — jede Abweichung im Verhalten zwischen Bridge und Client ist ein Wartungsrisiko und potenzielle Inkonsistenzquelle. [KORR v22: Datei hieß zuvor ollama_bridge.rs — tatsächlicher Dateiname ist ollama.rs.]"
