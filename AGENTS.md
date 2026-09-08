@@ -1,5 +1,5 @@
 # MemFuse — AI-Assistenten-Kontext
-## Verifizierter Codestand · HEAD `79677186` · Stand 2026-09-07
+## Verifizierter Codestand · HEAD `79677186` · Stand 2026-09-08
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:

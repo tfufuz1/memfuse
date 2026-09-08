@@ -42,6 +42,8 @@ mod check_duplicate_symbols;
 mod check_placeholder_refs;
 mod check_vetoes;
 
+pub use check_jules_context_freshness::run_check_jules_context_freshness;
+
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1160,81 +1162,6 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     Ok(stdout)
 }
 
-pub fn run_check_jules_context_freshness() -> bool {
-    println!("=== xtask check-jules-context-freshness ===");
-    let root = find_root_dir();
-    let jules_context_path = root.join(".jules/JULES_CONTEXT.md");
-
-    let content = match fs::read_to_string(&jules_context_path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("❌ Failed to read .jules/JULES_CONTEXT.md: {}", e);
-            return false;
-        }
-    };
-
-    let re_stand = Regex::new(r"Stand:\s*(\d{4}-\d{2}-\d{2})").unwrap();
-    let stand_date = match re_stand.captures(&content) {
-        Some(caps) => caps[1].to_string(),
-        None => {
-            eprintln!(
-                "❌ Could not extract 'Stand: YYYY-MM-DD' from .jules/JULES_CONTEXT.md header"
-            );
-            return false;
-        }
-    };
-
-    let mut failed = false;
-
-    // Check against docs/decisions/README.md
-    match get_git_file_last_modified("docs/decisions/README.md") {
-        Ok(decisions_date) => {
-            if decisions_date.as_str() > stand_date.as_str() {
-                eprintln!(
-                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, docs/decisions/README.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den ADR-Tabellen-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
-                    stand_date, decisions_date
-                );
-                failed = true;
-            } else {
-                println!("✅ JULES_CONTEXT.md is up to date relative to docs/decisions/README.md (Stand: {}, docs/decisions/README.md: {})", stand_date, decisions_date);
-            }
-        }
-        Err(e) => {
-            eprintln!(
-                "❌ Failed to check docs/decisions/README.md git timestamp: {}",
-                e
-            );
-            failed = true;
-        }
-    }
-
-    // Check against WORKING_STATE.md
-    match get_git_file_last_modified("WORKING_STATE.md") {
-        Ok(working_state_date) => {
-            if working_state_date.as_str() > stand_date.as_str() {
-                eprintln!(
-                    "❌ JULES_CONTEXT.md ist veraltet (Stand: {}, WORKING_STATE.md zuletzt geändert: {}). Aktualisiere den Header-Timestamp UND den Projektstatus-Abschnitt in .jules/JULES_CONTEXT.md manuell, dann erneut committen.",
-                    stand_date, working_state_date
-                );
-                failed = true;
-            } else {
-                println!("✅ JULES_CONTEXT.md is up to date relative to WORKING_STATE.md (Stand: {}, WORKING_STATE.md: {})", stand_date, working_state_date);
-            }
-        }
-        Err(e) => {
-            eprintln!("❌ Failed to check WORKING_STATE.md git timestamp: {}", e);
-            failed = true;
-        }
-    }
-
-    if failed {
-        eprintln!("=== xtask check-jules-context-freshness FAILED ===");
-        false
-    } else {
-        println!("=== xtask check-jules-context-freshness PASSED ===");
-        true
-    }
-}
 
 pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_chars: Vec<char> = a.chars().collect();
@@ -2823,12 +2750,11 @@ mod tests {
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),
             ("memfuse-calibration", 1),
-            ("memfuse-candle", 1),
+            ("memfuse-candle", 2),
             ("memfuse-checkpoint", 1),
             ("memfuse-crypto", 1),
-            ("memfuse-kv-bridge", 1),
             ("memfuse-graph", 1),
-            ("memfuse-kv-bridge", 1),
+            ("memfuse-kv-bridge", 2),
             ("memfuse-text", 1),
             ("memfuse-embed", 2),
             ("memfuse-index", 2),
