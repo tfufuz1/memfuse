@@ -38,6 +38,7 @@ fn chrono_or_today() -> String {
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
 mod check_duplicate_symbols;
+mod check_placeholder_refs;
 mod check_vetoes;
 
 use chrono::{NaiveDate, NaiveDateTime};
@@ -1816,6 +1817,12 @@ fn main() {
                     eprintln!("❌ check-duplicate-symbols failed: {}", e);
                     process::exit(1);
                 }
+            }
+        }
+        "check-placeholder-refs" => {
+            if let Err(e) = check_placeholder_refs::run() {
+                eprintln!("❌ check-placeholder-refs failed: {}", e);
+                process::exit(1);
             }
         }
         "check-vetoes" => {
