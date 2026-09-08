@@ -8,10 +8,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-db",
-      "issue": "CASCADE-WIRING-01",
-      "timestamp": "2026-09-08T23:16:44.165520439+00:00",
-      "session_id": "11771656286957420865",
+      "krate": "memfuse-tauri",
+      "issue": "ADR077-DEPRECATION-MARKER",
+      "timestamp": "2026-09-08T23:16:34.515682512+00:00",
+      "session_id": "8107571721804661471",
       "active": true
     }
   ]
