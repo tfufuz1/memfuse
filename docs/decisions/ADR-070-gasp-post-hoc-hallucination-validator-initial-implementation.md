@@ -1,4 +1,4 @@
-# ADR-067: GASP Post-Hoc Halluzinations-Validator (Initiale Implementierung K19)
+# ADR-070: GASP Post-Hoc Halluzinations-Validator (Initiale Implementierung K19)
 
 * **Status:** Akzeptiert (Schließung von K19 als "H2 — initiale Implementierung")
 * **Datum:** 2026-09-07
