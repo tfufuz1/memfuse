@@ -3351,6 +3351,7 @@ dependencies = [
  "memfuse-calibration",
  "memfuse-checkpoint",
  "memfuse-core",
+ "memfuse-crypto",
  "memfuse-embed",
  "memfuse-graph",
  "memfuse-index",

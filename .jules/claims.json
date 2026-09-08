@@ -6,6 +6,13 @@
       "timestamp": "2026-09-08T21:50:44.781466215+00:00",
       "session_id": "6558016856048513528",
       "active": true
+    },
+    {
+      "krate": "memfuse-db",
+      "issue": "DELETION-PROOF-WIRING",
+      "timestamp": "2026-09-08T23:16:36.968551396+00:00",
+      "session_id": "1997257214306540800",
+      "active": true
     }
   ]
 }
