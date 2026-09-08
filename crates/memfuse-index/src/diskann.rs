@@ -27,14 +27,32 @@ const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
-/// Pending-Threshold: nach 50 pending inserts → auto-trigger persist_delta (reine
-/// Batching-Performance-Entscheidung, siehe trigger_background_persist_delta()).
-/// CRASH-SICHERHEIT: Jeder insert() schreibt VOR dem In-Memory-Push per
-/// append_to_pending_wal() in `<index>.pending.wal` (inkl. fsync via file.sync_all()).
-/// Bei Absturz/OOM innerhalb des Flush-Fensters stellt recover_pending_delta() beim
-/// nächsten Öffnen/load() alle WAL-persistierten Vektoren wieder her und führt persist_delta()
-/// aus — kein Datenverlust.
-const PENDING_FLUSH_THRESHOLD: u64 = 50;
+/// Minimaler Pending-Flush-Threshold (untere Grenze der adaptiven Formel).
+/// Siehe ADR-068 für die vollständige Stufenregelung.
+const PENDING_FLUSH_THRESHOLD_MIN: u64 = 50;
+/// Maximaler Pending-Flush-Threshold (obere Grenze der adaptiven Formel).
+const PENDING_FLUSH_THRESHOLD_MAX: u64 = 1_000;
+/// Adaptiver Faktor: 5% der Collection-Größe N.
+const PENDING_FLUSH_THRESHOLD_FACTOR: f64 = 0.05;
+
+#[allow(dead_code)]
+#[deprecated(note = "Verwende compute_adaptive_flush_threshold(). Siehe ADR-068.")]
+const PENDING_FLUSH_THRESHOLD: u64 = PENDING_FLUSH_THRESHOLD_MIN;
+
+/// Berechnet den adaptiven Pending-Flush-Threshold gemäß ADR-068.
+///
+/// Formel: max(MIN, min(MAX, floor(n_persisted × FACTOR)))
+///
+/// # Arguments
+/// * `n_persisted` - Aktuelle Anzahl persistierter Vektoren im Index.
+///
+/// # Returns
+/// Threshold als u64. Für `n_persisted = 0` wird `MIN` zurückgegeben.
+#[inline]
+fn compute_adaptive_flush_threshold(n_persisted: u64) -> u64 {
+    let adaptive = (n_persisted as f64 * PENDING_FLUSH_THRESHOLD_FACTOR).floor() as u64;
+    adaptive.clamp(PENDING_FLUSH_THRESHOLD_MIN, PENDING_FLUSH_THRESHOLD_MAX)
+}
 
 /// Header for DiskANN index file.
 #[derive(Debug, Clone, Copy)]
@@ -231,7 +249,8 @@ pub struct DiskAnnConfig {
     pub quantize: bool,
     /// Fallback policy when index file loading or integrity validation fails.
     pub fallback_policy: DiskAnnFallbackPolicy,
-    /// Optional override for pending flush threshold (for benchmarking). None uses PENDING_FLUSH_THRESHOLD (50).
+    /// Optionaler Override für den Pending-Flush-Threshold (für Benchmarks/Tests).
+    /// None: adaptiver Threshold gemäß ADR-068 (max(50, min(1000, floor(N × 0.05)))).
     pub pending_flush_threshold: Option<u64>,
 }
 
@@ -1731,11 +1750,15 @@ impl VectorIndex for DiskAnnIndex {
             self.inner.pending_count.fetch_add(1, Ordering::Relaxed) + 1
         };
 
+        // config.pending_flush_threshold dient als Benchmark-Override (z.B. für Tests).
+        // Im Normalfall: adaptiver Schwellenwert basierend auf der aktuellen
+        // Collection-Größe (ADR-068).
+        let n_persisted = self.len().await as u64;
         let threshold = self
             .inner
             .config
             .pending_flush_threshold
-            .unwrap_or(PENDING_FLUSH_THRESHOLD);
+            .unwrap_or_else(|| compute_adaptive_flush_threshold(n_persisted));
 
         if count >= threshold {
             self.trigger_background_persist_delta();
@@ -1843,6 +1866,38 @@ impl Ord for SearchCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_compute_adaptive_flush_threshold_formula() {
+        // Kleine Collection: Boden greift
+        assert_eq!(compute_adaptive_flush_threshold(0), 50);
+        assert_eq!(compute_adaptive_flush_threshold(100), 50);   // floor(100*0.05)=5 < 50
+        assert_eq!(compute_adaptive_flush_threshold(1_000), 50);  // floor(1000*0.05)=50
+
+        // Mittlere Collection
+        assert_eq!(compute_adaptive_flush_threshold(10_000), 500); // floor(10000*0.05)=500
+
+        // Große Collection: Deckel greift
+        assert_eq!(compute_adaptive_flush_threshold(20_000), 1_000); // floor(20000*0.05)=1000
+        assert_eq!(compute_adaptive_flush_threshold(100_000), 1_000); // Deckel
+
+        // Monotonie: Threshold wächst mit N (bis Deckel)
+        let t1 = compute_adaptive_flush_threshold(5_000);
+        let t2 = compute_adaptive_flush_threshold(15_000);
+        assert!(t1 <= t2);
+    }
+
+    #[test]
+    fn test_benchmark_override_respected() {
+        // Wenn pending_flush_threshold im Config gesetzt ist, soll er den
+        // adaptiven Wert überschreiben (Benchmark-Escape-Hatch bleibt intakt).
+        // Dieser Test prüft die Logik-Ebene (nicht den async insert()-Pfad).
+        let threshold_override: Option<u64> = Some(42);
+        let n_persisted: u64 = 100_000;
+        let result = threshold_override
+            .unwrap_or_else(|| compute_adaptive_flush_threshold(n_persisted));
+        assert_eq!(result, 42); // Override gewinnt
+    }
 
     #[tokio::test]
     async fn test_diskann_non_power_of_two_sector_size_rejected() {

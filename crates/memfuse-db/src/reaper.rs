@@ -7,7 +7,9 @@
 use crate::collection::{Collection, StoredDocument};
 use crate::consolidation_executor::execute_consolidation_pass;
 use crate::memory_consolidation::ConsolidationConfig;
-use memfuse_core::traits::{StorageEngine, VectorIndex};
+use memfuse_core::traits::StorageEngine;
+#[cfg(feature = "background-maintenance")]
+use memfuse_core::VectorIndex;
 use memfuse_core::tx_buffer::TxBuffer;
 use memfuse_core::DocId;
 use std::sync::Arc;

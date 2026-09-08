@@ -1,4 +1,4 @@
-# ADR-068: KV-Bridge Increment 2 — KvSegment-Verschlüsselung, ModelFingerprint und RoPE-Offset (K14)
+# ADR-072: KV-Bridge Increment 2 — KvSegment-Verschlüsselung, ModelFingerprint und RoPE-Offset (K14)
 
 - **Status:** Akzeptiert
 - **Datum:** 2026-09-08
