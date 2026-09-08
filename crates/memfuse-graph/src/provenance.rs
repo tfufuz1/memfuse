@@ -1,4 +1,4 @@
-use crate::immune::EdgeId;
+use crate::consistency_enforcement::EdgeId;
 use ahash::{AHashMap, AHashSet};
 use memfuse_core::{DocId, TxId};
 use parking_lot::RwLock;

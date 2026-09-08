@@ -1,11 +1,11 @@
-//! Session-DAG for Agent State Branching (Grok Pattern).
+//! Session-DAG for Agent State Branching (MemFuse Session-DAG Pattern).
 //!
 //! Native DAG implementation based on standard library maps and RwLock,
 //! keeping memfuse-graph pure-Rust and zero-external-graph-dependency (ADR-004).
 
 // FILE-CONTEXT
 // STAND: 2026-08-30T18:53:58Z (SESSION: b1234567)
-// ZWECK: Session-DAG für Grok-Style Agent State Branching
+// ZWECK: Session-DAG für persistente, azyklische Agent-State-Verzweigung (MemFuse Session-DAG Pattern)
 // INVARIANTEN: Monoton steigende NodeIdx; active_head verweist immer auf existierenden Knoten.
 // HOTSPOTS: L100-L150 (branch_from & path_to_head)
 // SIEHE AUCH: DECISIONS.md ADR-004
@@ -198,7 +198,7 @@ impl SessionBranchTree {
         Ok(new_id)
     }
 
-    /// Branches from an arbitrary prior node (Grok Branching).
+    /// Branches from an arbitrary prior node (Branch-Erstellung ab beliebigem Vorgänger-Knoten).
     ///
     /// # Errors
     /// Returns `Err(MemFuseError::InvalidInput)` if `parent_node` does not exist in the DAG.
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn test_grok_branching() {
+    fn test_session_dag_branch_from_arbitrary_node() {
         let dag = SessionBranchTree::new("Root".into(), "Root Resp".into());
         let step1 = dag
             .append_step("Step 1".into(), "Resp 1".into(), None, vec![], "main")
@@ -480,7 +480,7 @@ mod tests {
             .unwrap(); // unwrap
         assert_eq!(step2, 2);
 
-        // Branch off from step1 (Grok branching)
+        // Branch off from step1 (Branch-Erstellung ab beliebigem Vorgänger-Knoten)
         let branch_step = dag
             .branch_from(
                 step1,
