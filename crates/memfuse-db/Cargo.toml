@@ -23,6 +23,11 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["rt"] }
+zeroize = { version = "1", features = ["derive", "zeroize_derive"] }
+thiserror = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
@@ -39,9 +44,10 @@ experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 background-maintenance = []
 graph-connectivity-health = ["memfuse-graph/physio-percolation"]
-replicator-dynamics-weights = ["memfuse-calibration/physio-replicator-weights"]
+replicator-dynamics-weights = ["memfuse-calibration/replicator-dynamics-weights"]
 coherence-bonus-fusion = []
 adaptive-candidate-pool-sizing = []
+volatile-vault = []
 
 [[bench]]
 name = "migration_benchmarks"
