@@ -35,7 +35,10 @@ pub fn run_check_agents_integrity() -> bool {
     let agents_content = match fs::read_to_string(&root_agents_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("❌ [AGENTS-INTEGRITY]: Failed to read root AGENTS.md: {}", e);
+            eprintln!(
+                "❌ [AGENTS-INTEGRITY]: Failed to read root AGENTS.md: {}",
+                e
+            );
             return false;
         }
     };
@@ -52,7 +55,10 @@ pub fn run_check_agents_integrity() -> bool {
         let fehlt_table = &fehlt_section[..section_end];
 
         for line in fehlt_table.lines() {
-            if !line.trim().starts_with('|') || line.contains("Komponente / Feature") || line.contains("---|") {
+            if !line.trim().starts_with('|')
+                || line.contains("Komponente / Feature")
+                || line.contains("---|")
+            {
                 continue;
             }
 

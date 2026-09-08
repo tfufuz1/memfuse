@@ -1,5 +1,4 @@
 use regex::Regex;
-use std::fs;
 use std::path::Path;
 
 use crate::{find_root_dir, run_check_dag};

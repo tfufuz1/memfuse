@@ -2167,19 +2167,15 @@ fn main() {
                 process::exit(1);
             }
         }
-        "check-agents-integrity" => {
-            let success = check_agents_integrity::run_check_agents_integrity();
+        "claim" => {
+            let success = claim::run_claim(&args[2..]);
             if !success {
                 process::exit(1);
             }
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-<<<<<<< HEAD
-            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
-=======
-            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-agents-integrity, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
->>>>>>> 23cc148e (Shell-Commit)
+            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
             process::exit(1);
         }
     }
