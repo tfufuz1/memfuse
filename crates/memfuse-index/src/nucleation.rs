@@ -1,6 +1,6 @@
 //! F-02: Lokaler Nukleations-Trigger für HNSW-Hot-Path-Regionen.
 //!
-//! FEATURE-FLAG: `physio-nucleation` (default: off).
+//! FEATURE-FLAG: `partial-index-rebuild` (default: off).
 //! ARCHITEKTUR: Ergänzt den globalen `HNSW_REBUILD_DELETION_RATIO`-Trigger.
 //!              Kein Ersatz — der globale Trigger bleibt aktiv.
 //!              Nur der Partial-Rebuild-Pfad wird ergänzt.
@@ -117,7 +117,7 @@ impl TraversalTracker {
 ///
 /// Returns `Some(hot_node_ids)` wenn Nukleation ausgelöst werden soll,
 /// `None` wenn kein Rebuild nötig.
-#[cfg(feature = "physio-nucleation")]
+#[cfg(feature = "partial-index-rebuild")]
 pub fn should_trigger_nucleation(
     tracker: &TraversalTracker,
     tombstone_map: &HashMap<u64, bool>,
@@ -178,9 +178,9 @@ mod tests {
         tombstone_map.insert(5, false);
 
         // Global ratio 0.005 < min_global_ratio (0.05)
-        #[cfg(feature = "physio-nucleation")]
+        #[cfg(feature = "partial-index-rebuild")]
         let res = should_trigger_nucleation(&tracker, &tombstone_map, 0.005, &config);
-        #[cfg(feature = "physio-nucleation")]
+        #[cfg(feature = "partial-index-rebuild")]
         assert!(res.is_none());
     }
 
@@ -211,7 +211,7 @@ mod tests {
         tombstone_map.insert(100, true);
 
         // Global ratio = 0.05 (5%), Local ratio = 0.30 (30%) -> S_local = 6.0 > theta_c (3.0)
-        #[cfg(feature = "physio-nucleation")]
+        #[cfg(feature = "partial-index-rebuild")]
         {
             let res = should_trigger_nucleation(&tracker, &tombstone_map, 0.05, &config);
             assert!(res.is_some());
