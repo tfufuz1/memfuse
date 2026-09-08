@@ -48,7 +48,7 @@ Vergleicht die Retrieval-Qualität der Standard 4-Signal RRF-Fusion (BM25 + HNSW
 
 ## Einordnung der Messwerte zu externen Forschungswerten
 
-In Marketing-Materialien und in der Literatur (z. B. Anthropic 2024 *Contextual Retrieval Paper*) werden häufig generische Prozentzahlen genannt:
+In Marketing-Materialien und in der Fachliteratur zu Contextual-Retrieval-Verfahren werden häufig generische Prozentzahlen genannt:
 - *49% weniger Retrieval-Fehler durch Contextual Retrieval*
 - *67% weniger Fehler in Kombination mit Cross-Encoder Reranking*
 
