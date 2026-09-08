@@ -8,17 +8,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-candle",
-      "issue": "CANDLE-EMBEDDING-PROVIDER",
-      "timestamp": "2026-09-08T23:18:26.140062951+00:00",
-      "session_id": "11474266591536647553",
-      "active": true
-    },
-    {
-      "krate": "memfuse-embed",
-      "issue": "CANDLE-EMBEDDING-PROVIDER",
-      "timestamp": "2026-09-08T23:18:26.464686110+00:00",
-      "session_id": "11474266591536647553",
+      "krate": "memfuse-tauri",
+      "issue": "ADR077-DEPRECATION-MARKER",
+      "timestamp": "2026-09-08T23:16:34.515682512+00:00",
+      "session_id": "8107571721804661471",
       "active": true
     }
   ]

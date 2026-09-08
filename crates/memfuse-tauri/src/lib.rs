@@ -1,3 +1,13 @@
+//! # DEPRECATION NOTICE — `memfuse-tauri`
+//!
+//! **WICHTIGER HINWEIS:** Gemäß **ADR-077** (2026-09-08) ist `memfuse-tauri` ("MemFuse Brain")
+//! als `deprecated` eingestuft.
+//!
+//! - **Fälligkeitsdatum der physischen Entfernung:** **2026-11-07** (60 Tage ab ADR-077 Merge-Datum)
+//! - **Nachfolge-Produktvision:** Fokussierung auf die PyPI-Library (`memfuse-py`) als primäre
+//!   Schnittstelle für eingebettete Gedächtnisarchitekturen.
+//! - **Migration:** Bitte migriere auf `memfuse-py` bzw. `memfuse-core`/`memfuse-db`.
+
 pub mod commands;
 pub mod ingestion;
 pub mod ollama;
@@ -6,6 +16,10 @@ pub mod state;
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[deprecated(
+    since = "0.1.0",
+    note = "memfuse-tauri wird gemäß ADR-077 am 2026-11-07 entfernt. Migriere auf memfuse-py."
+)]
 pub fn run() {
     tracing_subscriber::fmt::init();
 
