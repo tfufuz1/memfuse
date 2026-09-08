@@ -1,5 +1,6 @@
 use crate::{find_root_dir, get_workspace_crates};
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -37,6 +38,21 @@ struct PrompterDataOutput {
     target_architecture: BTreeMap<String, String>,
     crates: Vec<CrateJsonData>,
     components: BTreeMap<String, Vec<ComponentJsonData>>,
+    working_state_snapshot: WorkingStateSnapshot,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkingStateSnapshot {
+    generated_at: String,
+    crate_count: usize,
+    crates: Vec<WorkingStateCrate>,
+    last_merge: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkingStateCrate {
+    name: String,
+    status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -245,12 +261,49 @@ pub fn run() -> bool {
         components_json.insert(crate_id.clone(), crate_components);
     }
 
+    // Read and parse WORKING_STATE.md for working_state_snapshot
+    let ws_path = root.join("WORKING_STATE.md");
+    let mut ws_crates = Vec::new();
+    let mut last_merge = "unbekannt".to_string();
+
+    if let Ok(ws_content) = fs::read_to_string(&ws_path) {
+        for line in ws_content.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("Letzter Merge:") {
+                let extracted = if let Some(idx) = trimmed.find("Letzter Merge:") {
+                    trimmed[idx..].trim().to_string()
+                } else {
+                    trimmed.to_string()
+                };
+                if !extracted.is_empty() {
+                    last_merge = extracted;
+                }
+            } else if trimmed.starts_with("| `memfuse-") {
+                let parts: Vec<&str> = trimmed.split('|').collect();
+                if parts.len() >= 5 {
+                    let name = parts[1].trim().trim_matches('`').to_string();
+                    let status = parts[4].trim().to_string();
+                    ws_crates.push(WorkingStateCrate { name, status });
+                }
+            }
+        }
+    }
+
+    let snapshot_now = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let crate_count = ws_crates.len();
+
     let output_data = PrompterDataOutput {
-        generated_at: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        generated_at: snapshot_now.clone(),
         head: get_git_head_short(),
         target_architecture: tiers_cfg.target_architecture,
         crates: crates_json,
         components: components_json,
+        working_state_snapshot: WorkingStateSnapshot {
+            generated_at: snapshot_now,
+            crate_count,
+            crates: ws_crates,
+            last_merge,
+        },
     };
 
     let output_path = root.join(".jules/prompter-data.json");
@@ -274,6 +327,33 @@ pub fn run() -> bool {
         output_data.crates.len(),
         total_components
     );
+
+    // 3. AGENTS.md timestamp freshness check
+    let agents_path = root.join("AGENTS.md");
+    if let Ok(agents_content) = fs::read_to_string(&agents_path) {
+        let re_stand = Regex::new(r"Stand\s*(\d{4}-\d{2}-\d{2})").unwrap();
+        if let Some(caps) = re_stand.captures(&agents_content) {
+            if let Ok(agents_date) = NaiveDate::parse_from_str(&caps[1], "%Y-%m-%d") {
+                let last_code_change_str = Command::new("git")
+                    .args(["log", "-1", "--format=%cs", "--", "crates/"])
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+
+                if let Ok(code_date) = NaiveDate::parse_from_str(&last_code_change_str, "%Y-%m-%d") {
+                    let days_diff = (code_date - agents_date).num_days();
+                    if days_diff > 3 {
+                        eprintln!(
+                            "⚠️  WORKING_STATE.md ist frisch, aber AGENTS.md Stand-Datum ist {} Tage alt (letzter Code-Change: {}). Erwäge 'just sync-agents'.",
+                            days_diff, last_code_change_str
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     true
 }
