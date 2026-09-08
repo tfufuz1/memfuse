@@ -1,52 +1,52 @@
 // FILE-CONTEXT
-// ZWECK: Zentraler PhysioScheduler für koordiniertes, sequenzielles Ausführen aller Physiologie-Aktionen (§10.1).
+// ZWECK: Zentraler MaintenanceScheduler für koordiniertes, sequenzielles Ausführen aller Background-Maintenance-Prozesse (§10.1).
 // INVARIANTEN: P2 Zero-Panic-Doctrine (Isolierte Fehlerbehandlung pro Teilschritt).
 //              P10 Wiederverwendung bestehender Logik ohne Duplikation.
-// NICHT-OFFENSICHTLICH: F-11 (LyapunovDriftWatcher) ist bewusst NICHT im PhysioScheduler-Tick enthalten,
+// NICHT-OFFENSICHTLICH: F-11 (LyapunovDriftWatcher) ist bewusst NICHT im MaintenanceScheduler-Tick enthalten,
 //                       sondern EVENT-DRIVEN in `crates/memfuse-router/src/router.rs` integriert. Event-driven
 //                       ist für Drift-Erkennung reaktionsschneller als ein periodischer 60s-Tick.
 // STAND: TS:2026-08-31T00:00:00Z
 
 use crate::collection::{Collection, StoredDocument};
-use crate::physio_config::PhysioConfig;
-use crate::sleep_cycle::NremConfig;
-use crate::sleep_cycle_executor::execute_nrem_cycle;
-use crate::thermostat::FreeEnergyThermostat;
+use crate::consolidation_executor::execute_consolidation_pass;
+use crate::decay_controller::AdaptiveDecayController;
+use crate::maintenance_config::MaintenanceConfig;
+use crate::memory_consolidation::ConsolidationConfig;
 use memfuse_core::traits::{StorageEngine, VectorIndex};
 use memfuse_core::{DocId, MemFuseError, TxId};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Zentraler Scheduler für die Ausführung der Physiologie-Gedächtnisprozesse (§10.1).
-pub struct PhysioScheduler<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
-    config: PhysioConfig,
+/// Zentraler Scheduler für die Ausführung der Background-Maintenance-Prozesse (§10.1).
+pub struct MaintenanceScheduler<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
+    config: MaintenanceConfig,
     collection: Arc<Collection<S, V>>,
-    nrem_config: NremConfig,
-    #[cfg(feature = "physio-replicator-weights")]
+    consolidation_config: ConsolidationConfig,
+    #[cfg(feature = "replicator-dynamics-weights")]
     replicator_state: Option<Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     active_sessions: Arc<AtomicUsize>,
 }
 
-impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V> {
-    /// Erstellt eine neue Instanz des `PhysioScheduler`.
+impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<S, V> {
+    /// Erstellt eine neue Instanz des `MaintenanceScheduler`.
     pub fn new(
-        config: PhysioConfig,
+        config: MaintenanceConfig,
         collection: Arc<Collection<S, V>>,
-        nrem_config: NremConfig,
+        consolidation_config: ConsolidationConfig,
     ) -> Self {
         Self {
             config,
             collection,
-            nrem_config,
-            #[cfg(feature = "physio-replicator-weights")]
+            consolidation_config,
+            #[cfg(feature = "replicator-dynamics-weights")]
             replicator_state: None,
             active_sessions: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     /// Setzt den optionalen `ReplicatorState` für F-07.
-    #[cfg(feature = "physio-replicator-weights")]
+    #[cfg(feature = "replicator-dynamics-weights")]
     pub fn with_replicator_state(
         mut self,
         state: Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>,
@@ -72,7 +72,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
             .saturating_sub(1)
     }
 
-    /// Startet den PhysioScheduler in einem eigenen Tokio-Task.
+    /// Startet den MaintenanceScheduler in einem eigenen Tokio-Task.
     pub fn start(
         self: Arc<Self>,
         cancel_token: tokio_util::sync::CancellationToken,
@@ -85,7 +85,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
             tracing::info!(
                 collection = %self.collection.name(),
                 interval_secs = interval_secs,
-                "PhysioScheduler started"
+                "MaintenanceScheduler started"
             );
 
             loop {
@@ -96,7 +96,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                     _ = cancel_token.cancelled() => {
                         tracing::info!(
                             collection = %self.collection.name(),
-                            "PhysioScheduler shutting down via cancellation token"
+                            "MaintenanceScheduler shutting down via cancellation token"
                         );
                         break;
                     }
@@ -105,39 +105,38 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
         })
     }
 
-    /// Führt einen einzelnen sequenziellen Physio-Tick durch (§10.1).
+    /// Führt einen einzelnen sequenziellen Maintenance-Tick durch (§10.1).
     pub async fn run_tick(&self) {
-        tracing::debug!(collection = %self.collection.name(), "PhysioScheduler tick started");
+        tracing::debug!(collection = %self.collection.name(), "MaintenanceScheduler tick started");
 
         // Step a: WAL-Intent schreiben
         if let Err(err) = write_tick_intent(&self.collection).await {
             tracing::error!(
                 collection = %self.collection.name(),
                 error = %err,
-                "PhysioScheduler: Failed to write tick start WAL intent"
+                "MaintenanceScheduler: Failed to write tick start WAL intent"
             );
         }
 
-        // Step b: F-01 Thermostat-Update
+        // Step b: F-01 Thermostat-Update / Decay Controller
         if self.config.thermostat_enabled {
-            let thermostat = FreeEnergyThermostat::new(self.config.thermostat.clone());
-            match self.collection.reap_by_thermostat(&thermostat, 100).await {
+            let decay_controller = AdaptiveDecayController::new(self.config.thermostat.clone());
+            match self.collection.reap_by_thermostat(&decay_controller, 100).await {
                 Ok(n) if n > 0 => {
-                    tracing::info!(collection = %self.collection.name(), evicted = n, "PhysioScheduler: Thermostat evicted chunks");
+                    tracing::info!(collection = %self.collection.name(), evicted = n, "MaintenanceScheduler: DecayController evicted chunks");
                 }
                 Ok(_) => {}
                 Err(err) => {
                     tracing::error!(
                         collection = %self.collection.name(),
                         error = %err,
-                        "PhysioScheduler: Thermostat step failed"
+                        "MaintenanceScheduler: DecayController step failed"
                     );
                 }
             }
         }
 
-        // Step c: F-03 SynapticUpdateBuffer.flush_to_csr()
-        // F-03 SynapticUpdateBuffer.flush_to_csr() — Hook wird von separatem Arbeitspaket ergänzt, siehe crates/memfuse-graph/src/synaptic.rs
+        // Step c: Edge-Reinforcement / SynapticUpdateBuffer.flush_to_csr()
         #[cfg(feature = "physio-synaptic-edges")]
         {
             // Placeholder: Hook wird in Prompt 5 ergänzt
@@ -145,7 +144,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
 
         // Step d: F-06 Perkolation
         if self.config.percolation_enabled && self.active_agent_sessions() == 0 {
-            #[cfg(feature = "physio-percolation")]
+            #[cfg(feature = "graph-connectivity-health")]
             {
                 match self
                     .collection
@@ -157,7 +156,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                             tracing::info!(
                                 collection = %self.collection.name(),
                                 new_edges = res.new_edges_added,
-                                "PhysioScheduler: Percolation re-bonding triggered"
+                                "MaintenanceScheduler: Percolation re-bonding triggered"
                             );
                         }
                     }
@@ -165,7 +164,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                         tracing::error!(
                             collection = %self.collection.name(),
                             error = %err,
-                            "PhysioScheduler: Percolation step failed"
+                            "MaintenanceScheduler: Percolation step failed"
                         );
                     }
                 }
@@ -176,13 +175,13 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
         // HINWEIS: Die periodische Aktualisierung greift auf `ReplicatorState` zu, sofern ein Shared Arc vorhanden ist.
         // Event-getriebene Feedback-Updates erfolgen separat über `record_retrieval_feedback`.
         if self.config.replicator_enabled {
-            #[cfg(feature = "physio-replicator-weights")]
+            #[cfg(feature = "replicator-dynamics-weights")]
             if let Some(ref state_arc) = self.replicator_state {
                 let guard = state_arc.read();
                 tracing::debug!(
                     update_count = guard.update_count,
                     weights = ?guard.weights,
-                    "PhysioScheduler: ReplicatorState verified"
+                    "MaintenanceScheduler: ReplicatorState verified"
                 );
             }
         }
@@ -193,7 +192,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
         // in `crates/memfuse-router/src/router.rs` integriert. Eine Auslagerung in diesen 60s-Tick
         // wäre eine architektonische Regression der Drift-Reaktionszeit.
 
-        // Step f: SleepCycle-Trigger
+        // Step f: Consolidation-Trigger
         if self.config.sleep_cycle_enabled && self.active_agent_sessions() == 0 {
             let user_key_prefix = self.collection.user_key_prefix();
             match self
@@ -216,10 +215,10 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                     }
 
                     if turns.len() >= self.config.sleep_episode_threshold {
-                        match execute_nrem_cycle(
+                        match execute_consolidation_pass(
                             self.collection.as_ref(),
                             &turns,
-                            &self.nrem_config,
+                            &self.consolidation_config,
                         )
                         .await
                         {
@@ -229,7 +228,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                                         collection = %self.collection.name(),
                                         tombstoned = res.duplicates_tombstoned.len(),
                                         segments = res.segments_created,
-                                        "PhysioScheduler: NREM sleep cycle consolidated turn duplicates"
+                                        "MaintenanceScheduler: Consolidation pass consolidated turn duplicates"
                                     );
                                 }
                             }
@@ -237,7 +236,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                                 tracing::error!(
                                     collection = %self.collection.name(),
                                     error = %err,
-                                    "PhysioScheduler: SleepCycle step failed"
+                                    "MaintenanceScheduler: Consolidation pass step failed"
                                 );
                             }
                         }
@@ -247,7 +246,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                     tracing::error!(
                         collection = %self.collection.name(),
                         error = %err,
-                        "PhysioScheduler: Failed to scan collection for SleepCycle"
+                        "MaintenanceScheduler: Failed to scan collection for consolidation pass"
                     );
                 }
             }
@@ -258,11 +257,11 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
             tracing::error!(
                 collection = %self.collection.name(),
                 error = %err,
-                "PhysioScheduler: Failed to write tick completion WAL intent"
+                "MaintenanceScheduler: Failed to write tick completion WAL intent"
             );
         }
 
-        tracing::debug!(collection = %self.collection.name(), "PhysioScheduler tick completed");
+        tracing::debug!(collection = %self.collection.name(), "MaintenanceScheduler tick completed");
     }
 }
 
@@ -279,7 +278,7 @@ async fn write_tick_intent<S: StorageEngine, V: VectorIndex>(
     }))?;
     collection
         .storage()
-        .put(tx, b"__physio_intent:tick", &payload)
+        .put(tx, b"__maintenance_intent:tick", &payload)
         .await?;
     collection.storage().commit(tx).await?;
     Ok(tx)
@@ -298,7 +297,7 @@ async fn complete_tick_intent<S: StorageEngine, V: VectorIndex>(
     }))?;
     collection
         .storage()
-        .put(tx, b"__physio_intent:tick", &payload)
+        .put(tx, b"__maintenance_intent:tick", &payload)
         .await?;
     collection.storage().commit(tx).await?;
     Ok(())
@@ -343,9 +342,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_physio_scheduler_tick_writes_wal_intent() {
+    async fn test_maintenance_scheduler_tick_writes_wal_intent() {
         let col = create_test_collection().await;
-        let config = PhysioConfig {
+        let config = MaintenanceConfig {
             tick_interval_secs: 1,
             thermostat_enabled: false,
             percolation_enabled: false,
@@ -354,17 +353,17 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(
+        let scheduler = Arc::new(MaintenanceScheduler::new(
             config,
             col.clone(),
-            NremConfig::default(),
+            ConsolidationConfig::default(),
         ));
 
         // Run single tick manually
         scheduler.run_tick().await;
 
         // Verify WAL intent key was written with status "completed"
-        let prefix = b"__physio_intent:tick".to_vec();
+        let prefix = b"__maintenance_intent:tick".to_vec();
         let entries = col.storage().scan_prefix(&prefix).await.unwrap();
         assert!(!entries.is_empty(), "WAL intent key should exist");
         let val: serde_json::Value = serde_json::from_slice(&entries[0].1).unwrap();
@@ -372,9 +371,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_physio_scheduler_step_isolation_on_error() {
+    async fn test_maintenance_scheduler_step_isolation_on_error() {
         let col = create_test_collection().await;
-        let config = PhysioConfig {
+        let config = MaintenanceConfig {
             tick_interval_secs: 1,
             thermostat_enabled: true,
             percolation_enabled: false,
@@ -383,26 +382,26 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(
+        let scheduler = Arc::new(MaintenanceScheduler::new(
             config,
             col.clone(),
-            NremConfig::default(),
+            ConsolidationConfig::default(),
         ));
 
-        // Run tick - thermostat step executes without error even on empty collection
+        // Run tick - decay controller step executes without error even on empty collection
         scheduler.run_tick().await;
 
         // Check completion marker
-        let prefix = b"__physio_intent:tick".to_vec();
+        let prefix = b"__maintenance_intent:tick".to_vec();
         let entries = col.storage().scan_prefix(&prefix).await.unwrap();
         let val: serde_json::Value = serde_json::from_slice(&entries[0].1).unwrap();
         assert_eq!(val["status"], "completed");
     }
 
     #[tokio::test]
-    async fn test_physio_scheduler_background_task_and_cancellation() {
+    async fn test_maintenance_scheduler_background_task_and_cancellation() {
         let col = create_test_collection().await;
-        let config = PhysioConfig {
+        let config = MaintenanceConfig {
             tick_interval_secs: 1,
             thermostat_enabled: false,
             percolation_enabled: false,
@@ -411,7 +410,7 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(config, col, NremConfig::default()));
+        let scheduler = Arc::new(MaintenanceScheduler::new(config, col, ConsolidationConfig::default()));
         let cancel_token = tokio_util::sync::CancellationToken::new();
 
         let handle = scheduler.clone().start(cancel_token.clone());
@@ -420,13 +419,13 @@ mod tests {
         cancel_token.cancel();
 
         let res = handle.await;
-        assert!(res.is_ok(), "PhysioScheduler task should shut down cleanly");
+        assert!(res.is_ok(), "MaintenanceScheduler task should shut down cleanly");
     }
 
     #[tokio::test]
     async fn test_active_sessions_tracking() {
         let col = create_test_collection().await;
-        let scheduler = PhysioScheduler::new(PhysioConfig::default(), col, NremConfig::default());
+        let scheduler = MaintenanceScheduler::new(MaintenanceConfig::default(), col, ConsolidationConfig::default());
 
         assert_eq!(scheduler.active_agent_sessions(), 0);
         assert_eq!(scheduler.increment_active_sessions(), 1);
