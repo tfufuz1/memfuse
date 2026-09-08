@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-08T12:04:24Z",
-  "head": "ff959f1",
+  "generated_at": "2026-09-08T21:48:19Z",
+  "head": "e3feb11",
   "target_architecture": {
     "memfuse-agent": "memfuse-agentic",
     "memfuse-calibration": "memfuse-inference",
@@ -70,7 +70,7 @@
       "id": "memfuse-graph",
       "layer": 1,
       "order": 5,
-      "loc": 9654,
+      "loc": 9679,
       "tests": "132+",
       "desc": "CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion)",
       "status": "✅",
@@ -92,7 +92,7 @@
       "id": "memfuse-candle",
       "layer": 2,
       "order": 7,
-      "loc": 1068,
+      "loc": 1102,
       "tests": "13+",
       "desc": "Native Candle GGUF ML inference backend for MemFuse",
       "status": "✅",
@@ -125,7 +125,7 @@
       "id": "memfuse-kv-bridge",
       "layer": 2,
       "order": 10,
-      "loc": 724,
+      "loc": 728,
       "tests": "6+",
       "desc": "KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker)",
       "status": "✅",
@@ -158,8 +158,8 @@
       "id": "memfuse-db",
       "layer": 3,
       "order": 13,
-      "loc": 26133,
-      "tests": "311+",
+      "loc": 26342,
+      "tests": "312+",
       "desc": "MemFuse — Embedded hybrid-search for AI agents",
       "status": "✅",
       "risk": "fusion",
@@ -169,7 +169,7 @@
       "id": "memfuse-bench",
       "layer": 4,
       "order": 14,
-      "loc": 3824,
+      "loc": 3884,
       "tests": "10+",
       "desc": "MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy",
       "status": "✅",
@@ -324,7 +324,7 @@
       {
         "file": "long_mem_eval.rs",
         "size": "L",
-        "loc": 1327,
+        "loc": 1350,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -332,7 +332,7 @@
       {
         "file": "main.rs",
         "size": "L",
-        "loc": 1304,
+        "loc": 1332,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -340,7 +340,7 @@
       {
         "file": "path_rag_sweep.rs",
         "size": "M",
-        "loc": 300,
+        "loc": 309,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -400,7 +400,7 @@
       {
         "file": "gasp.rs",
         "size": "M",
-        "loc": 341,
+        "loc": 375,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -688,7 +688,7 @@
       {
         "file": "collection/query_builder.rs",
         "size": "L",
-        "loc": 1124,
+        "loc": 1125,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -704,7 +704,7 @@
       {
         "file": "collection/search.rs",
         "size": "L",
-        "loc": 1100,
+        "loc": 1202,
         "risk": "Snapshot",
         "desc": "hybrid_search() — Orchestrierung aller 4 Signale",
         "focus": "LSM/BM25/Metadaten binden an seq_no, HNSW und CSR-Graph lesen unpinnten Live-State — verlasse dich in neuem Code NIE auf implizite Snapshot-Konsistenz von HNSW/Graph; nachgelagerte Filterung muss veraltete/gelöschte Treffer aktiv verwerfen."
@@ -728,7 +728,7 @@
       {
         "file": "consolidation_executor.rs",
         "size": "S",
-        "loc": 196,
+        "loc": 197,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -768,7 +768,7 @@
       {
         "file": "fusion.rs",
         "size": "L",
-        "loc": 1465,
+        "loc": 1467,
         "risk": "APM-5",
         "desc": "reciprocal_rank_fusion() / weighted_reciprocal_rank_fusion() — Kern der 4-Signal-Fusion",
         "focus": "RRF nutzt AUSSCHLIESSLICH die Rang-Position, nicht den Score-Wert — jede score *= boost-Modifikation VOR der Fusion hat NULLEFFEKT (APM-5). Boosts müssen POST-RRF angewendet werden. Beachte zusätzlich: weighted_reciprocal_rank_fusion() materialisiert und sortiert VOLLSTÄNDIG (O(U log U)) — jede neue Aufruferstelle muss MAX_SEARCH_K respektieren."
@@ -800,7 +800,7 @@
       {
         "file": "maintenance_scheduler.rs",
         "size": "M",
-        "loc": 459,
+        "loc": 474,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -808,7 +808,7 @@
       {
         "file": "memory_consolidation.rs",
         "size": "L",
-        "loc": 873,
+        "loc": 876,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -824,7 +824,7 @@
       {
         "file": "reaper.rs",
         "size": "L",
-        "loc": 634,
+        "loc": 637,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -856,7 +856,7 @@
       {
         "file": "volatile_vault.rs",
         "size": "M",
-        "loc": 419,
+        "loc": 425,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -900,7 +900,7 @@
       {
         "file": "consistency_enforcement.rs",
         "size": "M",
-        "loc": 324,
+        "loc": 328,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -908,7 +908,7 @@
       {
         "file": "csr.rs",
         "size": "XL",
-        "loc": 4362,
+        "loc": 4375,
         "risk": "Invariante/DoS",
         "desc": "CSR-Graph-Kern — offsets/reverse_map, compact(), rollback(), traverse()/traverse_at() Multi-Hop-BFS mit Hub-Node-Branching-Limit",
         "focus": "offsets.len() == reverse_map.len() + 1 MUSS immer gelten, auch bei entity-only-Commits ohne Kanten — compact() darf das offsets-Padding in diesem Fall nicht überspringen. rollback() MUSS id_map UND reverse_map bereinigen, nicht nur staged_edges. Ein Knoten mit sehr vielen Kanten (Hub) darf die Traversal-Queue nicht explodieren lassen — MAX_VISITED_NODES-Limit muss PER LEVEL greifen, nicht nur als globales Ergebnis-Limit. [KORR v22: Es gibt keine eigene bfs.rs — die komplette Traversal-Logik (traverse/traverse_at/traverse_at_bitemporal) lebt bereits in dieser Datei.]"
@@ -916,7 +916,7 @@
       {
         "file": "edge_reinforcement.rs",
         "size": "S",
-        "loc": 143,
+        "loc": 142,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -924,7 +924,7 @@
       {
         "file": "edge_reinforcement_buffer.rs",
         "size": "S",
-        "loc": 146,
+        "loc": 154,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -940,7 +940,7 @@
       {
         "file": "path_rag.rs",
         "size": "M",
-        "loc": 407,
+        "loc": 408,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1056,7 +1056,7 @@
       {
         "file": "segment.rs",
         "size": "M",
-        "loc": 221,
+        "loc": 224,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1514,5 +1514,84 @@
         "focus": "Der Trie darf nicht bei jedem Aufruf neu aufgebaut werden — prüfe OnceLock<Arc<Trie>>-Caching. Fehlendes Caching ist ein Performance-kritischer Befund."
       }
     ]
+  },
+  "working_state_snapshot": {
+    "generated_at": "2026-09-08T21:48:19Z",
+    "crate_count": 18,
+    "crates": [
+      {
+        "name": "memfuse-core",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-calibration",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-checkpoint",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-crypto",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-graph",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-text",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-candle",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-embed",
+        "status": "🧊 Optional"
+      },
+      {
+        "name": "memfuse-index",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-kv-bridge",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-ollama",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-store",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-db",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-bench",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-router",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-tauri",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-agent",
+        "status": "🟢 Clean"
+      },
+      {
+        "name": "memfuse-mcp",
+        "status": "🟢 Clean"
+      }
+    ],
+    "last_merge": "Letzter Merge: e3feb11 — \"Shell-Commit\" (2026-09-08)"
   }
 }

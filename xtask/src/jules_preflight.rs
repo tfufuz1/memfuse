@@ -1,3 +1,4 @@
+use crate::claim::ClaimsDatabase;
 use crate::{
     check_duplicate_symbols, get_changed_rs_files_from_git_diff, run_check_consistency,
     run_check_dag, run_check_jules_context_freshness, run_check_review_coverage,
@@ -5,7 +6,80 @@ use crate::{
 };
 use regex::Regex;
 use std::fs;
+use std::path::Path;
 use std::time::Instant;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CheckResult {
+    Pass,
+    Fail(String),
+    Skip(String),
+}
+
+pub fn check_no_active_claim_conflict(root: &Path, target_crate: Option<&str>) -> CheckResult {
+    let krate = match target_crate {
+        Some(c) if !c.trim().is_empty() => c.to_string(),
+        _ => match std::env::var("MEMFUSE_CLAIM_CRATE") {
+            Ok(c) if !c.trim().is_empty() => c,
+            _ => return CheckResult::Skip("MEMFUSE_CLAIM_CRATE nicht gesetzt".to_string()),
+        },
+    };
+
+    let is_ci = std::env::var("MEMFUSE_CI")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let token = std::env::var("GITHUB_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty());
+
+    if !is_ci {
+        if let Some(tok) = token {
+            let check_url = format!(
+                "https://api.github.com/repos/tfufuz1/memfuse/issues?labels=claim:{}&state=open",
+                krate
+            );
+            let output = std::process::Command::new("curl")
+                .args([
+                    "-s",
+                    "-H",
+                    &format!("Authorization: Bearer {}", tok),
+                    "-H",
+                    "User-Agent: memfuse-xtask",
+                    "-H",
+                    "Accept: application/vnd.github+json",
+                    &check_url,
+                ])
+                .output();
+
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let body = String::from_utf8_lossy(&out.stdout);
+                    if let Ok(issues) = serde_json::from_str::<serde_json::Value>(&body) {
+                        if let Some(arr) = issues.as_array() {
+                            if !arr.is_empty() {
+                                return CheckResult::Fail(format!(
+                                    "Aktiver Claim auf GitHub für Crate '{}' gefunden.",
+                                    krate
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let claims_path = root.join(".jules/claims.json");
+    let db = ClaimsDatabase::load(&claims_path);
+    if let Some(existing) = db.find_active_claim(&krate) {
+        return CheckResult::Fail(format!(
+            "Aktiver lokaler Claim für Crate '{}' (Issue '{}', seit {}).",
+            krate, existing.issue, existing.timestamp
+        ));
+    }
+
+    CheckResult::Pass
+}
 
 /// Gate-Prüfergebnis mit Name, Bestanden-Flag und optionaler Fehlerbeschreibung.
 struct GateResult {
@@ -66,6 +140,23 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
                 "Gate 1: Kritische AI-TAGs ({:.1}s)",
                 start.elapsed().as_secs_f64()
             ),
+            passed,
+            detail,
+        });
+    }
+
+    // Gate: Claim Conflict Check
+    {
+        let start = Instant::now();
+        let root = crate::find_root_dir();
+        let claim_res = check_no_active_claim_conflict(&root, None);
+        let (passed, detail) = match claim_res {
+            CheckResult::Pass => (true, None),
+            CheckResult::Skip(reason) => (true, Some(format!("Übersprungen: {}", reason))),
+            CheckResult::Fail(msg) => (false, Some(msg)),
+        };
+        results.push(GateResult {
+            name: format!("Claim-Check ({:.1}s)", start.elapsed().as_secs_f64()),
             passed,
             detail,
         });
@@ -385,6 +476,53 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::claim::{ClaimEntry, ClaimsDatabase};
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_claim_conflict_check_unset_crate_skips() {
+        std::env::remove_var("MEMFUSE_CLAIM_CRATE");
+        let dir = tempdir().unwrap();
+        let result = check_no_active_claim_conflict(dir.path(), None);
+        assert_eq!(
+            result,
+            CheckResult::Skip("MEMFUSE_CLAIM_CRATE nicht gesetzt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_claim_conflict_check_no_conflict_passes() {
+        let dir = tempdir().unwrap();
+        let result = check_no_active_claim_conflict(dir.path(), Some("memfuse-unclaimed"));
+        assert_eq!(result, CheckResult::Pass);
+    }
+
+    #[test]
+    fn test_claim_conflict_check_active_local_claim_fails() {
+        let dir = tempdir().unwrap();
+        let claims_dir = dir.path().join(".jules");
+        fs::create_dir_all(&claims_dir).unwrap();
+        let claims_path = claims_dir.join("claims.json");
+
+        let mut db = ClaimsDatabase::default();
+        db.claims.push(ClaimEntry {
+            krate: "memfuse-active".to_string(),
+            issue: "TASK-123".to_string(),
+            timestamp: "2026-09-08T20:00:00Z".to_string(),
+            session_id: "s123".to_string(),
+            active: true,
+        });
+        db.save(&claims_path).unwrap();
+
+        let result = check_no_active_claim_conflict(dir.path(), Some("memfuse-active"));
+        match result {
+            CheckResult::Fail(msg) => {
+                assert!(msg.contains("memfuse-active"));
+                assert!(msg.contains("TASK-123"));
+            }
+            _ => panic!("Expected CheckResult::Fail for active local claim"),
+        }
+    }
 
     #[test]
     fn test_silent_io_regex() {
