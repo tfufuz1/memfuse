@@ -72,8 +72,4 @@ Gemäß Governance (`CONSTITUTION.md`) ist `docs/decisions/` der alleinige kanon
 | [ADR-065](ADR-065-duplicate-symbol-ci-gate.md) | Duplicate Symbol CI-Gate zur Prävention von Merge-Kollisionen | 2026-09-07 | Final |
 | [ADR-066](ADR-066-physio-resonance-fusion-feature-flag-aktivierung.md) | Physio Resonance Fusion Feature-Flag Aktivierung | 2026-09-07 | Final |
 | [ADR-067](ADR-067-pathrag-sufficiency-threshold-calibration.md) | Normative Kalibrierung des PathRAG Sufficiency-Gate Thresholds | 2026-09-07 | Final |
-| [ADR-068](ADR-068-pending-flush-threshold-write-amplification-studie.md) | Pending Flush Threshold & Write Amplification Studie | 2026-09-08 | Final |
-| [ADR-069](ADR-069-standard-terminologie-norm.md) | Standard-Terminologie statt biologischer Metaphern und Anbieter-Branding | 2026-09-08 | Final |
-| [ADR-070](ADR-070-gasp-post-hoc-hallucination-validator-initial-implementation.md) | GASP Post-Hoc Halluzinations-Validator (Initiale Implementierung K19) | 2026-09-07 | Final |
-| [ADR-071](ADR-071-tenantid-konstruktor-haertung-additiv.md) | Additive Härtung der TenantId-Konstruktoren zur Erzwingung von INV-TENANT-1 | 2026-09-07 | Final |
-| [ADR-072](ADR-072-kv-bridge-increment-2-segment-encryption.md) | KV-Bridge Increment 2 — KvSegment-Verschlüsselung, ModelFingerprint und RoPE-Offset (K14) | 2026-09-08 | Final |
+| [ADR-070](ADR-070-f02-tombstone-pruning-scope-abgrenzung.md) | F-02 Scope-Abgrenzung — Reines Tombstone-Pruning vs. Ursprüngliches Veto | 2026-09-08 | Final |

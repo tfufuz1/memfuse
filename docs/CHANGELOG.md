@@ -4,13 +4,16 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
+| `TS:2026-09-08T00:00:00Z` | `crates/memfuse-crypto/src/kv_cipher.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Dedicated AEAD encryption and key isolation for KV-cache segments (memfuse-kv-bridge). |
+| `TS:2026-09-08T00:00:00Z` | `crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Integrationstest für KvSegment-Verschlüsselung, Zeroize und Prozess-Speicherabbild-Prüfung (P9). |
 | `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
-| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker). |
-| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
-| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
 | `TS:2026-09-07T12:00:00Z` | `crates/memfuse-db/src/temporal_filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bi-temporaler Validity-Filter für Post-RRF Fusion-Ergebnisse in Retrieval-Pipelines. |
-| `TS:2026-09-07T08:30:00Z` | `crates/memfuse-db/src/sleep_cycle_executor.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verbindet NREM-Phase-Ergebnisse mit der Collection-Mutation-API. |
+| `TS:2026-09-07T08:30:00Z` | `crates/memfuse-db/src/consolidation_executor.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verbindet Structural Consolidation Pass-Ergebnisse mit der Collection-Mutation-API. |
 | `TS:2026-09-07T00:00:00Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cryptographic deletion proof for GDPR Article 17 compliance verification across storage layers. |
+| `TS:2026-09-07T00:00:00Z` | `crates/memfuse-index/benches/flush_threshold_amplification.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Quantifizierung von Schreibvolumen und Latenz-Trade-offs für PENDING_FLUSH_THRESHOLD (50 / 200 / 1.000) |
 | `TS:2026-09-06T11:18:35Z (SESSION: 820afd9c)` | `crates/memfuse-agent/src/dlq.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistent dead-letter queue storage abstraction for failed agent steps. |
 | `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
@@ -33,7 +36,7 @@
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/nonce_reuse.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Nonce reuse demonstration and mitigation verification suite. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/proptests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Property-based testing suite for memfuse-crypto using proptest. |
 | `TS:2026-08-31T00:00:00Z (SESSION: 8a7c2f1e)` | `crates/memfuse-agent/tests/budget_race_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Test token budget concurrency and RMW race condition in memfuse-agent workflow steps. |
-| `TS:2026-08-31T00:00:00Z` | `crates/memfuse-db/src/physio_config.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Konfiguration des PhysioSchedulers für konsolidierte Physiologie-Hintergrund-Tasks. |
+| `TS:2026-08-31T00:00:00Z` | `crates/memfuse-db/src/maintenance_config.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Konfiguration des MaintenanceSchedulers für Background-Maintenance-Layer. |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/benches/audit_benchmarks.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit Benchmark Suite zur Ermittlung von Durchsatz, Speedup, Latenz-Perzentilen, Pareto-Front und RAM-Footprint |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/quantize_persistence_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für SQ8 Kendall-Tau Rangkorrelation, Persistence Roundtrips und Mmap Fault-Tolerance |
 | `TS:2026-08-31T00:00:00Z` | `crates/memfuse-index/tests/recall_audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Audit-Testsuite für HNSW & DiskANN Graph-Korrektheit & Brute-Force Recall |
@@ -57,7 +60,7 @@
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte und Skalar-Distanzberechnungen (Cosine, Euclidean, Dot Product). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW Vector Index mit Layer Descent, Soft-Deletes und transaktionalem Staging (TxBuffer). |
 | `TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)` | `crates/memfuse-index/src/persistence.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Persistenz-Schicht für HNSW-Dateiserialisierung (`.hnsw`) und mmap-basiertes Lesen. |
-| `TS:2026-08-29T18:00:00Z` | `crates/memfuse-db/src/sleep_cycle.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Sleep-Cycle-Architecture - NREM-Phase (Non-REM: Strukturierte Gedächtniskonsolidierung, Near-Duplicate-Detection & Segmentation). |
+| `TS:2026-08-29T18:00:00Z` | `crates/memfuse-db/src/memory_consolidation.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Structural Consolidation Pass & Generative Synthesis Pass Architecture — Memory Consolidation (Near-Duplicate-Detection & Segmentation). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/chunker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Markdown-basierte semantische Textzerlegung (WP-7.1) und UTF-8-sicheres Chunken. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/crud.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CRUD-Operationen (Insert, Upsert, Update, Delete, Get) für Collection. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/collection/maintenance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Wartungs-, Reparatur- und Bereinigungsoperationen (Index repair, Expiry reaper, Community detection). |
@@ -130,7 +133,7 @@
 | `2026-08-30T19:00:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `b8e4f1a2` | `PASS` | `5` | // REVIEW-PASS[1/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-30T19:00:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `TEST:OLL-001` | `b8e4f1a2` | `PASS` | `1` | // REVIEW-PASS[1/2] STATUS:PASS (ID: TEST:OLL-001) (TS: 2026-08-30T19:00:00Z) (SESSION: b8e4f1a2) |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/client.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HTTP-Client für lokale Ollama LLM/Embedding API mit Retry/Timeout/Streaming-Semantik |
-| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/context_prefixer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Anthropic Contextual Retrieval — LLM-basierte Präfix-Generierung für Chunks |
+| `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/context_prefixer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Contextual Chunk Prefixing — LLM-basierte Präfix-Generierung für Chunks |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/embedding.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | `TextEmbeddingEngine`-Implementierung für Ollama Embedding API |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/importance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LLM-basierte Wichtigkeits-Bewertung (ImportanceScore 0.0-1.0) für Memory Chunks |
 | `2026-08-30T18:54:39Z (SESSION: ed7b7b38)` | `crates/memfuse-ollama/src/model_info.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Modell-Inspektion (/api/show) und Statisches Mapping bekannter Embedding-Dimensionen |
@@ -138,7 +141,7 @@
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/community.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Community-Erkennung via Label Propagation für GraphRAG |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/csr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | CSR-Graph für Entity-Relation-Traversal (Signal 3 in 4-Signal-Fusion) |
 | `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/ppr.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Personalized PageRank Power Iteration über CSR Graph |
-| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für Grok-Style Agent State Branching |
+| `2026-08-30T18:53:58Z (SESSION: b1234567)` | `crates/memfuse-graph/src/session_dag.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Session-DAG für persistente, azyklische Agent-State-Verzweigung (MemFuse Session-DAG Pattern) |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/seq_log.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Shared Versioned Sequence Log für Snapshot-isolierte Index-Suchen (_at Familie). |
 | `2026-08-30T18:51:56Z (SESSION: e459bd5f)` | `crates/memfuse-core/src/snapshot.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SnapshotRegistry für MVCC-sichere Reads und minimal aktive Sequenznummern. |
@@ -207,8 +210,8 @@
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/concurrent_collection_stress.rs` | `ANCHOR` | `INTEGRATION:STRESS-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:STRESS-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `2026-05-18T00:00:00Z` | `crates/memfuse-db/tests/full_stack_e2e.rs` | `ANCHOR` | `INTEGRATION:E2E-001` | `-` | `DONE` | `0` | // ANCHOR[INTEGRATION:E2E-001] STATUS:DONE (TS:2026-05-18T00:00:00Z) |
 | `` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `-` | `-` | `-` | `-` | // AGENT-NOTIZ: Demonstrating second-precision TS, SESSION hash, hash-based ID and REVIEW-PASS grammar. |
-| `` | `crates/memfuse-db/src/physio_scheduler.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zentraler PhysioScheduler für koordiniertes, sequenzielles Ausführen aller Physiologie-Aktionen (§10.1). |
-| `` | `crates/memfuse-db/src/sleep_cycle.rs` | `AI-TAG` | `AGT-DB-660fbb5f` | `-` | `RESOLVED` | `0` | /// AI-TAG[SLEEP][MINOR] RESOLVED: AGT-DB-660fbb5f — Position im turns-Slice wird anstelle des |
+| `` | `crates/memfuse-db/src/maintenance_scheduler.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zentraler MaintenanceScheduler für koordiniertes, sequenzielles Ausführen aller Background-Maintenance-Prozesse (§10.1). |
+| `` | `crates/memfuse-db/src/memory_consolidation.rs` | `AI-TAG` | `AGT-DB-660fbb5f` | `-` | `RESOLVED` | `0` | /// AI-TAG[SLEEP][MINOR] RESOLVED: AGT-DB-660fbb5f — Position im turns-Slice wird anstelle des |
 | `` | `crates/memfuse-db/tests/diskann_collection_fallback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection Integration Fallback Test (Pflichttest 3). |
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |

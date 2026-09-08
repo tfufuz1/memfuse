@@ -8,14 +8,14 @@ MemFuse ist in ein 5-Schichten-Modell (Layer 0–4) gegliedert. Sämtliche Works
 ```
 Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
 Layer 1:  memfuse-calibration —  (deps: memfuse-core)
-          memfuse-candle — Native Candle GGUF ML inference backend for MemFuse (deps: memfuse-core)
           memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-crypto — Encryption at Rest utilities for MemFuse (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
-          memfuse-kv-bridge — KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) (deps: memfuse-core)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
-Layer 2:  memfuse-embed —  (deps: memfuse-calibration, memfuse-core)
+Layer 2:  memfuse-candle — Native Candle GGUF ML inference backend for MemFuse (deps: memfuse-calibration, memfuse-core)
+          memfuse-embed —  (deps: memfuse-calibration, memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-crypto, memfuse-graph)
+          memfuse-kv-bridge — KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) (deps: memfuse-core, memfuse-crypto)
           memfuse-ollama —  (deps: memfuse-calibration, memfuse-core)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-crypto)
 Layer 3:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)

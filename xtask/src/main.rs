@@ -37,8 +37,9 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_commit_messages;
 mod check_duplicate_symbols;
-mod check_jules_context_freshness;
+mod check_placeholder_refs;
 mod check_vetoes;
 
 pub use check_jules_context_freshness::run_check_jules_context_freshness;
@@ -1162,6 +1163,133 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
 }
 
 
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let len_a = a_chars.len();
+    let len_b = b_chars.len();
+
+    if len_a == 0 {
+        return len_b;
+    }
+    if len_b == 0 {
+        return len_a;
+    }
+
+    let mut dp = vec![vec![0usize; len_b + 1]; len_a + 1];
+    for i in 0..=len_a {
+        dp[i][0] = i;
+    }
+    for j in 0..=len_b {
+        dp[0][j] = j;
+    }
+
+    for i in 1..=len_a {
+        for j in 1..=len_b {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            dp[i][j] = (dp[i - 1][j] + 1)
+                .min(dp[i][j - 1] + 1)
+                .min(dp[i - 1][j - 1] + cost);
+        }
+    }
+
+    dp[len_a][len_b]
+}
+
+#[derive(Debug, Clone)]
+pub struct SentenceItem {
+    pub text: String,
+    pub normalized: String,
+    pub line_num: usize,
+}
+
+pub fn split_into_sentences(content: &str) -> Vec<SentenceItem> {
+    let mut sentences = Vec::new();
+    for (line_idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('|') || trimmed.starts_with("```") {
+            continue;
+        }
+
+        // Split by ". " / "\n" heuristics
+        let parts: Vec<&str> = trimmed.split(". ").collect();
+        for part in parts {
+            let part_trimmed = part.trim_matches(&['.', ' ', '-', '*', '>', '`'][..]).trim();
+            if part_trimmed.len() < 10 {
+                continue;
+            }
+            let normalized = part_trimmed
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase();
+
+            if normalized.len() >= 10 {
+                sentences.push(SentenceItem {
+                    text: part_trimmed.to_string(),
+                    normalized,
+                    line_num: line_idx + 1,
+                });
+            }
+        }
+    }
+    sentences
+}
+
+pub fn sentences_are_similar(s1: &SentenceItem, s2: &SentenceItem) -> bool {
+    if s1.normalized == s2.normalized {
+        return true;
+    }
+    let dist = levenshtein_distance(&s1.normalized, &s2.normalized);
+    let max_len = s1.normalized.len().max(s2.normalized.len());
+    if max_len == 0 {
+        return false;
+    }
+    (dist as f64 / max_len as f64) < 0.10
+}
+
+pub fn check_sentence_overlap(agents_content: &str, jules_content: &str) -> bool {
+    let agents_sentences = split_into_sentences(agents_content);
+    let jules_sentences = split_into_sentences(jules_content);
+
+    let mut found_duplicates = false;
+
+    for i in 0..agents_sentences.len() {
+        for j in 0..jules_sentences.len() {
+            let mut match_count = 0;
+            while i + match_count < agents_sentences.len()
+                && j + match_count < jules_sentences.len()
+                && sentences_are_similar(
+                    &agents_sentences[i + match_count],
+                    &jules_sentences[j + match_count],
+                )
+            {
+                match_count += 1;
+            }
+
+            if match_count > 3 {
+                let a_start = agents_sentences[i].line_num;
+                let a_end = agents_sentences[i + match_count - 1].line_num;
+                let j_start = jules_sentences[j].line_num;
+                let j_end = jules_sentences[j + match_count - 1].line_num;
+
+                eprintln!(
+                    "❌ Consistency error: MECE violation (>3 consecutive matching sentences) between AGENTS.md (lines {}-{}) and JULES_CONTEXT.md (lines {}-{}):",
+                    a_start, a_end, j_start, j_end
+                );
+                for k in 0..match_count {
+                    eprintln!("   - AGENTS.md:{}: {}", agents_sentences[i + k].line_num, agents_sentences[i + k].text);
+                    eprintln!("     JULES_CONTEXT.md:{}: {}", jules_sentences[j + k].line_num, jules_sentences[j + k].text);
+                }
+                found_duplicates = true;
+                break;
+            }
+        }
+    }
+
+    !found_duplicates
+}
+
 pub fn run_check_consistency() -> bool {
     println!("=== xtask check-consistency ===");
     let mut failed = false;
@@ -1191,6 +1319,17 @@ pub fn run_check_consistency() -> bool {
     // (e) Malformed ADR files check
     if !check_no_orphan_adr_files(&root_dir) {
         failed = true;
+    }
+
+    // (f) MECE sentence overlap check between AGENTS.md and .jules/JULES_CONTEXT.md
+    let agents_path = root_dir.join("AGENTS.md");
+    let jules_path = root_dir.join(".jules/JULES_CONTEXT.md");
+    if agents_path.exists() && jules_path.exists() {
+        let agents_content = fs::read_to_string(&agents_path).unwrap_or_default();
+        let jules_content = fs::read_to_string(&jules_path).unwrap_or_default();
+        if !check_sentence_overlap(&agents_content, &jules_content) {
+            failed = true;
+        }
     }
 
     if failed {
@@ -1716,6 +1855,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-commit-messages" => {
+            if let Err(e) = check_commit_messages::check_commit_messages() {
+                eprintln!("❌ check-commit-messages failed: {}", e);
+                process::exit(1);
+            }
+        }
         "check-duplicate-symbols" => {
             let changed_files = get_changed_rs_files_from_git_diff().unwrap_or_default();
             match check_duplicate_symbols::check_duplicate_symbols(&changed_files) {
@@ -1744,6 +1889,12 @@ fn main() {
                     eprintln!("❌ check-duplicate-symbols failed: {}", e);
                     process::exit(1);
                 }
+            }
+        }
+        "check-placeholder-refs" => {
+            if let Err(e) = check_placeholder_refs::run() {
+                eprintln!("❌ check-placeholder-refs failed: {}", e);
+                process::exit(1);
             }
         }
         "check-vetoes" => {
@@ -1808,7 +1959,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
@@ -2629,6 +2780,33 @@ mod tests {
                 c.name, c.layer, exp_layer
             );
         }
+    }
+
+    #[test]
+    fn test_check_sentence_overlap_detects_duplicates() {
+        let agents = r#"
+This is the first sentence that describes a very important rule in the codebase.
+This is the second sentence that explains how transactions are allocated safely.
+This is the third sentence that mandates zero panic in production Rust code.
+This is the fourth sentence that enforces strict WAL integrity check algorithms.
+"#;
+
+        let jules_duplicate = r#"
+This is the first sentence that describes a very important rule in the codebase.
+This is the second sentence that explains how transactions are allocated safely.
+This is the third sentence that mandates zero panic in production Rust code.
+This is the fourth sentence that enforces strict WAL integrity check algorithms.
+"#;
+
+        let jules_clean = r#"
+For session instructions, consult the main process guide in JULES_CONTEXT.md.
+Refer to AGENTS.md for code state facts and architecture details.
+Make sure to run xtask check-consistency before submitting changes.
+Always ensure all unit tests pass cleanly.
+"#;
+
+        assert!(!check_sentence_overlap(agents, jules_duplicate));
+        assert!(check_sentence_overlap(agents, jules_clean));
     }
 
     #[test]
