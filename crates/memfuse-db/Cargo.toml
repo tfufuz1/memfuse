@@ -39,7 +39,7 @@ experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 physio-features = []
 physio-percolation = ["memfuse-graph/physio-percolation"]
-physio-replicator-weights = ["memfuse-calibration/physio-replicator-weights"]
+physio-replicator-weights = ["memfuse-calibration/replicator-dynamics-weights"]
 physio-resonance-fusion = []
 
 [[bench]]
