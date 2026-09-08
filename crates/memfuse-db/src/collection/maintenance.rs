@@ -5,7 +5,7 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 use super::{extract_text, Collection, StoredDocument, StoredDocumentMeta};
-use crate::thermostat::{FreeEnergyThermostat, ThermostatInputs};
+use crate::decay_controller::{AdaptiveDecayController, DecaySignalInputs};
 use memfuse_calibration::IsotonicCalibrator;
 use memfuse_core::{
     DocId, EntityId, GraphIndex, MemFuseError, Result, StorageEngine, TextIndex, TxId, VectorIndex,
@@ -18,13 +18,13 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
-    /// Führt einen thermostat-gesteuerten Importance-Score-Sweep durch.
+    /// Führt einen Importance-Score-Sweep via Adaptive Decay Controller durch.
     /// Evictet Chunks deren effective_score unter eviction_threshold liegt.
     /// Gibt Anzahl der evictierten Dokumente zurück.
-    #[tracing::instrument(level = "trace", skip(self, thermostat))]
+    #[tracing::instrument(level = "trace", skip(self, decay_controller))]
     pub async fn reap_by_thermostat(
         &self,
-        thermostat: &FreeEnergyThermostat,
+        decay_controller: &AdaptiveDecayController,
         max_per_tick: usize,
     ) -> Result<usize> {
         let tombstone_ratio = self
@@ -34,9 +34,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             .map(|s| s.deleted_ratio as f32)
             .unwrap_or(0.0);
 
-        let inputs = ThermostatInputs {
+        let inputs = DecaySignalInputs {
             tombstone_ratio,
-            ..ThermostatInputs::default()
+            ..DecaySignalInputs::default()
         };
 
         let current_tx = self.next_tx.load(Ordering::SeqCst);
@@ -75,7 +75,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                     let elapsed_tx = current_tx.saturating_sub(created_tx);
 
-                    if thermostat.should_evict(base_score, elapsed_tx, &inputs) {
+                    if decay_controller.should_evict(base_score, elapsed_tx, &inputs) {
                         evicted_ids.push(id);
                     }
                 }
@@ -87,14 +87,14 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             tracing::info!(
                 collection = %self.name,
                 id = %id,
-                "Thermostat reaper evicting document"
+                "Decay controller reaper evicting document"
             );
             if let Err(e) = self.delete(id).await {
                 tracing::error!(
                     collection = %self.name,
                     id = %id,
                     error = %e,
-                    "Thermostat reaper failed to delete document"
+                    "Decay controller reaper failed to delete document"
                 );
             }
         }
@@ -141,7 +141,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         target_id,
                         base_tx: _,
                     } => {
-                        // Crash Recovery during Sleep-Cycle Consolidation (INV-CONSOLIDATE-2)
+                        // Crash Recovery during Consolidation Pass (INV-CONSOLIDATE-2)
                         // If target_id was committed to storage, ensure it is re-synced to index.
                         // If target_id was not yet committed, consolidation aborted; delete the intent.
                         let target_doc_key =
@@ -669,7 +669,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 }
 
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PercolationResult {
     pub health: Option<f32>,
@@ -677,7 +677,7 @@ pub struct PercolationResult {
     pub new_edges_added: usize,
 }
 
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Überprüft die Perkolations-Gesundheit des Wissensgraphen und löst bei Unterschreitung
     /// des Schwellenwerts automatisch einen Re-Bonding-Pass aus.

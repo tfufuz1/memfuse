@@ -1,38 +1,39 @@
 // FILE-CONTEXT
-// ZWECK: Verbindet NREM-Phase-Ergebnisse mit der Collection-Mutation-API.
-// INVARIANTEN: Nur NREM (rein strukturell) hier. Keine LLM-Calls. Keine direkte Abhängigkeit zu memfuse-graph (P1-DAG-Integrität).
+// ZWECK: Verbindet Structural Consolidation Pass-Ergebnisse mit der Collection-Mutation-API.
+// INVARIANTEN: Nur Structural Consolidation Pass (rein strukturell) hier. Keine LLM-Calls. Keine direkte Abhängigkeit zu memfuse-graph (P1-DAG-Integrität).
 // STAND: TS:2026-09-07T08:30:00Z
 
-//! Verbindet NREM-Phase-Ergebnisse mit der Collection-Mutation-API.
-//! INVARIANTE: Nur NREM (rein strukturell) hier. Keine LLM-Calls.
+//! Verbindet Structural Consolidation Pass-Ergebnisse mit der Collection-Mutation-API.
+//! INVARIANTE: Nur Structural Consolidation Pass (rein strukturell) hier. Keine LLM-Calls.
 
 use crate::collection::{Collection, StoredDocumentMeta};
-use crate::sleep_cycle::{
-    compute_community_hash, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, NremConfig,
-    NremPhaseResult, RemConfig, RemPhaseResult,
+use crate::memory_consolidation::{
+    compute_community_hash, run_consolidation_pass, run_synthesis_pass,
+    CommunityStabilityTracker, ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig,
+    SynthesisPhaseResult,
 };
 use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
 use memfuse_graph::{detect_communities, CommunityDetectionConfig};
 use std::collections::{HashMap, HashSet};
 
-/// Führt NREM-Phase aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
+/// Führt den Structural Consolidation Pass aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
 ///
-/// Gibt das `NremPhaseResult` zurück.
-pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
+/// Gibt das `ConsolidationPhaseResult` zurück.
+pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
     collection: &Collection<S, V>,
     turns: &[(DocId, Vec<f32>)],
-    config: &NremConfig,
-) -> Result<NremPhaseResult> {
+    config: &ConsolidationConfig,
+) -> Result<ConsolidationPhaseResult> {
     if turns.is_empty() {
-        return Ok(NremPhaseResult {
+        return Ok(ConsolidationPhaseResult {
             segments_created: 0,
             duplicates_tombstoned: Vec::new(),
             cascade_edge_tombstones_needed: Vec::new(),
         });
     }
 
-    let result = run_nrem_phase(turns, config);
+    let result = run_consolidation_pass(turns, config);
 
     // Tombstones auf echte Collection anwenden
     for doc_id in &result.duplicates_tombstoned {
@@ -41,26 +42,26 @@ pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
             Ok(Some(val)) => match serde_json::from_slice::<StoredDocumentMeta>(&val) {
                 Ok(meta) => meta.id,
                 Err(e) => {
-                    tracing::warn!(doc_id = ?doc_id, error = %e, "NREM: failed to deserialize StoredDocumentMeta for tombstone");
+                    tracing::warn!(doc_id = ?doc_id, error = %e, "Consolidation pass: failed to deserialize StoredDocumentMeta for tombstone");
                     continue;
                 }
             },
             Ok(None) => {
-                tracing::warn!(doc_id = ?doc_id, "NREM: doc_id key not found for tombstone");
+                tracing::warn!(doc_id = ?doc_id, "Consolidation pass: doc_id key not found for tombstone");
                 continue;
             }
             Err(e) => {
-                tracing::warn!(doc_id = ?doc_id, error = %e, "NREM: failed to lookup doc_id for tombstone");
+                tracing::warn!(doc_id = ?doc_id, error = %e, "Consolidation pass: failed to lookup doc_id for tombstone");
                 continue;
             }
         };
 
         match collection.delete(&user_id).await {
             Ok(_) => {
-                tracing::debug!(doc_id = ?doc_id, user_id = %user_id, "NREM: duplicate tombstoned")
+                tracing::debug!(doc_id = ?doc_id, user_id = %user_id, "Consolidation pass: duplicate tombstoned")
             }
             Err(e) => {
-                tracing::warn!(doc_id = ?doc_id, user_id = %user_id, error = %e, "NREM: tombstone failed")
+                tracing::warn!(doc_id = ?doc_id, user_id = %user_id, error = %e, "Consolidation pass: tombstone failed")
             }
         }
     }
@@ -70,29 +71,29 @@ pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
     if !result.cascade_edge_tombstones_needed.is_empty() {
         tracing::info!(
             count = result.cascade_edge_tombstones_needed.len(),
-            "NREM: cascade graph edge tombstones needed — caller must invoke graph cleanup"
+            "Consolidation pass: cascade graph edge tombstones needed — caller must invoke graph cleanup"
         );
     }
 
     Ok(result)
 }
 
-/// Führt den vollständigen Sleep-Cycle (NREM-Phase und optional REM-Phase) aus.
+/// Führt den vollständigen Sleep-Cycle (Structural Consolidation Pass und optional Generative Synthesis Pass) aus.
 ///
-/// 1. NREM-Phase: Segmentierung & Near-Duplicate Tombstoning.
-/// 2. REM-Phase (falls `rem_config` und `llm` angegeben): Wissenssynthese über stabile Graph-Communities.
+/// 1. Structural Consolidation Pass: Segmentierung & Near-Duplicate Tombstoning.
+/// 2. Generative Synthesis Pass (falls `synthesis_config` und `llm` angegeben): Wissenssynthese über stabile Graph-Communities.
 ///    Synthetisierte MetaChunks werden in die Collection eingefügt.
 pub async fn execute_sleep_cycle<S: StorageEngine>(
     collection: &Collection<S>,
     turns: &[(DocId, Vec<f32>)],
-    nrem_config: &NremConfig,
-    rem_config: Option<&RemConfig>,
+    consolidation_config: &ConsolidationConfig,
+    synthesis_config: Option<&SynthesisConfig>,
     llm: Option<&dyn LlmTextGenerator>,
     stability_tracker: Option<&mut CommunityStabilityTracker>,
-) -> Result<(NremPhaseResult, Option<RemPhaseResult>)> {
-    let nrem_result = execute_nrem_cycle(collection, turns, nrem_config).await?;
+) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
+    let consolidation_result = execute_consolidation_pass(collection, turns, consolidation_config).await?;
 
-    let rem_result = if let (Some(rem_cfg), Some(llm_gen)) = (rem_config, llm) {
+    let synthesis_result = if let (Some(synth_cfg), Some(llm_gen)) = (synthesis_config, llm) {
         let assignments = detect_communities(
             &collection.graph_index,
             &CommunityDetectionConfig::default(),
@@ -125,7 +126,7 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
             let comm_hash = compute_community_hash(&members);
             currently_observed.insert(comm_hash);
             let count = tracker.observe(comm_hash);
-            if count >= rem_cfg.stability_cycles_required {
+            if count >= synth_cfg.stability_cycles_required {
                 stable_communities.push((comm_hash, members));
             }
         }
@@ -160,9 +161,9 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
             }
         }
 
-        let rem_res = run_rem_phase(&stable_communities, &source_texts, llm_gen, rem_cfg).await?;
+        let synth_res = run_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg).await?;
 
-        for (idx, meta_chunk) in rem_res.synthesized.iter().enumerate() {
+        for (idx, meta_chunk) in synth_res.synthesized.iter().enumerate() {
             let chunk_id = format!("rem_synth_{}_{}", meta_chunk.source_community_hash, idx);
             let source_ids_json: Vec<u64> = meta_chunk
                 .abstracts_from
@@ -186,10 +187,10 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
             }
         }
 
-        Some(rem_res)
+        Some(synth_res)
     } else {
         None
     };
 
-    Ok((nrem_result, rem_result))
+    Ok((consolidation_result, synthesis_result))
 }
