@@ -37,6 +37,7 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_duplicate_intent;
 mod check_duplicate_symbols;
 mod check_vetoes;
 
@@ -1816,6 +1817,12 @@ fn main() {
                     eprintln!("❌ check-duplicate-symbols failed: {}", e);
                     process::exit(1);
                 }
+            }
+        }
+        "check-duplicate-intent" => {
+            if let Err(e) = check_duplicate_intent::check_duplicate_intent() {
+                eprintln!("❌ check-duplicate-intent failed: {}", e);
+                process::exit(1);
             }
         }
         "check-vetoes" => {
