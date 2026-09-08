@@ -1,4 +1,15 @@
 # MemFuse — AI-Assistenten-Kontext
+
+<!-- Anker-Index (für §N-Referenzen in anderen Dokumenten) -->
+<!-- §1 = Verifizierter Codestand -->
+<!-- §2 = Crate-Topologie (verifiziert aus Cargo.toml & DAG-Analyse) -->
+<!-- §3 = Was TATSÄCHLICH implementiert ist vs. FEHLT (verifiziert) -->
+<!-- §4 = Bekannte offene Risiken -->
+<!-- §5 = ⚠️ Frischhaltungspflicht dieser Datei -->
+<!-- §6 = Entwicklungsprozess: Analyse- und Implementierungsstufe -->
+<!-- §7 = Non-Obvious Decisions (would cause wrong code without this knowledge) -->
+
+<a id="1"></a>
 ## Verifizierter Codestand · HEAD `b89e356e` · Stand 2026-09-08
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
@@ -7,6 +18,7 @@
 
 ---
 
+<a id="2"></a>
 ## Crate-Topologie (verifiziert aus Cargo.toml & DAG-Analyse)
 
 MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspace-Crates halten sich an einen strikten gerichteten azyklischen Graphen (DAG):
@@ -40,6 +52,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 
 ---
 
+<a id="3"></a>
 ## Was TATSÄCHLICH implementiert ist vs. FEHLT (verifiziert)
 
 ### Implementiert ✅
@@ -83,6 +96,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 
 ---
 
+<a id="4"></a>
 ## Bekannte offene Risiken
 
 1. **`rebuild_region()` ohne Recall-Tests (F-02, `crates/memfuse-index/src/hnsw.rs:1812`)**:
@@ -92,6 +106,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 
 ---
 
+<a id="5"></a>
 ## ⚠️ Frischhaltungspflicht dieser Datei
 
 Diese Datei MUSS bei jedem PR aktualisiert werden, der:
@@ -107,6 +122,34 @@ Eine veraltete AGENTS.md ist schlimmer als keine — sie führt Agenten aktiv in
 
 ---
 
+<a id="6"></a>
+## Entwicklungsprozess: Analyse- und Implementierungsstufe
+
+### Stufe 1 — Analyse (Claude)
+Claude liest Repository-Stand, analysiert Architektur und ADRs, identifiziert
+Konflikte und trifft Entscheidungen. Claude schreibt KEINE Code-Änderungen.
+Output: präzise Jules-Prompt-Spezifikation mit Dateiliste, Schritten, Constraints.
+
+### Stufe 2 — Implementierung (Jules)
+Jules empfängt den Prompt, führt Mandatory Bootstrap aus, setzt Claim,
+implementiert genau die spezifizierten Änderungen, keine darüber hinaus.
+
+### Regel: ADR-Erstellung durch Jules
+Jules erstellt KEINEN neuen ADR eigenständig, wenn die Entscheidung
+architekturrelevant ist (neue Dependency, DAG-Layer-Änderung, Feature-Scope-Änderung).
+Stattdessen: Draft-Notiz im PR-Body mit Prefix "ADR-VORSCHLAG:" hinterlassen
+und auf menschliche Freigabe warten (gemäß §5 ASK-Grenzen).
+Jules DARF ADRs für rein technische Umsetzungsentscheidungen (Typ, Signatur,
+Impl-Detail) schreiben, wenn keine Alternativen offen sind.
+
+### Claim-Pflicht vor Arbeitsbeginn
+Jede Session MUSS vor erstem Schreibzugriff einen Claim setzen:
+  `cargo xtask claim --crate <ZIEL-CRATE> --issue <TASK-ID>`
+Bei Claim-Konflikt: STOP — warten oder koordinieren, nicht überschreiben.
+
+---
+
+<a id="7"></a>
 ## Non-Obvious Decisions (would cause wrong code without this knowledge)
 
 - **TxId generation**: ALWAYS `collection.allocate_tx()` — NEVER `SystemTime::as_nanos()`
