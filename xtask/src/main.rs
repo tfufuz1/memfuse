@@ -562,13 +562,22 @@ fn generate_session_continuity_section() -> String {
     out.push_str("## Session-Kontinuität (autogeneriert aus letztem Merge)\n");
 
     let last_commit = std::process::Command::new("git")
-        .args(["log", "-1", "--format=%h%x09%s"])
+        .args(["log", "--grep=Merge\\|Shell-Commit", "-1", "--format=%h%x09%s"])
         .output()
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "0000000\tUnbekannter Commit".to_string());
+        .unwrap_or_else(|| {
+            std::process::Command::new("git")
+                .args(["log", "-1", "--format=%h%x09%s"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "0000000\tUnbekannter Commit".to_string())
+        });
 
     let (last_hash, last_subject) = match last_commit.split_once('\t') {
         Some((h, s)) => (h.trim(), s.trim()),
