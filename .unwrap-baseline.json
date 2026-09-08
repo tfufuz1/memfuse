@@ -1041,7 +1041,7 @@
   },
   {
     "file": "crates/memfuse-candle/src/gasp.rs",
-    "hash": "3314dfa6f453903b"
+    "hash": "4df3a2df5fdb8144"
   },
   {
     "file": "crates/memfuse-candle/src/gasp.rs",
@@ -4853,6 +4853,10 @@
   },
   {
     "file": "crates/memfuse-db/src/reaper.rs",
+    "hash": "7e43c6684c61504c"
+  },
+  {
+    "file": "crates/memfuse-db/src/reaper.rs",
     "hash": "7fb5a34bc788eca3"
   },
   {
@@ -4896,10 +4900,6 @@
     "hash": "ef8c38b37cb5a4f9"
   },
   {
-    "file": "crates/memfuse-db/src/reaper.rs",
-    "hash": "fa982b0b7f3d23c3"
-  },
-  {
     "file": "crates/memfuse-db/src/transaction.rs",
     "hash": "3dea9b02273f2ea2"
   },
@@ -4921,10 +4921,6 @@
   },
   {
     "file": "crates/memfuse-db/src/volatile_vault.rs",
-    "hash": "2c35aa47d85cb7b2"
-  },
-  {
-    "file": "crates/memfuse-db/src/volatile_vault.rs",
     "hash": "389f9e290fde05f8"
   },
   {
@@ -4938,6 +4934,10 @@
   {
     "file": "crates/memfuse-db/src/volatile_vault.rs",
     "hash": "dbc548e863b1c991"
+  },
+  {
+    "file": "crates/memfuse-db/src/volatile_vault.rs",
+    "hash": "f4098a4d8804d4b1"
   },
   {
     "file": "crates/memfuse-db/tests/atomic_commit.rs",

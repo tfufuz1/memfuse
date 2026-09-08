@@ -392,11 +392,12 @@ mod tests {
         // REGRESSION TEST (ADR-067 / arXiv:2506.00610):
         // Verhindert, dass der Default-Schwellenwert versehentlich unter 0.10 fällt (z.B. auf 0.01),
         // was Precision-Kollaps durch ungefilterte, verrauschte Multi-Hop-Pfade auslösen würde.
-        assert!(
-            DEFAULT_SUFFICIENCY_THRESHOLD >= 0.10,
-            "DEFAULT_SUFFICIENCY_THRESHOLD must be >= 0.10 to prevent precision collapse (got {})",
-            DEFAULT_SUFFICIENCY_THRESHOLD
-        );
+        const {
+            assert!(
+                DEFAULT_SUFFICIENCY_THRESHOLD >= 0.10,
+                "DEFAULT_SUFFICIENCY_THRESHOLD must be >= 0.10 to prevent precision collapse",
+            )
+        };
 
         let engine = PathRAGEngine::with_defaults(TestGraph::new(vec![]));
         assert_eq!(

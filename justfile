@@ -222,3 +222,22 @@ spec NAME:
     cp docs/specs/TEMPLATE_MICRO_SPEC.md "$TARGET"
     echo "Created new micro-spec at $TARGET"
     echo "Please fill out the spec and follow the SDD-Process (Spec -> Test -> Impl)!"
+
+# Runs the Jules Session Preflight Verification
+jules-preflight *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo run -p xtask -- jules-preflight "$@"
+
+# Claims a crate / feature for exclusive session execution
+claim *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo run -p xtask -- claim "$@"
+
+# Runs factual integrity check for AGENTS.md against workspace
+check-agents-integrity:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo run -p xtask -- check-agents-integrity
+

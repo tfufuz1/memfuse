@@ -2142,9 +2142,18 @@ fn main() {
         "generate-adr" => {
             let title = args.get(2).map(|s| s.as_str()).unwrap_or("Untitled");
             let dry_run = args.iter().any(|arg| arg == "--dry-run");
-            if let Err(e) = generate_adr::run_generate_adr(title, dry_run) {
-                eprintln!("❌ generate-adr failed: {}", e);
-                process::exit(1);
+            match generate_adr::run_generate_adr(title, dry_run) {
+                Ok(res) => {
+                    println!(
+                        "✅ ADR-{:03} erfolgreich in {} registriert",
+                        res.number,
+                        res.path.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("❌ generate-adr failed: {}", e);
+                    process::exit(1);
+                }
             }
         }
         "consolidate-adrs" => {

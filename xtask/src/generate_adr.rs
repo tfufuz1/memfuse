@@ -17,10 +17,11 @@ pub fn consolidate_decisions(root: &Path) -> Result<(), String> {
     let target_file = root.join("DECISIONS.md");
 
     if !decisions_dir.exists() {
-        return Err(format!(
-            "Verzeichnis {} existiert nicht",
+        println!(
+            "ℹ️ Verzeichnis {} existiert nicht mehr — DECISIONS.md ist bereits die kanonische Single Source of Truth.",
             decisions_dir.display()
-        ));
+        );
+        return Ok(());
     }
 
     let adr_re = Regex::new(r"^ADR-(\d+)").unwrap();

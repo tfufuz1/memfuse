@@ -80,16 +80,16 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-calibration` | 1 | 1034 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 3142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 9654 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 9678 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-candle` | 2 | 1068 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
+| `memfuse-candle` | 2 | 1102 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-embed` | 2 | 1882 | 🧊 Optional |  |
 | `memfuse-index` | 2 | 14508 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-kv-bridge` | 2 | 724 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
+| `memfuse-kv-bridge` | 2 | 728 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
 | `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15882 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-db` | 3 | 26305 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 4 | 3847 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-db` | 3 | 26342 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 4 | 3884 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 4 | 4329 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
 | `memfuse-agent` | 5 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
