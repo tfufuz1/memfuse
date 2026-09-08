@@ -7790,6 +7790,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "memfuse-bench",
  "regex",
  "serde",
  "serde_json",
