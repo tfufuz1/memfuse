@@ -60,8 +60,26 @@ pub struct LongMemEvalCase {
         u64,    /* session_idx */
     )>,
     pub question: String,
-    pub expected_answer: String,
+    pub answer: serde_json::Value,
     pub question_type: LongMemEvalQuestionType,
+}
+
+impl LongMemEvalCase {
+    pub fn answer_str(&self) -> String {
+        match &self.answer {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(" | "),
+            other => other.to_string(),
+        }
+    }
+
+    pub fn expected_answer(&self) -> String {
+        self.answer_str()
+    }
 }
 
 /// Report containing evaluation metrics per question category.
@@ -1207,12 +1225,12 @@ fn json_val_to_string(val: Option<serde_json::Value>) -> Option<String> {
                 .filter_map(|v| match v {
                     serde_json::Value::String(s) => Some(s),
                     serde_json::Value::Number(n) => Some(n.to_string()),
-                    _ => None,
+                    other => Some(other.to_string()),
                 })
                 .collect::<Vec<_>>()
-                .join(" "),
+                .join(" | "),
         ),
-        _ => None,
+        other => Some(other.to_string()),
     }
 }
 
@@ -1223,9 +1241,10 @@ fn parse_raw_item(item: RawLongMemEvalItem) -> Option<LongMemEvalCase> {
         .unwrap_or_else(|| "unknown_qid".to_string());
 
     let question = item.question?;
-    let expected_answer = json_val_to_string(item.answer)
-        .or_else(|| json_val_to_string(item.expected_answer))
-        .unwrap_or_default();
+    let answer = item
+        .answer
+        .or(item.expected_answer)
+        .unwrap_or(serde_json::Value::Null);
 
     let qtype_str = item.question_type.unwrap_or_default();
     let question_type = parse_question_type(&qtype_str, &qid);
@@ -1254,7 +1273,7 @@ fn parse_raw_item(item: RawLongMemEvalItem) -> Option<LongMemEvalCase> {
         question_id: qid,
         session_history,
         question,
-        expected_answer,
+        answer,
         question_type,
     })
 }
@@ -1308,7 +1327,7 @@ where
                     .iter()
                     .all(|c| c.score < 0.1 || c.text.is_empty())
         } else {
-            let lower_answer = case.expected_answer.to_lowercase();
+            let lower_answer = case.answer_str().to_lowercase();
             search_results.iter().any(|chunk| {
                 let lower_chunk = chunk.text.to_lowercase();
                 lower_chunk.contains(&lower_answer)

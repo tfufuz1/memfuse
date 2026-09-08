@@ -35,7 +35,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 15882 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-db` | 3 | 26342 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 4 | 3884 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-bench` | 4 | 3903 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 4 | 4329 | 🟢 Clean |  |
 | `memfuse-tauri` | 4 | 6156 | 🟢 Clean |  |
 | `memfuse-agent` | 5 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
