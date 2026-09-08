@@ -37,6 +37,7 @@ fn chrono_or_today() -> String {
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
+mod check_agents_integrity;
 mod check_commit_messages;
 mod check_duplicate_intent;
 mod check_duplicate_symbols;
@@ -1458,6 +1459,11 @@ pub fn run_check_consistency() -> bool {
         }
     }
 
+    // (g) AGENTS.md factual integrity check
+    if !check_agents_integrity::run_check_agents_integrity() {
+        failed = true;
+    }
+
     if failed {
         eprintln!("=== xtask check-consistency FAILED ===");
         false
@@ -2047,6 +2053,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-agents-integrity" => {
+            let success = check_agents_integrity::run_check_agents_integrity();
+            if !success {
+                process::exit(1);
+            }
+        }
         "check-consistency" => {
             let success = run_check_consistency();
             if !success {
@@ -2126,7 +2138,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }
