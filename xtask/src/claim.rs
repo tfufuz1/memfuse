@@ -67,6 +67,16 @@ impl ClaimsDatabase {
 }
 
 pub fn run_claim(args: &[String]) -> bool {
+    if std::env::var("GITHUB_TOKEN")
+        .map(|t| !t.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return run_claim_github(args);
+    }
+    run_claim_local(args)
+}
+
+fn run_claim_local(args: &[String]) -> bool {
     let mut krate = String::new();
     let mut issue = String::new();
     let mut dry_run = false;
@@ -156,6 +166,173 @@ pub fn run_claim(args: &[String]) -> bool {
     true
 }
 
+pub fn run_claim_github(args: &[String]) -> bool {
+    let token = match std::env::var("GITHUB_TOKEN") {
+        Ok(t) if !t.trim().is_empty() => t,
+        _ => return run_claim_local(args),
+    };
+
+    let mut krate = String::new();
+    let mut issue = String::new();
+    let mut session_hash = String::new();
+    let mut dry_run = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--crate" => {
+                if i + 1 < args.len() {
+                    krate = args[i + 1].clone();
+                    i += 1;
+                }
+            }
+            "--issue" => {
+                if i + 1 < args.len() {
+                    issue = args[i + 1].clone();
+                    i += 1;
+                }
+            }
+            "--session" | "--session-hash" => {
+                if i + 1 < args.len() {
+                    session_hash = args[i + 1].clone();
+                    i += 1;
+                }
+            }
+            "--dry-run" => {
+                dry_run = true;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    if krate.is_empty() {
+        eprintln!("❌ Parameter --crate <CRATE> erforderlich.");
+        return false;
+    }
+    if issue.is_empty() {
+        issue = "UNSPECIFIED".to_string();
+    }
+    if session_hash.is_empty() {
+        session_hash = std::env::var("MEMFUSE_SESSION_HASH")
+            .or_else(|_| std::env::var("JULES_SESSION_ID"))
+            .unwrap_or_else(|_| "local".to_string());
+    }
+
+    // Step c: Check existing issues with label "claim:<crate>" via GitHub REST API
+    let check_url = format!(
+        "https://api.github.com/repos/tfufuz1/memfuse/issues?labels=claim:{}&state=open",
+        krate
+    );
+    let output = std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-H",
+            &format!("Authorization: Bearer {}", token),
+            "-H",
+            "User-Agent: memfuse-xtask",
+            "-H",
+            "Accept: application/vnd.github+json",
+            &check_url,
+        ])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let body = String::from_utf8_lossy(&out.stdout);
+            if let Ok(issues) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(arr) = issues.as_array() {
+                    if !arr.is_empty() {
+                        eprintln!(
+                            "⚠️ KONFLIKT: Offenes Issue mit Label 'claim:{}' existiert bereits auf GitHub.",
+                            krate
+                        );
+                        if !dry_run {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if dry_run {
+        println!(
+            "{{\"status\": \"claimed\", \"crate\": \"{}\", \"issue\": \"{}\", \"mode\": \"github\", \"dry_run\": true}}",
+            krate, issue
+        );
+        return true;
+    }
+
+    // Step b: Create GitHub issue via REST API
+    let create_url = "https://api.github.com/repos/tfufuz1/memfuse/issues";
+    let title = format!("CLAIM: {} — {}", krate, issue);
+    let payload = serde_json::json!({
+        "title": title,
+        "body": session_hash,
+        "labels": ["claimed", format!("claim:{}", krate)]
+    });
+
+    let payload_str = match serde_json::to_string(&payload) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "❌ Fehler bei JSON-Serialisierung für Issue-Erstellung: {}",
+                e
+            );
+            return false;
+        }
+    };
+
+    let post_output = std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-X",
+            "POST",
+            "-H",
+            &format!("Authorization: Bearer {}", token),
+            "-H",
+            "User-Agent: memfuse-xtask",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-d",
+            &payload_str,
+            create_url,
+        ])
+        .output();
+
+    match post_output {
+        Ok(out) if out.status.success() => {
+            let response_body = String::from_utf8_lossy(&out.stdout);
+            if let Ok(json_res) = serde_json::from_str::<serde_json::Value>(&response_body) {
+                if json_res.get("number").is_some() {
+                    println!(
+                        "✅ GitHub Claim-Issue erfolgreich erstellt: Crate '{}' für Issue '{}' gesperrt.",
+                        krate, issue
+                    );
+                    return true;
+                }
+            }
+            eprintln!(
+                "❌ GitHub API Fehler bei Issue-Erstellung: {}",
+                response_body
+            );
+            false
+        }
+        Ok(out) => {
+            eprintln!(
+                "❌ curl-Befehl fehlgeschlagen mit Status Code {}",
+                out.status
+            );
+            false
+        }
+        Err(e) => {
+            eprintln!("❌ Fehler beim Ausführen von curl: {}", e);
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +361,26 @@ mod tests {
             "ADR-063"
         );
         assert!(loaded.find_active_claim("memfuse-core").is_none());
+    }
+
+    #[test]
+    fn test_claim_empty_crate_returns_false() {
+        let args = vec!["--issue".to_string(), "ISSUE-1".to_string()];
+        assert!(!run_claim(&args));
+        assert!(!run_claim_github(&args));
+    }
+
+    #[test]
+    fn test_claim_github_fallback_without_token() {
+        // Ensure GITHUB_TOKEN is unset for fallback test
+        std::env::remove_var("GITHUB_TOKEN");
+        let args = vec![
+            "--crate".to_string(),
+            "memfuse-test-fallback".to_string(),
+            "--issue".to_string(),
+            "TEST-FB".to_string(),
+            "--dry-run".to_string(),
+        ];
+        assert!(run_claim_github(&args));
     }
 }
