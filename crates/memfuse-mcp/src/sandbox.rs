@@ -6,7 +6,7 @@
 // SIEHE AUCH:  ADR-010, rules/detect_nested_locks.yml
 
 // memfuse-mcp/src/sandbox.rs
-// MCP Tool Isolation Layer (Anthropic Containment Pattern)
+// MCP Tool Isolation Layer (MemFuse Volatile-Output Isolation)
 
 use memfuse_core::{MemFuseError, Result};
 use parking_lot::Mutex;

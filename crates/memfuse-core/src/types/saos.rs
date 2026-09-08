@@ -135,7 +135,7 @@ pub struct ContextChunk {
 
 impl ContextChunk {
     /// Kombinierten Text für BM25-Indizierung und Embedding.
-    /// Entspricht Anthropic Contextual BM25: prefix + "\n\n" + content.
+    /// Entspricht dem etablierten Contextual-BM25-Schema: prefix + "\n\n" + content.
     ///
     /// Allokiert nur wenn `contextual_prefix` gesetzt. Akzeptabel für
     /// Ingestion-Pipeline (1× pro Chunk, kein Hot-Path).
