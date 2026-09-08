@@ -915,6 +915,7 @@ async fn run_long_mem_eval_cmd(
     let col = db.collection("long_mem_eval_col").await?;
 
     let dummy_vec = pad_vector(&[0.5, 0.5, 0.0, 0.0], 768);
+    let mut batch = Vec::new();
     for (case_idx, case) in cases.iter().enumerate() {
         for (turn_idx, (role, utterance, sess_idx)) in case.session_history.iter().enumerate() {
             let doc_id = format!("lme_doc_{}_{}_{}", case_idx, sess_idx, turn_idx);
@@ -924,8 +925,15 @@ async fn run_long_mem_eval_cmd(
                 "case_id": case.question_id,
                 "session_idx": sess_idx,
             });
-            col.insert(&doc_id, &dummy_vec, Some(metadata)).await?;
+            batch.push((doc_id, dummy_vec.clone(), Some(metadata)));
+            if batch.len() >= 50 {
+                col.insert_many(&batch).await?;
+                batch.clear();
+            }
         }
+    }
+    if !batch.is_empty() {
+        col.insert_many(&batch).await?;
     }
 
     let report = run_long_mem_eval(&cases, |q| {
@@ -997,6 +1005,7 @@ async fn run_locomo_cmd(
     let col = db.collection("locomo_col").await?;
 
     let dummy_vec = pad_vector(&[0.5, 0.5, 0.0, 0.0], 768);
+    let mut batch = Vec::new();
     for (case_idx, case) in cases.iter().enumerate() {
         for (ev_idx, ev) in case.evidence.iter().enumerate() {
             let doc_id = format!("locomo_doc_{}_{}", case_idx, ev_idx);
@@ -1005,8 +1014,15 @@ async fn run_locomo_cmd(
                 "case_id": case.question_id,
                 "sample_id": case.sample_id,
             });
-            col.insert(&doc_id, &dummy_vec, Some(metadata)).await?;
+            batch.push((doc_id, dummy_vec.clone(), Some(metadata)));
+            if batch.len() >= 50 {
+                col.insert_many(&batch).await?;
+                batch.clear();
+            }
         }
+    }
+    if !batch.is_empty() {
+        col.insert_many(&batch).await?;
     }
 
     let report = run_locomo_eval(&cases, |q| {

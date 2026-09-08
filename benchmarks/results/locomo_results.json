@@ -1,15 +1,15 @@
 {
   "per_category_recall_at_5": {
     "Temporal": 0.003115264797507788,
+    "SingleHop": 0.007134363852556481,
     "MultiHop": 0.0,
-    "OpenDomain": 0.0,
-    "SingleHop": 0.007134363852556481
+    "OpenDomain": 0.0
   },
   "per_category_mrr": {
-    "MultiHop": 0.0,
+    "SingleHop": 0.0038644470868014267,
     "Temporal": 0.0006230529595015577,
     "OpenDomain": 0.0,
-    "SingleHop": 0.0038644470868014267
+    "MultiHop": 0.0
   },
   "overall_recall_at_5": 0.004545454545454545,
   "overall_mrr": 0.0022402597402597403,
