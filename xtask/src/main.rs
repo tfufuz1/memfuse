@@ -954,8 +954,11 @@ pub fn run_sync_docs(check_only: bool) -> bool {
 
     let current_ws = fs::read_to_string("WORKING_STATE.md").unwrap_or_default();
     let re = Regex::new(r"\| LAST_SYNC \| `[^`]+` \|").unwrap();
+    let re_merge = Regex::new(r"- Letzter Merge: [^\n]+").unwrap();
     let norm_current = re.replace_all(current_ws.trim(), "| LAST_SYNC | `NORMALIZED` |");
+    let norm_current = re_merge.replace_all(&norm_current, "- Letzter Merge: NORMALIZED");
     let norm_full = re.replace_all(full_working_state.trim(), "| LAST_SYNC | `NORMALIZED` |");
+    let norm_full = re_merge.replace_all(&norm_full, "- Letzter Merge: NORMALIZED");
 
     if check_only {
         let mut drift = false;
