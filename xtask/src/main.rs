@@ -39,8 +39,10 @@ fn chrono_or_today() -> String {
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
 mod check_commit_messages;
 mod check_duplicate_symbols;
+mod check_jules_context_freshness;
 mod check_placeholder_refs;
 mod check_vetoes;
+mod gen_prompter_data;
 
 pub use check_jules_context_freshness::run_check_jules_context_freshness;
 
@@ -2070,6 +2072,12 @@ fn main() {
             println!("Note: Community detection triggers should be invoked via collection.run_community_detection().await or embedded engine instances.");
             println!("=== xtask run-community-detection PASSED ===");
         }
+        "gen-prompter-data" => {
+            let success = gen_prompter_data::run();
+            if !success {
+                process::exit(1);
+            }
+        }
         "context-tags" => {
             let tags = scan_tags("crates");
             let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
@@ -2077,7 +2085,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }

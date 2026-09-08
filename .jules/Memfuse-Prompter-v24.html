@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>MEMFUSE.BAUKASTEN — v23 · 15 CRATES · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
+<title>MEMFUSE.BAUKASTEN — v25 · 18 CRATES · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
 <style>
 :root{
   --bg:#050508;--s1:#08080e;--s2:#0d0d17;--s3:#121220;
@@ -202,14 +202,14 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
 
 <header class="hdr">
   <div class="hdr-in">
-    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v23</span></span>
+    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v25</span></span>
     <span class="hdot"></span>
-    <span class="hsub">15 Crates · Tier+Domain-Profile · 42 APMs · 14 Task-Typen · ROLE-LOCK (Audit≠Fix) · PLAN→ACT→VERIFY→REFLECT</span>
+    <span class="hsub">18 Crates · Tier+Domain-Profile · 42 APMs · 14 Task-Typen · ROLE-LOCK (Audit≠Fix) · PLAN→ACT→VERIFY→REFLECT</span>
     <div class="hright">
-      <span class="hbadge hb-a">15 CRATES · 5 LAYER</span>
+      <span class="hbadge hb-a">18 CRATES · 7 LAYER</span>
       <span class="hbadge hb-b">14 TASK-TYPEN</span>
       <span class="hbadge hb-c">42 APM-PATTERN</span>
-      <span class="hbadge hb-a">~80 KOMPONENTEN</span>
+      <span class="hbadge hb-a">~157 KOMPONENTEN</span>
       <span class="hbadge hb-b">AUDIT≠FIX ROLE-LOCK</span>
     </div>
   </div>
@@ -232,7 +232,7 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
       </div>
       <div class="cb">
         <div id="data-source-slot"></div>
-        <div class="inv-hint">Dieses Tool ist projektunabhängig: die Engine (Task-Vorlagen, APM-Katalog, Tag-Grammatik) ist fest verdrahtet, das Crate-/Datei-Inventar ist austauschbar. Lade eine lokal erzeugte <code style="color:var(--ac2)">prompter-data.json</code> (Schema unten), um die Beispieldaten durch den echten Stand deines Repos zu ersetzen — kein Netzwerk, kein Server, rein clientseitig.</div>
+        <div class="inv-hint">Dieses Tool ist projektunabhängig: die Engine (Task-Vorlagen, APM-Katalog, Tag-Grammatik) ist fest verdrahtet, das Crate-/Datei-Inventar ist austauschbar. Empfohlener Weg: Führe im Repo-Root <code style="color:var(--teal)">cargo xtask gen-prompter-data</code> (oder <code style="color:var(--teal)">just gen-prompter-data</code>) aus. Das erzeugt automatisch <code style="color:var(--ac2)">.jules/prompter-data.json</code> aus allen 18 Workspace-Crates mit Live-LOC, Layer-Topologie, Test-Zahlen und Zielarchitektur-Mapping. Lade eine erzeugte <code style="color:var(--ac2)">prompter-data.json</code> — kein Netzwerk, kein Server, rein clientseitig.</div>
         <input type="file" id="data-file-input" accept="application/json" style="display:none" onchange="loadProjectDataFile(this.files[0])">
         <div class="chips" style="margin-top:7px">
           <div class="chip" onclick="document.getElementById('data-file-input').click()">prompter-data.json laden</div>
@@ -543,7 +543,7 @@ let _rawPrompt = '';
 // memfuse_prompter_review.md Abschnitt 1). Dieses Datum manuell aktualisieren,
 // sobald das Inventar unten per Hand neu gegen das Repo abgeglichen wurde.
 // ═══════════════════════════════════════════════════════════════════
-let INVENTORY_DATE = '2026-09-03';
+let INVENTORY_DATE = '2026-09-08';
 let INVENTORY_SOURCE = 'bundled'; // 'bundled' | 'imported'
 let INVENTORY_FILENAME = null;
 const APM_ON = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16',
@@ -561,22 +561,45 @@ const APM_ON = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13',
 // beim Laden einer prompter-data.json per mergeProjectData() überschrieben
 // werden. Die ENGINE (TASKS, APM, Tag-Grammatik, Protokoll-Blöcke weiter unten)
 // bleibt davon unberührt und ist projektunabhängig.
+let TARGET_ARCH = {
+  "memfuse-core": "memfuse-foundation",
+  "memfuse-crypto": "memfuse-security",
+  "memfuse-kv-bridge": "memfuse-security",
+  "memfuse-store": "memfuse-persistence",
+  "memfuse-checkpoint": "memfuse-persistence",
+  "memfuse-index": "memfuse-retrieval",
+  "memfuse-graph": "memfuse-retrieval",
+  "memfuse-text": "memfuse-retrieval",
+  "memfuse-db": "memfuse-orchestrator",
+  "memfuse-calibration": "memfuse-inference",
+  "memfuse-router": "memfuse-inference",
+  "memfuse-ollama": "memfuse-inference",
+  "memfuse-candle": "memfuse-inference",
+  "memfuse-embed": "memfuse-inference",
+  "memfuse-agent": "memfuse-agentic",
+  "memfuse-mcp": "memfuse-mcp",
+  "memfuse-py": "memfuse-bindings",
+  "memfuse-tauri": "memfuse-bindings"
+};
 const DEFAULT_CRATES = [
-  { id:'memfuse-core',       layer:0, order:1,  desc:'Typen · Traits · Fehler · SnapshotRegistry · TxBuffer', loc:'8443', tests:'143+', status:'✅', risk:'none', tier:'1' },
-  { id:'memfuse-crypto',     layer:1, order:2,  desc:'AES-256-GCM-SIV · HKDF · HMAC-SHA256 · Zeroize', loc:'2318', tests:'85+', status:'✅', risk:'sec', tier:'1' },
-  { id:'memfuse-store',      layer:1, order:3,  desc:'LSM-Tree · WAL · MemTable · SSTable · Compaction', loc:'13147', tests:'156+', status:'✅', risk:'crash', tier:'1' },
-  { id:'memfuse-index',      layer:1, order:4,  desc:'HNSW · DiskANN · SIMD AVX2/NEON · SQ8-Quantisierung', loc:'11207', tests:'134+', status:'✅', risk:'simd', tier:'1' },
-  { id:'memfuse-graph',      layer:1, order:5,  desc:'CSR-Graph · PPR · Community · Session-DAG · BFS (in csr.rs)', loc:'6820', tests:'95+', status:'✅', risk:'none', tier:'2' },
-  { id:'memfuse-text',       layer:1, order:6,  desc:'BM25 · Invertierter Index (inverted.rs) · German Compound Splitter', loc:'4977', tests:'85+', status:'✅', risk:'utf8', tier:'2' },
-  { id:'memfuse-checkpoint', layer:1, order:7,  desc:'RAII CheckpointGuard · Time-Travel · BLAKE3-Manifest (1 Datei, Größenklasse XL)', loc:'4352', tests:'69+', status:'✅', risk:'none', tier:'2' },
-  { id:'memfuse-db',         layer:2, order:8,  desc:'4-Signal-Fusion · RRF · 2PC · MultiStep · repair_on_open', loc:'18263', tests:'210+', status:'✅', risk:'fusion', tier:'1' },
-  { id:'memfuse-embed',      layer:3, order:9,  desc:'ONNX CrossEncoder-Reranking · Feature-gated · SessionPool (in reranker.rs)', loc:'1191', tests:'16+', status:'🟡', risk:'gate', tier:'3' },
-  { id:'memfuse-ollama',     layer:3, order:10, desc:'HTTP-Client · ContextPrefixEngine · xml_escape · Embedder', loc:'2679', tests:'49+', status:'🟡', risk:'inj', tier:'3' },
-  { id:'memfuse-agent',      layer:3, order:11, desc:'State-Machine · Exactly-Once · AuditLog (audit.rs) · Token-Budget', loc:'4116', tests:'48+', status:'✅', risk:'budget', tier:'2' },
-  { id:'memfuse-py',         layer:3, order:12, desc:'PyO3-FFI · GIL-Release · Zero-Panic-Boundary · OnceLock', loc:'1392', tests:'14+', status:'✅', risk:'ffi', tier:'1' },
-  { id:'memfuse-router',     layer:3, order:13, desc:'SLM-Routing · NaN-Validierung · 100%-Branch-Ziel', loc:'2434', tests:'36+', status:'✅', risk:'nan', tier:'3' },
-  { id:'memfuse-mcp',        layer:4, order:14, desc:'stdio JSON-RPC 2.0 (lib.rs) · Sandbox · Prompt-Injection-Guard · Slowloris', loc:'3433', tests:'59+', status:'✅', risk:'proto', tier:'1' },
-  { id:'memfuse-tauri',      layer:4, order:15, desc:'Tauri-IPC · PDF/DOCX/E-Mail-Parser · Ingestion-Pipeline', loc:'4197', tests:'92+', status:'🟡', risk:'parse', tier:'2' },
+  { id:'memfuse-core',       layer:0, order:1,  desc:'Typen · Traits · Fehler · SnapshotRegistry · TxBuffer', loc:'9615', tests:'163+', status:'✅', risk:'none', tier:'1' },
+  { id:'memfuse-crypto',     layer:1, order:2,  desc:'AES-256-GCM-SIV · HKDF · HMAC-SHA256 · Zeroize', loc:'2113', tests:'104+', status:'✅', risk:'sec', tier:'1' },
+  { id:'memfuse-store',      layer:2, order:3,  desc:'LSM-Tree · WAL · MemTable · SSTable · Compaction', loc:'11172', tests:'182+', status:'✅', risk:'crash', tier:'1' },
+  { id:'memfuse-index',      layer:2, order:4,  desc:'HNSW · DiskANN · SIMD AVX2/NEON · SQ8-Quantisierung', loc:'10540', tests:'166+', status:'✅', risk:'simd', tier:'1' },
+  { id:'memfuse-graph',      layer:1, order:5,  desc:'CSR-Graph · PPR · Community · Session-DAG · BFS (in csr.rs)', loc:'8515', tests:'132+', status:'✅', risk:'none', tier:'2' },
+  { id:'memfuse-text',       layer:1, order:6,  desc:'BM25 · Invertierter Index (inverted.rs) · German Compound Splitter', loc:'3988', tests:'90+', status:'✅', risk:'utf8', tier:'2' },
+  { id:'memfuse-checkpoint', layer:1, order:7,  desc:'RAII CheckpointGuard · Time-Travel · BLAKE3-Manifest', loc:'2619', tests:'77+', status:'✅', risk:'none', tier:'2' },
+  { id:'memfuse-db',         layer:3, order:8,  desc:'4-Signal-Fusion · RRF · 2PC · MultiStep · repair_on_open', loc:'18981', tests:'311+', status:'✅', risk:'fusion', tier:'1' },
+  { id:'memfuse-embed',      layer:2, order:9,  desc:'ONNX CrossEncoder-Reranking · Feature-gated · SessionPool (in reranker.rs)', loc:'1616', tests:'30+', status:'🟡', risk:'gate', tier:'3' },
+  { id:'memfuse-ollama',     layer:2, order:10, desc:'HTTP-Client · ContextPrefixEngine · xml_escape · Embedder', loc:'3925', tests:'76+', status:'🟡', risk:'inj', tier:'3' },
+  { id:'memfuse-agent',      layer:5, order:11, desc:'State-Machine · Exactly-Once · AuditLog (audit.rs) · Token-Budget', loc:'2756', tests:'58+', status:'✅', risk:'budget', tier:'2' },
+  { id:'memfuse-py',         layer:3, order:12, desc:'PyO3-FFI · GIL-Release · Zero-Panic-Boundary · OnceLock', loc:'1505', tests:'14+', status:'✅', risk:'ffi', tier:'1' },
+  { id:'memfuse-router',     layer:4, order:13, desc:'SLM-Routing · NaN-Validierung · 100%-Branch-Ziel', loc:'4250', tests:'65+', status:'✅', risk:'nan', tier:'3' },
+  { id:'memfuse-mcp',        layer:6, order:14, desc:'stdio JSON-RPC 2.0 (lib.rs) · Sandbox · Prompt-Injection-Guard · Slowloris', loc:'3125', tests:'79+', status:'✅', risk:'proto', tier:'1' },
+  { id:'memfuse-tauri',      layer:4, order:15, desc:'Tauri-IPC · PDF/DOCX/E-Mail-Parser · Ingestion-Pipeline', loc:'4320', tests:'118+', status:'🟡', risk:'parse', tier:'2' },
+  { id:'memfuse-calibration', layer:1, order:16, desc:'Score-Kalibrierung · ECE-Metriken · Confidence-Fitting', loc:'1034', tests:'22+', status:'✅', risk:'calib', tier:'3' },
+  { id:'memfuse-candle',      layer:2, order:17, desc:'Pure-Rust ML Inferenz-Backend · GGUF/Quantisierung', loc:'1068', tests:'13+', status:'🟡', risk:'candle', tier:'3' },
+  { id:'memfuse-kv-bridge',   layer:2, order:18, desc:'SAOS KV-Cache Bridge · Fragmented Paged Attention', loc:'609', tests:'6+', status:'🟡', risk:'bridge', tier:'3' },
 ];
 // Aktive, ggf. durch mergeProjectData() ersetzte/erweiterte Arbeitskopie.
 let CRATES = DEFAULT_CRATES.map(c => ({ ...c }));
@@ -714,6 +737,15 @@ const DEFAULT_COMPONENTS = {
     { file:'ingestion/docx.rs', size:'M', risk:'Sicherheit/Parser', desc:'DOCX-Parser für externe Nutzerdateien', focus:'Gleiche Robustheitsanforderungen wie pdf.rs: leere/trunkierte Datei → Err, kein Panic. Geparste Inhalte landen später im RAG-Kontext — Prompt-Injection-Bewusstsein wie bei memfuse-ollama.' },
     { file:'ingestion/email.rs', size:'M', risk:'Sicherheit/Parser', desc:'E-Mail-Parser für externe Nutzerdateien', focus:'Gleiche Robustheitsanforderungen wie pdf.rs/docx.rs. Zusätzlich: Header-Injection und verschachtelte MIME-Strukturen als Fuzzing-Ziel betrachten.' },
     { file:'ollama.rs', size:'S', risk:'Duplikation', desc:'OllamaBridge — Desktop-App-seitige Ollama-Anbindung', focus:'Prüfe auf Logik-Duplikation gegenüber memfuse-ollama::client.rs — jede Abweichung im Verhalten zwischen Bridge und Client ist ein Wartungsrisiko und potenzielle Inkonsistenzquelle. [KORR v22: Datei hieß zuvor ollama_bridge.rs — tatsächlicher Dateiname ist ollama.rs.]' },
+  ],
+  'memfuse-calibration': [
+    { file:'lib.rs', size:'S', risk:'—', desc:'Einstiegspunkt und Exports der Score-Kalibrierung', focus:'Prüfe API auf saubere Fehlerpropagation.' },
+  ],
+  'memfuse-candle': [
+    { file:'lib.rs', size:'S', risk:'—', desc:'Candle Inferenz Engine Einstiegspunkt', focus:'Prüfe, dass keine C++-Abhängigkeiten lecken.' },
+  ],
+  'memfuse-kv-bridge': [
+    { file:'lib.rs', size:'S', risk:'—', desc:'KV-Cache Bridge Einstiegspunkt', focus:'Prüfe Puffer-Lebensdauer und Zero-Copy-Invarianten.' },
   ],
 };
 // Aktive, ggf. durch mergeProjectData() ersetzte/erweiterte Arbeitskopie.
@@ -1317,6 +1349,39 @@ for i in $(seq 1 20); do
   cargo test -p memfuse-tauri -- appstate_concurrent --test-threads=8 2>&1 | grep FAILED
 done
 \`\`\``
+  },
+  'memfuse-calibration': {
+    title:'Senior Rust Performance-Engineer — Score-Kalibrierung & ECE-Metriken',
+    layer:'Layer 1 — Calibration & Uncertainty-Quantification',
+    focus:`KRIT. INVARIANTEN für memfuse-calibration:
+• ECE-Metrik (Expected Calibration Error): Binning & Confidence-Fitting
+• Confidence-Drift: Erkennung von Over-Confidence / Under-Confidence
+• Pure-Rust: keine externen C-Bindings`,
+    audit_cmds:`grep -rn "\.unwrap()\|\.expect(" crates/memfuse-calibration/src/ | grep -v "#\[cfg(test)\]"
+grep -rn "ece\|confidence\|bin" crates/memfuse-calibration/src/`,
+    deep_extra:`cargo test -p memfuse-calibration --all-features -- --nocapture`
+  },
+  'memfuse-candle': {
+    title:'Senior Rust ML-Engineer — Candle Inferenz & GGUF Quantisierung',
+    layer:'Layer 2 — Pure-Rust ML-Inferenz-Backend',
+    focus:`KRIT. INVARIANTEN für memfuse-candle:
+• Pure-Rust ML: Inferenz über Candle, kein Libtorch/C++ Dependency-Leck
+• Tensor-Quantisierung: GGUF Q4/Q8 Handling
+• Blocking-Inferenz: Inferenz-Pfade müssen über spawn_blocking laufen`,
+    audit_cmds:`grep -rn "\.unwrap()\|\.expect(" crates/memfuse-candle/src/ | grep -v "#\[cfg(test)\]"
+grep -rn "spawn_blocking" crates/memfuse-candle/src/`,
+    deep_extra:`cargo test -p memfuse-candle --all-features -- --nocapture`
+  },
+  'memfuse-kv-bridge': {
+    title:'Senior Rust Memory-Architect — SAOS KV-Cache Bridge & Fragmented Paged Attention',
+    layer:'Layer 2 — KV-Cache Interop & SAOS Bridge',
+    focus:`KRIT. INVARIANTEN für memfuse-kv-bridge:
+• Zero-Copy KV-Transfer: Fragmented Paged Attention Puffer-Lebensdauer
+• Crypto-Integrität: Segment-Verschlüsselung an der KV-Bridge
+• Boundary Safety: Saubere Fehlerpropagation bei Cache-Misses`,
+    audit_cmds:`grep -rn "\.unwrap()\|\.expect(" crates/memfuse-kv-bridge/src/ | grep -v "#\[cfg(test)\]"
+grep -rn "page\|cache\|bridge" crates/memfuse-kv-bridge/src/`,
+    deep_extra:`cargo test -p memfuse-kv-bridge --all-features -- --nocapture`
   },
 };
 
@@ -3401,6 +3466,7 @@ function initCrates() {
         <span class="cr-pill pill-l">Layer ${c.layer}</span>
         <span class="cr-pill pill-w">T${c.tier}</span>
         ${risk ? `<span class="cr-pill pill-w">${risk}</span>` : ''}
+        ${(c.target_architecture || TARGET_ARCH[c.id]) ? `<span class="cr-pill" style="background:rgba(192,132,252,.12);color:var(--purple)">→ ${c.target_architecture || TARGET_ARCH[c.id]}</span>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -3580,6 +3646,9 @@ function mergeProjectData(data) {
       .forEach(f => { prevFocusByFile[f] = { focus: c.focus, risk: c.risk, desc: c.desc }; }); })
   );
 
+  if (data.target_architecture && typeof data.target_architecture === 'object') {
+    TARGET_ARCH = data.target_architecture;
+  }
   if (Array.isArray(data.crates) && data.crates.length) {
     CRATES = data.crates.map((c, i) => ({
       id: c.id, layer: c.layer ?? 0, order: c.order ?? (i + 1),

@@ -96,6 +96,10 @@ check-tauri:
 check-embed:
     nix develop -c cargo check -p memfuse-embed || cargo check -p memfuse-embed
 
+# Generiert prompter-data.json aus dem Live-Repo-Stand
+gen-prompter-data:
+    nix develop -c cargo xtask gen-prompter-data || cargo xtask gen-prompter-data
+
 # Verifies the Directed Acyclic Graph (DAG) integrity of the workspace
 dag-check:
     nix develop -c cargo xtask check-dag || cargo xtask check-dag
