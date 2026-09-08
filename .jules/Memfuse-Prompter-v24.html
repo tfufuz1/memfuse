@@ -232,6 +232,10 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
       </div>
       <div class="cb">
         <div id="data-source-slot"></div>
+        <div id="session-kontinuität" style="margin-top:8px;font-family:monospace;font-size:9.5px;padding:6px 10px;border-radius:7px;border:1.5px solid var(--b1);background:var(--s2);">
+          <strong>Session-Kontinuität:</strong>
+          <span id="last-merge-display">nicht verfügbar (cargo xtask gen-prompter-data ausführen)</span>
+        </div>
         <div class="inv-hint">Dieses Tool ist projektunabhängig: die Engine (Task-Vorlagen, APM-Katalog, Tag-Grammatik) ist fest verdrahtet, das Crate-/Datei-Inventar ist austauschbar. Empfohlener Weg: Führe im Repo-Root <code style="color:var(--teal)">cargo xtask gen-prompter-data</code> (oder <code style="color:var(--teal)">just gen-prompter-data</code>) aus. Das erzeugt automatisch <code style="color:var(--ac2)">.jules/prompter-data.json</code> aus allen 18 Workspace-Crates mit Live-LOC, Layer-Topologie, Test-Zahlen und Zielarchitektur-Mapping. Lade eine erzeugte <code style="color:var(--ac2)">prompter-data.json</code> — kein Netzwerk, kein Server, rein clientseitig.</div>
         <input type="file" id="data-file-input" accept="application/json" style="display:none" onchange="loadProjectDataFile(this.files[0])">
         <div class="chips" style="margin-top:7px">
@@ -3297,6 +3301,32 @@ function selTask(id) {
   generate();
 }
 
+function getSelectedCrate() {
+  return SS.crate || 'none';
+}
+
+function generateTaskId(taskTitle) {
+  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const slug = (taskTitle || '').replace(/[^a-zA-Z0-9]/g,'').slice(0,6).toUpperCase();
+  return `JULES-${date}-${slug || 'TASK'}`;
+}
+
+function buildMandatoryBootstrap(claimCrate, taskId) {
+  return `---MANDATORY BOOTSTRAP (nicht überspringen, nicht kürzen)---
+[SCHRITT 0 — Inventar-Realitätsabgleich, IMMER ZUERST]
+1. read_file("AGENTS.md") — vollständig lesen
+2. read_file(".jules/SESSION_BOOTSTRAP.md") — vollständig lesen
+3. run_in_bash_session("head -80 WORKING_STATE.md") — Crate-Stand prüfen
+4. run_in_bash_session("cargo xtask claim --crate ${claimCrate} --issue ${taskId}")
+   — CLAIM_CRATE und TASK_ID aus dem Task-Kontext unten bestimmen
+   — Bei Claim-Konflikt: STOP. Nicht fortfahren. Meldung ausgeben.
+5. run_in_bash_session("cargo run -p xtask -- jules-preflight --fast")
+   — Bei Failure: Befund lesen, beheben, dann fortfahren
+---END MANDATORY BOOTSTRAP---
+
+`;
+}
+
 function selFmt(f) { SS.fmt = f; ['full','compact','checklist'].forEach(x => document.getElementById('fmt-'+x).classList.toggle('on', x===f)); generate(); }
 function selPar(p) { SS.par = p; ['on','off'].forEach(x => document.getElementById('par-'+x).classList.toggle('on', x===p)); generate(); }
 function selLoop(v) { SS.loop = v; ['on','off'].forEach(x => document.getElementById('loop-'+x).classList.toggle('on', x===v)); generate(); }
@@ -3336,34 +3366,33 @@ function generate() {
 
   const claimCrate = getSelectedCrate();
   if (!claimCrate || claimCrate === 'none' || claimCrate === '') {
-    const proceed = confirm(
-      '⚠️ Kein Ziel-Crate ausgewählt.\n\n' +
-      'Ohne Crate-Auswahl kann kein Claim gesetzt werden — parallele Sessions ' +
-      'könnten dieselbe Arbeit doppelt ausführen.\n\n' +
-      'Trotzdem fortfahren?'
-    );
-    if (!proceed) return;
+      const proceed = confirm(
+          '⚠️ Kein Ziel-Crate ausgewählt.\n\n' +
+          'Ohne Crate-Auswahl kann kein Claim gesetzt werden — parallele Sessions ' +
+          'könnten dieselbe Arbeit doppelt ausführen.\n\n' +
+          'Trotzdem fortfahren?'
+      );
+      if (!proceed) return;
   }
 
-  const targetCrate = SS.crate || '${CLAIM_CRATE}';
-  const p = CRATE_PROFILES[targetCrate] || {};
+  const effectiveCrate = SS.crate || 'memfuse-core';
+  const p = CRATE_PROFILES[effectiveCrate] || {};
   const fn_ = TASKS[SS.task];
   if (!fn_) return;
-  _rawPrompt = fn_(targetCrate, p, SS.par);
+
+  const taskId = generateTaskId(SS.task);
+  const mandatoryBootstrap = buildMandatoryBootstrap(claimCrate, taskId);
+
+  let promptBody = fn_(effectiveCrate, p, SS.par);
   if (SS.fmt === 'checklist') {
-    _rawPrompt = APM_BLOCK(APM_ON) + DOD(targetCrate);
+    promptBody = APM_BLOCK(APM_ON) + DOD(effectiveCrate);
   } else if (SS.fmt === 'compact') {
     // Compact: remove verbose code blocks, keep structure
-    _rawPrompt = _rawPrompt.replace(/```bash[\s\S]*?```/g, '[→ Befehle wie im Vollformat]');
+    promptBody = promptBody.replace(/```bash[\s\S]*?```/g, '[→ Befehle wie im Vollformat]');
   }
-  const taskNames = {
-    audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',
-    test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',
-    deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',
-    flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation'
-  };
-  const taskTitle = taskNames[SS.task] || SS.task || '';
-  _rawPrompt = MANDATORY_BOOTSTRAP_BLOCK(SS.crate, taskTitle) + _rawPrompt;
+
+  _rawPrompt = mandatoryBootstrap + promptBody;
+
   document.getElementById('pt-empty').style.display = 'none';
   document.getElementById('pt-output').style.display = 'block';
   document.getElementById('pt-output').textContent = _rawPrompt;
@@ -3417,7 +3446,9 @@ function genBatch() {
     const p = CRATE_PROFILES[c.id] || {};
     SS.crate = c.id;
     SS.components = new Set((COMPONENTS[c.id] || []).map(x => x.file));
-    const prompt = MANDATORY_BOOTSTRAP_BLOCK(c.id, 'Tages-Audit') + TASKS.audit(c.id, p, 'on');
+    const taskId = generateTaskId('audit');
+    const mandatoryBootstrap = buildMandatoryBootstrap(c.id, taskId);
+    const prompt = mandatoryBootstrap + TASKS.audit(c.id, p, 'on');
     QUEUE.push({ key: `${c.id}:audit`, crate: c.id, task: 'audit', prompt });
   });
   SS.crate = savedCrate; SS.components = savedComponents;
@@ -3706,6 +3737,14 @@ function mergeProjectData(data) {
     list.forEach(c => { c.file.split(' / ').map(s => s.trim().split('/').pop())
       .forEach(f => { prevFocusByFile[f] = { focus: c.focus, risk: c.risk, desc: c.desc }; }); })
   );
+
+  if (data.working_state_snapshot && data.working_state_snapshot.last_merge) {
+      document.getElementById('last-merge-display').textContent =
+          data.working_state_snapshot.last_merge;
+  } else {
+      document.getElementById('last-merge-display').textContent =
+          'nicht verfügbar (cargo xtask gen-prompter-data ausführen)';
+  }
 
   if (data.target_architecture && typeof data.target_architecture === 'object') {
     TARGET_ARCH = data.target_architecture;
