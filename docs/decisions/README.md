@@ -72,3 +72,4 @@ Gemäß Governance (`CONSTITUTION.md`) ist `docs/decisions/` der alleinige kanon
 | [ADR-065](ADR-065-duplicate-symbol-ci-gate.md) | Duplicate Symbol CI-Gate zur Prävention von Merge-Kollisionen | 2026-09-07 | Final |
 | [ADR-066](ADR-066-physio-resonance-fusion-feature-flag-aktivierung.md) | Physio Resonance Fusion Feature-Flag Aktivierung | 2026-09-07 | Final |
 | [ADR-067](ADR-067-pathrag-sufficiency-threshold-calibration.md) | Normative Kalibrierung des PathRAG Sufficiency-Gate Thresholds | 2026-09-07 | Final |
+| [ADR-070](ADR-070-f02-tombstone-pruning-scope-abgrenzung.md) | F-02 Scope-Abgrenzung — Reines Tombstone-Pruning vs. Ursprüngliches Veto | 2026-09-08 | Final |

@@ -25,8 +25,8 @@ scope_note: >
   Reines Tombstone-Pruning (ohne Re-Wiring) ist NICHT vom ursprünglichen Veto
   erfasst, unterliegt aber eigenem Gate (siehe adr_ref). Feature bleibt
   non-default via physio-nucleation bis Recall-Regressionstest 30 Tage stabil.
-adr_ref: docs/decisions/ADR-0XX-f02-nucleation-tombstone-pruning-vs-ursprungliches-veto.md
-last_verified: 2026-09-07
+adr_ref: docs/decisions/ADR-070-f02-tombstone-pruning-scope-abgrenzung.md
+last_verified: 2026-09-08
 
 ## VETO-F10
 
