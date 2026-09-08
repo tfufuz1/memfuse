@@ -8,10 +8,10 @@ use crate::collection::{Collection, StoredDocument};
 use crate::consolidation_executor::execute_consolidation_pass;
 use crate::memory_consolidation::ConsolidationConfig;
 use memfuse_core::traits::StorageEngine;
-#[cfg(feature = "background-maintenance")]
-use memfuse_core::VectorIndex;
 use memfuse_core::tx_buffer::TxBuffer;
 use memfuse_core::DocId;
+#[cfg(feature = "background-maintenance")]
+use memfuse_core::VectorIndex;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -537,7 +537,10 @@ mod tests {
         });
 
         // Reap with decay controller sweep
-        let evicted = col.reap_by_thermostat(&decay_controller, 100).await.unwrap(); // unwrap
+        let evicted = col
+            .reap_by_thermostat(&decay_controller, 100)
+            .await
+            .unwrap(); // unwrap
         assert_eq!(evicted, 10, "All 10 old low-score chunks should be evicted");
 
         // Verify old_low chunks are gone

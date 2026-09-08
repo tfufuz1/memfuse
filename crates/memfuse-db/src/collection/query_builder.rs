@@ -531,7 +531,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                     let _elapsed = start_time.elapsed();
                     #[cfg(feature = "adaptive-candidate-pool-sizing")]
                     if let Some(ref pid) = self.pid_controller {
-                        pid.lock().update(_current_pool, _elapsed.as_millis() as f32);
+                        pid.lock()
+                            .update(_current_pool, _elapsed.as_millis() as f32);
                     }
 
                     // Implizites Calibration-Feedback (k=5 als Relevanz-Cutoff)

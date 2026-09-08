@@ -105,8 +105,30 @@ pub fn check_placeholder_refs_in_content(
                         || first_word == "~";
 
                     if !is_null {
-                        let ref_path = root.join(first_word);
-                        if !ref_path.exists() && !Path::new(first_word).exists() {
+                        let file_exists =
+                            root.join(first_word).exists() || Path::new(first_word).exists();
+                        let found_in_decisions = if !file_exists {
+                            let decisions_file = root.join("DECISIONS.md");
+                            if decisions_file.is_file() {
+                                if let Ok(dec_content) = fs::read_to_string(&decisions_file) {
+                                    let adr_re = Regex::new(r"ADR-(\d+)").unwrap();
+                                    if let Some(caps) = adr_re.captures(first_word) {
+                                        let pattern = format!("ADR-{}", &caps[1]);
+                                        dec_content.contains(&pattern)
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        if !file_exists && !found_in_decisions {
                             violations.push(PlaceholderViolation {
                                 file: file_rel_path.to_string(),
                                 line: line_num,
@@ -135,8 +157,7 @@ pub fn check_placeholder_refs(root: &Path) -> Vec<PlaceholderViolation> {
             .to_string();
 
         if let Ok(content) = fs::read_to_string(&file_path) {
-            let file_violations =
-                check_placeholder_refs_in_content(&content, &rel_path, root);
+            let file_violations = check_placeholder_refs_in_content(&content, &rel_path, root);
             violations.extend(file_violations);
         }
     }

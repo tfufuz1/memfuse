@@ -63,18 +63,17 @@ jobs:
         run: maturin build --manifest-path crates/memfuse-py/Cargo.toml
 
   test:
-    name: Test Suite (Triple-Run Flaky-Detection)
+    name: Test Suite (cargo-nextest with retries)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run 1
-        run: cargo test --locked --workspace --exclude memfuse-tauri
-      - name: Run 2 (Flaky-Check)
-        run: cargo test --locked --workspace --exclude memfuse-tauri
-      - name: Run 3 (Flaky-Check Final)
-        run: cargo test --locked --workspace --exclude memfuse-tauri
+      - uses: taiki-e/install-action@nextest
+      - name: Run Tests with Nextest Retries
+        run: cargo nextest run --locked --workspace --exclude memfuse-tauri --retries 2
+      - name: Run Doc Tests
+        run: cargo test --doc --locked --workspace --exclude memfuse-tauri
 
   clippy-py:
     name: Clippy (memfuse-py)

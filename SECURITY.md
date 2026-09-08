@@ -1,6 +1,6 @@
 # SECURITY.md — Bedrohungsmodell & Sicherheitsschicht für MemFuse & Agenten
 
-Dieses Dokument definiert das Bedrohungsmodell und die Sicherheitsarchitektur für MemFuse Brain (Desktop-App, Local LLM/Ollama Integration, MCP Server) sowie die agentische Entwicklungsumgebung. Es ist Pflicht-Lektüre (siehe `AGENTS.md §1`).
+Dieses Dokument definiert das Bedrohungsmodell und die Sicherheitsarchitektur für MemFuse Brain (Desktop-App, Local LLM/Ollama Integration, MCP Server) sowie die agentische Entwicklungsumgebung. Es ist Pflicht-Lektüre (siehe `AGENTS.md`).
 
 ---
 
@@ -30,7 +30,7 @@ Dieses Dokument definiert das Bedrohungsmodell und die Sicherheitsarchitektur f�
 
 ## 4. Schutz der Kontextdateien
 *   **`AGENTS.md`-Änderungen sind sicherheitskritisch**: Jede Änderung an `AGENTS.md`, Bridge-Dateien (`CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `.clinerules`, `.github/copilot-instructions.md`), `CONSTITUTION.md` und `rules/*.md` durchläuft denselben Review-Prozess wie ein Produktionscode-Diff.
-*   **Keine ungeprüften Kontextdatei-Generierungen**: Ein Agent darf Kontextdateien nicht eigenständig neu erzeugen oder umstrukturieren, ohne explizite menschliche Freigabe (ASK-FIRST, siehe `AGENTS.md §3`).
+*   **Keine ungeprüften Kontextdatei-Generierungen**: Ein Agent darf Kontextdateien nicht eigenständig neu erzeugen oder umstrukturieren, ohne explizite menschliche Freigabe (ASK-FIRST, siehe `AGENTS.md` — Non-Obvious Decisions).
 
 ---
 

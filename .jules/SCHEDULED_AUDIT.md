@@ -26,7 +26,7 @@ Er besteht aus zwei unabhängigen Jobs:
 - Erstellt automatisch ein GitHub-Issue mit dem Titel `Proaktiv-Audit YYYY-MM-DD` und den Labels `jules-audit`, `automated`.
 - Der Issue-Text verweist strikt auf `.jules/AUDIT_INTAKE_PROTOCOL.md` und fordert die Prüfung auf:
   1. Race Conditions / TOCTOU-Fehler
-  2. Neue `.unwrap()` / `.expect()` außerhalb der Baseline (`.unwrap-baseline.txt`)
+  2. Neue `.unwrap()` / `.expect()` außerhalb der Baseline (`.unwrap-baseline.json`)
   3. Silent-Failure-Pattern (`let _ = ...` bei I/O-Operationen)
   4. DAG-Grenzverletzungen in `Cargo.toml`-Dependencies
 

@@ -8,9 +8,8 @@
 
 use crate::collection::{Collection, StoredDocumentMeta};
 use crate::memory_consolidation::{
-    compute_community_hash, run_consolidation_pass, run_synthesis_pass,
-    CommunityStabilityTracker, ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig,
-    SynthesisPhaseResult,
+    compute_community_hash, run_consolidation_pass, run_synthesis_pass, CommunityStabilityTracker,
+    ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig, SynthesisPhaseResult,
 };
 use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
@@ -91,7 +90,8 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
     llm: Option<&dyn LlmTextGenerator>,
     stability_tracker: Option<&mut CommunityStabilityTracker>,
 ) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
-    let consolidation_result = execute_consolidation_pass(collection, turns, consolidation_config).await?;
+    let consolidation_result =
+        execute_consolidation_pass(collection, turns, consolidation_config).await?;
 
     let synthesis_result = if let (Some(synth_cfg), Some(llm_gen)) = (synthesis_config, llm) {
         let assignments = detect_communities(
@@ -161,7 +161,8 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
             }
         }
 
-        let synth_res = run_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg).await?;
+        let synth_res =
+            run_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg).await?;
 
         for (idx, meta_chunk) in synth_res.synthesized.iter().enumerate() {
             let chunk_id = format!("rem_synth_{}_{}", meta_chunk.source_community_hash, idx);

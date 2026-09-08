@@ -49,12 +49,12 @@ graph TD
 
 ### Schleife 7: Rollentrennung Planer/Implementierer
 *   **Phasen-Trennung**: Planung, Code-Generierung und Validierung sind strikt getrennt.
-    1.  **Planer**: Dokumentiert nicht-triviale Entscheidungen in `docs/decisions/` (ADR) und wartet auf Genehmigung.
+    1.  **Planer**: Dokumentiert nicht-triviale Entscheidungen in `DECISIONS.md` (ADR) und wartet auf Genehmigung.
     2.  **Implementierer**: Arbeitet den priorisierten Backlog aus `docs/SOURCE_OF_TRUTH.md` ab.
-    3.  **Verifizierer**: Führt `just triple-test` aus und aktualisiert den Status in `docs/SOURCE_OF_TRUTH.md`.
+    3.  **Verifizierer**: Führt `just test` aus und aktualisiert den Status in `docs/SOURCE_OF_TRUTH.md`.
 
 ### Schleife 8: Mehrfach-Review (Unabhängige Session-Prüfdurchläufe)
-*   **Mehrfach-Session-Pflicht**: Jede nicht-triviale Implementierung (mehr als 1 Datei, Public API, `unsafe`, Crypto, WAL oder Concurrency) erfordert MINDESTENS 2 (Standard) bzw. 3 (für `AGENTS.md §5 ASK`-sicherheitskritische Bereiche) `REVIEW-PASS`-Einträge mit `STATUS:PASS` von unterschiedlichen `SESSION:`-Hashes, bevor ein `ANCHOR` auf `STATUS:DONE` gesetzt werden darf.
+*   **Mehrfach-Session-Pflicht**: Jede nicht-triviale Implementierung (mehr als 1 Datei, Public API, `unsafe`, Crypto, WAL oder Concurrency) erfordert MINDESTENS 2 (Standard) bzw. 3 (für sicherheitskritische Bereiche gemäß `AGENTS.md`) `REVIEW-PASS`-Einträge mit `STATUS:PASS` von unterschiedlichen `SESSION:`-Hashes, bevor ein `ANCHOR` auf `STATUS:DONE` gesetzt werden darf.
 *   **Unabhängigkeitsgebot**: Jeder `REVIEW-PASS` MUSS aus einer frischen Jules-Sitzung stammen (`PRÜFER-KONTEXT: FRESH`). Kein Agent darf eigene Änderungen selbst abzeichnen.
 *   **Grammatik**:
     ```rust

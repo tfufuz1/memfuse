@@ -123,7 +123,11 @@ impl ConsistencyEnforcer {
     ///
     /// Erhöht `contradiction_count` und setzt `suppressed = true`, sobald der Zähler
     /// den `suppression_threshold` erreicht oder überschreitet.
-    pub fn record_contradiction(&mut self, pattern_hash: [u8; 32], at_tx: TxId) -> &ConflictPattern {
+    pub fn record_contradiction(
+        &mut self,
+        pattern_hash: [u8; 32],
+        at_tx: TxId,
+    ) -> &ConflictPattern {
         let threshold = self.suppression_threshold;
         let entry = self
             .patterns

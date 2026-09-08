@@ -134,7 +134,11 @@ pub fn run_validate_pr_checklist() -> bool {
     }
 
     // P10: Reuse-Check Hinweis
-    let reuse_functions = ["score_batch", "tombstoned_edges", "persist_calibration_state"];
+    let reuse_functions = [
+        "score_batch",
+        "tombstoned_edges",
+        "persist_calibration_state",
+    ];
     let mut reuse_hints = Vec::new();
     for func in &reuse_functions {
         if diff.contains(func) {
@@ -164,9 +168,7 @@ pub fn run_validate_pr_checklist() -> bool {
 
     // ── Provenienz-Dimension ───────────────────────────────────────────────
 
-    let graph_changes = diff_files
-        .iter()
-        .any(|f| f.contains("memfuse-graph/"));
+    let graph_changes = diff_files.iter().any(|f| f.contains("memfuse-graph/"));
     if graph_changes {
         let has_provenance = diff.contains("EdgeProvenance");
         let mut prov_checks = Vec::new();
@@ -197,9 +199,9 @@ pub fn run_validate_pr_checklist() -> bool {
     let mut veto_checks = Vec::new();
 
     // VETO-01: Partieller HNSW-Rebuild
-    let hnsw_changes = diff_files.iter().any(|f| {
-        f.contains("memfuse-index/") && (f.contains("hnsw") || f.contains("rebuild"))
-    });
+    let hnsw_changes = diff_files
+        .iter()
+        .any(|f| f.contains("memfuse-index/") && (f.contains("hnsw") || f.contains("rebuild")));
     if hnsw_changes {
         let has_rebuild_region = diff.contains("rebuild_region");
         veto_checks.push(CheckItem {
@@ -251,9 +253,9 @@ pub fn run_validate_pr_checklist() -> bool {
 
     // ── Chaos-Dimension (nur bei Storage-Änderungen) ───────────────────────
 
-    let storage_changes = diff_files.iter().any(|f| {
-        f.contains("memfuse-store/") || f.contains("wal") || f.contains("compaction")
-    });
+    let storage_changes = diff_files
+        .iter()
+        .any(|f| f.contains("memfuse-store/") || f.contains("wal") || f.contains("compaction"));
     if storage_changes {
         let mut chaos_checks = Vec::new();
         chaos_checks.push(CheckItem {
@@ -365,11 +367,7 @@ fn check_unsafe_without_safety(diff: &str) -> Vec<String> {
 
     for line in diff.lines() {
         if line.starts_with("diff --git") {
-            current_file = line
-                .split(" b/")
-                .last()
-                .unwrap_or("")
-                .to_string();
+            current_file = line.split(" b/").last().unwrap_or("").to_string();
             context_lines.clear();
         } else if line.starts_with('+') && !line.starts_with("+++") {
             if unsafe_re.is_match(line) {
@@ -391,11 +389,7 @@ fn check_unsafe_without_safety(diff: &str) -> Vec<String> {
                         && !trimmed.contains("cfg(test)")
                         && !trimmed.contains("cfg_attr(not(test), forbid(unsafe_code))")
                     {
-                        violations.push(format!(
-                            "  {}: {}",
-                            current_file,
-                            trimmed
-                        ));
+                        violations.push(format!("  {}: {}", current_file, trimmed));
                     }
                 }
             }
@@ -421,11 +415,7 @@ fn check_silent_io_in_diff(diff: &str) -> Vec<String> {
 
     for line in diff.lines() {
         if line.starts_with("diff --git") {
-            current_file = line
-                .split(" b/")
-                .last()
-                .unwrap_or("")
-                .to_string();
+            current_file = line.split(" b/").last().unwrap_or("").to_string();
         } else if line.starts_with('+') && !line.starts_with("+++") {
             if re.is_match(line) {
                 violations.push(format!(
@@ -452,7 +442,10 @@ mod tests {
 +    unsafe { ptr::copy(src, dst, len) }
 "#;
         let violations = check_unsafe_without_safety(diff);
-        assert!(!violations.is_empty(), "unsafe ohne SAFETY sollte erkannt werden");
+        assert!(
+            !violations.is_empty(),
+            "unsafe ohne SAFETY sollte erkannt werden"
+        );
     }
 
     #[test]
@@ -474,6 +467,10 @@ mod tests {
 +    file.sync_all().await?;
 "#;
         let violations = check_silent_io_in_diff(diff);
-        assert_eq!(violations.len(), 1, "Nur die let _ = sync_all Zeile sollte matchen");
+        assert_eq!(
+            violations.len(),
+            1,
+            "Nur die let _ = sync_all Zeile sollte matchen"
+        );
     }
 }

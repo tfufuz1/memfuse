@@ -126,8 +126,8 @@ pub mod transaction;
 pub mod volatile_vault;
 #[cfg(feature = "volatile-vault")]
 pub use volatile_vault::{
-    VolatileContextVault, VaultChunk, VaultChunkMetadata, VaultConfig,
-    VaultError, PurgeReceipt, CommitReceipt, SignalModality,
+    CommitReceipt, PurgeReceipt, SignalModality, VaultChunk, VaultChunkMetadata, VaultConfig,
+    VaultError, VolatileContextVault,
 };
 
 pub use decay_controller::{AdaptiveDecayController, DecayControllerConfig, DecaySignalInputs};

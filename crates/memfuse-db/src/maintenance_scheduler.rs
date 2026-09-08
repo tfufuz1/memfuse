@@ -135,7 +135,11 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
         // Step b: F-01 Thermostat-Update / Decay Controller
         if self.config.thermostat_enabled {
             let decay_controller = AdaptiveDecayController::new(self.config.thermostat.clone());
-            match self.collection.reap_by_thermostat(&decay_controller, 100).await {
+            match self
+                .collection
+                .reap_by_thermostat(&decay_controller, 100)
+                .await
+            {
                 Ok(n) if n > 0 => {
                     tracing::info!(collection = %self.collection.name(), evicted = n, "MaintenanceScheduler: DecayController evicted chunks");
                 }
@@ -431,7 +435,11 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(MaintenanceScheduler::new(config, col, ConsolidationConfig::default()));
+        let scheduler = Arc::new(MaintenanceScheduler::new(
+            config,
+            col,
+            ConsolidationConfig::default(),
+        ));
         let cancel_token = tokio_util::sync::CancellationToken::new();
 
         let handle = scheduler.clone().start(cancel_token.clone());
@@ -440,13 +448,20 @@ mod tests {
         cancel_token.cancel();
 
         let res = handle.await;
-        assert!(res.is_ok(), "MaintenanceScheduler task should shut down cleanly");
+        assert!(
+            res.is_ok(),
+            "MaintenanceScheduler task should shut down cleanly"
+        );
     }
 
     #[tokio::test]
     async fn test_active_sessions_tracking() {
         let col = create_test_collection().await;
-        let scheduler = MaintenanceScheduler::new(MaintenanceConfig::default(), col, ConsolidationConfig::default());
+        let scheduler = MaintenanceScheduler::new(
+            MaintenanceConfig::default(),
+            col,
+            ConsolidationConfig::default(),
+        );
 
         assert_eq!(scheduler.active_agent_sessions(), 0);
         assert_eq!(scheduler.increment_active_sessions(), 1);

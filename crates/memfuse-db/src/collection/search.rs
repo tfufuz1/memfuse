@@ -800,7 +800,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         let raw_len = raw_vec_results.len();
                         let filtered = filter_pre_rrf(raw_vec_results);
 
-                        if filtered.len() >= candidate_k || oversample >= max_cap || raw_len < oversample {
+                        if filtered.len() >= candidate_k
+                            || oversample >= max_cap
+                            || raw_len < oversample
+                        {
                             tracing::debug!(
                                 search_iterations_needed = iterations,
                                 signal = "vector",
@@ -824,7 +827,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     let raw_len = raw_vec_results.len();
                     let filtered = filter_pre_rrf(raw_vec_results);
 
-                    if filtered.len() >= candidate_k || oversample >= max_cap || raw_len < oversample {
+                    if filtered.len() >= candidate_k
+                        || oversample >= max_cap
+                        || raw_len < oversample
+                    {
                         tracing::debug!(
                             search_iterations_needed = iterations,
                             signal = "vector",

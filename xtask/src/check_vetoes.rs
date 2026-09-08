@@ -95,9 +95,7 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
                 if !rest.is_empty() && rest != ">" {
                     reason_lines.push(rest.to_string());
                 }
-            } else if trimmed.starts_with("scope_note:")
-                || trimmed.starts_with("last_verified:")
-            {
+            } else if trimmed.starts_with("scope_note:") || trimmed.starts_with("last_verified:") {
                 parsing_reason = false;
             } else if parsing_reason && !trimmed.is_empty() {
                 reason_lines.push(trimmed.to_string());

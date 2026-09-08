@@ -1,6 +1,6 @@
 # Test-Qualitätskriterien
 
-> Referenziert aus `AGENTS.md §8`
+> Referenziert aus `AGENTS.md`
 
 ## Anti-Mirroring-Regel
 

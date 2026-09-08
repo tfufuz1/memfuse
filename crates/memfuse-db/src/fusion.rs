@@ -128,9 +128,11 @@ impl SignalKind {
             "text" | "bm25" | "keyword" => Some(SignalKind::Text),
             "graph" => Some(SignalKind::Graph),
             #[cfg(feature = "edge-reinforcement-learning")]
-            "edge-reinforcement" | "cooccurrence" | "traversal-reinforcement" | "synaptic" | "hebbian" => {
-                Some(SignalKind::EdgeReinforcement)
-            }
+            "edge-reinforcement"
+            | "cooccurrence"
+            | "traversal-reinforcement"
+            | "synaptic"
+            | "hebbian" => Some(SignalKind::EdgeReinforcement),
             _ => None,
         }
     }

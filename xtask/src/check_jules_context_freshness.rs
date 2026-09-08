@@ -27,10 +27,11 @@ pub fn check_file_freshness(
     content: &str,
     last_code_change_date: NaiveDate,
 ) -> Result<NaiveDate, FreshnessError> {
-    let re = Regex::new(r"Stand:?\s*(\d{4}-\d{2}-\d{2})")
-        .map_err(|_| FreshnessError::MissingHeader {
+    let re = Regex::new(r"Stand:?\s*(\d{4}-\d{2}-\d{2})").map_err(|_| {
+        FreshnessError::MissingHeader {
             file: file_rel_path.to_string(),
-        })?;
+        }
+    })?;
 
     let caps = match re.captures(content) {
         Some(c) => c,
@@ -131,10 +132,7 @@ pub fn run_check_jules_context_freshness() -> bool {
                 );
             }
             Err(FreshnessError::MissingHeader { file }) => {
-                eprintln!(
-                    "❌ [GATE-10]: Header 'Stand: YYYY-MM-DD' fehlt in {}",
-                    file
-                );
+                eprintln!("❌ [GATE-10]: Header 'Stand: YYYY-MM-DD' fehlt in {}", file);
                 eprintln!(
                     "   Erwartetes Datum (letzter Code-Change in crates/): {}",
                     code_change_date.format("%Y-%m-%d")

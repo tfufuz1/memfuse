@@ -50,6 +50,19 @@ echo "[3/8] Verifying ONNX runtime availability..."
 ldd --version | head -1
 echo "  ✅ glibc compatible for ORT dynamic linking"
 
+# ── 4. ast-grep (AST analysis) & Git Hooks ───────────────────────────────────
+echo ""
+echo "[4/8] Installing ast-grep and configuring git hooks..."
+
+if ! command -v ast-grep &>/dev/null && ! command -v sg &>/dev/null; then
+    cargo install ast-grep --locked --quiet 2>/dev/null || npm install -g @ast-grep/cli 2>/dev/null || echo "  ⚠️ ast-grep install failed (acceptable fallback)"
+    echo "  ✅ ast-grep step finished"
+else
+    echo "  ✅ ast-grep already available"
+fi
+
+git config core.hooksPath .githooks || true
+echo "  ✅ git hooks configured to .githooks"
 
 # ── 5. just (task runner) ───────────────────────────────────────────────────
 echo ""

@@ -11,6 +11,12 @@ jobs:
       - name: "Check for duplicate symbols (fast pre-build gate)"
         run: cargo run -p xtask -- check-duplicate-symbols
 
+      - name: "DAG Integrity Check"
+        run: cargo xtask check-dag
+
+      - name: "AGENTS.md Crate Integrity Gate"
+        run: cargo xtask check-agents-integrity
+
       - name: "Gate 12: Duplicate-PR-Intent-Detection"
         env:
           MEMFUSE_PR_BODY: ${{ github.event.pull_request.body }}

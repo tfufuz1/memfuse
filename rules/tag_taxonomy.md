@@ -104,5 +104,5 @@ Format dort: `| AGENT:N | YYYY-MM-DD | <Session-Beschreibung> |`
 |---|---|---|
 | `rules/llm_protocol.md` | Test-Gate-Pflicht | rust-ci.yml (test job) |
 | `rules/tag_taxonomy.md` | Tag-Definitionen | rust-ci.yml / context-gates.yml (Gate 1, Gate 7) |
-| `AGENTS.md §4` | unsafe-Scope | rust-ci.yml (Gate 4) |
-| `AGENTS.md §3` | DAG-Schichten | dag-check.yml |
+| `AGENTS.md (Non-Obvious Decisions)` | unsafe-Scope | rust-ci.yml (Gate 4) |
+| `AGENTS.md (Crate-Topologie)` | DAG-Schichten | context-gates.yml |

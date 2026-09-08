@@ -102,4 +102,4 @@ gewährleistet wird).
 | ADR/Rule | Relevanz |
 |---|---|
 | `rules/wal_crypto.md` | HMAC Chaining & Derivation Regeln |
-| `AGENTS.md §4` | `unsafe` Ausnahme für Memory-Wipe Verifikation |
+| `AGENTS.md (Non-Obvious Decisions)` | `unsafe` Ausnahme für Memory-Wipe Verifikation |

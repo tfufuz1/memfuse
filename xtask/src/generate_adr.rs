@@ -11,15 +11,10 @@ pub struct AdrResult {
     pub number: u32,
 }
 
-/// Generiert eine neue ADR-Datei mit sicherer, live-geprüfter Nummernvergabe.
-///
-/// Liest die aktuell höchste ADR-Nummer aus dem Dateisystem, inkrementiert
-/// um 1, und erstellt eine Template-Datei mit dem gegebenen Titel.
-///
-/// Bei `dry_run = true` wird die Datei nicht geschrieben (nur Ausgabe).
-pub fn run_generate_adr(title: &str, dry_run: bool) -> Result<AdrResult, String> {
-    let root = find_root_dir();
+/// Konsolidiert alle ADRs aus docs/decisions/ in eine einzige kanonische DECISIONS.md (ADR-060).
+pub fn consolidate_decisions(root: &Path) -> Result<(), String> {
     let decisions_dir = root.join("docs").join("decisions");
+    let target_file = root.join("DECISIONS.md");
 
     if !decisions_dir.exists() {
         return Err(format!(
@@ -28,37 +23,125 @@ pub fn run_generate_adr(title: &str, dry_run: bool) -> Result<AdrResult, String>
         ));
     }
 
-    // Höchste ADR-Nummer ermitteln (exakt wie AGENTS.md vorschreibt)
     let adr_re = Regex::new(r"^ADR-(\d+)").unwrap();
-    let mut max_num: u32 = 0;
+    let mut adr_files: Vec<(u32, PathBuf)> = Vec::new();
 
     let entries = fs::read_dir(&decisions_dir)
         .map_err(|e| format!("Kann {} nicht lesen: {}", decisions_dir.display(), e))?;
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(caps) = adr_re.captures(&name) {
-            if let Ok(num) = caps[1].parse::<u32>() {
-                if num > max_num {
-                    max_num = num;
+        if name.ends_with(".md") && name != "README.md" && name != "INDEX.md" {
+            if let Some(caps) = adr_re.captures(&name) {
+                if let Ok(num) = caps[1].parse::<u32>() {
+                    adr_files.push((num, entry.path()));
+                }
+            }
+        }
+    }
+
+    adr_files.sort_by_key(|(num, _)| *num);
+
+    let mut output = String::new();
+    output.push_str("# Architecture Decision Records (ADR)\n\n");
+    output.push_str("> **Kanonische Einzel-Quelle:** Gemäß ADR-060 ist `DECISIONS.md` die einzige maßgebliche\n");
+    output.push_str("> Quelle für Architecture Decision Records im MemFuse-Projekt. Neue Entscheidungen werden\n");
+    output.push_str("> ausschließlich append-only am Ende dieser Datei ergänzt (`cargo xtask generate-adr \"<Titel>\"`).\n\n");
+
+    output.push_str("## Dokumentierte Lücken & Umnummerierungen\n\n");
+    output.push_str("* ADR-057: Lücken-Dokumentation (Umnummerierung / Ausgelassen im Zuge paralleler Audit-Sessions)\n");
+    output.push_str("* ADR-067: Umnummeriert zu ADR-074 (Normative Kalibrierung des PathRAG Sufficiency-Gate Thresholds)\n");
+    output.push_str("* ADR-068: Umnummeriert zu ADR-076 (Studie zur DiskANN PENDING_FLUSH_THRESHOLD Write-Amplification)\n\n");
+
+    output.push_str("---\n\n");
+
+    let header_re = Regex::new(r"^(#+)\s*ADR-\d+:\s*").unwrap();
+
+    for (num, path) in adr_files {
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Kann {} nicht lesen: {}", path.display(), e))?;
+        let trimmed = content.trim();
+        let normalized = if let Some(first_line_end) = trimmed.find('\n') {
+            let (first_line, rest) = trimmed.split_at(first_line_end);
+            if header_re.is_match(first_line) {
+                let title = header_re.replace(first_line, "");
+                format!("# ADR-{:03}: {}{}", num, title, rest)
+            } else {
+                trimmed.to_string()
+            }
+        } else {
+            trimmed.to_string()
+        };
+        output.push_str(&normalized);
+        output.push_str("\n\n---\n\n");
+    }
+
+    fs::write(&target_file, &output)
+        .map_err(|e| format!("Kann {} nicht schreiben: {}", target_file.display(), e))?;
+
+    println!(
+        "✅ DECISIONS.md erfolgreich konsolidiert: {}",
+        target_file.display()
+    );
+    Ok(())
+}
+
+/// Generiert einen neuen ADR-Eintrag in DECISIONS.md gemäß ADR-060.
+///
+/// Liest die aktuell höchste ADR-Nummer direkt aus DECISIONS.md, inkrementiert
+/// um 1, und hängt ein Template für den neuen Eintrag an.
+///
+/// Bei `dry_run = true` wird DECISIONS.md nicht verändert.
+pub fn run_generate_adr(title: &str, dry_run: bool) -> Result<AdrResult, String> {
+    let root = find_root_dir();
+    let decisions_path = root.join("DECISIONS.md");
+
+    let content = if decisions_path.exists() {
+        fs::read_to_string(&decisions_path)
+            .map_err(|e| format!("Kann {} nicht lesen: {}", decisions_path.display(), e))?
+    } else {
+        String::new()
+    };
+
+    // Höchste ADR-Nummer ermitteln aus DECISIONS.md (oder Fallback auf docs/decisions)
+    let adr_re = Regex::new(r"(?m)^#+\s+ADR-(\d+)").unwrap();
+    let mut max_num: u32 = 0;
+
+    for caps in adr_re.captures_iter(&content) {
+        if let Ok(num) = caps[1].parse::<u32>() {
+            if num > max_num {
+                max_num = num;
+            }
+        }
+    }
+
+    // Fallback: Wenn in DECISIONS.md noch keine ADRs sind, docs/decisions prüfen
+    if max_num == 0 {
+        let decisions_dir = root.join("docs").join("decisions");
+        if decisions_dir.exists() {
+            let file_adr_re = Regex::new(r"^ADR-(\d+)").unwrap();
+            if let Ok(entries) = fs::read_dir(&decisions_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if let Some(caps) = file_adr_re.captures(&name) {
+                        if let Ok(num) = caps[1].parse::<u32>() {
+                            if num > max_num {
+                                max_num = num;
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
     let next_num = max_num + 1;
-
-    // Slug aus Titel generieren
-    let slug = generate_slug(title);
-    let filename = format!("ADR-{:03}-{}.md", next_num, slug);
-    let filepath = decisions_dir.join(&filename);
-
-    // Aktuelles Datum
     let date = get_today_iso();
 
     // Template-Inhalt
-    let content = format!(
-        r#"# ADR-{num:03}: {title}
+    let template = format!(
+        r#"
+# ADR-{num:03}: {title}
 
 * **Status:** Vorgeschlagen
 * **Datum:** {date}
@@ -75,6 +158,8 @@ pub fn run_generate_adr(title: &str, dry_run: bool) -> Result<AdrResult, String>
 
 ## Konsequenzen
 <!-- Was folgt aus dieser Entscheidung? -->
+
+---
 "#,
         num = next_num,
         title = title,
@@ -84,37 +169,43 @@ pub fn run_generate_adr(title: &str, dry_run: bool) -> Result<AdrResult, String>
     if dry_run {
         println!(
             "{{\"dry_run\": true, \"path\": \"{}\", \"number\": {}}}",
-            filepath.display(),
+            decisions_path.display(),
             next_num
         );
         return Ok(AdrResult {
-            path: filepath,
+            path: decisions_path,
             number: next_num,
         });
     }
 
-    // Datei schreiben
-    fs::write(&filepath, &content)
-        .map_err(|e| format!("Kann {} nicht schreiben: {}", filepath.display(), e))?;
+    let mut final_content = content;
+    if !final_content.ends_with('\n') {
+        final_content.push('\n');
+    }
+    final_content.push_str(&template);
+
+    fs::write(&decisions_path, final_content)
+        .map_err(|e| format!("Kann {} nicht schreiben: {}", decisions_path.display(), e))?;
 
     println!(
         "{{\"path\": \"{}\", \"number\": {}}}",
-        filepath.display(),
+        decisions_path.display(),
         next_num
     );
     println!(
-        "✅ ADR-{:03} erstellt: {}",
+        "✅ ADR-{:03} an {} angehängt.",
         next_num,
-        filepath.display()
+        decisions_path.display()
     );
 
     Ok(AdrResult {
-        path: filepath,
+        path: decisions_path,
         number: next_num,
     })
 }
 
 /// Generiert einen URL-freundlichen Slug aus einem Titel.
+#[allow(dead_code)]
 fn generate_slug(title: &str) -> String {
     let slug: String = title
         .to_lowercase()
@@ -130,7 +221,6 @@ fn generate_slug(title: &str) -> String {
         })
         .collect();
 
-    // Mehrfache Bindestriche zusammenfassen und Rand-Striche entfernen
     let re = Regex::new(r"-+").unwrap();
     let slug = re.replace_all(&slug, "-");
     slug.trim_matches('-').to_string()
@@ -179,37 +269,26 @@ mod tests {
 
     #[test]
     fn test_generate_slug_multiple_hyphens() {
-        assert_eq!(
-            generate_slug("  Foo -- Bar  "),
-            "foo-bar"
-        );
+        assert_eq!(generate_slug("  Foo -- Bar  "), "foo-bar");
     }
 
     #[test]
     fn test_adr_template_contains_required_sections() {
-        // Verify the template format by checking the generated content structure
         let title = "Test Decision";
         let date = "2026-09-07";
-        let content = format!(
-            "# ADR-066: {title}\n\n* **Status:** Vorgeschlagen\n* **Datum:** {date}\n",
-        );
+        let content =
+            format!("# ADR-066: {title}\n\n* **Status:** Vorgeschlagen\n* **Datum:** {date}\n",);
         assert!(content.contains("Status:"));
         assert!(content.contains("Datum:"));
     }
 
     #[test]
     fn test_generate_adr_dry_run() {
-        // Dry-run muss funktionieren ohne Dateisystem-Seiteneffekte
-        // (wird nur getestet wenn docs/decisions existiert)
         let root = crate::find_root_dir();
-        let decisions = root.join("docs").join("decisions");
-        if decisions.exists() {
-            let result = run_generate_adr("Test Dry Run", true);
-            assert!(result.is_ok());
-            let adr = result.unwrap();
-            assert!(adr.number > 0);
-            // Datei darf NICHT existieren bei dry_run
-            assert!(!adr.path.exists());
-        }
+        let result = run_generate_adr("Test Dry Run", true);
+        assert!(result.is_ok());
+        let adr = result.unwrap();
+        assert!(adr.number > 0);
+        assert_eq!(adr.path, root.join("DECISIONS.md"));
     }
 }

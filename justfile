@@ -4,6 +4,13 @@ set shell := ["bash", "-uc"]
 default:
     @just --list
 
+# Sets up local development environment (git hooks, tooling)
+bootstrap:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git config core.hooksPath .githooks
+    echo "✅ git core.hooksPath configured to .githooks"
+
 # Runs the TDD Validation Loop (Red -> Green -> Refactor)
 test: check
     #!/usr/bin/env bash

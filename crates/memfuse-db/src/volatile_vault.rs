@@ -17,9 +17,9 @@
 
 #![allow(unsafe_code)]
 
+use memfuse_core::types::{DocId, TxId};
 use std::time::Instant;
 use zeroize::{Zeroize, ZeroizeOnDrop};
-use memfuse_core::types::{DocId, TxId};
 
 #[cfg(unix)]
 use libc::{mlock, munlock};
@@ -38,24 +38,19 @@ pub enum SignalModality {
 #[derive(ZeroizeOnDrop)]
 pub struct VaultChunk {
     #[zeroize(skip)]
-    pub id: u64,  // DocId-Wert, ohne komplexe Drop-Interaktion
+    pub id: u64, // DocId-Wert, ohne komplexe Drop-Interaktion
     /// Sensitiver Inhalt — wird bei Drop gezeroized.
     pub content: Vec<u8>,
     #[zeroize(skip)]
     pub modality: SignalModality,
     #[zeroize(skip)]
-    pub captured_tx: u64,  // TxId-Wert
+    pub captured_tx: u64, // TxId-Wert
     #[zeroize(skip)]
     pub label: Option<String>,
 }
 
 impl VaultChunk {
-    pub fn new(
-        id: DocId,
-        content: Vec<u8>,
-        modality: SignalModality,
-        captured_tx: TxId,
-    ) -> Self {
+    pub fn new(id: DocId, content: Vec<u8>, modality: SignalModality, captured_tx: TxId) -> Self {
         Self {
             id: id.0,
             content,
@@ -386,7 +381,10 @@ mod tests {
     /// Impliziter Drop (ohne purge()) läuft ohne Panic.
     #[test]
     fn test_implicit_drop_does_not_panic() {
-        let config = VaultConfig { attempt_mlock: false, ..Default::default() };
+        let config = VaultConfig {
+            attempt_mlock: false,
+            ..Default::default()
+        };
         let mut vault = VolatileContextVault::open(config);
         vault.ingest(make_chunk(1, b"data")).unwrap();
         // Drop am Ende des Scope — kein Panic erwartet.
@@ -395,7 +393,10 @@ mod tests {
     /// Doppeltes ingest() nach purge() → AlreadyConsumed.
     #[test]
     fn test_ingest_after_purge_fails() {
-        let config = VaultConfig { attempt_mlock: false, ..Default::default() };
+        let config = VaultConfig {
+            attempt_mlock: false,
+            ..Default::default()
+        };
         let mut vault = VolatileContextVault::open(config);
         vault.ingest(make_chunk(1, b"data")).unwrap();
         vault.purge();
@@ -406,9 +407,14 @@ mod tests {
     /// preview_metadata gibt keine sensitiven Inhalte zurück.
     #[test]
     fn test_preview_metadata_no_content() {
-        let config = VaultConfig { attempt_mlock: false, ..Default::default() };
+        let config = VaultConfig {
+            attempt_mlock: false,
+            ..Default::default()
+        };
         let mut vault = VolatileContextVault::open(config);
-        vault.ingest(make_chunk(42, b"very secret").with_label("test")).unwrap();
+        vault
+            .ingest(make_chunk(42, b"very secret").with_label("test"))
+            .unwrap();
         let meta = vault.preview_metadata();
         assert_eq!(meta.len(), 1);
         assert_eq!(meta[0].id.0, 42);

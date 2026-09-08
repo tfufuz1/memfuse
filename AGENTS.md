@@ -1,5 +1,5 @@
 # MemFuse — AI-Assistenten-Kontext
-## Verifizierter Codestand · HEAD `79677186` · Stand 2026-09-08
+## Verifizierter Codestand · HEAD `b89e356e` · Stand 2026-09-08
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
@@ -16,6 +16,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
   - `memfuse-calibration`: Calibration scalers (Platt, Isotonic, Replicator) (`crates/memfuse-calibration`)
 - **Layer 1 — Storage-Primitiven & Vertikalen**:
   - `memfuse-crypto`: Encryption at rest & cryptographic deletion proofs (`DeletionProof`) (`crates/memfuse-crypto`)
+  - `memfuse-kv-bridge`: KV-Cache-Bridge Sicherheitsschicht (`KvSegment`, `TenantIsolatedKvStore`, `EvictionWorker`) (`crates/memfuse-kv-bridge`)
   - `memfuse-checkpoint`: Snapshot & backup management (`crates/memfuse-checkpoint`)
   - `memfuse-graph`: CSR-Graph, `ImmunMemory` (F-04), `PathRAGEngine`, `EdgeProvenance` (`crates/memfuse-graph`)
   - `memfuse-text`: BM25 full-text search & DACH compound splitting (`crates/memfuse-text`)
@@ -48,6 +49,9 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `TenantId` | `crates/memfuse-core/src/types/domain.rs:59` | Mandanten-Identifikator |
 | `ConfigFingerprint` | `crates/memfuse-core/src/types/domain.rs:914` | Invalidation-Fingerprint für Kalibrierung & Profile |
 | `DeletionProof` | `crates/memfuse-crypto/src/deletion_proof.rs:81` | Kryptographischer Löschnachweis (GDPR Art. 17) |
+| `memfuse-kv-bridge` | `crates/memfuse-kv-bridge/src/lib.rs:20` | KV-Cache-Bridge Sicherheitsschicht (`KvSegment`, Tenant-Isolation, Eviction) |
+| `EdgeProvenance` | `crates/memfuse-graph/src/provenance.rs:11` | Herkunftsnachweis für Graph-Kanten (`INV-GRAPH-PROV-1`, `DocEdgeIndex`) |
+| `Kaskadierende CSR-Invalidierung` | `crates/memfuse-db/src/collection/crud.rs:958` | Kaskadierendes Tombstoning verknüpfter Graph-Kanten bei Dokument-Superseding via `DocEdgeIndex` |
 | `memfuse-calibration` | `crates/memfuse-calibration/` | Scaler (Platt, Isotonic, Replicator) & P8 Compliance |
 | `PathRAGEngine` | `crates/memfuse-graph/src/path_rag.rs:35` | Bidirektionale Graph-Retrieval Search Engine |
 | `ImmunMemory` (F-04) | `crates/memfuse-graph/src/immune.rs:84` | Immunologische Widerspruchserkennung & Edge-Suppression |
@@ -83,9 +87,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 
 1. **`rebuild_region()` ohne Recall-Tests (F-02, `crates/memfuse-index/src/hnsw.rs:1812`)**:
    `rebuild_region()` führt reines Tombstone-Pruning durch, ohne dass wissenschaftliche Recall-Tests oder ein offizielles ADR vorliegen. Das Feature-Flag `physio-nucleation` MUSS deaktiviert bleiben, bis entsprechende Regressionstests vorliegen.
-2. **Kaskadierende Invalidierung Supersedes→CSR-Kante fehlt (`crates/memfuse-db/src/collection/search.rs:937`)**:
-   `search.rs` filtert abgelöste Dokumente nur zur Abfragezeit (Query-Time Filter). Eine aktive Kaskaden-Invalidierung verknüpfter CSR-Graph-Kanten bei Dokument-Superseding fehlt.
-3. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
+2. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
    `memfuse-candle` ist zwar als Workspace-Crate vorhanden, dient aber derzeit als isoliertes Modul und ist noch nicht in die Haupt-Serving-Pipeline (`memfuse-db` / `memfuse-router`) eingebunden.
 
 ---

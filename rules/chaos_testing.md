@@ -1,6 +1,6 @@
 # Chaos Testing Rules — WAL V3/MVCC Fault-Injection
 
-> Referenziert aus `AGENTS.md §7` und `DECISIONS.md` (ADR-062)
+> Referenziert aus `AGENTS.md` und `DECISIONS.md` (ADR-062)
 
 ## Szenario-Übersicht
 

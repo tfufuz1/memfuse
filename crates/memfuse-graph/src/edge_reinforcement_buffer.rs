@@ -48,12 +48,20 @@ pub mod edge_reinforcement_buffer {
         /// Fügt ein Co-Occurrence-Signal hinzu (ko-aktivierte Entitäten in derselben
         /// Retrieval-Session). Kann von mehreren Threads gleichzeitig aufgerufen werden.
         pub fn push_cooccurrence(&self, from: EntityId, to: EntityId, co_activation: f32) {
-            self.cooccurrence.lock().push(CooccurrenceSignal { from, to, co_activation });
+            self.cooccurrence.lock().push(CooccurrenceSignal {
+                from,
+                to,
+                co_activation,
+            });
         }
 
         /// Fügt ein Traversal-Signal hinzu (traversierte Kante mit Pfadlänge).
         pub fn push_traversal(&self, from: EntityId, to: EntityId, path_length: usize) {
-            self.traversal.lock().push(TraversalSignal { from, to, path_length });
+            self.traversal.lock().push(TraversalSignal {
+                from,
+                to,
+                path_length,
+            });
         }
 
         /// Gibt die Anzahl der gepufferten Co-Occurrence-Signale zurück (für Monitoring).

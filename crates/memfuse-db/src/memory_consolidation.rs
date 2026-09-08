@@ -256,7 +256,10 @@ pub fn detect_near_duplicates(turns: &[(DocId, Vec<f32>)], threshold: f32) -> Ve
 /// Die Segmentierung und Near-Duplicate-Detection stützen sich auf die zeitliche Abfolge der Slice-Indizes.
 ///
 /// Führt KEINE LLM-API-Aufrufe durch (Structural Consolidation Pass ist rein strukturell/statistisch).
-pub fn run_consolidation_pass(turns: &[(DocId, Vec<f32>)], config: &ConsolidationConfig) -> ConsolidationPhaseResult {
+pub fn run_consolidation_pass(
+    turns: &[(DocId, Vec<f32>)],
+    config: &ConsolidationConfig,
+) -> ConsolidationPhaseResult {
     if turns.is_empty() {
         return ConsolidationPhaseResult {
             segments_created: 0,

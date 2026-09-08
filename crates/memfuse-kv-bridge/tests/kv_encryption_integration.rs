@@ -31,7 +31,8 @@ fn test_encrypted_segment_memory_inspection_and_decryption_roundtrip() {
     let rope_offset = Some(256);
 
     // Distinct confidential plaintext payload
-    let secret_plaintext = b"CONFIDENTIAL_TENSOR_PAYLOAD_0123456789_SECRET_KEY_VALUES_P9_VERIFICATION";
+    let secret_plaintext =
+        b"CONFIDENTIAL_TENSOR_PAYLOAD_0123456789_SECRET_KEY_VALUES_P9_VERIFICATION";
 
     // 1. Insert encrypted segment into store
     store

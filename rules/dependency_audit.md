@@ -1,6 +1,6 @@
 # Dependency-Audit-Protokoll
 
-> Referenziert aus `AGENTS.md §8`. Pflicht bei jeder neuen Abhängigkeit.
+> Referenziert aus `AGENTS.md`. Pflicht bei jeder neuen Abhängigkeit.
 
 ## Checkliste (alle Punkte vor `Ask-first`-Freigabe)
 

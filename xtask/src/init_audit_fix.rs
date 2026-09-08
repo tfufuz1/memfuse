@@ -11,11 +11,7 @@ pub fn run_init_audit_fix(commit_hash: &str) -> Result<(), String> {
     let root = find_root_dir();
 
     // Validiere Commit-Hash (mindestens 7 Hex-Zeichen)
-    if commit_hash.len() < 7
-        || !commit_hash
-            .chars()
-            .all(|c| c.is_ascii_hexdigit())
-    {
+    if commit_hash.len() < 7 || !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(
             "Ungültiger Commit-Hash: '{}' — mindestens 7 Hex-Zeichen erwartet",
             commit_hash
@@ -67,7 +63,9 @@ pub fn run_init_audit_fix(commit_hash: &str) -> Result<(), String> {
 
     if affected_crates.is_empty() {
         // Dateien liegen nicht unter crates/ — Fallback auf Root-Ebene
-        println!("⚠️  Commit betrifft keine Crate-Dateien. Erstelle Test im ersten betroffenen Pfad.");
+        println!(
+            "⚠️  Commit betrifft keine Crate-Dateien. Erstelle Test im ersten betroffenen Pfad."
+        );
         println!("Betroffene Dateien:");
         for f in &changed_files {
             println!("  {}", f);
@@ -75,10 +73,7 @@ pub fn run_init_audit_fix(commit_hash: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    println!(
-        "=== xtask init-audit-fix {} ===",
-        short_hash
-    );
+    println!("=== xtask init-audit-fix {} ===", short_hash);
     println!("Betroffene Crates: {}", affected_crates.join(", "));
     println!();
 
@@ -86,7 +81,10 @@ pub fn run_init_audit_fix(commit_hash: &str) -> Result<(), String> {
     for krate in &affected_crates {
         let crate_dir = root.join("crates").join(krate);
         if !crate_dir.exists() {
-            eprintln!("⚠️  Crate-Verzeichnis {} existiert nicht — überspringe", krate);
+            eprintln!(
+                "⚠️  Crate-Verzeichnis {} existiert nicht — überspringe",
+                krate
+            );
             continue;
         }
 
@@ -100,7 +98,10 @@ pub fn run_init_audit_fix(commit_hash: &str) -> Result<(), String> {
         let test_path = tests_dir.join(&test_filename);
 
         if test_path.exists() {
-            println!("⚠️  {} existiert bereits — überspringe", test_path.display());
+            println!(
+                "⚠️  {} existiert bereits — überspringe",
+                test_path.display()
+            );
             continue;
         }
 
@@ -165,8 +166,7 @@ fn audit_fix_{short}_reproduce() {{
     for krate in &affected_crates {
         println!(
             "│     cargo test -p {} --test audit_fix_{}    │",
-            krate,
-            short_hash
+            krate, short_hash
         );
     }
     println!("│  3. Implementiere den Fix                                │");

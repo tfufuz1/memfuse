@@ -452,7 +452,10 @@ impl GraphInner {
         let vec = self.edge_store.entry(from).or_default();
         if !vec.iter().any(|e| e.target == to) {
             let current_weight = if let Some(pending) = self.pending_edges.get(&from_idx) {
-                pending.iter().find(|e| e.target == to_idx).map(|e| e.weight)
+                pending
+                    .iter()
+                    .find(|e| e.target == to_idx)
+                    .map(|e| e.weight)
             } else {
                 None
             }
@@ -622,13 +625,19 @@ impl CsrGraph {
             inner: RwLock::new(GraphInner::new()),
             storage: None,
             last_tx_id: AtomicU64::new(0),
-            consistency_enforcer: Some(RwLock::new(ConsistencyEnforcer::new(suppression_threshold))),
+            consistency_enforcer: Some(RwLock::new(ConsistencyEnforcer::new(
+                suppression_threshold,
+            ))),
             doc_edge_index: crate::provenance::DocEdgeIndex::new(),
         }
     }
 
     /// Tombstoniert eine Kante direkt für eine Transaktions-ID via Cascading-Invalidation (INV-GRAPH-PROV-1).
-    pub async fn tombstone_edge(&self, edge_id: crate::consistency_enforcement::EdgeId, tx: TxId) -> Result<()> {
+    pub async fn tombstone_edge(
+        &self,
+        edge_id: crate::consistency_enforcement::EdgeId,
+        tx: TxId,
+    ) -> Result<()> {
         let (from, to) = edge_id;
         GraphIndex::remove_edge(self, tx, from, to).await?;
         GraphIndex::commit(self, tx).await?;
@@ -792,7 +801,9 @@ impl CsrGraph {
                         ));
                     }
                     // Widerspruch erkannt aber noch nicht suppressed — loggen, trotzdem einfügen
-                    tracing::warn!("ConsistencyEnforcer: contradictory edge detected (not yet suppressed)");
+                    tracing::warn!(
+                        "ConsistencyEnforcer: contradictory edge detected (not yet suppressed)"
+                    );
                 }
             }
         }
@@ -1524,7 +1535,9 @@ impl GraphIndex for CsrGraph {
                             "Contradictory edge suppressed by consistency enforcer".to_string(),
                         ));
                     }
-                    tracing::warn!("ConsistencyEnforcer: contradictory edge detected (not yet suppressed)");
+                    tracing::warn!(
+                        "ConsistencyEnforcer: contradictory edge detected (not yet suppressed)"
+                    );
                 }
             }
 

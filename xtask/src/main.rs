@@ -45,6 +45,7 @@ mod check_jules_context_freshness;
 mod check_placeholder_refs;
 mod check_type_registry;
 mod check_vetoes;
+mod claim;
 mod gen_prompter_data;
 mod generate_adr;
 mod init_audit_fix;
@@ -1289,7 +1290,6 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     Ok(stdout)
 }
 
-
 pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
@@ -1313,7 +1313,11 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
 
     for i in 1..=len_a {
         for j in 1..=len_b {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             dp[i][j] = (dp[i - 1][j] + 1)
                 .min(dp[i][j - 1] + 1)
                 .min(dp[i - 1][j - 1] + cost);
@@ -1334,14 +1338,20 @@ pub fn split_into_sentences(content: &str) -> Vec<SentenceItem> {
     let mut sentences = Vec::new();
     for (line_idx, line) in content.lines().enumerate() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('|') || trimmed.starts_with("```") {
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with('|')
+            || trimmed.starts_with("```")
+        {
             continue;
         }
 
         // Split by ". " / "\n" heuristics
         let parts: Vec<&str> = trimmed.split(". ").collect();
         for part in parts {
-            let part_trimmed = part.trim_matches(&['.', ' ', '-', '*', '>', '`'][..]).trim();
+            let part_trimmed = part
+                .trim_matches(&['.', ' ', '-', '*', '>', '`'][..])
+                .trim();
             if part_trimmed.len() < 10 {
                 continue;
             }
@@ -1405,8 +1415,16 @@ pub fn check_sentence_overlap(agents_content: &str, jules_content: &str) -> bool
                     a_start, a_end, j_start, j_end
                 );
                 for k in 0..match_count {
-                    eprintln!("   - AGENTS.md:{}: {}", agents_sentences[i + k].line_num, agents_sentences[i + k].text);
-                    eprintln!("     JULES_CONTEXT.md:{}: {}", jules_sentences[j + k].line_num, jules_sentences[j + k].text);
+                    eprintln!(
+                        "   - AGENTS.md:{}: {}",
+                        agents_sentences[i + k].line_num,
+                        agents_sentences[i + k].text
+                    );
+                    eprintln!(
+                        "     JULES_CONTEXT.md:{}: {}",
+                        jules_sentences[j + k].line_num,
+                        jules_sentences[j + k].text
+                    );
                 }
                 found_duplicates = true;
                 break;
@@ -2129,6 +2147,13 @@ fn main() {
                 process::exit(1);
             }
         }
+        "consolidate-adrs" => {
+            let root = find_root_dir();
+            if let Err(e) = generate_adr::consolidate_decisions(&root) {
+                eprintln!("❌ consolidate-adrs failed: {}", e);
+                process::exit(1);
+            }
+        }
         "init-audit-fix" => {
             let hash = args.get(2).map(|s| s.as_str()).unwrap_or("HEAD");
             if let Err(e) = init_audit_fix::run_init_audit_fix(hash) {
@@ -2142,9 +2167,19 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-agents-integrity" => {
+            let success = check_agents_integrity::run_check_agents_integrity();
+            if !success {
+                process::exit(1);
+            }
+        }
         other => {
             eprintln!("Unknown xtask command: {}", other);
+<<<<<<< HEAD
             eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
+=======
+            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-agents-integrity, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
+>>>>>>> 23cc148e (Shell-Commit)
             process::exit(1);
         }
     }
@@ -2484,7 +2519,11 @@ description = "Core crate"
         let tokens2 = tokenize_title(title2);
 
         let score = jaccard_similarity(&tokens1, &tokens2);
-        assert!(score >= 50, "Expected similarity score >= 50, got {}", score);
+        assert!(
+            score >= 50,
+            "Expected similarity score >= 50, got {}",
+            score
+        );
 
         assert_eq!(extract_scope(title1), "memfuse-index");
     }

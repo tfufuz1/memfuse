@@ -1,7 +1,7 @@
 use crate::{
     check_duplicate_symbols, get_changed_rs_files_from_git_diff, run_check_consistency,
-    run_check_dag, run_check_review_coverage, run_check_unwrap_baseline,
-    run_check_jules_context_freshness, run_sync_docs, run_validate_tags, scan_tags,
+    run_check_dag, run_check_jules_context_freshness, run_check_review_coverage,
+    run_check_unwrap_baseline, run_sync_docs, run_validate_tags, scan_tags,
 };
 use regex::Regex;
 use std::fs;
@@ -62,7 +62,10 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
             ))
         };
         results.push(GateResult {
-            name: format!("Gate 1: Kritische AI-TAGs ({:.1}s)", start.elapsed().as_secs_f64()),
+            name: format!(
+                "Gate 1: Kritische AI-TAGs ({:.1}s)",
+                start.elapsed().as_secs_f64()
+            ),
             passed,
             detail,
         });
@@ -96,11 +99,7 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
                 if let Ok(content) = fs::read_to_string(path) {
                     for (idx, line) in content.lines().enumerate() {
                         if re.is_match(line) {
-                            violations.push(format!(
-                                "  {}:{}",
-                                path.display(),
-                                idx + 1
-                            ));
+                            violations.push(format!("  {}:{}", path.display(), idx + 1));
                         }
                     }
                 }
@@ -154,11 +153,7 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
                 if let Ok(content) = fs::read_to_string(path) {
                     for (idx, line) in content.lines().enumerate() {
                         if line.contains("TODO") && !line.contains("AI-TAG") {
-                            violations.push(format!(
-                                "  {}:{}",
-                                path.display(),
-                                idx + 1
-                            ));
+                            violations.push(format!("  {}:{}", path.display(), idx + 1));
                         }
                     }
                 }
@@ -171,7 +166,12 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
             Some(format!(
                 "{} TODOs ohne AI-TAG Grammatik:\n{}",
                 violations.len(),
-                violations.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+                violations
+                    .iter()
+                    .take(10)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n")
             ))
         };
         results.push(GateResult {
@@ -213,10 +213,7 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
             _ => None,
         };
         results.push(GateResult {
-            name: format!(
-                "Duplicate Symbols ({:.1}s)",
-                start.elapsed().as_secs_f64()
-            ),
+            name: format!("Duplicate Symbols ({:.1}s)", start.elapsed().as_secs_f64()),
             passed,
             detail,
         });
@@ -228,6 +225,20 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
         let passed = run_check_dag();
         results.push(GateResult {
             name: format!("DAG-Integrität ({:.1}s)", start.elapsed().as_secs_f64()),
+            passed,
+            detail: None,
+        });
+    }
+
+    // Gate: AGENTS.md Integrität
+    {
+        let start = Instant::now();
+        let passed = crate::check_agents_integrity::run_check_agents_integrity();
+        results.push(GateResult {
+            name: format!(
+                "AGENTS.md Integrität ({:.1}s)",
+                start.elapsed().as_secs_f64()
+            ),
             passed,
             detail: None,
         });
@@ -258,7 +269,16 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
         {
             let start = Instant::now();
             let output = std::process::Command::new("cargo")
-                .args(["clippy", "--all-targets", "--workspace", "--exclude", "memfuse-tauri", "--", "-D", "warnings"])
+                .args([
+                    "clippy",
+                    "--all-targets",
+                    "--workspace",
+                    "--exclude",
+                    "memfuse-tauri",
+                    "--",
+                    "-D",
+                    "warnings",
+                ])
                 .output();
             let passed = output.map(|o| o.status.success()).unwrap_or(false);
             results.push(GateResult {
@@ -277,10 +297,7 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
             let start = Instant::now();
             let passed = run_sync_docs(true);
             results.push(GateResult {
-                name: format!(
-                    "Gate 5: Docs-Sync ({:.1}s)",
-                    start.elapsed().as_secs_f64()
-                ),
+                name: format!("Gate 5: Docs-Sync ({:.1}s)", start.elapsed().as_secs_f64()),
                 passed,
                 detail: None,
             });
@@ -306,10 +323,7 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
             let start = Instant::now();
             let passed = run_check_consistency();
             results.push(GateResult {
-                name: format!(
-                    "Gate 9: Konsistenz ({:.1}s)",
-                    start.elapsed().as_secs_f64()
-                ),
+                name: format!("Gate 9: Konsistenz ({:.1}s)", start.elapsed().as_secs_f64()),
                 passed,
                 detail: None,
             });

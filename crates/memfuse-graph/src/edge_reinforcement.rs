@@ -127,8 +127,7 @@ pub fn apply_traversal_reinforcement(
     } else {
         0.0
     };
-    edge.traversal_weight =
-        ((1.0 - config.rho) * edge.traversal_weight + reinforcement).max(0.0);
+    edge.traversal_weight = ((1.0 - config.rho) * edge.traversal_weight + reinforcement).max(0.0);
 }
 
 /// Gewichtsnormalisierung: wenn Σ_j w_ij > W_max, skaliere alle Kanten von i proportional.

@@ -228,12 +228,8 @@ pub fn run() -> bool {
                 let comp_risk = focus_data
                     .and_then(|d| d.risk.clone())
                     .unwrap_or_else(|| "—".to_string());
-                let comp_desc = focus_data
-                    .and_then(|d| d.desc.clone())
-                    .unwrap_or_default();
-                let comp_focus = focus_data
-                    .and_then(|d| d.focus.clone())
-                    .unwrap_or_default();
+                let comp_desc = focus_data.and_then(|d| d.desc.clone()).unwrap_or_default();
+                let comp_focus = focus_data.and_then(|d| d.focus.clone()).unwrap_or_default();
 
                 crate_components.push(ComponentJsonData {
                     file: rel_file,

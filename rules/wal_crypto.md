@@ -1,6 +1,6 @@
 # WAL & Crypto Invarianten
 
-> Referenziert aus `AGENTS.md §8`
+> Referenziert aus `AGENTS.md`
 
 ## WAL-First Regel
 

@@ -1116,8 +1116,12 @@ async fn run_pathrag_sweep_cmd(
     let mut md = String::new();
     md.push_str("# PathRAG Sufficiency Threshold Sweep Results\n\n");
     md.push_str("## LongMemEval Parameter Sweep\n\n");
-    md.push_str("| Threshold | Recall@5 | Recall@10 | Precision@5 | Precision@10 | Total Queries |\n");
-    md.push_str("|-----------|----------|-----------|-------------|--------------|---------------|\n");
+    md.push_str(
+        "| Threshold | Recall@5 | Recall@10 | Precision@5 | Precision@10 | Total Queries |\n",
+    );
+    md.push_str(
+        "|-----------|----------|-----------|-------------|--------------|---------------|\n",
+    );
     for m in &report.long_mem_eval_sweep {
         md.push_str(&format!(
             "| {:.2} | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |\n",
@@ -1131,8 +1135,12 @@ async fn run_pathrag_sweep_cmd(
     }
 
     md.push_str("\n## LoCoMo Parameter Sweep\n\n");
-    md.push_str("| Threshold | Recall@5 | Recall@10 | Precision@5 | Precision@10 | Total Queries |\n");
-    md.push_str("|-----------|----------|-----------|-------------|--------------|---------------|\n");
+    md.push_str(
+        "| Threshold | Recall@5 | Recall@10 | Precision@5 | Precision@10 | Total Queries |\n",
+    );
+    md.push_str(
+        "|-----------|----------|-----------|-------------|--------------|---------------|\n",
+    );
     for m in &report.locomo_sweep {
         md.push_str(&format!(
             "| {:.2} | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |\n",
@@ -1159,13 +1167,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     if args.len() > 1 && (args[1] == "pathrag-sweep" || args[1] == "pathrag_sweep") {
         let locomo_dataset_path =
             PathBuf::from("benchmarks/memfuse-bench/tests/fixtures/locomo_fixture.json");
-        let sweep_output_path =
-            PathBuf::from("benchmarks/results/pathrag_sufficiency_sweep.json");
-        let sweep_md_path =
-            PathBuf::from("benchmarks/results/pathrag_sufficiency_sweep.md");
+        let sweep_output_path = PathBuf::from("benchmarks/results/pathrag_sufficiency_sweep.json");
+        let sweep_md_path = PathBuf::from("benchmarks/results/pathrag_sufficiency_sweep.md");
 
         let thresholds = vec![0.01, 0.1, 0.3, 0.6];
-        run_pathrag_sweep_cmd(&locomo_dataset_path, &sweep_output_path, &sweep_md_path, &thresholds).await?;
+        run_pathrag_sweep_cmd(
+            &locomo_dataset_path,
+            &sweep_output_path,
+            &sweep_md_path,
+            &thresholds,
+        )
+        .await?;
         return Ok(());
     } else if args.len() > 1 && (args[1] == "long-mem-eval" || args[1] == "long_mem_eval") {
         let mut dataset_path =

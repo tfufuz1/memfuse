@@ -29,7 +29,8 @@ pub fn normalize_subject(subject: &str) -> String {
 }
 
 pub fn parse_conventional_commit(raw_message: &str) -> (String, String) {
-    let re = Regex::new(r"^(?i)[a-z0-9_-]+(?:\((?P<scope>[^)]+)\))?!?:\s*(?P<subject>.*)$").unwrap();
+    let re =
+        Regex::new(r"^(?i)[a-z0-9_-]+(?:\((?P<scope>[^)]+)\))?!?:\s*(?P<subject>.*)$").unwrap();
     if let Some(caps) = re.captures(raw_message.trim()) {
         let scope = caps
             .name("scope")
@@ -86,7 +87,8 @@ pub fn normalized_similarity(a: &str, b: &str) -> f64 {
 }
 
 pub fn parse_override_exception(pr_body: &str) -> Option<String> {
-    let re = Regex::new(r"(?i)(?:Supersedes|Fixes-Regression-Of):\s*\b([a-fA-F0-9]{7,40})\b").unwrap();
+    let re =
+        Regex::new(r"(?i)(?:Supersedes|Fixes-Regression-Of):\s*\b([a-fA-F0-9]{7,40})\b").unwrap();
     re.captures(pr_body).map(|caps| caps[1].to_string())
 }
 

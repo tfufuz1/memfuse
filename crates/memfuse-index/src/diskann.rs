@@ -1871,8 +1871,8 @@ mod tests {
     fn test_compute_adaptive_flush_threshold_formula() {
         // Kleine Collection: Boden greift
         assert_eq!(compute_adaptive_flush_threshold(0), 50);
-        assert_eq!(compute_adaptive_flush_threshold(100), 50);   // floor(100*0.05)=5 < 50
-        assert_eq!(compute_adaptive_flush_threshold(1_000), 50);  // floor(1000*0.05)=50
+        assert_eq!(compute_adaptive_flush_threshold(100), 50); // floor(100*0.05)=5 < 50
+        assert_eq!(compute_adaptive_flush_threshold(1_000), 50); // floor(1000*0.05)=50
 
         // Mittlere Collection
         assert_eq!(compute_adaptive_flush_threshold(10_000), 500); // floor(10000*0.05)=500
@@ -1894,8 +1894,8 @@ mod tests {
         // Dieser Test prüft die Logik-Ebene (nicht den async insert()-Pfad).
         let threshold_override: Option<u64> = Some(42);
         let n_persisted: u64 = 100_000;
-        let result = threshold_override
-            .unwrap_or_else(|| compute_adaptive_flush_threshold(n_persisted));
+        let result =
+            threshold_override.unwrap_or_else(|| compute_adaptive_flush_threshold(n_persisted));
         assert_eq!(result, 42); // Override gewinnt
     }
 

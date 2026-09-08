@@ -124,7 +124,10 @@ impl KvSegment {
     /// Entschlüsselt die Daten des Segments, falls es verschlüsselt ist.
     /// Gibt bei Klartext-Segmenten direkt einen Klon der `data`-Bytes zurück.
     #[cfg(feature = "kv-encryption")]
-    pub fn decrypt_data(&self, cipher: &KvSegmentCipher) -> Result<Vec<u8>, memfuse_crypto::CryptoError> {
+    pub fn decrypt_data(
+        &self,
+        cipher: &KvSegmentCipher,
+    ) -> Result<Vec<u8>, memfuse_crypto::CryptoError> {
         if !self.encrypted {
             return Ok(self.data.clone());
         }

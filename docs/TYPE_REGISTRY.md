@@ -1,6 +1,6 @@
 # MemFuse — Central Type Registry (`TYPE_REGISTRY.md`)
 
-> **Regel (AGENTS.md §4)**: Vor dem Anlegen eines neuen Typs oder Traits MUSS diese Tabelle konsultiert werden. Bei semantischen Überschneidungen ist der bestehende Typ zu erweitern oder die Kollision explizit per ADR zu begründen.
+> **Regel (AGENTS.md — Non-Obvious Decisions)**: Vor dem Anlegen eines neuen Typs oder Traits MUSS diese Tabelle konsultiert werden. Bei semantischen Überschneidungen ist der bestehende Typ zu erweitern oder die Kollision explizit per ADR zu begründen.
 
 ---
 
@@ -17,9 +17,10 @@
 | `HybridQuery` | `memfuse-core` | `crates/memfuse-core/src/types/saos.rs:75` | Query-Spezifikation für 4-Signal-Suche |
 | `MetadataFilter` | `memfuse-core` | `crates/memfuse-core/src/types/saos.rs:120` | Metadaten-Filter-Prädikate (Eq, Ne, In, Range, Contains, And, Or) |
 | `CheckpointGuard` | `memfuse-checkpoint` | `crates/memfuse-checkpoint/src/lib.rs:24` | RAII-Guard für automatischen WAL-Rollback bei Drop |
+| `TenantId` | `memfuse-core` | `crates/memfuse-core/src/types/domain.rs:59` | Mandanten-Identifikator (INV-TENANT-1: 0 ist SYSTEM) |
 | `CompactionStrategy` | `memfuse-db` | `crates/memfuse-db/src/compaction.rs:18` | Kontext-Kompaktierungs-Strategien (DropOld, Summarize, LlmSummarize) |
-| `StoredDocument` | `memfuse-db` | `crates/memfuse-db/src/collection.rs:85` | In-Storage Repräsentation eines Dokuments inklusive Embeddings |
-| `StoredDocumentMeta` | `memfuse-db` | `crates/memfuse-db/src/collection.rs:110` | In-Storage Repräsentation für schnelle Result-Hydration (ohne Vektoren) |
+| `StoredDocument` | `memfuse-db` | `crates/memfuse-db/src/collection/mod.rs:34` | In-Storage Repräsentation eines Dokuments inklusive Embeddings |
+| `StoredDocumentMeta` | `memfuse-db` | `crates/memfuse-db/src/collection/mod.rs:43` | In-Storage Repräsentation für schnelle Result-Hydration (ohne Vektoren) |
 | `MemoryType` | `memfuse-core` | `crates/memfuse-core/src/types/domain.rs:535` | Klassifikation kognitiver Gedächtnistypen (Episodic, Semantic, Procedural, Working) (ADR-041) |
 
 ---

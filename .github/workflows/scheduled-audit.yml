@@ -36,7 +36,7 @@ Analysiere die folgenden Commits der letzten 7 Tage auf:
 1. Race Conditions / TOCTOU-Fehler (insbesondere in neu hinzugefuegten
    Mutex/RwLock/Atomic-Nutzungen)
 2. Neue .unwrap()/.expect() in Produktionscode ausserhalb der Baseline
-   (.unwrap-baseline.txt)
+   (.unwrap-baseline.json)
 3. Silent-Failure-Pattern (let _ = ... bei IO-Operationen)
 4. DAG-Grenzverletzungen in neuen Cargo.toml-Dependencies
 

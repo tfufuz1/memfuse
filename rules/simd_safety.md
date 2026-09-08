@@ -1,6 +1,6 @@
 # SIMD & Unsafe Safety Rules
 
-> Referenziert aus `AGENTS.md §8`
+> Referenziert aus `AGENTS.md`
 
 ## SAFETY-Kommentar-Pflicht
 

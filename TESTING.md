@@ -58,5 +58,5 @@ This check verifies zero leakage of optional dependencies or types into non-feat
 ---
 
 ## 7. Weiterführende Regeln
-*   [rules/testing.md](file:///home/freddy/Arbeitsplatz/DEV/memfuse/rules/testing.md) — Anti-Test-Mirroring & required categories.
-*   [rules/test_quality.md](file:///home/freddy/Arbeitsplatz/DEV/memfuse/rules/test_quality.md) — Detaillierte Code-Beispiele für Test-Qualität.
+*   [rules/testing.md](rules/testing.md) — Anti-Test-Mirroring & required categories.
+*   [rules/test_quality.md](rules/test_quality.md) — Detaillierte Code-Beispiele für Test-Qualität.

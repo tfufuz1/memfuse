@@ -47,7 +47,10 @@ pub fn run_check_type_registry(type_name: &str) -> bool {
             type_name
         );
     } else {
-        println!("✅ Typ '{}' existiert noch nicht — Anlage möglich.", type_name);
+        println!(
+            "✅ Typ '{}' existiert noch nicht — Anlage möglich.",
+            type_name
+        );
     }
 
     !has_hits

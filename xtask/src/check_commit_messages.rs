@@ -97,7 +97,9 @@ pub fn check_commit_messages() -> Result<(), String> {
         println!("✅ Alle geprüften Commit-Messages entsprechen dem Conventional-Commits-Schema.");
         Ok(())
     } else {
-        eprintln!("❌ GATE-FEHLER: Es wurden aussageschwache oder ungültige Commit-Messages gefunden!");
+        eprintln!(
+            "❌ GATE-FEHLER: Es wurden aussageschwache oder ungültige Commit-Messages gefunden!"
+        );
         eprintln!();
         eprintln!("Anzahl Verstöße: {}", violations.len());
         eprintln!();
@@ -113,9 +115,15 @@ pub fn check_commit_messages() -> Result<(), String> {
         eprintln!("  - Keine generischen Messages (z.B. 'Shell-Commit', 'wip', 'update', etc.)");
         eprintln!();
         eprintln!("WARUM GENERISCHE MESSAGES VERBOTEN SIND:");
-        eprintln!("  Bei agentengesteuerter Entwicklung (Google Jules als alleiniger Committer ohne");
-        eprintln!("  menschlichen Reviewer im Loop) ist eine präzise Audit-Trail-Integrität essenziell,");
-        eprintln!("  damit nachfolgende Agenten-Sessions die Historie ohne aufwändige Diff-Analysen");
+        eprintln!(
+            "  Bei agentengesteuerter Entwicklung (Google Jules als alleiniger Committer ohne"
+        );
+        eprintln!(
+            "  menschlichen Reviewer im Loop) ist eine präzise Audit-Trail-Integrität essenziell,"
+        );
+        eprintln!(
+            "  damit nachfolgende Agenten-Sessions die Historie ohne aufwändige Diff-Analysen"
+        );
         eprintln!("  nachvollziehen können.");
 
         Err(format!(
@@ -131,22 +139,14 @@ mod tests {
 
     #[test]
     fn test_valid_commit_messages() {
-        assert!(validate_commit_message(
-            "feat(graph): add PPR bidirectional traversal support"
-        )
-        .is_ok());
-        assert!(validate_commit_message(
-            "chore(ci): add commit message linter gate"
-        )
-        .is_ok());
-        assert!(validate_commit_message(
-            "fix: resolve memory leak in buffer pool"
-        )
-        .is_ok());
-        assert!(validate_commit_message(
-            "docs(adr): document architecture decisions for WAL"
-        )
-        .is_ok());
+        assert!(
+            validate_commit_message("feat(graph): add PPR bidirectional traversal support").is_ok()
+        );
+        assert!(validate_commit_message("chore(ci): add commit message linter gate").is_ok());
+        assert!(validate_commit_message("fix: resolve memory leak in buffer pool").is_ok());
+        assert!(
+            validate_commit_message("docs(adr): document architecture decisions for WAL").is_ok()
+        );
     }
 
     #[test]

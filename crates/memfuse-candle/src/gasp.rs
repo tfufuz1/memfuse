@@ -39,7 +39,12 @@ impl Default for GaspConfig {
             threshold: DEFAULT_GROUNDING_THRESHOLD,
             warmup_required: 10,
             max_observations: 2000,
-            fingerprint: ConfigFingerprint::new("candle-gasp-v1", "Q4_K_M", "gasp-attribution", 0.0),
+            fingerprint: ConfigFingerprint::new(
+                "candle-gasp-v1",
+                "Q4_K_M",
+                "gasp-attribution",
+                0.0,
+            ),
         }
     }
 }
@@ -71,7 +76,8 @@ impl GaspValidator {
     /// Verknüpft einen `CandleLlmClient` für optionale Modell-Inferenz.
     pub fn with_llm_client(mut self, client: crate::CandleLlmClient) -> Self {
         let fp = client.fingerprint();
-        self.config.fingerprint = ConfigFingerprint::new(&fp.model_id, &fp.quantization, "gasp-attribution", 0.0);
+        self.config.fingerprint =
+            ConfigFingerprint::new(&fp.model_id, &fp.quantization, "gasp-attribution", 0.0);
         if let Ok(mut cal) = self.calibrator.lock() {
             cal.invalidate_on_config_change(self.config.fingerprint.clone());
         }
@@ -98,7 +104,11 @@ impl GaspValidator {
     ///
     /// Extrahierte Fakten / Zahlen / Entitäten in `response` werden mit den bereitgestellten
     /// `context_chunks` verglichen.
-    pub fn compute_raw_grounding_score(&self, response: &str, context_chunks: &[ContextChunk]) -> Result<f32> {
+    pub fn compute_raw_grounding_score(
+        &self,
+        response: &str,
+        context_chunks: &[ContextChunk],
+    ) -> Result<f32> {
         if context_chunks.is_empty() {
             return Err(MemFuseError::InvalidInput(
                 "Empty context provided for post-hoc grounding validation".to_string(),
@@ -249,29 +259,44 @@ mod tests {
         let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro und der Gewinn lag bei 5 Millionen Euro.";
 
         let res = validator.validate_grounding(response, &chunks).await;
-        assert!(res.is_ok(), "Response fully supported by context should succeed: {:?}", res);
+        assert!(
+            res.is_ok(),
+            "Response fully supported by context should succeed: {:?}",
+            res
+        );
 
         let assessment = res.unwrap();
         assert!(assessment.is_grounded);
-        assert!(assessment.score >= 0.70, "Score should be >= 0.70, got {}", assessment.score);
+        assert!(
+            assessment.score >= 0.70,
+            "Score should be >= 0.70, got {}",
+            assessment.score
+        );
     }
 
     #[tokio::test]
     async fn test_case_b_hallucinated_number_low_score_triggers_abstention() {
         let validator = GaspValidator::new();
-        let chunks = vec![
-            sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro."),
-        ];
+        let chunks = vec![sample_chunk(
+            1,
+            "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.",
+        )];
         // 99 Millionen Euro is ungrounded / hallucinated
         let response = "Im Jahr 2025 betrug der Umsatz 99 Millionen Euro.";
 
         let res = validator.validate_grounding(response, &chunks).await;
-        assert!(res.is_err(), "Hallucinated number should trigger abstention error");
+        assert!(
+            res.is_err(),
+            "Hallucinated number should trigger abstention error"
+        );
 
         let err = res.unwrap_err();
         match err {
             MemFuseError::PolicyViolation(msg) => {
-                assert!(msg.contains("LowConfidenceGrounding"), "Expected LowConfidenceGrounding in error msg: {msg}");
+                assert!(
+                    msg.contains("LowConfidenceGrounding"),
+                    "Expected LowConfidenceGrounding in error msg: {msg}"
+                );
             }
             _ => panic!("Expected MemFuseError::PolicyViolation, got {:?}", err),
         }
@@ -284,12 +309,18 @@ mod tests {
         let response = "Das ist eine Antwort ohne Kontext.";
 
         let res = validator.validate_grounding(response, &empty_chunks).await;
-        assert!(res.is_err(), "Empty context must return an error without panicking");
+        assert!(
+            res.is_err(),
+            "Empty context must return an error without panicking"
+        );
 
         let err = res.unwrap_err();
         match err {
             MemFuseError::InvalidInput(msg) => {
-                assert!(msg.contains("Empty context provided"), "Expected clear empty context message: {msg}");
+                assert!(
+                    msg.contains("Empty context provided"),
+                    "Expected clear empty context message: {msg}"
+                );
             }
             _ => panic!("Expected MemFuseError::InvalidInput, got {:?}", err),
         }
@@ -325,7 +356,10 @@ mod tests {
 
         let chunks = vec![sample_chunk(1, "Alpha Beta Gamma Delta.")];
         let response = "Alpha Beta Gamma.";
-        let assessment = validator.validate_grounding(response, &chunks).await.unwrap();
+        let assessment = validator
+            .validate_grounding(response, &chunks)
+            .await
+            .unwrap();
         assert!(assessment.is_grounded);
     }
 
