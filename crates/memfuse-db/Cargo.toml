@@ -48,6 +48,7 @@ replicator-dynamics-weights = ["memfuse-calibration/replicator-dynamics-weights"
 coherence-bonus-fusion = []
 adaptive-candidate-pool-sizing = []
 volatile-vault = []
+edge-reinforcement-learning = []
 
 [[bench]]
 name = "migration_benchmarks"
