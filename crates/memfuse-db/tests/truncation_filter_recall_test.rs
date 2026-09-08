@@ -229,3 +229,79 @@ async fn test_unselective_filter_performance_regression() {
         builder_results.len()
     );
 }
+
+#[tokio::test]
+async fn test_memory_type_filter_recall() {
+    use memfuse_core::MemoryType;
+
+    let dir = TempDir::new().expect("tempdir");
+    let lsm_config = LsmConfig {
+        path: dir.path().to_path_buf(),
+        ..Default::default()
+    };
+    let storage = Arc::new(LsmStorage::new(lsm_config).await.expect("storage"));
+    let hnsw_config = HnswConfig {
+        dimension: 4,
+        max_elements: 500,
+        m: 16,
+        ef_construction: 64,
+        ef_search: 64,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+    let index = Arc::new(HnswIndex::try_new(hnsw_config).expect("hnsw index"));
+    let graph = Arc::new(CsrGraph::new());
+    let next_tx = Arc::new(AtomicU64::new(1));
+    let col = Collection::new(
+        "test_memory_type".to_string(),
+        storage,
+        index,
+        graph,
+        next_tx,
+        4,
+        Language::English,
+    );
+
+    // Insert 100 semantic docs and 10 episodic docs
+    let mut batch = Vec::new();
+    for i in 0..100 {
+        batch.push((
+            format!("semantic-{}", i),
+            vec![1.0, 0.0, 0.0, 0.0],
+            Some(json!({
+                "memory_type": "semantic",
+                "text": format!("semantic doc {}", i)
+            })),
+        ));
+    }
+    for i in 0..10 {
+        batch.push((
+            format!("episodic-{}", i),
+            vec![1.0, 0.0, 0.0, 0.0],
+            Some(json!({
+                "memory_type": "episodic",
+                "text": format!("episodic doc {}", i)
+            })),
+        ));
+    }
+    col.insert_many(&batch).await.expect("insert batch");
+
+    let query_vector = vec![1.0, 0.0, 0.0, 0.0];
+    let k = 10;
+
+    let results = col
+        .query()
+        .vector(&query_vector)
+        .memory_types(vec![MemoryType::Episodic])
+        .k(k)
+        .execute()
+        .await
+        .expect("memory_types search");
+
+    assert_eq!(
+        results.len(),
+        k,
+        "MemoryType::Episodic search should find all 10 episodic docs despite 100 semantic docs, got {}",
+        results.len()
+    );
+}
