@@ -156,10 +156,7 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
             CheckResult::Fail(msg) => (false, Some(msg)),
         };
         results.push(GateResult {
-            name: format!(
-                "Claim-Check ({:.1}s)",
-                start.elapsed().as_secs_f64()
-            ),
+            name: format!("Claim-Check ({:.1}s)", start.elapsed().as_secs_f64()),
             passed,
             detail,
         });

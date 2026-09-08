@@ -276,7 +276,10 @@ pub fn run_claim_github(args: &[String]) -> bool {
     let payload_str = match serde_json::to_string(&payload) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ Fehler bei JSON-Serialisierung für Issue-Erstellung: {}", e);
+            eprintln!(
+                "❌ Fehler bei JSON-Serialisierung für Issue-Erstellung: {}",
+                e
+            );
             return false;
         }
     };
@@ -310,7 +313,10 @@ pub fn run_claim_github(args: &[String]) -> bool {
                     return true;
                 }
             }
-            eprintln!("❌ GitHub API Fehler bei Issue-Erstellung: {}", response_body);
+            eprintln!(
+                "❌ GitHub API Fehler bei Issue-Erstellung: {}",
+                response_body
+            );
             false
         }
         Ok(out) => {
