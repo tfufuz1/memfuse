@@ -1,16 +1,18 @@
-//! Immunologische Widerspruchsprävention / "Antikörper"-Register (Feature F-04).
+//! Consistency Enforcement / Konflikterkennungs-Register (Feature F-04).
 //!
 //! SPECIFICATION: Feature F-04 gemäß Spezifikation.
 //! ORTHOGONALITÄT: Dieses Feature ist vollkommen orthogonal zu Feature F-02
 //! (Veto-Feature / partieller HNSW-Rebuild), welches NICHT in diesem Modul oder Crate
 //! implementiert wird.
 //!
-//! Naturvorbild: Ein Immunsystem lernt "Antikörper" gegen wiederkehrende, als fehlerhaft
-//! erkannte Muster (z. B. widersprüchliche oder sich gegenseitig aufhebende Kanten/Fakten
-//! im Wissensgraphen) und verhindert deren erneute unkritische Aufnahme.
+//! Consistency-Enforcement-Modul: lernt wiederkehrende, als fehlerhaft erkannte
+//! Muster (z. B. widersprüchliche oder sich gegenseitig aufhebende Kanten/Fakten
+//! im Wissensgraphen) und meldet sie als Kandidaten für Unterdrückung/Review.
+//! Implementiert reines Pattern-Signal — keine automatische Löschung (siehe
+//! Abgrenzung unten).
 //!
 //! WICHTIGER HINWEIS ZUR TRENNUNG VON ERKENNUNG UND WIRKUNG:
-//! Dieses Modul implementiert KEINE automatische Löschung von Kanten. `ImmunMemory` liefert
+//! Dieses Modul implementiert KEINE automatische Löschung von Kanten. `ConsistencyEnforcer` liefert
 //! lediglich Kandidaten/Signale. Die tatsächliche Tombstone-Ausführung bleibt in der
 //! Verantwortung des Aufrufers.
 
@@ -22,9 +24,9 @@ use std::collections::HashMap;
 /// Identifikator für eine Kante im CSR-Graphen.
 pub type EdgeId = (EntityId, EntityId);
 
-/// Antikörper-Eintrag für ein gelerntes Widerspruchsmuster.
+/// Eintrag für ein gelerntes Konfliktmuster (Constraint-Violation-Signatur).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Antibody {
+pub struct ConflictPattern {
     /// Blake3-Hash über die normalisierte (subject, predicate, object)-Tripel-Signatur der widersprüchlichen Aussage.
     pub pattern_hash: [u8; 32],
     /// Anzahl der bisher detektierten Widersprüche für dieses Muster.
@@ -79,31 +81,31 @@ impl ContradictionDetector for ExactPredicateConflictDetector {
     }
 }
 
-/// Immunologisches Gedächtnis zur Verwaltung registrierter Antikörper.
+/// Consistency-Enforcement-Register zur Verwaltung registrierter Konfliktmuster.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImmunMemory {
-    antibodies: HashMap<[u8; 32], Antibody>,
+pub struct ConsistencyEnforcer {
+    patterns: HashMap<[u8; 32], ConflictPattern>,
     suppression_threshold: u32,
 }
 
-impl ImmunMemory {
+impl ConsistencyEnforcer {
     /// Standard-Schwellenwert für die Unterdrückung (3 gegenseitige Detektionen).
     pub const DEFAULT_SUPPRESSION_THRESHOLD: u32 = 3;
 
-    /// Erstellt ein neues immunologisches Gedächtnis mit konfigurierbarem Schwellenwert.
+    /// Erstellt einen neuen ConsistencyEnforcer mit konfigurierbarem Schwellenwert.
     pub fn new(suppression_threshold: u32) -> Self {
         Self {
-            antibodies: HashMap::new(),
+            patterns: HashMap::new(),
             suppression_threshold,
         }
     }
 
     /// Prüft eine Kanten-Aussage vor dem Einfügen, registriert das Widerspruchsmuster
-    /// und gibt den Antikörper-Eintrag zurück.
-    pub fn check_before_insert(&mut self, assertion: &EdgeAssertion) -> Option<Antibody> {
+    /// und gibt den Konfliktmuster-Eintrag zurück.
+    pub fn check_before_insert(&mut self, assertion: &EdgeAssertion) -> Option<ConflictPattern> {
         let pattern = assertion.pattern_hash();
-        let ab = self.record_contradiction(pattern, TxId::new(0));
-        Some(ab.clone())
+        let cp = self.record_contradiction(pattern, TxId::new(0));
+        Some(cp.clone())
     }
 
     /// Bewertet mit Hilfe des übergebenen [`ContradictionDetector`]s, ob zwei Kanten-Aussagen
@@ -121,19 +123,19 @@ impl ImmunMemory {
     ///
     /// Erhöht `contradiction_count` und setzt `suppressed = true`, sobald der Zähler
     /// den `suppression_threshold` erreicht oder überschreitet.
-    pub fn record_contradiction(&mut self, pattern_hash: [u8; 32], at_tx: TxId) -> &Antibody {
+    pub fn record_contradiction(&mut self, pattern_hash: [u8; 32], at_tx: TxId) -> &ConflictPattern {
         let threshold = self.suppression_threshold;
         let entry = self
-            .antibodies
+            .patterns
             .entry(pattern_hash)
-            .and_modify(|ab| {
-                ab.contradiction_count = ab.contradiction_count.saturating_add(1);
-                ab.last_detected_tx = at_tx;
-                if ab.contradiction_count >= threshold {
-                    ab.suppressed = true;
+            .and_modify(|cp| {
+                cp.contradiction_count = cp.contradiction_count.saturating_add(1);
+                cp.last_detected_tx = at_tx;
+                if cp.contradiction_count >= threshold {
+                    cp.suppressed = true;
                 }
             })
-            .or_insert_with(|| Antibody {
+            .or_insert_with(|| ConflictPattern {
                 pattern_hash,
                 contradiction_count: 1,
                 first_detected_tx: at_tx,
@@ -145,19 +147,19 @@ impl ImmunMemory {
 
     /// Prüft, ob ein gegebenes Muster unterdrückt wird (`suppressed == true`).
     pub fn is_suppressed(&self, pattern_hash: [u8; 32]) -> bool {
-        self.antibodies
+        self.patterns
             .get(&pattern_hash)
-            .is_some_and(|ab| ab.suppressed)
+            .is_some_and(|cp| cp.suppressed)
     }
 
-    /// Gibt einen Iterator über alle aktuell aktiven (unterdrückenden) Antikörper zurück.
-    pub fn active_antibodies(&self) -> impl Iterator<Item = &Antibody> {
-        self.antibodies.values().filter(|ab| ab.suppressed)
+    /// Gibt einen Iterator über alle aktuell aktiven (unterdrückenden) Konfliktmuster zurück.
+    pub fn active_patterns(&self) -> impl Iterator<Item = &ConflictPattern> {
+        self.patterns.values().filter(|cp| cp.suppressed)
     }
 
-    /// Gibt einen registrierten Antikörper zu einem Muster-Hash zurück, falls vorhanden.
-    pub fn get_antibody(&self, pattern_hash: &[u8; 32]) -> Option<&Antibody> {
-        self.antibodies.get(pattern_hash)
+    /// Gibt ein registriertes Konfliktmuster zu einem Muster-Hash zurück, falls vorhanden.
+    pub fn get_pattern(&self, pattern_hash: &[u8; 32]) -> Option<&ConflictPattern> {
+        self.patterns.get(pattern_hash)
     }
 
     /// Gibt die konfigurierte Unterdrückungsschwelle zurück.
@@ -180,7 +182,7 @@ impl ImmunMemory {
     }
 }
 
-impl Default for ImmunMemory {
+impl Default for ConsistencyEnforcer {
     fn default() -> Self {
         Self::new(Self::DEFAULT_SUPPRESSION_THRESHOLD)
     }
@@ -192,63 +194,63 @@ mod tests {
 
     #[test]
     fn test_first_contradiction() {
-        let mut mem = ImmunMemory::new(3);
+        let mut enforcer = ConsistencyEnforcer::new(3);
         let hash = [1u8; 32];
         let tx1 = TxId::new(10);
 
-        let ab = mem.record_contradiction(hash, tx1);
-        assert_eq!(ab.contradiction_count, 1);
-        assert!(!ab.suppressed);
-        assert_eq!(ab.first_detected_tx, tx1);
-        assert_eq!(ab.last_detected_tx, tx1);
-        assert!(!mem.is_suppressed(hash));
+        let cp = enforcer.record_contradiction(hash, tx1);
+        assert_eq!(cp.contradiction_count, 1);
+        assert!(!cp.suppressed);
+        assert_eq!(cp.first_detected_tx, tx1);
+        assert_eq!(cp.last_detected_tx, tx1);
+        assert!(!enforcer.is_suppressed(hash));
     }
 
     #[test]
     fn test_three_repeated_contradictions_suppresses_pattern() {
-        let mut mem = ImmunMemory::new(3);
+        let mut enforcer = ConsistencyEnforcer::new(3);
         let hash = [2u8; 32];
 
-        mem.record_contradiction(hash, TxId::new(1));
-        assert!(!mem.is_suppressed(hash));
+        enforcer.record_contradiction(hash, TxId::new(1));
+        assert!(!enforcer.is_suppressed(hash));
 
-        mem.record_contradiction(hash, TxId::new(2));
-        assert!(!mem.is_suppressed(hash));
+        enforcer.record_contradiction(hash, TxId::new(2));
+        assert!(!enforcer.is_suppressed(hash));
 
-        let ab3 = mem.record_contradiction(hash, TxId::new(3));
-        assert_eq!(ab3.contradiction_count, 3);
-        assert!(ab3.suppressed);
-        assert_eq!(ab3.first_detected_tx, TxId::new(1));
-        assert_eq!(ab3.last_detected_tx, TxId::new(3));
-        assert!(mem.is_suppressed(hash));
+        let cp3 = enforcer.record_contradiction(hash, TxId::new(3));
+        assert_eq!(cp3.contradiction_count, 3);
+        assert!(cp3.suppressed);
+        assert_eq!(cp3.first_detected_tx, TxId::new(1));
+        assert_eq!(cp3.last_detected_tx, TxId::new(3));
+        assert!(enforcer.is_suppressed(hash));
     }
 
     #[test]
     fn test_independent_pattern_hash_counting_no_cross_contamination() {
-        let mut mem = ImmunMemory::new(3);
+        let mut enforcer = ConsistencyEnforcer::new(3);
         let hash1 = [10u8; 32];
         let hash2 = [20u8; 32];
 
-        mem.record_contradiction(hash1, TxId::new(1));
-        mem.record_contradiction(hash1, TxId::new(2));
+        enforcer.record_contradiction(hash1, TxId::new(1));
+        enforcer.record_contradiction(hash1, TxId::new(2));
 
-        mem.record_contradiction(hash2, TxId::new(1));
+        enforcer.record_contradiction(hash2, TxId::new(1));
 
         assert_eq!(
-            mem.get_antibody(&hash1).map(|a| a.contradiction_count),
+            enforcer.get_pattern(&hash1).map(|a| a.contradiction_count),
             Some(2)
         );
         assert_eq!(
-            mem.get_antibody(&hash2).map(|a| a.contradiction_count),
+            enforcer.get_pattern(&hash2).map(|a| a.contradiction_count),
             Some(1)
         );
-        assert!(!mem.is_suppressed(hash1));
-        assert!(!mem.is_suppressed(hash2));
+        assert!(!enforcer.is_suppressed(hash1));
+        assert!(!enforcer.is_suppressed(hash2));
 
         // Third contradiction on hash1 suppresses hash1, but leaves hash2 unsuppressed
-        mem.record_contradiction(hash1, TxId::new(3));
-        assert!(mem.is_suppressed(hash1));
-        assert!(!mem.is_suppressed(hash2));
+        enforcer.record_contradiction(hash1, TxId::new(3));
+        assert!(enforcer.is_suppressed(hash1));
+        assert!(!enforcer.is_suppressed(hash2));
     }
 
     #[test]
@@ -297,17 +299,17 @@ mod tests {
     }
 
     #[test]
-    fn test_active_antibodies_and_suggest_tombstones() {
-        let mut mem = ImmunMemory::default();
+    fn test_active_patterns_and_suggest_tombstones() {
+        let mut enforcer = ConsistencyEnforcer::default();
         let hash_suppressed = [100u8; 32];
         let hash_unsuppressed = [200u8; 32];
 
         for i in 1..=3 {
-            mem.record_contradiction(hash_suppressed, TxId::new(i));
+            enforcer.record_contradiction(hash_suppressed, TxId::new(i));
         }
-        mem.record_contradiction(hash_unsuppressed, TxId::new(1));
+        enforcer.record_contradiction(hash_unsuppressed, TxId::new(1));
 
-        let active: Vec<_> = mem.active_antibodies().collect();
+        let active: Vec<_> = enforcer.active_patterns().collect();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].pattern_hash, hash_suppressed);
 
@@ -316,7 +318,7 @@ mod tests {
             (EntityId::new(3), EntityId::new(4)),
         ];
 
-        let suggestions = mem.suggest_tombstone_candidates(&candidate_edges);
+        let suggestions = enforcer.suggest_tombstone_candidates(&candidate_edges);
         assert_eq!(suggestions, candidate_edges);
     }
 }
