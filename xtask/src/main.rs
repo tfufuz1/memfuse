@@ -38,11 +38,17 @@ fn chrono_or_today() -> String {
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
 mod check_commit_messages;
+mod check_duplicate_intent;
 mod check_duplicate_symbols;
 mod check_jules_context_freshness;
 mod check_placeholder_refs;
+mod check_type_registry;
 mod check_vetoes;
 mod gen_prompter_data;
+mod generate_adr;
+mod init_audit_fix;
+mod jules_preflight;
+mod validate_pr_checklist;
 
 pub use check_jules_context_freshness::run_check_jules_context_freshness;
 
@@ -2083,9 +2089,44 @@ fn main() {
             let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
             run_context_tags(&tags, extra_args);
         }
+        "jules-preflight" => {
+            let fast_only = args.iter().any(|arg| arg == "--fast");
+            let success = jules_preflight::run_jules_preflight(fast_only);
+            if !success {
+                process::exit(1);
+            }
+        }
+        "check-type-registry" => {
+            let type_name = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            let success = check_type_registry::run_check_type_registry(type_name);
+            if !success {
+                process::exit(1);
+            }
+        }
+        "generate-adr" => {
+            let title = args.get(2).map(|s| s.as_str()).unwrap_or("Untitled");
+            let dry_run = args.iter().any(|arg| arg == "--dry-run");
+            if let Err(e) = generate_adr::run_generate_adr(title, dry_run) {
+                eprintln!("❌ generate-adr failed: {}", e);
+                process::exit(1);
+            }
+        }
+        "init-audit-fix" => {
+            let hash = args.get(2).map(|s| s.as_str()).unwrap_or("HEAD");
+            if let Err(e) = init_audit_fix::run_init_audit_fix(hash) {
+                eprintln!("❌ init-audit-fix failed: {}", e);
+                process::exit(1);
+            }
+        }
+        "validate-pr-checklist" => {
+            let success = validate_pr_checklist::run_validate_pr_checklist();
+            if !success {
+                process::exit(1);
+            }
+        }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, context-tags [*ARGS], run-community-detection");
+            eprintln!("Available commands: gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection");
             process::exit(1);
         }
     }

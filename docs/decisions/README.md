@@ -73,3 +73,10 @@ Gemäß Governance (`CONSTITUTION.md`) ist `docs/decisions/` der alleinige kanon
 | [ADR-066](ADR-066-physio-resonance-fusion-feature-flag-aktivierung.md) | Physio Resonance Fusion Feature-Flag Aktivierung | 2026-09-07 | Final |
 | [ADR-067](ADR-067-pathrag-sufficiency-threshold-calibration.md) | Normative Kalibrierung des PathRAG Sufficiency-Gate Thresholds | 2026-09-07 | Final |
 | [ADR-070](ADR-070-f02-tombstone-pruning-scope-abgrenzung.md) | F-02 Scope-Abgrenzung — Reines Tombstone-Pruning vs. Ursprüngliches Veto | 2026-09-08 | Final |
+| [ADR-071](ADR-071-tenantid-konstruktor-haertung-additiv.md) | TenantId Konstruktor-Härtung (Additiv) | 2026-09-08 | Final |
+| [ADR-072](ADR-072-kv-bridge-increment-2-segment-encryption.md) | KV-Bridge Increment 2 — KvSegment-Verschlüsselung, ModelFingerprint und RoPE-Offset | 2026-09-08 | Final |
+| [ADR-073](ADR-073-gasp-post-hoc-hallucination-validator-initial-implementation.md) | GASP Post-Hoc Halluzinations-Validator (Initiale Implementierung K19) | 2026-09-07 | Final |
+| [ADR-074](ADR-074-pathrag-sufficiency-threshold-calibration.md) | Normative Kalibrierung des PathRAG Sufficiency-Gate Thresholds | 2026-09-07 | Final |
+| [ADR-075](ADR-075-pid-min-pool-size-kalibrierung.md) | PID-Regler min_pool_size Kalibrierung und Default-Konsolidierung | 2026-09-08 | Final |
+| [ADR-076](ADR-076-pending-flush-threshold-write-amplification-studie.md) | Studie zur DiskANN PENDING_FLUSH_THRESHOLD Write-Amplification und Empfehlung | 2026-09-07 | Final |
+| [ADR-077](ADR-077-produktvision-pypi-library-fokus-und-tauri-deprecation.md) | Produktvision PyPI-Library Fokus und Tauri Deprecation | 2026-09-08 | Final |

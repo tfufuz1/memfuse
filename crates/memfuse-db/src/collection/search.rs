@@ -235,6 +235,58 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         Ok(matched)
     }
 
+    pub(super) async fn get_matching_doc_ids_for_query_at(
+        &self,
+        query: &memfuse_core::HybridQuery,
+        seq: u64,
+    ) -> Result<Option<std::collections::HashSet<DocId>>> {
+        if query.filter.is_none() && query.memory_type_filter.is_none() {
+            return Ok(None);
+        }
+
+        let prefix = if self.name == "default" {
+            b"__docid:".to_vec()
+        } else {
+            let mut p = self.prefix.clone();
+            p.push(1); // docid mapping type
+            p
+        };
+
+        let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
+        let mut matched = std::collections::HashSet::new();
+
+        for (_, v) in entries {
+            let (id_str, doc_metadata) =
+                if let Ok(meta) = serde_json::from_slice::<StoredDocumentMeta>(&v) {
+                    (meta.id, meta.metadata)
+                } else if let Ok(full) = serde_json::from_slice::<StoredDocument>(&v) {
+                    (full.id, full.metadata)
+                } else {
+                    continue;
+                };
+
+            if let Some(ref filter_expr) = query.filter {
+                let metadata = doc_metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                if !filter_expr.evaluate(metadata) {
+                    continue;
+                }
+            }
+
+            if let Some(ref type_filter) = query.memory_type_filter {
+                let memory_type = crate::filter::extract_memory_type(&doc_metadata);
+                if !type_filter.contains(&memory_type) {
+                    continue;
+                }
+            }
+
+            if let Ok(doc_id) = DocId::from_key(&id_str) {
+                matched.insert(doc_id);
+            }
+        }
+
+        Ok(Some(matched))
+    }
+
     /// Performs filtered semantic vector search in the collection.
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
@@ -726,19 +778,63 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         let is_filtered = query.filter.is_some() || query.memory_type_filter.is_some();
 
-        // 1. Vector Signal (Predicate Pushdown into HNSW)
+        // 1. Vector Signal (Predicate Pushdown into HNSW + Adaptive Oversampling for Post-Filters)
         let vector_results = if is_vector_zero {
             Vec::new()
-        } else if let Some(ref filter_expr) = query.filter {
-            let matched_ids = self.get_matching_doc_ids_at(filter_expr, seq).await?;
-            if matched_ids.is_empty() {
-                Vec::new()
+        } else if is_filtered {
+            let matched_ids_opt = self.get_matching_doc_ids_for_query_at(query, seq).await?;
+            if let Some(ref matched_ids) = matched_ids_opt {
+                if matched_ids.is_empty() {
+                    Vec::new()
+                } else {
+                    let matched_ids_cloned = matched_ids.clone();
+                    let filter_fn = move |id: DocId| matched_ids_cloned.contains(&id);
+                    let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
+                    let mut oversample = candidate_k;
+                    let mut iterations = 0;
+                    loop {
+                        iterations += 1;
+                        let raw_vec_results = self
+                            .search_filtered_at(vector, oversample, Some(&filter_fn), seq)
+                            .await?;
+                        let raw_len = raw_vec_results.len();
+                        let filtered = filter_pre_rrf(raw_vec_results);
+
+                        if filtered.len() >= candidate_k || oversample >= max_cap || raw_len < oversample {
+                            tracing::debug!(
+                                search_iterations_needed = iterations,
+                                signal = "vector",
+                                matched_count = filtered.len(),
+                                "Adaptive oversampling vector signal completed"
+                            );
+                            break filtered;
+                        }
+                        oversample = (oversample * 2).min(max_cap);
+                    }
+                }
             } else {
-                let filter_fn = move |id: DocId| matched_ids.contains(&id);
-                let raw_vec_results = self
-                    .search_filtered_at(vector, candidate_k, Some(&filter_fn), seq)
-                    .await?;
-                filter_pre_rrf(raw_vec_results)
+                let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
+                let mut oversample = candidate_k;
+                let mut iterations = 0;
+                loop {
+                    iterations += 1;
+                    let raw_vec_results = self
+                        .search_filtered_at(vector, oversample, None, seq)
+                        .await?;
+                    let raw_len = raw_vec_results.len();
+                    let filtered = filter_pre_rrf(raw_vec_results);
+
+                    if filtered.len() >= candidate_k || oversample >= max_cap || raw_len < oversample {
+                        tracing::debug!(
+                            search_iterations_needed = iterations,
+                            signal = "vector",
+                            matched_count = filtered.len(),
+                            "Adaptive oversampling vector signal completed"
+                        );
+                        break filtered;
+                    }
+                    oversample = (oversample * 2).min(max_cap);
+                }
             }
         } else {
             let raw_vec_results = self
