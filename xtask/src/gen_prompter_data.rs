@@ -342,7 +342,8 @@ pub fn run() -> bool {
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                     .unwrap_or_default();
 
-                if let Ok(code_date) = NaiveDate::parse_from_str(&last_code_change_str, "%Y-%m-%d") {
+                if let Ok(code_date) = NaiveDate::parse_from_str(&last_code_change_str, "%Y-%m-%d")
+                {
                     let days_diff = (code_date - agents_date).num_days();
                     if days_diff > 3 {
                         eprintln!(

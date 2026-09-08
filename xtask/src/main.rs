@@ -630,7 +630,10 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
                 out.push_str("- Änderungsbereich: keine\n");
             } else {
                 let display_files: Vec<String> = files.into_iter().take(5).collect();
-                out.push_str(&format!("- Änderungsbereich: {}\n", display_files.join(", ")));
+                out.push_str(&format!(
+                    "- Änderungsbereich: {}\n",
+                    display_files.join(", ")
+                ));
             }
         } else {
             out.push_str("- Änderungsbereich: keine\n");
