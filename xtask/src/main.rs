@@ -571,12 +571,14 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
                 .args(["log", "-1", "main", "--format=%h%x09%s"])
                 .output()
                 .ok()
+                .filter(|o| o.status.success() && !o.stdout.is_empty())
         })
         .or_else(|| {
             std::process::Command::new("git")
                 .args(["log", "-1", "--format=%h%x09%s"])
                 .output()
                 .ok()
+                .filter(|o| o.status.success() && !o.stdout.is_empty())
         })
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty());
