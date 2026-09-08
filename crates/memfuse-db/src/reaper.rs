@@ -5,16 +5,16 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 use crate::collection::{Collection, StoredDocument};
-use crate::sleep_cycle::NremConfig;
-use crate::sleep_cycle_executor::execute_nrem_cycle;
-use memfuse_core::traits::StorageEngine;
+use crate::consolidation_executor::execute_consolidation_pass;
+use crate::memory_consolidation::ConsolidationConfig;
+use memfuse_core::traits::{StorageEngine, VectorIndex};
 use memfuse_core::tx_buffer::TxBuffer;
 use memfuse_core::DocId;
 use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(feature = "physio-features")]
-use crate::thermostat::{FreeEnergyThermostat, ThermostatConfig};
+use crate::decay_controller::{FreeEnergyThermostat, ThermostatConfig};
 
 /// Maximum number of orphan transactions processed in a single reaper tick
 /// to avoid starving foreground operations.
@@ -23,13 +23,13 @@ pub const MAX_ORPHANS_PER_TICK: usize = 100;
 /// Maximum number of expired documents processed in a single expiry reaper tick.
 pub const MAX_EXPIRED_PER_TICK: usize = 100;
 
-/// Starts a background task for periodic NREM consolidation.
+/// Starts a background task for periodic consolidation.
 #[deprecated(
-    note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt."
+    note = "Verwende `MaintenanceScheduler::start()` aus `maintenance_scheduler.rs`. Dieser direkte Task-Spawn koordiniert sich nicht mit dem Scheduler-Takt — K17-Rest. Wird in v0.2.0 entfernt."
 )]
-pub fn start_nrem_reaper<S: StorageEngine>(
+pub fn start_consolidation_reaper<S: StorageEngine>(
     collection: Arc<Collection<S>>,
-    nrem_config: NremConfig,
+    nrem_config: ConsolidationConfig,
     interval: Duration,
     cancel_token: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
@@ -76,14 +76,14 @@ pub fn start_nrem_reaper<S: StorageEngine>(
                         continue;
                     }
 
-                    match execute_nrem_cycle(&collection, &turns, &nrem_config).await {
+                    match execute_consolidation_pass(&collection, &turns, &nrem_config).await {
                         Ok(res) => {
                             if !res.duplicates_tombstoned.is_empty() {
                                 tracing::info!(
                                     collection = %collection.name(),
                                     tombstoned = res.duplicates_tombstoned.len(),
                                     segments = res.segments_created,
-                                    "NREM reaper: consolidated duplicate turns"
+                                    "Consolidation reaper: consolidated duplicate turns"
                                 );
                             }
                         }
@@ -91,7 +91,7 @@ pub fn start_nrem_reaper<S: StorageEngine>(
                             tracing::error!(
                                 collection = %collection.name(),
                                 error = %err,
-                                "NREM reaper: cycle execution failed"
+                                "Consolidation reaper: cycle execution failed"
                             );
                         }
                     }
@@ -156,11 +156,14 @@ pub fn start_expiry_reaper<S: StorageEngine>(
     })
 }
 
+/// Backwards compatibility alias
+pub use start_consolidation_reaper as start_nrem_reaper;
+
 /// Starts a background task for thermostat-driven importance-score eviction.
 /// Nur aktiv wenn `physio-features` Feature-Flag gesetzt.
 #[cfg(feature = "physio-features")]
 #[deprecated(
-    note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt."
+    note = "Verwende `MaintenanceScheduler::start()` aus `maintenance_scheduler.rs`. Thermostat-Updates werden dort unter `config.thermostat_enabled` gesteuert. Wird in v0.2.0 entfernt."
 )]
 pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
     collection: Arc<Collection<S, V>>,

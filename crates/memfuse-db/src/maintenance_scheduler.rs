@@ -8,10 +8,10 @@
 // STAND: TS:2026-08-31T00:00:00Z
 
 use crate::collection::{Collection, StoredDocument};
-use crate::physio_config::PhysioConfig;
-use crate::sleep_cycle::NremConfig;
-use crate::sleep_cycle_executor::execute_nrem_cycle;
-use crate::thermostat::FreeEnergyThermostat;
+use crate::consolidation_executor::execute_consolidation_pass;
+use crate::decay_controller::FreeEnergyThermostat;
+use crate::maintenance_config::MaintenanceConfig;
+use crate::memory_consolidation::ConsolidationConfig;
 use memfuse_core::traits::{StorageEngine, VectorIndex};
 use memfuse_core::{DocId, MemFuseError, TxId};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -19,21 +19,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Zentraler Scheduler für die Ausführung der Physiologie-Gedächtnisprozesse (§10.1).
-pub struct PhysioScheduler<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
-    config: PhysioConfig,
+pub struct MaintenanceScheduler<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
+    config: MaintenanceConfig,
     collection: Arc<Collection<S, V>>,
-    nrem_config: NremConfig,
+    nrem_config: ConsolidationConfig,
     #[cfg(feature = "physio-replicator-weights")]
     replicator_state: Option<Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     active_sessions: Arc<AtomicUsize>,
 }
 
-impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V> {
-    /// Erstellt eine neue Instanz des `PhysioScheduler`.
+/// Backwards compatibility alias
+pub type PhysioScheduler<S, V = memfuse_index::HnswIndex> = MaintenanceScheduler<S, V>;
+
+impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<S, V> {
+    /// Erstellt eine neue Instanz des `MaintenanceScheduler`.
     pub fn new(
-        config: PhysioConfig,
+        config: MaintenanceConfig,
         collection: Arc<Collection<S, V>>,
-        nrem_config: NremConfig,
+        nrem_config: ConsolidationConfig,
     ) -> Self {
         Self {
             config,
@@ -216,7 +219,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> PhysioScheduler<S, V>
                     }
 
                     if turns.len() >= self.config.sleep_episode_threshold {
-                        match execute_nrem_cycle(
+                        match execute_consolidation_pass(
                             self.collection.as_ref(),
                             &turns,
                             &self.nrem_config,
@@ -345,7 +348,7 @@ mod tests {
     #[tokio::test]
     async fn test_physio_scheduler_tick_writes_wal_intent() {
         let col = create_test_collection().await;
-        let config = PhysioConfig {
+        let config = MaintenanceConfig {
             tick_interval_secs: 1,
             thermostat_enabled: false,
             percolation_enabled: false,
@@ -354,10 +357,10 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(
+        let scheduler = Arc::new(MaintenanceScheduler::new(
             config,
             col.clone(),
-            NremConfig::default(),
+            ConsolidationConfig::default(),
         ));
 
         // Run single tick manually
@@ -374,7 +377,7 @@ mod tests {
     #[tokio::test]
     async fn test_physio_scheduler_step_isolation_on_error() {
         let col = create_test_collection().await;
-        let config = PhysioConfig {
+        let config = MaintenanceConfig {
             tick_interval_secs: 1,
             thermostat_enabled: true,
             percolation_enabled: false,
@@ -383,10 +386,10 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(
+        let scheduler = Arc::new(MaintenanceScheduler::new(
             config,
             col.clone(),
-            NremConfig::default(),
+            ConsolidationConfig::default(),
         ));
 
         // Run tick - thermostat step executes without error even on empty collection
@@ -402,7 +405,7 @@ mod tests {
     #[tokio::test]
     async fn test_physio_scheduler_background_task_and_cancellation() {
         let col = create_test_collection().await;
-        let config = PhysioConfig {
+        let config = MaintenanceConfig {
             tick_interval_secs: 1,
             thermostat_enabled: false,
             percolation_enabled: false,
@@ -411,7 +414,7 @@ mod tests {
             ..Default::default()
         };
 
-        let scheduler = Arc::new(PhysioScheduler::new(config, col, NremConfig::default()));
+        let scheduler = Arc::new(MaintenanceScheduler::new(config, col, ConsolidationConfig::default()));
         let cancel_token = tokio_util::sync::CancellationToken::new();
 
         let handle = scheduler.clone().start(cancel_token.clone());
@@ -426,7 +429,7 @@ mod tests {
     #[tokio::test]
     async fn test_active_sessions_tracking() {
         let col = create_test_collection().await;
-        let scheduler = PhysioScheduler::new(PhysioConfig::default(), col, NremConfig::default());
+        let scheduler = MaintenanceScheduler::new(MaintenanceConfig::default(), col, ConsolidationConfig::default());
 
         assert_eq!(scheduler.active_agent_sessions(), 0);
         assert_eq!(scheduler.increment_active_sessions(), 1);

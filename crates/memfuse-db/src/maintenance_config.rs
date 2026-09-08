@@ -3,7 +3,7 @@
 // INVARIANTEN: P10: Wiederverwendung bestehender Konfigurationsobjekte (ThermostatConfig, PercolationConfig) ohne Duplikation.
 // STAND: TS:2026-08-31T00:00:00Z
 
-use crate::thermostat::ThermostatConfig;
+use crate::decay_controller::ThermostatConfig;
 
 #[cfg(feature = "physio-percolation")]
 use memfuse_graph::percolation::PercolationConfig;
@@ -27,9 +27,9 @@ impl Default for PercolationConfig {
     }
 }
 
-/// Zentale Konfiguration für den `PhysioScheduler` (§10.2).
+/// Zentale Konfiguration für den `MaintenanceScheduler` (§10.2).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PhysioConfig {
+pub struct MaintenanceConfig {
     /// Intervall zwischen Ticks in Sekunden. Default: 60s.
     pub tick_interval_secs: u64,
 
@@ -66,7 +66,7 @@ pub struct PhysioConfig {
     pub sleep_episode_threshold: usize,
 }
 
-impl Default for PhysioConfig {
+impl Default for MaintenanceConfig {
     fn default() -> Self {
         Self {
             tick_interval_secs: 60,
@@ -82,3 +82,6 @@ impl Default for PhysioConfig {
         }
     }
 }
+
+/// Backwards compatibility alias
+pub type PhysioConfig = MaintenanceConfig;

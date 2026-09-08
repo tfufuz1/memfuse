@@ -19,9 +19,9 @@ use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::{ContextChunk, DocId, TxId};
 use std::collections::HashSet;
 
-/// Konfiguration für die NREM-Konsolidierungsphase.
+/// Konfiguration für die Gedächtniskonsolidierungsphase (ConsolidationConfig / NremConfig).
 #[derive(Debug, Clone)]
-pub struct NremConfig {
+pub struct ConsolidationConfig {
     /// Mindestanzahl von Turns pro Segment (Default: 3).
     pub min_turns_per_segment: usize,
     /// Maximale Anzahl von Turns pro Segment (Default: 20).
@@ -36,7 +36,7 @@ pub struct NremConfig {
     pub near_duplicate_cosine_threshold: f32,
 }
 
-impl Default for NremConfig {
+impl Default for ConsolidationConfig {
     fn default() -> Self {
         Self {
             min_turns_per_segment: 3,
@@ -46,6 +46,9 @@ impl Default for NremConfig {
         }
     }
 }
+
+/// Backwards compatibility alias
+pub type NremConfig = ConsolidationConfig;
 
 /// Repräsentiert ein semantisch zusammenhängendes Segment aus aufeinanderfolgenden Turns.
 #[derive(Debug, Clone, PartialEq)]

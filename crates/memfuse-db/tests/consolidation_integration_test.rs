@@ -2,8 +2,8 @@ use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::BoxFuture;
 use memfuse_core::DocId;
 use memfuse_db::{
-    execute_nrem_cycle, execute_sleep_cycle, start_nrem_reaper, CommunityStabilityTracker, MemFuse,
-    MemFuseConfig, NremConfig, RemConfig,
+    execute_nrem_cycle, execute_sleep_cycle, CommunityStabilityTracker, ConsolidationConfig,
+    MaintenanceConfig, MaintenanceScheduler, MemFuse, MemFuseConfig, NremConfig, RemConfig,
 };
 use std::time::Duration;
 use tempfile::tempdir;
@@ -56,14 +56,14 @@ async fn test_nrem_cycle_tombstones_duplicates() {
 }
 
 #[tokio::test]
-async fn test_nrem_reaper_periodic_execution_and_cancellation() {
+async fn test_consolidation_scheduler_periodic_execution_and_cancellation() {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-    let collection = db.collection("nrem_reaper_test").await.unwrap();
+    let collection = db.collection("consolidation_scheduler_test").await.unwrap();
 
     let duplicate_emb = vec![0.0, 1.0, 0.0, 0.0];
 
@@ -79,14 +79,20 @@ async fn test_nrem_reaper_periodic_execution_and_cancellation() {
     assert_eq!(collection.len().await, 10);
 
     let cancel_token = tokio_util::sync::CancellationToken::new();
-    let handle = start_nrem_reaper(
+    let scheduler = std::sync::Arc::new(MaintenanceScheduler::new(
+        MaintenanceConfig {
+            tick_interval_secs: 1,
+            thermostat_enabled: false,
+            sleep_cycle_enabled: true,
+            sleep_episode_threshold: 1,
+            ..Default::default()
+        },
         collection.clone(),
-        NremConfig::default(),
-        Duration::from_millis(20),
-        cancel_token.clone(),
-    );
+        ConsolidationConfig::default(),
+    ));
+    let handle = scheduler.start(cancel_token.clone());
 
-    // Wait for the reaper ticker to execute NREM consolidation
+    // Wait for the scheduler ticker to execute consolidation
     let mut consolidated = false;
     for _ in 0..50 {
         sleep(Duration::from_millis(20)).await;
@@ -99,10 +105,10 @@ async fn test_nrem_reaper_periodic_execution_and_cancellation() {
     cancel_token.cancel();
     let handle_res = handle.await;
 
-    assert!(handle_res.is_ok(), "Reaper task should exit cleanly");
+    assert!(handle_res.is_ok(), "Scheduler task should exit cleanly");
     assert!(
         consolidated,
-        "NREM reaper should consolidate duplicate chunks down to 1"
+        "Consolidation scheduler should consolidate duplicate chunks down to 1"
     );
 }
 

@@ -80,25 +80,40 @@ use std::sync::Arc;
 
 pub mod chunker;
 pub mod collection;
+pub mod consolidation_executor;
 pub mod context;
 pub mod context_compaction;
+pub mod decay_controller;
+pub mod maintenance_config;
+pub mod maintenance_scheduler;
+pub mod memory_consolidation;
 pub mod rem_phase;
-pub mod sleep_cycle;
-pub mod sleep_cycle_executor;
 pub mod temporal_filter;
 
+// Aliases for backwards compatibility
+pub mod sleep_cycle { pub use crate::memory_consolidation::*; }
+pub mod sleep_cycle_executor { pub use crate::consolidation_executor::*; }
+pub mod physio_config { pub use crate::maintenance_config::*; }
+pub mod physio_scheduler { pub use crate::maintenance_scheduler::*; }
+pub mod thermostat { pub use crate::decay_controller::*; }
+
+pub use consolidation_executor::{execute_consolidation_pass, execute_nrem_cycle, execute_sleep_cycle};
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
 };
-pub use memfuse_core::SegmentSynthesizer;
-pub use reaper::start_nrem_reaper;
-pub use sleep_cycle::{
+pub use decay_controller::{AdaptiveDecayController, FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
+pub use maintenance_config::{MaintenanceConfig, PhysioConfig};
+pub use maintenance_scheduler::{MaintenanceScheduler, PhysioScheduler};
+pub use memory_consolidation::{
     compact_segment_via_context_compactor, compute_community_hash, detect_near_duplicates,
-    group_turns_into_segments, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, MetaChunk,
-    NremConfig, NremPhaseResult, RemConfig, RemPhaseResult, TurnSegment,
+    group_turns_into_segments, run_nrem_phase, run_rem_phase, CommunityStabilityTracker,
+    ConsolidationConfig, MetaChunk, NremConfig, NremPhaseResult, RemConfig, RemPhaseResult, TurnSegment,
 };
-pub use sleep_cycle_executor::{execute_nrem_cycle, execute_sleep_cycle};
+pub use memfuse_core::SegmentSynthesizer;
+
+// Reaper-Funktionen mit eigenständigem Zweck (Expiry, Orphan). Für Thermostat und Konsolidierungsdurchläufe ist MaintenanceScheduler::start() der kanonische Einstiegspunkt — siehe maintenance_scheduler.rs.
+pub use reaper::{start_expiry_reaper, start_orphan_reaper};
 
 #[cfg(feature = "sandbox")]
 pub trait SandboxBridge: Send + Sync {
@@ -112,16 +127,10 @@ pub mod filter;
 pub mod fusion;
 pub mod homeostat;
 pub mod multistep;
-pub mod physio_config;
-pub mod physio_scheduler;
 pub mod reaper;
-pub mod thermostat;
 pub mod transaction;
 
 pub use homeostat::{pid_regulated_candidate_pool, RerankDeadline, RerankPidController};
-pub use physio_config::PhysioConfig;
-pub use physio_scheduler::PhysioScheduler;
-pub use thermostat::{FreeEnergyThermostat, ThermostatConfig, ThermostatInputs};
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 

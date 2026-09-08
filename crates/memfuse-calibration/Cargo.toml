@@ -16,3 +16,4 @@ proptest = "1.4"
 [features]
 default = []
 replicator-dynamics-weights = []
+physio-replicator-weights = ["replicator-dynamics-weights"]

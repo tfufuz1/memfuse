@@ -7,22 +7,22 @@
 //! INVARIANTE: Nur NREM (rein strukturell) hier. Keine LLM-Calls.
 
 use crate::collection::{Collection, StoredDocumentMeta};
-use crate::sleep_cycle::{
-    compute_community_hash, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, NremConfig,
-    NremPhaseResult, RemConfig, RemPhaseResult,
+use crate::memory_consolidation::{
+    compute_community_hash, run_nrem_phase, run_rem_phase, CommunityStabilityTracker, ConsolidationConfig,
+    NremConfig, NremPhaseResult, RemConfig, RemPhaseResult,
 };
 use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
 use memfuse_graph::{detect_communities, CommunityDetectionConfig};
 use std::collections::{HashMap, HashSet};
 
-/// Führt NREM-Phase aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
+/// Führt den Konsolidierungsdurchlauf aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
 ///
 /// Gibt das `NremPhaseResult` zurück.
-pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
+pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
     collection: &Collection<S, V>,
     turns: &[(DocId, Vec<f32>)],
-    config: &NremConfig,
+    config: &ConsolidationConfig,
 ) -> Result<NremPhaseResult> {
     if turns.is_empty() {
         return Ok(NremPhaseResult {
@@ -76,6 +76,9 @@ pub async fn execute_nrem_cycle<S: StorageEngine, V: VectorIndex>(
 
     Ok(result)
 }
+
+/// Backwards compatibility alias
+pub use execute_consolidation_pass as execute_nrem_cycle;
 
 /// Führt den vollständigen Sleep-Cycle (NREM-Phase und optional REM-Phase) aus.
 ///

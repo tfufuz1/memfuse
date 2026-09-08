@@ -65,6 +65,9 @@ pub struct FreeEnergyThermostat {
     config: ThermostatConfig,
 }
 
+/// Backwards compatibility alias / P1 architecture name
+pub type AdaptiveDecayController = FreeEnergyThermostat;
+
 impl FreeEnergyThermostat {
     pub fn new(config: ThermostatConfig) -> Self {
         Self { config }
