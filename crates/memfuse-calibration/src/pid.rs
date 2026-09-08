@@ -3,6 +3,14 @@
 //! Hält Reranking-Latenz auf `target_latency_ms` durch adaptive Pool-Größe.
 //! ANTI-WINDUP: Integral-Term wird auf [-max_integral, +max_integral] geclipped.
 
+/// Minimale Kandidaten-Pool-Größe.
+/// Wert empirisch belegt via `memfuse-bench` PID-Sweep (ADR-070).
+/// arXiv:2604.01733 berichtet stabiles Recall@5 (0.888) ab Pool ≥ 100.
+pub const PID_MIN_POOL_SIZE_DEFAULT: usize = 50;
+
+/// Maximale Kandidaten-Pool-Größe.
+pub const PID_MAX_POOL_SIZE_DEFAULT: usize = 500;
+
 /// PID-Regler zur dynamischen Steuerung der Reranking-Kandidatenpool-Größe basierend auf Latenzmessungen.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PidController {
@@ -32,8 +40,8 @@ impl Default for PidController {
             ki: 0.1,
             kd: 0.5,
             target_latency_ms: 200.0,
-            min_pool_size: 10,
-            max_pool_size: 500,
+            min_pool_size: PID_MIN_POOL_SIZE_DEFAULT,
+            max_pool_size: PID_MAX_POOL_SIZE_DEFAULT,
             current_pool_size: None,
             integral: 0.0,
             prev_error: 0.0,
@@ -119,6 +127,7 @@ mod tests {
 
     #[test]
     fn test_pid_clamps_to_min_max() {
+        // Test-Override, nicht Produktions-Default — testet Clamp-Logik bei beliebiger min_pool_size.
         let mut pid = PidController {
             min_pool_size: 20,
             max_pool_size: 150,
