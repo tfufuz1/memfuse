@@ -10,7 +10,7 @@
 
 ---
 
-## §0 — Warum dieses Dokument existiert und was it ablöst
+## §0 — Warum dieses Dokument existiert und was es ablöst
 
 ### §0.1 Das Kernproblem: Kapazität kompensiert fehlende Entscheidung
 In der bisherigen Entwicklung von MemFuse führte eine hohe Entwicklungsgeschwindigkeit (~195 Tasks/Tag in Spitzenzeiten) dazu, dass unentschiedene Architekturfragen von parallelen Agenten-Sessions mehrfach und auf widersprüchliche Weise gelöst wurden.
