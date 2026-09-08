@@ -17,12 +17,13 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 - **Layer 1 — Storage-Primitiven & Vertikalen**:
   - `memfuse-crypto`: Encryption at rest & cryptographic deletion proofs (`DeletionProof`) (`crates/memfuse-crypto`)
   - `memfuse-checkpoint`: Snapshot & backup management (`crates/memfuse-checkpoint`)
-  - `memfuse-graph`: CSR-Graph, `ImmunMemory` (F-04), `PathRAGEngine` (`crates/memfuse-graph`)
+  - `memfuse-graph`: CSR-Graph, `ImmunMemory` (F-04), `PathRAGEngine`, `EdgeProvenance` (`crates/memfuse-graph`)
   - `memfuse-text`: BM25 full-text search & DACH compound splitting (`crates/memfuse-text`)
   - `memfuse-candle`: Native Candle GGUF ML inference backend (`crates/memfuse-candle`)
 - **Layer 2 — Subsysteme**:
   - `memfuse-embed`: Text embeddings & Cross-Encoder reranking (`crates/memfuse-embed`, optional)
   - `memfuse-index`: HNSW vector index, SQ8 quantization, DiskANN (`crates/memfuse-index`)
+  - `memfuse-kv-bridge`: KV-Cache-Bridge security layer & tenant isolation (`crates/memfuse-kv-bridge`)
   - `memfuse-ollama`: Ollama HTTP client & context prefix engine (`crates/memfuse-ollama`)
   - `memfuse-store`: LSM-Tree storage engine & WAL (`crates/memfuse-store`)
 - **Layer 3 — Hauptdatenbank**:
@@ -61,14 +62,14 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `McpSandbox` | `crates/memfuse-mcp/src/lib.rs` | Read-Only MCP-Server Sandbox & Write Authorization Guard |
 | `ContextPrefixEngine` | `crates/memfuse-ollama/src/context_prefixer.rs` | Context Prefix Compression Engine |
 | `CSRGraph` & PPR | `crates/memfuse-graph/src/csr.rs` | Compressed Sparse Row Graph mit Personalized PageRank |
+| `EdgeProvenance` | `crates/memfuse-graph/src/provenance.rs:11` | Herkunftsnachweis & Dokument-Indizierung für Graph-Kanten |
+| `memfuse-kv-bridge` | `crates/memfuse-kv-bridge/` | KV-Cache-Bridge Security-Layer, KvSegment & Tenant Isolation |
 | `PersistentAgentWorkflow` | `crates/memfuse-agent/src/lib.rs` | Multi-Step Agent Execution Loop mit State Graph & Checkpointing |
 
 ### Fehlt / Nicht integriert ❌
 
 | Komponente / Feature | Status | Befund / Grund |
 |---|---|---|
-| `memfuse-kv-bridge` | FEHLT | Crate existiert nicht im Repository |
-| `EdgeProvenance` | FEHLT | Typ existiert nicht in den Crates (`grep -rn "EdgeProvenance" crates/`) |
 | `memfuse-candle` Serving-Anbindung | NICHT VERDRAHTET | Crate existiert als Member, ist aber nicht in `memfuse-db`, `memfuse-router` oder `memfuse-ollama` eingebunden |
 ### Bewusst entkoppelte Architektur-Komponenten (Keine technische Schuld) 🟢
 
@@ -84,9 +85,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
    `rebuild_region()` führt reines Tombstone-Pruning durch, ohne dass wissenschaftliche Recall-Tests oder ein offizielles ADR vorliegen. Das Feature-Flag `physio-nucleation` MUSS deaktiviert bleiben, bis entsprechende Regressionstests vorliegen.
 2. **Kaskadierende Invalidierung Supersedes→CSR-Kante fehlt (`crates/memfuse-db/src/collection/search.rs:937`)**:
    `search.rs` filtert abgelöste Dokumente nur zur Abfragezeit (Query-Time Filter). Eine aktive Kaskaden-Invalidierung verknüpfter CSR-Graph-Kanten bei Dokument-Superseding fehlt.
-3. **`EdgeProvenance`-Typ fehlt**:
-   Herkunftsnachweise für Graph-Kanten (`EdgeProvenance`) sind in Spezifikationen erwähnt, jedoch im Codebase noch nicht als Typ implementiert.
-4. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
+3. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
    `memfuse-candle` ist zwar als Workspace-Crate vorhanden, dient aber derzeit als isoliertes Modul und ist noch nicht in die Haupt-Serving-Pipeline (`memfuse-db` / `memfuse-router`) eingebunden.
 
 ---
