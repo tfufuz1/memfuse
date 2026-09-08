@@ -1,5 +1,5 @@
 # MemFuse — AI-Assistenten-Kontext
-## Verifizierter Codestand · HEAD `79677186` · Stand 2026-09-07
+## Verifizierter Codestand · HEAD `79677186` · Stand 2026-09-08
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
@@ -54,6 +54,14 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `ConsolidationSession` | `crates/memfuse-db/src/context_compaction.rs:188` | Context Compaction mit Transaktionssicherheit |
 | `FreeEnergyThermostat` (F-01) | `crates/memfuse-db/src/thermostat.rs:44` | Thermodynamisches Adaptive-Decay hinter `physio-features` |
 | `SleepCycleEngine` | `crates/memfuse-db/src/sleep_cycle.rs:72` | NREM/REM Konsolidierung und Community-Synthese |
+| `MarkdownChunker` | `crates/memfuse-db/src/chunker.rs` | Strukturiertes Dokumentsplitting vor Vektor-Embedding |
+| `MultiStepEngine` | `crates/memfuse-db/src/multistep.rs` | Mehrstufige Iterative Search Engine mit RRF-Signal-Fusion |
+| `CheckpointGuard` | `crates/memfuse-checkpoint/src/lib.rs` | RAII-Checkpoint & Persistent Store Management |
+| `CrossEncoderReranker` | `crates/memfuse-embed/src/reranker.rs` | Cross-Encoder Reranking für High-Precision Retrieval |
+| `McpSandbox` | `crates/memfuse-mcp/src/lib.rs` | Read-Only MCP-Server Sandbox & Write Authorization Guard |
+| `ContextPrefixEngine` | `crates/memfuse-ollama/src/context_prefixer.rs` | Context Prefix Compression Engine |
+| `CSRGraph` & PPR | `crates/memfuse-graph/src/csr.rs` | Compressed Sparse Row Graph mit Personalized PageRank |
+| `PersistentAgentWorkflow` | `crates/memfuse-agent/src/lib.rs` | Multi-Step Agent Execution Loop mit State Graph & Checkpointing |
 
 ### Fehlt / Nicht integriert ❌
 
@@ -116,3 +124,8 @@ Eine veraltete AGENTS.md ist schlimmer als keine — sie führt Agenten aktiv in
 - **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
 - **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
 - **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `ls docs/decisions/ | grep -oP '(?<=ADR-)\d+' | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
+- **Namenskonventionen & Standard-Terminologie**: Gemäß [ADR-069](docs/decisions/ADR-069-standard-terminologie-norm.md) sind biologische Metaphern und Anbieter-Branding in Typnamen, Feature-Flags (`physio-*`) und Architektur-Labels untersagt; neue Features und Muster folgen verbindlich der MemFuse-Standard-Terminologie ("MemFuse [Funktion] Pattern").
+- **TOMBSTONE_BIT-Disziplin (ADR-041)**: Bit 63 strikt maskieren (`seq & !TOMBSTONE_BIT`) vor `max_seq` Vergleichen.
+- **SSTable Flush-Sichtbarkeit (ADR-043)**: `last_committed_tx` vor `sstables.push()` in `LsmStorage::flush` aktualisieren.
+- **MCP Write-Authorization & Sandbox Policy (ADR-044)**: DB-Schreibzugriffe im MCP Server sind standardmäßig GESPERRT (Read-Only Policy).
+- **Entkopplung memfuse-router und memfuse-mcp (ADR-045)**: JSON-RPC Typen liegen in `memfuse-core::ipc`, `memfuse-router` ist hängtfrei von `memfuse-mcp`.

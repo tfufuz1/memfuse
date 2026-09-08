@@ -5,16 +5,18 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 use crate::collection::{Collection, StoredDocument};
-use crate::sleep_cycle::NremConfig;
-use crate::sleep_cycle_executor::execute_nrem_cycle;
+use crate::consolidation_executor::execute_consolidation_pass;
+use crate::memory_consolidation::ConsolidationConfig;
 use memfuse_core::traits::StorageEngine;
+#[cfg(feature = "background-maintenance")]
+use memfuse_core::VectorIndex;
 use memfuse_core::tx_buffer::TxBuffer;
 use memfuse_core::DocId;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(feature = "physio-features")]
-use crate::thermostat::{FreeEnergyThermostat, ThermostatConfig};
+#[cfg(feature = "background-maintenance")]
+use crate::decay_controller::{AdaptiveDecayController, DecayControllerConfig};
 
 /// Maximum number of orphan transactions processed in a single reaper tick
 /// to avoid starving foreground operations.
@@ -23,13 +25,13 @@ pub const MAX_ORPHANS_PER_TICK: usize = 100;
 /// Maximum number of expired documents processed in a single expiry reaper tick.
 pub const MAX_EXPIRED_PER_TICK: usize = 100;
 
-/// Starts a background task for periodic NREM consolidation.
+/// Starts a background task for periodic consolidation.
 #[deprecated(
-    note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt."
+    note = "Konsolidiert in MaintenanceScheduler — siehe maintenance_scheduler.rs. Wird nach Migrationsfrist entfernt."
 )]
-pub fn start_nrem_reaper<S: StorageEngine>(
+pub fn start_consolidation_reaper<S: StorageEngine>(
     collection: Arc<Collection<S>>,
-    nrem_config: NremConfig,
+    consolidation_config: ConsolidationConfig,
     interval: Duration,
     cancel_token: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
@@ -40,7 +42,7 @@ pub fn start_nrem_reaper<S: StorageEngine>(
         tracing::info!(
             collection = %collection.name(),
             interval = ?interval,
-            "NREM reaper task started"
+            "Consolidation reaper task started"
         );
 
         loop {
@@ -54,7 +56,7 @@ pub fn start_nrem_reaper<S: StorageEngine>(
                             tracing::error!(
                                 collection = %collection.name(),
                                 error = %err,
-                                "NREM reaper: failed to scan collection"
+                                "Consolidation reaper: failed to scan collection"
                             );
                             continue;
                         }
@@ -76,14 +78,14 @@ pub fn start_nrem_reaper<S: StorageEngine>(
                         continue;
                     }
 
-                    match execute_nrem_cycle(&collection, &turns, &nrem_config).await {
+                    match execute_consolidation_pass(&collection, &turns, &consolidation_config).await {
                         Ok(res) => {
                             if !res.duplicates_tombstoned.is_empty() {
                                 tracing::info!(
                                     collection = %collection.name(),
                                     tombstoned = res.duplicates_tombstoned.len(),
                                     segments = res.segments_created,
-                                    "NREM reaper: consolidated duplicate turns"
+                                    "Consolidation reaper: consolidated duplicate turns"
                                 );
                             }
                         }
@@ -91,7 +93,7 @@ pub fn start_nrem_reaper<S: StorageEngine>(
                             tracing::error!(
                                 collection = %collection.name(),
                                 error = %err,
-                                "NREM reaper: cycle execution failed"
+                                "Consolidation reaper: pass execution failed"
                             );
                         }
                     }
@@ -99,7 +101,7 @@ pub fn start_nrem_reaper<S: StorageEngine>(
                 _ = cancel_token.cancelled() => {
                     tracing::info!(
                         collection = %collection.name(),
-                        "NREM reaper task shutting down via token"
+                        "Consolidation reaper task shutting down via token"
                     );
                     break;
                 }
@@ -156,29 +158,29 @@ pub fn start_expiry_reaper<S: StorageEngine>(
     })
 }
 
-/// Starts a background task for thermostat-driven importance-score eviction.
-/// Nur aktiv wenn `physio-features` Feature-Flag gesetzt.
-#[cfg(feature = "physio-features")]
+/// Starts a background task for decay-controller-driven importance-score eviction.
+/// Nur aktiv wenn `background-maintenance` Feature-Flag gesetzt.
+#[cfg(feature = "background-maintenance")]
 #[deprecated(
-    note = "Konsolidiert in PhysioScheduler — siehe physio_scheduler.rs. Wird nach Migrationsfrist entfernt."
+    note = "Konsolidiert in MaintenanceScheduler — siehe maintenance_scheduler.rs. Wird nach Migrationsfrist entfernt."
 )]
 pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
     collection: Arc<Collection<S, V>>,
-    thermostat_config: ThermostatConfig,
+    decay_config: DecayControllerConfig,
     interval: Duration,
     cancel_token: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
-    let thermostat = FreeEnergyThermostat::new(thermostat_config);
+    let decay_controller = AdaptiveDecayController::new(decay_config);
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    match collection.reap_by_thermostat(&thermostat, 100).await {
-                        Ok(n) if n > 0 => tracing::info!(evicted = n, "Thermostat reaper evicted chunks"),
+                    match collection.reap_by_thermostat(&decay_controller, 100).await {
+                        Ok(n) if n > 0 => tracing::info!(evicted = n, "Decay controller reaper evicted chunks"),
                         Ok(_) => {},
-                        Err(e) => tracing::error!(error = %e, "Thermostat reaper error"),
+                        Err(e) => tracing::error!(error = %e, "Decay controller reaper error"),
                     }
                 }
                 _ = cancel_token.cancelled() => break,
@@ -458,7 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_thermostat_reaper_eviction_thresholds() {
-        use crate::thermostat::{FreeEnergyThermostat, ThermostatConfig};
+        use crate::decay_controller::{AdaptiveDecayController, DecayControllerConfig};
         use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
@@ -528,14 +530,14 @@ mod tests {
         // Advance current transaction ID to 50_000
         next_tx.store(50_000, Ordering::SeqCst);
 
-        let thermostat = FreeEnergyThermostat::new(ThermostatConfig {
+        let decay_controller = AdaptiveDecayController::new(DecayControllerConfig {
             kappa: 2.0,
             base_half_life_tx: 1_000,
             eviction_threshold: 0.01,
         });
 
-        // Reap with thermostat sweep
-        let evicted = col.reap_by_thermostat(&thermostat, 100).await.unwrap(); // unwrap
+        // Reap with decay controller sweep
+        let evicted = col.reap_by_thermostat(&decay_controller, 100).await.unwrap(); // unwrap
         assert_eq!(evicted, 10, "All 10 old low-score chunks should be evicted");
 
         // Verify old_low chunks are gone
@@ -551,10 +553,10 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "physio-features")]
+    #[cfg(feature = "background-maintenance")]
     #[tokio::test]
     async fn test_start_thermostat_reaper_background_task() {
-        use crate::thermostat::ThermostatConfig;
+        use crate::decay_controller::DecayControllerConfig;
         use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
@@ -606,7 +608,7 @@ mod tests {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let handle = start_thermostat_reaper(
             col.clone(),
-            ThermostatConfig::default(),
+            DecayControllerConfig::default(),
             Duration::from_millis(10),
             cancel_token.clone(),
         );
@@ -626,7 +628,7 @@ mod tests {
 
         assert!(
             evicted,
-            "Thermostat reaper task should evict low score document"
+            "Decay controller reaper task should evict low score document"
         );
     }
 }

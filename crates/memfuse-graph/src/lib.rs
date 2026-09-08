@@ -3,7 +3,7 @@
 //! This crate provides the graph signal (Signal 3) for the 4-Signal Fusion
 //! architecture. It implements a Compressed Sparse Row (CSR) graph for
 //! memory-efficient BFS traversal with score-decay, and a Session-DAG for
-//! agent state branching (Grok pattern).
+//! agent state branching (MemFuse Session-DAG Pattern).
 //!
 //! # Architecture Role (Triebwerk — Layer 1)
 //!
@@ -27,26 +27,31 @@
 
 pub mod cascade;
 pub mod community;
+pub mod consistency_enforcement;
 pub mod csr;
-pub mod immune;
+#[cfg(feature = "edge-reinforcement-learning")]
+pub mod edge_reinforcement;
 pub mod path_rag;
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 pub mod percolation;
 pub mod ppr;
 pub mod provenance;
 pub mod session_dag;
-#[cfg(feature = "physio-synaptic-edges")]
-pub mod synaptic;
 
 pub use cascade::{cascade_invalidate_edges_for_superseded_doc, CascadeInvalidationReport};
 pub use community::{detect_communities, CommunityAssignment, CommunityDetectionConfig};
+pub use consistency_enforcement::{
+    ConflictPattern, ConsistencyEnforcer, ContradictionDetector, EdgeAssertion, EdgeId,
+    ExactPredicateConflictDetector,
+};
 pub use csr::CsrGraph;
-pub use immune::{
-    Antibody, ContradictionDetector, EdgeAssertion, EdgeId, ExactPredicateConflictDetector,
-    ImmunMemory,
+#[cfg(feature = "edge-reinforcement-learning")]
+pub use edge_reinforcement::{
+    apply_cooccurrence_reinforcement, apply_traversal_reinforcement, apply_weight_normalization,
+    compute_edge_weight, EdgeReinforcementConfig,
 };
 pub use path_rag::{EntityId, GraphPath, PathGraph, PathRAGEngine};
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 pub use percolation::{
     compute_percolation_health, find_rebonding_candidates, should_trigger_rebonding,
     PercolationConfig,
@@ -55,9 +60,4 @@ pub use ppr::PprContext;
 pub use provenance::{DocEdgeIndex, EdgeProvenance};
 pub use session_dag::{
     AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree,
-};
-#[cfg(feature = "physio-synaptic-edges")]
-pub use synaptic::{
-    apply_hebbian_update, apply_homeostatic_scaling, apply_pheromone_update, synaptic_score,
-    SynapticConfig,
 };

@@ -12,7 +12,7 @@ use memfuse_core::{
     StorageEngine, VectorIndex,
 };
 
-#[cfg(feature = "physio-pid-homeostasis")]
+#[cfg(feature = "adaptive-candidate-pool-sizing")]
 use std::sync::Arc;
 
 /// Custom weights for vector, text, and graph signals in hybrid search.
@@ -143,12 +143,12 @@ pub struct HybridQueryBuilder<'a, S: StorageEngine, V: VectorIndex> {
     filter_fn: Option<Box<dyn Fn(DocId) -> bool + Send + Sync>>,
     #[cfg(feature = "reranking")]
     reranker: Option<&'a memfuse_embed::CrossEncoderReranker>,
-    #[cfg(feature = "physio-replicator-weights")]
+    #[cfg(feature = "replicator-dynamics-weights")]
     replicator_state:
         Option<std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>>,
     rerank_pool_multiplier: Option<usize>,
     rerank_pool_max: Option<usize>,
-    #[cfg(feature = "physio-pid-homeostasis")]
+    #[cfg(feature = "adaptive-candidate-pool-sizing")]
     pid_controller: Option<Arc<parking_lot::Mutex<memfuse_calibration::PidController>>>,
     seq: Option<u64>,
     as_of_timestamp: Option<u64>,
@@ -175,11 +175,11 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             filter_fn: None,
             #[cfg(feature = "reranking")]
             reranker: None,
-            #[cfg(feature = "physio-replicator-weights")]
+            #[cfg(feature = "replicator-dynamics-weights")]
             replicator_state: None,
             rerank_pool_multiplier: None,
             rerank_pool_max: None,
-            #[cfg(feature = "physio-pid-homeostasis")]
+            #[cfg(feature = "adaptive-candidate-pool-sizing")]
             pid_controller: None,
             seq: None,
             as_of_timestamp: None,
@@ -303,7 +303,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
     }
 
     /// Sets an online adaptive replicator state for dynamic signal fusion weights.
-    #[cfg(feature = "physio-replicator-weights")]
+    #[cfg(feature = "replicator-dynamics-weights")]
     pub fn replicator_state(
         mut self,
         state: std::sync::Arc<parking_lot::RwLock<memfuse_calibration::ReplicatorState>>,
@@ -329,8 +329,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         self
     }
 
-    /// Sets optional PID controller for dynamic reranking candidate pool size homeostasis.
-    #[cfg(feature = "physio-pid-homeostasis")]
+    /// Sets optional PID controller for adaptive reranking candidate pool sizing.
+    #[cfg(feature = "adaptive-candidate-pool-sizing")]
     pub fn pid_controller(
         mut self,
         pid: Arc<parking_lot::Mutex<memfuse_calibration::PidController>>,
@@ -402,7 +402,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
         let _has_reranker = false;
 
         let fusion_weights = {
-            #[cfg(feature = "physio-replicator-weights")]
+            #[cfg(feature = "replicator-dynamics-weights")]
             {
                 if let Some(ref state) = self.replicator_state {
                     state.read().fusion_weights()
@@ -410,7 +410,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
                     self.weights.unwrap_or_default()
                 }
             }
-            #[cfg(not(feature = "physio-replicator-weights"))]
+            #[cfg(not(feature = "replicator-dynamics-weights"))]
             {
                 self.weights.unwrap_or_default()
             }
@@ -912,7 +912,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(all(feature = "reranking", feature = "physio-pid-homeostasis"))]
+    #[cfg(all(feature = "reranking", feature = "adaptive-candidate-pool-sizing"))]
     async fn test_pid_controller_integration_with_reranker() {
         let (col, _dir) = create_test_collection("test_pid_rerank").await;
         col.insert(

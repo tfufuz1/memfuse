@@ -2395,7 +2395,7 @@ async fn test_community_boost_post_rrf_preserves_non_community_and_reranks(
     Ok(())
 }
 
-#[cfg(feature = "physio-percolation")]
+#[cfg(feature = "graph-connectivity-health")]
 #[tokio::test]
 async fn test_run_percolation_check_rebonding() -> memfuse_core::Result<()> {
     use crate::{MemFuse, MemFuseConfig};

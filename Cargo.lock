@@ -3347,6 +3347,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "criterion",
+ "libc",
  "memfuse-calibration",
  "memfuse-checkpoint",
  "memfuse-core",
@@ -3361,9 +3362,11 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
