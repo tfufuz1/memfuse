@@ -77,6 +77,11 @@ jobs:
           cargo run -p xtask -- check-consistency
           echo "✅ Konsistenzprüfung erfolgreich"
 
+      - name: "Gate 14: Aussagekräftige Commit-Messages"
+        env:
+          MEMFUSE_CI_BASE_REF: origin/${{ github.base_ref || 'main' }}
+        run: cargo run -p xtask -- check-commit-messages
+
       - name: "Gate 10: Jules Context Frischeprüfung"
         run: |
           cargo run -p xtask -- check-jules-context-freshness
