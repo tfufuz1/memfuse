@@ -241,3 +241,21 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
   - **Phase 1 (Proptests):** Alle proptest Testfälle grün (`prop_manifest_roundtrip`, `prop_monotonic_timestamp_ms_increases_or_equals`, `prop_manifest_checksum_integrity`, `prop_guard_random_lifecycle_sequences`).
   - **Phase 2 (Concurrency Stress):** Concurrency Stress Tests fehlerfrei gelaufen (0 failures, 0 deadlocks).
   - **Phase 3 (Fault-Injection & Stress):** 100 Iterationen Multi-Session Isolation Stress Test (`test_concurrent_two_session_rollback_race_stress_100_iterations`) und Panic Isolation Tests zu 100% bestanden.
+
+---
+
+## 14. Audit Session Log & Deep Tiefen-Audit (TS: 2026-09-09T20:45:25Z) (SESSION: 1f95a020)
+
+- **Audit-Datum:** 2026-09-09T20:45:25Z
+- **Session-Hash:** `1f95a020`
+- **Compiler/Toolchain:** Rust 1.98.1 / Cargo 1.98.1
+- **Inventar-Realitätsabgleich (Schritt 0):** Inventarabgleich: keine Abweichung, Stand 2026-09-08 bestätigt (`crates/memfuse-checkpoint/src/lib.rs`).
+- **Crate-Status:**
+  - `cargo check -p memfuse-checkpoint --all-features` → PASSED (0 Fehler, 0 Warnungen)
+  - `cargo clippy -p memfuse-checkpoint -- -D warnings` → PASSED (0 Findings)
+  - `cargo fmt --check -p memfuse-checkpoint` → PASSED
+  - `cargo test -p memfuse-checkpoint --all-features` → PASSED (47 Unit-Tests + 32 Integrationstests grün)
+  - Unsafe Code Check → PASSED (`#![forbid(unsafe_code)]` strikt eingehalten)
+- **Befunde & Behebung:**
+  - In upstream commit `5f67021`, a duplicate definition of `scan_bounded` in `crates/memfuse-core/src/traits/mod.rs` and missing associated function `unchecked_new` in `crates/memfuse-crypto/src/deletion_proof.rs` broke workspace compilation. Fixed both upstream issues so workspace and `memfuse-checkpoint` build cleanly.
+  - Verified `memfuse-checkpoint` has zero open findings or issues.

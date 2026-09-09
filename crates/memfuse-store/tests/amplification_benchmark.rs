@@ -220,7 +220,7 @@ async fn run_amplification_benchmark() {
 
     // Compute logical bytes stored at end (remaining active key-value entries)
     let all_entries = storage
-        .scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded)
+        .scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded, None)
         .await
         .expect("scan end");
     let mut logical_stored_bytes: u64 = 0;
