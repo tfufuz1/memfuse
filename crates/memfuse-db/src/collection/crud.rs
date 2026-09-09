@@ -15,6 +15,10 @@ use memfuse_core::{
 /// übergeben wird. Verhindert unbeabsichtigten Vollscan bei generischen Präfixen.
 pub const DEFAULT_SCAN_LIMIT: usize = 10_000;
 
+/// Harte Obergrenze für den maximal erlaubten `limit`-Parameter in scan() und scan_prefix().
+/// Verhindert unbegrenzte Materialisierung im Speicher selbst wenn explizit ein riesiges Limit angefragt wird.
+pub const HARD_SCAN_CEILING: usize = 100_000;
+
 /// Alias for backwards compatibility with earlier MAX_SCAN_RESULTS references.
 pub const MAX_SCAN_RESULTS: usize = DEFAULT_SCAN_LIMIT;
 
