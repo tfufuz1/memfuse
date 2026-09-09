@@ -2933,6 +2933,10 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "213db80fd94bf59c"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "29178fc55b4398e7"
   },
   {
@@ -3010,6 +3014,10 @@
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "acbd07ca64dfb707"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "c3e4de5969fe8fa2"
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
