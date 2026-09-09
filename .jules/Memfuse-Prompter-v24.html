@@ -71,6 +71,15 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
 .crate-card.hidden{display:none}
 .cr-name{font-family:monospace;font-size:10px;font-weight:700;color:var(--tx);padding-right:24px}
 .crate-card.on .cr-name{color:var(--ac2)}
+.crate-card.deprecated-crate{opacity:.5;border-color:var(--red)}
+.crate-card.deprecated-crate:hover{border-color:var(--red);opacity:.7}
+.cr-deprecated-badge{font-family:monospace;font-size:6px;font-weight:700;color:var(--red);background:rgba(255,85,102,.1);border:1px solid rgba(255,85,102,.3);border-radius:2px;padding:1px 4px;margin-bottom:4px;display:inline-block}
+.daily-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.daily-btn{border:1.5px solid var(--b1);border-radius:7px;background:var(--s2);cursor:pointer;padding:7px 9px;transition:all .1s;text-align:left;font-family:'Syne','Segoe UI',system-ui,sans-serif}
+.daily-btn:hover{border-color:var(--ac);background:var(--acg)}
+.daily-btn-label{font-size:9px;font-weight:700;color:var(--tx)}
+.daily-btn-sub{font-size:7.5px;color:var(--td);font-family:monospace;margin-top:2px}
+kbd{font-family:monospace;font-size:8px}
 .cr-desc{font-size:7.5px;color:var(--td);margin-top:2px;font-family:monospace;line-height:1.4}
 .cr-meta{display:flex;align-items:center;gap:3px;margin-top:4px;flex-wrap:wrap}
 .cr-pill{font-family:monospace;font-size:6.5px;padding:1px 4px;border-radius:2px;font-weight:700}
@@ -218,6 +227,28 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
 <div class="wrap">
   <div class="lcol">
 
+    <div class="card" id="c-daily">
+      <div class="ch" onclick="toggle('c-daily')">
+        <div class="cico" style="background:rgba(74,222,128,.12);color:#4ade80">📅</div>
+        <div class="clbl">Tages-Schnellstart<small>Häufigste Workflows direkt starten</small></div>
+        <span class="carr">▼</span>
+      </div>
+      <div class="cb">
+        <div class="sl"><span class="sl-dot" style="background:var(--green)"></span>Quick-Select — Crate + Aufgabe in einem Klick</div>
+        <div class="daily-grid" id="daily-grid">
+          <!-- wird von initDailyPanel() befüllt -->
+        </div>
+        <div style="margin-top:8px;font-family:monospace;font-size:8.5px;color:var(--td)">
+          Shortcut: <kbd style="background:var(--b2);padding:1px 5px;border-radius:3px;font-family:monospace">1-9</kbd> Crate-Tier-Auswahl ·
+          <kbd style="background:var(--b2);padding:1px 5px;border-radius:3px;font-family:monospace">A</kbd>=Audit
+          <kbd style="background:var(--b2);padding:1px 5px;border-radius:3px;font-family:monospace">I</kbd>=Impl
+          <kbd style="background:var(--b2);padding:1px 5px;border-radius:3px;font-family:monospace">F</kbd>=Fix
+          <kbd style="background:var(--b2);padding:1px 5px;border-radius:3px;font-family:monospace">T</kbd>=Test
+          <kbd style="background:var(--b2);padding:1px 5px;border-radius:3px;font-family:monospace">C</kbd>=Kopieren
+        </div>
+      </div>
+    </div>
+
     <!-- PROJEKT-DATEN (v24) — Engine/Daten-Trennung: Crate-/Komponenten-Inventar
          kommt idealerweise aus einer lokal generierten JSON-Datei statt aus dem
          JS-Quelltext. Ohne Import laufen die gebündelten Beispieldaten (Stand
@@ -232,10 +263,6 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
       </div>
       <div class="cb">
         <div id="data-source-slot"></div>
-        <div id="session-kontinuität" style="margin-top:8px;font-family:monospace;font-size:9.5px;padding:6px 10px;border-radius:7px;border:1.5px solid var(--b1);background:var(--s2);">
-          <strong>Session-Kontinuität:</strong>
-          <span id="last-merge-display">nicht verfügbar (cargo xtask gen-prompter-data ausführen)</span>
-        </div>
         <div class="inv-hint">Dieses Tool ist projektunabhängig: die Engine (Task-Vorlagen, APM-Katalog, Tag-Grammatik) ist fest verdrahtet, das Crate-/Datei-Inventar ist austauschbar. Empfohlener Weg: Führe im Repo-Root <code style="color:var(--teal)">cargo xtask gen-prompter-data</code> (oder <code style="color:var(--teal)">just gen-prompter-data</code>) aus. Das erzeugt automatisch <code style="color:var(--ac2)">.jules/prompter-data.json</code> aus allen 18 Workspace-Crates mit Live-LOC, Layer-Topologie, Test-Zahlen und Zielarchitektur-Mapping. Lade eine erzeugte <code style="color:var(--ac2)">prompter-data.json</code> — kein Netzwerk, kein Server, rein clientseitig.</div>
         <input type="file" id="data-file-input" accept="application/json" style="display:none" onchange="loadProjectDataFile(this.files[0])">
         <div class="chips" style="margin-top:7px">
@@ -606,7 +633,7 @@ const DEFAULT_CRATES = [
   { id:'memfuse-db', layer:3, order:13, desc:'4-Signal-Fusion · RRF · 2PC · MultiStep · repair_on_open', loc:'19114', tests:'312+', status:'✅', risk:'fusion', tier:'1' },
   { id:'memfuse-bench', layer:4, order:14, desc:'LOCOMO/Long-Mem-Eval-Benchmark-Harness · Retrieval-Accuracy-Vergleich ggü. Baselines (eigenständiges Workspace-Mitglied, kein Produktionscode im DAG-Sinn)', loc:'3560', tests:'10+', status:'🟡', risk:'none', tier:'2' },
   { id:'memfuse-router', layer:4, order:15, desc:'SLM-Routing · NaN-Validierung · 100%-Branch-Ziel', loc:'4250', tests:'65+', status:'✅', risk:'nan', tier:'3' },
-  { id:'memfuse-tauri', layer:4, order:16, desc:'Tauri-IPC · PDF/DOCX/E-Mail-Parser · Ingestion-Pipeline', loc:'4320', tests:'118+', status:'🟡', risk:'parse', tier:'2' },
+  { id:'memfuse-tauri', layer:4, order:16, deprecated: true, desc:'[DEPRECATED ADR-077] Tauri-IPC · PDF/DOCX/E-Mail-Parser · Entfernung bis 2026-11-07', loc:'4320', tests:'118+', status:'🟡', risk:'parse', tier:'2' },
   { id:'memfuse-agent', layer:5, order:17, desc:'State-Machine · Exactly-Once · AuditLog (audit.rs) · Token-Budget', loc:'2756', tests:'58+', status:'✅', risk:'budget', tier:'2' },
   { id:'memfuse-mcp', layer:6, order:18, desc:'stdio JSON-RPC 2.0 (lib.rs) · Sandbox · Prompt-Injection-Guard · Slowloris', loc:'3125', tests:'79+', status:'✅', risk:'proto', tier:'1' },
   { id:'memfuse-py', layer:null, order:19, desc:'PyO3-FFI · GIL-Release · Zero-Panic-Boundary · OnceLock — SEIT ADR-064 (2026-09-07) EIGENSTÄNDIGER Cargo-Workspace (eigenes [workspace] in crates/memfuse-py/Cargo.toml), NICHT Mitglied des Root-Workspace. Grund: Root-Workspace = panic-Strategie "abort", PyO3-FFI-Grenze braucht catch_unwind. Gates NUR via --manifest-path, niemals -p memfuse-py.', loc:'1505', tests:'14+', status:'✅', risk:'ffi', tier:'1' },
@@ -3441,16 +3468,6 @@ function selTask(id) {
   generate();
 }
 
-function getSelectedCrate() {
-  return SS.crate || 'none';
-}
-
-function generateTaskId(taskTitle) {
-  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  const slug = (taskTitle || '').replace(/[^a-zA-Z0-9]/g,'').slice(0,6).toUpperCase();
-  return `JULES-${date}-${slug || 'TASK'}`;
-}
-
 function buildMandatoryBootstrap(claimCrate, taskId) {
   return `---MANDATORY BOOTSTRAP (nicht überspringen, nicht kürzen)---
 [SCHRITT 0 — Inventar-Realitätsabgleich, IMMER ZUERST]
@@ -3524,6 +3541,14 @@ function generate() {
   const mandatoryBootstrap = buildMandatoryBootstrap(claimCrate, taskId);
 
   let promptBody = fn_(effectiveCrate, p, SS.par);
+  if (effectiveCrate === 'memfuse-tauri') {
+    promptBody = `⚠️ HINWEIS: memfuse-tauri ist DEPRECATED (ADR-077, 2026-09-08).
+Entfernung geplant bis 2026-11-07. Keine neuen Features implementieren.
+Nur Sicherheits-Fixes oder Aufräum-Arbeiten (Entfernung vorbereiten) sind zulässig.
+Vor jeder Änderung: Überprüfe ob die Änderung in memfuse-py stattdessen sinnvoller wäre.
+
+` + promptBody;
+  }
   if (SS.fmt === 'checklist') {
     promptBody = APM_BLOCK(APM_ON) + DOD(effectiveCrate);
   } else if (SS.fmt === 'compact') {
@@ -3660,6 +3685,50 @@ function initAPM() {
     </div>`).join('');
 }
 
+// DAILY PANEL — meistgenutzte Crate+Task Kombinationen
+const DAILY_WORKFLOWS = [
+  { crate:'memfuse-store',      task:'audit',  label:'Store Audit',      sub:'WAL · LSM · Crash-Safety' },
+  { crate:'memfuse-db',         task:'audit',  label:'DB Audit',         sub:'Fusion · 2PC · Scheduler' },
+  { crate:'memfuse-core',       task:'audit',  label:'Core Audit',       sub:'Types · TxId · Snapshots' },
+  { crate:'memfuse-crypto',     task:'audit',  label:'Crypto Audit',     sub:'AES · HMAC · WAL-Chain' },
+  { crate:'memfuse-index',      task:'audit',  label:'Index Audit',      sub:'HNSW · SIMD · DiskANN' },
+  { crate:'memfuse-graph',      task:'audit',  label:'Graph Audit',      sub:'CSR · PPR · Session-DAG' },
+  { crate:'memfuse-db',         task:'impl',   label:'DB Implementierung', sub:'Feature · Scope-Kontrolle' },
+  { crate:'memfuse-store',      task:'fix',    label:'Store Fix',        sub:'Bugfix · Regression-Test' },
+  { crate:'memfuse-mcp',        task:'sec',    label:'MCP Security',     sub:'Injection · Proto · DoS' },
+  { crate:'memfuse-py',         task:'test',   label:'Python Tests',     sub:'FFI · Panic-Grenze · OnceLock' },
+];
+
+function initDailyPanel() {
+  const grid = document.getElementById('daily-grid');
+  if (!grid) return;
+  grid.innerHTML = DAILY_WORKFLOWS.map((w) => `
+    <button class="daily-btn" onclick="quickSelect('${w.crate}','${w.task}')" title="${w.crate} · ${w.task}">
+      <div class="daily-btn-label">${w.label}</div>
+      <div class="daily-btn-sub">${w.sub}</div>
+    </button>`).join('');
+}
+
+function quickSelect(crateId, taskId) {
+  selCrate(crateId);
+  selTask(taskId);
+  const oc = document.querySelector('.ocol');
+  if (oc) oc.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// KEYBOARD SHORTCUTS — nur wenn kein Eingabefeld fokussiert ist
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  const key = e.key.toUpperCase();
+  if (key === 'A') { if (SS.crate) selTask('audit'); }
+  else if (key === 'I') { if (SS.crate) selTask('impl'); }
+  else if (key === 'F') { if (SS.crate) selTask('fix'); }
+  else if (key === 'T') { if (SS.crate) selTask('test'); }
+  else if (key === 'S') { if (SS.crate) selTask('sec'); }
+  else if (key === 'C' && SS.crate && SS.task) { copyPrompt(); }
+  else if (key === 'R') { if (SS.crate) selTask('review'); }
+});
+
 function toggleAPM(id) {
   if (APM_ON.has(id)) APM_ON.delete(id); else APM_ON.add(id);
   document.getElementById('apm-'+id).classList.toggle('on', APM_ON.has(id));
@@ -3679,8 +3748,9 @@ function initCrates() {
   const grid = document.getElementById('crate-grid');
   grid.innerHTML = CRATES.map(c => {
     const risk = RISK_LABELS[c.risk] || '';
-    return `<div class="crate-card" id="cc-${c.id}" data-id="${c.id}" data-desc="${c.desc}"
+    return `<div class="crate-card ${c.deprecated ? 'deprecated-crate' : ''}" id="cc-${c.id}" data-id="${c.id}" data-desc="${c.desc}"
       onclick="selCrate('${c.id}')">
+      ${c.deprecated ? '<div class="cr-deprecated-badge">DEPRECATED · ADR-077</div>' : ''}
       <div class="cr-order">L${c.layer}</div>
       <div class="cr-name">${c.id}</div>
       <div class="cr-desc">${c.desc}</div>
@@ -3925,7 +3995,7 @@ function resetProjectData() {
   COMPONENTS = Object.fromEntries(Object.entries(DEFAULT_COMPONENTS).map(([k, v]) => [k, v.map(c => ({ ...c }))]));
   INVENTORY_SOURCE = 'bundled';
   INVENTORY_FILENAME = null;
-  INVENTORY_DATE = '2026-09-03';
+  INVENTORY_DATE = '2026-09-08';
   const fileInput = document.getElementById('data-file-input');
   if (fileInput) fileInput.value = '';
   const resultEl = document.getElementById('data-result');

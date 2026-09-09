@@ -90,7 +90,9 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
                         error = %e,
                         "Consolidation pass: cascade edge invalidation failed"
                     );
-                    result.cascade_errors.push(format!("DocId {:?}: {}", doc_id, e));
+                    result
+                        .cascade_errors
+                        .push(format!("DocId {:?}: {}", doc_id, e));
                 }
             }
         }
