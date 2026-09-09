@@ -213,13 +213,13 @@ pub fn create_llm_text_generator(
 ) -> Result<Arc<dyn LlmTextGenerator>, MemFuseError> {
     match provider_type.to_lowercase().trim() {
         "ollama" => {
-            // AI-TAG[SMELL][MAJOR] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T12:35:54Z) (SESSION: 5665b844)
-            // BEFUND: OllamaConfig::default() is reassigned via config.base_url and config.model instead of struct init expression.
-            // RISIKO: Violates Clippy pedantic lint clippy::field_reassign_with_default, causing build failures when clippy warnings are denied.
-            // EMPFEHLUNG: Refactor to OllamaConfig { base_url: ollama_url.to_string(), model: llm_model.to_string(), ..Default::default() }.
-            let mut config = memfuse_ollama::OllamaConfig::default();
-            config.base_url = ollama_url.to_string();
-            config.model = llm_model.to_string();
+            // AI-TAG[SMELL][MAJOR][RESOLVED] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T14:04:00Z) (SESSION: fdf816df)
+            // FIX: Refactored to struct init expression with ..Default::default() spread.
+            let config = memfuse_ollama::OllamaConfig {
+                base_url: ollama_url.to_string(),
+                model: llm_model.to_string(),
+                ..Default::default()
+            };
             let client = memfuse_ollama::OllamaClient::with_config(config);
             Ok(Arc::new(client))
         }

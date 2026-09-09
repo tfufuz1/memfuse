@@ -105,8 +105,9 @@ pub fn check_placeholder_refs_in_content(
                         || first_word == "~";
 
                     if !is_null {
+                        let path_part = first_word.split('#').next().unwrap_or(first_word);
                         let file_exists =
-                            root.join(first_word).exists() || Path::new(first_word).exists();
+                            root.join(path_part).exists() || Path::new(path_part).exists();
                         let found_in_decisions = if !file_exists {
                             let decisions_file = root.join("DECISIONS.md");
                             if decisions_file.is_file() {

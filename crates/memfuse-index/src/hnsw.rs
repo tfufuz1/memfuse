@@ -229,7 +229,10 @@ impl HnswConfigBuilder {
 
     /// Sets the partial rebuild configuration for local hot-path rebuilds (F-02).
     #[cfg(feature = "partial-index-rebuild")]
-    pub fn partial_rebuild_config(mut self, config: crate::partial_rebuild::PartialRebuildConfig) -> Self {
+    pub fn partial_rebuild_config(
+        mut self,
+        config: crate::partial_rebuild::PartialRebuildConfig,
+    ) -> Self {
         self.config.partial_rebuild_config = config;
         self
     }

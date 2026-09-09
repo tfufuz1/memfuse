@@ -36,7 +36,11 @@ pub fn check_recall_stability_from_file(history_path: &Path, today: NaiveDate) -
             let _ = fs::create_dir_all(parent);
         }
         if let Err(e) = fs::write(history_path, "") {
-            eprintln!("⚠️ Fehler beim Anlegen von {}: {}", history_path.display(), e);
+            eprintln!(
+                "⚠️ Fehler beim Anlegen von {}: {}",
+                history_path.display(),
+                e
+            );
             return true;
         }
         println!(
@@ -159,7 +163,10 @@ mod tests {
     #[test]
     fn test_missing_history_file_creates_empty_and_returns_true() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("results").join("nucleation_recall_history.jsonl");
+        let file_path = dir
+            .path()
+            .join("results")
+            .join("nucleation_recall_history.jsonl");
         let today = NaiveDate::from_ymd_opt(2026, 9, 9).unwrap();
 
         assert!(!file_path.exists());

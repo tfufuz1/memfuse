@@ -62,12 +62,20 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
             } else if trimmed.starts_with("status:") {
                 parsing_reason = false;
                 status = trimmed.trim_start_matches("status:").trim().to_string();
-            } else if trimmed.starts_with("review_date:") || trimmed.starts_with("conditional_review_due:") {
+            } else if trimmed.starts_with("review_date:")
+                || trimmed.starts_with("conditional_review_due:")
+            {
                 parsing_reason = false;
                 let due = if trimmed.starts_with("review_date:") {
-                    trimmed.trim_start_matches("review_date:").trim().to_string()
+                    trimmed
+                        .trim_start_matches("review_date:")
+                        .trim()
+                        .to_string()
                 } else {
-                    trimmed.trim_start_matches("conditional_review_due:").trim().to_string()
+                    trimmed
+                        .trim_start_matches("conditional_review_due:")
+                        .trim()
+                        .to_string()
                 };
                 if !due.is_empty() {
                     conditional_review_due = Some(due);

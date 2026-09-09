@@ -57,7 +57,7 @@ impl Default for SandboxPolicy {
 /// Tool-Ergebnisse werden verschlüsselt im Arbeitsspeicher gehalten.
 /// Beim Drop wird der Speicher via Zeroize bereinigt.
 pub struct VolatileToolResult {
-    /// Verschlüsselte Ausgabe (AES-256-GCM-SIV via memfuse-crypto).
+    /// Verschlüsselte Ausgabe (AES-256-GCM-SIV via memfuse-security).
     encrypted: zeroize::Zeroizing<Vec<u8>>,
     /// Klartext-Nonce (nicht sensitiv).
     nonce: Vec<u8>,
