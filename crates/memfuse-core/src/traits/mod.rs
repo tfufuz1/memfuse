@@ -110,6 +110,14 @@ pub struct StorageStats {
 // INVARIANT: Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // Lifecycle: put/delete → commit/rollback → flush(background).
 
+/// Harte Obergrenze für die Anzahl distinkter Keys, die eine StorageEngine-
+/// Implementierung während eines einzelnen scan()/scan_prefix_bounded()-Aufrufs
+/// intern akkumulieren darf, BEVOR limit/cursor angewendet wird. Verhindert
+/// unbegrenztes Speicherwachstum bei sehr breiten Scans, unabhängig vom vom
+/// Aufrufer angeforderten `limit`. Muss größer als jedes sinnvolle `limit` sein,
+/// um normale paginierte Nutzung nicht zu beeinträchtigen.
+pub const MAX_SCAN_MERGE_ACCUMULATOR: usize = 100_000;
+
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
 ///
 /// # Dyn-Kompatibilität
@@ -316,16 +324,15 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-    /// Scans a range of keys between `start` and `end` bounds, bounded to at most `limit`
-    /// entries, resumable via an opaque `cursor` (the last returned key from a previous call).
-    /// Returns the batch and, if more entries may exist beyond `limit`, the next cursor
-    /// to resume from.
+    /// Führt einen begrenzten, Cursor-fähigen Range-Scan durch. Der Cursor dient als
+    /// exklusive untere Schranke (`Bound::Excluded(cursor)`), analog zu
+    /// `scan_prefix_bounded`. Bevorzugt gegenüber `scan()` für jeden neuen Call-Site,
+    /// der potenziell große Ergebnismengen erwarten muss.
     ///
-    /// # Contract
-    /// Implementors SHOULD avoid materializing more than O(limit) entries internally where
-    /// feasible. The default implementation below does NOT provide this guarantee (it
-    /// delegates to the unbounded `scan()` and slices the result).
-    /// **Implementors with an efficient underlying merge structure MUST override this method.**
+    /// Die Default-Implementierung delegiert an `scan()` und schneidet danach zu —
+    /// bietet also KEINE Speicherbegrenzung für Implementierungen, die diese Methode
+    /// nicht überschreiben. `LsmStorage` MUSS diese Methode mit einer echten
+    /// begrenzten Implementierung überschreiben (siehe dortige Implementierung).
     #[allow(clippy::type_complexity)]
     fn scan_bounded<'a>(
         &'a self,
@@ -335,13 +342,14 @@ pub trait StorageEngine: Send + Sync + 'static {
         cursor: Option<&'a [u8]>,
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
-            let effective_start = match cursor {
-                Some(c) => std::ops::Bound::Excluded(c),
-                None => start,
-            };
-            let all = self.scan(effective_start, end).await?;
+            let all = self.scan(start, end).await?;
             let mut results = Vec::new();
             for (k, v) in all {
+                if let Some(cur_bytes) = cursor {
+                    if k.as_slice() <= cur_bytes {
+                        continue;
+                    }
+                }
                 results.push((k, v));
                 if results.len() == limit {
                     break;

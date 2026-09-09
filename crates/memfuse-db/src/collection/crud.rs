@@ -1466,11 +1466,13 @@ mod tests {
                 .unwrap();
         }
 
-        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
-        assert_eq!(
-            scanned.len(),
-            DEFAULT_SCAN_LIMIT,
-            "scan_prefix must be capped at DEFAULT_SCAN_LIMIT (10,000)"
+        let res = collection.scan_prefix("pfx_", None).await;
+        assert!(
+            matches!(
+                res,
+                Err(memfuse_core::MemFuseError::LimitExceeded { limit: 10000, .. })
+            ),
+            "scan_prefix over 10,000 items with default limit must return LimitExceeded error"
         );
     }
 }
