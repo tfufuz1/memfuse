@@ -118,10 +118,7 @@ pub fn check_placeholder_refs_in_content(
                             let decisions_file = root.join("DECISIONS.md");
                             if decisions_file.is_file() {
                                 if let Ok(dec_content) = fs::read_to_string(&decisions_file) {
-<<<<<<< HEAD
-=======
                                     let adr_re = Regex::new(r"(?i)ADR-(\d+)").unwrap();
->>>>>>> ab132146 (Shell-Commit)
                                     if let Some(caps) = adr_re.captures(first_word) {
                                         let search_re =
                                             Regex::new(&format!(r"(?i)ADR-{}", &caps[1])).unwrap();
