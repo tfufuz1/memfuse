@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
-// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
 
 use ahash::AHashMap;
 use memfuse_core::TenantId;
