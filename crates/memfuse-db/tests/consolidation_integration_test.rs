@@ -119,6 +119,10 @@ impl LlmTextGenerator for TestLlmGenerator {
     }
 }
 
+// AI-TAG[TEST][MAJOR] test_execute_sleep_cycle_with_synthesis_pass uses identical embeddings causing near-duplicate tombstoning (ID: AGT-DB-7c141164) (TS: 2026-09-09T12:43:24Z) (SESSION: 82e80d01)
+// BEFUND: Alle 5 Turn-Embeddings verwenden denselben Vektor emb_a = [1.0, 0.0, 0.0, 0.0]. Cosine Similarity = 1.0 > 0.99 (near_duplicate_cosine_threshold), wodurch 4 von 5 Dokumenten in Zyklus 1 gelöscht/tombstoned werden.
+// RISIKO: In Zyklus 2 verbleibt nur 1 Knoten im Graph, so dass Community-Größe = 1 < 3 (min_community_size) ist und assert_eq!(synth_2.synthesized.len(), 1) fehlschlägt (left: 0, right: 1).
+// EMPFEHLUNG: Verschiedene, aber kohärente Vektoren (z.B. [1.0, 0.0, 0.0, 0.0], [0.9, 0.1, 0.0, 0.0] etc.) im Test verwenden.
 #[tokio::test]
 async fn test_execute_sleep_cycle_with_synthesis_pass() {
     let dir = tempdir().unwrap();
