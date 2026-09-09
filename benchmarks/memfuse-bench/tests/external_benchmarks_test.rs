@@ -156,6 +156,175 @@ async fn test_regression_suite_baseline_count_and_execution() -> Result<()> {
 }
 
 #[test]
+fn test_locomo_category_enum_conversions() {
+    assert_eq!(
+        LocomoQuestionCategory::from_u8(1),
+        Some(LocomoQuestionCategory::MultiHop)
+    );
+    assert_eq!(
+        LocomoQuestionCategory::from_u8(2),
+        Some(LocomoQuestionCategory::Temporal)
+    );
+    assert_eq!(
+        LocomoQuestionCategory::from_u8(3),
+        Some(LocomoQuestionCategory::OpenDomain)
+    );
+    assert_eq!(
+        LocomoQuestionCategory::from_u8(4),
+        Some(LocomoQuestionCategory::SingleHop)
+    );
+    assert_eq!(
+        LocomoQuestionCategory::from_u8(5),
+        Some(LocomoQuestionCategory::Adversarial)
+    );
+    assert_eq!(LocomoQuestionCategory::from_u8(0), None);
+    assert_eq!(LocomoQuestionCategory::from_u8(6), None);
+    assert_eq!(LocomoQuestionCategory::from_u8(255), None);
+
+    assert_eq!(LocomoQuestionCategory::MultiHop.to_string(), "Multi-hop");
+    assert_eq!(LocomoQuestionCategory::Temporal.to_string(), "Temporal");
+    assert_eq!(
+        LocomoQuestionCategory::OpenDomain.to_string(),
+        "Open-domain"
+    );
+    assert_eq!(LocomoQuestionCategory::SingleHop.to_string(), "Single-hop");
+    assert_eq!(
+        LocomoQuestionCategory::Adversarial.to_string(),
+        "Adversarial"
+    );
+}
+
+#[test]
+fn test_long_mem_eval_question_type_enum_conversions() {
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::SingleSessionUser),
+        "SingleSessionUser"
+    );
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::SingleSessionAssistant),
+        "SingleSessionAssistant"
+    );
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::SingleSessionPreference),
+        "SingleSessionPreference"
+    );
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::MultiSession),
+        "MultiSession"
+    );
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::KnowledgeUpdate),
+        "KnowledgeUpdate"
+    );
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::TemporalReasoning),
+        "TemporalReasoning"
+    );
+    assert_eq!(
+        format!("{:?}", LongMemEvalQuestionType::Abstention),
+        "Abstention"
+    );
+}
+
+#[tokio::test]
+async fn test_empty_and_erroring_eval_runs() {
+    // Empty cases for LoCoMo
+    let empty_locomo: Vec<memfuse_bench::locomo::LocomoCase> = vec![];
+    let mock_search_ok = |_q: &str| {
+        Box::pin(async { Ok(vec![]) })
+            as memfuse_bench::long_mem_eval::BoxFuture<
+                'static,
+                memfuse_core::Result<Vec<ScoredChunk>>,
+            >
+    };
+    let locomo_report = run_locomo_eval(&empty_locomo, mock_search_ok)
+        .await
+        .unwrap();
+    assert_eq!(locomo_report.total_eval_cases, 0);
+    assert_eq!(locomo_report.overall_recall_at_5, 0.0);
+    assert_eq!(locomo_report.overall_mrr, 0.0);
+
+    // Empty cases for LongMemEval
+    let empty_lme: Vec<memfuse_bench::long_mem_eval::LongMemEvalCase> = vec![];
+    let lme_report = run_long_mem_eval(&empty_lme, mock_search_ok).await.unwrap();
+    assert_eq!(lme_report.total_cases, 0);
+    assert_eq!(lme_report.overall_accuracy, 0.0);
+
+    // Erroring search closure
+    let mock_search_err = |_q: &str| {
+        Box::pin(async {
+            Err(memfuse_core::MemFuseError::InvalidInput(
+                "Search failed".into(),
+            ))
+        })
+            as memfuse_bench::long_mem_eval::BoxFuture<
+                'static,
+                memfuse_core::Result<Vec<ScoredChunk>>,
+            >
+    };
+    let dummy_case = memfuse_bench::long_mem_eval::LongMemEvalCase {
+        question_id: "q1".into(),
+        session_history: vec![],
+        question: "Who?".into(),
+        answer: serde_json::json!("Alice"),
+        question_type: LongMemEvalQuestionType::SingleSessionUser,
+    };
+    let err_res = run_long_mem_eval(&[dummy_case], mock_search_err).await;
+    assert!(err_res.is_err());
+    assert!(err_res.unwrap_err().to_string().contains("Search failed"));
+}
+
+#[test]
+fn test_load_locomo_dataset_varied_json_formats() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // 1. Array answer and number answer
+    let json_content = r#"[
+        {
+            "sample_id": "s1",
+            "qa": [
+                {
+                    "question": "Where was Bob?",
+                    "answer": ["Paris", "France"],
+                    "evidence": ["Bob was in Paris."],
+                    "category": 1
+                },
+                {
+                    "question": "How many items?",
+                    "answer": 42,
+                    "evidence": ["There were 42 items."],
+                    "category": 4
+                },
+                {
+                    "question": "Adversarial question?",
+                    "adversarial_answer": "No answer possible",
+                    "evidence": [],
+                    "category": 5
+                }
+            ]
+        }
+    ]"#;
+    let json_path = temp_dir.path().join("locomo_varied.json");
+    std::fs::write(&json_path, json_content).unwrap();
+
+    let cases = load_locomo_dataset(&json_path).unwrap();
+    assert_eq!(cases.len(), 3);
+    assert_eq!(cases[0].expected_answer, "Paris France");
+    assert_eq!(cases[1].expected_answer, "42");
+    assert_eq!(cases[2].expected_answer, "No answer possible");
+
+    // 2. Empty JSON array -> InvalidInput
+    let empty_json_path = temp_dir.path().join("locomo_empty.json");
+    std::fs::write(&empty_json_path, "[]").unwrap();
+    let empty_res = load_locomo_dataset(&empty_json_path);
+    assert!(empty_res.is_err());
+    assert!(empty_res
+        .unwrap_err()
+        .to_string()
+        .contains("No valid LoCoMo cases extracted"));
+}
+
+#[test]
 fn test_check_regression_gate_thresholds() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let baseline_path = temp_dir.path().join("baseline.json");
