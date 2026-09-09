@@ -663,6 +663,9 @@ mod tests {
     // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-06T11:17:24Z) (SESSION: 9fd3f17f)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified gate-stack, zero unsafe, APM-7 slicing safety, KMU suite 54/55 (98.2% > 90.0%), and Tier-2 concurrency suite.
+    // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-09T12:39:30Z) (SESSION: 6ccc1466)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Re-verified gate-stack, zero unsafe, APM-7 slicing safety, KMU suite 55/55 (100% recall), Tier-2 concurrency suite (10/10 runs pass), and 94.13% line coverage.
     #[test]
     fn test_kmu_55_compounds_suite() {
         let splitter = GermanCompoundSplitter::new();
