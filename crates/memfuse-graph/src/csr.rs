@@ -1416,6 +1416,37 @@ impl CsrGraph {
         result
     }
 
+    /// Collects internal node indices of entities that are marked as deleted in storage.
+    pub async fn get_deleted_node_indices(&self) -> HashSet<usize> {
+        if self.storage.is_none() {
+            return HashSet::new();
+        }
+        let entity_ids: Vec<(usize, EntityId)> = {
+            let inner = self.inner.read();
+            inner.reverse_map.iter().copied().enumerate().collect()
+        };
+        let mut deleted_indices = HashSet::new();
+        for (idx, entity_id) in entity_ids {
+            if self.is_entity_deleted(entity_id).await {
+                deleted_indices.insert(idx);
+            }
+        }
+        deleted_indices
+    }
+
+    /// Calculates Personalized PageRank (PPR) using a reusable [`crate::PprContext`] buffer to avoid allocations.
+    pub async fn personalized_page_rank_with_context_async(
+        &self,
+        seed_nodes: &[EntityId],
+        config: &memfuse_core::PprConfig,
+        ctx: &mut crate::PprContext,
+    ) -> Vec<(EntityId, f32)> {
+        let deleted_nodes = self.get_deleted_node_indices().await;
+        self.compact();
+        let inner = self.inner.read();
+        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, &deleted_nodes, ctx)
+    }
+
     /// Calculates Personalized PageRank (PPR) using a reusable [`crate::PprContext`] buffer to avoid allocations.
     pub fn personalized_page_rank_with_context(
         &self,
@@ -1425,7 +1456,8 @@ impl CsrGraph {
     ) -> Vec<(EntityId, f32)> {
         self.compact();
         let inner = self.inner.read();
-        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, ctx)
+        let deleted_nodes = HashSet::new();
+        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, &deleted_nodes, ctx)
     }
 
     /// Returns the number of committed entities in the graph.
@@ -1441,6 +1473,16 @@ impl CsrGraph {
         } else {
             false
         }
+    }
+
+    /// Prüft ob eine Entity per Tombstone als gelöscht markiert wurde.
+    /// Nutzt den Key "graph:entity:deleted:{entity_id}" im LSM-Storage (wenn vorhanden).
+    pub async fn is_entity_deleted(&self, entity: EntityId) -> bool {
+        if let Some(storage) = &self.storage {
+            let key = format!("graph:entity:deleted:{}", entity.0);
+            return storage.get(key.as_bytes()).await.ok().flatten().is_some();
+        }
+        false
     }
 
     /// Returns the number of edges in the graph.
@@ -1578,9 +1620,10 @@ impl GraphIndex for CsrGraph {
         config: &'a memfuse_core::PprConfig,
     ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
         Box::pin(async move {
+            let deleted_nodes = self.get_deleted_node_indices().await;
             self.compact();
             let inner = self.inner.read();
-            Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+            Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config, &deleted_nodes))
         })
     }
 
@@ -4371,5 +4414,40 @@ mod tests {
                 "Insertion {i} on default CsrGraph without consistency enforcer should always succeed"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_csr_is_entity_deleted_returns_false_for_live_entity() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let graph = CsrGraph::with_storage(storage.clone());
+        let entity_live = EntityId::new(10);
+        let entity_deleted = EntityId::new(20);
+
+        // No storage marker exists for entity_live -> returns false
+        assert!(!graph.is_entity_deleted(entity_live).await);
+
+        // Put deletion tombstone key in LSM storage for entity_deleted
+        let tx = TxId::new(1);
+        let tombstone_key = format!("graph:entity:deleted:{}", entity_deleted.0);
+        storage
+            .put(tx, tombstone_key.as_bytes(), b"deleted")
+            .await
+            .unwrap();
+        storage.commit(tx).await.unwrap();
+
+        // Marker exists -> returns true
+        assert!(graph.is_entity_deleted(entity_deleted).await);
+        // Live entity still returns false
+        assert!(!graph.is_entity_deleted(entity_live).await);
     }
 }
