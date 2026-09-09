@@ -130,7 +130,7 @@ async fn run_amplification_benchmark() {
 
     let config = LsmConfig {
         path: db_path.clone(),
-        memtable_size_limit: 256 * 1024, // 256KB memtable limit to force frequent SSTable flushes
+        memtable_size_limit: 128 * 1024, // 128KB memtable limit to force frequent SSTable flushes
         max_ram_mb: 512,
         tx_timeout: Duration::from_secs(60),
         compaction: CompactionConfig {

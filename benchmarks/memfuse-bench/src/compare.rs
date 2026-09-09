@@ -116,6 +116,31 @@ fn compare_single_metric(
     info_hints: &mut Vec<String>,
     pass_messages: &mut Vec<String>,
 ) {
+    if current_val.is_nan() || current_val.is_infinite() {
+        *has_regression = true;
+        errors.push(format!(
+            "[REGRESSION] {} contains invalid float value (NaN/Inf): Current = {}",
+            metric_name, current_val
+        ));
+        return;
+    }
+    if baseline_val.is_nan() || baseline_val.is_infinite() {
+        *has_regression = true;
+        errors.push(format!(
+            "[REGRESSION] {} baseline contains invalid float value (NaN/Inf): Baseline = {}",
+            metric_name, baseline_val
+        ));
+        return;
+    }
+    if threshold.is_nan() || threshold.is_infinite() || threshold < 0.0 {
+        *has_regression = true;
+        errors.push(format!(
+            "[REGRESSION] Invalid threshold value for {}: Threshold = {}",
+            metric_name, threshold
+        ));
+        return;
+    }
+
     if baseline_val > 0.0 {
         let delta = baseline_val - current_val;
         let relative_drop = delta / baseline_val;

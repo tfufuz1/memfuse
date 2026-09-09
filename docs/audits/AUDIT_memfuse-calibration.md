@@ -1,7 +1,7 @@
 # MemFuse Calibration Audit Report (`memfuse-calibration`)
 
 **Stand:** 2026-09-09
-**Session:** `20c1aaf4`
+**Session:** `b5990b59` (vorherige Audit-Session: `20c1aaf4`)
 **Crate:** `memfuse-calibration` (Layer 1 — Calibration & Uncertainty Quantification)
 **Auditor Persona:** Senior Rust Performance-Engineer — Score-Kalibrierung & ECE-Metriken
 
@@ -23,7 +23,7 @@
 
 ## 2. Zusammenfassung der Prüfergebnisse
 
-- **Test-Ergebnis:** 40/40 Tests grün (`cargo test -p memfuse-calibration --all-features`).
+- **Test-Ergebnis:** 42/42 Tests grün (`cargo test -p memfuse-calibration --all-features`).
 - **Nebenläufigkeit / Concurrency:** 10 Läufe mit 8 parallelen Threads bestanden (0 Race Conditions, 0 Deadlocks).
 - **Code Coverage (`cargo llvm-cov`):**
   - Gesamt: **96.05% Line Coverage** (608/632 Ausführungspfade)
@@ -60,10 +60,10 @@ In `replicator.rs` implementiert `ReplicatorState` das Multiplicative Weights Up
 
 ## 4. Identifizierte Befunde & Code Smells
 
-| ID | Datei:Zeile | Kategorie | Severity | Beschreibung |
-| :--- | :--- | :--- | :--- | :--- |
-| `AGT-CALIBRATION-16f90c35` | `isotonic.rs:97` | `AI-TAG[SMELL]` | `MAJOR` | PAVA duplicate raw score observation pooling: Identische `raw_score`-Beobachtungen mit unterschiedlichen Ergebnissen (0.0 vs 1.0) erzeugen unzusammengefasste Blöcke mit gleichem X-Wert in `cached_model`, wenn sie in aufsteigender Ergebnisfolge sortiert werden (`last_avg <= prev_avg` ist false bei 1.0 <= 0.0). `binary_search_by` kann dadurch nicht-deterministisch den niedrigen oder hohen Block zurückgeben. |
-| `AGT-CALIBRATION-fca75496` | `pid.rs:57` | `AI-TAG[SMELL]` | `MAJOR` | PID controller `measured_latency_ms` validation: In `update()` wird `measured_latency_ms` nicht auf `is_finite()` geprüft. Eine NaN- oder Inf-Latenzmessung propagiert in `self.integral` und `self.prev_error` und korrumpiert den Reglerzustand dauerhaft. |
+| ID | Datei:Zeile | Kategorie | Severity | Status | Beschreibung |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `AGT-CALIBRATION-16f90c35` | `isotonic.rs:97` | `AI-TAG[SMELL]` | `MAJOR` | RESOLVED (SESSION: `74eb6216`) | PAVA duplicate raw score observation pooling: Identische `raw_score`-Beobachtungen mit unterschiedlichen Ergebnissen (0.0 vs 1.0) erzeugen unzusammengefasste Blöcke mit gleichem X-Wert in `cached_model`, wenn sie in aufsteigender Ergebnisfolge sortiert werden (`last_avg <= prev_avg` ist false bei 1.0 <= 0.0). `binary_search_by` kann dadurch nicht-deterministisch den niedrigen oder hohen Block zurückgeben. |
+| `AGT-CALIBRATION-fca75496` | `pid.rs:57` | `AI-TAG[SMELL]` | `MAJOR` | RESOLVED (SESSION: `74eb6216`) | PID controller `measured_latency_ms` validation: In `update()` wird `measured_latency_ms` nicht auf `is_finite()` geprüft. Eine NaN- oder Inf-Latenzmessung propagiert in `self.integral` und `self.prev_error` und korrumpiert den Reglerzustand dauerhaft. |
 
 ---
 
@@ -78,7 +78,8 @@ In `replicator.rs` implementiert `ReplicatorState` das Multiplicative Weights Up
 
 ---
 
-## 6. Empfehlungen für künftige Fix-Tasks
+## 6. Empfehlungen & Verifikation (Session `b5990b59`)
 
-1. **PAVA Score Aggregation:** In `isotonic.rs::rebuild_model()` vor dem PAVA-Durchlauf Beobachtungen mit identischem `raw_score` in einen gemeinsamen Initial-Block `(score, sum_labels, count)` zusammenfassen.
-2. **PID Latency Sanity Check:** In `pid.rs::update()` am Anfang `if !measured_latency_ms.is_finite() { return self.current_pool_size.unwrap_or(current_pool_size); }` einfügen.
+1. **PAVA Score Aggregation:** In `isotonic.rs::rebuild_model()` verifiziert. Identische Scores werden vor dem PAVA pooling zusammengefasst.
+2. **PID Latency Sanity Check:** In `pid.rs::update()` verifiziert. Non-finite values (`NaN`/`Infinity`) werden abgefangen und verändern den Zustand nicht.
+3. **Workspace Gate Stack & Preflight:** Verifiziert via `cargo xtask jules-preflight --fast`.

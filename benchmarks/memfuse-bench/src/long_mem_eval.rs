@@ -165,6 +165,19 @@ pub fn check_regression(
         )
     })?;
 
+    if current.recall_at_5.is_nan() || current.recall_at_5.is_infinite() {
+        return Err(format!(
+            "Current Recall@5 contains invalid float value (NaN/Inf): {:.3}",
+            current.recall_at_5
+        ));
+    }
+    if baseline.recall_at_5.is_nan() || baseline.recall_at_5.is_infinite() {
+        return Err(format!(
+            "Baseline Recall@5 contains invalid float value (NaN/Inf): {:.3}",
+            baseline.recall_at_5
+        ));
+    }
+
     let delta = baseline.recall_at_5 - current.recall_at_5;
     if delta > 0.03 {
         return Err(format!(
@@ -185,6 +198,7 @@ fn pad_vector(v: &[f32], target_dim: usize) -> Vec<f32> {
 
 impl RegressionSuite {
     /// Constructs a baseline suite with 31 multi-session scenarios.
+    #[allow(clippy::vec_init_then_push)]
     pub fn baseline() -> Self {
         // AI-TAG[CODE_STYLE][MINOR] Vector initialization followed by multiple pushes can be initialized with vec![] macro (ID: AGT-BENCH-3b6c4f9c) (TS: 2026-09-09T12:48:06Z) (SESSION: 321b5c25)
         // BEFUND: clippy::vec_init_then_push is flagged on `let mut scenarios = Vec::new()`.
@@ -1230,10 +1244,10 @@ fn json_val_to_string(val: Option<serde_json::Value>) -> Option<String> {
             // RISIKO: Minor clippy lint violation in LongMemEval JSON parsing helper.
             // EMPFEHLUNG: Use `.map()` instead of `.filter_map()` in fix step.
             arr.into_iter()
-                .filter_map(|v| match v {
-                    serde_json::Value::String(s) => Some(s),
-                    serde_json::Value::Number(n) => Some(n.to_string()),
-                    other => Some(other.to_string()),
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s,
+                    serde_json::Value::Number(n) => n.to_string(),
+                    other => other.to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(" | "),
@@ -1374,4 +1388,50 @@ where
         overall_accuracy,
         total_cases: cases.len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_regression_nan_inf_safety() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let baseline_report = RegressionReport {
+            recall_at_5: 0.85,
+            recall_at_10: 0.90,
+            overall_accuracy: 0.85,
+            total_scenarios: 10,
+            failed_scenarios: vec![],
+        };
+        std::fs::write(
+            temp_file.path(),
+            serde_json::to_string(&baseline_report).unwrap(),
+        )
+        .unwrap();
+
+        // Current has NaN
+        let current_nan = RegressionReport {
+            recall_at_5: f64::NAN,
+            recall_at_10: 0.90,
+            overall_accuracy: 0.85,
+            total_scenarios: 10,
+            failed_scenarios: vec![],
+        };
+        let res_nan = check_regression(&current_nan, temp_file.path());
+        assert!(res_nan.is_err());
+        assert!(res_nan.unwrap_err().contains("invalid float value"));
+
+        // Current has Infinity
+        let current_inf = RegressionReport {
+            recall_at_5: f64::INFINITY,
+            recall_at_10: 0.90,
+            overall_accuracy: 0.85,
+            total_scenarios: 10,
+            failed_scenarios: vec![],
+        };
+        let res_inf = check_regression(&current_inf, temp_file.path());
+        assert!(res_inf.is_err());
+        assert!(res_inf.unwrap_err().contains("invalid float value"));
+    }
 }

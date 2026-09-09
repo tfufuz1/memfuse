@@ -74,7 +74,7 @@ async fn test_full_stack_document_lifecycle() {
 
     // Check forward relationship
     let relations = col
-        .scan_prefix("__rel:doc1:cousin:")
+        .scan_prefix("__rel:doc1:cousin:", None)
         .await
         .expect("Scan forward relations failed");
     assert_eq!(relations.len(), 1);

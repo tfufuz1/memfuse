@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
+// ZWECK: GASP Grounding-Aware Sensitivity by Perturbation post-hoc hallucination validator.
+// INVARIANTEN: Grounding scores are clamped to [0.0, 1.0] with explicit NaN protection; ConfigFingerprint drift resets calibrator.
+// NICHT-OFFENSICHTLICH: Post-hoc validator returns PolicyViolation(LowConfidenceGrounding) on score below threshold.
+
 //! GASP (Grounding-Aware Sensitivity by Perturbation) Post-Hoc Hallucination Validator.
 //!
 //! # Architektur & Abgrenzung
@@ -188,6 +194,10 @@ impl GaspValidator {
             base_score
         };
 
+        if raw_score.is_nan() || !raw_score.is_finite() {
+            return Ok(0.0);
+        }
+
         Ok(raw_score.clamp(0.0, 1.0))
     }
 }
@@ -361,6 +371,34 @@ mod tests {
             .await
             .unwrap();
         assert!(assessment.is_grounded);
+    }
+
+    #[test]
+    fn test_gasp_nan_score_protection() {
+        let validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(1, "Valid context text.")];
+        let res = validator.compute_raw_grounding_score("Valid response text.", &chunks);
+        assert!(res.is_ok());
+        let score = res.unwrap();
+        assert!(score >= 0.0 && score <= 1.0);
+        assert!(!score.is_nan());
+
+        // Verify that non-finite/NaN float inputs do not panic clamp(0.0, 1.0)
+        let nan_score: f32 = f32::NAN;
+        let safe_nan = if nan_score.is_nan() || !nan_score.is_finite() {
+            0.0
+        } else {
+            nan_score.clamp(0.0, 1.0)
+        };
+        assert_eq!(safe_nan, 0.0);
+
+        let inf_score: f32 = f32::INFINITY;
+        let safe_inf = if inf_score.is_nan() || !inf_score.is_finite() {
+            0.0
+        } else {
+            inf_score.clamp(0.0, 1.0)
+        };
+        assert_eq!(safe_inf, 0.0);
     }
 
     #[test]

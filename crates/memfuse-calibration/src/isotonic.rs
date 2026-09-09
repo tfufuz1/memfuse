@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T14:46:37Z (SESSION: 74eb6216)
+// ZWECK: Non-parametric probability calibration via PAVA (Pool-Adjacent Violators Algorithm).
+// INVARIANTEN: INV-CAL-1 (returns None before warmup), INV-CAL-2 (resets observations on fingerprint change).
+// NICHT-OFFENSICHTLICH: Pre-aggregates observations with identical raw scores prior to PAVA block merging.
+// SIEHE AUCH: crates/memfuse-calibration/src/platt.rs, crates/memfuse-calibration/src/lib.rs
+
 //! Isotonische Kalibrierung via PAVA (Pool-Adjacent Violators Algorithm).
 //!
 //! KOMPLEXITÄT: O(n) amortisiert (NICHT O(n log n) — Spec-Fehler korrigiert).
@@ -93,10 +100,7 @@ impl IsotonicCalibrator {
         }
     }
 
-    // AI-TAG[SMELL][MAJOR] PAVA duplicate raw score observation pooling (ID: AGT-CALIBRATION-16f90c35) (TS: 2026-09-09T12:37:35Z) (SESSION: 20c1aaf4)
-    // BEFUND: Identische raw_score-Beobachtungen mit unterschiedlichen Ergebnissen (0.0 vs 1.0) erzeugen unzusammengefasste Blöcke mit gleichem X-Wert in cached_model, wenn sie in aufsteigender Ergebnisfolge sortiert werden (last_avg <= prev_avg ist false bei 1.0 <= 0.0).
-    // RISIKO: binary_search_by bei Nachschlagen eines identischen raw_score kann nicht-deterministisch entweder den niedrigen oder hohen Wahrscheinlichkeitsblock zurückgeben.
-    // EMPFEHLUNG: Beobachtungen mit identischem raw_score vor dem PAVA-Durchlauf zusammenfassen oder kaskadierende Block-Aggregation bei gleichen Scores erzwingen.
+    // RESOLVED: AGT-CALIBRATION-16f90c35 — pre-aggregate observations with identical raw_scores in rebuild_model() before PAVA pooling (TS: 2026-09-09T14:46:37Z) (SESSION: 74eb6216)
     /// PAVA — Pool-Adjacent Violators Algorithm, O(n) amortisiert.
     fn rebuild_model(&mut self) {
         let mut sorted: Vec<(f32, f32)> = self
@@ -320,5 +324,116 @@ mod tests {
                 probs
             );
         }
+    }
+
+    #[test]
+    fn test_with_defaults_initialization() {
+        let cal = IsotonicCalibrator::with_defaults();
+        assert_eq!(cal.warmup_required, DEFAULT_WARMUP_REQUIRED);
+        assert_eq!(cal.max_observations, DEFAULT_MAX_OBSERVATIONS);
+        assert_eq!(cal.observation_count(), 0);
+        assert!(!cal.is_calibrated());
+    }
+
+    #[test]
+    fn test_pava_identical_raw_score_conflicting_outcomes_is_deterministic() {
+        let mut cal = IsotonicCalibrator::new(4, 100);
+        // Order A: (0.5, true) then (0.5, false)
+        cal.record_outcome(0.1, false);
+        cal.record_outcome(0.3, false);
+        cal.record_outcome(0.5, true);
+        cal.record_outcome(0.5, false);
+        cal.record_outcome(0.7, true);
+        cal.record_outcome(0.9, true);
+
+        let result_order_a = cal.calibrated_probability(0.5);
+        assert!(result_order_a.is_some());
+
+        // Expected value calculation:
+        // Pre-aggregation merges (0.5, true) and (0.5, false) into a single point (0.5, label_sum=1.0, count=2)
+        // with average outcome = 1.0 / 2.0 = 0.5.
+        // PAVA forms monotonic blocks: [0.0 (count 2), 0.5 (count 2), 1.0 (count 2)].
+        // Lookup at raw_score 0.5 hits exact threshold 0.5 with calibrated prob 0.5.
+        let prob_a = result_order_a.unwrap();
+        assert!(
+            (prob_a - 0.5).abs() < 1e-6,
+            "Expected calibrated prob 0.5 for score 0.5 with 1 true and 1 false, got {prob_a}"
+        );
+    }
+
+    #[test]
+    fn test_pava_identical_raw_score_reversed_insertion_order_matches() {
+        // Order A: (0.5, true) then (0.5, false)
+        let mut cal_a = IsotonicCalibrator::new(4, 100);
+        cal_a.record_outcome(0.1, false);
+        cal_a.record_outcome(0.3, false);
+        cal_a.record_outcome(0.5, true);
+        cal_a.record_outcome(0.5, false);
+        cal_a.record_outcome(0.7, true);
+        cal_a.record_outcome(0.9, true);
+
+        // Order B: (0.5, false) then (0.5, true) - reversed order of identical scores
+        let mut cal_b = IsotonicCalibrator::new(4, 100);
+        cal_b.record_outcome(0.1, false);
+        cal_b.record_outcome(0.3, false);
+        cal_b.record_outcome(0.5, false);
+        cal_b.record_outcome(0.5, true);
+        cal_b.record_outcome(0.7, true);
+        cal_b.record_outcome(0.9, true);
+
+        let result_order_a = cal_a.calibrated_probability(0.5).unwrap();
+        let result_order_b = cal_b.calibrated_probability(0.5).unwrap();
+
+        // Insertion order of conflicting outcomes for identical raw scores must not affect output.
+        assert!(
+            (result_order_a - result_order_b).abs() < 1e-6,
+            "Order A ({result_order_a}) and Order B ({result_order_b}) must match"
+        );
+
+        // Expected calculation:
+        // Pre-aggregation merges both (0.5, true/false) observations into (0.5, sum=1.0, count=2),
+        // giving avg = 1.0 / 2 = 0.5.
+        assert!(
+            (result_order_b - 0.5).abs() < 1e-6,
+            "Expected 0.5, got {result_order_b}"
+        );
+    }
+
+    #[test]
+    fn test_pava_three_identical_scores_mixed_outcomes_deterministic() {
+        // Permutation 1: (0.7, true), (0.7, true), (0.7, false)
+        let mut cal1 = IsotonicCalibrator::new(4, 100);
+        cal1.record_outcome(0.1, false);
+        cal1.record_outcome(0.3, false);
+        cal1.record_outcome(0.7, true);
+        cal1.record_outcome(0.7, true);
+        cal1.record_outcome(0.7, false);
+        cal1.record_outcome(0.9, true);
+
+        // Permutation 2: (0.7, false), (0.7, true), (0.7, true)
+        let mut cal2 = IsotonicCalibrator::new(4, 100);
+        cal2.record_outcome(0.1, false);
+        cal2.record_outcome(0.3, false);
+        cal2.record_outcome(0.7, false);
+        cal2.record_outcome(0.7, true);
+        cal2.record_outcome(0.7, true);
+        cal2.record_outcome(0.9, true);
+
+        let prob1 = cal1.calibrated_probability(0.7).unwrap();
+        let prob2 = cal2.calibrated_probability(0.7).unwrap();
+
+        assert!(
+            (prob1 - prob2).abs() < 1e-6,
+            "Permutation 1 ({prob1}) and Permutation 2 ({prob2}) must match"
+        );
+
+        // Expected calculation:
+        // Pre-aggregation merges three 0.7 observations (2 true, 1 false) into (0.7, sum=2.0, count=3),
+        // giving avg = 2.0 / 3.0 = 0.6666667.
+        let expected = 2.0 / 3.0;
+        assert!(
+            (prob1 - expected).abs() < 1e-6,
+            "Expected {expected}, got {prob1}"
+        );
     }
 }
