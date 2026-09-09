@@ -52,11 +52,11 @@ fn brute_force_knn(
     all_gt
 }
 
-fn bench_nucleation_recall_curve(c: &mut Criterion) {
+fn bench_partial_rebuild_recall_curve(c: &mut Criterion) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("Tokio runtime required for Nucleation benchmarks");
+        .expect("Tokio runtime required for Partial Rebuild benchmarks");
 
     let num_vectors = 1_000;
     let dim = 128;
@@ -67,7 +67,7 @@ fn bench_nucleation_recall_curve(c: &mut Criterion) {
 
     let tombstone_ratios = [0.10, 0.20, 0.30, 0.40];
 
-    let mut group = c.benchmark_group("Nucleation_Recall_Regression_Curve");
+    let mut group = c.benchmark_group("Partial_Rebuild_Recall_Regression_Curve");
 
     for &ratio in &tombstone_ratios {
         let ratio_percent = (ratio * 100.0) as usize;
@@ -151,5 +151,5 @@ fn bench_nucleation_recall_curve(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_nucleation_recall_curve);
+criterion_group!(benches, bench_partial_rebuild_recall_curve);
 criterion_main!(benches);
