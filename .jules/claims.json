@@ -27,6 +27,13 @@
       "timestamp": "2026-09-09T12:41:59.893591146+00:00",
       "session_id": "3967351318889068769",
       "active": true
+    },
+    {
+      "krate": "memfuse-calibration",
+      "issue": "JULES-20260909-KORREK",
+      "timestamp": "2026-09-09T14:51:48.511363226+00:00",
+      "session_id": "6690384352205422628",
+      "active": true
     }
   ]
 }

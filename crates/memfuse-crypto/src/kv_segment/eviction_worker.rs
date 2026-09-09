@@ -16,7 +16,6 @@
 //!    vollständig abgeschlossen — bewusst anders als der reguläre Worker-Pfad.
 
 use super::store::TenantIsolatedKvStore;
-use parking_lot::RwLock;
 use std::sync::mpsc;
 use std::sync::Arc;
 
