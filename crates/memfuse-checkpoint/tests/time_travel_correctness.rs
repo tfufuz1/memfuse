@@ -167,6 +167,7 @@ impl StorageEngine for VersionedMockStorage {
         &'a self,
         _start: std::ops::Bound<&'a [u8]>,
         _end: std::ops::Bound<&'a [u8]>,
+        _limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move { Ok(Vec::new()) })
     }
@@ -284,8 +285,9 @@ impl StorageEngine for NamespaceStorageEngine {
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
-        Box::pin(async move { self.inner.scan(start, end).await })
+        Box::pin(async move { self.inner.scan(start, end, limit).await })
     }
 
     fn scan_prefix<'a>(

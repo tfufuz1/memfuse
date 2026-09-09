@@ -301,46 +301,6 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-    /// Führt einen begrenzten, Cursor-fähigen Range-Scan durch. Der Cursor dient als
-    /// exklusive untere Schranke (`Bound::Excluded(cursor)`), analog zu
-    /// `scan_prefix_bounded`. Bevorzugt gegenüber `scan()` für jeden neuen Call-Site,
-    /// der potenziell große Ergebnismengen erwarten muss.
-    ///
-    /// Die Default-Implementierung delegiert an `scan()` und schneidet danach zu —
-    /// bietet also KEINE Speicherbegrenzung für Implementierungen, die diese Methode
-    /// nicht überschreiben. `LsmStorage` MUSS diese Methode mit einer echten
-    /// begrenzten Implementierung überschreiben (siehe dortige Implementierung).
-    #[allow(clippy::type_complexity)]
-    fn scan_bounded<'a>(
-        &'a self,
-        start: std::ops::Bound<&'a [u8]>,
-        end: std::ops::Bound<&'a [u8]>,
-        limit: usize,
-        cursor: Option<&'a [u8]>,
-    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
-        Box::pin(async move {
-            let all = self.scan(start, end).await?;
-            let mut results = Vec::new();
-            for (k, v) in all {
-                if let Some(cur_bytes) = cursor {
-                    if k.as_slice() <= cur_bytes {
-                        continue;
-                    }
-                }
-                results.push((k, v));
-                if results.len() == limit {
-                    break;
-                }
-            }
-            let next_cursor = if results.len() == limit {
-                results.last().map(|(k, _)| k.clone())
-            } else {
-                None
-            };
-            Ok((results, next_cursor))
-        })
-    }
-
     /// Scans keys with a prefix, returning only entries visible at or before `seq_no`.
     ///
     /// # Contract
@@ -364,14 +324,31 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-
-    /// Scans a range of keys between `start` and `end` bounds.
+    /// Scans a range of keys between `start` and `end` bounds, optionally capped at `limit`.
     #[allow(clippy::type_complexity)]
     fn scan<'a>(
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
+
+    /// Scans a range of keys with start and end bounds, limit, and pagination cursor.
+    #[allow(clippy::type_complexity)]
+    fn scan_bounded<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+        _limit: usize,
+        _cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "scan_bounded",
+                "Bounded range scan (scan_bounded) is not supported by default",
+            ))
+        })
+    }
 }
 
 // INVARIANT: Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
@@ -1238,6 +1215,7 @@ mod capability_coverage {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }

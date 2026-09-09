@@ -50,10 +50,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-index",
+      "krate": "memfuse-db",
       "issue": "JULES-20260909-FIX",
-      "timestamp": "2026-09-09T20:35:14.280514408+00:00",
-      "session_id": "7165089424405140668",
+      "timestamp": "2026-09-09T20:31:21.235131386+00:00",
+      "session_id": "2567090070726996880",
       "active": true
     }
   ]

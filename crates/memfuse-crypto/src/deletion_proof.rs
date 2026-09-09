@@ -52,7 +52,10 @@ impl LayerCleanupProof {
                  performed before proof construction"
             )));
         }
-        Ok(Self { layer, _private: () })
+        Ok(Self {
+            layer,
+            _private: (),
+        })
     }
 
     /// Fabrikfunktion — MUSS unmittelbar nach erfolgreicher, verifizierter physischer
@@ -78,10 +81,7 @@ impl LayerCleanupProof {
     /// KEINE bloße Behauptung. Ein `Ok(false)`-Rückgabewert oder ein
     /// `Err` aus `verification` führt zu einem `Err` hier — es wird in
     /// diesem Fall NIEMALS ein Proof erzeugt (INV-DELETION-1).
-    pub fn verify_and_create<F>(
-        layer: DeletionLayer,
-        verification: F,
-    ) -> Result<Self>
+    pub fn verify_and_create<F>(layer: DeletionLayer, verification: F) -> Result<Self>
     where
         F: FnOnce() -> Result<bool>,
     {
@@ -289,8 +289,7 @@ mod tests {
             keys,
             TxId(100),
             vec![
-                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0)
-                    .unwrap(),
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
                 LayerCleanupProof::new_after_verified_empty(DeletionLayer::HnswIndex, 0).unwrap(),
             ],
             vec![ExcludedScope::LlmParameterMemory],
@@ -336,8 +335,7 @@ mod tests {
             vec![b"k1".to_vec()],
             TxId(10),
             vec![
-                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0)
-                    .unwrap(),
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
             ],
             vec![ExcludedScope::LlmParameterMemory],
             &test_key(),
@@ -495,5 +493,17 @@ mod tests {
                 DeletionLayer::HnswIndex,
             ]
         );
+    }
+
+    #[test]
+    fn test_layer_cleanup_proof_rejects_nonzero_remaining_entries() {
+        let res = LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 3);
+        assert!(res.is_err());
+        if let Err(MemFuseError::Internal(msg)) = res {
+            assert!(msg.contains("INV-DELETION-1 violation"));
+            assert!(msg.contains("3 remaining live entries"));
+        } else {
+            panic!("Expected MemFuseError::Internal");
+        }
     }
 }

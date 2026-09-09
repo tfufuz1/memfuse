@@ -8,7 +8,7 @@
 tier = "1"
 risk = "none"
 
-[crate_overrides.memfuse-crypto]
+[crate_overrides.memfuse-security]
 tier = "1"
 risk = "sec"
 
@@ -72,15 +72,10 @@ risk = "calib"
 tier = "3"
 risk = "candle"
 
-[crate_overrides.memfuse-kv-bridge]
-tier = "3"
-risk = "bridge"
-
 # Zielarchitektur-Mapping (§3, Anhang A der Zielarchitektur v8.0)
 [target_architecture]
 "memfuse-core" = "memfuse-foundation"
-"memfuse-crypto" = "memfuse-security"
-"memfuse-kv-bridge" = "memfuse-security"
+"memfuse-security" = "memfuse-security"
 "memfuse-store" = "memfuse-persistence"
 "memfuse-checkpoint" = "memfuse-persistence"
 "memfuse-index" = "memfuse-retrieval"
@@ -132,21 +127,21 @@ risk = "Trait-Default"
 desc = "Kern-Traits (VectorIndex, GraphIndex, capability_coverage) inkl. Default-Methoden"
 focus = "Trait-Default-Pflichttest (AGENTS.md §4) beachten: neuer Implementor eines Traits mit Default-Methode benötigt im selben PR einen Test, der beweist, dass der Default NICHT unbeabsichtigt greift."
 
-[component_focus."memfuse-crypto"."lib.rs"]
-desc = "Modul-Exports der Krypto-Primitiven"
+[component_focus."memfuse-security"."lib.rs"]
+desc = "Modul-Exports der Krypto-Primitiven & KV-Segment-Sicherheit"
 focus = "Stelle sicher, dass ausschließlich geprüfte Primitiven exportiert werden — kein Ad-hoc-Crypto-Code außerhalb dieses Crates darf entstehen (Krypto-Isolation)."
 
-[component_focus."memfuse-crypto"."crypto.rs"]
+[component_focus."memfuse-security"."crypto.rs"]
 risk = "RFC 8452/5869/4231"
 desc = "KeyManager — AES-256-GCM-SIV encrypt/decrypt + Nonce-Konstruktion, HKDF Key Derivation, HMAC-SHA256 (alle drei Primitiven in EINER Datei, Größenklasse L)"
 focus = "Nonce = 4B Instanz-Präfix (OsRng) + 8B per-Call OsRng-Suffix — jede Änderung an der Nonce-Konstruktion erfordert eine erneute Kollisionswahrscheinlichkeits-Betrachtung (Referenz p≈2.71e-8 bei 10⁶ Nonces). Jeder neue abgeleitete Schlüsseltyp braucht einen eigenen, disjunkten HKDF-Domain-Separator-String. Jeder Tag-/MAC-Vergleich MUSS über subtle::ConstantTimeEq laufen. [KORR v22: Es gibt KEINE separaten Dateien aes_gcm_siv.rs/hkdf.rs/hmac.rs — alle drei Primitiven sind im KeyManager in crypto.rs konsolidiert.]"
 
-[component_focus."memfuse-crypto"."wal_crypto.rs"]
+[component_focus."memfuse-security"."wal_crypto.rs"]
 risk = "HMAC-Chain"
 desc = "WAL-HMAC-Chaining v3 — kryptographische Integritätskette über das gesamte WAL"
 focus = "Byte-Reihenfolge ist bindend: domain-separator → prev_hmac → seq_no → tx_id → op_type+kv. Jede Abweichung bricht die Chain rückwirkend. Änderungen hier erfordern Regressionstests gegen die bestehende v3-Testvektor-Suite UND explizite Versionierung (nie v3 stillschweigend überschreiben)."
 
-[component_focus."memfuse-crypto"."anti_tamper.rs"]
+[component_focus."memfuse-security"."anti_tamper.rs"]
 risk = "Zeroize"
 desc = "IntegrityVerifier, VolatileEncryptionKey (#[zeroize(drop)]) & Zeroize-Drop-Semantik-Verifikation"
 focus = "Test-only unsafe hier ist explizit erlaubt (AGENTS.md-Ausnahme) — ausschließlich zur Verifikation der Zeroize-Drop-Semantik via Raw-Pointer-Inspektion, niemals für Produktionslogik. JEDES neue Struct mit Schlüsselmaterial MUSS ZeroizeOnDrop implementieren — lückenlos, keine Ausnahme. [KORR v22: Es gibt keine eigene zeroize_types.rs — VolatileEncryptionKey lebt bereits hier in anti_tamper.rs.]"

@@ -402,3 +402,29 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
    - **BEFUND:** `test_scan_prefix_capped_at_max_limit` rief `scan_prefix("pfx_", None)` auf einer Sammlung mit 10.005 Elementen auf. Gemäß APM-20 und ADR-067 gibt `scan_prefix` mit `None` (Standard-Limit: 10.000) `MemFuseError::LimitExceeded` zurück, um unbeabsichtigte Unbounded Memory Allocation zu verhindern.
    - **BEHEBUNG:** Test in `crud.rs` aktualisiert, so dass ein explizites `limit: Some(10_005)` übergeben und die vollständige Rückgabe von 10.005 Elementen verifiziert wird. AI-TAG mit Risiko- und Empfehlungskommentar hinzugefügt.
    - **VERIFIKATION:** `cargo test -p memfuse-db --lib collection::crud::tests::test_scan_prefix_capped_at_max_limit` sowie die gesamte Testsuite laufen grün.
+
+---
+
+## 15. Realitätsabgleich, Tag Resolution & Preflight Verification (2026-09-10)
+
+**Datum:** 10. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt
+**Crate:** `memfuse-db` · Layer 2 Orchestrator & 4-Signal-Fusion
+
+### Inventar-Realitätsabgleich:
+- **Befund:** Inventar-Drift festgestellt (`reaper.rs` wurde zu `background_workers.rs` umbenannt). Alle 27 Quellcode-Dateien in `crates/memfuse-db/src/` gepflegt und verifiziert.
+
+### Behobene Befunde:
+1. **`RESOLVED: AGT-DB-cb16e356` in `crates/memfuse-db/src/collection/crud.rs`:**
+   - Exakte Grenzsemantik für `scan_prefix` verifiziert und Testgrenzen auf `10,000` bzw. `10,001` für `LimitExceeded` scharfgestellt.
+2. **`RESOLVED: AGT-DB-7c141164` in `crates/memfuse-db/tests/consolidation_integration_test.rs`:**
+   - Turn-Embeddings im Konsolidierungstest auf distinkte Vektoren korrigiert, um ungewolltes Near-Duplicate-Tombstoning zu verhindern.
+3. **Merge-Reconciliation in `memfuse-core`, `memfuse-store` & `memfuse-crypto`:**
+   - Doppelte Methodendefinitionen von `scan_bounded` bereinigt, Clippy-Lints behoben und `unwrap-baseline` aktualisiert.
+
+### Gate Stack Verification:
+- `cargo check -p memfuse-db --all-features` → 0 Fehler, 0 Warnungen
+- `cargo clippy -p memfuse-db -- -D warnings` → 0 Findings
+- `cargo fmt --check -p memfuse-db` → 0 Diffs
+- `cargo test -p memfuse-db --all-features` → 100% grün
+- `cargo run -p xtask -- jules-preflight --fast` → ALLE GATES BESTANDEN
