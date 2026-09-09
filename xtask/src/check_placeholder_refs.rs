@@ -105,13 +105,14 @@ pub fn check_placeholder_refs_in_content(
                         || first_word == "~";
 
                     if !is_null {
+                        let path_only = first_word.split('#').next().unwrap_or(first_word);
                         let file_exists =
-                            root.join(first_word).exists() || Path::new(first_word).exists();
+                            root.join(path_only).exists() || Path::new(path_only).exists();
                         let found_in_decisions = if !file_exists {
                             let decisions_file = root.join("DECISIONS.md");
                             if decisions_file.is_file() {
                                 if let Ok(dec_content) = fs::read_to_string(&decisions_file) {
-                                    let adr_re = Regex::new(r"ADR-(\d+)").unwrap();
+                                    let adr_re = Regex::new(r"(?i)ADR-(\d+)").unwrap();
                                     if let Some(caps) = adr_re.captures(first_word) {
                                         let pattern = format!("ADR-{}", &caps[1]);
                                         dec_content.contains(&pattern)
@@ -233,6 +234,14 @@ mod tests {
     fn test_negative_existing_adr() {
         let root = crate::find_root_dir();
         let content = "adr_ref: docs/decisions/ADR-001-lsm-tree-für-persistenz.md";
+        let violations = check_placeholder_refs_in_content(content, "test.md", &root);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn test_negative_existing_decisions_anchor() {
+        let root = crate::find_root_dir();
+        let content = "adr_ref: DECISIONS.md#adr-070";
         let violations = check_placeholder_refs_in_content(content, "test.md", &root);
         assert!(violations.is_empty());
     }
