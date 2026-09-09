@@ -29,10 +29,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-text",
-      "issue": "JULES-20260909-KORREK",
-      "timestamp": "2026-09-09T14:50:51.177391128+00:00",
-      "session_id": "16536679125694646574",
+      "krate": "memfuse-mcp",
+      "issue": "JULES-20260909-TEST",
+      "timestamp": "2026-09-09T14:50:26.226246210+00:00",
+      "session_id": "17893647405335683469",
       "active": true
     }
   ]
