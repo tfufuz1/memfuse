@@ -128,7 +128,7 @@ impl TenantIsolatedKvStore {
             for (tenant, segs) in map.iter() {
                 for (idx, seg) in segs.iter().enumerate() {
                     let acc = seg.last_accessed();
-                    if oldest_time.map_or(true, |t| acc < t) {
+                    if oldest_time.is_none_or(|t| acc < t) {
                         lru_tenant = Some(*tenant);
                         lru_idx = idx;
                         oldest_time = Some(acc);
@@ -141,7 +141,7 @@ impl TenantIsolatedKvStore {
                     let evicted = segs.remove(lru_idx);
                     freed += evicted.len();
                     tracing::debug!(
-                        tenant_id = tenant.as_u64(),
+                        tenant_id = tenant.inner(),
                         segment_id = evicted.segment_id,
                         freed_bytes = evicted.len(),
                         "KV eviction worker: evicted segment"
@@ -150,7 +150,7 @@ impl TenantIsolatedKvStore {
                         // Avoid holding the mutable reference while removing
                     }
                 }
-                if map.get(&tenant).map_or(false, |s| s.is_empty()) {
+                if map.get(&tenant).is_some_and(|s| s.is_empty()) {
                     map.remove(&tenant);
                 }
             } else {
