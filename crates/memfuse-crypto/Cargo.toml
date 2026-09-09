@@ -1,10 +1,10 @@
 [package]
-name = "memfuse-crypto"
+name = "memfuse-security"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Encryption at Rest utilities for MemFuse"
+description = "Encryption at Rest and KV-Cache Security utilities for MemFuse"
 
 [dependencies]
 thiserror = { workspace = true }
@@ -21,13 +21,17 @@ memfuse-core = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+ahash = { workspace = true }
 
 [features]
 test-utils = []
+kv-encryption = []
 
 [dev-dependencies]
-memfuse-crypto = { path = ".", features = ["test-utils"] }
-tokio = { workspace = true, features = ["full"] }
+memfuse-security = { path = ".", features = ["test-utils"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 proptest = "1.4"
 criterion = { workspace = true }
 
