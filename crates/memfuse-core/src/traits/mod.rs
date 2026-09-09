@@ -110,6 +110,14 @@ pub struct StorageStats {
 // INVARIANT: Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // Lifecycle: put/delete → commit/rollback → flush(background).
 
+/// Harte Obergrenze für die Anzahl distinkter Keys, die eine StorageEngine-
+/// Implementierung während eines einzelnen scan()/scan_prefix_bounded()-Aufrufs
+/// intern akkumulieren darf, BEVOR limit/cursor angewendet wird. Verhindert
+/// unbegrenztes Speicherwachstum bei sehr breiten Scans, unabhängig vom vom
+/// Aufrufer angeforderten `limit`. Muss größer als jedes sinnvolle `limit` sein,
+/// um normale paginierte Nutzung nicht zu beeinträchtigen.
+pub const MAX_SCAN_MERGE_ACCUMULATOR: usize = 100_000;
+
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
 ///
 /// # Dyn-Kompatibilität
@@ -316,53 +324,31 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-    /// Scans a range of keys between `start` and `end` bounds, bounded to at most `limit`
-    /// entries, resumable via an opaque `cursor` (the last returned key from a previous call).
-    /// Returns the batch and, if more entries may exist beyond `limit`, the next cursor
-    /// to resume from.
-    ///
-    /// # Contract
-    /// Implementors SHOULD avoid materializing more than O(limit) entries internally where
-    /// feasible. The default implementation below does NOT provide this guarantee (it
-    /// delegates to the unbounded `scan()` and slices the result).
-    /// **Implementors with an efficient underlying merge structure MUST override this method.**
-    #[allow(clippy::type_complexity)]
-    fn scan_bounded<'a>(
-        &'a self,
-        start: std::ops::Bound<&'a [u8]>,
-        end: std::ops::Bound<&'a [u8]>,
-        limit: usize,
-        cursor: Option<&'a [u8]>,
-    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
-        Box::pin(async move {
-            let effective_start = match cursor {
-                Some(c) => std::ops::Bound::Excluded(c),
-                None => start,
-            };
-            let all = self.scan(effective_start, end).await?;
-            let mut results = Vec::new();
-            for (k, v) in all {
-                results.push((k, v));
-                if results.len() == limit {
-                    break;
-                }
-            }
-            let next_cursor = if results.len() == limit {
-                results.last().map(|(k, _)| k.clone())
-            } else {
-                None
-            };
-            Ok((results, next_cursor))
-        })
-    }
-
-    /// Scans a range of keys between `start` and `end` bounds.
+    /// Scans a range of keys between `start` and `end` bounds, optionally capped at `limit`.
     #[allow(clippy::type_complexity)]
     fn scan<'a>(
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
+
+    /// Scans a range of keys with start and end bounds, limit, and pagination cursor.
+    #[allow(clippy::type_complexity)]
+    fn scan_bounded<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+        _limit: usize,
+        _cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "scan_bounded",
+                "Bounded range scan (scan_bounded) is not supported by default",
+            ))
+        })
+    }
 }
 
 // INVARIANT: Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
@@ -1229,6 +1215,7 @@ mod capability_coverage {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }

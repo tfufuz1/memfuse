@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 
 use memfuse_checkpoint::{
-    clear_all_orphaned_checkpoints, CheckpointManifest, CheckpointMeta, PersistentCheckpointStore,
+    CheckpointManifest, CheckpointMeta, PersistentCheckpointStore,
 };
 use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
@@ -99,6 +99,7 @@ impl StorageEngine for TrackingMockStorage {
         &'a self,
         _start: std::ops::Bound<&'a [u8]>,
         _end: std::ops::Bound<&'a [u8]>,
+        _: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move { Ok(Vec::new()) })
     }
@@ -149,11 +150,11 @@ proptest! {
 
     #[test]
     fn prop_guard_random_lifecycle_sequences(steps in proptest::collection::vec(arb_guard_step(), 1..15)) {
-        clear_all_orphaned_checkpoints();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let storage = Arc::new(TrackingMockStorage::new());
             let store = PersistentCheckpointStore::new(storage.clone(), "prop_ns").unwrap();
+            store.clear_all_orphaned_checkpoints();
 
             let mut expected_rollbacks = Vec::new();
 

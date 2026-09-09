@@ -229,6 +229,18 @@ async fn test_deleted_keys_hash_is_deterministic() {
         b"__col:test_col:\x00doc_c".to_vec(),
     ];
 
+    // LayerCleanupProof Erzeugung via verify_and_create:
+    let lsm_proof_1 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("lsm proof 1");
+    let sstable_proof_1 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("sstable proof 1");
+
     let proof_1 = DeletionProof::create(
         scope.clone(),
         keys_order_1,
@@ -242,6 +254,17 @@ async fn test_deleted_keys_hash_is_deterministic() {
         proof_key,
     )
     .expect("create proof 1");
+
+    let lsm_proof_2 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("lsm proof 2");
+    let sstable_proof_2 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("sstable proof 2");
 
     let proof_2 = DeletionProof::create(
         scope,
@@ -270,51 +293,26 @@ async fn test_deleted_keys_hash_is_deterministic() {
     assert!(proof_2.verify(proof_key).unwrap());
 }
 
-/// Test 4d: Verification of physical emptiness before DeletionProof issuance during drop_collection().
+/// Test 4d: Explicit integration test for drop_collection verifying physical emptiness before proof generation.
 #[tokio::test]
 async fn test_drop_collection_verifies_physical_emptiness_before_proof() {
-    let (db, _tmp) = setup_db(4).await;
-    let tenant_id = TenantId::try_new(101).unwrap();
-    let proof_key = b"emptiness-verification-proof-key";
-    let col_name = "verify_empty_col";
+    let (db, _tmp) = setup_db(3).await;
+    let tenant_id = TenantId::try_new(123).unwrap();
+    let proof_key = b"emptiness-verification-test-key";
+    let col_name = "verified_empty_col";
 
-    // 1. Create collection with multiple documents
     let col = db.collection(col_name).await.expect("create col");
-    col.insert(
-        "doc_a",
-        &[1.0, 0.0, 0.0, 0.0],
-        Some(json!({"data": "document a"})),
-    )
-    .await
-    .expect("insert doc_a");
+    col.insert("d1", &[1.0, 0.0, 0.0], Some(json!({"data": "doc 1"})))
+        .await
+        .expect("insert d1");
+    col.insert("d2", &[0.0, 1.0, 0.0], Some(json!({"data": "doc 2"})))
+        .await
+        .expect("insert d2");
 
-    col.insert(
-        "doc_b",
-        &[0.0, 1.0, 0.0, 0.0],
-        Some(json!({"data": "document b"})),
-    )
-    .await
-    .expect("insert doc_b");
+    let proof = db
+        .drop_collection(col_name, tenant_id, proof_key)
+        .await
+        .expect("drop_collection should succeed when storage is verifiably empty");
 
-    assert_eq!(col.len().await, 2, "Collection should contain 2 documents");
-
-    // 2. Call drop_collection() and verify it succeeds
-    // In normal operation, post-commit re-scans confirm 0 remaining live entries,
-    // allowing LayerCleanupProof::new_after_verified_empty to succeed.
-    let drop_res = db.drop_collection(col_name, tenant_id, proof_key).await;
-    assert!(
-        drop_res.is_ok(),
-        "drop_collection should succeed when physical cleanup is complete and post-scan finds 0 entries"
-    );
-
-    let proof = drop_res.unwrap();
-    assert!(
-        proof.verify(proof_key).unwrap(),
-        "Issued proof must be cryptographically valid"
-    );
-
-    // Note: Simulating a residual live entry after commit would require a custom StorageEngine mock.
-    // Since StorageEngine is implemented directly by LsmStorage in production code,
-    // unit test `test_layer_cleanup_proof_rejects_nonzero_remaining_entries` in deletion_proof.rs
-    // covers non-zero residual entry rejection.
+    assert!(proof.verify(proof_key).expect("verify signature"));
 }

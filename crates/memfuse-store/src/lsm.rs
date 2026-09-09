@@ -1352,6 +1352,15 @@ impl StorageEngine for LsmStorage {
         Box::pin(async move { self.scan_prefix_at(prefix, u64::MAX).await })
     }
 
+    /// Scans a prefix with a limit and pagination cursor.
+    ///
+    /// # Complexity & Bounding Strategy
+    /// Reads entries matching `prefix` starting after `cursor` from active MemTable, immutable
+    /// MemTables, and SSTables. To avoid materializing all matching entries unbounded into RAM,
+    /// each source is scanned only up to a candidate capacity of `limit + 1` entries above `cursor`.
+    /// The candidates across sources are then merged in a `BTreeMap`.
+    /// - Memory Complexity: O(N * limit) where N is the number of storage sources (SSTables + MemTables).
+    /// - Time Complexity: O(N * limit * log(limit)) instead of O(M^2) across paginated calls over M entries.
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -1359,8 +1368,10 @@ impl StorageEngine for LsmStorage {
         cursor: Option<&'a [u8]>,
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
+            let cur_bytes = cursor.map(Bytes::copy_from_slice);
             const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
             let max_entries = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
+            let safety_limit = max_entries;
 
             let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
@@ -1369,6 +1380,20 @@ impl StorageEngine for LsmStorage {
             let sstables = self.sstables.read().await;
 
             let mut processed_count = 0usize;
+            let mut has_more_beyond_limit = false;
+
+            let get_k_max = |m: &std::collections::BTreeMap<Bytes, (Bytes, u64)>| -> Option<Bytes> {
+                let mut count = 0usize;
+                for (k, (_, seq)) in m.iter() {
+                    if (seq & TOMBSTONE_BIT) == 0 {
+                        count += 1;
+                        if count == limit {
+                            return Some(k.clone());
+                        }
+                    }
+                }
+                None
+            };
 
             // Collect from SSTables
             for sst in sstables.iter() {
@@ -1390,9 +1415,10 @@ impl StorageEngine for LsmStorage {
                 }
 
                 let entries = sst.scan_prefix(prefix).await?;
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in entries {
-                    if let Some(ref cb) = cur_bytes {
-                        if &k <= cb {
+                    if let Some(cb) = cursor {
+                        if k.as_ref() <= cb {
                             continue;
                         }
                     }
@@ -1409,9 +1435,15 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v, seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                     processed_count += 1;
-                    if processed_count % 500 == 0 && map.len() > max_entries {
+                    if processed_count.is_multiple_of(500) && map.len() > max_entries {
                         return Err(MemFuseError::invalid_input(format!(
                             "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
                             map.len(),
@@ -1421,11 +1453,12 @@ impl StorageEngine for LsmStorage {
                 }
             }
 
-            // Collect from immutable memtables
+            // Collect bounded candidates from immutable memtables
             for mt in &state.immutable_memtables {
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in mt.iter() {
-                    if let Some(ref cb) = cur_bytes {
-                        if &k <= cb {
+                    if let Some(cb) = cursor {
+                        if k.as_ref() <= cb {
                             continue;
                         }
                     }
@@ -1442,9 +1475,15 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.clone(), seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                     processed_count += 1;
-                    if processed_count % 500 == 0 && map.len() > max_entries {
+                    if processed_count.is_multiple_of(500) && map.len() > max_entries {
                         return Err(MemFuseError::invalid_input(format!(
                             "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
                             map.len(),
@@ -1454,10 +1493,11 @@ impl StorageEngine for LsmStorage {
                 }
             }
 
-            // Collect from active memtable
+            // Collect bounded candidates from active memtable
+            let mut found_count = 0usize;
             for (k, v, seq, tx) in state.memtable.iter() {
-                if let Some(ref cb) = cur_bytes {
-                    if &k <= cb {
+                if let Some(cb) = cursor {
+                    if k.as_ref() <= cb {
                         continue;
                     }
                 }
@@ -1474,9 +1514,15 @@ impl StorageEngine for LsmStorage {
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.clone(), seq);
                     }
+                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        });
+                    }
                 }
                 processed_count += 1;
-                if processed_count % 500 == 0 && map.len() > max_entries {
+                if processed_count.is_multiple_of(500) && map.len() > max_entries {
                     return Err(MemFuseError::invalid_input(format!(
                         "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
                         map.len(),
@@ -1490,14 +1536,6 @@ impl StorageEngine for LsmStorage {
                     "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
                     map.len(),
                     max_entries
-                )));
-            }
-
-            if map.len() > safety_limit {
-                return Err(MemFuseError::invalid_input(format!(
-                    "scan_prefix_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                     narrow the range or use a smaller limit",
-                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                 )));
             }
 
@@ -1521,156 +1559,6 @@ impl StorageEngine for LsmStorage {
                             has_more = true;
                             break;
                         }
-                    }
-                }
-                if has_more {
-                    results.last().map(|(k, _)| k.clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            Ok((results, next_cursor))
-        })
-    }
-
-    fn scan_bounded<'a>(
-        &'a self,
-        start: std::ops::Bound<&'a [u8]>,
-        end: std::ops::Bound<&'a [u8]>,
-        limit: usize,
-        cursor: Option<&'a [u8]>,
-    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
-        Box::pin(async move {
-            use std::ops::Bound;
-
-            const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
-            let max_entries = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
-
-            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
-            let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
-            let state = self.state.read().await;
-            let sstables = self.sstables.read().await;
-
-            let mut processed_count = 0usize;
-
-            // 1. SSTables (filtered by visibility tx <= last_tx)
-            for sst in sstables.iter() {
-                let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
-                for (k, v, seq, tx) in entries {
-                    if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
-                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                            *entry = (v.to_vec(), seq);
-                        }
-                    }
-                    processed_count += 1;
-                    if processed_count % 500 == 0 && map.len() > max_entries {
-                        return Err(MemFuseError::invalid_input(format!(
-                            "Internal merge size ({}) exceeded safety limit ({}) during bounded range scan",
-                            map.len(),
-                            max_entries
-                        )));
-                    }
-                }
-            }
-
-            // 2. Immutable memtables (older → newer)
-            for mt in &state.immutable_memtables {
-                for (k, v, seq, tx) in mt.iter() {
-                    if tx > last_tx && tx < TxId::INTERNAL_BASE {
-                        continue;
-                    }
-                    let in_range = match start {
-                        Bound::Included(s) => k.as_ref() >= s,
-                        Bound::Excluded(s) => k.as_ref() > s,
-                        Bound::Unbounded => true,
-                    } && match end {
-                        Bound::Included(e) => k.as_ref() <= e,
-                        Bound::Excluded(e) => k.as_ref() < e,
-                        Bound::Unbounded => true,
-                    };
-                    if in_range {
-                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                            *entry = (v.to_vec(), seq);
-                        }
-                    }
-                    processed_count += 1;
-                    if processed_count % 500 == 0 && map.len() > max_entries {
-                        return Err(MemFuseError::invalid_input(format!(
-                            "Internal merge size ({}) exceeded safety limit ({}) during bounded range scan",
-                            map.len(),
-                            max_entries
-                        )));
-                    }
-                }
-            }
-
-            // 3. Active memtable
-            for (k, v, seq, tx) in state.memtable.iter() {
-                if tx > last_tx && tx < TxId::INTERNAL_BASE {
-                    continue;
-                }
-                let in_range = match start {
-                    Bound::Included(s) => k.as_ref() >= s,
-                    Bound::Excluded(s) => k.as_ref() > s,
-                    Bound::Unbounded => true,
-                } && match end {
-                    Bound::Included(e) => k.as_ref() <= e,
-                    Bound::Excluded(e) => k.as_ref() < e,
-                    Bound::Unbounded => true,
-                };
-                if in_range {
-                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
-                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
-                        *entry = (v.to_vec(), seq);
-                    }
-                }
-                processed_count += 1;
-                if processed_count % 500 == 0 && map.len() > max_entries {
-                    return Err(MemFuseError::invalid_input(format!(
-                        "Internal merge size ({}) exceeded safety limit ({}) during bounded range scan",
-                        map.len(),
-                        max_entries
-                    )));
-                }
-            }
-
-            if map.len() > max_entries {
-                return Err(MemFuseError::invalid_input(format!(
-                    "Internal merge size ({}) exceeded safety limit ({}) during bounded range scan",
-                    map.len(),
-                    max_entries
-                )));
-            }
-
-            let range_bound = if let Some(cur) = cursor {
-                Bound::Excluded(cur.to_vec())
-            } else {
-                Bound::Unbounded
-            };
-
-            let mut results = Vec::new();
-            let mut iter = map.range((range_bound, Bound::Unbounded));
-
-            for (k, (v, seq)) in iter.by_ref() {
-                if (seq & TOMBSTONE_BIT) == 0 {
-                    results.push((k.clone(), v.clone()));
-                    if results.len() == limit {
-                        break;
-                    }
-                }
-            }
-
-            let next_cursor = if results.len() == limit {
-                let mut has_more = false;
-                for (_k, (_v, seq)) in iter {
-                    if (seq & TOMBSTONE_BIT) == 0 {
-                        has_more = true;
-                        break;
                     }
                 }
                 if has_more {
@@ -1796,22 +1684,25 @@ impl StorageEngine for LsmStorage {
             let mut processed_count = 0usize;
             let mut has_more_beyond_limit = false;
 
-            let get_k_max = |m: &std::collections::BTreeMap<Vec<u8>, (Vec<u8>, u64)>| -> Option<Vec<u8>> {
-                let mut count = 0usize;
-                for (k, (_, seq)) in m.iter() {
-                    if (seq & TOMBSTONE_BIT) == 0 {
-                        count += 1;
-                        if count == limit {
-                            return Some(k.clone());
+            let get_k_max =
+                |m: &std::collections::BTreeMap<Vec<u8>, (Vec<u8>, u64)>| -> Option<Vec<u8>> {
+                    let mut count = 0usize;
+                    for (k, (_, seq)) in m.iter() {
+                        if (seq & TOMBSTONE_BIT) == 0 {
+                            count += 1;
+                            if count == limit {
+                                return Some(k.clone());
+                            }
                         }
                     }
-                }
-                None
-            };
+                    None
+                };
 
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
-                let entries = sst.scan_range(effective_start.map(|s| s), end.map(|e| e)).await?;
+                let entries = sst
+                    .scan_range(effective_start.map(|s| s), end.map(|e| e))
+                    .await?;
                 for (k, v, seq, tx) in entries {
                     let k_vec = k.to_vec();
                     if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
@@ -1827,12 +1718,17 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                     processed_count += 1;
-                    if processed_count % 1000 == 0 && map.len() > safety_limit {
+                    if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
                         return Err(MemFuseError::invalid_input(format!(
-                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                             narrow the range or use a smaller limit",
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
                             map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                         )));
                     }
@@ -1841,7 +1737,8 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::invalid_input(format!(
                         "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                          narrow the range or use a smaller limit",
-                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                     )));
                 }
             }
@@ -1875,12 +1772,17 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                     processed_count += 1;
-                    if processed_count % 1000 == 0 && map.len() > safety_limit {
+                    if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
                         return Err(MemFuseError::invalid_input(format!(
-                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                             narrow the range or use a smaller limit",
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
                             map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                         )));
                     }
@@ -1889,7 +1791,8 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::invalid_input(format!(
                         "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                          narrow the range or use a smaller limit",
-                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                     )));
                 }
             }
@@ -1922,13 +1825,20 @@ impl StorageEngine for LsmStorage {
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
                     }
+                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        });
+                    }
                 }
                 processed_count += 1;
-                if processed_count % 1000 == 0 && map.len() > safety_limit {
+                if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
                     return Err(MemFuseError::invalid_input(format!(
                         "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                          narrow the range or use a smaller limit",
-                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                     )));
                 }
             }
@@ -1937,7 +1847,8 @@ impl StorageEngine for LsmStorage {
                 return Err(MemFuseError::invalid_input(format!(
                     "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                      narrow the range or use a smaller limit",
-                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    map.len(),
+                    MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                 )));
             }
 
@@ -1981,6 +1892,7 @@ impl StorageEngine for LsmStorage {
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
             use std::ops::Bound;
@@ -1993,11 +1905,18 @@ impl StorageEngine for LsmStorage {
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
                 let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in entries {
                     if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
                         let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
+                        }
+                        found_count += 1;
+                        if let Some(lim) = limit {
+                            if found_count >= lim {
+                                break;
+                            }
                         }
                     }
                 }
@@ -2005,6 +1924,7 @@ impl StorageEngine for LsmStorage {
 
             // 2. Immutable memtables (older → newer)
             for mt in &state.immutable_memtables {
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in mt.iter() {
                     if tx > last_tx && tx < TxId::INTERNAL_BASE {
                         continue;
@@ -2023,11 +1943,18 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
+                        found_count += 1;
+                        if let Some(lim) = limit {
+                            if found_count >= lim {
+                                break;
+                            }
+                        }
                     }
                 }
             }
 
             // 3. Active memtable
+            let mut found_count = 0usize;
             for (k, v, seq, tx) in state.memtable.iter() {
                 if tx > last_tx && tx < TxId::INTERNAL_BASE {
                     continue;
@@ -2046,15 +1973,27 @@ impl StorageEngine for LsmStorage {
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
                     }
+                    found_count += 1;
+                    if let Some(lim) = limit {
+                        if found_count >= lim {
+                            break;
+                        }
+                    }
                 }
             }
 
-            // 4. Filter tombstones
-            let results = map
-                .into_iter()
-                .filter(|(_, (_, seq))| (seq & TOMBSTONE_BIT) == 0)
-                .map(|(k, (v, _))| (k, v))
-                .collect();
+            // 4. Filter tombstones and apply limit
+            let mut results = Vec::new();
+            for (k, (v, seq)) in map {
+                if (seq & TOMBSTONE_BIT) == 0 {
+                    results.push((k, v));
+                    if let Some(lim) = limit {
+                        if results.len() == lim {
+                            break;
+                        }
+                    }
+                }
+            }
 
             Ok(results)
         })
@@ -2324,7 +2263,7 @@ mod tests {
         // Scan [c, g] inclusive
         use std::ops::Bound;
         let results = storage
-            .scan(Bound::Included(b"c"), Bound::Included(b"g"))
+            .scan(Bound::Included(b"c"), Bound::Included(b"g"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 5); // c, d, e, f, g
@@ -2333,14 +2272,14 @@ mod tests {
 
         // Scan (c, g) exclusive
         let results = storage
-            .scan(Bound::Excluded(b"c"), Bound::Excluded(b"g"))
+            .scan(Bound::Excluded(b"c"), Bound::Excluded(b"g"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 3); // d, e, f
 
         // Scan unbounded start to d inclusive
         let results = storage
-            .scan(Bound::Unbounded, Bound::Included(b"d"))
+            .scan(Bound::Unbounded, Bound::Included(b"d"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 4); // a, b, c, d
@@ -2351,10 +2290,46 @@ mod tests {
         storage.commit(tx2).await.expect("commit"); // expect
 
         let results = storage
-            .scan(Bound::Included(b"d"), Bound::Included(b"f"))
+            .scan(Bound::Included(b"d"), Bound::Included(b"f"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 2); // d, f (e deleted)
+    }
+
+    #[tokio::test]
+    async fn test_bounded_scan_and_prefix_bounded_limits_candidate_evaluation() {
+        let (storage, _tmp) = test_storage().await;
+        let tx = TxId::new(1);
+
+        // Populate 100 items: k:00..k:99
+        for i in 0..100 {
+            let key = format!("k:{:02}", i);
+            let val = format!("v:{:02}", i);
+            storage
+                .put(tx, key.as_bytes(), val.as_bytes())
+                .await
+                .expect("put");
+        }
+        storage.commit(tx).await.expect("commit");
+
+        // 1. scan with limit = 5
+        let res_scan = storage
+            .scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded, Some(5))
+            .await
+            .expect("scan");
+        assert_eq!(res_scan.len(), 5);
+        assert_eq!(res_scan[0].0, b"k:00");
+        assert_eq!(res_scan[4].0, b"k:04");
+
+        // 2. scan_prefix_bounded with limit = 5
+        let (res_prefix, next_cursor) = storage
+            .scan_prefix_bounded(b"k:", 5, None)
+            .await
+            .expect("scan_prefix_bounded");
+        assert_eq!(res_prefix.len(), 5);
+        assert_eq!(res_prefix[0].0, b"k:00");
+        assert_eq!(res_prefix[4].0, b"k:04");
+        assert_eq!(next_cursor, Some(b"k:04".to_vec()));
     }
 
     #[tokio::test]
@@ -3035,6 +3010,93 @@ mod tests {
         // get_at_seq(key, 3) -> Some("b")
         let val_seq3 = storage.get_at_seq(key, 3).await.unwrap(); // unwrap #[cfg(test)]
         assert_eq!(val_seq3, Some(b"b".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_scan_bounded_respects_accumulator_ceiling_with_wide_range() {
+        let (storage, _tmp) = test_storage().await;
+
+        // Put MAX_SCAN_MERGE_ACCUMULATOR + 5 items across multiple transactions (max 5000 ops per tx)
+        let total = memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR + 5;
+        let batch_size = 5000;
+        let mut tx_num = 1;
+
+        for chunk in (0..total).collect::<Vec<_>>().chunks(batch_size) {
+            let tx = TxId::new(tx_num);
+            let entries: Vec<(Vec<u8>, Vec<u8>)> = chunk
+                .iter()
+                .map(|i| {
+                    (
+                        format!("k:{:06}", i).into_bytes(),
+                        format!("v:{:06}", i).into_bytes(),
+                    )
+                })
+                .collect();
+            storage.put_batch(tx, &entries).await.unwrap();
+            storage.commit(tx).await.unwrap();
+            tx_num += 1;
+        }
+
+        // Calling scan_bounded over unbounded range must fail with LimitExceeded
+        use std::ops::Bound;
+        let res = storage
+            .scan_bounded(Bound::Unbounded, Bound::Unbounded, 10, None)
+            .await;
+
+        assert!(matches!(
+            res,
+            Err(MemFuseError::LimitExceeded { limit, .. }) if limit == memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_scan_bounded_pagination_matches_full_scan() {
+        let (storage, _tmp) = test_storage().await;
+        let tx = TxId::new(1);
+
+        // Populate 50 items
+        let entries: Vec<(Vec<u8>, Vec<u8>)> = (0..50)
+            .map(|i| {
+                (
+                    format!("k:{:02}", i).into_bytes(),
+                    format!("v:{:02}", i).into_bytes(),
+                )
+            })
+            .collect();
+
+        storage.put_batch(tx, &entries).await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        use std::ops::Bound;
+        let full_scan = storage
+            .scan(Bound::Unbounded, Bound::Unbounded)
+            .await
+            .unwrap();
+
+        // Paginate using scan_bounded with limit = 7
+        let mut paginated = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+
+        loop {
+            let (batch, next_cursor) = storage
+                .scan_bounded(Bound::Unbounded, Bound::Unbounded, 7, cursor.as_deref())
+                .await
+                .unwrap();
+
+            if batch.is_empty() {
+                break;
+            }
+
+            paginated.extend(batch);
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
+            }
+        }
+
+        assert_eq!(paginated, full_scan);
     }
 
     #[tokio::test]

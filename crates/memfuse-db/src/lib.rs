@@ -822,20 +822,30 @@ impl MemFuse {
             tenant_id,
         };
 
+        let layer_proofs = vec![
+            LayerCleanupProof::new_after_verified_empty(
+                DeletionLayer::LsmMemtable,
+                remaining_col_data.len(),
+            ),
+            LayerCleanupProof::new_after_verified_empty(
+                DeletionLayer::SsTableAllLevels,
+                remaining_txt_data.len(),
+            ),
+        ]
+        .into_iter()
+        .collect::<Result<Vec<_>>>()
+        .map_err(|e| {
+            memfuse_core::MemFuseError::Internal(format!(
+                "CRITICAL: Collection '{name}' was physically sanitized and committed at tx {}, but DeletionProof generation failed: {e}. Data is permanently deleted.",
+                tx.inner()
+            ))
+        })?;
+
         let proof = DeletionProof::create(
             scope,
             deleted_keys,
             tx,
-            vec![
-                LayerCleanupProof::new_after_verified_empty(
-                    DeletionLayer::LsmMemtable,
-                    remaining_col_data.len(),
-                )?,
-                LayerCleanupProof::new_after_verified_empty(
-                    DeletionLayer::SsTableAllLevels,
-                    remaining_txt_data.len(),
-                )?,
-            ],
+            layer_proofs,
             vec![],
             proof_key,
         )
