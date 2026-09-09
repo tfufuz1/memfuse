@@ -59,6 +59,9 @@ impl PidController {
     ///
     /// ANTI-WINDUP: Integral wird auf [-max_integral, max_integral] geclipped.
     pub fn update(&mut self, current_pool_size: usize, measured_latency_ms: f32) -> usize {
+        if !measured_latency_ms.is_finite() {
+            return self.current_pool_size.unwrap_or(current_pool_size);
+        }
         let error = self.target_latency_ms - measured_latency_ms;
         self.integral = (self.integral + error).clamp(-self.max_integral, self.max_integral);
         let derivative = error - self.prev_error;

@@ -114,6 +114,58 @@ impl TenantIsolatedKvStore {
             .map(|v| v.len())
             .unwrap_or(0)
     }
+
+    pub fn evict_lru_global(&self, target_free_bytes: usize) -> usize {
+        let mut map = self.segments.write();
+        let mut freed = 0;
+
+        while freed < target_free_bytes && !map.is_empty() {
+            let mut lru_tenant = None;
+            let mut lru_idx = 0;
+            // KV segment timestamp handling
+            let mut oldest_time = None;
+
+            for (tenant, segs) in map.iter() {
+                for (idx, seg) in segs.iter().enumerate() {
+                    let acc = seg.last_accessed();
+                    if oldest_time.map_or(true, |t| acc < t) {
+                        lru_tenant = Some(*tenant);
+                        lru_idx = idx;
+                        oldest_time = Some(acc);
+                    }
+                }
+            }
+
+            if let Some(tenant) = lru_tenant {
+                if let Some(segs) = map.get_mut(&tenant) {
+                    let evicted = segs.remove(lru_idx);
+                    freed += evicted.len();
+                    tracing::debug!(
+                        tenant_id = tenant.as_u64(),
+                        segment_id = evicted.segment_id,
+                        freed_bytes = evicted.len(),
+                        "KV eviction worker: evicted segment"
+                    );
+                    if segs.is_empty() {
+                        // Avoid holding the mutable reference while removing
+                    }
+                }
+                if map.get(&tenant).map_or(false, |s| s.is_empty()) {
+                    map.remove(&tenant);
+                }
+            } else {
+                break;
+            }
+        }
+
+        freed
+    }
+
+    pub fn clear_all(&self) {
+        let mut map = self.segments.write();
+        map.clear();
+        tracing::warn!("KV emergency_wipe: all segments zeroized synchronously");
+    }
 }
 
 impl Default for TenantIsolatedKvStore {

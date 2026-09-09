@@ -15,7 +15,7 @@
 //!    Sicherheits-Alarm). Synchron, blockierend, garantiert vor Rückkehr
 //!    vollständig abgeschlossen — bewusst anders als der reguläre Worker-Pfad.
 
-use super::segment::KvSegment;
+use super::store::TenantIsolatedKvStore;
 use parking_lot::RwLock;
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -35,8 +35,7 @@ pub struct EvictionWorker {
 
 impl EvictionWorker {
     /// Spawnt den Eviction-Worker auf einem dedizierten OS-Thread.
-    // AI-TAG[ARCH][MAJOR] EvictionWorker accepts flat Vec instead of TenantIsolatedKvStore (ID: AGT-CRYPTO-ba40758c) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
-    pub fn spawn(segments: Arc<RwLock<Vec<KvSegment>>>) -> Self {
+    pub fn spawn(store: Arc<TenantIsolatedKvStore>) -> Self {
         let (sender, receiver) = mpsc::channel::<EvictionCommand>();
         let handle = std::thread::Builder::new()
             .name("kv-eviction-worker".into())
@@ -44,29 +43,7 @@ impl EvictionWorker {
                 while let Ok(cmd) = receiver.recv() {
                     match cmd {
                         EvictionCommand::EvictLru { target_free_bytes } => {
-                            let mut segs = segments.write();
-                            let mut freed = 0;
-                            // LRU-Eviction bis target_free_bytes erreicht.
-                            // Drop() der KvSegment-Structs triggert Zeroize automatisch.
-                            //
-                            // EVALUATION DER IMPLEMENTIERUNGSSTRATEGIEN:
-                            // (a) O(n)-Scan bei jeder Eviction: Einfach, zuteilungsfrei und ausreichend performant,
-                            //     da die Segmentanzahl in der Regel klein ist.
-                            // (b) Intrusive doppelt verkettete Liste mit O(1) Move-to-Front: Verringert die
-                            //     Laufzeitkomplexität bei sehr großen Segmentmengen, erhöht jedoch die Codekomplexität.
-                            // WAHLE (a) als Erstimplementierung, da keine Performance-Messung vorliegt, die (b)
-                            // rechtfertigt. (b) ist eine mögliche Folgeoptimierung, falls Profiling hohe Eviction-Frequenz zeigt.
-                            while freed < target_free_bytes && !segs.is_empty() {
-                                let lru_index = segs
-                                    .iter()
-                                    .enumerate()
-                                    .min_by_key(|(_, seg)| seg.last_accessed())
-                                    .map(|(idx, _)| idx)
-                                    .unwrap_or(0);
-                                let evicted = segs.remove(lru_index);
-                                freed += evicted.len();
-                                // evicted geht hier out of scope -> Zeroize
-                            }
+                            let freed = store.evict_lru_global(target_free_bytes);
                             tracing::debug!(
                                 freed_bytes = freed,
                                 "KV eviction worker: LRU evict done"
@@ -110,10 +87,8 @@ impl Drop for EvictionWorker {
 /// SEPARATER Pfad für Notfall-Löschung (z.B. Prozess-Shutdown, expliziter
 /// Sicherheits-Trigger). Synchron, blockierend, garantiert vor Rückkehr abgeschlossen --
 /// bewusst ANDERS als der reguläre Worker-Pfad.
-pub fn emergency_wipe(segments: &RwLock<Vec<KvSegment>>) {
-    let mut segs = segments.write();
-    segs.clear(); // Drop aller Segmente -> Zeroize synchron und vollständig
-    tracing::warn!("KV emergency_wipe: all segments zeroized synchronously");
+pub fn emergency_wipe(store: &TenantIsolatedKvStore) {
+    store.clear_all();
 }
 
 #[cfg(test)]

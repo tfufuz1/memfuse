@@ -106,11 +106,23 @@ impl IsotonicCalibrator {
             .collect();
         sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
 
-        // Stack von Blöcken: (max_score, label_sum, count)
-        let mut blocks: Vec<(f64, f64, usize)> = Vec::with_capacity(sorted.len());
+        let mut aggregated: Vec<(f64, f64, usize)> = Vec::with_capacity(sorted.len());
+        for (score, label) in sorted {
+            if let Some(last) = aggregated.last_mut() {
+                if (last.0 as f32).total_cmp(&score) == std::cmp::Ordering::Equal {
+                    last.1 += label as f64;
+                    last.2 += 1;
+                    continue;
+                }
+            }
+            aggregated.push((score as f64, label as f64, 1));
+        }
 
-        for (score, label) in &sorted {
-            blocks.push((*score as f64, *label as f64, 1));
+        // Stack von Blöcken: (max_score, label_sum, count)
+        let mut blocks: Vec<(f64, f64, usize)> = Vec::with_capacity(aggregated.len());
+
+        for (score, label_sum, count) in aggregated {
+            blocks.push((score, label_sum, count));
 
             while blocks.len() >= 2 {
                 let n = blocks.len();
