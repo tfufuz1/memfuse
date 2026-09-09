@@ -54,6 +54,7 @@ mod check_jules_context_freshness;
 mod check_placeholder_refs;
 mod check_recall_stability;
 mod check_type_registry;
+mod check_unwrap_baseline_trend;
 mod check_vetoes;
 mod claim;
 mod gen_prompter_data;
@@ -2100,6 +2101,13 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-unwrap-baseline-trend" => {
+            let root = find_root_dir();
+            let success = check_unwrap_baseline_trend::run_check_unwrap_baseline_trend(&root);
+            if !success {
+                process::exit(1);
+            }
+        }
         "check-recall-stability" => {
             let success = check_recall_stability::run_check_recall_stability(&args[2..]);
             if !success {
@@ -2298,7 +2306,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
             process::exit(1);
         }
     }

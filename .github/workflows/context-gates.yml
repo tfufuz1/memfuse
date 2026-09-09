@@ -39,6 +39,11 @@ jobs:
       - name: "Gate 2: Keine neuen .unwrap()/.expect() in Produktionscode"
         run: cargo xtask check-unwrap-baseline
 
+      - name: "Gate 2b: Trend-Überwachung der .unwrap()/.expect() Baseline"
+        env:
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref || github.event.before || 'origin/main' }}
+        run: cargo run -p xtask -- check-unwrap-baseline-trend
+
       - name: "Gate 3: Kein silent let _ für IO-Operationen"
         run: |
           if grep -rn "let _ = .*sync\|let _ = .*flush\|let _ = .*write" \
