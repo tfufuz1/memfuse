@@ -2314,7 +2314,11 @@ mod tests {
 
         // 1. scan with limit = 5
         let res_scan = storage
-            .scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded, Some(5))
+            .scan(
+                std::ops::Bound::Unbounded,
+                std::ops::Bound::Unbounded,
+                Some(5),
+            )
             .await
             .expect("scan");
         assert_eq!(res_scan.len(), 5);

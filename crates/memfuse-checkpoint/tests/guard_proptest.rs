@@ -1,8 +1,6 @@
 #![allow(deprecated)]
 
-use memfuse_checkpoint::{
-    CheckpointManifest, CheckpointMeta, PersistentCheckpointStore,
-};
+use memfuse_checkpoint::{CheckpointManifest, CheckpointMeta, PersistentCheckpointStore};
 use memfuse_core::{BoxFuture, Result, StorageEngine, StorageStats, TxId};
 use parking_lot::Mutex;
 use proptest::prelude::*;
