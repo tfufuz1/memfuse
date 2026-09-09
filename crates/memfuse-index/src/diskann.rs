@@ -1590,6 +1590,12 @@ impl DiskAnnIndex {
             )));
         }
 
+        if !query.iter().all(|v| v.is_finite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains non-finite (NaN or Infinity) components".to_string(),
+            ));
+        }
+
         let fallback_opt = self.inner.hnsw_fallback.read().clone();
         if let Some(hnsw) = fallback_opt {
             return hnsw.search(query, k).await;
@@ -2676,5 +2682,51 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_internal_rejects_non_finite_query_vector() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let index_path = temp_dir.path().join("non_finite_test.idx");
+        let config = DiskAnnConfig {
+            index_path,
+            dimension: 4,
+            ..DiskAnnConfig::default()
+        };
+        let index = DiskAnnIndex::try_new(config).unwrap();
+        let vectors = vec![vec![1.0, 2.0, 3.0, 4.0]];
+        let ids = vec![DocId::from(1)];
+        index.build(&vectors, &ids).await.unwrap();
+
+        // a & b) Query containing f32::NAN
+        let nan_query = vec![f32::NAN, 2.0, 3.0, 4.0];
+        let res_nan = index.search_internal(&nan_query, 1).await;
+        assert!(res_nan.is_err());
+        let err_nan = res_nan.err().unwrap().to_string();
+        assert!(
+            err_nan.contains("non-finite"),
+            "Expected error containing 'non-finite', got: {err_nan}"
+        );
+
+        // c) Query containing f32::INFINITY
+        let inf_query = vec![f32::INFINITY, 2.0, 3.0, 4.0];
+        let res_inf = index.search_internal(&inf_query, 1).await;
+        assert!(res_inf.is_err());
+        let err_inf = res_inf.err().unwrap().to_string();
+        assert!(
+            err_inf.contains("non-finite"),
+            "Expected error containing 'non-finite', got: {err_inf}"
+        );
+
+        // d) Normal finite query vector succeeds
+        let valid_query = vec![1.0, 2.0, 3.0, 4.0];
+        let res_valid = index.search_internal(&valid_query, 1).await;
+        assert!(
+            res_valid.is_ok(),
+            "Normal finite query vector must succeed"
+        );
+        let docs = res_valid.unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].doc_id, DocId::from(1));
     }
 }
