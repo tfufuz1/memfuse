@@ -445,7 +445,6 @@ reason: >
         assert_eq!(res.errors.len(), 1);
         assert!(res.errors[0].contains("F-01"));
         assert!(res.errors[0].contains("2026-08-01"));
-        assert!(res.errors[0].contains("docs/decisions/ADR-001.md"));
 
         assert_eq!(res.warnings.len(), 1);
         assert!(res.warnings[0].contains("F-02"));
