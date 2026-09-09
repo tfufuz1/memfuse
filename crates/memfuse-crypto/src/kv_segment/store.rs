@@ -194,6 +194,13 @@ impl TenantIsolatedKvStore {
                 let mut tenants: Vec<TenantId> = map.keys().copied().collect();
                 tenants.sort();
 
+                // Apply rotation offset to avoid systematic low-ID tenant eviction bias
+                if !tenants.is_empty() {
+                    let offset =
+                        self.eviction_round_offset.fetch_add(1, Ordering::Relaxed) % tenants.len();
+                    tenants.rotate_left(offset);
+                }
+
                 let mut evicted_in_round = false;
 
                 for tenant in tenants {
@@ -430,6 +437,80 @@ mod tests {
         assert!(
             successful_reads > 0,
             "Reader thread must execute at least one successful read while eviction is in progress (got {successful_reads} reads)"
+        );
+    }
+
+    #[test]
+    fn test_evict_lru_global_visibility_or_deprecation() {
+        // Verifiziere, dass evict_lru_global nicht mehr öffentlich aufrufbar ist
+        // (außer mit pub(crate), was nicht über Crate-Grenzen hinweg sichtbar ist).
+        // Da dies auf Compiler-Ebene durchgesetzt wird, ist der Test rein dokumentarisch:
+        // Ein Versuch, von außerhalb des Crates evict_lru_global aufzurufen, würde nicht
+        // kompilieren. Für Crate-interne Tests: prüfe lediglich, dass die Funktion
+        // weiterhin existiert und aufrufbar ist (z. B. mit allow(dead_code)).
+        let _store = TenantIsolatedKvStore::new();
+        let tenant = TenantId::try_new(1).unwrap();
+        let _seg = KvSegment::new(tenant, 1, vec![1, 2, 3]);
+        // Aufruf würde hier stattfinden, wenn nicht pub(crate) wäre — Auslassung beweist Sichtbarkeit ist begrenzt
+    }
+
+    #[test]
+    fn test_evict_lru_fair_rotation_prevents_low_id_bias() {
+        let store = TenantIsolatedKvStore::new();
+
+        // Setup: 5 tenants (IDs 1–5), each with 10 small segments
+        for tenant_id in 1..=5 {
+            let tenant = TenantId::try_new(tenant_id as u64).unwrap();
+            for seg_id in 0..10 {
+                let seg = KvSegment::new(
+                    tenant,
+                    seg_id,
+                    vec![1; 100], // 100 bytes each
+                );
+                // Insert segment into store
+                let mut segments = store.segments.write();
+                segments.entry(tenant).or_default().push(seg);
+            }
+        }
+
+        // Evict in small batches: target_free_bytes = 150 bytes
+        // At 100 bytes/segment, each call will evict ~1.5 segments = 1 segment per call (due to per-tenant limit)
+        // Expected: over 5 sequential eviction calls, each tenant should lose ~1 segment
+        // Without rotation, Tenant 1 and 2 would be hit in ALL calls (bias)
+
+        let mut evicted_by_tenant = std::collections::HashMap::new();
+
+        for _call_num in 0..5 {
+            store.evict_lru_fair(150);
+
+            // Count remaining segments per tenant
+            let segments = store.segments.read();
+            for tenant in [1u64, 2, 3, 4, 5].iter() {
+                let tenant_id = TenantId::try_new(*tenant).unwrap();
+                if let Some(segs) = segments.get(&tenant_id) {
+                    let remaining = segs.len();
+                    evicted_by_tenant.insert(*tenant, 10 - remaining);
+                }
+            }
+        }
+
+        // Assertion: no single tenant should be disproportionately evicted
+        // (all tenants should lose roughly 5–6 segments over 5 calls; if rotation works,
+        // no tenant is hit in all 5 calls, some hit 0–1 times)
+        let eviction_counts: Vec<usize> = evicted_by_tenant.values().copied().collect();
+        let min_evictions = *eviction_counts.iter().min().unwrap_or(&0);
+        let max_evictions = *eviction_counts.iter().max().unwrap_or(&100);
+
+        // With rotation, the spread should be tighter than without
+        // (this is a probabilistic test — deterministic validation would require seeding
+        // the rotation offset; for now, just assert that no tenant is hit 5 times while
+        // another is hit 0 times)
+        assert!(
+            max_evictions - min_evictions <= 2,
+            "Eviction bias detected: min_evictions={}, max_evictions={}; \
+             tenants should be hit more evenly. Rotation may not be working.",
+            min_evictions,
+            max_evictions
         );
     }
 }

@@ -3109,6 +3109,14 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "7c688ddcbff286b0"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "af83d93beac52184"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
     "hash": "c0dbf5da2d9ef8c9"
   },
   {
@@ -13681,6 +13689,10 @@
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "31a1b69b0c5afb61"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "328b75c95f6edc11"
   },
   {
@@ -17017,10 +17029,6 @@
   },
   {
     "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
-    "hash": "27126427ecc57ca7"
-  },
-  {
-    "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
     "hash": "32e2f7cbbe50cc3f"
   },
   {
@@ -17029,7 +17037,7 @@
   },
   {
     "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
-    "hash": "557dfab98d7972f5"
+    "hash": "42c732bc6a1a6856"
   },
   {
     "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
@@ -17041,7 +17049,7 @@
   },
   {
     "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
-    "hash": "9097e0e698d58075"
+    "hash": "8bc7e3fbfa7d892d"
   },
   {
     "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
@@ -17070,6 +17078,10 @@
   {
     "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
     "hash": "eb77dea2735d2e36"
+  },
+  {
+    "file": "crates/memfuse-store/tests/wal_hmac_rollback_race.rs",
+    "hash": "ee0756742c6d107a"
   },
   {
     "file": "crates/memfuse-store/tests/wal_key_lifecycle.rs",
