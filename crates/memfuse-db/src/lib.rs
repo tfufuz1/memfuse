@@ -155,9 +155,9 @@ pub use maintenance_scheduler::MaintenanceScheduler;
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
+pub use collection::crud::MAX_SCAN_RESULTS;
 #[cfg(feature = "graph-connectivity-health")]
 pub use collection::maintenance::PercolationResult;
-pub use collection::crud::MAX_SCAN_RESULTS;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]
@@ -1159,7 +1159,11 @@ impl MemFuse {
 
     /// Scans storage for key-value pairs matching a prefix.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn scan_prefix(&self, prefix: &str, limit: Option<usize>) -> Result<Vec<(String, Value)>> {
+    pub async fn scan_prefix(
+        &self,
+        prefix: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<(String, Value)>> {
         self.default_col().await?.scan_prefix(prefix, limit).await
     }
 
