@@ -34,6 +34,13 @@
       "timestamp": "2026-09-09T14:50:26.226246210+00:00",
       "session_id": "17893647405335683469",
       "active": true
+    },
+    {
+      "krate": "memfuse-agent",
+      "issue": "JULES-20260909-IMPL",
+      "timestamp": "2026-09-09T15:49:57.345223243+00:00",
+      "session_id": "10742454368874091560",
+      "active": true
     }
   ]
 }
