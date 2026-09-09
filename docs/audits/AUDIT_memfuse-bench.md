@@ -52,3 +52,15 @@
 - [x] No unsafe code in `benchmarks/memfuse-bench`.
 - [x] All tag taxonomy requirements met (`TS:`, `SESSION:`, `AGT-BENCH-` IDs).
 - [x] `cargo run -p xtask -- validate-tags` PASSED.
+
+---
+
+## Session-Update (Erweiterung Testabdeckung & Edge Cases)
+**Stand / Zeitstempel**: `2026-09-09T14:55:00Z` (SESSION: 91845717)
+**Scope**: Unit Tests & Edge Case Coverage (`compare.rs`, `locomo.rs`, `long_mem_eval.rs`, `regression_gate.rs`, `path_rag_sweep.rs`)
+
+### Durchgeführte Ergänzungen & Tests
+- **Unit Tests `compare_baseline_test.rs`**: Fehlende Metrik-Sektionen (LongMemEval/LoCoMo missing in current), File-Read & Parse Error-Behandlung in `compare_metrics_files`, sowie Grenzwertprüfungen für Null-Baselines (`0.0`).
+- **Unit Tests `external_benchmarks_test.rs`**: `LocomoQuestionCategory::from_u8` & `Display` Vollständigkeits-Tests, `LongMemEvalQuestionType` Formatierungs-Checks, gemischte QA-Antworttypen (Array, Number, Adversarial) in LoCoMo JSON, leere & fehlerhafte Search-Closures.
+- **Unit Tests `regression_gate.rs` & `path_rag_sweep.rs`**: `run_regression_gate` Fehlerfälle (fehlende Datei, ungültiges JSON, automatische Eltern-Verzeichnis-Erstellung) sowie `pad_vector` Vektor-Padding-Grenzwerte.
+- **Verifikation**: `cargo test -p memfuse-bench --all-features` (22/22 Tests grün), `cargo check --workspace --exclude memfuse-tauri` clean.
