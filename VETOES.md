@@ -25,6 +25,7 @@ scope_note: >
   Reines Tombstone-Pruning (ohne Re-Wiring) ist NICHT vom ursprünglichen Veto
   erfasst, unterliegt aber eigenem Gate (siehe adr_ref). Feature bleibt
   non-default via physio-nucleation bis Recall-Regressionstest 30 Tage stabil.
+  Automatisierte 30-Tage-Stabilitätsmessung läuft täglich über .github/workflows/nucleation-recall-history.yml, Verlauf in benchmarks/results/nucleation_recall_history.jsonl, Statusprüfung via cargo xtask check-recall-stability.
 adr_ref: DECISIONS.md#adr-070
 last_verified: 2026-09-08
 
