@@ -198,822 +198,792 @@ fn pad_vector(v: &[f32], target_dim: usize) -> Vec<f32> {
 
 impl RegressionSuite {
     /// Constructs a baseline suite with 31 multi-session scenarios.
-    #[allow(clippy::vec_init_then_push)]
     pub fn baseline() -> Self {
-        // AI-TAG[CODE_STYLE][MINOR] Vector initialization followed by multiple pushes can be initialized with vec![] macro (ID: AGT-BENCH-3b6c4f9c) (TS: 2026-09-09T12:48:06Z) (SESSION: 321b5c25)
-        // BEFUND: clippy::vec_init_then_push is flagged on `let mut scenarios = Vec::new()`.
-        // RISIKO: Minor code style / lint violation in benchmark suite construction.
-        // EMPFEHLUNG: Refactor to `vec![...]` macro initialization in fix step.
-        let mut scenarios = Vec::new();
-
-        // ---------------------------------------------------------------------
-        // 1. KNOWLEDGE UPDATES / SUPERSEDES (Scenarios 1-10)
-        // ---------------------------------------------------------------------
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_01".into(),
-            description: "Programming language preference update (Python -> Rust)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_01_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "I write all my backend microservices in Python 3.11 with FastAPI.".into(),
-                        doc_id: "doc_sup_01_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_01_b".into(),
-                    timestamp_ms: 5000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "UPDATE: We completely migrated all services to Rust using Tokio and Axum for memory efficiency.".into(),
-                        doc_id: "doc_sup_01_new".into(),
-                    }],
-                },
-            ],
-            query: "What is the primary programming language for the user's backend services?".into(),
-            expected_answer_doc_id: "doc_sup_01_new".into(),
-            expected_keywords: vec!["Rust".into(), "Tokio".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_02".into(),
-            description: "User residence move (Munich -> Berlin)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_02_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "I live near Englischer Garten in Munich, Germany.".into(),
-                        doc_id: "doc_sup_02_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_02_b".into(),
-                    timestamp_ms: 6000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Correction: I moved to Berlin Kreuzberg last month for my new tech job.".into(),
-                        doc_id: "doc_sup_02_new".into(),
-                    }],
-                },
-            ],
-            query: "Where does the user currently reside?".into(),
-            expected_answer_doc_id: "doc_sup_02_new".into(),
-            expected_keywords: vec!["Berlin".into(), "Kreuzberg".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_03".into(),
-            description: "Project team lead change (Alice -> Bob)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_03_a".into(),
-                    timestamp_ms: 2000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Alice is currently leading the MemFuse database core engineering team.".into(),
-                        doc_id: "doc_sup_03_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_03_b".into(),
-                    timestamp_ms: 7000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "As of Q3, Bob took over as the technical lead for the MemFuse core engineering team.".into(),
-                        doc_id: "doc_sup_03_new".into(),
-                    }],
-                },
-            ],
-            query: "Who is the current team lead of MemFuse core engineering?".into(),
-            expected_answer_doc_id: "doc_sup_03_new".into(),
-            expected_keywords: vec!["Bob".into(), "lead".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_04".into(),
-            description: "IDE choice update (VS Code -> JetBrains CLion)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_04_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "My primary editor is VS Code with rust-analyzer extension.".into(),
-                        doc_id: "doc_sup_04_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_04_b".into(),
-                    timestamp_ms: 8000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "I switched completely to JetBrains CLion Rust plugin for better debugging and refactoring.".into(),
-                        doc_id: "doc_sup_04_new".into(),
-                    }],
-                },
-            ],
-            query: "Which IDE or editor does the user use for development?".into(),
-            expected_answer_doc_id: "doc_sup_04_new".into(),
-            expected_keywords: vec!["CLion".into(), "JetBrains".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_05".into(),
-            description: "Database engine migration (PostgreSQL -> MemFuse LSM-Tree)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_05_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "We use PostgreSQL 15 for storing session graph memories.".into(),
-                        doc_id: "doc_sup_05_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_05_b".into(),
-                    timestamp_ms: 9000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Architectural change: We migrated storage to MemFuse LSM-Tree with SSTable persistence.".into(),
-                        doc_id: "doc_sup_05_new".into(),
-                    }],
-                },
-            ],
-            query: "Which database storage engine is used for session memory?".into(),
-            expected_answer_doc_id: "doc_sup_05_new".into(),
-            expected_keywords: vec!["MemFuse".into(), "LSM-Tree".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_06".into(),
-            description: "Cloud provider shift (AWS -> GCP)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_06_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Our Kubernetes clusters run in AWS us-east-1.".into(),
-                        doc_id: "doc_sup_06_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_06_b".into(),
-                    timestamp_ms: 10000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Cloud update: All infrastructure was moved to GCP europe-west3 in Frankfurt.".into(),
-                        doc_id: "doc_sup_06_new".into(),
-                    }],
-                },
-            ],
-            query: "Which cloud provider hosts the production infrastructure?".into(),
-            expected_answer_doc_id: "doc_sup_06_new".into(),
-            expected_keywords: vec!["GCP".into(), "Frankfurt".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_07".into(),
-            description: "Working schedule shift (Fixed 9-5 -> Async Flexible)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_07_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "The team operates strictly 9:00 AM to 5:00 PM CET.".into(),
-                        doc_id: "doc_sup_07_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_07_b".into(),
-                    timestamp_ms: 11000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Policy change: We transitioned to 100% async flexible hours across all timezones.".into(),
-                        doc_id: "doc_sup_07_new".into(),
-                    }],
-                },
-            ],
-            query: "What is the team's work schedule policy?".into(),
-            expected_answer_doc_id: "doc_sup_07_new".into(),
-            expected_keywords: vec!["async".into(), "flexible".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_08".into(),
-            description: "License change (GPL -> Apache 2.0)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_08_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "The codebase is licensed under GNU GPL v3.".into(),
-                        doc_id: "doc_sup_08_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_08_b".into(),
-                    timestamp_ms: 12000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Relicensing announcement: The project was relicensed to Apache License 2.0.".into(),
-                        doc_id: "doc_sup_08_new".into(),
-                    }],
-                },
-            ],
-            query: "What open source license governs the project?".into(),
-            expected_answer_doc_id: "doc_sup_08_new".into(),
-            expected_keywords: vec!["Apache".into(), "2.0".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_09".into(),
-            description: "Distance metric update (L2 -> Cosine)".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_09_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "HNSW index uses Euclidean L2 distance for vector ranking.".into(),
-                        doc_id: "doc_sup_09_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_09_b".into(),
-                    timestamp_ms: 13000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Vector index update: Switched distance metric to Cosine distance for unit-normalized embeddings.".into(),
-                        doc_id: "doc_sup_09_new".into(),
-                    }],
-                },
-            ],
-            query: "Which distance metric is used in the vector index?".into(),
-            expected_answer_doc_id: "doc_sup_09_new".into(),
-            expected_keywords: vec!["Cosine".into(), "distance".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "sup_10".into(),
-            description: "Support phone number update".into(),
-            question_type: LongMemEvalQuestionType::KnowledgeUpdate,
-            sessions: vec![
-                Session {
-                    session_id: "sess_sup_10_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Emergency phone line for support is +1-800-555-0100.".into(),
-                        doc_id: "doc_sup_10_old".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_sup_10_b".into(),
-                    timestamp_ms: 14000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Updated contact info: The new 24/7 hotline is +1-888-555-0199."
-                            .into(),
-                        doc_id: "doc_sup_10_new".into(),
-                    }],
-                },
-            ],
-            query: "What is the emergency support hotline number?".into(),
-            expected_answer_doc_id: "doc_sup_10_new".into(),
-            expected_keywords: vec!["+1-888-555-0199".into()],
-        });
-
-        // ---------------------------------------------------------------------
-        // 2. MULTI-SESSION TEMPORAL REASONING & AGGREGATION (Scenarios 11-20)
-        // ---------------------------------------------------------------------
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_11".into(),
-            description: "Conference attendance tracking across cities".into(),
-            question_type: LongMemEvalQuestionType::TemporalReasoning,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_11_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "In 2022 I attended EuroSys in Munich.".into(),
-                        doc_id: "doc_multi_11_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_11_b".into(),
-                    timestamp_ms: 5000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "In 2023 I presented a paper at SOSP in Vienna.".into(),
-                        doc_id: "doc_multi_11_2".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_11_c".into(),
-                    timestamp_ms: 10000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "In 2024 I registered for OSDI held in Zurich, Switzerland.".into(),
-                        doc_id: "doc_multi_11_3".into(),
-                    }],
-                },
-            ],
-            query: "Which conference in Zurich did the user attend in 2024?".into(),
-            expected_answer_doc_id: "doc_multi_11_3".into(),
-            expected_keywords: vec!["OSDI".into(), "Zurich".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_12".into(),
-            description: "Pet adoption details in multi-year timeline".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_12_a".into(),
-                    timestamp_ms: 2000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "We got a golden retriever named Max in 2020.".into(),
-                        doc_id: "doc_multi_12_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_12_b".into(),
-                    timestamp_ms: 8000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "In November 2023 we adopted a rescue tabby cat named Cleo from the shelter.".into(),
-                        doc_id: "doc_multi_12_2".into(),
-                    }],
-                },
-            ],
-            query: "What is the name of the rescue cat adopted in 2023?".into(),
-            expected_answer_doc_id: "doc_multi_12_2".into(),
-            expected_keywords: vec!["Cleo".into(), "cat".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_13".into(),
-            description: "HNSW paper discussions across meetings".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_13_a".into(),
-                    timestamp_ms: 3000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Meeting 1 covered BM25 Robertson-Spärck-Jones score functions.".into(),
-                        doc_id: "doc_multi_13_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_13_b".into(),
-                    timestamp_ms: 9000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Meeting 2 focused on Malkov & Yashunin's 2018 HNSW paper on logarithmic search complexity.".into(),
-                        doc_id: "doc_multi_13_2".into(),
-                    }],
-                },
-            ],
-            query: "Which paper on HNSW vector graphs was discussed in the second meeting?".into(),
-            expected_answer_doc_id: "doc_multi_13_2".into(),
-            expected_keywords: vec!["Malkov".into(), "HNSW".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_14".into(),
-            description: "Server hardware node specification".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_14_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Server Node Alpha has 512GB ECC RAM and dual AMD EPYC CPUs.".into(),
-                        doc_id: "doc_multi_14_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_14_b".into(),
-                    timestamp_ms: 5000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Server Node Beta has 128GB RAM and NVMe storage array.".into(),
-                        doc_id: "doc_multi_14_2".into(),
-                    }],
-                },
-            ],
-            query: "What is the memory RAM capacity of Server Node Alpha?".into(),
-            expected_answer_doc_id: "doc_multi_14_1".into(),
-            expected_keywords: vec!["512GB".into(), "RAM".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_15".into(),
-            description: "Quarterly department budget breakdown".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_15_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Q2 engineering budget was set to $450,000.".into(),
-                        doc_id: "doc_multi_15_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_15_b".into(),
-                    timestamp_ms: 7000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Q3 engineering budget was approved at $620,000 for infrastructure scaling.".into(),
-                        doc_id: "doc_multi_15_2".into(),
-                    }],
-                },
-            ],
-            query: "What was the approved Q3 budget for engineering?".into(),
-            expected_answer_doc_id: "doc_multi_15_2".into(),
-            expected_keywords: vec!["$620,000".into(), "Q3".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_16".into(),
-            description: "Summer vacation location in 2024".into(),
-            question_type: LongMemEvalQuestionType::TemporalReasoning,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_16_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "In summer 2023 we spent two weeks in Crete, Greece.".into(),
-                        doc_id: "doc_multi_16_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_16_b".into(),
-                    timestamp_ms: 12000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "For summer 2024 we hiked the Fjords in Bergen, Norway.".into(),
-                        doc_id: "doc_multi_16_2".into(),
-                    }],
-                },
-            ],
-            query: "Where did the user spend their summer vacation in 2024?".into(),
-            expected_answer_doc_id: "doc_multi_16_2".into(),
-            expected_keywords: vec!["Bergen".into(), "Norway".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_17".into(),
-            description: "Book recommendation across topics".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_17_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "I recommended 'Designing Data-Intensive Applications' by Martin Kleppmann.".into(),
-                        doc_id: "doc_multi_17_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_17_b".into(),
-                    timestamp_ms: 8000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "For quantum computing, I recommended 'Quantum Computation and Quantum Information' by Nielsen & Chuang.".into(),
-                        doc_id: "doc_multi_17_2".into(),
-                    }],
-                },
-            ],
-            query: "Which book was recommended for quantum computing?".into(),
-            expected_answer_doc_id: "doc_multi_17_2".into(),
-            expected_keywords: vec!["Nielsen".into(), "Chuang".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_18".into(),
-            description: "Vehicle service history maintenance".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_18_a".into(),
-                    timestamp_ms: 1000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Changed engine oil at 45,000 km in January.".into(),
-                        doc_id: "doc_multi_18_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_18_b".into(),
-                    timestamp_ms: 9000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text:
-                            "Replaced brake fluid and front pads at 52,000 km service in September."
+        // AI-TAG[CODE_STYLE][MINOR][RESOLVED] Vector initialization followed by multiple pushes can be initialized with vec![] macro (ID: AGT-BENCH-3b6c4f9c) (TS: 2026-09-09T21:54:11Z) (SESSION: e7ffabd9)
+        // RESOLVED: AGT-BENCH-3b6c4f9c — Replaced Vec::new() + push calls with vec![...] macro initialization.
+        let scenarios = vec![
+            // ---------------------------------------------------------------------
+            // 1. KNOWLEDGE UPDATES / SUPERSEDES (Scenarios 1-10)
+            // ---------------------------------------------------------------------
+            MultiSessionScenario {
+                scenario_id: "sup_01".into(),
+                description: "Programming language preference update (Python -> Rust)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_01_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "I write all my backend microservices in Python 3.11 with FastAPI.".into(),
+                            doc_id: "doc_sup_01_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_01_b".into(),
+                        timestamp_ms: 5000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "UPDATE: We completely migrated all services to Rust using Tokio and Axum for memory efficiency.".into(),
+                            doc_id: "doc_sup_01_new".into(),
+                        }],
+                    },
+                ],
+                query: "What is the primary programming language for the user's backend services?".into(),
+                expected_answer_doc_id: "doc_sup_01_new".into(),
+                expected_keywords: vec!["Rust".into(), "Tokio".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_02".into(),
+                description: "User residence move (Munich -> Berlin)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_02_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "I live near Englischer Garten in Munich, Germany.".into(),
+                            doc_id: "doc_sup_02_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_02_b".into(),
+                        timestamp_ms: 6000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Correction: I moved to Berlin Kreuzberg last month for my new tech job.".into(),
+                            doc_id: "doc_sup_02_new".into(),
+                        }],
+                    },
+                ],
+                query: "Where does the user currently reside?".into(),
+                expected_answer_doc_id: "doc_sup_02_new".into(),
+                expected_keywords: vec!["Berlin".into(), "Kreuzberg".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_03".into(),
+                description: "Project team lead change (Alice -> Bob)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_03_a".into(),
+                        timestamp_ms: 2000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Alice is currently leading the MemFuse database core engineering team.".into(),
+                            doc_id: "doc_sup_03_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_03_b".into(),
+                        timestamp_ms: 7000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "As of Q3, Bob took over as the technical lead for the MemFuse core engineering team.".into(),
+                            doc_id: "doc_sup_03_new".into(),
+                        }],
+                    },
+                ],
+                query: "Who is the current team lead of MemFuse core engineering?".into(),
+                expected_answer_doc_id: "doc_sup_03_new".into(),
+                expected_keywords: vec!["Bob".into(), "lead".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_04".into(),
+                description: "IDE choice update (VS Code -> JetBrains CLion)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_04_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "My primary editor is VS Code with rust-analyzer extension.".into(),
+                            doc_id: "doc_sup_04_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_04_b".into(),
+                        timestamp_ms: 8000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "I switched completely to JetBrains CLion Rust plugin for better debugging and refactoring.".into(),
+                            doc_id: "doc_sup_04_new".into(),
+                        }],
+                    },
+                ],
+                query: "Which IDE or editor does the user use for development?".into(),
+                expected_answer_doc_id: "doc_sup_04_new".into(),
+                expected_keywords: vec!["CLion".into(), "JetBrains".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_05".into(),
+                description: "Database engine migration (PostgreSQL -> MemFuse LSM-Tree)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_05_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "We use PostgreSQL 15 for storing session graph memories.".into(),
+                            doc_id: "doc_sup_05_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_05_b".into(),
+                        timestamp_ms: 9000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Architectural change: We migrated storage to MemFuse LSM-Tree with SSTable persistence.".into(),
+                            doc_id: "doc_sup_05_new".into(),
+                        }],
+                    },
+                ],
+                query: "Which database storage engine is used for session memory?".into(),
+                expected_answer_doc_id: "doc_sup_05_new".into(),
+                expected_keywords: vec!["MemFuse".into(), "LSM-Tree".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_06".into(),
+                description: "Cloud provider shift (AWS -> GCP)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_06_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Our Kubernetes clusters run in AWS us-east-1.".into(),
+                            doc_id: "doc_sup_06_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_06_b".into(),
+                        timestamp_ms: 10000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Cloud update: All infrastructure was moved to GCP europe-west3 in Frankfurt.".into(),
+                            doc_id: "doc_sup_06_new".into(),
+                        }],
+                    },
+                ],
+                query: "Which cloud provider hosts the production infrastructure?".into(),
+                expected_answer_doc_id: "doc_sup_06_new".into(),
+                expected_keywords: vec!["GCP".into(), "Frankfurt".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_07".into(),
+                description: "Working schedule shift (Fixed 9-5 -> Async Flexible)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_07_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "The team operates strictly 9:00 AM to 5:00 PM CET.".into(),
+                            doc_id: "doc_sup_07_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_07_b".into(),
+                        timestamp_ms: 11000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Policy change: We transitioned to 100% async flexible hours across all timezones.".into(),
+                            doc_id: "doc_sup_07_new".into(),
+                        }],
+                    },
+                ],
+                query: "What is the team's work schedule policy?".into(),
+                expected_answer_doc_id: "doc_sup_07_new".into(),
+                expected_keywords: vec!["async".into(), "flexible".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_08".into(),
+                description: "License change (GPL -> Apache 2.0)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_08_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "The codebase is licensed under GNU GPL v3.".into(),
+                            doc_id: "doc_sup_08_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_08_b".into(),
+                        timestamp_ms: 12000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Relicensing announcement: The project was relicensed to Apache License 2.0.".into(),
+                            doc_id: "doc_sup_08_new".into(),
+                        }],
+                    },
+                ],
+                query: "What open source license governs the project?".into(),
+                expected_answer_doc_id: "doc_sup_08_new".into(),
+                expected_keywords: vec!["Apache".into(), "2.0".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_09".into(),
+                description: "Distance metric update (L2 -> Cosine)".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_09_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "HNSW index uses Euclidean L2 distance for vector ranking.".into(),
+                            doc_id: "doc_sup_09_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_09_b".into(),
+                        timestamp_ms: 13000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Vector index update: Switched distance metric to Cosine distance for unit-normalized embeddings.".into(),
+                            doc_id: "doc_sup_09_new".into(),
+                        }],
+                    },
+                ],
+                query: "Which distance metric is used in the vector index?".into(),
+                expected_answer_doc_id: "doc_sup_09_new".into(),
+                expected_keywords: vec!["Cosine".into(), "distance".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "sup_10".into(),
+                description: "Support phone number update".into(),
+                question_type: LongMemEvalQuestionType::KnowledgeUpdate,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_sup_10_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Emergency phone line for support is +1-800-555-0100.".into(),
+                            doc_id: "doc_sup_10_old".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_sup_10_b".into(),
+                        timestamp_ms: 14000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Updated contact info: The new 24/7 hotline is +1-888-555-0199."
                                 .into(),
-                        doc_id: "doc_multi_18_2".into(),
-                    }],
-                },
-            ],
-            query: "At how many kilometers was the brake fluid replaced?".into(),
-            expected_answer_doc_id: "doc_multi_18_2".into(),
-            expected_keywords: vec!["52,000".into(), "brake".into()],
-        });
+                            doc_id: "doc_sup_10_new".into(),
+                        }],
+                    },
+                ],
+                query: "What is the emergency support hotline number?".into(),
+                expected_answer_doc_id: "doc_sup_10_new".into(),
+                expected_keywords: vec!["+1-888-555-0199".into()],
+            },
 
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_19".into(),
-            description: "Machine learning course certification".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_19_a".into(),
+            // ---------------------------------------------------------------------
+            // 2. MULTI-SESSION TEMPORAL REASONING & AGGREGATION (Scenarios 11-20)
+            // ---------------------------------------------------------------------
+            MultiSessionScenario {
+                scenario_id: "multi_11".into(),
+                description: "Conference attendance tracking across cities".into(),
+                question_type: LongMemEvalQuestionType::TemporalReasoning,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_11_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "In 2022 I attended EuroSys in Munich.".into(),
+                            doc_id: "doc_multi_11_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_11_b".into(),
+                        timestamp_ms: 5000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "In 2023 I presented a paper at SOSP in Vienna.".into(),
+                            doc_id: "doc_multi_11_2".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_11_c".into(),
+                        timestamp_ms: 10000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "In 2024 I registered for OSDI held in Zurich, Switzerland.".into(),
+                            doc_id: "doc_multi_11_3".into(),
+                        }],
+                    },
+                ],
+                query: "Which conference in Zurich did the user attend in 2024?".into(),
+                expected_answer_doc_id: "doc_multi_11_3".into(),
+                expected_keywords: vec!["OSDI".into(), "Zurich".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_12".into(),
+                description: "Pet adoption details in multi-year timeline".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_12_a".into(),
+                        timestamp_ms: 2000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "We got a golden retriever named Max in 2020.".into(),
+                            doc_id: "doc_multi_12_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_12_b".into(),
+                        timestamp_ms: 8000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "In November 2023 we adopted a rescue tabby cat named Cleo from the shelter.".into(),
+                            doc_id: "doc_multi_12_2".into(),
+                        }],
+                    },
+                ],
+                query: "What is the name of the rescue cat adopted in 2023?".into(),
+                expected_answer_doc_id: "doc_multi_12_2".into(),
+                expected_keywords: vec!["Cleo".into(), "cat".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_13".into(),
+                description: "HNSW paper discussions across meetings".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_13_a".into(),
+                        timestamp_ms: 3000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Meeting 1 covered BM25 Robertson-Spärck-Jones score functions.".into(),
+                            doc_id: "doc_multi_13_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_13_b".into(),
+                        timestamp_ms: 9000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Meeting 2 focused on Malkov & Yashunin's 2018 HNSW paper on logarithmic search complexity.".into(),
+                            doc_id: "doc_multi_13_2".into(),
+                        }],
+                    },
+                ],
+                query: "Which paper on HNSW vector graphs was discussed in the second meeting?".into(),
+                expected_answer_doc_id: "doc_multi_13_2".into(),
+                expected_keywords: vec!["Malkov".into(), "HNSW".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_14".into(),
+                description: "Server hardware node specification".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_14_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Server Node Alpha has 512GB ECC RAM and dual AMD EPYC CPUs.".into(),
+                            doc_id: "doc_multi_14_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_14_b".into(),
+                        timestamp_ms: 5000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Server Node Beta has 128GB RAM and NVMe storage array.".into(),
+                            doc_id: "doc_multi_14_2".into(),
+                        }],
+                    },
+                ],
+                query: "What is the memory RAM capacity of Server Node Alpha?".into(),
+                expected_answer_doc_id: "doc_multi_14_1".into(),
+                expected_keywords: vec!["512GB".into(), "RAM".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_15".into(),
+                description: "Quarterly department budget breakdown".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_15_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Q2 engineering budget was set to $450,000.".into(),
+                            doc_id: "doc_multi_15_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_15_b".into(),
+                        timestamp_ms: 7000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Q3 engineering budget was approved at $620,000 for infrastructure scaling.".into(),
+                            doc_id: "doc_multi_15_2".into(),
+                        }],
+                    },
+                ],
+                query: "What was the approved Q3 budget for engineering?".into(),
+                expected_answer_doc_id: "doc_multi_15_2".into(),
+                expected_keywords: vec!["$620,000".into(), "Q3".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_16".into(),
+                description: "Summer vacation location in 2024".into(),
+                question_type: LongMemEvalQuestionType::TemporalReasoning,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_16_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "In summer 2023 we spent two weeks in Crete, Greece.".into(),
+                            doc_id: "doc_multi_16_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_16_b".into(),
+                        timestamp_ms: 12000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "For summer 2024 we hiked the Fjords in Bergen, Norway.".into(),
+                            doc_id: "doc_multi_16_2".into(),
+                        }],
+                    },
+                ],
+                query: "Where did the user spend their summer vacation in 2024?".into(),
+                expected_answer_doc_id: "doc_multi_16_2".into(),
+                expected_keywords: vec!["Bergen".into(), "Norway".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_17".into(),
+                description: "Book recommendation across topics".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_17_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "I recommended 'Designing Data-Intensive Applications' by Martin Kleppmann.".into(),
+                            doc_id: "doc_multi_17_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_17_b".into(),
+                        timestamp_ms: 8000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "For quantum computing, I recommended 'Quantum Computation and Quantum Information' by Nielsen & Chuang.".into(),
+                            doc_id: "doc_multi_17_2".into(),
+                        }],
+                    },
+                ],
+                query: "Which book was recommended for quantum computing?".into(),
+                expected_answer_doc_id: "doc_multi_17_2".into(),
+                expected_keywords: vec!["Nielsen".into(), "Chuang".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_18".into(),
+                description: "Vehicle service history maintenance".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_18_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Changed engine oil at 45,000 km in January.".into(),
+                            doc_id: "doc_multi_18_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_18_b".into(),
+                        timestamp_ms: 9000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text:
+                                "Replaced brake fluid and front pads at 52,000 km service in September."
+                                    .into(),
+                            doc_id: "doc_multi_18_2".into(),
+                        }],
+                    },
+                ],
+                query: "At how many kilometers was the brake fluid replaced?".into(),
+                expected_answer_doc_id: "doc_multi_18_2".into(),
+                expected_keywords: vec!["52,000".into(), "brake".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_19".into(),
+                description: "Machine learning course certification".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_19_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Enrolled in Coursera Deep Learning Specialization.".into(),
+                            doc_id: "doc_multi_19_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_19_b".into(),
+                        timestamp_ms: 10000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Successfully passed Stanford CS224N Natural Language Processing with Deep Learning.".into(),
+                            doc_id: "doc_multi_19_2".into(),
+                        }],
+                    },
+                ],
+                query: "Which NLP course certification did the user complete?".into(),
+                expected_answer_doc_id: "doc_multi_19_2".into(),
+                expected_keywords: vec!["CS224N".into(), "Stanford".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "multi_20".into(),
+                description: "Medical allergy report in health profile".into(),
+                question_type: LongMemEvalQuestionType::MultiSession,
+                sessions: vec![
+                    Session {
+                        session_id: "sess_multi_20_a".into(),
+                        timestamp_ms: 1000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Patient profile notes mild lactose intolerance.".into(),
+                            doc_id: "doc_multi_20_1".into(),
+                        }],
+                    },
+                    Session {
+                        session_id: "sess_multi_20_b".into(),
+                        timestamp_ms: 11000,
+                        turns: vec![SessionTurn {
+                            speaker: "User".into(),
+                            text: "Critical allergy alert: Patient has severe Penicillin drug allergy."
+                                .into(),
+                            doc_id: "doc_multi_20_2".into(),
+                        }],
+                    },
+                ],
+                query: "Which medication drug allergy is listed in the profile?".into(),
+                expected_answer_doc_id: "doc_multi_20_2".into(),
+                expected_keywords: vec!["Penicillin".into(), "allergy".into()],
+            },
+
+            // ---------------------------------------------------------------------
+            // 3. SINGLE-SESSION PREFERENCES & FACTS (Scenarios 21-28)
+            // ---------------------------------------------------------------------
+            MultiSessionScenario {
+                scenario_id: "single_21".into(),
+                description: "User coffee preference".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionPreference,
+                sessions: vec![Session {
+                    session_id: "sess_single_21".into(),
                     timestamp_ms: 1000,
                     turns: vec![SessionTurn {
                         speaker: "User".into(),
-                        text: "Enrolled in Coursera Deep Learning Specialization.".into(),
-                        doc_id: "doc_multi_19_1".into(),
+                        text: "I always order an oat milk cappuccino with extra espresso shot.".into(),
+                        doc_id: "doc_single_21".into(),
                     }],
-                },
-                Session {
-                    session_id: "sess_multi_19_b".into(),
-                    timestamp_ms: 10000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Successfully passed Stanford CS224N Natural Language Processing with Deep Learning.".into(),
-                        doc_id: "doc_multi_19_2".into(),
-                    }],
-                },
-            ],
-            query: "Which NLP course certification did the user complete?".into(),
-            expected_answer_doc_id: "doc_multi_19_2".into(),
-            expected_keywords: vec!["CS224N".into(), "Stanford".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "multi_20".into(),
-            description: "Medical allergy report in health profile".into(),
-            question_type: LongMemEvalQuestionType::MultiSession,
-            sessions: vec![
-                Session {
-                    session_id: "sess_multi_20_a".into(),
+                }],
+                query: "How does the user prefer their coffee prepared?".into(),
+                expected_answer_doc_id: "doc_single_21".into(),
+                expected_keywords: vec!["oat".into(), "cappuccino".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_22".into(),
+                description: "Linux distro preference".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionUser,
+                sessions: vec![Session {
+                    session_id: "sess_single_22".into(),
                     timestamp_ms: 1000,
                     turns: vec![SessionTurn {
                         speaker: "User".into(),
-                        text: "Patient profile notes mild lactose intolerance.".into(),
-                        doc_id: "doc_multi_20_1".into(),
-                    }],
-                },
-                Session {
-                    session_id: "sess_multi_20_b".into(),
-                    timestamp_ms: 11000,
-                    turns: vec![SessionTurn {
-                        speaker: "User".into(),
-                        text: "Critical allergy alert: Patient has severe Penicillin drug allergy."
+                        text: "My workstation workstation runs Fedora Workstation Linux 40 with GNOME."
                             .into(),
-                        doc_id: "doc_multi_20_2".into(),
+                        doc_id: "doc_single_22".into(),
                     }],
-                },
-            ],
-            query: "Which medication drug allergy is listed in the profile?".into(),
-            expected_answer_doc_id: "doc_multi_20_2".into(),
-            expected_keywords: vec!["Penicillin".into(), "allergy".into()],
-        });
-
-        // ---------------------------------------------------------------------
-        // 3. SINGLE-SESSION PREFERENCES & FACTS (Scenarios 21-28)
-        // ---------------------------------------------------------------------
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_21".into(),
-            description: "User coffee preference".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionPreference,
-            sessions: vec![Session {
-                session_id: "sess_single_21".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "I always order an oat milk cappuccino with extra espresso shot.".into(),
-                    doc_id: "doc_single_21".into(),
                 }],
-            }],
-            query: "How does the user prefer their coffee prepared?".into(),
-            expected_answer_doc_id: "doc_single_21".into(),
-            expected_keywords: vec!["oat".into(), "cappuccino".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_22".into(),
-            description: "Linux distro preference".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionUser,
-            sessions: vec![Session {
-                session_id: "sess_single_22".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "My workstation workstation runs Fedora Workstation Linux 40 with GNOME."
-                        .into(),
-                    doc_id: "doc_single_22".into(),
+                query: "Which Linux distribution is installed on the workstation?".into(),
+                expected_answer_doc_id: "doc_single_22".into(),
+                expected_keywords: vec!["Fedora".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_23".into(),
+                description: "Favorite science fiction author".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionPreference,
+                sessions: vec![Session {
+                    session_id: "sess_single_23".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "My favorite science fiction author of all time is Ursula K. Le Guin."
+                            .into(),
+                        doc_id: "doc_single_23".into(),
+                    }],
                 }],
-            }],
-            query: "Which Linux distribution is installed on the workstation?".into(),
-            expected_answer_doc_id: "doc_single_22".into(),
-            expected_keywords: vec!["Fedora".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_23".into(),
-            description: "Favorite science fiction author".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionPreference,
-            sessions: vec![Session {
-                session_id: "sess_single_23".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "My favorite science fiction author of all time is Ursula K. Le Guin."
-                        .into(),
-                    doc_id: "doc_single_23".into(),
+                query: "Who is the user's favorite science fiction author?".into(),
+                expected_answer_doc_id: "doc_single_23".into(),
+                expected_keywords: vec!["Ursula".into(), "Guin".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_24".into(),
+                description: "Mandated WAL encryption algorithm".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionAssistant,
+                sessions: vec![Session {
+                    session_id: "sess_single_24".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "Assistant".into(),
+                        text: "Security policy specifies AES-256-GCM authenticated encryption for WAL log chunks.".into(),
+                        doc_id: "doc_single_24".into(),
+                    }],
                 }],
-            }],
-            query: "Who is the user's favorite science fiction author?".into(),
-            expected_answer_doc_id: "doc_single_23".into(),
-            expected_keywords: vec!["Ursula".into(), "Guin".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_24".into(),
-            description: "Mandated WAL encryption algorithm".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionAssistant,
-            sessions: vec![Session {
-                session_id: "sess_single_24".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "Assistant".into(),
-                    text: "Security policy specifies AES-256-GCM authenticated encryption for WAL log chunks.".into(),
-                    doc_id: "doc_single_24".into(),
+                query: "Which encryption algorithm is mandated for WAL chunks?".into(),
+                expected_answer_doc_id: "doc_single_24".into(),
+                expected_keywords: vec!["AES-256-GCM".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_25".into(),
+                description: "Configured maximum batch size".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionUser,
+                sessions: vec![Session {
+                    session_id: "sess_single_25".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "Set MAX_BATCH_SIZE parameter to exactly 128 items per commit.".into(),
+                        doc_id: "doc_single_25".into(),
+                    }],
                 }],
-            }],
-            query: "Which encryption algorithm is mandated for WAL chunks?".into(),
-            expected_answer_doc_id: "doc_single_24".into(),
-            expected_keywords: vec!["AES-256-GCM".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_25".into(),
-            description: "Configured maximum batch size".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionUser,
-            sessions: vec![Session {
-                session_id: "sess_single_25".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "Set MAX_BATCH_SIZE parameter to exactly 128 items per commit.".into(),
-                    doc_id: "doc_single_25".into(),
+                query: "What is the configured maximum batch size parameter?".into(),
+                expected_answer_doc_id: "doc_single_25".into(),
+                expected_keywords: vec!["128".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_26".into(),
+                description: "Daily standup schedule time".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionUser,
+                sessions: vec![Session {
+                    session_id: "sess_single_26".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "Daily engineering standup is scheduled at 09:30 AM UTC every morning."
+                            .into(),
+                        doc_id: "doc_single_26".into(),
+                    }],
                 }],
-            }],
-            query: "What is the configured maximum batch size parameter?".into(),
-            expected_answer_doc_id: "doc_single_25".into(),
-            expected_keywords: vec!["128".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_26".into(),
-            description: "Daily standup schedule time".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionUser,
-            sessions: vec![Session {
-                session_id: "sess_single_26".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "Daily engineering standup is scheduled at 09:30 AM UTC every morning."
-                        .into(),
-                    doc_id: "doc_single_26".into(),
+                query: "At what time is the daily engineering standup scheduled?".into(),
+                expected_answer_doc_id: "doc_single_26".into(),
+                expected_keywords: vec!["09:30".into(), "UTC".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_27".into(),
+                description: "Network serialization format preference".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionPreference,
+                sessions: vec![Session {
+                    session_id: "sess_single_27".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "We prefer Protocol Buffers v3 for binary RPC network transport serialization.".into(),
+                        doc_id: "doc_single_27".into(),
+                    }],
                 }],
-            }],
-            query: "At what time is the daily engineering standup scheduled?".into(),
-            expected_answer_doc_id: "doc_single_26".into(),
-            expected_keywords: vec!["09:30".into(), "UTC".into()],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_27".into(),
-            description: "Network serialization format preference".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionPreference,
-            sessions: vec![Session {
-                session_id: "sess_single_27".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "We prefer Protocol Buffers v3 for binary RPC network transport serialization.".into(),
-                    doc_id: "doc_single_27".into(),
+                query: "Which serialization format is preferred for network transport?".into(),
+                expected_answer_doc_id: "doc_single_27".into(),
+                expected_keywords: vec!["Buffers".into(), "Protocol".into()],
+            },
+            MultiSessionScenario {
+                scenario_id: "single_28".into(),
+                description: "Ergonomic keyboard layout preference".into(),
+                question_type: LongMemEvalQuestionType::SingleSessionPreference,
+                sessions: vec![Session {
+                    session_id: "sess_single_28".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "I type on a split ergonomic keyboard using the Colemak-DH layout."
+                            .into(),
+                        doc_id: "doc_single_28".into(),
+                    }],
                 }],
-            }],
-            query: "Which serialization format is preferred for network transport?".into(),
-            expected_answer_doc_id: "doc_single_27".into(),
-            expected_keywords: vec!["Buffers".into(), "Protocol".into()],
-        });
+                query: "Which keyboard layout does the user use on split keyboards?".into(),
+                expected_answer_doc_id: "doc_single_28".into(),
+                expected_keywords: vec!["Colemak".into()],
+            },
 
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "single_28".into(),
-            description: "Ergonomic keyboard layout preference".into(),
-            question_type: LongMemEvalQuestionType::SingleSessionPreference,
-            sessions: vec![Session {
-                session_id: "sess_single_28".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "I type on a split ergonomic keyboard using the Colemak-DH layout."
-                        .into(),
-                    doc_id: "doc_single_28".into(),
+            // ---------------------------------------------------------------------
+            // 4. ABSTENTION / NEGATIVE CONTROLS (Scenarios 29-31)
+            // ---------------------------------------------------------------------
+            MultiSessionScenario {
+                scenario_id: "abs_29".into(),
+                description: "Unmentioned nuclear vault passcode (Abstention)".into(),
+                question_type: LongMemEvalQuestionType::Abstention,
+                sessions: vec![Session {
+                    session_id: "sess_abs_29".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "Discussion about standard database backup credentials and OAuth tokens."
+                            .into(),
+                        doc_id: "doc_abs_29".into(),
+                    }],
                 }],
-            }],
-            query: "Which keyboard layout does the user use on split keyboards?".into(),
-            expected_answer_doc_id: "doc_single_28".into(),
-            expected_keywords: vec!["Colemak".into()],
-        });
-
-        // ---------------------------------------------------------------------
-        // 4. ABSTENTION / NEGATIVE CONTROLS (Scenarios 29-31)
-        // ---------------------------------------------------------------------
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "abs_29".into(),
-            description: "Unmentioned nuclear vault passcode (Abstention)".into(),
-            question_type: LongMemEvalQuestionType::Abstention,
-            sessions: vec![Session {
-                session_id: "sess_abs_29".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "Discussion about standard database backup credentials and OAuth tokens."
-                        .into(),
-                    doc_id: "doc_abs_29".into(),
+                query: "What is the secret passphrase for the nuclear vault facility?".into(),
+                expected_answer_doc_id: "".into(),
+                expected_keywords: vec![],
+            },
+            MultiSessionScenario {
+                scenario_id: "abs_30".into(),
+                description: "Non-existent flight booking number (Abstention)".into(),
+                question_type: LongMemEvalQuestionType::Abstention,
+                sessions: vec![Session {
+                    session_id: "sess_abs_30".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "Booked train ticket from Berlin to Hamburg on Deutsche Bahn ICE.".into(),
+                        doc_id: "doc_abs_30".into(),
+                    }],
                 }],
-            }],
-            query: "What is the secret passphrase for the nuclear vault facility?".into(),
-            expected_answer_doc_id: "".into(),
-            expected_keywords: vec![],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "abs_30".into(),
-            description: "Non-existent flight booking number (Abstention)".into(),
-            question_type: LongMemEvalQuestionType::Abstention,
-            sessions: vec![Session {
-                session_id: "sess_abs_30".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "Booked train ticket from Berlin to Hamburg on Deutsche Bahn ICE.".into(),
-                    doc_id: "doc_abs_30".into(),
+                query: "What is the flight confirmation code for the flight to Mars?".into(),
+                expected_answer_doc_id: "".into(),
+                expected_keywords: vec![],
+            },
+            MultiSessionScenario {
+                scenario_id: "abs_31".into(),
+                description: "Unmentioned employee compensation figure (Abstention)".into(),
+                question_type: LongMemEvalQuestionType::Abstention,
+                sessions: vec![Session {
+                    session_id: "sess_abs_31".into(),
+                    timestamp_ms: 1000,
+                    turns: vec![SessionTurn {
+                        speaker: "User".into(),
+                        text: "Discussed team performance reviews and quarterly goal achievements."
+                            .into(),
+                        doc_id: "doc_abs_31".into(),
+                    }],
                 }],
-            }],
-            query: "What is the flight confirmation code for the flight to Mars?".into(),
-            expected_answer_doc_id: "".into(),
-            expected_keywords: vec![],
-        });
-
-        scenarios.push(MultiSessionScenario {
-            scenario_id: "abs_31".into(),
-            description: "Unmentioned employee compensation figure (Abstention)".into(),
-            question_type: LongMemEvalQuestionType::Abstention,
-            sessions: vec![Session {
-                session_id: "sess_abs_31".into(),
-                timestamp_ms: 1000,
-                turns: vec![SessionTurn {
-                    speaker: "User".into(),
-                    text: "Discussed team performance reviews and quarterly goal achievements."
-                        .into(),
-                    doc_id: "doc_abs_31".into(),
-                }],
-            }],
-            query: "What is the exact net salary of employee ID 9999?".into(),
-            expected_answer_doc_id: "".into(),
-            expected_keywords: vec![],
-        });
+                query: "What is the exact net salary of employee ID 9999?".into(),
+                expected_answer_doc_id: "".into(),
+                expected_keywords: vec![],
+            },
+        ];
 
         Self { scenarios }
     }
@@ -1239,10 +1209,8 @@ fn json_val_to_string(val: Option<serde_json::Value>) -> Option<String> {
         serde_json::Value::Number(n) => Some(n.to_string()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
         serde_json::Value::Array(arr) => Some(
-            // AI-TAG[CODE_STYLE][MINOR] Unnecessary filter_map in json_val_to_string can be map (ID: AGT-BENCH-032cfc65) (TS: 2026-09-09T12:48:06Z) (SESSION: 321b5c25)
-            // BEFUND: clippy::unnecessary_filter_map is flagged on array conversion.
-            // RISIKO: Minor clippy lint violation in LongMemEval JSON parsing helper.
-            // EMPFEHLUNG: Use `.map()` instead of `.filter_map()` in fix step.
+            // AI-TAG[CODE_STYLE][MINOR][RESOLVED] Unnecessary filter_map in json_val_to_string can be map (ID: AGT-BENCH-032cfc65) (TS: 2026-09-09T21:54:11Z) (SESSION: e7ffabd9)
+            // RESOLVED: AGT-BENCH-032cfc65 — Replaced .filter_map() with .map() in json_val_to_string.
             arr.into_iter()
                 .map(|v| match v {
                     serde_json::Value::String(s) => s,

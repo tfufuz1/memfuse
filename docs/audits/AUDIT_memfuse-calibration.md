@@ -1,7 +1,7 @@
 # MemFuse Calibration Audit Report (`memfuse-calibration`)
 
 **Stand:** 2026-09-09
-**Session:** `b5990b59` (vorherige Audit-Session: `20c1aaf4`)
+**Session:** `383b2472` (vorherige Audit-Session: `b5990b59`)
 **Crate:** `memfuse-calibration` (Layer 1 — Calibration & Uncertainty Quantification)
 **Auditor Persona:** Senior Rust Performance-Engineer — Score-Kalibrierung & ECE-Metriken
 
@@ -23,15 +23,16 @@
 
 ## 2. Zusammenfassung der Prüfergebnisse
 
-- **Test-Ergebnis:** 42/42 Tests grün (`cargo test -p memfuse-calibration --all-features`).
+- **Test-Ergebnis:** 52/52 Tests grün (`cargo test -p memfuse-calibration --all-features`), bestehend aus 32 Unit-Tests und 20 Integration/Proptests.
 - **Nebenläufigkeit / Concurrency:** 10 Läufe mit 8 parallelen Threads bestanden (0 Race Conditions, 0 Deadlocks).
 - **Code Coverage (`cargo llvm-cov`):**
-  - Gesamt: **96.05% Line Coverage** (608/632 Ausführungspfade)
-  - `isotonic.rs`: 95.59%
-  - `pid.rs`: 100.00%
-  - `platt.rs`: 97.87%
-  - `replicator.rs`: 93.48%
+  - Gesamt: **97.25% Line Coverage** (744/765 Zeilen), **97.66% Region Coverage** (1208/1237 Regionen)
+  - `isotonic.rs`: 97.97% Line Coverage (289/295 Zeilen)
+  - `pid.rs`: 100.00% Line Coverage (145/145 Zeilen)
+  - `platt.rs`: 97.87% Line Coverage (138/141 Zeilen)
+  - `replicator.rs`: 93.48% Line Coverage (172/184 Zeilen)
 - **Unsafe-Safety:** `#![deny(unsafe_code)]` in `lib.rs` erzwungen (0 unsafe Blöcke).
+- **Produktions-Error-Disziplin:** 0 `.unwrap()` oder `.expect()` Aufrufe in Produktions-Code unter `crates/memfuse-calibration/src/`.
 - **Clippy & Formatierung:** 0 Clippy Warnings (`-D warnings`), 0 `cargo fmt` Diffs.
 
 ---
@@ -78,8 +79,19 @@ In `replicator.rs` implementiert `ReplicatorState` das Multiplicative Weights Up
 
 ---
 
-## 6. Empfehlungen & Verifikation (Session `b5990b59`)
+## 6. Tiefen-Audit & Re-Verifikation (Session `383b2472`)
 
-1. **PAVA Score Aggregation:** In `isotonic.rs::rebuild_model()` verifiziert. Identische Scores werden vor dem PAVA pooling zusammengefasst.
-2. **PID Latency Sanity Check:** In `pid.rs::update()` verifiziert. Non-finite values (`NaN`/`Infinity`) werden abgefangen und verändern den Zustand nicht.
-3. **Workspace Gate Stack & Preflight:** Verifiziert via `cargo xtask jules-preflight --fast`.
+1. **Gate-Stack Cleanliness:** `cargo check -p memfuse-calibration --all-features`, `cargo clippy -p memfuse-calibration -- -D warnings` und `cargo fmt --check -p memfuse-calibration` ohne jegliche Fehler oder Warnungen ausgefuehrt.
+2. **Concurrency & Thread Safety:** 10 sequentielle Läufe des Test-Suites mit `--test-threads=8` ohne Deadlocks oder Race Conditions verifiziert.
+3. **Coverage Standard:** Overall Line Coverage liegt bei **97.25%** (744/765 lines) und Region Coverage bei **97.66%** (1208/1237 regions).
+4. **Safety & Robustness:** Zero `unsafe` Code (`#![deny(unsafe_code)]`) und zero `.unwrap()` / `.expect()` Calls in Production Logic.
+5. **Verdict:** **GO** — `memfuse-calibration` erfüllt alle Invarianten (INV-CAL-1, INV-CAL-2, P8 Compliance) und Quality Gates.
+
+---
+
+## 7. Re-Verifikation & Final Compliance Check (Session `80a3120b`, Stand: 2026-09-09)
+
+1. **Cleanliness & Quality Gates:** `cargo check -p memfuse-calibration --all-features`, `cargo clippy -p memfuse-calibration -- -D warnings`, `cargo fmt --check -p memfuse-calibration` und `cargo test -p memfuse-calibration --all-features` (52/52 Tests grün) verifiziert.
+2. **FILE-CONTEXT Header Coverage:** `FILE-CONTEXT`-Header für alle Dateien > 50 Zeilen (`isotonic.rs`, `pid.rs`, `platt.rs`, `replicator.rs`) überprüft und vervollständigt.
+3. **Finding Verification:** `AGT-CALIBRATION-16f90c35` und `AGT-CALIBRATION-fca75496` bleiben vollständig gelöst (`RESOLVED`).
+4. **Final Status:** **PASS** — Keine offenen Findings, alle Quality Gates bestanden.

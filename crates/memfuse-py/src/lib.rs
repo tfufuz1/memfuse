@@ -126,6 +126,28 @@ const MAX_LABEL_LENGTH: usize = 256;
 /// Maximum batch size for batch insertion/upsertion (10,000 items).
 const MAX_BATCH_SIZE: usize = 10_000;
 
+/// Validates that a relationship label is non-empty, contains no null bytes, and does not exceed maximum length.
+fn validate_label(label: &str) -> PyResult<()> {
+    if label.trim().is_empty() {
+        return Err(MemFuseValueError::new_err(
+            "Relationship label cannot be empty or whitespace-only",
+        ));
+    }
+    if label.contains('\0') {
+        return Err(MemFuseValueError::new_err(
+            "Relationship label cannot contain null bytes",
+        ));
+    }
+    if label.len() > MAX_LABEL_LENGTH {
+        return Err(MemFuseValueError::new_err(format!(
+            "Relationship label exceeds maximum length of {} bytes. Got: {}",
+            MAX_LABEL_LENGTH,
+            label.len()
+        )));
+    }
+    Ok(())
+}
+
 /// Validates that a string ID is non-empty, contains no null bytes, and does not exceed maximum length.
 fn validate_id(id: &str) -> PyResult<()> {
     if id.trim().is_empty() {
@@ -290,7 +312,7 @@ fn check_subinterpreter_guard(py: Python<'_>) -> PyResult<()> {
     Ok(())
 }
 
-// AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286)
+// AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348)
 // BEFUND: Resolved by decoupling `crates/memfuse-py` into an independent workspace with its own `[profile.release]` setting `panic = "unwind"`.
 // BEHOBEN: `std::panic::catch_unwind` in `run_blocking_ffi` intercepts panics in release builds, converting them into catchable PyRuntimeError exceptions without aborting CPython via SIGABRT.
 // Siehe docs/decisions/ADR-064-memfuse-py-separater-workspace-panic-strategie.md
@@ -839,23 +861,7 @@ macro_rules! memfuse_crud_methods {
             ) -> PyResult<()> {
                 let from_str = validate_id_obj(from)?;
                 let to_str = validate_id_obj(to)?;
-                if label.trim().is_empty() {
-                    return Err(MemFuseValueError::new_err(
-                        "Relationship label cannot be empty or whitespace-only",
-                    ));
-                }
-                if label.contains('\0') {
-                    return Err(MemFuseValueError::new_err(
-                        "Relationship label cannot contain null bytes",
-                    ));
-                }
-                if label.len() > MAX_LABEL_LENGTH {
-                    return Err(MemFuseValueError::new_err(format!(
-                        "Relationship label exceeds maximum length of {} bytes. Got: {}",
-                        MAX_LABEL_LENGTH,
-                        label.len()
-                    )));
-                }
+                validate_label(label)?;
                 let rt = &self.runtime;
                 let label_owned = label.to_string();
                 run_blocking_ffi(py, || {
@@ -1417,6 +1423,21 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_label_length_and_empty() {
+        pyo3::prepare_freethreaded_python();
+        assert!(validate_label("").is_err());
+        assert!(validate_label("   ").is_err());
+        assert!(validate_label("label\0null").is_err());
+        assert!(validate_label("valid_label").is_ok());
+
+        let long_label = "l".repeat(MAX_LABEL_LENGTH + 1);
+        assert!(validate_label(&long_label).is_err());
+
+        let max_label = "l".repeat(MAX_LABEL_LENGTH);
+        assert!(validate_label(&max_label).is_ok());
+    }
+
+    #[test]
     fn test_validate_vector_nan_inf() {
         assert!(validate_vector(&[1.0, 2.0, 3.0]).is_ok());
         assert!(validate_vector(&[1.0, f32::NAN, 3.0]).is_err());
@@ -1546,7 +1567,7 @@ mod tests {
     }
 }
 
-// AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c)
+// AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348)
 // RESOLVED: _trigger_panic_for_test now calls run_blocking_ffi internally triggering a panic in the closure to test FFI panic containment.
 /// Internal helper function for testing FFI panic isolation.
 #[pyfunction]

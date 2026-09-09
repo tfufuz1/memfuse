@@ -257,6 +257,66 @@ mod tests {
         assert_eq!(compute_max_prefix_chars(0), 0);
     }
 
+    #[test]
+    fn test_truncate_prefix_empty_and_whitespace() {
+        assert_eq!(truncate_prefix("", 10, 100), "");
+        assert_eq!(truncate_prefix("   \t\n ", 10, 100), "");
+    }
+
+    #[test]
+    fn test_truncate_prefix_token_boundary_off_by_one() {
+        let text = "eins zwei drei vier fünf";
+
+        // max_tokens == 0
+        assert_eq!(truncate_prefix(text, 0, 100), "");
+
+        // max_tokens == 4 (words.len() - 1)
+        assert_eq!(truncate_prefix(text, 4, 100), "eins zwei drei vier");
+
+        // max_tokens == 5 (words.len() == max_tokens)
+        assert_eq!(truncate_prefix(text, 5, 100), "eins zwei drei vier fünf");
+
+        // max_tokens == 6 (words.len() < max_tokens)
+        assert_eq!(truncate_prefix(text, 6, 100), "eins zwei drei vier fünf");
+    }
+
+    #[test]
+    fn test_truncate_prefix_char_boundary_off_by_one() {
+        let text = "alpha beta gamma delta"; // 22 chars
+
+        // max_chars == 0
+        assert_eq!(truncate_prefix(text, 10, 0), "");
+
+        // max_chars == 22 (exact match)
+        assert_eq!(truncate_prefix(text, 10, 22), "alpha beta gamma delta");
+
+        // max_chars == 23 (above length)
+        assert_eq!(truncate_prefix(text, 10, 23), "alpha beta gamma delta");
+
+        // max_chars == 21 ("alpha beta gamma delt" -> char_truncated.rfind(' ') finds space after "gamma", yielding "alpha beta gamma")
+        assert_eq!(truncate_prefix(text, 10, 21), "alpha beta gamma");
+
+        // max_chars == 17 ("alpha beta gamma " -> char_truncated.rfind(' ') finds space at end, yielding "alpha beta gamma")
+        assert_eq!(truncate_prefix(text, 10, 17), "alpha beta gamma");
+
+        // max_chars == 16 ("alpha beta gamma" -> char_truncated.rfind(' ') finds space after "beta", yielding "alpha beta")
+        assert_eq!(truncate_prefix(text, 10, 16), "alpha beta");
+
+        // max_chars == 15 ("alpha beta gamm" -> char_truncated.rfind(' ') finds space after "beta", yielding "alpha beta")
+        assert_eq!(truncate_prefix(text, 10, 15), "alpha beta");
+
+        // Single long word without spaces exceeding max_chars
+        assert_eq!(truncate_prefix("supercalifragilistic", 10, 5), "super");
+    }
+
+    #[test]
+    fn test_truncate_chars_zero_and_boundary() {
+        assert_eq!(truncate_chars("hello", 0), "");
+        assert_eq!(truncate_chars("hello", 4), "hell");
+        assert_eq!(truncate_chars("hello", 5), "hello");
+        assert_eq!(truncate_chars("hello", 6), "hello");
+    }
+
     #[tokio::test]
     async fn test_generate_prefix_max_prefix_tokens_prompt_assertion() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); // unwrap

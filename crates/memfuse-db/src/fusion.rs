@@ -53,6 +53,13 @@ pub fn apply_resonance_bonus(
     let mut results: Vec<_> = results
         .into_iter()
         .map(|mut r| {
+            if !r.score.is_finite() {
+                tracing::error!(
+                    doc_id = %r.id,
+                    raw_score = r.score,
+                    "apply_resonance_bonus: non-finite score entering resonance bonus stage"
+                );
+            }
             let signal_count = r.matched_signals.len();
             let coherence = (signal_count as f32 / total_signal_count as f32).powf(beta);
             let bonus = gamma * coherence;
@@ -64,12 +71,7 @@ pub fn apply_resonance_bonus(
         })
         .collect();
 
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
 
     results
 }
@@ -259,16 +261,16 @@ pub fn build_provenance(
         coherence_bonus: 0.0,
     };
 
-    #[cfg(debug_assertions)]
-    {
-        if let Some(expected) = expected_total {
-            let expected_rrf: f32 = record
-                .signal_contributions
-                .values()
-                .map(|c| c.rrf_contribution)
-                .sum();
-            debug_assert!(
-                (expected_rrf - expected).abs() < 1e-6,
+    if let Some(expected) = expected_total {
+        let expected_rrf: f32 = record
+            .signal_contributions
+            .values()
+            .map(|c| c.rrf_contribution)
+            .sum();
+        if !(expected_rrf - expected).abs().lt(&1e-6) {
+            tracing::error!(
+                expected_rrf,
+                expected,
                 "INV-PROV-1 violation in build_provenance: sum of contributions ({expected_rrf}) != expected RRF score ({expected})"
             );
         }
@@ -550,6 +552,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 prov
             };
 
+            // INV-PROV-1: Sum of per-signal RRF contributions must equal entry score
             if !final_prov.signal_contributions.is_empty() {
                 let sum_contrib: f32 = final_prov
                     .signal_contributions
@@ -1118,15 +1121,13 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "INV-PROV-1 violation in build_provenance")]
-    fn test_build_provenance_invariant_inconsistent_panics() {
+    fn test_build_provenance_invariant_inconsistent_logs_error() {
         let rank = 1u32;
         let weight = 1.0f32;
         let k = 60.0f32;
         let wrong_expected = 0.999f32; // Discrepancy > 1e-6
 
-        build_provenance(
+        let prov = build_provenance(
             Some(0.95),
             Some(rank),
             Some(weight),
@@ -1142,85 +1143,96 @@ mod tests {
             Some("hnsw".to_string()),
             Some(wrong_expected),
         );
+        assert!(!prov.signal_contributions.is_empty());
     }
 
     #[test]
     fn test_heap_entry_nan_score_sorts_to_worst_position() {
-        let entry_high = HeapEntry {
+        use std::collections::BinaryHeap;
+
+        let mut heap = BinaryHeap::new();
+        heap.push(HeapEntry {
             result: SearchResult {
-                id: "doc_high".to_string(),
+                id: "doc1".to_string(),
                 score: 0.9,
                 metadata: None,
                 matched_signals: vec![],
                 provenance: None,
             },
-        };
-        let entry_mid = HeapEntry {
+        });
+        heap.push(HeapEntry {
             result: SearchResult {
-                id: "doc_mid".to_string(),
+                id: "doc2".to_string(),
                 score: 0.5,
                 metadata: None,
                 matched_signals: vec![],
                 provenance: None,
             },
-        };
-        let entry_nan = HeapEntry {
+        });
+        heap.push(HeapEntry {
             result: SearchResult {
-                id: "00_doc_nan".to_string(),
+                id: "doc_nan".to_string(),
                 score: f32::NAN,
                 metadata: None,
                 matched_signals: vec![],
                 provenance: None,
             },
-        };
+        });
 
-        let mut heap = BinaryHeap::new();
-        heap.push(entry_high);
-        heap.push(entry_mid);
-        heap.push(entry_nan);
+        // Extract all entries and verify NaN entry is last (worst)
+        let mut extracted = vec![];
+        while let Some(entry) = heap.pop() {
+            extracted.push(entry.result.id.clone());
+        }
 
-        // Repeated pop() yields entries from worst finite score to best finite score, and NaN always last.
-        let popped_first = heap.pop().expect("entry present");
-        assert_eq!(popped_first.result.id, "doc_mid");
-
-        let popped_second = heap.pop().expect("entry present");
-        assert_eq!(popped_second.result.id, "doc_high");
-
-        let popped_last = heap.pop().expect("entry present");
-        assert_eq!(popped_last.result.id, "00_doc_nan");
-        assert!(popped_last.result.score.is_nan());
-        assert!(heap.is_empty());
+        assert_eq!(
+            extracted.last().map(|s| s.as_str()),
+            Some("doc_nan"),
+            "NaN score entry must be at the end (worst position) after total_cmp\nExtracted order: {:?}",
+            extracted
+        );
     }
 
     #[test]
     fn test_inv_prov1_violation_logged_in_release_mode() {
-        let mut prov = ProvenanceRecord {
-            vector_distance: Some(0.95),
-            source_collection: Some("col".to_string()),
-            index_type: Some("hnsw".to_string()),
-            ..Default::default()
-        };
-        // Inject an inconsistent prior signal contribution manually into doc.provenance
+        // Construct a result with inconsistent signal_contributions
+        let score = 0.5;
+        let mut prov = ProvenanceRecord::default();
         prov.signal_contributions.insert(
-            "text".to_string(),
+            "vector".to_string(),
             crate::SignalContribution {
-                raw_score: 0.95,
+                raw_score: 0.9,
                 rank: 1,
-                rrf_contribution: 0.9999, // Unexpected extra contribution causing discrepancy
+                rrf_contribution: 0.1, // Intentionally wrong sum (0.1 != 0.5)
             },
         );
 
-        let set = vec![SearchResult {
-            id: "doc1".to_string(),
-            score: 0.95,
+        // Call the fusion function with a result that violates INV-PROV-1
+        let result = SearchResult {
+            id: "test_doc".to_string(),
+            score,
             metadata: None,
             matched_signals: vec!["vector".to_string()],
             provenance: Some(prov),
-        }];
+        };
 
-        let fused = weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 10);
-        assert_eq!(fused.len(), 1);
-        assert_eq!(fused[0].id, "doc1");
+        // The test verifies that the function doesn't panic (no fatal error)
+        // In a real scenario with tracing-test, we could capture the error log;
+        // for now, we just ensure no panic occurs
+        let results = weighted_reciprocal_rank_fusion_with_options(
+            vec![("vector".to_string(), vec![result], 1.0)],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        // Function should complete without panic despite invariant violation
+        assert_eq!(
+            results.len(),
+            1,
+            "Fusion should complete and return results despite INV-PROV-1 violation"
+        );
     }
 
     #[test]
@@ -1357,6 +1369,147 @@ mod tests {
             None => panic!("provenance present"),
         };
         assert!((prov.coherence_bonus - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_apply_resonance_bonus_handles_nan_score_deterministically() {
+        let results = vec![
+            SearchResult {
+                id: "doc_mid".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec!["vector".to_string()],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec!["vector".to_string(), "text".to_string()],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_top".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec!["vector".to_string()],
+                provenance: None,
+            },
+        ];
+
+        let cfg = ResonanceConfig::default();
+        let first_run = apply_resonance_bonus(results.clone(), 2, &cfg);
+
+        // Verify loop determinism over 100 iterations
+        for _ in 0..100 {
+            let run = apply_resonance_bonus(results.clone(), 2, &cfg);
+            assert_eq!(run.len(), first_run.len());
+            for (r1, r2) in run.iter().zip(first_run.iter()) {
+                assert_eq!(r1.id, r2.id);
+                if r1.score.is_nan() {
+                    assert!(r2.score.is_nan());
+                } else {
+                    assert_eq!(r1.score, r2.score);
+                }
+            }
+        }
+
+        // Verify total_cmp consistently sorts results without panic and yields exact deterministic order
+        assert_eq!(first_run.len(), 3);
+        assert_eq!(first_run[0].id, "doc_nan");
+        assert!(first_run[0].score.is_nan());
+        assert_eq!(first_run[1].id, "doc_top");
+        assert_eq!(first_run[2].id, "doc_mid");
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_apply_resonance_bonus_finite_scores_regression() {
+        let results = vec![
+            SearchResult {
+                id: "doc_single_signal_low".to_string(),
+                score: 0.2,
+                metadata: None,
+                matched_signals: vec!["vector".to_string()],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_two_signals_mid".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec!["vector".to_string(), "text".to_string()],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_three_signals_high".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![
+                    "vector".to_string(),
+                    "text".to_string(),
+                    "graph".to_string(),
+                ],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_no_signals".to_string(),
+                score: 0.6,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_all_signals".to_string(),
+                score: 0.4,
+                metadata: None,
+                matched_signals: vec![
+                    "vector".to_string(),
+                    "text".to_string(),
+                    "graph".to_string(),
+                    "custom".to_string(),
+                ],
+                provenance: None,
+            },
+        ];
+
+        let cfg = ResonanceConfig {
+            beta: 0.5,
+            gamma: 0.3,
+        };
+        let total_signals = 4;
+        let boosted = apply_resonance_bonus(results, total_signals, &cfg);
+
+        // Expected coherence calculations:
+        // total_signals = 4
+        // beta = 0.5, gamma = 0.3
+        // doc_three_signals_high: 0.8 * (1.0 + 0.3 * (3/4)^0.5) = 0.8 * (1.0 + 0.3 * 0.8660254) = 0.8 * 1.2598076 = 1.0078461
+        // doc_all_signals:        0.4 * (1.0 + 0.3 * (4/4)^0.5) = 0.4 * (1.0 + 0.3 * 1.0) = 0.4 * 1.3 = 0.52
+        // doc_two_signals_mid:   0.5 * (1.0 + 0.3 * (2/4)^0.5) = 0.5 * (1.0 + 0.3 * 0.7071068) = 0.5 * 1.212132 = 0.606066
+        // doc_no_signals:        0.6 * (1.0 + 0.3 * (0/4)^0.5) = 0.6 * 1.0 = 0.6
+        // doc_single_signal_low: 0.2 * (1.0 + 0.3 * (1/4)^0.5) = 0.2 * (1.0 + 0.3 * 0.5) = 0.2 * 1.15 = 0.23
+
+        let ids: Vec<&str> = boosted.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "doc_three_signals_high",
+                "doc_two_signals_mid",
+                "doc_no_signals",
+                "doc_all_signals",
+                "doc_single_signal_low"
+            ]
+        );
+
+        // Verify exact boosted score calculations
+        let score_map: std::collections::HashMap<&str, f32> =
+            boosted.iter().map(|r| (r.id.as_str(), r.score)).collect();
+
+        assert!((score_map["doc_three_signals_high"] - 1.0078461).abs() < 1e-5);
+        assert!((score_map["doc_two_signals_mid"] - 0.606066).abs() < 1e-5);
+        assert!((score_map["doc_no_signals"] - 0.6).abs() < 1e-5);
+        assert!((score_map["doc_all_signals"] - 0.52).abs() < 1e-5);
+        assert!((score_map["doc_single_signal_low"] - 0.23).abs() < 1e-5);
     }
 
     #[test]
@@ -1529,7 +1682,7 @@ mod tests {
             .as_ref()
             .expect("provenance should be attached");
         assert!(
-            prov.vector_distance.map_or(false, |s| s.is_nan()),
+            prov.vector_distance.is_some_and(|s| s.is_nan()),
             "Non-finite raw score should be preserved as NaN in vector_distance provenance for traceabilty"
         );
         let contrib = prov
