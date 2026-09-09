@@ -1998,7 +1998,13 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
             }
         };
 
-        let required_passes = 2;
+        let is_unsafe_file = anchor.file_path.contains("distance.rs")
+            || anchor.file_path.contains("diskann.rs")
+            || anchor.file_path.contains("persistence.rs")
+            || anchor.file_path.contains("anti_tamper.rs");
+        let is_security = anchor.raw.contains("SECURITY");
+
+        let required_passes = if is_unsafe_file || is_security { 3 } else { 2 };
 
         let matching_passes: Vec<&TagItem> = tags
             .iter()
@@ -2705,7 +2711,7 @@ description = "Core crate"
         });
         assert!(!run_check_review_coverage(&tags_same_session));
 
-        // Fixture 3: 2 passes from DIFFERENT independent sessions (should pass)
+        // Fixture 3: 2 passes from DIFFERENT independent sessions (should pass for standard anchor)
         let mut tags_diff_sessions = tags_0_passes.clone();
         tags_diff_sessions.push(TagItem {
             file_path: "crates/memfuse-store/src/lsm.rs".to_string(),
@@ -2736,6 +2742,75 @@ description = "Core crate"
             is_resolved: false,
         });
         assert!(run_check_review_coverage(&tags_diff_sessions));
+
+        // Fixture 4: Unsafe file anchor with 2 passes (should fail because 3 are required)
+        let mut tags_unsafe_file = vec![TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 10,
+            tag_type: "ANCHOR".to_string(),
+            raw: "// ANCHOR[PERF:SIMD-001] STATUS:DONE (ID: AGT-INDEX-b4f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION:a3f29c1d)".to_string(),
+            timestamp: "2026-08-29T09:14:07Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-b4f29c1d".to_string()),
+            session: Some("a3f29c1d".to_string()),
+            status: Some("DONE".to_string()),
+            description: "SIMD Task".to_string(),
+            is_resolved: true,
+        }];
+        tags_unsafe_file.push(TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 15,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[1/3] STATUS:PASS (ID: AGT-INDEX-b4f29c1d) (TS:2026-08-29T10:00:00Z) (SESSION:b8e4f1a2)".to_string(),
+            timestamp: "2026-08-29T10:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-b4f29c1d".to_string()),
+            session: Some("b8e4f1a2".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Review 1".to_string(),
+            is_resolved: false,
+        });
+        tags_unsafe_file.push(TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 16,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[2/3] STATUS:PASS (ID: AGT-INDEX-b4f29c1d) (TS:2026-08-29T11:00:00Z) (SESSION:c9f5e2b3)".to_string(),
+            timestamp: "2026-08-29T11:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-b4f29c1d".to_string()),
+            session: Some("c9f5e2b3".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Review 2".to_string(),
+            is_resolved: false,
+        });
+        assert!(
+            !run_check_review_coverage(&tags_unsafe_file),
+            "Unsafe file anchor with only 2 passes must fail"
+        );
+
+        // Fixture 5: Unsafe file anchor with 3 independent passes (should pass)
+        let mut tags_unsafe_3_passes = tags_unsafe_file.clone();
+        tags_unsafe_3_passes.push(TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 17,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[3/3] STATUS:PASS (ID: AGT-INDEX-b4f29c1d) (TS:2026-08-29T12:00:00Z) (SESSION:d0a1b2c3)".to_string(),
+            timestamp: "2026-08-29T12:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-b4f29c1d".to_string()),
+            session: Some("d0a1b2c3".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Review 3".to_string(),
+            is_resolved: false,
+        });
+        assert!(
+            run_check_review_coverage(&tags_unsafe_3_passes),
+            "Unsafe file anchor with 3 independent passes must pass"
+        );
     }
 
     #[test]

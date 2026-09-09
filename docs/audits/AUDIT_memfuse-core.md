@@ -177,3 +177,9 @@ cargo check --workspace --exclude memfuse-tauri
 ### Summary Sign-off
 - **Quality Gate Stack:** 156 unit + 2 integration + 5 robustness tests passing 100% green. Zero clippy warnings (`-D warnings`), zero formatting issues, zero open `AI-TAG` findings.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) re-verified fully bit-accurate, zero-panic compliant, thread-safe, and fully ready as the foundation of MemFuse.
+
+## 12. TenantId Helper Method Enhancement (2026-09-09 — SESSION a69d21e4)
+
+- **`TenantId::as_u64` Addition:** Added `pub const fn as_u64(self) -> u64` helper method to `TenantId` in `crates/memfuse-core/src/types/domain.rs` to provide explicit `u64` primitive getter semantics and ensure seamless compatibility across workspace crates (e.g. `memfuse-crypto`).
+- **Unit Testing:** Updated unit tests in `types/domain.rs` (`test_tenant_id_defaults_and_constants` and `test_tenant_id_valid`) to verify `as_u64()`.
+- **Full Verification:** All 156 unit tests, 2 integration tests, and 5 robustness tests in `memfuse-core` pass 100% green. Workspace compilation check (`cargo check --workspace --exclude memfuse-tauri`) succeeds cleanly.
