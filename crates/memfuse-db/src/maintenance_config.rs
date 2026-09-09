@@ -33,12 +33,13 @@ pub struct MaintenanceConfig {
     /// Intervall zwischen Ticks in Sekunden. Default: 60s.
     pub tick_interval_secs: u64,
 
-    // --- F-01 Thermostat / Decay Controller ---
-    /// Ob Thermostat-Eviction aktiviert ist. Default: true.
-    pub thermostat_enabled: bool,
+    // --- F-01 Adaptive Decay Controller ---
+    /// Ob Decay-Eviction aktiviert ist. Default: true.
+    #[serde(alias = "thermostat_enabled")]
+    pub decay_enabled: bool,
     /// DecayController-Konfiguration (κ, base_half_life_tx, eviction_threshold).
-    #[serde(flatten)]
-    pub thermostat: DecayControllerConfig,
+    #[serde(flatten, alias = "thermostat")]
+    pub decay_config: DecayControllerConfig,
 
     // --- F-03 Edge Reinforcement ---
     /// Edge-Reinforcement-Konfiguration (η, δ, W_max, ρ, Q, α).
@@ -63,18 +64,20 @@ pub struct MaintenanceConfig {
     pub coherence_bonus_beta: f32,
 
     // --- MemoryConsolidation ---
-    /// Ob MemoryConsolidation-Konsolidierung aktiviert ist. Default: false (erfordert LLM).
-    pub sleep_cycle_enabled: bool,
-    /// Schwellenwert der Episoden für MemoryConsolidation-Triggern. Default: 50.
-    pub sleep_episode_threshold: usize,
+    /// Ob Hintergrund-Konsolidierung aktiviert ist. Default: false (erfordert LLM).
+    #[serde(alias = "sleep_cycle_enabled")]
+    pub background_consolidation_enabled: bool,
+    /// Schwellenwert der Episoden für Konsolidierungs-Triggern. Default: 50.
+    #[serde(alias = "sleep_episode_threshold")]
+    pub background_consolidation_episode_threshold: usize,
 }
 
 impl Default for MaintenanceConfig {
     fn default() -> Self {
         Self {
             tick_interval_secs: 60,
-            thermostat_enabled: true,
-            thermostat: DecayControllerConfig::default(),
+            decay_enabled: true,
+            decay_config: DecayControllerConfig::default(),
             #[cfg(feature = "edge-reinforcement-learning")]
             edge_reinforcement: memfuse_graph::EdgeReinforcementConfig::default(),
             percolation_enabled: true,
@@ -82,8 +85,8 @@ impl Default for MaintenanceConfig {
             replicator_enabled: true,
             replicator_lr: 0.05,
             coherence_bonus_beta: 0.15,
-            sleep_cycle_enabled: false,
-            sleep_episode_threshold: 50,
+            background_consolidation_enabled: false,
+            background_consolidation_episode_threshold: 50,
         }
     }
 }

@@ -80,6 +80,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+pub mod background_workers;
 pub mod chunker;
 pub mod collection;
 pub mod consolidation_executor;
@@ -89,7 +90,14 @@ pub mod memory_consolidation;
 pub mod synthesis_phase;
 pub mod temporal_filter;
 
-pub use consolidation_executor::{execute_consolidation_pass, execute_sleep_cycle};
+#[cfg(feature = "background-maintenance")]
+pub use background_workers::start_decay_cleanup_worker;
+pub use background_workers::{
+    start_consolidation_worker, start_expiry_cleanup_worker, start_orphan_cleanup_worker,
+};
+pub use consolidation_executor::{
+    execute_background_consolidation, execute_consolidation_pass, execute_sleep_cycle,
+};
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
@@ -101,7 +109,14 @@ pub use memory_consolidation::{
     ConsolidationConfig, ConsolidationPhaseResult, MetaChunk, SynthesisConfig,
     SynthesisPhaseResult, TurnSegment,
 };
-pub use reaper::start_consolidation_reaper;
+
+#[deprecated(note = "use background_workers instead")]
+pub mod reaper {
+    pub use crate::background_workers::*;
+}
+#[deprecated(note = "use start_consolidation_worker instead")]
+pub use background_workers::start_consolidation_reaper;
+
 pub use synthesis_phase::run_synthesis_pass;
 
 #[cfg(feature = "sandbox")]
@@ -119,7 +134,6 @@ pub mod homeostat;
 pub mod maintenance_config;
 pub mod maintenance_scheduler;
 pub mod multistep;
-pub mod reaper;
 pub mod transaction;
 
 // Jarvis-Erweiterungs-Module (Feature-gated)
@@ -683,14 +697,14 @@ impl MemFuse {
         let col_arc = Arc::new(col);
         write_guard.insert(name.to_string(), Arc::clone(&col_arc));
 
-        let reaper_handle = reaper::start_expiry_reaper(
+        let worker_handle = background_workers::start_expiry_cleanup_worker(
             Arc::clone(&col_arc),
             self.expiry_reaper_interval,
             self.cancel_token.clone(),
         );
         self.task_tracker.spawn(async move {
-            if let Err(e) = reaper_handle.await {
-                tracing::warn!(error = %e, "Reaper handle task failed or was cancelled");
+            if let Err(e) = worker_handle.await {
+                tracing::warn!(error = %e, "Expiry cleanup worker task failed or was cancelled");
             }
         });
 
