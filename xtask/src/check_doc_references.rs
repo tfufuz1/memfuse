@@ -251,7 +251,11 @@ mod tests {
         let candidates = extract_path_candidates(line);
         assert_eq!(
             candidates,
-            vec!["Cargo.toml", "crates/memfuse-core/src/lib.rs", "physio_scheduler.rs"]
+            vec![
+                "Cargo.toml",
+                "crates/memfuse-core/src/lib.rs",
+                "physio_scheduler.rs"
+            ]
         );
     }
 
@@ -278,6 +282,9 @@ mod tests {
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].file, "test.md");
         assert_eq!(violations[0].line, 1);
-        assert_eq!(violations[0].referenced_path, "nonexistent_module_xyz123.rs");
+        assert_eq!(
+            violations[0].referenced_path,
+            "nonexistent_module_xyz123.rs"
+        );
     }
 }
