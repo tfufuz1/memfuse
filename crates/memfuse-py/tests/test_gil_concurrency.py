@@ -172,3 +172,45 @@ def test_canary_thread_progress_during_heavy_db_operation(tmp_path):
         f"Canary thread was blocked during DB execution window ({db_start_time:.3f} to {db_end_time:.3f}). "
         f"Recorded {len(logs_during_db)} timestamps during DB operation."
     )
+
+
+def test_gil_not_held_during_blocking_ops(tmp_path):
+    """Spawns N Python threads executing scan_prefix concurrently and validates
+    that no thread blocks indefinitely (timeout assertion < 5s for the entire test).
+    """
+    path = str(tmp_path / "scan_prefix_gil_db")
+    db = memfuse.open(path, dimension=128)
+
+    # Pre-populate database with documents under different prefixes
+    v_base = np.random.rand(128).astype(np.float32)
+    for i in range(50):
+        db.insert(f"pref_a_{i}", v_base + (i * 0.001), {"idx": i})
+        db.insert(f"pref_b_{i}", v_base + (i * 0.001), {"idx": i})
+
+    num_threads = 5
+    errors = []
+
+    def scan_worker(thread_id):
+        try:
+            prefix = "pref_a_" if thread_id % 2 == 0 else "pref_b_"
+            for _ in range(20):
+                res = db.scan_prefix(prefix)
+                assert len(res) == 50
+        except Exception as e:
+            errors.append(e)
+
+    threads = [
+        threading.Thread(target=scan_worker, args=(i,)) for i in range(num_threads)
+    ]
+
+    start_time = time.time()
+    for t in threads:
+        t.start()
+
+    for t in threads:
+        t.join(timeout=4.0)
+        assert not t.is_alive(), "Thread timed out, GIL likely held blocking concurrency"
+
+    elapsed = time.time() - start_time
+    assert elapsed < 5.0, f"Test took {elapsed:.2f}s, expected < 5.0s"
+    assert not errors, f"Errors occurred during thread execution: {errors}"

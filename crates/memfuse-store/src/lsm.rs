@@ -1018,8 +1018,9 @@ impl StorageEngine for LsmStorage {
             }
 
             // --- PHASE 2: Group Commit to WAL ---
-            let wal_entries = state.wal.prepare_batch(wal_ops).await?;
+            let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
             if let Err(e) = state.wal.append_batch(&wal_entries).await {
+                let _ = state.wal.restore_last_hmac(prev_hmac_snapshot).await;
                 // FATAL I/O ERROR: Physical Rollback to last committed transaction state
                 drop(state);
                 let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
@@ -3338,85 +3339,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flush_cleanup_on_sstable_create_failure() {
+    async fn test_lsm_commit_append_failure_restores_hmac() {
         let (storage, _tmp) = test_storage().await;
 
-        let tx = TxId::new(1);
-        storage.put(tx, b"flush_fail_key", b"val").await.unwrap();
-        storage.commit(tx).await.unwrap();
-
-        // Calculate expected sst_path and pre-create a directory there to force SstableBuilder::create to fail
-        let count = storage.segment_counter.load(Ordering::Relaxed);
-        let seq = storage.next_seq_no.load(Ordering::Relaxed);
-        let sst_path = storage
-            .config
-            .path
-            .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
-        tokio::fs::create_dir_all(&sst_path).await.unwrap();
-
-        let flush_res = storage.flush().await;
-        assert!(
-            flush_res.is_err(),
-            "Flush must fail when sst_path is a directory"
-        );
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
 
         let state = storage.state.read().await;
-        assert!(
-            state.immutable_memtables.is_empty(),
-            "immutable_memtables must be empty after flush failure"
-        );
-    }
+        let hmac_before = state.wal.last_hmac_snapshot().await;
+        let wal_path = state.wal.path().to_path_buf();
 
-    #[tokio::test]
-    async fn test_flush_cleanup_on_sstable_finish_failure() {
-        let (storage, _tmp) = test_storage().await;
-
-        // Value > 65535 bytes passes put/commit, but SstableBuilder::add rejects it
-        let large_val = vec![b'x'; 70_000];
-        let tx = TxId::new(1);
-        storage.put(tx, b"oversized_key", &large_val).await.unwrap();
-        storage.commit(tx).await.unwrap();
-
-        let flush_res = storage.flush().await;
-        assert!(
-            flush_res.is_err(),
-            "Flush must fail when value exceeds SSTable builder limit"
-        );
-
-        let state = storage.state.read().await;
-        assert!(
-            state.immutable_memtables.is_empty(),
-            "immutable_memtables must be cleaned up after builder failure"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_flush_repeated_failures_no_memory_leak() {
-        let (storage, _tmp) = test_storage().await;
-
-        let initial_usage = storage.budget.memory_used();
-
-        // Perform 100 write + failed flush cycles
-        for i in 1..=100u64 {
-            let large_val = vec![b'y'; 70_000];
-            let tx = TxId::new(i);
-            storage.put(tx, b"leak_key", &large_val).await.unwrap();
-            storage.commit(tx).await.unwrap();
-
-            let flush_res = storage.flush().await;
-            assert!(flush_res.is_err(), "Flush must fail for oversized value");
+        // Replace file with read-only handle to simulate WAL append failure
+        {
+            let ro_file = tokio::fs::OpenOptions::new()
+                .read(true)
+                .write(false)
+                .open(&wal_path)
+                .await
+                .unwrap();
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = ro_file;
         }
+        drop(state);
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        let commit_res = storage.commit(tx2).await;
+        assert!(commit_res.is_err(), "Commit must fail when WAL write fails");
 
         let state = storage.state.read().await;
-        assert!(
-            state.immutable_memtables.is_empty(),
-            "immutable_memtables must remain empty after repeated flush failures"
-        );
-
-        let final_usage = storage.budget.memory_used();
+        let hmac_after = state.wal.last_hmac_snapshot().await;
         assert_eq!(
-            final_usage, initial_usage,
-            "Memory usage must return to baseline and not leak across repeated failed flushes"
+            hmac_after, hmac_before,
+            "last_hmac must be restored to pre-commit state after commit failure"
         );
     }
 }

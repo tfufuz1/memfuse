@@ -2419,4 +2419,227 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_pending_decisions_evicted_after_ttl() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::router::{MAX_PENDING_DECISIONS, PENDING_DECISION_TTL};
+
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert("doc1", &vec_data, Some(json!({"text": "eviction test content"})))
+            .await?;
+
+        let profile = SlmProfile::new(
+            "p1",
+            "http://localhost:8000/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Fill pending_decisions with MAX_PENDING_DECISIONS stale entries older than TTL (300s)
+        let stale_timestamp = std::time::Instant::now()
+            - (PENDING_DECISION_TTL + std::time::Duration::from_secs(10));
+        {
+            let mut map = router.pending_decisions.write();
+            for _ in 0..MAX_PENDING_DECISIONS {
+                map.insert(DecisionId::new(), ("p1".to_string(), stale_timestamp));
+            }
+        }
+
+        assert_eq!(router.pending_decision_count(), MAX_PENDING_DECISIONS);
+
+        // Calling route() triggers evict_stale_decisions()
+        let decision = router.route(&vec_data, "eviction test content").await?;
+
+        // Stale entries should be evicted, leaving only the new decision
+        assert_eq!(router.pending_decision_count(), 1);
+        assert!(router.record_outcome(decision.decision_id, RoutingOutcome::Success));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_decisions_max_capacity_enforced() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::router::{MAX_PENDING_DECISIONS, PENDING_DECISION_TTL};
+
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert("doc1", &vec_data, Some(json!({"text": "capacity test content"})))
+            .await?;
+
+        let profile = SlmProfile::new(
+            "p1",
+            "http://localhost:8000/mcp",
+            vec![],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        // Fill pending_decisions with MAX_PENDING_DECISIONS + 1 stale entries without record_outcome
+        let stale_timestamp = std::time::Instant::now()
+            - (PENDING_DECISION_TTL + std::time::Duration::from_secs(10));
+        {
+            let mut map = router.pending_decisions.write();
+            for _ in 0..=(MAX_PENDING_DECISIONS) {
+                map.insert(DecisionId::new(), ("p1".to_string(), stale_timestamp));
+            }
+        }
+
+        assert!(router.pending_decision_count() > MAX_PENDING_DECISIONS);
+
+        // Call route()
+        let _decision = router.route(&vec_data, "capacity test content").await?;
+
+        // Verify map size is <= MAX_PENDING_DECISIONS
+        assert!(router.pending_decision_count() <= MAX_PENDING_DECISIONS);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cascade_confidence_uses_conformal_alpha() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::profile::ProfileCalibrationState;
+        use crate::router::COMMUNITY_RELEVANCE_BOOST;
+        use memfuse_core::{ConfigFingerprint, ContextChunk, DocId};
+        use std::collections::HashMap;
+
+        let fp = ConfigFingerprint::new("model1", "Q4_K_M", "prompt", 0.7);
+        let profile = SlmProfile::new(
+            "alpha-slm",
+            "http://localhost/alpha",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.4,
+        )
+        .with_fingerprint(fp.clone());
+
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new()?;
+        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config))?;
+        let collection = rt.block_on(db.collection("default"))?;
+
+        let router = RouterEngine::new(collection, vec![profile.clone()], None);
+
+        let mut cal_state = ProfileCalibrationState::new(0.4);
+        cal_state.conformal.alpha = 0.15;
+        cal_state.conformal.window_total = 100; // calibrated
+        cal_state.last_calibrated_fingerprint = Some(fp);
+
+        let mut calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+        calibration.insert("alpha-slm".to_string(), cal_state);
+
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "alpha test".to_string(),
+            relevance: 0.5,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let chunks = vec![(chunk, Some(1))];
+
+        let (_, _, metrics) = router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
+
+        let score = 0.5 * COMMUNITY_RELEVANCE_BOOST;
+        assert!(metrics.calibrated);
+        let expected_lower = score * (1.0 - 0.15); // score * 0.85
+        let expected_upper = score * (1.0 + 0.15); // score * 1.15
+
+        let lower = metrics.score_lower.ok_or("score_lower missing")?;
+        let upper = metrics.score_upper.ok_or("score_upper missing")?;
+
+        assert!(
+            (lower - expected_lower).abs() < 1e-5,
+            "Expected {expected_lower}, got {lower}"
+        );
+        assert!(
+            (upper - expected_upper).abs() < 1e-5,
+            "Expected {expected_upper}, got {upper}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cascade_non_conformity_score_not_zero() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::profile::ProfileCalibrationState;
+        use memfuse_core::{ContextChunk, DocId};
+        use std::collections::HashMap;
+
+        let profile = SlmProfile::new(
+            "nc-slm",
+            "http://localhost/nc",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.1,
+        );
+
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let rt = tokio::runtime::Runtime::new()?;
+        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config))?;
+        let collection = rt.block_on(db.collection("default"))?;
+
+        let router = RouterEngine::new(collection, vec![profile.clone()], None);
+
+        let mut cal_state = ProfileCalibrationState::new(0.1);
+        cal_state.conformal.quantile_threshold = 0.8; // higher than score
+        let mut calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+        calibration.insert("nc-slm".to_string(), cal_state);
+
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "nc test".to_string(),
+            relevance: 0.4,
+            token_count: 5,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let chunks = vec![(chunk, Some(1))];
+
+        let (_, _, metrics) = router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
+
+        assert!(
+            metrics.non_conformity_score != 0.0,
+            "non_conformity_score should not be 0.0"
+        );
+        let expected_nc = (1.0 - (0.48 / 0.8f32)).clamp(0.0, 1.0);
+        assert!(
+            (metrics.non_conformity_score - expected_nc).abs() < 1e-5,
+            "Expected {expected_nc}, got {}",
+            metrics.non_conformity_score
+        );
+
+        Ok(())
+    }
 }
