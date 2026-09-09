@@ -1018,8 +1018,9 @@ impl StorageEngine for LsmStorage {
             }
 
             // --- PHASE 2: Group Commit to WAL ---
-            let wal_entries = state.wal.prepare_batch(wal_ops).await?;
+            let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
             if let Err(e) = state.wal.append_batch(&wal_entries).await {
+                let _ = state.wal.restore_last_hmac(prev_hmac_snapshot).await;
                 // FATAL I/O ERROR: Physical Rollback to last committed transaction state
                 drop(state);
                 let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
@@ -3307,6 +3308,44 @@ mod tests {
         assert_eq!(
             stored_val, expected_val,
             "Stored value must match winning task's value"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_lsm_commit_append_failure_restores_hmac() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let state = storage.state.read().await;
+        let hmac_before = state.wal.last_hmac_snapshot().await;
+        let wal_path = state.wal.path().to_path_buf();
+
+        // Replace file with read-only handle to simulate WAL append failure
+        {
+            let ro_file = tokio::fs::OpenOptions::new()
+                .read(true)
+                .write(false)
+                .open(&wal_path)
+                .await
+                .unwrap();
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = ro_file;
+        }
+        drop(state);
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        let commit_res = storage.commit(tx2).await;
+        assert!(commit_res.is_err(), "Commit must fail when WAL write fails");
+
+        let state = storage.state.read().await;
+        let hmac_after = state.wal.last_hmac_snapshot().await;
+        assert_eq!(
+            hmac_after, hmac_before,
+            "last_hmac must be restored to pre-commit state after commit failure"
         );
     }
 }
