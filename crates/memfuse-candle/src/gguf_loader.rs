@@ -1,3 +1,8 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T13:00:00Z (SESSION: c74a1828)
+// ZWECK: GGUF model container header and metadata parser for Candle models.
+// INVARIANTEN: No full tensor payload loading during metadata parsing; error propagation via MemFuseError.
+
 use candle_core::quantized::gguf_file;
 use memfuse_core::MemFuseError;
 use std::fs::File;
