@@ -1025,6 +1025,10 @@
   },
   {
     "file": "crates/memfuse-calibration/tests/calibration_deep_tests.rs",
+    "hash": "ad91d48943479b5a"
+  },
+  {
+    "file": "crates/memfuse-calibration/tests/calibration_deep_tests.rs",
     "hash": "ca5eeb4eb134d9ab"
   },
   {
@@ -2353,6 +2357,10 @@
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
+    "hash": "5e32c18422851b00"
+  },
+  {
+    "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "5e74c6854a7469e1"
   },
   {
@@ -2494,10 +2502,6 @@
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
     "hash": "d88b2f021d9da121"
-  },
-  {
-    "file": "crates/memfuse-core/src/types/domain.rs",
-    "hash": "d99803fdb2748f94"
   },
   {
     "file": "crates/memfuse-core/src/types/domain.rs",
@@ -3021,7 +3025,7 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "25085c32fe5c7879"
+    "hash": "33654c2d796476df"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
@@ -3029,11 +3033,7 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "9f88712eb627b2be"
-  },
-  {
-    "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "b6d9bbff2c8bc5d7"
+    "hash": "70db28c09d123f0b"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/segment.rs",
@@ -3349,11 +3349,11 @@
   },
   {
     "file": "crates/memfuse-crypto/tests/kv_segment_concurrency.rs",
-    "hash": "beb9b035ed4699f8"
+    "hash": "99ba9a1bbd2bbc62"
   },
   {
     "file": "crates/memfuse-crypto/tests/kv_segment_concurrency.rs",
-    "hash": "c64f48f1172469c5"
+    "hash": "beb9b035ed4699f8"
   },
   {
     "file": "crates/memfuse-crypto/tests/kv_segment_concurrency.rs",
@@ -8729,11 +8729,11 @@
   },
   {
     "file": "crates/memfuse-graph/src/provenance.rs",
-    "hash": "5e15a207a8407814"
+    "hash": "12a402256b9cfa40"
   },
   {
     "file": "crates/memfuse-graph/src/provenance.rs",
-    "hash": "d9668746e4fff2eb"
+    "hash": "2ffd63455894a871"
   },
   {
     "file": "crates/memfuse-graph/src/session_dag.rs",
