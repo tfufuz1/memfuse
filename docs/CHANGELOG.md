@@ -190,7 +190,6 @@
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-08-30T14:46:32Z (SESSION: 2c814094)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
 | `2026-08-29T18:00:00Z` | `crates/memfuse-mcp/src/prompt_injection.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Prompt-Injection-Erkennung & Quarantäne-System für MCP-Server |
-| `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-core/src/tx_buffer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Transaktion-Staging-Buffer zwischen Writes und WAL-Commit |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrator-Facade (Layer 2) — öffentliche API der Collection |
 | `2026-08-29T15:22:34Z (SESSION: 2c814094)` | `crates/memfuse-index/src/hnsw.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | HNSW-Vektorindex (Insert/Search/Delete/Persist) für Approximate Nearest Neighbor Search |
