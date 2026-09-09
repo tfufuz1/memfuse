@@ -35,7 +35,10 @@ impl LayerCleanupProof {
     /// Bereinigung (LSM-Compaction, WAL-Truncation, HNSW-Purge, ...) aufgerufen werden,
     /// um einen Proof für den jeweiligen Layer zu erzeugen.
     pub fn new_after_physical_cleanup(layer: DeletionLayer) -> Self {
-        Self { layer, _private: () }
+        Self {
+            layer,
+            _private: (),
+        }
     }
 
     /// Gibt den zugrundeliegenden DeletionLayer zurück.
@@ -150,10 +153,8 @@ impl DeletionProof {
         let signature =
             compute_hmac_sha256(proof_key, &[&scope_bytes, &deleted_keys_hash, &tx_bytes])?;
 
-        let covered_layers: Vec<DeletionLayer> = covered_layers
-            .into_iter()
-            .map(|p| p.layer)
-            .collect();
+        let covered_layers: Vec<DeletionLayer> =
+            covered_layers.into_iter().map(|p| p.layer).collect();
 
         Ok(Self {
             scope,
@@ -262,7 +263,9 @@ mod tests {
             scope,
             vec![b"k1".to_vec()],
             TxId(10),
-            vec![LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable)],
+            vec![LayerCleanupProof::new_after_physical_cleanup(
+                DeletionLayer::LsmMemtable,
+            )],
             vec![ExcludedScope::LlmParameterMemory],
             &test_key(),
         )

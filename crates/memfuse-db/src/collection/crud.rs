@@ -1451,19 +1451,16 @@ mod tests {
         // Insert 10,005 items via put_kv
         for i in 0..10_005 {
             collection
-                .put_kv(
-                    &format!("pfx_{i:05}"),
-                    &serde_json::json!({ "idx": i }),
-                )
+                .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
                 .unwrap();
         }
 
-        let scanned = collection.scan_prefix("pfx_").await.unwrap();
+        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
         assert_eq!(
             scanned.len(),
-            MAX_SCAN_RESULTS_DEFAULT,
-            "scan_prefix must be capped at MAX_SCAN_RESULTS_DEFAULT (10,000)"
+            DEFAULT_SCAN_LIMIT,
+            "scan_prefix must be capped at DEFAULT_SCAN_LIMIT (10,000)"
         );
     }
 }
