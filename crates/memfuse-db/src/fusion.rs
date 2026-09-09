@@ -393,12 +393,26 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
     > = HashMap::new();
 
     for (signal_name, result_set, weight) in result_sets {
-        if weight <= 0.0 {
+        if !weight.is_finite() || weight <= 0.0 {
+            tracing::warn!(
+                signal = %signal_name,
+                weight,
+                "RRF fusion: non-finite or non-positive weight skipped"
+            );
             continue;
         }
         let signal_kind = SignalKind::from_name(&signal_name);
         for (rank, doc) in result_set.into_iter().enumerate() {
+            if !doc.score.is_finite() {
+                tracing::error!(
+                    signal = %signal_name,
+                    doc_id = %doc.id,
+                    raw_score = doc.score,
+                    "RRF fusion: non-finite raw score from upstream signal detected"
+                );
+            }
             let score = weight / (k as f32 + rank as f32 + 1.0);
+            debug_assert!(score.is_finite(), "RRF score must be finite after weight validation");
             let entry = fused
                 .entry(doc.id)
                 .or_insert_with(|| (0.0, None, Vec::new(), ProvenanceRecord::default()));
@@ -1349,6 +1363,130 @@ mod tests {
         let expected_final = expected_unboosted * (1.0 + prov.coherence_bonus);
         assert!((res.score - expected_final).abs() < 1e-6);
         assert!((unboosted_sum - res.score).abs() > 1e-6);
+    }
+
+    #[test]
+    fn test_rrf_fusion_rejects_nan_weight_without_score_corruption() {
+        let set1 = vec![
+            SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc2".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+        let set2_nan = vec![
+            SearchResult {
+                id: "doc1".to_string(),
+                score: 0.95,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc3".to_string(),
+                score: 0.7,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+        let set3 = vec![SearchResult {
+            id: "doc2".to_string(),
+            score: 0.85,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+
+        let result_with_nan = weighted_reciprocal_rank_fusion_with_options(
+            vec![
+                ("vector".to_string(), set1.clone(), 1.0),
+                ("text".to_string(), set2_nan.clone(), f32::NAN),
+                ("graph".to_string(), set3.clone(), 0.5),
+            ],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert!(
+            result_with_nan.iter().all(|r| r.score.is_finite()),
+            "No score in fusion results should be NaN or non-finite"
+        );
+
+        let result_without_nan_signal = weighted_reciprocal_rank_fusion_with_options(
+            vec![
+                ("vector".to_string(), set1, 1.0),
+                ("graph".to_string(), set3, 0.5),
+            ],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert_eq!(
+            result_with_nan.len(), result_without_nan_signal.len(),
+            "Signal with NaN weight must produce identical result count"
+        );
+        for (r1, r2) in result_with_nan.iter().zip(result_without_nan_signal.iter()) {
+            assert_eq!(r1.id, r2.id);
+            assert_eq!(r1.score, r2.score);
+            assert_eq!(r1.metadata, r2.metadata);
+            assert_eq!(r1.matched_signals, r2.matched_signals);
+        }
+    }
+
+    #[test]
+    fn test_rrf_fusion_logs_nonfinite_raw_score() {
+        let set_with_nan_raw_score = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: f32::NAN,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+
+        let result = weighted_reciprocal_rank_fusion_with_options(
+            vec![("vector".to_string(), set_with_nan_raw_score, 1.0)],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].score.is_finite(),
+            "RRF rank score must remain finite despite NaN raw doc score"
+        );
+
+        let prov = result[0]
+            .provenance
+            .as_ref()
+            .expect("provenance should be attached");
+        assert!(
+            prov.vector_distance.map_or(false, |s| s.is_nan()),
+            "Non-finite raw score should be preserved as NaN in vector_distance provenance for traceabilty"
+        );
+        let contrib = prov
+            .signal_contributions
+            .get("vector")
+            .expect("vector signal contribution present");
+        assert!(
+            contrib.raw_score.is_nan(),
+            "Non-finite raw score should be preserved as NaN in signal contribution raw_score"
+        );
     }
 
     #[test]

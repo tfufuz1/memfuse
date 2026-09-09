@@ -1,12 +1,11 @@
 // FILE-CONTEXT
 // ZWECK: Concurrency Stress Test für TenantIsolatedKvStore und EvictionWorker unter hoher Parallellast.
-// STAND: TS:2026-09-09T13:17:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T16:15:00Z (SESSION: dafac391)
 
 use memfuse_core::TenantId;
 use memfuse_security::kv_segment::{
     emergency_wipe, EvictionWorker, KvSegment, TenantIsolatedKvStore,
 };
-use parking_lot::RwLock;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -57,18 +56,15 @@ fn test_concurrent_tenant_store_read_write() {
 
 #[test]
 fn test_concurrent_eviction_worker_triggers() {
-    let segs = Arc::new(RwLock::new(Vec::new()));
+    let store = Arc::new(TenantIsolatedKvStore::new());
     let tenant = TenantId::try_new(1).unwrap();
 
     // Populate store with 50 segments
-    {
-        let mut w = segs.write();
-        for i in 0..50 {
-            w.push(KvSegment::new(tenant, i, vec![0xFF; 256]));
-        }
+    for i in 0..50 {
+        store.insert_segment(tenant, KvSegment::new(tenant, i, vec![0xFF; 256]));
     }
 
-    let worker = Arc::new(EvictionWorker::spawn(Arc::clone(&segs)));
+    let worker = Arc::new(EvictionWorker::spawn(Arc::clone(&store)));
     let num_trigger_threads = 4;
 
     let handles: Vec<_> = (0..num_trigger_threads)
@@ -91,7 +87,7 @@ fn test_concurrent_eviction_worker_triggers() {
     thread::sleep(Duration::from_millis(100));
 
     // Segments should have been evicted down
-    let remaining = segs.read().len();
+    let remaining = store.get_tenant_segment_len(tenant);
     assert!(
         remaining < 50,
         "Segments should have been evicted by worker thread"
@@ -100,29 +96,29 @@ fn test_concurrent_eviction_worker_triggers() {
 
 #[test]
 fn test_concurrent_emergency_wipe_race() {
-    let segs = Arc::new(RwLock::new(Vec::new()));
+    let store = Arc::new(TenantIsolatedKvStore::new());
     let tenant = TenantId::try_new(1).unwrap();
 
     for i in 0..100 {
-        segs.write().push(KvSegment::new(tenant, i, vec![0x11; 64]));
+        store.insert_segment(tenant, KvSegment::new(tenant, i, vec![0x11; 64]));
     }
 
-    let segs_ref1 = Arc::clone(&segs);
-    let segs_ref2 = Arc::clone(&segs);
+    let store_ref1 = Arc::clone(&store);
+    let store_ref2 = Arc::clone(&store);
 
     let handle1 = thread::spawn(move || {
-        emergency_wipe(&segs_ref1);
+        emergency_wipe(&store_ref1);
     });
 
     let handle2 = thread::spawn(move || {
-        emergency_wipe(&segs_ref2);
+        emergency_wipe(&store_ref2);
     });
 
     handle1.join().unwrap();
     handle2.join().unwrap();
 
     assert_eq!(
-        segs.read().len(),
+        store.get_tenant_segment_len(tenant),
         0,
         "Store must be completely empty after emergency wipe"
     );

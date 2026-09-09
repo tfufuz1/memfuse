@@ -48,10 +48,8 @@ pub fn run_check_agents_integrity() -> bool {
     if let Some(fehlt_start) = agents_content.find(header_marker) {
         let fehlt_section = &agents_content[fehlt_start..];
         let after_header = &fehlt_section[header_marker.len()..];
-        let section_end = header_marker.len()
-            + after_header
-                .find("###")
-                .unwrap_or_else(|| after_header.len());
+        let section_end =
+            header_marker.len() + after_header.find("###").unwrap_or(after_header.len());
         let fehlt_table = &fehlt_section[..section_end];
 
         for line in fehlt_table.lines() {

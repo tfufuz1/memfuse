@@ -101,7 +101,7 @@ async fn test_collection_scan_range_isolation() {
 
     // Scan col_a [apple, banana]
     let results = col_a
-        .scan(Bound::Included(b"apple"), Bound::Included(b"banana"))
+        .scan(Bound::Included(b"apple"), Bound::Included(b"banana"), None)
         .await
         .expect("scan");
 
@@ -111,7 +111,7 @@ async fn test_collection_scan_range_isolation() {
 
     // Verify col_b scanning only returns its own keys
     let results_b = col_b
-        .scan(Bound::Unbounded, Bound::Unbounded)
+        .scan(Bound::Unbounded, Bound::Unbounded, None)
         .await
         .expect("scan b");
     assert_eq!(results_b.len(), 1);
@@ -128,11 +128,11 @@ async fn test_collection_scan_prefix_isolation() {
     col.insert("user/2", &[0.2, 0.0, 0.0], None).await.unwrap();
     col.insert("item/1", &[0.3, 0.0, 0.0], None).await.unwrap();
 
-    let users = col.scan_prefix("user/").await.expect("scan_prefix");
+    let users = col.scan_prefix("user/", None).await.expect("scan_prefix");
     assert_eq!(users.len(), 2);
     assert!(users.iter().all(|(k, _)| k.starts_with("user/")));
 
-    let items = col.scan_prefix("item/").await.expect("scan_prefix item");
+    let items = col.scan_prefix("item/", None).await.expect("scan_prefix item");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].0, "user/1".to_string().replace("user/1", "item/1")); // Verification of key name
     assert_eq!(items[0].0, "item/1");

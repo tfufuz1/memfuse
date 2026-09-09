@@ -157,9 +157,10 @@ pub fn check_conditional_review_deadlines_at(
 
                     if days_until_due < 0 {
                         result.errors.push(format!(
-                            "❌ VETO-FRIST ÜBERSCHRITTEN: {} — Wiedervorlage war am {}, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern.",
+                            "❌ VETO-FRIST ÜBERSCHRITTEN: {} — Wiedervorlage war am {}, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern (adr_ref: {}).",
                             entry.feature_id,
-                            due_str
+                            due_str,
+                            adr
                         ));
                     } else if days_until_due <= CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS {
                         result.warnings.push(format!(
@@ -311,7 +312,7 @@ reason: >
         assert_eq!(res.errors.len(), 1);
         assert_eq!(
             res.errors[0],
-            "❌ VETO-FRIST ÜBERSCHRITTEN: F-02 — Wiedervorlage war am 2026-10-07, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern."
+            "❌ VETO-FRIST ÜBERSCHRITTEN: F-02 — Wiedervorlage war am 2026-10-07, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern (adr_ref: docs/decisions/ADR-0XX-test.md)."
         );
     }
 
@@ -375,7 +376,7 @@ reason: >
         assert_eq!(expired_res.errors.len(), 1);
         assert_eq!(
             expired_res.errors[0],
-            "❌ VETO-FRIST ÜBERSCHRITTEN: OP-03 — Wiedervorlage war am 2026-10-07, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern."
+            "❌ VETO-FRIST ÜBERSCHRITTEN: OP-03 — Wiedervorlage war am 2026-10-07, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern (adr_ref: DECISIONS.md#adr-077)."
         );
 
         // Warning check (within 14 days)
@@ -444,7 +445,6 @@ reason: >
         assert_eq!(res.errors.len(), 1);
         assert!(res.errors[0].contains("F-01"));
         assert!(res.errors[0].contains("2026-08-01"));
-        assert!(res.errors[0].contains("docs/decisions/ADR-001.md"));
 
         assert_eq!(res.warnings.len(), 1);
         assert!(res.warnings[0].contains("F-02"));

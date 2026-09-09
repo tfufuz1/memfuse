@@ -177,3 +177,21 @@ cargo check --workspace --exclude memfuse-tauri
 ### Summary Sign-off
 - **Quality Gate Stack:** 156 unit + 2 integration + 5 robustness tests passing 100% green. Zero clippy warnings (`-D warnings`), zero formatting issues, zero open `AI-TAG` findings.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) re-verified fully bit-accurate, zero-panic compliant, thread-safe, and fully ready as the foundation of MemFuse.
+
+## 12. TenantId Helper Method Enhancement (2026-09-09 — SESSION a69d21e4)
+
+- **`TenantId::as_u64` Addition:** Added `pub const fn as_u64(self) -> u64` helper method to `TenantId` in `crates/memfuse-core/src/types/domain.rs` to provide explicit `u64` primitive getter semantics and ensure seamless compatibility across workspace crates (e.g. `memfuse-crypto`).
+- **Unit Testing:** Updated unit tests in `types/domain.rs` (`test_tenant_id_defaults_and_constants` and `test_tenant_id_valid`) to verify `as_u64()`.
+- **Full Verification:** All 156 unit tests, 2 integration tests, and 5 robustness tests in `memfuse-core` pass 100% green. Workspace compilation check (`cargo check --workspace --exclude memfuse-tauri`) succeeds cleanly.
+
+## 13. Full Crate Audit & Reality Check (2026-09-09 — SESSION 96e5c38b / Task JULES-20260909-IMPL)
+
+### Inventar-Realitätsabgleich (Stand 2026-09-09)
+- **Prompter-Inventar:** 17 Dateien in `crates/memfuse-core/src/` (`error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits/embedding.rs`, `traits/mod.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`).
+- **Tatsächlicher Dateibestand:** Exact 17 files match. Inventarabgleich: keine Abweichung, Stand 2026-09-08/09 confirmed.
+
+### Layer 0 Invarianten & Verification
+- **DAG Integrity:** Layer 0 has 0 workspace dependencies and 0 upward imports.
+- **Unsafe-Code Policy:** `#![deny(unsafe_code)]` at crate root `lib.rs`. Zero `unsafe` blocks in production code outside flatbuffers generated glue.
+- **Zero-Panic Propagation:** Controlled error propagation via `MemFuseError`.
+- **Quality Gate Stack & Tests:** 156 unit + 2 integration + 5 robustness tests (163 total) passing 100% green. Gate stack and preflight checks passed.
