@@ -470,7 +470,8 @@ mod tests {
                     vec![1; 100], // 100 bytes each
                 );
                 // Insert segment into store
-                store.insert_segment(tenant, seg);
+                let mut segments = store.segments.write();
+                segments.entry(tenant).or_default().push(seg);
             }
         }
 
@@ -485,17 +486,20 @@ mod tests {
             store.evict_lru_fair(150);
 
             // Count remaining segments per tenant
+            let segments = store.segments.read();
             for tenant in [1u64, 2, 3, 4, 5].iter() {
                 let tenant_id = TenantId::try_new(*tenant).unwrap();
-                let remaining = store.get_tenant_segment_len(tenant_id);
-                *evicted_by_tenant.entry(*tenant).or_insert(0) = 10 - remaining as u64;
+                if let Some(segs) = segments.get(&tenant_id) {
+                    let remaining = segs.len();
+                    evicted_by_tenant.insert(*tenant, 10 - remaining);
+                }
             }
         }
 
         // Assertion: no single tenant should be disproportionately evicted
         // (all tenants should lose roughly 5–6 segments over 5 calls; if rotation works,
         // no tenant is hit in all 5 calls, some hit 0–1 times)
-        let eviction_counts: Vec<u64> = evicted_by_tenant.values().copied().collect();
+        let eviction_counts: Vec<usize> = evicted_by_tenant.values().copied().collect();
         let min_evictions = *eviction_counts.iter().min().unwrap_or(&0);
         let max_evictions = *eviction_counts.iter().max().unwrap_or(&100);
 
