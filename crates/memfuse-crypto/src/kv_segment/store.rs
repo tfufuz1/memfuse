@@ -162,6 +162,11 @@ impl TenantIsolatedKvStore {
         freed
     }
 
+    /// Maximale Anzahl an Eviction-Runden, die unter einem einzigen Lock-Erwerb
+    /// ausgeführt werden, bevor der Schreiblock kurzzeitig freigegeben wird, um
+    /// wartenden Lesezugriffen (get_segments/get_decrypted_segment) eine Chance zu geben.
+    const MAX_ROUNDS_PER_LOCK_ACQUISITION: usize = 4;
+
     /// Evictiert KV-Segmente unter Erhaltung von Tenant-Fairness via Round-Robin über alle aktiven Tenants.
     ///
     /// Im Gegensatz zu `evict_lru_global()` verhindert diese Methode, dass sehr aktive Tenants
@@ -169,56 +174,66 @@ impl TenantIsolatedKvStore {
     /// Dies ist der faire Multi-Tenant-Eviction-Pfad. Für reines globales LRU siehe `evict_lru_global()`.
     // AI-TAG[SECURITY][MAJOR][RESOLVED] Add tenant-fair LRU eviction to prevent cross-tenant starvation (ID: AGT-CRYPTO-c1a93b22) (TS: 2026-09-10T10:00:00Z)
     pub fn evict_lru_fair(&self, target_free_bytes: usize) -> usize {
-        let mut map = self.segments.write();
         let mut freed = 0;
 
-        while freed < target_free_bytes && !map.is_empty() {
-            let mut tenants: Vec<TenantId> = map.keys().copied().collect();
-            tenants.sort();
-
-            let mut evicted_in_round = false;
-
-            for tenant in tenants {
-                if freed >= target_free_bytes {
-                    break;
-                }
-
-                if let Some(segs) = map.get_mut(&tenant) {
-                    if segs.is_empty() {
-                        map.remove(&tenant);
-                        continue;
-                    }
-
-                    let mut lru_idx = 0;
-                    let mut oldest_time = None;
-
-                    for (idx, seg) in segs.iter().enumerate() {
-                        let acc = seg.last_accessed();
-                        if oldest_time.is_none_or(|t| acc < t) {
-                            lru_idx = idx;
-                            oldest_time = Some(acc);
-                        }
-                    }
-
-                    let evicted = segs.remove(lru_idx);
-                    freed += evicted.len();
-                    evicted_in_round = true;
-
-                    tracing::debug!(
-                        tenant_id = tenant.inner(),
-                        segment_id = evicted.segment_id,
-                        freed_bytes = evicted.len(),
-                        "KV eviction worker: evicted segment"
-                    );
-
-                    if segs.is_empty() {
-                        map.remove(&tenant);
-                    }
-                }
+        'outer: while freed < target_free_bytes {
+            let mut map = self.segments.write();
+            if map.is_empty() {
+                break;
             }
 
-            if !evicted_in_round {
-                break;
+            for _round in 0..Self::MAX_ROUNDS_PER_LOCK_ACQUISITION {
+                if freed >= target_free_bytes {
+                    break 'outer;
+                }
+
+                let mut tenants: Vec<TenantId> = map.keys().copied().collect();
+                tenants.sort();
+
+                let mut evicted_in_round = false;
+
+                for tenant in tenants {
+                    if freed >= target_free_bytes {
+                        break;
+                    }
+
+                    if let Some(segs) = map.get_mut(&tenant) {
+                        if segs.is_empty() {
+                            map.remove(&tenant);
+                            continue;
+                        }
+
+                        let mut lru_idx = 0;
+                        let mut oldest_time = None;
+
+                        for (idx, seg) in segs.iter().enumerate() {
+                            let acc = seg.last_accessed();
+                            if oldest_time.is_none_or(|t| acc < t) {
+                                lru_idx = idx;
+                                oldest_time = Some(acc);
+                            }
+                        }
+
+                        let evicted = segs.remove(lru_idx);
+                        freed += evicted.len();
+                        evicted_in_round = true;
+
+                        tracing::debug!(
+                            tenant_id = tenant.inner(),
+                            segment_id = evicted.segment_id,
+                            freed_bytes = evicted.len(),
+                            "KV eviction worker: evicted segment"
+                        );
+
+                        if segs.is_empty() {
+                            map.remove(&tenant);
+                        }
+                    }
+                }
+
+                if !evicted_in_round {
+                    break 'outer;
+                }
             }
         }
 
@@ -335,5 +350,88 @@ mod tests {
         // Fair round-robin evicts 1 segment from Tenant A and 1 segment from Tenant B
         assert_eq!(store.get_tenant_segment_len(tenant_a), 2);
         assert_eq!(store.get_tenant_segment_len(tenant_b), 2);
+    }
+
+    #[test]
+    fn test_evict_lru_fair_releases_lock_between_batches() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let store = Arc::new(TenantIsolatedKvStore::new());
+
+        // Create 5 tenants with 200 segments each (1000 bytes per segment).
+        // Total segments = 1000.
+        // MAX_ROUNDS_PER_LOCK_ACQUISITION = 4.
+        // In 4 rounds, at most 4 * 5 = 20 segments are evicted per lock acquisition cycle.
+        // Evicting 500 segments (500,000 bytes) requires at least 25 lock acquisition cycles.
+        let num_tenants = 5;
+        for t in 1..=num_tenants {
+            let tenant = TenantId::try_new(t).unwrap();
+            for seg_id in 1..=200 {
+                store.insert_segment(tenant, KvSegment::new(tenant, seg_id, vec![0xAA; 1000]));
+            }
+        }
+
+        // Add unaffected Tenant Z with 500 segments so it isn't emptied quickly.
+        let tenant_z = TenantId::try_new(99).unwrap();
+        for seg_id in 1..=500 {
+            store.insert_segment(tenant_z, KvSegment::new(tenant_z, seg_id, vec![0xBB; 1000]));
+        }
+
+        let eviction_started = Arc::new(AtomicBool::new(false));
+        let eviction_done = Arc::new(AtomicBool::new(false));
+        let reads_during_eviction = Arc::new(AtomicUsize::new(0));
+
+        let store_reader = Arc::clone(&store);
+        let eviction_started_reader = Arc::clone(&eviction_started);
+        let eviction_done_reader = Arc::clone(&eviction_done);
+        let reads_during_eviction_clone = Arc::clone(&reads_during_eviction);
+
+        // Reader thread
+        let reader_handle = std::thread::spawn(move || {
+            // Wait until eviction starts
+            while !eviction_started_reader.load(Ordering::SeqCst) {
+                std::thread::yield_now();
+            }
+
+            let start = Instant::now();
+            while !eviction_done_reader.load(Ordering::SeqCst) {
+                if start.elapsed() > Duration::from_secs(5) {
+                    break;
+                }
+                // Try reading tenant_z segment count or list
+                let len = store_reader.get_tenant_segment_len(tenant_z);
+                if len > 0 && !eviction_done_reader.load(Ordering::SeqCst) {
+                    reads_during_eviction_clone.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        });
+
+        let store_evict = Arc::clone(&store);
+        let eviction_started_clone = Arc::clone(&eviction_started);
+        let eviction_done_clone = Arc::clone(&eviction_done);
+
+        // Eviction thread
+        let evict_handle = std::thread::spawn(move || {
+            eviction_started_clone.store(true, Ordering::SeqCst);
+            let freed = store_evict.evict_lru_fair(500_000);
+            eviction_done_clone.store(true, Ordering::SeqCst);
+            freed
+        });
+
+        let freed_bytes = evict_handle.join().expect("eviction thread failed");
+        reader_handle.join().expect("reader thread failed");
+
+        assert!(
+            freed_bytes >= 500_000,
+            "evict_lru_fair must free target bytes (got {freed_bytes})"
+        );
+
+        let reads_count = reads_during_eviction.load(Ordering::SeqCst);
+        assert!(
+            reads_count > 0,
+            "Concurrent read access must succeed during multi-batch eviction (reads_during_eviction = {reads_count})"
+        );
     }
 }
