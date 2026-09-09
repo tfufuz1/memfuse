@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T12:50:00Z (SESSION: 1b2550ba)
+// ZWECK: SLM-Profildefinitionen und konformale Quantil-Kalibrierung (Gibbs & Candès).
+// INVARIANTEN: INV-ROUTER-1 (quantile_threshold in [0.0, 1.0]), INV-P8-1 (Fingerprint-Invalidation).
+// NICHT-OFFENSICHTLICH: Fast O(1) HashSet Community-Filter + deterministische JSON-Sortierung.
+// SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
+
 //! Profile definition for Small Language Models (SLMs) in MemFuse Router.
 
 use memfuse_core::{ConfigFingerprint, MemFuseError, Result, TokenBudget};

@@ -382,3 +382,35 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
 - `cargo test -p memfuse-store --all-features`: **PASSED** (114 unit/integration tests + benchmarks passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+
+---
+
+## 20. Storage Engine Tier 1 Deep Audit & Realitätsabgleich (TS: 2026-09-09T12:45:00Z / SESSION: 1b0ed289)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Audit Timestamp**: `2026-09-09T12:45:00Z`
+- **Session Hash**: `1b0ed289`
+
+### Inventory Realitätsabgleich (Step 0)
+- **Inventory Check**: Verified all 10 source files (`checkpoint.rs`, `compaction.rs`, `lib.rs`, `lsm.rs`, `memtable.rs`, `mmap.rs`, `sstable.rs`, `tenant_codec.rs`, `util.rs`, `wal.rs`). Confirmed 0 drift against prompter inventory (Stand 2026-09-08 confirmed).
+
+### Invariant & Crash-Safety Compliance Matrix
+1. **fsync & Directory Sync Discipline (APM-1)**: Verified `sync_all()` error propagation with `?` and parent directory sync (`fsync_parent_dir`) across `util.rs`, `wal.rs`, `sstable.rs`, `lsm.rs`, and `compaction.rs`.
+2. **MVCC Single-Load Rule (APM-17)**: Confirmed single load of `last_committed_tx` at start of read entrypoints (`get_at_seq`, `scan_prefix_at`) in `lsm.rs`.
+3. **Lock Hierarchy & Concurrency Safety (APM-3, APM-12)**: Confirmed strict top-down lock ordering (`commit_mutex` -> `immutable_memtables`/`memtable` locks) and atomic pointer swaps.
+4. **Zero Production Unwraps / Expects**: Verified 0 non-test `.unwrap()` and `.expect()` calls in `crates/memfuse-store/src/`.
+5. **Role Lock Discipline**: Strict Auditor role maintained — zero functional code changes in `src/` (only `.unwrap-baseline.json` updated for test-only unwraps).
+
+### Tier 1 Rauchtest & Concurrency Verification
+- **Concurrency Rauchtest**: 3 consecutive runs of lib unit tests (`cargo test -p memfuse-store --lib`) with 8 threads — 124/124 tests passed cleanly each run (0 panics, 0 deadlocks).
+- **Coverage & Mutation Analysis**: `cargo-llvm-cov` and `cargo-mutants` missing in environment, recorded as `[ÜBERSPRUNGEN: cargo-llvm-cov nicht installierbar]` and `[ÜBERSPRUNGEN: cargo-mutants nicht installierbar]`.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --lib --all-features`: **PASSED** (124 tests passed cleanly)
+- `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+- `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (All gates passed)

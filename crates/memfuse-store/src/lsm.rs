@@ -3392,7 +3392,10 @@ mod tests {
         tokio::fs::create_dir(&sst_path).await.unwrap();
 
         let res = storage.force_flush().await;
-        assert!(res.is_err(), "Flush must return error when SSTable creation fails");
+        assert!(
+            res.is_err(),
+            "Flush must return error when SSTable creation fails"
+        );
 
         let state = storage.state.read().await;
         assert!(
