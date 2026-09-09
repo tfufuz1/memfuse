@@ -36,10 +36,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-agent",
+      "krate": "memfuse-crypto",
       "issue": "JULES-20260909-IMPL",
-      "timestamp": "2026-09-09T15:49:57.345223243+00:00",
-      "session_id": "10742454368874091560",
+      "timestamp": "2026-09-09T15:42:26.576534363+00:00",
+      "session_id": "14951270737769827256",
       "active": true
     }
   ]
