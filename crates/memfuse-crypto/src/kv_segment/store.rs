@@ -2,6 +2,8 @@
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
 // STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use ahash::AHashMap;
 use memfuse_core::TenantId;
 use parking_lot::RwLock;
@@ -14,6 +16,7 @@ use super::segment::KvSegment;
 /// eines anderen Tenants lesen. Strukturell erzwungen durch getrennte Maps.
 pub struct TenantIsolatedKvStore {
     segments: RwLock<AHashMap<TenantId, Vec<KvSegment>>>,
+    eviction_round_offset: AtomicUsize,
 }
 
 impl TenantIsolatedKvStore {
@@ -21,6 +24,7 @@ impl TenantIsolatedKvStore {
     pub fn new() -> Self {
         Self {
             segments: RwLock::new(AHashMap::new()),
+            eviction_round_offset: AtomicUsize::new(0),
         }
     }
 
@@ -116,7 +120,8 @@ impl TenantIsolatedKvStore {
     }
 
     /// Dies ist GLOBALES LRU ohne Tenant-Fairness. Für faire Multi-Tenant-Eviction siehe `evict_lru_fair()`.
-    pub fn evict_lru_global(&self, target_free_bytes: usize) -> usize {
+    #[allow(dead_code)]
+    pub(crate) fn evict_lru_global(&self, target_free_bytes: usize) -> usize {
         let mut map = self.segments.write();
         let mut freed = 0;
 
@@ -169,9 +174,8 @@ impl TenantIsolatedKvStore {
 
     /// Evictiert KV-Segmente unter Erhaltung von Tenant-Fairness via Round-Robin über alle aktiven Tenants.
     ///
-    /// Im Gegensatz zu `evict_lru_global()` verhindert diese Methode, dass sehr aktive Tenants
-    /// inaktive Tenants vollständig verdrängen (Prevent Cross-Tenant Starvation).
-    /// Dies ist der faire Multi-Tenant-Eviction-Pfad. Für reines globales LRU siehe `evict_lru_global()`.
+    /// Im Gegensatz zu `evict_lru_global()` verhindert diese Methode, dass sehr aktive
+    /// Tenants inaktive Tenants vollständig verdrängen (Prevent Cross-Tenant Starvation).
     // AI-TAG[SECURITY][MAJOR][RESOLVED] Add tenant-fair LRU eviction to prevent cross-tenant starvation (ID: AGT-CRYPTO-c1a93b22) (TS: 2026-09-10T10:00:00Z)
     pub fn evict_lru_fair(&self, target_free_bytes: usize) -> usize {
         let mut freed = 0;
