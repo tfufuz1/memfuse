@@ -165,6 +165,19 @@ pub fn check_regression(
         )
     })?;
 
+    if current.recall_at_5.is_nan() || current.recall_at_5.is_infinite() {
+        return Err(format!(
+            "Current Recall@5 contains invalid float value (NaN/Inf): {:.3}",
+            current.recall_at_5
+        ));
+    }
+    if baseline.recall_at_5.is_nan() || baseline.recall_at_5.is_infinite() {
+        return Err(format!(
+            "Baseline Recall@5 contains invalid float value (NaN/Inf): {:.3}",
+            baseline.recall_at_5
+        ));
+    }
+
     let delta = baseline.recall_at_5 - current.recall_at_5;
     if delta > 0.03 {
         return Err(format!(
@@ -1375,4 +1388,50 @@ where
         overall_accuracy,
         total_cases: cases.len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_regression_nan_inf_safety() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let baseline_report = RegressionReport {
+            recall_at_5: 0.85,
+            recall_at_10: 0.90,
+            overall_accuracy: 0.85,
+            total_scenarios: 10,
+            failed_scenarios: vec![],
+        };
+        std::fs::write(
+            temp_file.path(),
+            serde_json::to_string(&baseline_report).unwrap(),
+        )
+        .unwrap();
+
+        // Current has NaN
+        let current_nan = RegressionReport {
+            recall_at_5: f64::NAN,
+            recall_at_10: 0.90,
+            overall_accuracy: 0.85,
+            total_scenarios: 10,
+            failed_scenarios: vec![],
+        };
+        let res_nan = check_regression(&current_nan, temp_file.path());
+        assert!(res_nan.is_err());
+        assert!(res_nan.unwrap_err().contains("invalid float value"));
+
+        // Current has Infinity
+        let current_inf = RegressionReport {
+            recall_at_5: f64::INFINITY,
+            recall_at_10: 0.90,
+            overall_accuracy: 0.85,
+            total_scenarios: 10,
+            failed_scenarios: vec![],
+        };
+        let res_inf = check_regression(&current_inf, temp_file.path());
+        assert!(res_inf.is_err());
+        assert!(res_inf.unwrap_err().contains("invalid float value"));
+    }
 }

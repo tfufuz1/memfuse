@@ -3029,7 +3029,7 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "5bf7eada6d89c49f"
+    "hash": "5c568223ba910b2c"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
