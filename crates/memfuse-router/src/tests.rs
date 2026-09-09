@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
 // ZWECK: Unit- und Integrationstest-Suite für memfuse-router.
 // INVARIANTEN: Determinismus, NaN-Safety, Hot-Reload Concurrent Safety.
 // SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
@@ -2678,6 +2678,254 @@ mod tests {
             "Expected {expected_nc}, got {}",
             metrics.non_conformity_score
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_quantization_level_default_and_try_new() {
+        use crate::profile::QuantizationLevel;
+
+        assert_eq!(QuantizationLevel::default(), QuantizationLevel::Unknown);
+
+        let valid = SlmProfile::try_new(
+            "valid",
+            "http://localhost:8000",
+            vec![1],
+            TokenBudget::default(),
+            0.5,
+        );
+        assert!(valid.is_ok());
+
+        let invalid_name = SlmProfile::try_new(
+            "   ",
+            "http://localhost:8000",
+            vec![1],
+            TokenBudget::default(),
+            0.5,
+        );
+        assert!(invalid_name.is_err());
+
+        let invalid_endpoint =
+            SlmProfile::try_new("valid", "   ", vec![1], TokenBudget::default(), 0.5);
+        assert!(invalid_endpoint.is_err());
+
+        let invalid_score = SlmProfile::try_new(
+            "valid",
+            "http://localhost:8000",
+            vec![1],
+            TokenBudget::default(),
+            f32::NAN,
+        );
+        assert!(invalid_score.is_err());
+
+        let invalid_neg_score = SlmProfile::try_new(
+            "valid",
+            "http://localhost:8000",
+            vec![1],
+            TokenBudget::default(),
+            -0.1,
+        );
+        assert!(invalid_neg_score.is_err());
+    }
+
+    #[test]
+    fn test_conformal_calibrator_empirical_rate_and_reset() {
+        use crate::profile::ConformalCalibrator;
+
+        let mut cal = ConformalCalibrator::default();
+        assert_eq!(cal.empirical_error_rate(), 0.0);
+
+        cal.update(0.9);
+        assert_eq!(cal.empirical_error_rate(), 1.0);
+
+        cal.update(0.1);
+        assert_eq!(cal.empirical_error_rate(), 0.5);
+
+        cal.reset_window();
+        assert_eq!(cal.window_errors, 0);
+        assert_eq!(cal.window_total, 0);
+        assert_eq!(cal.empirical_error_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_profile_calibration_state_edge_cases() {
+        use crate::profile::ProfileCalibrationState;
+        use memfuse_core::ConfigFingerprint;
+
+        let mut state = ProfileCalibrationState::new(0.5);
+        assert_eq!(state.average_confidence(), 1.0);
+
+        assert!(!state.is_calibrated(None));
+
+        let fp = ConfigFingerprint::new("model", "F16", "hash", 0.7);
+        assert!(!state.is_calibrated(Some(&fp)));
+
+        state.conformal.window_total = 30;
+        state.last_calibrated_fingerprint = Some(fp.clone());
+        assert!(state.is_calibrated(Some(&fp)));
+
+        state.check_and_invalidate_fingerprint(None);
+        assert_eq!(state.last_calibrated_fingerprint, None);
+        assert_eq!(state.conformal.window_total, 0);
+    }
+
+    #[tokio::test]
+    async fn test_router_engine_try_new_and_try_update_profiles_error_paths(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let invalid_profile =
+            SlmProfile::new("", "http://localhost", vec![1], TokenBudget::default(), 0.5);
+
+        let try_new_res =
+            RouterEngine::try_new(collection.clone(), vec![invalid_profile.clone()], None);
+        assert!(try_new_res.is_err());
+
+        let valid_profile = SlmProfile::new(
+            "valid",
+            "http://localhost",
+            vec![1],
+            TokenBudget::default(),
+            0.5,
+        );
+        let router = RouterEngine::new(collection, vec![valid_profile], None);
+
+        let try_update_res = router.try_update_profiles(vec![invalid_profile]);
+        assert!(try_update_res.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_router_engine_drift_status_and_baseline_helpers(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let profile = SlmProfile::new(
+            "p1",
+            "http://localhost",
+            vec![1],
+            TokenBudget::default(),
+            0.5,
+        );
+        let router = RouterEngine::new(collection, vec![profile], None);
+
+        assert!(router.drift_status("nonexistent").is_none());
+        assert!(!router.set_lyapunov_baseline("nonexistent", &[0.1, 0.2]));
+        assert!(router.set_lyapunov_baseline("p1", &[0.1, 0.2]));
+
+        assert_eq!(router.pending_decision_count(), 0);
+
+        router.reset_all_calibration();
+        assert_eq!(router.calibration_stats()["p1"].times_selected, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_select_profile_cascade_error_branches_and_fallback(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::profile::ProfileCalibrationState;
+        use memfuse_core::{ContextChunk, DocId};
+        use std::collections::HashMap;
+
+        let dir = tempfile::tempdir()?;
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        let profile1 = SlmProfile::new(
+            "p1",
+            "http://localhost/1",
+            vec![1],
+            TokenBudget::default(),
+            0.9,
+        );
+        let profile2 = SlmProfile::new(
+            "p2",
+            "http://localhost/2",
+            vec![1],
+            TokenBudget::default(),
+            0.8,
+        );
+        let profiles = vec![profile1.clone(), profile2.clone()];
+        let router = RouterEngine::new(collection, profiles.clone(), None);
+
+        let mut calibration: HashMap<String, ProfileCalibrationState> = HashMap::new();
+        calibration.insert("p1".to_string(), ProfileCalibrationState::new(0.9));
+        calibration.insert("p2".to_string(), ProfileCalibrationState::new(0.8));
+
+        // 1. Empty chunks
+        let err_empty_chunks = router.select_profile_cascade(&[], &profiles, &mut calibration);
+        assert!(err_empty_chunks.is_err());
+
+        // 2. All NaN chunks
+        let nan_chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "nan test".to_string(),
+            relevance: f32::NAN,
+            token_count: 2,
+            metadata: None,
+            contextual_prefix: None,
+            links: vec![],
+        };
+        let err_nan_chunks =
+            router.select_profile_cascade(&[(nan_chunk, Some(1))], &profiles, &mut calibration);
+        assert!(err_nan_chunks.is_err());
+
+        // 3. Empty profiles
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "test".to_string(),
+            relevance: 0.5,
+            token_count: 2,
+            metadata: None,
+            contextual_prefix: None,
+            links: vec![],
+        };
+        let err_empty_profiles =
+            router.select_profile_cascade(&[(chunk.clone(), Some(1))], &[], &mut calibration);
+        assert!(err_empty_profiles.is_err());
+
+        // 4. No matching communities
+        let err_no_comm = router.select_profile_cascade(
+            &[(chunk.clone(), Some(999))],
+            &profiles,
+            &mut calibration,
+        );
+        assert!(err_no_comm.is_err());
+
+        // 5. Cascade fallback path: relevance (0.1) is below both p1 (0.9) and p2 (0.8) thresholds
+        let low_chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "low relevance".to_string(),
+            relevance: 0.1,
+            token_count: 2,
+            metadata: None,
+            contextual_prefix: None,
+            links: vec![],
+        };
+        let (fallback_idx, fallback_p, metrics) =
+            router.select_profile_cascade(&[(low_chunk, Some(1))], &profiles, &mut calibration)?;
+        assert_eq!(fallback_p.name, "p2");
+        assert_eq!(fallback_idx, 1);
+        assert!(!metrics.calibrated);
 
         Ok(())
     }
