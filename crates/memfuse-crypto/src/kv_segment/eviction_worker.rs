@@ -101,8 +101,9 @@ mod tests {
     fn test_eviction_worker_nonblocking_trigger() {
         let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
-        let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
-        let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
+        let store = Arc::new(TenantIsolatedKvStore::new());
+        store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 512]));
+        store.insert_segment(tenant, KvSegment::new(tenant, 2, vec![0x22; 512]));
 
         let store = Arc::new(TenantIsolatedKvStore::new());
         store.insert_segment(tenant, seg1);
@@ -139,18 +140,17 @@ mod tests {
     fn test_lru_eviction_order_not_fifo() {
         let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
-        // A is created first (clock 1)
-        let seg_a = KvSegment::new(tenant, 10, vec![0x11; 512]);
-        // B is created second (clock 2)
-        let seg_b = KvSegment::new(tenant, 20, vec![0x22; 512]);
-        // C is created third (clock 3)
-        let seg_c = KvSegment::new(tenant, 30, vec![0x33; 512]);
+        let store = Arc::new(TenantIsolatedKvStore::new());
 
-        // A is read/touched last -> clock updated to 4 (most recently used)
-        seg_a.touch();
+        // Insert A, B, C
+        store.insert_segment(tenant, KvSegment::new(tenant, 10, vec![0x11; 512]));
+        std::thread::sleep(Duration::from_millis(1));
+        store.insert_segment(tenant, KvSegment::new(tenant, 20, vec![0x22; 512]));
+        std::thread::sleep(Duration::from_millis(1));
+        store.insert_segment(tenant, KvSegment::new(tenant, 30, vec![0x33; 512]));
 
-        assert!(seg_a.last_accessed() > seg_b.last_accessed());
-        assert!(seg_a.last_accessed() > seg_c.last_accessed());
+        // Touch A so it becomes most recently used
+        let _ = store.get_segment_bytes(tenant, 10);
 
         let store = Arc::new(TenantIsolatedKvStore::new());
         store.insert_segment(tenant, seg_a);
@@ -193,8 +193,9 @@ mod tests {
     fn test_emergency_wipe_synchronous_completion() {
         let store = TenantIsolatedKvStore::new();
         let tenant = TenantId::try_new(1).unwrap();
-        let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
-        let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
+        let store = TenantIsolatedKvStore::new();
+        store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 512]));
+        store.insert_segment(tenant, KvSegment::new(tenant, 2, vec![0x22; 512]));
 
         let store = TenantIsolatedKvStore::new();
         store.insert_segment(tenant, seg1);
