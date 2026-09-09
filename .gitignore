@@ -32,5 +32,8 @@ memfuse_orphaned_pins.json
 
 # TODO: .unwrap-baseline.json is tracked in repository to provide baseline for Gate 2
 
+# Benchmark-Datenbanken / Downloads
+benchmarks/memfuse-bench/tests/data/
+
 # Kompilierte Ad-hoc-Binaries ohne Cargo-Build-System
 /fix_unsafe
