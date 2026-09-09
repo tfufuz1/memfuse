@@ -191,7 +191,7 @@ async fn test_insert_with_ttl_and_reap_expired_documents() {
         col.insert(&format!("dummy_{i}"), &vec, None).await.unwrap(); // unwrap
     }
 
-    // 3. Trigger expiry reaper
+    // 3. Trigger expiry cleanup
     let reaped = col.reap_expired_documents(100).await.unwrap(); // unwrap
     assert_eq!(reaped, 1, "Expired document should be reaped");
 
@@ -1024,7 +1024,7 @@ async fn test_ttl_missing_created_at_does_not_expire() {
     )
     .await
     .unwrap(); // unwrap
-    let reaped = col.trigger_reaper().await.unwrap(); // unwrap
+    let reaped = col.trigger_expiry_cleanup().await.unwrap(); // unwrap
     assert_eq!(reaped, 0);
     assert!(col.get("doc_no_created_at").await.unwrap().is_some()); // unwrap
 }
@@ -1072,7 +1072,7 @@ async fn test_ttl_zero_does_not_expire() {
     )
     .await
     .unwrap(); // unwrap
-    let reaped = col.trigger_reaper().await.unwrap(); // unwrap
+    let reaped = col.trigger_expiry_cleanup().await.unwrap(); // unwrap
     assert_eq!(reaped, 0);
     assert!(col.get("doc_zero_ttl").await.unwrap().is_some()); // unwrap
 }
@@ -1137,7 +1137,7 @@ async fn test_ttl_overflow_does_not_expire() {
     )
     .await
     .unwrap(); // unwrap
-    let reaped = col.trigger_reaper().await.unwrap(); // unwrap
+    let reaped = col.trigger_expiry_cleanup().await.unwrap(); // unwrap
     assert_eq!(reaped, 0);
     assert!(col.get("doc_overflow").await.unwrap().is_some()); // unwrap
 }
@@ -1497,7 +1497,7 @@ async fn test_begin_transaction_returns_active_db_transaction() {
 }
 
 #[tokio::test]
-async fn test_reaper_deletes_decayed_working_memory() {
+async fn test_expiry_cleanup_deletes_decayed_working_memory() {
     use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -1561,13 +1561,13 @@ async fn test_reaper_deletes_decayed_working_memory() {
     // Tx 30: 0.5 * 0.0625 = 0.03125 (< 0.05)
     next_tx.store(35, Ordering::SeqCst);
 
-    let count = col.trigger_reaper().await.unwrap(); // unwrap
+    let count = col.trigger_expiry_cleanup().await.unwrap(); // unwrap
     assert_eq!(count, 1, "Decayed working memory document should be reaped");
     assert!(col.get("doc_decayed").await.unwrap().is_none()); // unwrap
 }
 
 #[tokio::test]
-async fn test_reaper_never_deletes_semantic_no_decay() {
+async fn test_expiry_cleanup_never_deletes_semantic_no_decay() {
     use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;
@@ -1625,7 +1625,7 @@ async fn test_reaper_never_deletes_semantic_no_decay() {
     // Advance TxId very far
     next_tx.store(100_000, Ordering::SeqCst);
 
-    let count = col.trigger_reaper().await.unwrap(); // unwrap
+    let count = col.trigger_expiry_cleanup().await.unwrap(); // unwrap
     assert_eq!(
         count, 0,
         "Semantic document with DecayFunction::None must never be deleted"

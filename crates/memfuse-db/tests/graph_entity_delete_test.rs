@@ -161,9 +161,7 @@ async fn test_entity_delete_persists_after_restart() {
     tx2.commit().await.unwrap();
 
     // Simulate restart by reloading CsrGraph from storage
-    let reloaded_graph = CsrGraph::load_from_storage(storage.as_ref())
-        .await
-        .unwrap();
+    let reloaded_graph = CsrGraph::load_from_storage(storage.as_ref()).await.unwrap();
 
     assert!(
         !reloaded_graph.entity_exists(id_a),
