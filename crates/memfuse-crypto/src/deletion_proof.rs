@@ -494,4 +494,16 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_layer_cleanup_proof_rejects_nonzero_remaining_entries() {
+        let res = LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 3);
+        assert!(res.is_err());
+        if let Err(MemFuseError::Internal(msg)) = res {
+            assert!(msg.contains("INV-DELETION-1 violation"));
+            assert!(msg.contains("3 remaining live entries"));
+        } else {
+            panic!("Expected MemFuseError::Internal");
+        }
+    }
 }
