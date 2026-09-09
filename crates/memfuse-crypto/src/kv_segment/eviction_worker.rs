@@ -99,6 +99,7 @@ mod tests {
 
     #[test]
     fn test_eviction_worker_nonblocking_trigger() {
+        let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
         let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
         let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
@@ -136,6 +137,7 @@ mod tests {
 
     #[test]
     fn test_lru_eviction_order_not_fifo() {
+        let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
         // A is created first (clock 1)
         let seg_a = KvSegment::new(tenant, 10, vec![0x11; 512]);
@@ -189,6 +191,7 @@ mod tests {
 
     #[test]
     fn test_emergency_wipe_synchronous_completion() {
+        let store = TenantIsolatedKvStore::new();
         let tenant = TenantId::try_new(1).unwrap();
         let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
         let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
