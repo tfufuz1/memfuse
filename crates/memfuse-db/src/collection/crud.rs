@@ -11,6 +11,16 @@ use memfuse_core::{
     DocId, EntityId, Result, StorageEngine, TxId, VectorIndex, EXPIRY_METADATA_KEY,
 };
 
+/// Maximum number of scan results returned by `scan` and `scan_prefix` operations when no explicit limit is provided or bounded.
+///
+/// **OOM Prevention Rationale**:
+/// `scan` and `scan_prefix` iterate over batches in LSM storage. Unbounded scans over large collections materialization
+/// can lead to massive heap allocations. In FFI bindings like `memfuse-py`, results are additionally converted entry-by-entry
+/// into Python heap objects (`json_to_py()`), resulting in temporary double memory overhead (Rust heap + Python heap).
+/// Unbounded scans on embedded libraries running within the caller's host process risk triggering Out-Of-Memory (OOM) killer,
+/// crashing the entire host application process.
+pub const MAX_SCAN_RESULTS: usize = 10_000;
+
 pub(super) fn validate_doc_id(id: &str) -> Result<()> {
     if id.is_empty() {
         return Err(memfuse_core::MemFuseError::invalid_input(
@@ -995,8 +1005,26 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Scans documents in the collection that match a given key prefix.
+    /// Caps maximum results to `MAX_SCAN_RESULTS_DEFAULT` to protect against unbounded memory growth.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
+    pub async fn scan_prefix(
+        &self,
+        prefix: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<(String, serde_json::Value)>> {
+        let effective_limit = match limit {
+            None => MAX_SCAN_RESULTS,
+            Some(n) => {
+                if n > MAX_SCAN_RESULTS {
+                    return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                        "scan limit {} exceeds MAX_SCAN_RESULTS ({}); use pagination via cursor instead",
+                        n, MAX_SCAN_RESULTS
+                    )));
+                }
+                n
+            }
+        };
+
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
                 prefix.strip_prefix("__rel:").unwrap_or(prefix).as_bytes(),
@@ -1010,10 +1038,11 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut cursor: Option<Vec<u8>> = None;
         const BATCH_SIZE: usize = 1000;
 
-        loop {
+        while results.len() < effective_limit {
+            let fetch_size = BATCH_SIZE.min(effective_limit - results.len());
             let (batch, next_cursor) = self
                 .storage
-                .scan_prefix_bounded(&real_prefix, BATCH_SIZE, cursor.as_deref())
+                .scan_prefix_bounded(&real_prefix, fetch_size, cursor.as_deref())
                 .await?;
 
             if batch.is_empty() {
@@ -1035,6 +1064,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                 if let Ok(val) = serde_json::from_slice(&v) {
                     results.push((user_key, val));
+                    if results.len() >= effective_limit {
+                        break;
+                    }
                 }
             }
 
@@ -1045,16 +1077,34 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             }
         }
 
+        if results.len() > effective_limit {
+            results.truncate(effective_limit);
+        }
+
         Ok(results)
     }
 
-    /// Performs semantic k-NN search over the collection's embeddings.
+    /// Performs a range scan of documents in the collection.
     #[tracing::instrument(level = "trace", skip(self, start, end))]
     pub async fn scan(
         &self,
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
+        limit: Option<usize>,
     ) -> Result<Vec<(String, serde_json::Value)>> {
+        let effective_limit = match limit {
+            None => MAX_SCAN_RESULTS,
+            Some(n) => {
+                if n > MAX_SCAN_RESULTS {
+                    return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                        "scan limit {} exceeds MAX_SCAN_RESULTS ({}); use pagination via cursor instead",
+                        n, MAX_SCAN_RESULTS
+                    )));
+                }
+                n
+            }
+        };
+
         use std::ops::Bound;
 
         let start_ns = match start {
@@ -1112,7 +1162,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
             if let Ok(val) = serde_json::from_slice(&v) {
                 results.push((user_key, val));
+                if results.len() >= effective_limit {
+                    break;
+                }
             }
+        }
+        if results.len() > effective_limit {
+            results.truncate(effective_limit);
         }
         Ok(results)
     }
@@ -1122,6 +1178,146 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 mod tests {
     use std::sync::Arc;
     use tokio::task::JoinSet;
+    use super::MAX_SCAN_RESULTS;
+    use std::ops::Bound;
+
+    #[tokio::test]
+    async fn test_scan_prefix_respects_default_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_prefix_default").await.unwrap();
+
+        for i in 0..50 {
+            col.put_kv(&format!("item_{:02}", i), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        let results = col.scan_prefix("", None).await.unwrap();
+        assert_eq!(results.len(), 50);
+        assert!(results.len() <= MAX_SCAN_RESULTS);
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_explicit_limit_below_max() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_prefix_below").await.unwrap();
+
+        for i in 0..50 {
+            col.put_kv(&format!("item_{:02}", i), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        let results = col.scan_prefix("", Some(10)).await.unwrap();
+        assert_eq!(results.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_explicit_limit_exceeding_max_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_prefix_exceed").await.unwrap();
+
+        let res = col.scan_prefix("", Some(MAX_SCAN_RESULTS + 1)).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("exceeds MAX_SCAN_RESULTS"));
+    }
+
+    #[tokio::test]
+    async fn test_scan_respects_default_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_default").await.unwrap();
+
+        for i in 0..50 {
+            col.put_kv(&format!("item_{:02}", i), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        let results = col.scan(Bound::Unbounded, Bound::Unbounded, None).await.unwrap();
+        assert_eq!(results.len(), 50);
+        assert!(results.len() <= MAX_SCAN_RESULTS);
+    }
+
+    #[tokio::test]
+    async fn test_scan_explicit_limit_below_max() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_below").await.unwrap();
+
+        for i in 0..50 {
+            col.put_kv(&format!("item_{:02}", i), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        let results = col.scan(Bound::Unbounded, Bound::Unbounded, Some(10)).await.unwrap();
+        assert_eq!(results.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_scan_explicit_limit_exceeding_max_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_exceed").await.unwrap();
+
+        let res = col.scan(Bound::Unbounded, Bound::Unbounded, Some(MAX_SCAN_RESULTS + 1)).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("exceeds MAX_SCAN_RESULTS"));
+    }
 
     #[tokio::test]
     async fn test_concurrent_put_kv_if_absent_race() {
@@ -1208,5 +1404,38 @@ mod tests {
         );
 
         drop(guard_a);
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_capped_at_max_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
+
+        // Insert 10,005 items via put_kv
+        for i in 0..10_005 {
+            collection
+                .put_kv(
+                    &format!("pfx_{i:05}"),
+                    &serde_json::json!({ "idx": i }),
+                )
+                .await
+                .unwrap();
+        }
+
+        let scanned = collection.scan_prefix("pfx_").await.unwrap();
+        assert_eq!(
+            scanned.len(),
+            MAX_SCAN_RESULTS_DEFAULT,
+            "scan_prefix must be capped at MAX_SCAN_RESULTS_DEFAULT (10,000)"
+        );
     }
 }

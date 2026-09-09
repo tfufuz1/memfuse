@@ -71,8 +71,8 @@
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
+use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_index::{HnswConfig, HnswIndex};
-use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -92,9 +92,11 @@ pub mod temporal_filter;
 
 #[cfg(feature = "background-maintenance")]
 pub use background_workers::start_decay_cleanup_worker;
+#[allow(deprecated)]
 pub use background_workers::{
     start_consolidation_worker, start_expiry_cleanup_worker, start_orphan_cleanup_worker,
 };
+#[allow(deprecated)]
 pub use consolidation_executor::{
     execute_background_consolidation, execute_consolidation_pass, execute_sleep_cycle,
 };
@@ -115,6 +117,7 @@ pub mod reaper {
     pub use crate::background_workers::*;
 }
 #[deprecated(note = "use start_consolidation_worker instead")]
+#[allow(deprecated)]
 pub use background_workers::start_consolidation_reaper;
 
 pub use synthesis_phase::run_synthesis_pass;
@@ -154,6 +157,7 @@ pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewr
 
 #[cfg(feature = "graph-connectivity-health")]
 pub use collection::maintenance::PercolationResult;
+pub use collection::crud::MAX_SCAN_RESULTS;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]
@@ -1155,8 +1159,8 @@ impl MemFuse {
 
     /// Scans storage for key-value pairs matching a prefix.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, Value)>> {
-        self.default_col().await?.scan_prefix(prefix).await
+    pub async fn scan_prefix(&self, prefix: &str, limit: Option<usize>) -> Result<Vec<(String, Value)>> {
+        self.default_col().await?.scan_prefix(prefix, limit).await
     }
 
     /// Returns the number of vectors in the index.
@@ -1177,8 +1181,9 @@ impl MemFuse {
         &self,
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
+        limit: Option<usize>,
     ) -> Result<Vec<(String, Value)>> {
-        self.default_col().await?.scan(start, end).await
+        self.default_col().await?.scan(start, end, limit).await
     }
 
     /// Returns combined statistics for the vector index and storage engine.
@@ -1510,7 +1515,7 @@ mod tests {
 
         // Scan for relations of doc-1
         let results = db
-            .scan_prefix("__rel:doc-1:references:")
+            .scan_prefix("__rel:doc-1:references:", None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 2);
@@ -1524,7 +1529,7 @@ mod tests {
 
         // Check backward edge setup automatically
         let backward_results = db
-            .scan_prefix("__rel:doc-2:references:")
+            .scan_prefix("__rel:doc-2:references:", None)
             .await
             .expect("scan bwd"); // expect
         assert_eq!(backward_results.len(), 1);
@@ -1595,7 +1600,7 @@ mod tests {
 
         // 5. Scan prefix
         let edges = db
-            .scan_prefix("__rel:agent-1:assigned_to:")
+            .scan_prefix("__rel:agent-1:assigned_to:", None)
             .await
             .expect("scan"); // expect
         assert_eq!(edges.len(), 2);

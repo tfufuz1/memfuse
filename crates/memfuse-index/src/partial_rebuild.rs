@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// ZWECK: Lokaler Partial-Rebuild-Trigger für HNSW-Hot-Path-Regionen (F-02).
+// INVARIANTEN: INV-NUC-1: Partial-Rebuild darf globalen HNSW-Graph nicht inkonsistent hinterlassen.
+// NICHT-OFFENSICHTLICH: Ergänzt den globalen HNSW_REBUILD_DELETION_RATIO-Trigger hinter Feature-Flag partial-index-rebuild.
+// STAND: TS:2026-09-09T15:52:00Z (SESSION: 8fae2834)
+
 //! F-02: Lokaler Partial-Rebuild-Trigger für HNSW-Hot-Path-Regionen.
 //!
 //! FEATURE-FLAG: `partial-index-rebuild` (default: off).
@@ -64,7 +70,10 @@ impl TraversalTracker {
         &self,
         tombstone_map: &HashMap<u64, bool>, // node_id → is_tombstoned
     ) -> Vec<u64> {
-        if tombstone_map.is_empty() {
+        if tombstone_map.is_empty()
+            || self.config.critical_ratio.is_nan()
+            || self.config.critical_ratio <= 0.0
+        {
             return Vec::new();
         }
 
@@ -72,7 +81,7 @@ impl TraversalTracker {
         let global_tombstones = tombstone_map.values().filter(|&&ts| ts).count() as f32;
         let global_density = global_tombstones / total_nodes;
 
-        if global_density <= 0.0 {
+        if global_density.is_nan() || global_density <= 0.0 || global_density.is_infinite() {
             return Vec::new();
         }
 
@@ -89,7 +98,7 @@ impl TraversalTracker {
 
         let s_local = local_density / global_density;
 
-        if s_local > self.config.critical_ratio {
+        if s_local.is_finite() && s_local > self.config.critical_ratio {
             hot_nodes
         } else {
             Vec::new()
@@ -124,7 +133,11 @@ pub fn should_trigger_partial_rebuild(
     global_tombstone_ratio: f32,
     config: &PartialRebuildConfig,
 ) -> Option<Vec<u64>> {
-    if global_tombstone_ratio < config.min_global_ratio {
+    if global_tombstone_ratio.is_nan()
+        || global_tombstone_ratio.is_infinite()
+        || config.min_global_ratio.is_nan()
+        || global_tombstone_ratio < config.min_global_ratio
+    {
         return None;
     }
     let regions = tracker.find_oversaturated_regions(tombstone_map);
@@ -185,6 +198,57 @@ mod tests {
     }
 
     #[test]
+    fn test_partial_rebuild_zero_window_size() {
+        let config = PartialRebuildConfig {
+            traversal_window: 0,
+            ..Default::default()
+        };
+        let mut tracker = TraversalTracker::new(config);
+        tracker.record_traversal(vec![1, 2, 3]);
+        assert_eq!(tracker.hot_path_nodes().count(), 0);
+    }
+
+    #[test]
+    fn test_partial_rebuild_empty_traversals_and_zero_tombstones() {
+        let config = PartialRebuildConfig::default();
+        let mut tracker = TraversalTracker::new(config);
+
+        // Record empty traversal
+        tracker.record_traversal(vec![]);
+        assert_eq!(tracker.hot_path_nodes().count(), 0);
+
+        // Record valid traversal but tombstone_map has 0 tombstones
+        tracker.record_traversal(vec![1, 2, 3]);
+        let mut tombstone_map = HashMap::new();
+        tombstone_map.insert(1, false);
+        tombstone_map.insert(2, false);
+
+        let oversaturated = tracker.find_oversaturated_regions(&tombstone_map);
+        assert!(oversaturated.is_empty());
+    }
+
+    #[test]
+    fn test_partial_rebuild_ring_buffer_eviction() {
+        let config = PartialRebuildConfig {
+            traversal_window: 2,
+            ..Default::default()
+        };
+        let mut tracker = TraversalTracker::new(config);
+
+        tracker.record_traversal(vec![10, 20]);
+        tracker.record_traversal(vec![30, 40]);
+        tracker.record_traversal(vec![50, 60]);
+
+        let hot_nodes: Vec<u64> = tracker.hot_path_nodes().collect();
+        // Since window is 2, [10, 20] was evicted. Only 30, 40, 50, 60 remain.
+        assert_eq!(hot_nodes.len(), 4);
+        assert!(!hot_nodes.contains(&10));
+        assert!(!hot_nodes.contains(&20));
+        assert!(hot_nodes.contains(&30));
+        assert!(hot_nodes.contains(&60));
+    }
+
+    #[test]
     fn test_partial_rebuild_trigger_on_local_oversaturation() {
         let config = PartialRebuildConfig {
             critical_ratio: 3.0,
@@ -217,6 +281,65 @@ mod tests {
             assert!(res.is_some());
             let triggered_nodes = res.unwrap(); // unwrap
             assert_eq!(triggered_nodes.len(), 10);
+        }
+    }
+
+    #[test]
+    fn test_partial_rebuild_nan_inf_safety() {
+        let config_nan = PartialRebuildConfig {
+            critical_ratio: f32::NAN,
+            ..Default::default()
+        };
+        let mut tracker_nan = TraversalTracker::new(config_nan);
+        tracker_nan.record_traversal(vec![1, 2, 3]);
+
+        let mut tombstone_map = HashMap::new();
+        tombstone_map.insert(1, true);
+        tombstone_map.insert(2, false);
+
+        assert!(tracker_nan
+            .find_oversaturated_regions(&tombstone_map)
+            .is_empty());
+
+        let config_negative = PartialRebuildConfig {
+            critical_ratio: -1.0,
+            ..Default::default()
+        };
+        let tracker_neg = TraversalTracker::new(config_negative);
+        assert!(tracker_neg
+            .find_oversaturated_regions(&tombstone_map)
+            .is_empty());
+    }
+
+    #[test]
+    fn test_should_trigger_partial_rebuild_nan_ratio() {
+        let config = PartialRebuildConfig::default();
+        let mut tracker = TraversalTracker::new(config.clone());
+        tracker.record_traversal(vec![1, 2, 3]);
+
+        let mut tombstone_map = HashMap::new();
+        tombstone_map.insert(1, true);
+
+        #[cfg(feature = "partial-index-rebuild")]
+        {
+            assert!(
+                should_trigger_partial_rebuild(&tracker, &tombstone_map, f32::NAN, &config)
+                    .is_none()
+            );
+            assert!(should_trigger_partial_rebuild(
+                &tracker,
+                &tombstone_map,
+                f32::INFINITY,
+                &config
+            )
+            .is_none());
+            assert!(should_trigger_partial_rebuild(
+                &tracker,
+                &tombstone_map,
+                f32::NEG_INFINITY,
+                &config
+            )
+            .is_none());
         }
     }
 }

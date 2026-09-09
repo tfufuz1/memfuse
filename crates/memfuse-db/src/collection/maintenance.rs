@@ -40,7 +40,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         };
 
         let current_tx = self.next_tx.load(Ordering::SeqCst);
-        let docs = self.scan_prefix("").await?;
+        let docs = self.scan_prefix("", None).await?;
         let mut evicted_ids = Vec::new();
 
         for (id, val) in docs {
@@ -333,7 +333,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn reap_expired_documents(&self, max_expired: usize) -> Result<usize> {
         let current_seq = self.snapshot_seq().await?;
-        let docs = self.scan_prefix("").await?;
+        let docs = self.scan_prefix("", None).await?;
         let mut expired_ids = Vec::new();
 
         for (id, val) in docs {
@@ -395,7 +395,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             .as_millis() as u64;
 
         let now_tx = self.next_tx.load(Ordering::SeqCst);
-        let docs = self.scan_prefix("").await?;
+        let docs = self.scan_prefix("", None).await?;
         let mut expired_ids = Vec::new();
 
         for (id, val) in docs {
@@ -718,7 +718,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let mut new_edges_added = 0;
 
         if rebonding_triggered {
-            let docs = self.scan_prefix("").await?;
+            let docs = self.scan_prefix("", None).await?;
             let mut embeddings = std::collections::HashMap::new();
             let mut id_map = std::collections::HashMap::new();
 

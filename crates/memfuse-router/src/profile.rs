@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T12:50:00Z (SESSION: 1b2550ba)
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
 // ZWECK: SLM-Profildefinitionen und konformale Quantil-Kalibrierung (Gibbs & Candès).
 // INVARIANTEN: INV-ROUTER-1 (quantile_threshold in [0.0, 1.0]), INV-P8-1 (Fingerprint-Invalidation).
 // NICHT-OFFENSICHTLICH: Fast O(1) HashSet Community-Filter + deterministische JSON-Sortierung.
@@ -12,19 +12,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Quantization level of the underlying model execution path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[allow(non_camel_case_types)]
 pub enum QuantizationLevel {
     F16,
     Q8_0,
     Q4_K_M,
+    #[default]
     Unknown,
-}
-
-impl Default for QuantizationLevel {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Represents a Small Language Model (SLM) target and its domain expertise parameters.
