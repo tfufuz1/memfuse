@@ -101,6 +101,9 @@ jobs:
       - name: "Gate 13: Keine Platzhalter-Referenzen in Governance-Dokumenten"
         run: cargo run -p xtask -- check-placeholder-refs
 
+      - name: "Gate 16: ADR Deprecation & Removal Deadline Monitoring"
+        run: cargo run -p xtask -- check-adr-deadlines
+
       - name: "Gate 10: Jules Context Frischeprüfung"
         run: |
           cargo run -p xtask -- check-jules-context-freshness
