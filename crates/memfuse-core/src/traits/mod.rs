@@ -1339,6 +1339,7 @@ mod tests {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }
@@ -1436,6 +1437,7 @@ mod tests {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }
@@ -1601,6 +1603,7 @@ mod tests {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }
