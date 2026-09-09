@@ -525,7 +525,9 @@ impl LsmStorage {
     /// This is a destructive operation that removes all data after the target TX.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
-        let commit_guard = CommitGuard { _lock: &_commit_lock };
+        let commit_guard = CommitGuard {
+            _lock: &_commit_lock,
+        };
         self.rollback_to_tx_locked(target_tx, &commit_guard).await
     }
 
@@ -1040,8 +1042,11 @@ impl StorageEngine for LsmStorage {
                 // FATAL I/O ERROR: Physical Rollback to last committed transaction state
                 drop(state);
                 let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
-                let commit_guard = CommitGuard { _lock: &_commit_lock };
-                if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx, &commit_guard).await {
+                let commit_guard = CommitGuard {
+                    _lock: &_commit_lock,
+                };
+                if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx, &commit_guard).await
+                {
                     tracing::error!(
                         "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
                         rollback_err
@@ -3796,11 +3801,17 @@ mod tests {
         // 990,000 + 60,008 = 1,050,008 > 1,048,576 (exceeds budget limit).
         // commit()'s has_memory_capacity() check: 990,000 < 996,147 -> PASSES.
         // consume_memory(60008) in Phase 3: 1,050,008 > 1,048,576 -> ERR!
-        storage.budget.consume_memory(990_000).expect("fill budget to 990,000");
+        storage
+            .budget
+            .consume_memory(990_000)
+            .expect("fill budget to 990,000");
 
         // commit must succeed (durability preserved) despite consume_memory failing in Phase 3
         let commit_res = storage.commit(tx).await;
-        assert!(commit_res.is_ok(), "commit must succeed even when consume_memory fails");
+        assert!(
+            commit_res.is_ok(),
+            "commit must succeed even when consume_memory fails"
+        );
 
         // verify drift counter accurately recorded entry size
         assert_eq!(

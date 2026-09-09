@@ -1456,21 +1456,21 @@ mod tests {
         )
         .await
         .unwrap();
-        let col = db.collection("test_scan_default_bounds").await.unwrap();
+        let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
 
-        // Put DEFAULT_SCAN_LIMIT + 5 items into the collection
-        let total = DEFAULT_SCAN_LIMIT + 5;
-        for i in 0..total {
-            col.put_kv(&format!("item_{:05}", i), &serde_json::json!({ "v": i }))
+        // Insert 10,005 items via put_kv
+        for i in 0..10_005 {
+            collection
+                .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
                 .unwrap();
         }
 
-        // Calling scan(Bound::Unbounded, Bound::Unbounded, None) without explicit limit
-        // on a collection exceeding DEFAULT_SCAN_LIMIT must return an error and NOT materialize the full dataset.
-        let res_default = col
-            .scan(Bound::Unbounded, Bound::Unbounded, None)
-            .await;
-        assert!(res_default.is_err());
+        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
+        assert_eq!(
+            scanned.len(),
+            DEFAULT_SCAN_LIMIT,
+            "scan_prefix must be capped at DEFAULT_SCAN_LIMIT (10,000)"
+        );
     }
 }
