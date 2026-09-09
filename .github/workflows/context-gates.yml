@@ -1,5 +1,5 @@
 # Context Integrity Gates Workflow
-# Enforces context integrity, DAG structure, tag grammar, and preflight checks (including Gate 14 Jules Preflight Aggregator).
+# Enforces context integrity, DAG structure, tag grammar, preflight checks, and Gate 16 Commit Message Quality.
 
 name: Context Integrity Gates
 
@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: "Check for duplicate symbols (fast pre-build gate)"
         run: cargo run -p xtask -- check-duplicate-symbols
@@ -38,6 +40,11 @@ jobs:
 
       - name: "Gate 2: Keine neuen .unwrap()/.expect() in Produktionscode"
         run: cargo xtask check-unwrap-baseline
+
+      - name: "Gate 2b: Trend-Überwachung der .unwrap()/.expect() Baseline"
+        env:
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref || github.event.before || 'origin/main' }}
+        run: cargo run -p xtask -- check-unwrap-baseline-trend
 
       - name: "Gate 3: Kein silent let _ für IO-Operationen"
         run: |
@@ -134,3 +141,8 @@ jobs:
         run: |
           cargo run -p xtask -- jules-preflight --fast
           echo "✅ Jules Preflight: alle Checks bestanden"
+
+      - name: "Gate 16: Commit Message Quality"
+        env:
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: cargo run -p xtask -- check-commit-messages
