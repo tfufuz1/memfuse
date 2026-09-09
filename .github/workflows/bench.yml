@@ -63,7 +63,7 @@ jobs:
           restore-keys: |
             longmemeval-dataset-v1-
 
-      - name: Download LongMemEval Dataset (if cache miss)
+      - name: Download LongMemEval & LoCoMo Datasets (if cache miss)
         if: steps.cache-longmemeval.outputs.cache-hit != 'true'
         run: |
           mkdir -p benchmarks/memfuse-bench/tests/data/
@@ -73,12 +73,24 @@ jobs:
           import shutil, os
           path = hf_hub_download(
               repo_id='xiaowu0162/longmemeval',
-              filename='longmemeval_s.jsonl',
+              filename='longmemeval_s',
               repo_type='dataset'
           )
           shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl')
           print(f'LongMemEval-S downloaded successfully: {os.path.getsize(path)} Bytes')
           " || echo "⚠️ HuggingFace download failed — fixture fallback active"
+
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          import shutil, os
+          path = hf_hub_download(
+              repo_id='KimmoZZZ/locomo',
+              filename='locomo10.json',
+              repo_type='dataset'
+          )
+          shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/locomo_test.json')
+          print(f'LoCoMo downloaded successfully: {os.path.getsize(path)} Bytes')
+          " || echo "⚠️ LoCoMo download failed — fixture fallback active"
 
       - name: Run LongMemEval Benchmark Execution
         run: |
@@ -89,6 +101,16 @@ jobs:
           cargo run --locked -p memfuse-bench --release -- long-mem-eval \
             --dataset "$ACTUAL" \
             --output benchmarks/results/long_mem_eval_results.json
+
+      - name: Run LoCoMo Benchmark Execution
+        run: |
+          DATASET="benchmarks/memfuse-bench/tests/data/locomo_test.json"
+          FIXTURE="benchmarks/memfuse-bench/tests/fixtures/locomo_fixture.json"
+          [ -f "$DATASET" ] && ACTUAL="$DATASET" || ACTUAL="$FIXTURE"
+          echo "Using Dataset: $ACTUAL ($(wc -c < $ACTUAL) Bytes)"
+          cargo run --locked -p memfuse-bench --release -- locomo \
+            --dataset "$ACTUAL" \
+            --output benchmarks/results/locomo_results.json
 
       - name: Run Synthetic Retrieval Accuracy Benchmark Harness
         run: cargo run --locked -p memfuse-bench --release
@@ -154,7 +176,7 @@ jobs:
           import shutil, os
           path = hf_hub_download(
               repo_id='xiaowu0162/longmemeval',
-              filename='longmemeval_s.jsonl',
+              filename='longmemeval_s',
               repo_type='dataset',
               token=os.environ.get('HF_TOKEN')
           )
@@ -162,13 +184,13 @@ jobs:
           print(f'LongMemEval-S heruntergeladen: {os.path.getsize(path)} Bytes')
           " || echo "⚠️ HuggingFace-Download fehlgeschlagen — Fixture-Fallback aktiv"
 
-          # LoCoMo: Öffentlich verfügbar
+          # LoCoMo: Öffentlich verfügbar via KimmoZZZ/locomo
           python3 -c "
           from huggingface_hub import hf_hub_download
           import shutil, os
           path = hf_hub_download(
-              repo_id='LoCoMo-Dataset/LoCoMo',
-              filename='test.json',
+              repo_id='KimmoZZZ/locomo',
+              filename='locomo10.json',
               repo_type='dataset',
               token=os.environ.get('HF_TOKEN')
           )
