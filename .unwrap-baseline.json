@@ -3089,6 +3089,10 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/segment.rs",
+    "hash": "4d58cb87b95d56e3"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/segment.rs",
     "hash": "bb1365364ea0bdb3"
   },
   {
@@ -3106,6 +3110,14 @@
   {
     "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
     "hash": "75c00d97bb5a0d61"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "7c688ddcbff286b0"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "af83d93beac52184"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
@@ -14602,6 +14614,10 @@
   {
     "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "ec413500d1daf55c"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "ec8ba0cf9d8b0025"
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
