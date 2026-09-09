@@ -80,7 +80,7 @@ async fn test_layer_001_fork_diverge_merge() {
         let fork_col = db.collection("fork-v1").await.expect("fork col");
 
         // Daten von "main" nach "fork" kopieren (Simulation von Fork-Logic)
-        let main_data = main_col.scan_prefix("").await.expect("scan main");
+        let main_data = main_col.scan_prefix("", None).await.expect("scan main");
         for (id, meta) in main_data {
             fork_col
                 .insert(&id, &[0.5, 0.5, 0.5, 0.5], Some(meta))

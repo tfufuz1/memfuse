@@ -1,7 +1,7 @@
 # Audit-Report: `memfuse-py` (Layer 3 — Python PyO3 Bindings)
 
-**Datum/Zeit:** 2026-09-03T19:29:58Z
-**Session:** `94a6a82c`
+**Datum/Zeit:** 2026-09-09T13:30:00Z
+**Session:** `5665b844`
 **Crate:** `memfuse-py`
 **Rolle:** Senior Rust FFI-Engineer — PyO3, GIL, Zero-Panic-Boundary
 
@@ -28,12 +28,13 @@ The current audit verified:
 
 ---
 
-## Audit Verification & Test Delta
+## Audit Verification & Test Delta (Session `64f05109`, TS: 2026-09-09T15:57:24Z)
 
-- **Rust Unit & Sanity Checks**: `cargo check -p memfuse-py --all-features` (0 errors, 0 warnings).
-- **Clippy Analysis**: `cargo clippy -p memfuse-py --no-deps -- -D warnings` (0 findings).
-- **Rust Integration Test Suite**: `cargo test -p memfuse-py --all-features` (100% passed).
-- **Tier 1 Concurrency Verification**: 5 consecutive runs of `cargo test -p memfuse-py --all-features -- --test-threads=8` executed with 0 failures and 0 panics.
+- **Inventory Reality Check**: Confirmed `crates/memfuse-py/src/lib.rs` (1598 lines) matches actual repo inventory with 0 drift.
+- **Rust Unit & Sanity Checks**: `cargo check --manifest-path crates/memfuse-py/Cargo.toml --all-features` (0 errors, 0 warnings).
+- **Clippy Analysis**: `cargo clippy --manifest-path crates/memfuse-py/Cargo.toml -- -D warnings` (0 findings).
+- **Rust Unit Test Suite**: `cargo test --manifest-path crates/memfuse-py/Cargo.toml --all-features` (100% passed).
+- **Python FFI / Integration Suite**: `maturin develop --release` + `pytest` executed 51 test cases with 100% pass rate in virtualenv context (including GIL concurrency, error handling, panic containment, recovery, and sub-interpreter rejection).
 
 ---
 
@@ -88,6 +89,14 @@ The current audit verified:
 
 ## Historical Session Audits
 
+### Changes Implemented in Session `64f05109` (TS: 2026-09-09T15:57:24Z)
+
+1. **Inventory Verification & Gate Alignment**:
+   - Performed inventory reality check (`crates/memfuse-py/src/lib.rs`).
+   - Cleaned git conflict artifacts in `xtask` and updated unwrap baseline for new codebase additions.
+2. **ANCHOR Review Status Update**:
+   - Verified integration test anchors `ANCHOR[TEST:PY-001]` and `ANCHOR[TEST:PY-002]` in `crates/memfuse-py/tests/test_bindings.py`, attaching `REVIEW-PASS[2/2]` for session `64f05109`.
+
 ### Changes Implemented in Session `9cd9a63a`
 
 1. **`crates/memfuse-py/src/lib.rs`**:
@@ -105,3 +114,15 @@ The current audit verified:
    - Added `test_empty_collection_name_and_query_validation` testing `MemFuseValueError` raising behavior on empty collection names and empty hybrid search queries.
 3. **`crates/memfuse-py/tests/test_bindings.py` & `crates/memfuse-py/AGENTS.md`**:
    - Annotated `test_open_and_close` and `test_hybrid_search` with `ANCHOR[TEST:PY-001]` and `ANCHOR[TEST:PY-002]` tags updating review status to `IN-PROGRESS (REVIEW-PASS 1/2)`.
+
+### Changes Implemented in Session `5665b844` (TS:2026-09-09T13:30:00Z)
+
+1. **`crates/memfuse-crypto`**:
+   - Fixed `TenantId` compilation error by replacing `tenant.as_u64()` with `tenant.inner()` in `store.rs` and removed unused `parking_lot::RwLock` import in `eviction_worker.rs`.
+2. **`crates/memfuse-py/src/lib.rs`**:
+   - Added `test_validate_id_obj_numeric_bounds` testing `validate_id_obj` for negative integers, `u64::MAX` bounds, and type mismatch errors.
+   - Added `test_memfuse_err_conflict_and_sandbox` testing PyErr mapping for `MemFuseError::Conflict` -> `PyRuntimeError` and `MemFuseError::Sandbox` -> `PyPermissionError`.
+3. **`crates/memfuse-py/tests/test_errors.py` & `crates/memfuse-py/tests/test_bindings.py`**:
+   - Added `test_batch_size_limit_validation` testing empty batch and `MAX_BATCH_SIZE` limit enforcement.
+   - Added `test_metadata_depythonize_failure` testing serialization error handling on invalid Python dict payloads.
+   - Added `test_context_manager_protocol` testing context manager `__enter__` and `__exit__` error propagation semantics.

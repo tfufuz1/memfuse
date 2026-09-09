@@ -411,6 +411,11 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 /// Maximum size for a single WAL entry payload (64MB).
 pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
 
+/// Global fault injection flag to simulate a WAL `append_batch` failure for a specific transaction ID during tests.
+#[cfg(feature = "fault-injection")]
+pub static FAIL_APPEND_FOR_TX: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 impl Wal {
     fn handle_wal_entry_parse_error(
         e: MemFuseError,
@@ -955,6 +960,17 @@ impl Wal {
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
+        }
+
+        #[cfg(feature = "fault-injection")]
+        {
+            let fail_tx = FAIL_APPEND_FOR_TX.load(std::sync::atomic::Ordering::SeqCst);
+            if fail_tx != 0 && entries.iter().any(|e| e.tx_id().inner() == fail_tx) {
+                FAIL_APPEND_FOR_TX.store(0, std::sync::atomic::Ordering::SeqCst);
+                return Err(MemFuseError::Storage(
+                    "Simulated WAL append_batch I/O failure via fault injection".into(),
+                ));
+            }
         }
 
         let mut total_bytes = Vec::new();
@@ -1549,8 +1565,12 @@ impl Wal {
         &self.path
     }
 
-    /// Physically truncates the WAL file to the specified offset.
-    /// This also updates the in-memory size and the HMAC chain link.
+    /// Truncates the WAL file to `offset` and resets `last_hmac` to `new_last_hmac`.
+    ///
+    /// # Concurrency invariant
+    /// `size` and `last_hmac` are updated while the `file` lock is still held, to avoid
+    /// a TOCTOU window in which a concurrent reader could observe a stale (too large)
+    /// `size` after the file has already been physically truncated on disk.
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` if setting file length or seeking fails.
@@ -1559,25 +1579,25 @@ impl Wal {
 
         let mut file = self.file.lock().await;
 
-        // 1. Physically truncate the file
+        // Update in-memory size BEFORE physical truncation so that
+        // in-memory size never exceeds physical file length on disk
+        // (closing the TOCTOU window during async OS file.set_len).
+        self.size.store(offset, std::sync::atomic::Ordering::SeqCst);
+
         file.set_len(offset)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {e}")))?;
 
-        // 2. Ensure we seek to the new end
         file.seek(std::io::SeekFrom::Start(offset))
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL seek after truncate failed: {e}")))?;
 
+        {
+            let mut last_hmac_guard = self.last_hmac.lock().await;
+            *last_hmac_guard = new_last_hmac;
+        }
+
         drop(file);
-
-        // 3. Update in-memory size
-        self.size.store(offset, std::sync::atomic::Ordering::SeqCst);
-
-        // 4. Update last_hmac
-        let mut last_hmac_guard = self.last_hmac.lock().await;
-        *last_hmac_guard = new_last_hmac;
-        drop(last_hmac_guard);
 
         Ok(())
     }
@@ -3046,5 +3066,71 @@ mod tests {
             hmac_after, hmac_before,
             "last_hmac_snapshot must match value before failed prepare_batch"
         );
+    }
+
+    #[tokio::test]
+    async fn test_truncate_size_visible_atomically_with_file_state() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("truncate_atomic.wal");
+
+        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal"));
+
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let wal_trunc = wal.clone();
+        let done_trunc = done.clone();
+        let truncater = tokio::spawn(async move {
+            for i in 0..100 {
+                // Prepare and append a batch of entries so file grows
+                let ops = vec![
+                    (
+                        WalOp::Put {
+                            tx_id: TxId::new(i * 2 + 1),
+                            key: b"atomic_key_1".to_vec(),
+                            value: b"atomic_val_1".to_vec(),
+                        },
+                        i * 2 + 1,
+                    ),
+                    (
+                        WalOp::Put {
+                            tx_id: TxId::new(i * 2 + 2),
+                            key: b"atomic_key_2".to_vec(),
+                            value: b"atomic_val_2".to_vec(),
+                        },
+                        i * 2 + 2,
+                    ),
+                ];
+                let (batch, _) = wal_trunc.prepare_batch(ops).await.expect("prepare_batch");
+                wal_trunc.append_batch(&batch).await.expect("append_batch");
+
+                // Truncate back to offset 4 (length of WAL_V3_HEADER)
+                wal_trunc
+                    .truncate(4, [0xAA; 32])
+                    .await
+                    .expect("truncate failed");
+            }
+            done_trunc.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        let wal_poll = wal.clone();
+        let done_poll = done.clone();
+        let poller = tokio::spawn(async move {
+            while !done_poll.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Ok(meta) = fs::metadata(wal_poll.path()).await {
+                    let disk_size = meta.len();
+                    let mem_size = wal_poll.size();
+                    // In-memory size must never observe stale mem_size > disk_size after truncation
+                    assert!(
+                        mem_size <= disk_size,
+                        "TOCTOU violation: in-memory WAL size ({mem_size}) > physical disk size ({disk_size})"
+                    );
+                }
+                tokio::task::yield_now().await;
+            }
+        });
+
+        let (res_trunc, res_poll) = tokio::join!(truncater, poller);
+        res_trunc.expect("truncater panicked");
+        res_poll.expect("poller panicked");
     }
 }

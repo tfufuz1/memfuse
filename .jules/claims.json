@@ -27,6 +27,20 @@
       "timestamp": "2026-09-09T12:41:59.893591146+00:00",
       "session_id": "3967351318889068769",
       "active": true
+    },
+    {
+      "krate": "memfuse-mcp",
+      "issue": "JULES-20260909-TEST",
+      "timestamp": "2026-09-09T14:50:26.226246210+00:00",
+      "session_id": "17893647405335683469",
+      "active": true
+    },
+    {
+      "krate": "memfuse-crypto",
+      "issue": "JULES-20260909-IMPL",
+      "timestamp": "2026-09-09T15:42:26.576534363+00:00",
+      "session_id": "14951270737769827256",
+      "active": true
     }
   ]
 }

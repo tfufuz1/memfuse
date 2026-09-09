@@ -134,7 +134,7 @@ async fn test_collection_scan_prefix_batches_via_mock_storage() {
         memfuse_text::Language::English,
     );
 
-    let items = col.scan_prefix("item_").await.unwrap();
+    let items = col.scan_prefix("item_", None).await.unwrap();
     assert_eq!(items.len(), 5000);
     // With 5000 items and BATCH_SIZE = 1000, scan_prefix_bounded should be called 5 times
     assert_eq!(mock_storage.bounded_call_count.load(Ordering::SeqCst), 5);
@@ -249,7 +249,7 @@ async fn test_relate_success_visible_in_storage_and_graph() {
     col.relate("doc1", "doc2", "references").await.unwrap(); // unwrap
 
     // 1. Storage check
-    let rels = col.scan_prefix("__rel:").await.unwrap(); // unwrap
+    let rels = col.scan_prefix("__rel:", None).await.unwrap(); // unwrap
     assert_eq!(rels.len(), 1);
     assert!(rels[0].0.contains("doc1:references:doc2"));
 

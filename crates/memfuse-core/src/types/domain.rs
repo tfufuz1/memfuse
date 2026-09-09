@@ -1,8 +1,8 @@
 //! Domain types for MemFuse.
 
 // FILE-CONTEXT
-// STAND: 2026-08-30T21:51:46Z (SESSION: a43b7682)
-// ZWECK: Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, DistanceMetric, Edge, Entity).
+// STAND: 2026-09-09T14:43:31Z (SESSION: a69d21e4)
+// ZWECK: Kanonische Domain-Typen (DocId, EntityId, TxId, TenantId, Embedding, DistanceMetric, Edge, Entity).
 // INVARIANTEN: TxId Base Ranges trennen System- (>= INTERNAL_BASE) von Collection-TxIds. TxId NIEMALS aus SystemTime erzeugen.
 // HOTSPOTS: 80-600
 // NICHT-OFFENSICHTLICH: DocId::from_key nutzt BLAKE3 8-Byte Präfix für deterministisches Slicing.
@@ -95,7 +95,7 @@ impl TenantId {
         self.0
     }
 
-    /// Backwards compatibility method returning raw `u64`.
+    /// Returns the inner raw `u64` identifier as a primitive `u64`.
     #[inline]
     pub const fn as_u64(self) -> u64 {
         self.0
@@ -1018,7 +1018,9 @@ mod tests {
         let default_tenant = TenantId::default();
         assert_eq!(default_tenant, TenantId::SYSTEM);
         assert_eq!(default_tenant.inner(), 0);
+        assert_eq!(default_tenant.as_u64(), 0);
         assert_eq!(TenantId::new(42).inner(), 42);
+        assert_eq!(TenantId::new(42).as_u64(), 42);
         assert_eq!(TenantId::try_from(100u64).unwrap(), TenantId::new(100));
         assert_eq!(format!("{default_tenant}"), "TenantId(0)");
     }
@@ -1897,6 +1899,7 @@ mod tests {
     fn test_tenant_id_valid() {
         let t = TenantId::try_new(42).expect("valid tenant_id");
         assert_eq!(t.inner(), 42);
+        assert_eq!(t.as_u64(), 42);
         assert!(!t.is_system());
     }
 

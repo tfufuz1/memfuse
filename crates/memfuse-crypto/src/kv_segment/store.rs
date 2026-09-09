@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
-// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
 
 use ahash::AHashMap;
 use memfuse_core::TenantId;
@@ -115,6 +115,7 @@ impl TenantIsolatedKvStore {
             .unwrap_or(0)
     }
 
+    /// Dies ist GLOBALES LRU ohne Tenant-Fairness. Für faire Multi-Tenant-Eviction siehe `evict_lru_fair()`.
     pub fn evict_lru_global(&self, target_free_bytes: usize) -> usize {
         let mut map = self.segments.write();
         let mut freed = 0;
@@ -128,7 +129,7 @@ impl TenantIsolatedKvStore {
             for (tenant, segs) in map.iter() {
                 for (idx, seg) in segs.iter().enumerate() {
                     let acc = seg.last_accessed();
-                    if oldest_time.map_or(true, |t| acc < t) {
+                    if oldest_time.is_none_or(|t| acc < t) {
                         lru_tenant = Some(*tenant);
                         lru_idx = idx;
                         oldest_time = Some(acc);
@@ -141,7 +142,7 @@ impl TenantIsolatedKvStore {
                     let evicted = segs.remove(lru_idx);
                     freed += evicted.len();
                     tracing::debug!(
-                        tenant_id = tenant.as_u64(),
+                        tenant_id = tenant.inner(),
                         segment_id = evicted.segment_id,
                         freed_bytes = evicted.len(),
                         "KV eviction worker: evicted segment"
@@ -150,10 +151,73 @@ impl TenantIsolatedKvStore {
                         // Avoid holding the mutable reference while removing
                     }
                 }
-                if map.get(&tenant).map_or(false, |s| s.is_empty()) {
+                if map.get(&tenant).is_some_and(|s| s.is_empty()) {
                     map.remove(&tenant);
                 }
             } else {
+                break;
+            }
+        }
+
+        freed
+    }
+
+    /// Evictiert KV-Segmente unter Erhaltung von Tenant-Fairness via Round-Robin über alle aktiven Tenants.
+    ///
+    /// Im Gegensatz zu `evict_lru_global()` verhindert diese Methode, dass sehr aktive Tenants
+    /// inaktive Tenants vollständig verdrängen (Prevent Cross-Tenant Starvation).
+    /// Dies ist der faire Multi-Tenant-Eviction-Pfad. Für reines globales LRU siehe `evict_lru_global()`.
+    // AI-TAG[SECURITY][MAJOR][RESOLVED] Add tenant-fair LRU eviction to prevent cross-tenant starvation (ID: AGT-CRYPTO-c1a93b22) (TS: 2026-09-10T10:00:00Z)
+    pub fn evict_lru_fair(&self, target_free_bytes: usize) -> usize {
+        let mut map = self.segments.write();
+        let mut freed = 0;
+
+        while freed < target_free_bytes && !map.is_empty() {
+            let mut tenants: Vec<TenantId> = map.keys().copied().collect();
+            tenants.sort();
+
+            let mut evicted_in_round = false;
+
+            for tenant in tenants {
+                if freed >= target_free_bytes {
+                    break;
+                }
+
+                if let Some(segs) = map.get_mut(&tenant) {
+                    if segs.is_empty() {
+                        map.remove(&tenant);
+                        continue;
+                    }
+
+                    let mut lru_idx = 0;
+                    let mut oldest_time = None;
+
+                    for (idx, seg) in segs.iter().enumerate() {
+                        let acc = seg.last_accessed();
+                        if oldest_time.is_none_or(|t| acc < t) {
+                            lru_idx = idx;
+                            oldest_time = Some(acc);
+                        }
+                    }
+
+                    let evicted = segs.remove(lru_idx);
+                    freed += evicted.len();
+                    evicted_in_round = true;
+
+                    tracing::debug!(
+                        tenant_id = tenant.inner(),
+                        segment_id = evicted.segment_id,
+                        freed_bytes = evicted.len(),
+                        "KV eviction worker: evicted segment"
+                    );
+
+                    if segs.is_empty() {
+                        map.remove(&tenant);
+                    }
+                }
+            }
+
+            if !evicted_in_round {
                 break;
             }
         }
@@ -205,5 +269,71 @@ mod tests {
         let tenant_c = TenantId::try_new(3).unwrap();
         assert!(store.get_segments(tenant_c).is_empty());
         assert_eq!(store.get_tenant_segment_len(tenant_c), 0);
+    }
+
+    #[test]
+    fn test_evict_lru_fair_does_not_starve_inactive_tenant() {
+        let store = TenantIsolatedKvStore::new();
+
+        let tenant_a = TenantId::try_new(1).unwrap();
+        let tenant_b = TenantId::try_new(2).unwrap();
+
+        // Tenant B has 1 segment with the oldest timestamp (inserted first, untouched)
+        let seg_b = KvSegment::new(tenant_b, 201, vec![0x22; 256]);
+        store.insert_segment(tenant_b, seg_b);
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        // Tenant A has 10 segments that are active/touched
+        for i in 1..=10 {
+            let seg_a = KvSegment::new(tenant_a, i, vec![0x11; 256]);
+            store.insert_segment(tenant_a, seg_a);
+        }
+
+        // Touch Tenant A's segments so their last_accessed timestamps are fresh
+        for i in 1..=10 {
+            let _ = store.get_segment_bytes(tenant_a, i);
+        }
+
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 10);
+        assert_eq!(store.get_tenant_segment_len(tenant_b), 1);
+
+        // Evict 256 bytes using fair eviction
+        let freed = store.evict_lru_fair(256);
+        assert!(freed >= 256);
+
+        // Tenant A should lose 1 segment (leaving 9)
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 9);
+
+        // Tenant B's segment MUST NOT be evicted despite being globally oldest
+        assert_eq!(
+            store.get_tenant_segment_len(tenant_b),
+            1,
+            "Tenant B (inactive) must not be starved by Tenant A"
+        );
+    }
+
+    #[test]
+    fn test_evict_lru_fair_respects_target_free_bytes() {
+        let store = TenantIsolatedKvStore::new();
+
+        let tenant_a = TenantId::try_new(1).unwrap();
+        let tenant_b = TenantId::try_new(2).unwrap();
+
+        for i in 1..=3 {
+            store.insert_segment(tenant_a, KvSegment::new(tenant_a, i, vec![0x11; 512]));
+            store.insert_segment(tenant_b, KvSegment::new(tenant_b, i + 10, vec![0x22; 512]));
+        }
+
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 3);
+        assert_eq!(store.get_tenant_segment_len(tenant_b), 3);
+
+        // Target 1000 bytes: requires freeing 2 segments (1024 bytes) across tenants
+        let freed = store.evict_lru_fair(1000);
+        assert!(freed >= 1000, "freed bytes ({freed}) must be >= target_free_bytes (1000)");
+
+        // Fair round-robin evicts 1 segment from Tenant A and 1 segment from Tenant B
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 2);
+        assert_eq!(store.get_tenant_segment_len(tenant_b), 2);
     }
 }
