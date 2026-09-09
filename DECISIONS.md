@@ -1233,7 +1233,7 @@ In `crates/memfuse-index/src/hnsw.rs` existiert die Funktion `rebuild_region()`.
 2. **Feature-Gating & Safety-Guard:** Obwohl reines Tombstone-Pruning algorithmisch sicher bezüglich RwLock-Mutationen ist, birgt das Entfernen von Kanten ohne Ersatz das verbleibende Risiko eines Grad-Verlusts (Reduzierung der Kantenanzahl pro Knoten). Daher bleibt das Feature `partial-index-rebuild` (sowie die Nucleation-Steuerung `physio-nucleation`) **non-default** und darf erst für den Produktionseinsatz freigegeben werden, wenn die Stabilität der Recall-Werte nachgewiesen ist.
 
 ## Konsequenzen
-- **Technischer Nachweis der Recall-Stabilität:** Der Nachweis, dass `rebuild_region()` den Recall nicht unzulässig degradiert, wird automatisiert über den Regressionstest `crates/memfuse-index/tests/nucleation_recall.rs` (`test_nucleation_recall_regression`) geführt.
+- **Technischer Nachweis der Recall-Stabilität:** Der Nachweis, dass `rebuild_region()` den Recall nicht unzulässig degradiert, wird automatisiert über den Regressionstest `crates/memfuse-index/tests/partial_rebuild_recall_regression.rs` (`test_nucleation_recall_regression`) geführt.
 - Der Test verifiziert, dass:
   1. `rebuild_region()` den Recall@10 gegenüber reinem Tombstone-Markieren um nicht mehr als 5 Prozentpunkte (5pp) verschlechtert.
   2. Der absolute Recall-Verlust gegenüber dem unveränderten Index unter 15 Prozentpunkten (15pp) bleibt.
@@ -1242,7 +1242,7 @@ In `crates/memfuse-index/src/hnsw.rs` existiert die Funktion `rebuild_region()`.
 ## enforced_by
 - `crates/memfuse-index/src/hnsw.rs:1812` (`pub async fn rebuild_region`)
 - `crates/memfuse-index/Cargo.toml` (`[features] partial-index-rebuild = []`)
-- `crates/memfuse-index/tests/nucleation_recall.rs` (`test_nucleation_recall_regression`)
+- `crates/memfuse-index/tests/partial_rebuild_recall_regression.rs` (`test_nucleation_recall_regression`)
 
 ---
 
