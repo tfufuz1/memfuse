@@ -324,6 +324,42 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
+    /// Scans a range of keys between `start` and `end` bounds, returning at most `limit` items
+    /// with an optional `cursor` for pagination.
+    #[allow(clippy::type_complexity)]
+    fn scan_bounded<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+        limit: usize,
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            let all = self.scan(start, end).await?;
+            let mut results = Vec::new();
+
+            for (k, v) in all {
+                if let Some(cur_bytes) = cursor {
+                    if k.as_slice() <= cur_bytes {
+                        continue;
+                    }
+                }
+                results.push((k, v));
+                if results.len() == limit {
+                    break;
+                }
+            }
+
+            let next_cursor = if results.len() == limit {
+                results.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
+
+            Ok((results, next_cursor))
+        })
+    }
+
     /// Scans a range of keys between `start` and `end` bounds.
     #[allow(clippy::type_complexity)]
     fn scan<'a>(

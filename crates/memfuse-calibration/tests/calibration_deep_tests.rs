@@ -4,11 +4,14 @@
 // INVARIANTEN: INV-CAL-1 (no silent fallback before warmup), INV-CAL-2 (invalidation resets observations/weights), P8 compliance.
 
 use memfuse_calibration::{
-    record_retrieval_feedback, ConfigFingerprint, IsotonicCalibrator, PidController, PlattScaler,
-    ReplicatorState,
+    ConfigFingerprint, IsotonicCalibrator, PidController, PlattScaler,
 };
+#[cfg(feature = "replicator-dynamics-weights")]
+use memfuse_calibration::{record_retrieval_feedback, ReplicatorState};
 use proptest::prelude::*;
+#[cfg(feature = "replicator-dynamics-weights")]
 use std::collections::HashMap;
+#[cfg(feature = "replicator-dynamics-weights")]
 use std::sync::Arc;
 
 // ============================================================================
@@ -274,6 +277,7 @@ fn test_pid_controller_non_finite_latency_safety() {
 // 4. REPLICATOR STATE TESTS
 // ============================================================================
 
+#[cfg(feature = "replicator-dynamics-weights")]
 #[test]
 fn test_replicator_initialization_and_weights() {
     let state = ReplicatorState::new(
@@ -293,6 +297,7 @@ fn test_replicator_initialization_and_weights() {
     assert!((fw.graph() - 1.0 / 3.0).abs() < 1e-5);
 }
 
+#[cfg(feature = "replicator-dynamics-weights")]
 #[test]
 fn test_replicator_record_feedback_thread_safe() {
     let state = Arc::new(parking_lot::RwLock::new(ReplicatorState::new(
@@ -315,6 +320,7 @@ fn test_replicator_record_feedback_thread_safe() {
     assert!(guard.weights[1] > guard.weights[0]);
 }
 
+#[cfg(feature = "replicator-dynamics-weights")]
 #[test]
 fn test_replicator_invalidation_resets_weights() {
     let mut state = ReplicatorState::new(
@@ -341,6 +347,7 @@ fn test_replicator_invalidation_resets_weights() {
 // ============================================================================
 
 proptest! {
+    #[cfg(feature = "replicator-dynamics-weights")]
     #[test]
     fn prop_replicator_weights_sum_to_one(
         rewards in prop::collection::vec(0.0f32..1.0f32, 3),
