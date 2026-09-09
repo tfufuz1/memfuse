@@ -1388,6 +1388,12 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v, seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                 }
             }
@@ -1400,6 +1406,12 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.clone(), seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                 }
             }
@@ -1410,6 +1422,12 @@ impl StorageEngine for LsmStorage {
                     let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.clone(), seq);
+                    }
+                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        });
                     }
                 }
             }
@@ -1434,6 +1452,137 @@ impl StorageEngine for LsmStorage {
 
             let next_cursor = if results.len() == limit {
                 // Check if there are remaining valid entries in the iterator
+                let mut has_more = false;
+                for (_k, (_v, seq)) in iter {
+                    if (seq & TOMBSTONE_BIT) == 0 {
+                        has_more = true;
+                        break;
+                    }
+                }
+                if has_more {
+                    results.last().map(|(k, _)| k.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            Ok((results, next_cursor))
+        })
+    }
+
+    fn scan_bounded<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+        limit: usize,
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            use std::ops::Bound;
+
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+            let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
+            let state = self.state.read().await;
+            let sstables = self.sstables.read().await;
+
+            // 1. SSTables (filtered by visibility tx <= last_tx)
+            for sst in sstables.iter() {
+                let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
+                for (k, v, seq, tx) in entries {
+                    if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.to_vec(), seq);
+                        }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 2. Immutable memtables (older → newer)
+            for mt in &state.immutable_memtables {
+                for (k, v, seq, tx) in mt.iter() {
+                    if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                        continue;
+                    }
+                    let in_range = match start {
+                        Bound::Included(s) => k.as_ref() >= s,
+                        Bound::Excluded(s) => k.as_ref() > s,
+                        Bound::Unbounded => true,
+                    } && match end {
+                        Bound::Included(e) => k.as_ref() <= e,
+                        Bound::Excluded(e) => k.as_ref() < e,
+                        Bound::Unbounded => true,
+                    };
+                    if in_range {
+                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.to_vec(), seq);
+                        }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 3. Active memtable
+            for (k, v, seq, tx) in state.memtable.iter() {
+                if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                    continue;
+                }
+                let in_range = match start {
+                    Bound::Included(s) => k.as_ref() >= s,
+                    Bound::Excluded(s) => k.as_ref() > s,
+                    Bound::Unbounded => true,
+                } && match end {
+                    Bound::Included(e) => k.as_ref() <= e,
+                    Bound::Excluded(e) => k.as_ref() < e,
+                    Bound::Unbounded => true,
+                };
+                if in_range {
+                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v.to_vec(), seq);
+                    }
+                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        });
+                    }
+                }
+            }
+
+            let range_bound: Bound<&[u8]> = if let Some(cur) = cursor {
+                Bound::Excluded(cur)
+            } else {
+                Bound::Unbounded
+            };
+
+            let mut results = Vec::new();
+            let mut iter = map.range::<[u8], _>((range_bound, Bound::Unbounded));
+
+            for (k, (v, seq)) in iter.by_ref() {
+                if (seq & TOMBSTONE_BIT) == 0 {
+                    results.push((k.clone(), v.clone()));
+                    if results.len() == limit {
+                        break;
+                    }
+                }
+            }
+
+            let next_cursor = if results.len() == limit {
                 let mut has_more = false;
                 for (_k, (_v, seq)) in iter {
                     if (seq & TOMBSTONE_BIT) == 0 {
@@ -2598,6 +2747,88 @@ mod tests {
         // get_at_seq(key, 3) -> Some("b")
         let val_seq3 = storage.get_at_seq(key, 3).await.unwrap(); // unwrap #[cfg(test)]
         assert_eq!(val_seq3, Some(b"b".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_scan_bounded_respects_accumulator_ceiling_with_wide_range() {
+        let (storage, _tmp) = test_storage().await;
+
+        // Put MAX_SCAN_MERGE_ACCUMULATOR + 5 items across multiple transactions (max 5000 ops per tx)
+        let total = memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR + 5;
+        let batch_size = 5000;
+        let mut tx_num = 1;
+
+        for chunk in (0..total).collect::<Vec<_>>().chunks(batch_size) {
+            let tx = TxId::new(tx_num);
+            let entries: Vec<(Vec<u8>, Vec<u8>)> = chunk
+                .iter()
+                .map(|i| (format!("k:{:06}", i).into_bytes(), format!("v:{:06}", i).into_bytes()))
+                .collect();
+            storage.put_batch(tx, &entries).await.unwrap();
+            storage.commit(tx).await.unwrap();
+            tx_num += 1;
+        }
+
+        // Calling scan_bounded over unbounded range must fail with LimitExceeded
+        use std::ops::Bound;
+        let res = storage
+            .scan_bounded(Bound::Unbounded, Bound::Unbounded, 10, None)
+            .await;
+
+        assert!(matches!(
+            res,
+            Err(MemFuseError::LimitExceeded { limit, .. }) if limit == memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_scan_bounded_pagination_matches_full_scan() {
+        let (storage, _tmp) = test_storage().await;
+        let tx = TxId::new(1);
+
+        // Populate 50 items
+        let entries: Vec<(Vec<u8>, Vec<u8>)> = (0..50)
+            .map(|i| (format!("k:{:02}", i).into_bytes(), format!("v:{:02}", i).into_bytes()))
+            .collect();
+
+        storage.put_batch(tx, &entries).await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        use std::ops::Bound;
+        let full_scan = storage
+            .scan(Bound::Unbounded, Bound::Unbounded)
+            .await
+            .unwrap();
+
+        // Paginate using scan_bounded with limit = 7
+        let mut paginated = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+
+        loop {
+            let (batch, next_cursor) = storage
+                .scan_bounded(
+                    Bound::Unbounded,
+                    Bound::Unbounded,
+                    7,
+                    cursor.as_deref(),
+                )
+                .await
+                .unwrap();
+
+            if batch.is_empty() {
+                break;
+            }
+
+            paginated.extend(batch);
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
+            }
+        }
+
+        assert_eq!(paginated, full_scan);
     }
 
     #[tokio::test]

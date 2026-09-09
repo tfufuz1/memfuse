@@ -110,6 +110,14 @@ pub struct StorageStats {
 // INVARIANT: Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // Lifecycle: put/delete → commit/rollback → flush(background).
 
+/// Harte Obergrenze für die Anzahl distinkter Keys, die eine StorageEngine-
+/// Implementierung während eines einzelnen scan()/scan_prefix_bounded()-Aufrufs
+/// intern akkumulieren darf, BEVOR limit/cursor angewendet wird. Verhindert
+/// unbegrenztes Speicherwachstum bei sehr breiten Scans, unabhängig vom vom
+/// Aufrufer angeforderten `limit`. Muss größer als jedes sinnvolle `limit` sein,
+/// um normale paginierte Nutzung nicht zu beeinträchtigen.
+pub const MAX_SCAN_MERGE_ACCUMULATOR: usize = 100_000;
+
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
 ///
 /// # Dyn-Kompatibilität
@@ -289,6 +297,46 @@ pub trait StorageEngine: Send + Sync + 'static {
                 None
             };
 
+            Ok((results, next_cursor))
+        })
+    }
+
+    /// Führt einen begrenzten, Cursor-fähigen Range-Scan durch. Der Cursor dient als
+    /// exklusive untere Schranke (`Bound::Excluded(cursor)`), analog zu
+    /// `scan_prefix_bounded`. Bevorzugt gegenüber `scan()` für jeden neuen Call-Site,
+    /// der potenziell große Ergebnismengen erwarten muss.
+    ///
+    /// Die Default-Implementierung delegiert an `scan()` und schneidet danach zu —
+    /// bietet also KEINE Speicherbegrenzung für Implementierungen, die diese Methode
+    /// nicht überschreiben. `LsmStorage` MUSS diese Methode mit einer echten
+    /// begrenzten Implementierung überschreiben (siehe dortige Implementierung).
+    #[allow(clippy::type_complexity)]
+    fn scan_bounded<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+        limit: usize,
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            let all = self.scan(start, end).await?;
+            let mut results = Vec::new();
+            for (k, v) in all {
+                if let Some(cur_bytes) = cursor {
+                    if k.as_slice() <= cur_bytes {
+                        continue;
+                    }
+                }
+                results.push((k, v));
+                if results.len() == limit {
+                    break;
+                }
+            }
+            let next_cursor = if results.len() == limit {
+                results.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
             Ok((results, next_cursor))
         })
     }
