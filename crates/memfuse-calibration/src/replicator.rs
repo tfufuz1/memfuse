@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T20:20:00Z (SESSION: 80a3120b)
+// ZWECK: Replicator dynamics for online adaptive RRF signal weight allocation (F-07).
+// INVARIANTEN: Sum of weights always equals 1.0 (normalized), weights strictly positive (> 0.0).
+// NICHT-OFFENSICHTLICH: Uses Multiplicative Weights Update Method (Arora et al., 2012) with regret O(sqrt(T log N)).
+// SIEHE AUCH: crates/memfuse-calibration/src/lib.rs
+
 // KONSOLIDIERUNGS-HINWEIS: Dies ist die einzige F-07-Implementierung im Workspace (Stand 2026-08-30). Eine zweite, unbenutzte Implementierung existierte zuvor in memfuse-db/src/replicator.rs und wurde entfernt (P10-Konsolidierung). Vor jeder künftigen F-07-Änderung: prüfe zuerst, ob diese Datei bereits die benötigte Funktionalität bietet.
 
 //! F-07: Replikatordynamik für Online-Adaptive RRF-Signalgewichte.

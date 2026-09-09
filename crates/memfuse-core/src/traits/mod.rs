@@ -110,6 +110,14 @@ pub struct StorageStats {
 // INVARIANT: Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // Lifecycle: put/delete → commit/rollback → flush(background).
 
+/// Harte Obergrenze für die Anzahl distinkter Keys, die eine StorageEngine-
+/// Implementierung während eines einzelnen scan()/scan_prefix_bounded()-Aufrufs
+/// intern akkumulieren darf, BEVOR limit/cursor angewendet wird. Verhindert
+/// unbegrenztes Speicherwachstum bei sehr breiten Scans, unabhängig vom vom
+/// Aufrufer angeforderten `limit`. Muss größer als jedes sinnvolle `limit` sein,
+/// um normale paginierte Nutzung nicht zu beeinträchtigen.
+pub const MAX_SCAN_MERGE_ACCUMULATOR: usize = 100_000;
+
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
 ///
 /// # Dyn-Kompatibilität

@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND: 2026-09-10T00:00:00Z (SESSION: 61b93a6f)
+// ZWECK: Herkunftsnachweis für Graph-Kanten (DocEdgeIndex & EdgeProvenance)
+// INVARIANTEN: INV-GRAPH-PROV-1: Jede CSR-Kante ordnet sich ihren Quelldokumenten zu.
+// SIEHE AUCH: crates/memfuse-graph/src/cascade.rs
+
 use crate::consistency_enforcement::EdgeId;
 use ahash::{AHashMap, AHashSet};
 use memfuse_core::{DocId, TxId};

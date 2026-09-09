@@ -416,3 +416,27 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` (`me
   - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
 - **Workspace-Integrität:**
   - `cargo check --workspace --exclude memfuse-tauri` -> 0 Fehler, 0 Warnungen.
+
+---
+
+## 22. Re-Audit & Test Expansion Verification (2026-09-10)
+
+**Datum:** 2026-09-10T11:45:00Z (SESSION: 13328400)
+**Status:** **ALL CHECKS GREEN (VERIFIED — 0 OPEN FINDINGS)**
+
+Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` (`memfuse-security`) inklusive Test-Ausbau für KV-Segment / Bridge Logic:
+- **Inventarabgleich & Drift (Schritt 0):**
+  - Confirmed inventory drift: KV-Bridge logic (`eviction_worker.rs`, `segment.rs`, `store.rs`, `mod.rs`) is located under `crates/memfuse-crypto/src/kv_segment/` in the `memfuse-security` crate rather than a separate `crates/memfuse-kv-bridge` workspace crate.
+- **Test-Ausbau:**
+  - Expanded unit tests in `segment.rs` covering `new_with_metadata`, `len`, `is_empty`, and `Debug` formatting (verifying zeroized tensor data redaction).
+  - Expanded unit tests in `store.rs` covering non-existent segment retrieval, 0-byte eviction, empty store eviction, and duplicate segment insert/overwrite logic.
+- **Kompilierung & Statische Analyse:**
+  - `cargo check -p memfuse-security --all-features` -> 0 Fehler, 0 Warnungen
+  - `cargo clippy -p memfuse-security -- -D warnings` -> 0 Findings
+  - `cargo fmt --check -p memfuse-security` -> 0 Formatting Diffs
+  - `cargo run -p xtask -- jules-preflight --fast` -> ALLE GATES BESTANDEN
+- **Test-Abdeckung & Safety:**
+  - `cargo test -p memfuse-security --all-features` -> 120 Tests (81 Unit-Tests in `lib.rs` + 39 Integration/Proptests) erfolgreich ausgeführt.
+  - Zero `unsafe` Blöcke im Produktionscode unter `crates/memfuse-crypto/src/` (`#![forbid(unsafe_code)]` aktiv).
+- **Workspace-Integrität:**
+  - `cargo check --workspace --exclude memfuse-tauri` -> 0 Fehler, 0 Warnungen.
