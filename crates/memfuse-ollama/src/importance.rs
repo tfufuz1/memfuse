@@ -36,7 +36,7 @@ pub async fn score_importance_batch(
         return Vec::new();
     }
 
-    let max_concurrent = max_concurrent.max(1).min(32);
+    let max_concurrent = max_concurrent.clamp(1, 32);
 
     stream::iter(chunks.iter().enumerate())
         .map(|(i, chunk_text)| {

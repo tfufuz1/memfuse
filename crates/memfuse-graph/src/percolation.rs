@@ -235,4 +235,35 @@ mod tests {
         assert!((*cand_from == id1 && *cand_to == id3) || (*cand_from == id3 && *cand_to == id1));
         assert!(*sim > config.rebonding_similarity);
     }
+
+    #[test]
+    fn test_cosine_similarity_edge_cases() {
+        // Mismatched vector lengths -> 0.0
+        assert_eq!(cosine_similarity(&[1.0, 2.0], &[1.0]), 0.0);
+        // Empty vectors -> 0.0
+        assert_eq!(cosine_similarity(&[], &[]), 0.0);
+        // Zero norm vectors -> 0.0
+        assert_eq!(cosine_similarity(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+        // Identical vectors -> 1.0
+        assert!((cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-6);
+        // Orthogonal vectors -> 0.0
+        assert!((cosine_similarity(&[1.0, 0.0], &[0.0, 1.0])).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn test_find_rebonding_candidates_empty_or_single_node() {
+        let graph = Arc::new(CsrGraph::new());
+        let config = PercolationConfig::default();
+
+        let empty_embeddings = HashMap::new();
+        let candidates =
+            find_rebonding_candidates(graph.as_ref(), &empty_embeddings, &config).await;
+        assert!(candidates.is_empty());
+
+        let mut single_embedding = HashMap::new();
+        single_embedding.insert(EntityId::new(1), vec![1.0, 0.0]);
+        let candidates_single =
+            find_rebonding_candidates(graph.as_ref(), &single_embedding, &config).await;
+        assert!(candidates_single.is_empty());
+    }
 }

@@ -28,7 +28,7 @@ Ergebnis: **3 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9881 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9890 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 1 | 1411 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-graph` | 1 | 10185 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
@@ -41,7 +41,7 @@ Ergebnis: **3 offene Tags**
 | `memfuse-embed` | 3 | 1893 | 🧊 Optional |  |
 | `memfuse-db` | 4 | 27143 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4104 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 4662 | 🟢 Clean |  |
+| `memfuse-router` | 5 | 4624 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6176 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5793 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-mcp` | 7 | 4360 | 🟢 Clean |  |
