@@ -3025,7 +3025,7 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "5bf7eada6d89c49f"
+    "hash": "33654c2d796476df"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
@@ -3033,11 +3033,7 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "c31fd8244becbc5f"
-  },
-  {
-    "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "f626e1ee2010b6b2"
+    "hash": "70db28c09d123f0b"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/segment.rs",
