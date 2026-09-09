@@ -209,6 +209,12 @@ async fn test_partial_rebuild_recall_regression() {
         println!("Muster (i) Random 20% Tombstones:");
         println!("  Recall@10 vor rebuild_region():  {:.4}", recall_before);
         println!("  Recall@10 nach rebuild_region(): {:.4}", recall_after);
+        eprintln!(
+            "RECALL_METRIC before={:.4} after={:.4} drop_pp={:.4}",
+            recall_before,
+            recall_after,
+            recall_before - recall_after
+        );
 
         assert!(
             recall_after >= recall_before - RECALL_TOLERANCE_BAND,
