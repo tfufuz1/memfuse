@@ -61,7 +61,16 @@ TOTAL                             288                 5    98.26%          23   
 
 ---
 
-## 5. Session Log & Verification (2026-09-06)
+## 5. Session Log & Verification (2026-09-09)
+- **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `lyapunov.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Inventory state confirmed identical to 2026-09-08 snapshot (zero drift).
+- **Domain & APM Deep Analysis**: Verified ML-Scoring domain invariants (`APM-22`, `APM-23`, `APM-24`). Confirmed conformal quantile bounds, outcome-driven recalibration, and Lyapunov distributional drift watcher integration.
+- **Chaos & Concurrency Verification**: Executed 10x 8-thread concurrency stress tests and hot-reload atomic snapshot isolation tests with 0 failures or race conditions.
+- **Coverage & Test Metrics**: Achieved **95.98% region coverage** and **93.89% line coverage** across `memfuse-router` (`cargo llvm-cov -p memfuse-router --all-features`).
+- **Governance & Verification**: Updated FILE-CONTEXT headers on `profile.rs` and `router.rs`. All 69 unit and property-based tests in `memfuse-router` pass cleanly (`cargo test -p memfuse-router --all-features`). Zero clippy warnings, zero compiler warnings, zero unsafe blocks.
+
+---
+
+## 6. Session Log & Verification (2026-09-06)
 - **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Documented inventory drift relative to prompt snapshot (Stand 2026-09-03).
 - **ConfidenceMetrics Enum-to-Struct Refactoring**: Fixed compilation failure where `ConfidenceMetrics` was referenced as an enum (`ConfidenceMetrics::Calibrated` / `ConfidenceMetrics::Uncalibrated`). Refactored `ConfidenceMetrics` instantiation in `router.rs` and struct assertions in `tests.rs`. Added `PartialEq` derive.
 - **Test Expansion & Concurrency Verification**: Expanded test suite from 48 to 53 tests covering `DecisionId`, `RoutingOutcome`, and persisted calibration state loading. Verified 10 multi-threaded concurrency runs (`--test-threads=8`).
