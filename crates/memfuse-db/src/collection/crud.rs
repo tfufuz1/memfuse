@@ -1005,6 +1005,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Scans documents in the collection that match a given key prefix.
+    /// Caps maximum results to `MAX_SCAN_RESULTS_DEFAULT` to protect against unbounded memory growth.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn scan_prefix(
         &self,
@@ -1403,5 +1404,38 @@ mod tests {
         );
 
         drop(guard_a);
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_capped_at_max_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
+
+        // Insert 10,005 items via put_kv
+        for i in 0..10_005 {
+            collection
+                .put_kv(
+                    &format!("pfx_{i:05}"),
+                    &serde_json::json!({ "idx": i }),
+                )
+                .await
+                .unwrap();
+        }
+
+        let scanned = collection.scan_prefix("pfx_").await.unwrap();
+        assert_eq!(
+            scanned.len(),
+            MAX_SCAN_RESULTS_DEFAULT,
+            "scan_prefix must be capped at MAX_SCAN_RESULTS_DEFAULT (10,000)"
+        );
     }
 }

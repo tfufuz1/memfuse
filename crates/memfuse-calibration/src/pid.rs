@@ -119,6 +119,27 @@ mod tests {
     }
 
     #[test]
+    fn test_pid_non_finite_latency_ignored() {
+        let mut pid = PidController::default();
+        let initial_pool = 100;
+        let _ = pid.update(initial_pool, 200.0);
+        let integral_before = pid.integral;
+        let prev_error_before = pid.prev_error;
+
+        // Test NAN
+        let size_nan = pid.update(100, f32::NAN);
+        assert_eq!(size_nan, 100);
+        assert_eq!(pid.integral, integral_before);
+        assert_eq!(pid.prev_error, prev_error_before);
+
+        // Test INFINITY
+        let size_inf = pid.update(100, f32::INFINITY);
+        assert_eq!(size_inf, 100);
+        assert_eq!(pid.integral, integral_before);
+        assert_eq!(pid.prev_error, prev_error_before);
+    }
+
+    #[test]
     fn test_pid_anti_windup_prevents_overflow() {
         let mut pid = PidController::default();
         let initial_pool = 100;
