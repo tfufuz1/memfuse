@@ -444,6 +444,42 @@ async fn test_memfuse_search_executes_query_builder_successfully() {
 }
 
 #[tokio::test]
+async fn test_protocol_request_deserialization_no_panic() {
+    let test_inputs = [
+        "",
+        "{}",
+        "{\"jsonrpc\":\"2.0\"}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"ping\"}",
+        "{\"jsonrpc\":\"1.0\",\"method\":\"ping\"}",
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":123}",
+        "{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"test\",\"params\":null}",
+        "{\"jsonrpc\":\"2.0\",\"id\":[1,2,3],\"method\":\"test\"}",
+        "\0\r\n\t",
+        "{\"method\":\"tool\",\"params\":{\"a\":\"\u{0000}\"}}",
+    ];
+
+    for input in test_inputs {
+        let _ = serde_json::from_str::<JsonRpcRequest>(input);
+    }
+}
+
+#[tokio::test]
+async fn test_protocol_response_serialization_no_panic() {
+    let test_cases = [
+        (Some(json!(1)), -32600, "Invalid Request"),
+        (Some(json!("str_id")), -32601, "Method not found"),
+        (Some(json!(null)), -32700, "Parse error"),
+        (None, -32603, "Internal error"),
+    ];
+
+    for (id, code, msg) in test_cases {
+        let err_resp = JsonRpcResponse::err(id, code, msg);
+        let ser = serde_json::to_string(&err_resp);
+        assert!(ser.is_ok());
+    }
+}
+
+#[tokio::test]
 async fn test_batch_request_handling() {
     let (server, _tmp) = create_mock_server().await;
 

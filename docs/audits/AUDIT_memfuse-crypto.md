@@ -362,6 +362,17 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` inkl
 
 ---
 
+## 20. Re-Audit & Inventory Drift Verification (2026-09-09)
+
+**Datum:** 2026-09-09T14:48:00Z (SESSION: 8427f167)
+**Status:** **IN PROGRESS — INVENTORY DRIFT DOCUMENTED**
+
+- **Inventar-Abgleich & Drift:**
+  - Befund: `Inventar-Drift: Dateien der KV-Bridge (eviction_worker.rs, segment.rs, store.rs, mod.rs) befinden sich im Repository unter crates/memfuse-crypto/src/kv_segment/ und nicht unter crates/memfuse-kv-bridge/src/`.
+  - Crate `memfuse-security` (Paketname in Cargo.toml) entspricht `crates/memfuse-crypto`.
+
+---
+
 ## 19. Re-Audit & Tiefen-Audit Verification (2026-09-09)
 
 **Datum:** 2026-09-09T12:50:00Z (SESSION: 98bd454c)

@@ -280,3 +280,19 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
   - `cargo clippy -p memfuse-embed --all-features -- -D warnings` -> 0 findings
   - `cargo fmt --check -p memfuse-embed` -> Clean
   - `cargo check --workspace --exclude memfuse-tauri` -> Clean
+
+## 16. Re-Verifikation & Test Expansion Audit (2026-09-09) (SESSION: 26be4fbf)
+
+### 16.1 Step 0 Inventory Reality Check
+- Verified file inventory for `crates/memfuse-embed/src`: `lib.rs`, `reranker.rs`. Confirmed 0 inventory drift relative to snapshot 2026-09-08.
+
+### 16.2 Code Quality, Clipping & Test Expansion
+- **Clippy Optimization:** Enforced indirection for large enum variant (`RerankerBackend::Onnx(Box<OnnxReranker>)`) to fix `clippy::large_enum_variant` warning under `--all-features`.
+- **Header Standardization:** Updated `FILE-CONTEXT` headers in `lib.rs` and `reranker.rs` to timestamp `2026-09-09T13:42:00Z` and session `26be4fbf`.
+- **Test Suite Expansion:** Added boundary candidate tests (`MAX_CANDIDATES` exact limit and single candidate), extreme logit calibration tests (`f32::MAX`, `f32::MIN_POSITIVE`, `NaN`, `Inf`), and config accessor tests.
+- **Verification Suite:**
+  - `cargo check -p memfuse-embed --all-features` -> Clean
+  - `cargo clippy -p memfuse-embed --all-features -- -D warnings` -> 0 findings
+  - `cargo fmt --check -p memfuse-embed` -> Clean
+  - `cargo test -p memfuse-embed --all-features` -> 32/32 tests passed (26 unit + 4 integration + 2 adversarial)
+  - `cargo check --workspace --exclude memfuse-tauri` -> Clean
