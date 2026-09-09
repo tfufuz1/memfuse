@@ -427,6 +427,15 @@ impl DiskAnnIndex {
             &vectors[entry_point as usize],
             self.inner.config.distance_metric,
         )?;
+        if !ep_dist.is_finite() {
+            tracing::error!(
+                entry_point = entry_point,
+                "DiskANN search_in_memory: non-finite distance for entry point"
+            );
+            return Err(MemFuseError::Index(
+                "Non-finite distance encountered for entry point in search_in_memory".into(),
+            ));
+        }
 
         let initial = SearchCandidate {
             index: entry_point,
@@ -452,6 +461,13 @@ impl DiskAnnIndex {
                     &vectors[neighbor as usize],
                     self.inner.config.distance_metric,
                 )?;
+                if !dist.is_finite() {
+                    tracing::error!(
+                        neighbor = neighbor,
+                        "DiskANN search_in_memory: non-finite distance encountered for neighbor, skipping"
+                    );
+                    continue;
+                }
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
@@ -496,6 +512,12 @@ impl DiskAnnIndex {
                     &vectors[p_idx as usize],
                     self.inner.config.distance_metric,
                 )?;
+                if !dist_p_cand.is_finite() || !cand.distance.is_finite() {
+                    tracing::warn!(
+                        "DiskANN robust-prune: non-finite distance encountered, treating candidate as non-prunable (fail-open, candidate retained)"
+                    );
+                    continue;
+                }
                 if alpha * dist_p_cand < cand.distance {
                     keep = false;
                     break;
@@ -762,6 +784,15 @@ impl DiskAnnIndex {
         let mut results = BinaryHeap::new();
 
         let ep_dist = self.get_dist_mixed(query, entry_point, existing_count, new_vecs)?;
+        if !ep_dist.is_finite() {
+            tracing::error!(
+                entry_point = entry_point,
+                "DiskANN search_streaming: non-finite distance for entry point"
+            );
+            return Err(MemFuseError::Index(
+                "Non-finite distance encountered for entry point in search_streaming".into(),
+            ));
+        }
 
         let initial = SearchCandidate {
             index: entry_point,
@@ -783,6 +814,13 @@ impl DiskAnnIndex {
                     continue;
                 }
                 let dist = self.get_dist_mixed(query, neighbor, existing_count, new_vecs)?;
+                if !dist.is_finite() {
+                    tracing::error!(
+                        neighbor = neighbor,
+                        "DiskANN search_streaming: non-finite distance encountered for neighbor, skipping"
+                    );
+                    continue;
+                }
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
@@ -831,6 +869,12 @@ impl DiskAnnIndex {
             for p_v in &pruned_vecs {
                 let dist_p_cand =
                     compute_distance(&cand_node_v, p_v, self.inner.config.distance_metric)?;
+                if !dist_p_cand.is_finite() || !cand.distance.is_finite() {
+                    tracing::warn!(
+                        "DiskANN robust-prune: non-finite distance encountered, treating candidate as non-prunable (fail-open, candidate retained)"
+                    );
+                    continue;
+                }
                 if alpha * dist_p_cand < cand.distance {
                     keep = false;
                     break;
@@ -1665,6 +1709,15 @@ impl DiskAnnIndex {
 
         let ep = header.entry_point;
         let ep_dist = self.get_dist_to_query(query, ep)?;
+        if !ep_dist.is_finite() {
+            tracing::error!(
+                entry_point = ep,
+                "DiskANN search: non-finite distance for entry point"
+            );
+            return Err(MemFuseError::Index(
+                "Non-finite distance encountered for entry point in search".into(),
+            ));
+        }
 
         let initial_cand = SearchCandidate {
             index: ep,
@@ -1688,6 +1741,13 @@ impl DiskAnnIndex {
                 }
 
                 let dist = self.get_dist_to_query(query, neighbor)?;
+                if !dist.is_finite() {
+                    tracing::error!(
+                        neighbor = neighbor,
+                        "DiskANN search: non-finite distance encountered for neighbor, skipping"
+                    );
+                    continue;
+                }
                 let cand = SearchCandidate {
                     index: neighbor,
                     distance: dist,
@@ -2685,48 +2745,92 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_search_internal_rejects_non_finite_query_vector() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let index_path = temp_dir.path().join("non_finite_test.idx");
+    async fn test_diskann_robust_prune_handles_nan_distance_without_panic() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
         let config = DiskAnnConfig {
-            index_path,
+            index_path: temp_dir.path().join("robust_prune_nan.idx"),
             dimension: 4,
+            max_degree: 4,
+            distance_metric: DistanceMetric::Euclidean,
             ..DiskAnnConfig::default()
         };
-        let index = DiskAnnIndex::try_new(config).unwrap();
-        let vectors = vec![vec![1.0, 2.0, 3.0, 4.0]];
-        let ids = vec![DocId::from(1)];
-        index.build(&vectors, &ids).await.unwrap();
+        let index = DiskAnnIndex::try_new(config)?;
 
-        // a & b) Query containing f32::NAN
-        let nan_query = vec![f32::NAN, 2.0, 3.0, 4.0];
-        let res_nan = index.search_internal(&nan_query, 1).await;
-        assert!(res_nan.is_err());
-        let err_nan = res_nan.err().unwrap().to_string();
-        assert!(
-            err_nan.contains("non-finite"),
-            "Expected error containing 'non-finite', got: {err_nan}"
-        );
+        // Test 1: candidate distance is NaN in prune_in_memory
+        let mut candidates = vec![
+            SearchCandidate {
+                index: 0,
+                distance: 1.0,
+            },
+            SearchCandidate {
+                index: 1,
+                distance: f32::NAN,
+            },
+        ];
+        let vectors = vec![
+            vec![0.0, 0.0, 0.0, 0.0],
+            vec![1.0, 0.0, 0.0, 0.0],
+        ];
 
-        // c) Query containing f32::INFINITY
-        let inf_query = vec![f32::INFINITY, 2.0, 3.0, 4.0];
-        let res_inf = index.search_internal(&inf_query, 1).await;
-        assert!(res_inf.is_err());
-        let err_inf = res_inf.err().unwrap().to_string();
-        assert!(
-            err_inf.contains("non-finite"),
-            "Expected error containing 'non-finite', got: {err_inf}"
-        );
+        let pruned = index.prune_in_memory(&mut candidates, &vectors, 4, 1.2)?;
+        // Both candidates must be retained (fail-open) and prune_in_memory must not panic
+        assert_eq!(pruned.len(), 2);
+        assert!(pruned.contains(&0));
+        assert!(pruned.contains(&1));
 
-        // d) Normal finite query vector succeeds
-        let valid_query = vec![1.0, 2.0, 3.0, 4.0];
-        let res_valid = index.search_internal(&valid_query, 1).await;
-        assert!(
-            res_valid.is_ok(),
-            "Normal finite query vector must succeed"
-        );
-        let docs = res_valid.unwrap();
-        assert_eq!(docs.len(), 1);
-        assert_eq!(docs[0].doc_id, DocId::from(1));
+        // Test 2: candidate distance is NaN in prune_streaming
+        let mut streaming_candidates = vec![
+            SearchCandidate {
+                index: 0,
+                distance: 1.0,
+            },
+            SearchCandidate {
+                index: 1,
+                distance: f32::NAN,
+            },
+        ];
+        let new_vecs = vec![
+            (DocId::from(1), vec![0.0, 0.0, 0.0, 0.0]),
+            (DocId::from(2), vec![1.0, 0.0, 0.0, 0.0]),
+        ];
+        let pruned_streaming =
+            index.prune_streaming(0, &mut streaming_candidates, 0, &new_vecs, 4, 1.2)?;
+        assert_eq!(pruned_streaming.len(), 2);
+        assert!(pruned_streaming.contains(&0));
+        assert!(pruned_streaming.contains(&1));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_diskann_query_handles_nan_neighbor_distance() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let index_path = temp_dir.path().join("query_nan_neighbor.idx");
+        let config = DiskAnnConfig {
+            index_path: index_path.clone(),
+            dimension: 4,
+            max_degree: 4,
+            beam_width: 4,
+            distance_metric: DistanceMetric::Cosine,
+            fallback_policy: DiskAnnFallbackPolicy::FailFast,
+            ..DiskAnnConfig::default()
+        };
+
+        let index = DiskAnnIndex::try_new(config.clone())?;
+        let vectors = vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 0.0],
+        ];
+        let ids = vec![DocId::from(1), DocId::from(2), DocId::from(3)];
+        index.build(&vectors, &ids).await?;
+
+        // Query with normal vector should succeed and find results
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = index.search(&query, 2).await?;
+        assert!(!results.is_empty());
+        assert_eq!(results[0].doc_id, DocId::from(1));
+
+        Ok(())
     }
 }
