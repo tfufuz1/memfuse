@@ -73,6 +73,8 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-09-09T00:00:00Z (SESSION: CANDLE-EMBEDDING-PROVIDER)` | `crates/memfuse-candle/src/embedding_provider.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Trait-based EmbeddingProvider implementation for CandleEmbedClient. |
+| `2026-09-09T00:00:00Z (SESSION: CANDLE-EMBEDDING-PROVIDER)` | `crates/memfuse-candle/tests/embedding_provider_conformance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Conformance integration tests for CandleEmbedClient as EmbeddingProvider. |
 | `2026-09-07T06:15:00Z` | `crates/memfuse-index/src/diskann.rs` | `AI-TAG` | `-` | `f04imm01` | `RESOLVED` | `-` | /// AI-TAG[RESOLVED] Echte inkrementelle Streaming-DiskANN Implementierung mit Beam-Search, RNG-Pruning und Rückwärts-Kanten-Kompression. (TS:2026-09-07T06:15:00Z) (SESSION: f04imm01) |
 | `2026-09-07T06:00:00Z` | `crates/memfuse-ollama/src/importance.rs` | `AI-TAG` | `AGT-OLLAMA-14c0c140` | `jules` | `RESOLVED` | `0` | // AI-TAG[ML-SCORING][MAJOR] RESOLVED: Score importance enriches output with model_id provenance and optional calibrated_confidence via IsotonicCalibrator. Post-hoc outcome feedback interface record_importance_outcome added (ID: AGT-OLLAMA-14c0c140) (TS: 2026-09-07T06:00:00Z) (SESSION: jules) |
 | `2026-09-06T12:00:00Z` | `crates/memfuse-embed/src/reranker.rs` | `AI-TAG` | `AGT-EMBED-62093e61` | `-` | `RESOLVED` | `0` | // AI-TAG[CALIBRATION][MINOR] AGT-EMBED-62093e61 [RESOLVED] (TS: 2026-09-06T12:00:00Z) |
@@ -215,6 +217,7 @@
 | `` | `crates/memfuse-db/tests/diskann_collection_fallback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection Integration Fallback Test (Pflichttest 3). |
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-index/benches/nucleation_recall_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-index/tests/diskann_corruption_fallback_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Corruption detection and DiskAnnFallbackPolicy test (Pflichttest 2). |
 | `` | `crates/memfuse-index/tests/diskann_fault_injection_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fault-Injection Test for DiskANN rebuild failures (Pflichttest 1). |
 | `` | `crates/memfuse-store/examples/chaos_writer.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |

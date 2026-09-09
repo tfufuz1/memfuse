@@ -1068,6 +1068,7 @@ impl PyMemFuse {
         let tenant_id = memfuse_core::TenantId::try_new(1).map_err(memfuse_err)?;
         run_blocking_ffi(py, || {
             rt.block_on(self.inner.drop_collection(&name_owned, tenant_id, &[0u8; 32]))
+                .map(|_| ())
                 .map_err(memfuse_err)
         })
     }
