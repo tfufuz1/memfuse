@@ -2,7 +2,7 @@
 // ZWECK: Lokaler Partial-Rebuild-Trigger für HNSW-Hot-Path-Regionen (F-02).
 // INVARIANTEN: INV-NUC-1: Partial-Rebuild darf globalen HNSW-Graph nicht inkonsistent hinterlassen.
 // NICHT-OFFENSICHTLICH: Ergänzt den globalen HNSW_REBUILD_DELETION_RATIO-Trigger hinter Feature-Flag partial-index-rebuild.
-// STAND: TS:2026-09-09T14:50:00Z (SESSION: 92d7bb7d)
+// STAND: TS:2026-09-09T15:52:00Z (SESSION: 8fae2834)
 
 //! F-02: Lokaler Partial-Rebuild-Trigger für HNSW-Hot-Path-Regionen.
 //!
@@ -70,7 +70,10 @@ impl TraversalTracker {
         &self,
         tombstone_map: &HashMap<u64, bool>, // node_id → is_tombstoned
     ) -> Vec<u64> {
-        if tombstone_map.is_empty() {
+        if tombstone_map.is_empty()
+            || self.config.critical_ratio.is_nan()
+            || self.config.critical_ratio <= 0.0
+        {
             return Vec::new();
         }
 
@@ -78,7 +81,7 @@ impl TraversalTracker {
         let global_tombstones = tombstone_map.values().filter(|&&ts| ts).count() as f32;
         let global_density = global_tombstones / total_nodes;
 
-        if global_density <= 0.0 {
+        if global_density.is_nan() || global_density <= 0.0 || global_density.is_infinite() {
             return Vec::new();
         }
 
@@ -95,7 +98,7 @@ impl TraversalTracker {
 
         let s_local = local_density / global_density;
 
-        if s_local > self.config.critical_ratio {
+        if s_local.is_finite() && s_local > self.config.critical_ratio {
             hot_nodes
         } else {
             Vec::new()
@@ -130,7 +133,11 @@ pub fn should_trigger_partial_rebuild(
     global_tombstone_ratio: f32,
     config: &PartialRebuildConfig,
 ) -> Option<Vec<u64>> {
-    if global_tombstone_ratio < config.min_global_ratio {
+    if global_tombstone_ratio.is_nan()
+        || global_tombstone_ratio.is_infinite()
+        || config.min_global_ratio.is_nan()
+        || global_tombstone_ratio < config.min_global_ratio
+    {
         return None;
     }
     let regions = tracker.find_oversaturated_regions(tombstone_map);
@@ -274,6 +281,65 @@ mod tests {
             assert!(res.is_some());
             let triggered_nodes = res.unwrap(); // unwrap
             assert_eq!(triggered_nodes.len(), 10);
+        }
+    }
+
+    #[test]
+    fn test_partial_rebuild_nan_inf_safety() {
+        let config_nan = PartialRebuildConfig {
+            critical_ratio: f32::NAN,
+            ..Default::default()
+        };
+        let mut tracker_nan = TraversalTracker::new(config_nan);
+        tracker_nan.record_traversal(vec![1, 2, 3]);
+
+        let mut tombstone_map = HashMap::new();
+        tombstone_map.insert(1, true);
+        tombstone_map.insert(2, false);
+
+        assert!(tracker_nan
+            .find_oversaturated_regions(&tombstone_map)
+            .is_empty());
+
+        let config_negative = PartialRebuildConfig {
+            critical_ratio: -1.0,
+            ..Default::default()
+        };
+        let tracker_neg = TraversalTracker::new(config_negative);
+        assert!(tracker_neg
+            .find_oversaturated_regions(&tombstone_map)
+            .is_empty());
+    }
+
+    #[test]
+    fn test_should_trigger_partial_rebuild_nan_ratio() {
+        let config = PartialRebuildConfig::default();
+        let mut tracker = TraversalTracker::new(config.clone());
+        tracker.record_traversal(vec![1, 2, 3]);
+
+        let mut tombstone_map = HashMap::new();
+        tombstone_map.insert(1, true);
+
+        #[cfg(feature = "partial-index-rebuild")]
+        {
+            assert!(
+                should_trigger_partial_rebuild(&tracker, &tombstone_map, f32::NAN, &config)
+                    .is_none()
+            );
+            assert!(should_trigger_partial_rebuild(
+                &tracker,
+                &tombstone_map,
+                f32::INFINITY,
+                &config
+            )
+            .is_none());
+            assert!(should_trigger_partial_rebuild(
+                &tracker,
+                &tombstone_map,
+                f32::NEG_INFINITY,
+                &config
+            )
+            .is_none());
         }
     }
 }
