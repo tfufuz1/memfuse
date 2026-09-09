@@ -11,6 +11,9 @@ use memfuse_core::{
     DocId, EntityId, Result, StorageEngine, TxId, VectorIndex, EXPIRY_METADATA_KEY,
 };
 
+/// Default safety cap for prefix and range scans to prevent unbounded memory allocation and OOM.
+pub const MAX_SCAN_RESULTS_DEFAULT: usize = 10_000;
+
 pub(super) fn validate_doc_id(id: &str) -> Result<()> {
     if id.is_empty() {
         return Err(memfuse_core::MemFuseError::invalid_input(
@@ -995,6 +998,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Scans documents in the collection that match a given key prefix.
+    /// Caps maximum results to `MAX_SCAN_RESULTS_DEFAULT` to protect against unbounded memory growth.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>> {
         let real_prefix = if prefix.starts_with("__rel:") {
@@ -1035,6 +1039,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
                 if let Ok(val) = serde_json::from_slice(&v) {
                     results.push((user_key, val));
+                    if results.len() >= MAX_SCAN_RESULTS_DEFAULT {
+                        return Ok(results);
+                    }
                 }
             }
 
@@ -1048,7 +1055,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         Ok(results)
     }
 
-    /// Performs semantic k-NN search over the collection's embeddings.
+    /// Performs range scan over keys in the collection.
+    /// Caps maximum results to `MAX_SCAN_RESULTS_DEFAULT` to protect against unbounded memory growth.
     #[tracing::instrument(level = "trace", skip(self, start, end))]
     pub async fn scan(
         &self,
@@ -1112,6 +1120,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
             if let Ok(val) = serde_json::from_slice(&v) {
                 results.push((user_key, val));
+                if results.len() >= MAX_SCAN_RESULTS_DEFAULT {
+                    break;
+                }
             }
         }
         Ok(results)
@@ -1208,5 +1219,38 @@ mod tests {
         );
 
         drop(guard_a);
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_capped_at_max_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
+
+        // Insert 10,005 items via put_kv
+        for i in 0..10_005 {
+            collection
+                .put_kv(
+                    &format!("pfx_{i:05}"),
+                    &serde_json::json!({ "idx": i }),
+                )
+                .await
+                .unwrap();
+        }
+
+        let scanned = collection.scan_prefix("pfx_").await.unwrap();
+        assert_eq!(
+            scanned.len(),
+            MAX_SCAN_RESULTS_DEFAULT,
+            "scan_prefix must be capped at MAX_SCAN_RESULTS_DEFAULT (10,000)"
+        );
     }
 }
