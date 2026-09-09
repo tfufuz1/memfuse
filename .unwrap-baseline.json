@@ -2944,6 +2944,38 @@
     "hash": "f8cccd25105b2c1c"
   },
   {
+    "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
+    "hash": "25085c32fe5c7879"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
+    "hash": "5bf7eada6d89c49f"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
+    "hash": "9f88712eb627b2be"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
+    "hash": "b6d9bbff2c8bc5d7"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/segment.rs",
+    "hash": "bb1365364ea0bdb3"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "75c00d97bb5a0d61"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "c0dbf5da2d9ef8c9"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
+    "hash": "fd67501a323e0302"
+  },
+  {
     "file": "crates/memfuse-crypto/src/wal_crypto.rs",
     "hash": "05a4839ef623fd74"
   },
@@ -3226,6 +3258,30 @@
   {
     "file": "crates/memfuse-crypto/tests/key_separation_and_edge_cases.rs",
     "hash": "fd484eafde6615d5"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/kv_segment_integration.rs",
+    "hash": "0725c9601388e399"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/kv_segment_integration.rs",
+    "hash": "65fccaa1fe5ed35b"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/kv_segment_integration.rs",
+    "hash": "7a4360d9078b198d"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/kv_segment_integration.rs",
+    "hash": "a2b25a4e031f9752"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/kv_segment_integration.rs",
+    "hash": "b3afdb8baef7295f"
+  },
+  {
+    "file": "crates/memfuse-crypto/tests/kv_segment_integration.rs",
+    "hash": "d8a269d343bc7419"
   },
   {
     "file": "crates/memfuse-crypto/tests/namespace_isolation.rs",
@@ -8881,10 +8937,6 @@
   },
   {
     "file": "crates/memfuse-index/src/diskann.rs",
-    "hash": "0b31976c8abeef00"
-  },
-  {
-    "file": "crates/memfuse-index/src/diskann.rs",
     "hash": "11151d46153331b9"
   },
   {
@@ -8901,10 +8953,6 @@
   },
   {
     "file": "crates/memfuse-index/src/diskann.rs",
-    "hash": "1b33b4e41f2b1caa"
-  },
-  {
-    "file": "crates/memfuse-index/src/diskann.rs",
     "hash": "1cde47882e2f8b32"
   },
   {
@@ -8918,6 +8966,10 @@
   {
     "file": "crates/memfuse-index/src/diskann.rs",
     "hash": "216529f86b394454"
+  },
+  {
+    "file": "crates/memfuse-index/src/diskann.rs",
+    "hash": "27c95778cbd72afd"
   },
   {
     "file": "crates/memfuse-index/src/diskann.rs",
@@ -9066,6 +9118,10 @@
   {
     "file": "crates/memfuse-index/src/diskann.rs",
     "hash": "d2e9b3370062a358"
+  },
+  {
+    "file": "crates/memfuse-index/src/diskann.rs",
+    "hash": "d58a4532b5f92f37"
   },
   {
     "file": "crates/memfuse-index/src/diskann.rs",
@@ -10940,62 +10996,6 @@
     "hash": "fc77be40e09863d8"
   },
   {
-    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
-    "hash": "25085c32fe5c7879"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
-    "hash": "5bf7eada6d89c49f"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
-    "hash": "9f88712eb627b2be"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/eviction_worker.rs",
-    "hash": "b6d9bbff2c8bc5d7"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/segment.rs",
-    "hash": "bb1365364ea0bdb3"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/store.rs",
-    "hash": "75c00d97bb5a0d61"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/store.rs",
-    "hash": "c0dbf5da2d9ef8c9"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/src/store.rs",
-    "hash": "fd67501a323e0302"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs",
-    "hash": "0725c9601388e399"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs",
-    "hash": "65fccaa1fe5ed35b"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs",
-    "hash": "7a4360d9078b198d"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs",
-    "hash": "a2b25a4e031f9752"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs",
-    "hash": "b3afdb8baef7295f"
-  },
-  {
-    "file": "crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs",
-    "hash": "d8a269d343bc7419"
-  },
-  {
     "file": "crates/memfuse-mcp/src/config.rs",
     "hash": "13e7f0edba3c3090"
   },
@@ -11081,11 +11081,11 @@
   },
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",
-    "hash": "21f9e353fd847d09"
+    "hash": "2c9fa0a79de67cb5"
   },
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",
-    "hash": "2c9fa0a79de67cb5"
+    "hash": "2f2ac9b633946bfc"
   },
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",
@@ -11094,10 +11094,6 @@
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",
     "hash": "5fefbf6be71669f3"
-  },
-  {
-    "file": "crates/memfuse-mcp/src/sandbox.rs",
-    "hash": "67bf07023bcf7d9d"
   },
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",
@@ -11114,6 +11110,10 @@
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",
     "hash": "9714f6d238d3ff99"
+  },
+  {
+    "file": "crates/memfuse-mcp/src/sandbox.rs",
+    "hash": "9d36bd667b86e71c"
   },
   {
     "file": "crates/memfuse-mcp/src/sandbox.rs",

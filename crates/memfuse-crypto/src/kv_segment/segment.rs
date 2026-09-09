@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[cfg(feature = "kv-encryption")]
-use memfuse_crypto::{EncryptedKvLayer, KvSegmentCipher, ModelFingerprint};
+use crate::{EncryptedKvLayer, KvSegmentCipher, ModelFingerprint};
 
 /// Monotoner Logical-Clock-Zähler für Recency-Ordering (P3: Keine SystemTime als Kausalitätsgarant).
 static GLOBAL_KV_ACCESS_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -102,7 +102,7 @@ impl KvSegment {
         model_fingerprint: ModelFingerprint,
         rope_offset: Option<usize>,
         plaintext: &[u8],
-    ) -> Result<Self, memfuse_crypto::CryptoError> {
+    ) -> Result<Self, crate::CryptoError> {
         let initial_clock = GLOBAL_KV_ACCESS_COUNTER.fetch_add(1, Ordering::Relaxed);
         let encrypted_layer = cipher.encrypt(tenant_id, model_fingerprint.clone(), plaintext)?;
         let ciphertext_copy = encrypted_layer.ciphertext.clone();
@@ -127,7 +127,7 @@ impl KvSegment {
     pub fn decrypt_data(
         &self,
         cipher: &KvSegmentCipher,
-    ) -> Result<Vec<u8>, memfuse_crypto::CryptoError> {
+    ) -> Result<Vec<u8>, crate::CryptoError> {
         if !self.encrypted {
             return Ok(self.data.clone());
         }
@@ -144,7 +144,7 @@ impl KvSegment {
             };
             cipher.decrypt(&layer)
         } else {
-            Err(memfuse_crypto::CryptoError::Crypto(
+            Err(crate::CryptoError::Crypto(
                 "Missing model fingerprint for encrypted segment decryption".into(),
             ))
         }
