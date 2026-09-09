@@ -1146,30 +1146,53 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Bound::Unbounded => Bound::Unbounded,
         };
 
-        let kvs = self.storage.scan(start_bytes, end_bytes).await?;
         let mut results = Vec::new();
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
+
+        while results.len() < effective_limit {
+            let fetch_size = BATCH_SIZE.min(effective_limit - results.len());
+            let (batch, next_cursor) = self
+                .storage
+                .scan_bounded(start_bytes, end_bytes, fetch_size, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
+                break;
+            }
+
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
                     key_str
-                }
-            };
-            if let Ok(val) = serde_json::from_slice(&v) {
-                results.push((user_key, val));
-                if results.len() >= effective_limit {
-                    break;
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
+
+                if let Ok(val) = serde_json::from_slice(&v) {
+                    results.push((user_key, val));
+                    if results.len() >= effective_limit {
+                        break;
+                    }
                 }
             }
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
+            }
         }
+
         if results.len() > effective_limit {
             results.truncate(effective_limit);
         }
+
         Ok(results)
     }
 }
@@ -1204,6 +1227,31 @@ mod tests {
         let results = col.scan_prefix("", None).await.unwrap();
         assert_eq!(results.len(), 50);
         assert!(results.len() <= MAX_SCAN_RESULTS);
+    }
+
+    #[tokio::test]
+    async fn test_scan_default_limit_bounds_full_range_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_scan_default_bounds").await.unwrap();
+
+        // Populate 10,005 entries
+        for i in 0..10_005 {
+            col.put_kv(&format!("item_{:05}", i), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        let results = col.scan(Bound::Unbounded, Bound::Unbounded, None).await.unwrap();
+        assert_eq!(results.len(), MAX_SCAN_RESULTS);
     }
 
     #[tokio::test]
@@ -1431,11 +1479,11 @@ mod tests {
                 .unwrap();
         }
 
-        let scanned = collection.scan_prefix("pfx_").await.unwrap();
+        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
         assert_eq!(
             scanned.len(),
-            MAX_SCAN_RESULTS_DEFAULT,
-            "scan_prefix must be capped at MAX_SCAN_RESULTS_DEFAULT (10,000)"
+            MAX_SCAN_RESULTS,
+            "scan_prefix must be capped at MAX_SCAN_RESULTS (10,000)"
         );
     }
 }

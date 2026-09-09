@@ -316,6 +316,46 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
+    /// Scans a range of keys between `start` and `end` bounds, bounded to at most `limit`
+    /// entries, resumable via an opaque `cursor` (the last returned key from a previous
+    /// call). Returns the batch and, if more entries may exist beyond `limit`, the next
+    /// cursor to resume from.
+    ///
+    /// # Contract
+    /// Implementors SHOULD avoid materializing more than O(limit) entries internally where
+    /// feasible. The default implementation below does NOT provide this guarantee (it
+    /// delegates to the unbounded `scan()` and slices the result) — implementors with an
+    /// efficient underlying merge structure (e.g. LSM storage) MUST override this method.
+    #[allow(clippy::type_complexity)]
+    fn scan_bounded<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+        limit: usize,
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            let effective_start = match cursor {
+                Some(c) => std::ops::Bound::Excluded(c),
+                None => start,
+            };
+            let all = self.scan(effective_start, end).await?;
+            let mut results = Vec::new();
+            for (k, v) in all {
+                results.push((k, v));
+                if results.len() == limit {
+                    break;
+                }
+            }
+            let next_cursor = if results.len() == limit {
+                results.last().map(|(k, _)| k.clone())
+            } else {
+                None
+            };
+            Ok((results, next_cursor))
+        })
+    }
+
     /// Scans a range of keys between `start` and `end` bounds.
     #[allow(clippy::type_complexity)]
     fn scan<'a>(
