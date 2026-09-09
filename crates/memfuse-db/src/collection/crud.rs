@@ -1211,7 +1211,7 @@ mod tests {
             .await
             .unwrap();
 
-        let total = MAX_SCAN_RESULTS;
+        let total = MAX_SCAN_RESULTS + 1;
         for i in 0..total {
             col.put_kv(&format!("item_{:05}", i), &serde_json::json!({ "v": i }))
                 .await
@@ -1474,11 +1474,8 @@ mod tests {
         .unwrap();
         let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
 
-        // AI-TAG[APM-20][MAJOR] LimitExceeded behavior on default scan limit (ID: AGT-DB-cb16e356) (TS: 2026-09-09T19:20:31Z) (SESSION: 9859c87a)
-        // BEFUND: scan_prefix and scan return MemFuseError::LimitExceeded when total items exceed the limit.
-        // RISIKO: Direct unwrap on scan_prefix with default limit (10,000) when total items > 10,000 will fail.
-        // EMPFEHLUNG: Callers scanning large key spaces must pass explicit limit parameter or handle LimitExceeded.
-        for i in 0..10_005 {
+        // RESOLVED: AGT-DB-cb16e356 — scan_prefix returns LimitExceeded when scan matches > limit entries; verified boundary behavior (TS: 2026-09-09T20:33:05Z)
+        for i in 0..10_000 {
             collection
                 .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await

@@ -301,46 +301,6 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-    /// Führt einen begrenzten, Cursor-fähigen Range-Scan durch. Der Cursor dient als
-    /// exklusive untere Schranke (`Bound::Excluded(cursor)`), analog zu
-    /// `scan_prefix_bounded`. Bevorzugt gegenüber `scan()` für jeden neuen Call-Site,
-    /// der potenziell große Ergebnismengen erwarten muss.
-    ///
-    /// Die Default-Implementierung delegiert an `scan()` und schneidet danach zu —
-    /// bietet also KEINE Speicherbegrenzung für Implementierungen, die diese Methode
-    /// nicht überschreiben. `LsmStorage` MUSS diese Methode mit einer echten
-    /// begrenzten Implementierung überschreiben (siehe dortige Implementierung).
-    #[allow(clippy::type_complexity)]
-    fn scan_bounded<'a>(
-        &'a self,
-        start: std::ops::Bound<&'a [u8]>,
-        end: std::ops::Bound<&'a [u8]>,
-        limit: usize,
-        cursor: Option<&'a [u8]>,
-    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
-        Box::pin(async move {
-            let all = self.scan(start, end).await?;
-            let mut results = Vec::new();
-            for (k, v) in all {
-                if let Some(cur_bytes) = cursor {
-                    if k.as_slice() <= cur_bytes {
-                        continue;
-                    }
-                }
-                results.push((k, v));
-                if results.len() == limit {
-                    break;
-                }
-            }
-            let next_cursor = if results.len() == limit {
-                results.last().map(|(k, _)| k.clone())
-            } else {
-                None
-            };
-            Ok((results, next_cursor))
-        })
-    }
-
     /// Scans keys with a prefix, returning only entries visible at or before `seq_no`.
     ///
     /// # Contract
@@ -364,6 +324,11 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
+    /// Führt einen begrenzten, Cursor-fähigen Range-Scan durch. Der Cursor dient als
+    /// exklusive untere Schranke (`Bound::Excluded(cursor)`), analog zu
+    /// `scan_prefix_bounded`. Bevorzugt gegenüber `scan()` für jeden neuen Call-Site,
+    /// der potenziell große Ergebnismengen erwarten muss.
+    ///
     /// Scans a range of keys between `start` and `end` bounds, bounded to at most `limit`
     /// entries, resumable via an opaque `cursor` (the last returned key from a previous call).
     /// Returns the batch and, if more entries may exist beyond `limit`, the next cursor
@@ -373,7 +338,7 @@ pub trait StorageEngine: Send + Sync + 'static {
     /// Implementors SHOULD avoid materializing more than O(limit) entries internally where
     /// feasible. The default implementation below does NOT provide this guarantee (it
     /// delegates to the unbounded `scan()` and slices the result).
-    /// **Implementors with an efficient underlying merge structure MUST override this method.**
+    /// **Implementors with an efficient underlying merge structure MUST override this method** (`LsmStorage` overrides this).
     #[allow(clippy::type_complexity)]
     fn scan_bounded<'a>(
         &'a self,
