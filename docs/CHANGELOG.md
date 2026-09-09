@@ -4,8 +4,6 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-09-09T13:20:00Z (SESSION: 5665b844)` | `crates/memfuse-crypto/src/kv_segment/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
-| `TS:2026-09-09T13:20:00Z (SESSION: 5665b844)` | `crates/memfuse-crypto/src/kv_segment/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
 | `TS:2026-09-09T13:17:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/tests/kv_segment_concurrency.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Concurrency Stress Test für TenantIsolatedKvStore und EvictionWorker unter hoher Parallellast. |
 | `TS:2026-09-09T13:17:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/tests/kv_segment_proptests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Property-based Tests für KvSegment, TenantIsolatedKvStore und LRU-Eviction. |
 | `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung). |
@@ -75,6 +73,7 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-09-09T14:43:31Z (SESSION: a69d21e4)` | `crates/memfuse-core/src/types/domain.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische Domain-Typen (DocId, EntityId, TxId, TenantId, Embedding, DistanceMetric, Edge, Entity). |
 | `2026-09-09T14:04:00Z` | `crates/memfuse-mcp/src/config.rs` | `AI-TAG` | `AGT-MCP-98350010` | `fdf816df` | `RESOLVED` | `0` | // AI-TAG[SMELL][MAJOR][RESOLVED] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T14:04:00Z) (SESSION: fdf816df) |
 | `2026-09-09T13:17:00Z` | `crates/memfuse-crypto/src/kv_segment/eviction_worker.rs` | `AI-TAG` | `AGT-CRYPTO-edaee52e` | `a413a598` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][MAJOR][RESOLVED] EvictionWorker is Sync via Mutex protection of sender and handle (ID: AGT-CRYPTO-edaee52e) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598) |
 | `2026-09-09T13:17:00Z` | `crates/memfuse-crypto/src/kv_segment/segment.rs` | `AI-TAG` | `AGT-CRYPTO-fae9dd56` | `a413a598` | `RESOLVED` | `0` | // AI-TAG[CRYPTO][MAJOR][RESOLVED] Fail fast on missing encrypted payload/nonce instead of dummy zero nonce (ID: AGT-CRYPTO-fae9dd56) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598) |
@@ -142,7 +141,6 @@
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische unified MemFuseError Enum für den gesamten Workspace. |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/error_dto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028). |
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/traits/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0. |
-| `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/types/domain.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, DistanceMetric, Edge, Entity). |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/checkpoint.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate-internes MVCC Snapshot-Pinning und TxId-skopierte Rollbacks. |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | STCS-Compaction-Engine (Size-Tiered Compaction Strategy) |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |
