@@ -76,7 +76,7 @@ pub fn check_placeholder_refs_in_content(
     // Regex für Platzhalter-Muster nach Ankern: ADR-0?X+\b, \bTBD\b, \bTODO-ADR\b, <[^>]+>
     let placeholder_re =
         Regex::new(r"(ADR-0?X+\b|\bTBD\b|\bTODO-ADR\b|<[^>]+>)").expect("Valid placeholder regex");
-    let adr_re = Regex::new(r"ADR-(\d+)").expect("Valid adr regex");
+    let adr_re = Regex::new(r"(?i)ADR-(\d+)").expect("Valid adr regex");
 
     let anchors = ["adr_ref:", "DECISION-REF:"];
 
@@ -118,10 +118,6 @@ pub fn check_placeholder_refs_in_content(
                             let decisions_file = root.join("DECISIONS.md");
                             if decisions_file.is_file() {
                                 if let Ok(dec_content) = fs::read_to_string(&decisions_file) {
-<<<<<<< HEAD
-=======
-                                    let adr_re = Regex::new(r"(?i)ADR-(\d+)").unwrap();
->>>>>>> ab132146 (Shell-Commit)
                                     if let Some(caps) = adr_re.captures(first_word) {
                                         let search_re =
                                             Regex::new(&format!(r"(?i)ADR-{}", &caps[1])).unwrap();
