@@ -1655,40 +1655,14 @@ impl StorageEngine for LsmStorage {
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
 
-            let mut processed_count = 0usize;
-            let mut has_more_beyond_limit = false;
-
-            let get_k_max =
-                |m: &std::collections::BTreeMap<Vec<u8>, (Vec<u8>, u64)>| -> Option<Vec<u8>> {
-                    let mut count = 0usize;
-                    for (k, (_, seq)) in m.iter() {
-                        if (seq & TOMBSTONE_BIT) == 0 {
-                            count += 1;
-                            if count == limit {
-                                return Some(k.clone());
-                            }
-                        }
-                    }
-                    None
-                };
-
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
                 let entries = sst
                     .scan_range(effective_start.map(|s| s), end.map(|e| e))
                     .await?;
                 for (k, v, seq, tx) in entries {
-                    let k_vec = k.to_vec();
                     if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
-                        if !map.contains_key(&k_vec) {
-                            if let Some(k_max) = get_k_max(&map) {
-                                if k_vec > k_max {
-                                    has_more_beyond_limit = true;
-                                    break;
-                                }
-                            }
-                        }
-                        let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
+                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
@@ -1733,16 +1707,7 @@ impl StorageEngine for LsmStorage {
                         Bound::Unbounded => true,
                     };
                     if in_range {
-                        let k_vec = k.to_vec();
-                        if !map.contains_key(&k_vec) {
-                            if let Some(k_max) = get_k_max(&map) {
-                                if k_vec > k_max {
-                                    has_more_beyond_limit = true;
-                                    break;
-                                }
-                            }
-                        }
-                        let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
+                        let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
@@ -1786,16 +1751,7 @@ impl StorageEngine for LsmStorage {
                     Bound::Unbounded => true,
                 };
                 if in_range {
-                    let k_vec = k.to_vec();
-                    if !map.contains_key(&k_vec) {
-                        if let Some(k_max) = get_k_max(&map) {
-                            if k_vec > k_max {
-                                has_more_beyond_limit = true;
-                                break;
-                            }
-                        }
-                    }
-                    let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
+                    let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
                     }
@@ -1819,10 +1775,8 @@ impl StorageEngine for LsmStorage {
 
             if map.len() > safety_limit {
                 return Err(MemFuseError::invalid_input(format!(
-                    "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                     narrow the range or use a smaller limit",
-                    map.len(),
-                    MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
+                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                 )));
             }
 
@@ -1840,13 +1794,11 @@ impl StorageEngine for LsmStorage {
             }
 
             let next_cursor = if results.len() == limit {
-                let mut has_more = has_more_beyond_limit;
-                if !has_more {
-                    for (_k, (_v, seq)) in iter {
-                        if (seq & TOMBSTONE_BIT) == 0 {
-                            has_more = true;
-                            break;
-                        }
+                let mut has_more = false;
+                for (_k, (_v, seq)) in iter {
+                    if (seq & TOMBSTONE_BIT) == 0 {
+                        has_more = true;
+                        break;
                     }
                 }
                 if has_more {

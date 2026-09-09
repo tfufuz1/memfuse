@@ -1,9 +1,9 @@
 # MemFuse — Gesamtspezifikation v10.0
 ## Einzige normative Wahrheitsquelle · Synthetisiert aus 12 Strategiedokumenten
 > **Änderungsvermerk (Konsolidierung v10 / v10.1):** 2026-09-09 — Konsolidierung aller v10/v10.1 Spezifikationsinhalte, Behebung verwaister Pfad-Referenzen (u.a. `OFFEN-11`), Entfernung von Root-Duplikaten gemäß ADR-078.
-> **Ersetzt:** alle Vorgängerdokumente (v4.0–v9.0, alle docs/NEW_STRATEGY/*.md)
+> **Ersetzt:** alle Vorgängerdokumente (v4.0–v9.0, alle docs/NEW_STRATEGY/*.md) <!-- doc-ref-ignore -->
 > **Stand:** 2026-09-09
-> **HEAD zum Zeitpunkt der Synthese:** `HEAD 92b22c9535eb0a9be2faeaefbc2cc86ea9a7ffc2, 2026-09-09 12:47:04 +0000`
+> **HEAD zum Zeitpunkt der Synthese:** `HEAD ff9ffecda524a227e3cab933616684a08bbd829e, 2026-09-09 22:34:57 +0200`
 > **Syntheseprinzip:** Jede Aussage ist entweder (a) per grep/read am Live-Code
 > verifiziert, oder (b) als verbindliche Entscheidung aus dem Entscheidungsdokument
 > (v9.0 §1–§3, Entscheidungen v1/v2) übernommen, oder (c) als offener Punkt mit
@@ -82,33 +82,32 @@ Die Entscheidung für Position A wird durch kontinuierliche LongMemEval- und LoC
 
 ### §3.1 Ist-Zustand (Live-verifiziert am HEAD)
 
-Das Repository umfasst aktuell 18 Workspace-Mitglieder im Haupt-Workspace sowie ein isoliertes FFI-Workspace (`memfuse-py`):
+Das Repository umfasst aktuell 17 Workspace-Mitglieder im Haupt-Workspace sowie ein isoliertes FFI-Workspace (`memfuse-py`):
 
 | Crate | Layer | Status | Beschreibung |
 |:---|:---:|:---:|:---|
 | `memfuse-core` | 0 | ✅ KERN | Core-Typen, Traits, Domain-Primitiven |
-| `memfuse-crypto` | 1 | ✅ KERN | AES-256-GCM-SIV, DeletionProof, HMAC-Chain |
+| `memfuse-security` | 1 | ✅ KERN | Package Name `memfuse-security` (`crates/memfuse-crypto`). AES-256-GCM-SIV, DeletionProof, HMAC-Chain & konsolidierte KV-Cache Security |
 | `memfuse-calibration` | 1 | ✅ KERN | IsotonicCalibrator, PlattScaler, ReplicatorState |
 | `memfuse-checkpoint` | 1 | ⏳ Konsolidieren | Checkpoint- und Snapshot-Management |
 | `memfuse-graph` | 1 | ✅ KERN | CSR-Graph, PPR, PathRAGEngine, ImmunMemory |
 | `memfuse-text` | 1 | ✅ KERN | BM25+, DACH-Kompositum-Dekomposition |
-| `memfuse-candle` | 1 | ⏳ Konsolidieren | Pure-Rust GGUF Inferenz & Embedding |
+| `memfuse-candle` | 2 | ⏳ Konsolidieren | Pure-Rust GGUF Inferenz & Embedding |
 | `memfuse-store` | 2 | ✅ KERN | LSM-Tree, WAL v3, SSTable, Mmap |
 | `memfuse-index` | 2 | ✅ KERN | HNSW, DiskANN (persist_delta), SIMD |
-| `memfuse-kv-bridge` | 2 | ⏳ Konsolidieren | KV-Cache-Bridge Sicherheitsschicht |
 | `memfuse-ollama` | 2 | ⏳ Konsolidieren | Ollama HTTP-Client & Prefix Engine |
-| `memfuse-embed` | 2 | ⏳ Konsolidieren | Optionales ONNX-Embedding/Reranking |
-| `memfuse-db` | 3 | ✅ KERN | Embedded Hybrid-Search & Collection Engine |
-| `memfuse-router` | 4 | ⏳ Konsolidieren | Conformal Router & SLM-Profile |
-| `memfuse-tauri` | 4 | 🗑️ DEPRECATED | Desktop App Shell (ADR-077, Frist läuft) |
-| `memfuse-bench` | 4 | ✅ KERN | LongMemEval / LoCoMo Benchmark Harness |
-| `memfuse-agent` | 5 | ✅ KERN | Persistent Agent Workflow Loop & DLQ |
-| `memfuse-mcp` | 6 | ✅ KERN | MCP JSON-RPC 2.0 stdio Server (ADR-010) |
+| `memfuse-embed` | 3 | ⏳ Konsolidieren | Optionales ONNX-Embedding/Reranking |
+| `memfuse-db` | 4 | ✅ KERN | Embedded Hybrid-Search & Collection Engine |
+| `memfuse-router` | 5 | ⏳ Konsolidieren | Conformal Router & SLM-Profile |
+| `memfuse-bench` | 5 | ✅ KERN | LongMemEval / LoCoMo Benchmark Harness |
+| `memfuse-tauri` | 5 | 🗑️ DEPRECATED | Desktop App Shell (ADR-077, Frist läuft) |
+| `memfuse-agent` | 6 | ✅ KERN | Persistent Agent Workflow Loop & DLQ |
+| `memfuse-mcp` | 7 | ✅ KERN | MCP JSON-RPC 2.0 stdio Server (ADR-010) |
 | `memfuse-py` | Grenzschicht | ✅ KERN | PyO3-Bindings (isoliertes Workspace, ADR-064) |
 
 ### §3.2 Ziel-Topologie (9–10 Crates)
 
-Ziel ist die Konsolidierung der 18 Workspace-Mitglieder in 9–10 fokussierte Module:
+Ziel ist die Konsolidierung der Workspace-Mitglieder in 9–10 fokussierte Module:
 
 ```
 KERN (6 Module):
@@ -131,7 +130,7 @@ WERKZEUG:
 
 ### §3.3 Migrationsreihenfolge (5 Phasen)
 
-- **Phase 1a (Security-Schicht):** Zusammenführung von `memfuse-crypto` und `memfuse-kv-bridge` in `memfuse-security`. Akzeptanz: Zeroize-on-Drop und AES-GCM-SIV voll integriert, 0 DAG-Verletzungen.
+- **Phase 1a (Security-Schicht):** Zusammenführung von `memfuse-crypto` und `memfuse-kv-bridge` in `memfuse-security` (im Code unter `crates/memfuse-crypto/src/kv_segment/` umgesetzt, Package-Name `memfuse-security`). Akzeptanz: Zeroize-on-Drop und AES-GCM-SIV voll integriert, 0 DAG-Verletzungen.
 - **Phase 1b (Persistence-Schicht):** Zusammenführung von `memfuse-store` und `memfuse-checkpoint` in `memfuse-persistence`. Akzeptanz: LSM-Tree und CheckpointGuard unter einheitlicher Fassade.
 - **Phase 2 (Inference-Schicht):** Konsolidierung von `calibration`, `ollama`, `candle`, `router` und `embed` in `memfuse-inference`. Akzeptanz: Bündelung aller LLM-/Embedding-Backends.
 - **Phase 3 (Scheduler & Orchestration):** Zusammenführung von `reaper.rs`, `sleep_cycle.rs` und `physio_scheduler.rs` in `memfuse-orchestrator` (`memfuse-db`). <!-- doc-ref-ignore -->
