@@ -2,6 +2,8 @@
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
 // STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use ahash::AHashMap;
 use memfuse_core::TenantId;
 use parking_lot::RwLock;
@@ -14,6 +16,7 @@ use super::segment::KvSegment;
 /// eines anderen Tenants lesen. Strukturell erzwungen durch getrennte Maps.
 pub struct TenantIsolatedKvStore {
     segments: RwLock<AHashMap<TenantId, Vec<KvSegment>>>,
+    eviction_round_offset: AtomicUsize,
 }
 
 impl TenantIsolatedKvStore {
@@ -21,6 +24,7 @@ impl TenantIsolatedKvStore {
     pub fn new() -> Self {
         Self {
             segments: RwLock::new(AHashMap::new()),
+            eviction_round_offset: AtomicUsize::new(0),
         }
     }
 
@@ -116,7 +120,8 @@ impl TenantIsolatedKvStore {
     }
 
     /// Dies ist GLOBALES LRU ohne Tenant-Fairness. Für faire Multi-Tenant-Eviction siehe `evict_lru_fair()`.
-    pub fn evict_lru_global(&self, target_free_bytes: usize) -> usize {
+    #[allow(dead_code)]
+    pub(crate) fn evict_lru_global(&self, target_free_bytes: usize) -> usize {
         let mut map = self.segments.write();
         let mut freed = 0;
 
@@ -162,11 +167,17 @@ impl TenantIsolatedKvStore {
         freed
     }
 
-    /// Evictiert KV-Segmente unter Erhaltung von Tenant-Fairness via Round-Robin über alle aktiven Tenants.
+    /// Evictiert KV-Segmente unter Erhaltung von Tenant-Fairness via Round-Robin über alle
+    /// aktive Tenants.
     ///
-    /// Im Gegensatz zu `evict_lru_global()` verhindert diese Methode, dass sehr aktive Tenants
-    /// inaktive Tenants vollständig verdrängen (Prevent Cross-Tenant Starvation).
-    /// Dies ist der faire Multi-Tenant-Eviction-Pfad. Für reines globales LRU siehe `evict_lru_global()`.
+    /// FAIRNESS-DEFINITION: Pro Runde wird höchstens EIN Segment pro aktivem Tenant
+    /// evictiert, unabhängig von dessen Byte-Größe. Dies ist Count-Fairness pro Runde,
+    /// NICHT Byte-Fairness — bei stark heterogenen Segmentgrößen zwischen Tenants kann ein
+    /// Tenant mit großen Segmenten pro Runde deutlich mehr Bytes verlieren als einer mit
+    /// kleinen Segmenten, obwohl beide "fair" (je 1 Segment/Runde) behandelt werden.
+    ///
+    /// Im Gegensatz zu `evict_lru_global()` verhindert diese Methode, dass sehr aktive
+    /// Tenants inaktive Tenants vollständig verdrängen (Prevent Cross-Tenant Starvation).
     // AI-TAG[SECURITY][MAJOR][RESOLVED] Add tenant-fair LRU eviction to prevent cross-tenant starvation (ID: AGT-CRYPTO-c1a93b22) (TS: 2026-09-10T10:00:00Z)
     pub fn evict_lru_fair(&self, target_free_bytes: usize) -> usize {
         let mut map = self.segments.write();
@@ -175,6 +186,11 @@ impl TenantIsolatedKvStore {
         while freed < target_free_bytes && !map.is_empty() {
             let mut tenants: Vec<TenantId> = map.keys().copied().collect();
             tenants.sort();
+            if !tenants.is_empty() {
+                let offset =
+                    self.eviction_round_offset.fetch_add(1, Ordering::Relaxed) % tenants.len();
+                tenants.rotate_left(offset);
+            }
 
             let mut evicted_in_round = false;
 
@@ -330,10 +346,68 @@ mod tests {
 
         // Target 1000 bytes: requires freeing 2 segments (1024 bytes) across tenants
         let freed = store.evict_lru_fair(1000);
-        assert!(freed >= 1000, "freed bytes ({freed}) must be >= target_free_bytes (1000)");
+        assert!(
+            freed >= 1000,
+            "freed bytes ({freed}) must be >= target_free_bytes (1000)"
+        );
 
         // Fair round-robin evicts 1 segment from Tenant A and 1 segment from Tenant B
         assert_eq!(store.get_tenant_segment_len(tenant_a), 2);
         assert_eq!(store.get_tenant_segment_len(tenant_b), 2);
+    }
+
+    #[test]
+    fn test_evict_lru_global_visibility_or_deprecation() {
+        let store = TenantIsolatedKvStore::new();
+        let tenant = TenantId::try_new(1).unwrap();
+        store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 100]));
+
+        // Verify that evict_lru_global is callable within crate (pub(crate))
+        let freed = store.evict_lru_global(100);
+        assert_eq!(freed, 100);
+        assert_eq!(store.get_tenant_segment_len(tenant), 0);
+    }
+
+    #[test]
+    fn test_evict_lru_fair_rotation_prevents_low_id_bias() {
+        let store = TenantIsolatedKvStore::new();
+        let tenants: Vec<TenantId> = (1..=5).map(|id| TenantId::try_new(id).unwrap()).collect();
+
+        // Populate 5 tenants with 5 segments each (100 bytes each)
+        for tenant in &tenants {
+            for seg_id in 1..=5 {
+                store.insert_segment(*tenant, KvSegment::new(*tenant, seg_id, vec![0xAA; 100]));
+            }
+        }
+
+        // Call 1: target_free_bytes = 200 (evicts 2 segments total across 2 tenants)
+        // Offset starts at 0 -> Tenants 1 & 2 evicted
+        store.evict_lru_fair(200);
+        assert_eq!(store.get_tenant_segment_len(tenants[0]), 4); // Tenant 1
+        assert_eq!(store.get_tenant_segment_len(tenants[1]), 4); // Tenant 2
+        assert_eq!(store.get_tenant_segment_len(tenants[2]), 5); // Tenant 3
+
+        // Call 2: target_free_bytes = 200 (evicts 2 segments total)
+        // Offset becomes 1 -> rotated order [2, 3, 4, 5, 1] -> Tenants 2 & 3 evicted
+        store.evict_lru_fair(200);
+
+        // Without rotation, Call 2 would evict from Tenants 1 & 2 again (leaving Tenant 1 with 3 and Tenant 3 with 5).
+        // With rotation, Call 2 evicts from Tenants 2 & 3:
+        // Tenant 1 stays at 4, Tenant 2 drops to 3, Tenant 3 drops to 4.
+        assert_eq!(
+            store.get_tenant_segment_len(tenants[2]),
+            4,
+            "Tenant 3 must be evicted on Call 2 due to round-robin rotation offset"
+        );
+        assert_eq!(
+            store.get_tenant_segment_len(tenants[0]),
+            4,
+            "Tenant 1 must be skipped on Call 2 due to round-robin rotation offset"
+        );
+
+        // Call 3: target_free_bytes = 200 (evicts 2 segments total)
+        // Offset becomes 2 -> rotated order [3, 4, 5, 1, 2] -> Tenants 3 & 4 evicted
+        store.evict_lru_fair(200);
+        assert_eq!(store.get_tenant_segment_len(tenants[3]), 4); // Tenant 4 evicted!
     }
 }
