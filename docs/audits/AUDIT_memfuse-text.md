@@ -214,3 +214,34 @@ Benchmarking ausgeführt auf Linux x86_64 via `criterion` (`crates/memfuse-text/
 | OOM / Backpressure | OK | Caps: MAX_TEXT_BYTES (10MB), MAX_STAGED_TRANSACTIONS (10,000), Token-Max-Len (128) | — |
 | SIGBUS mmap-truncate | N/A | memfuse-text nutzt kein mmap (#![forbid(unsafe_code)]) | — |
 | SIGKILL recovery | OK | Statetransaktionen via StorageEngine rollback/commit isoliert | — |
+
+---
+
+## Tiefen-Audit 2026-09-09
+
+**Session:** `6ccc1466`
+**Audit-Typ:** Deep Audit / Tier 2 Concurrency, Fault-Injection & Property Testing
+**Crate:** `crates/memfuse-text`
+
+### Coverage Analysis
+- **Line Coverage:** 94.13% (2389 / 2538 lines)
+- **Region Coverage:** 91.28% (3976 / 4356 regions)
+- **Function Coverage:** 88.15% (290 / 329 functions)
+
+#### Coverage Breakdown by Module
+- `bm25.rs`: 98.15% Line Coverage, 93.21% Region Coverage
+- `morphology.rs`: 98.48% Line Coverage, 98.41% Region Coverage
+- `tokenizer.rs`: 96.79% Line Coverage, 97.45% Region Coverage
+- `inverted.rs`: 91.85% Line Coverage, 87.73% Region Coverage
+- `lib.rs`: 83.15% Line Coverage, 84.88% Region Coverage
+
+### Verification & Stress Loop Results
+1. **Gate-Stack Verification:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ 0 Fehler, 0 Warnungen
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ 0 Findings
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ 0 Diffs
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ 79 passed, 0 failed
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ Clean build
+2. **Tier-2 Concurrency Stress Test:** 10/10 consecutive runs with `--test-threads=8` on `concurrent_metadata` suite passed with 100% determinism.
+3. **Property & Fuzz Testing:** 10,000 iterations of UTF-8 multi-byte fuzzing (`fuzz_german_compound_splitter_utf8_panic_free_10k`) passed with zero panics.
+4. **KMU Compound Suite:** 55/55 test cases passed (100% recall).

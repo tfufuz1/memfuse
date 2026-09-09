@@ -122,6 +122,9 @@ jobs:
           done
           echo "✅ Alle AGENTS.md Dateien entsprechen dem 8-Sektionen-Template"
 
+      - name: "Gate 15: Validierung von Dateipfad-Referenzen in Dokumenten"
+        run: cargo run -p xtask -- check-doc-references
+
       - name: "Gate 14: Jules Preflight Aggregator"
         env:
           MEMFUSE_CI: "true"

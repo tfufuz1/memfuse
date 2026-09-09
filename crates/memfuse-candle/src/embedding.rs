@@ -158,7 +158,6 @@ impl CandleEmbedInner for DefaultCandleEmbedModel {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

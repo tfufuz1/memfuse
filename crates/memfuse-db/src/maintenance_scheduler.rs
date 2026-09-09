@@ -132,12 +132,12 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
             );
         }
 
-        // Step b: F-01 Thermostat-Update / Decay Controller
-        if self.config.thermostat_enabled {
-            let decay_controller = AdaptiveDecayController::new(self.config.thermostat.clone());
+        // Step b: F-01 Decay Controller Update / Eviction
+        if self.config.decay_enabled {
+            let decay_controller = AdaptiveDecayController::new(self.config.decay_config.clone());
             match self
                 .collection
-                .reap_by_thermostat(&decay_controller, 100)
+                .evict_decayed_chunks(&decay_controller, 100)
                 .await
             {
                 Ok(n) if n > 0 => {
@@ -218,7 +218,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
         // wäre eine architektonische Regression der Drift-Reaktionszeit.
 
         // Step f: Consolidation-Trigger
-        if self.config.sleep_cycle_enabled && self.active_agent_sessions() == 0 {
+        if self.config.background_consolidation_enabled && self.active_agent_sessions() == 0 {
             let user_key_prefix = self.collection.user_key_prefix();
             match self
                 .collection
@@ -239,7 +239,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
                         }
                     }
 
-                    if turns.len() >= self.config.sleep_episode_threshold {
+                    if turns.len() >= self.config.background_consolidation_episode_threshold {
                         match execute_consolidation_pass(
                             self.collection.as_ref(),
                             &turns,
@@ -371,10 +371,10 @@ mod tests {
         let col = create_test_collection().await;
         let config = MaintenanceConfig {
             tick_interval_secs: 1,
-            thermostat_enabled: false,
+            decay_enabled: false,
             percolation_enabled: false,
             replicator_enabled: false,
-            sleep_cycle_enabled: false,
+            background_consolidation_enabled: false,
             ..Default::default()
         };
 
@@ -400,10 +400,10 @@ mod tests {
         let col = create_test_collection().await;
         let config = MaintenanceConfig {
             tick_interval_secs: 1,
-            thermostat_enabled: true,
+            decay_enabled: true,
             percolation_enabled: false,
             replicator_enabled: false,
-            sleep_cycle_enabled: false,
+            background_consolidation_enabled: false,
             ..Default::default()
         };
 
@@ -428,10 +428,10 @@ mod tests {
         let col = create_test_collection().await;
         let config = MaintenanceConfig {
             tick_interval_secs: 1,
-            thermostat_enabled: false,
+            decay_enabled: false,
             percolation_enabled: false,
             replicator_enabled: false,
-            sleep_cycle_enabled: false,
+            background_consolidation_enabled: false,
             ..Default::default()
         };
 

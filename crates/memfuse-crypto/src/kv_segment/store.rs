@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use memfuse_core::TenantId;
 use parking_lot::RwLock;
 
-use crate::segment::KvSegment;
+use super::segment::KvSegment;
 
 /// Tenant-isolierter KV-Segment-Store.
 ///
@@ -25,22 +25,39 @@ impl TenantIsolatedKvStore {
     }
 
     /// Fügt ein Segment für einen bestimmten Tenant ein.
+    // AI-TAG[API][MINOR][RESOLVED] Overwrite or update existing segment_id on duplicate insert (ID: AGT-CRYPTO-6016eb9a) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
     pub fn insert_segment(&self, tenant: TenantId, segment: KvSegment) {
         let mut map = self.segments.write();
-        map.entry(tenant).or_default().push(segment);
+        let list = map.entry(tenant).or_default();
+        if let Some(pos) = list.iter().position(|s| s.segment_id == segment.segment_id) {
+            list[pos] = segment;
+        } else {
+            list.push(segment);
+        }
+    }
+
+    /// Liefert unverschlüsselte Segment-Bytes für einen Tenant (Klartext-Modus).
+    // AI-TAG[API][MAJOR][RESOLVED] Add unencrypted segment retrieval API for plaintext mode (ID: AGT-CRYPTO-7e1f286d) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
+    pub fn get_segment_bytes(&self, tenant: TenantId, segment_id: u64) -> Option<Vec<u8>> {
+        self.segments.read().get(&tenant).and_then(|segs| {
+            segs.iter().find(|s| s.segment_id == segment_id).map(|s| {
+                s.touch();
+                s.as_bytes().to_vec()
+            })
+        })
     }
 
     /// Verschlüsselt einen Klartext-Tensor und fügt ein verschlüsseltes Segment ein.
     #[cfg(feature = "kv-encryption")]
     pub fn insert_encrypted_segment(
         &self,
-        cipher: &memfuse_crypto::KvSegmentCipher,
+        cipher: &crate::KvSegmentCipher,
         tenant: TenantId,
         segment_id: u64,
-        model_fingerprint: memfuse_crypto::ModelFingerprint,
+        model_fingerprint: crate::ModelFingerprint,
         rope_offset: Option<usize>,
         plaintext: &[u8],
-    ) -> Result<(), memfuse_crypto::CryptoError> {
+    ) -> Result<(), crate::CryptoError> {
         let segment = KvSegment::new_encrypted(
             cipher,
             tenant,
@@ -74,10 +91,10 @@ impl TenantIsolatedKvStore {
     #[cfg(feature = "kv-encryption")]
     pub fn get_decrypted_segment(
         &self,
-        cipher: &memfuse_crypto::KvSegmentCipher,
+        cipher: &crate::KvSegmentCipher,
         tenant: TenantId,
         segment_id: u64,
-    ) -> Result<Option<Vec<u8>>, memfuse_crypto::CryptoError> {
+    ) -> Result<Option<Vec<u8>>, crate::CryptoError> {
         let map = self.segments.read();
         if let Some(list) = map.get(&tenant) {
             if let Some(seg) = list.iter().find(|s| s.segment_id == segment_id) {

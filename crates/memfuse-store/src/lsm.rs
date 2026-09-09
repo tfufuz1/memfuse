@@ -68,7 +68,7 @@ use memfuse_core::{
     BoxFuture, DocId, IndexOp, MemFuseError, ResourceBudget, ResourceTracker, Result,
     SnapshotRegistry, StorageEngine, TxBuffer, TxId, TOMBSTONE_BIT,
 };
-use memfuse_crypto::crypto::KeyManager;
+use memfuse_security::crypto::KeyManager;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -1183,10 +1183,10 @@ impl StorageEngine for LsmStorage {
 
             let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
             let seq = self.next_seq_no.load(Ordering::Relaxed);
-            let sst_path = self
-                .config
-                .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
+            let sst_path =
+                self.config
+                    .path
+                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
 
             // ── Phase 3: Expensive I/O & Atomic Transition ──────────────────────────
             let phase3_res: Result<()> = async {
@@ -3392,7 +3392,10 @@ mod tests {
         tokio::fs::create_dir(&sst_path).await.unwrap();
 
         let res = storage.force_flush().await;
-        assert!(res.is_err(), "Flush must return error when SSTable creation fails");
+        assert!(
+            res.is_err(),
+            "Flush must return error when SSTable creation fails"
+        );
 
         let state = storage.state.read().await;
         assert!(

@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// ZWECK: Wartungs-, Reparatur- und Bereinigungsoperationen (Index repair, Expiry reaper, Community detection).
+// ZWECK: Wartungs-, Reparatur- und Bereinigungsoperationen (Index repair, Expiry cleanup, Community detection).
 // INVARIANTEN: repair() stellt LSM<->Index Synchronität nach Crash sicher; Reaping stützt sich auf Snapshot-Sequenzen.
 // NICHT-OFFENSICHTLICH: Pending TxIntents werden beim Start via Forward-Commit repariert und markiert.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
@@ -22,7 +22,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Evictet Chunks deren effective_score unter eviction_threshold liegt.
     /// Gibt Anzahl der evictierten Dokumente zurück.
     #[tracing::instrument(level = "trace", skip(self, decay_controller))]
-    pub async fn reap_by_thermostat(
+    pub async fn evict_decayed_chunks(
         &self,
         decay_controller: &AdaptiveDecayController,
         max_per_tick: usize,
@@ -87,19 +87,30 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             tracing::info!(
                 collection = %self.name,
                 id = %id,
-                "Decay controller reaper evicting document"
+                "Decay controller evicting document"
             );
             if let Err(e) = self.delete(id).await {
                 tracing::error!(
                     collection = %self.name,
                     id = %id,
                     error = %e,
-                    "Decay controller reaper failed to delete document"
+                    "Decay controller failed to delete document"
                 );
             }
         }
 
         Ok(count)
+    }
+
+    /// Veraltete Alias-Methode für `evict_decayed_chunks`.
+    #[deprecated(note = "use evict_decayed_chunks instead")]
+    pub async fn reap_by_thermostat(
+        &self,
+        decay_controller: &AdaptiveDecayController,
+        max_per_tick: usize,
+    ) -> Result<usize> {
+        self.evict_decayed_chunks(decay_controller, max_per_tick)
+            .await
     }
 
     /// Repairs the index by re-syncing with the storage.
@@ -356,7 +367,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     collection = %self.name,
                     id = %id,
                     error = %e,
-                    "Expiry reaper failed to delete document"
+                    "Expiry cleanup failed to delete document"
                 );
             }
         }
@@ -377,7 +388,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Reads `created_at_ms` (or `timestamp_ms`) and `ttl_ms` from document metadata for wall-clock TTL,
     /// and `importance` metadata for TxId-based decay sweep (`effective_score < DECAY_DELETION_THRESHOLD`).
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn trigger_reaper(&self) -> Result<usize> {
+    pub async fn trigger_expiry_cleanup(&self) -> Result<usize> {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?
@@ -451,13 +462,19 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         collection = %self.name,
                         id = %id,
                         error = %e,
-                        "Reaper failed to delete expired document"
+                        "Expiry cleanup failed to delete expired document"
                     );
                 }
             }
         }
 
         Ok(count)
+    }
+
+    /// Deprecated legacy alias for `trigger_expiry_cleanup`.
+    #[deprecated(note = "use trigger_expiry_cleanup instead")]
+    pub async fn trigger_reaper(&self) -> Result<usize> {
+        self.trigger_expiry_cleanup().await
     }
 
     /// Bewertet die Wichtigkeit eines Dokuments via LLM (Ollama) und

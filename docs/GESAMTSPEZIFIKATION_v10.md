@@ -1,8 +1,9 @@
 # MemFuse — Gesamtspezifikation v10.0
 ## Einzige normative Wahrheitsquelle · Synthetisiert aus 12 Strategiedokumenten
+> **Änderungsvermerk (Konsolidierung v10 / v10.1):** 2026-09-09 — Konsolidierung aller v10/v10.1 Spezifikationsinhalte, Behebung verwaister Pfad-Referenzen (u.a. `OFFEN-11`), Entfernung von Root-Duplikaten gemäß ADR-078.
 > **Ersetzt:** alle Vorgängerdokumente (v4.0–v9.0, alle docs/NEW_STRATEGY/*.md)
-> **Stand:** 2026-09-08
-> **HEAD zum Zeitpunkt der Synthese:** `e3feb1137d561cd3098face7e8bea00e35798e03`
+> **Stand:** 2026-09-09
+> **HEAD zum Zeitpunkt der Synthese:** `HEAD 92b22c9535eb0a9be2faeaefbc2cc86ea9a7ffc2, 2026-09-09 12:47:04 +0000`
 > **Syntheseprinzip:** Jede Aussage ist entweder (a) per grep/read am Live-Code
 > verifiziert, oder (b) als verbindliche Entscheidung aus dem Entscheidungsdokument
 > (v9.0 §1–§3, Entscheidungen v1/v2) übernommen, oder (c) als offener Punkt mit
@@ -133,7 +134,7 @@ WERKZEUG:
 - **Phase 1a (Security-Schicht):** Zusammenführung von `memfuse-crypto` und `memfuse-kv-bridge` in `memfuse-security`. Akzeptanz: Zeroize-on-Drop und AES-GCM-SIV voll integriert, 0 DAG-Verletzungen.
 - **Phase 1b (Persistence-Schicht):** Zusammenführung von `memfuse-store` und `memfuse-checkpoint` in `memfuse-persistence`. Akzeptanz: LSM-Tree und CheckpointGuard unter einheitlicher Fassade.
 - **Phase 2 (Inference-Schicht):** Konsolidierung von `calibration`, `ollama`, `candle`, `router` und `embed` in `memfuse-inference`. Akzeptanz: Bündelung aller LLM-/Embedding-Backends.
-- **Phase 3 (Scheduler & Orchestration):** Zusammenführung von `reaper.rs`, `sleep_cycle.rs` und `physio_scheduler.rs` in `memfuse-orchestrator` (`memfuse-db`).
+- **Phase 3 (Scheduler & Orchestration):** Zusammenführung von `reaper.rs`, `sleep_cycle.rs` und `physio_scheduler.rs` in `memfuse-orchestrator` (`memfuse-db`). <!-- doc-ref-ignore -->
 - **Phase 4 (Retrieval-Schicht):** Bündelung von `memfuse-index`, `memfuse-graph` und `memfuse-text` unter `memfuse-retrieval`. Akzeptanz: Unified 3-Signal Hybrid Search Engine.
 - **Phase 5 (Abschluss & Bereinigung):** Entfernung verwaister Crates, finale DAG-Integritätsprüfung via `cargo xtask check-dag`.
 
@@ -228,7 +229,7 @@ Gemäß v9.0 existieren strikt zwei Feature-Kategorien (KERN vs. ENTFERNEN/VETO)
 | OFFEN-08 | Governance | Zwei-Stufen-Prozess (Claude/Jules) in `AGENTS.md` noch nicht dokumentiert | P2 | Governance-Standard |
 | OFFEN-09 | Prompter | Prompter v25 Bootstrap-Präfix und Claim-Step nicht hart im HTML-Baukasten verankert | P2 | P17-Garantie |
 | OFFEN-10 | `memfuse-tauri` | Deprecated per ADR-077, physische Entfernung aus Repo steht aus (Frist: 2026-11-07) | P3 | Vision-Clean-Up |
-| OFFEN-11 | `memfuse-db` | F-03 EdgeReinforcement Flush-Hook in `physio_scheduler.rs` noch Platzhalter | P3 | Scheduler-Ausbau |
+| OFFEN-11 | `memfuse-db` | F-03 EdgeReinforcement Flush-Hook in `crates/memfuse-db/src/maintenance_scheduler.rs` implementiert | P3 | Scheduler-Ausbau |
 | OFFEN-12 | `memfuse-embed` | `ImportanceClassifier` zurückgestellt bis Benchmark-Baseline steht | P3 | LongMemEval |
 
 ---
@@ -242,7 +243,7 @@ Gemäß v9.0 existieren strikt zwei Feature-Kategorien (KERN vs. ENTFERNEN/VETO)
 - Verdrahtung aller xtask-Module, Ergänzung von `check-agents-integrity`, Reparatur von `context-gates.yml` und `environment_script.sh`.
 
 ### Phase B — Claim-Mechanismus
-- Vollständige Anbindung von `cargo xtask claim` an GitHub-Issues/Labels. Integration der Claim-Prüfung in `jules-preflight.rs` und Prompter v25.
+- Vollständige Anbindung von `cargo xtask claim` an GitHub-Issues/Labels. Integration der Claim-Prüfung in `jules-preflight.rs` und Prompter v25. <!-- doc-ref-ignore -->
 
 ### Phase C — Crate-Konsolidierung (18 → 9–10 Crates)
 - **Schritt C1:** `memfuse-crypto` + `memfuse-kv-bridge` → `memfuse-security`
@@ -309,5 +310,5 @@ Ein Milestone oder Release gilt als "Done", wenn:
 2. **Voice-Assistant / Jarvis Interface:** Verworfene Vision Option 3. Veto aktiv (`VETOES.md`), Review in 6 Monaten.
 3. **F-02 Partieller HNSW-Rebuild (Nucleation):** Verworfene Option (VETO-F02). Partielle Rebuilds verletzen Delaunay-Nachbarschaften und führen zu Recall-Kollaps. Ersatz: 2-Phasen CoW-Rebuild (ADR-061).
 4. **F-10 Cross-Tenant-Wissensaustausch:** Permanentes VETO (VETO-F10). Bricht TenantId-Isolationsgarantien und macht DeletionProof mathematisch unmöglich.
-5. **`CLAIMS.md` Dateisystem-Locking:** Verworfene Option. Datei-Locks bei 25 parallelen Sessions erzeugen Git-Merge-Konflikte. Ersatz: Atomare GitHub-Issues/Labels API.
-6. **Verteilte ADR-Dateien (`docs/decisions/*.md`):** Verworfene Option per ADR-060. Führte zu ADR-Nummern-Kollisionen (4× ADR-070). Ersatz: Zentrale `DECISIONS.md`.
+5. **`CLAIMS.md` Dateisystem-Locking:** Verworfene Option. Datei-Locks bei 25 parallelen Sessions erzeugen Git-Merge-Konflikte. Ersatz: Atomare GitHub-Issues/Labels API. <!-- doc-ref-ignore -->
+6. **Verteilte ADR-Dateien (`docs/decisions/*.md`):** Verworfene Option per ADR-060. Führte zu ADR-Nummern-Kollisionen (4× ADR-070). Ersatz: Zentrale `DECISIONS.md`. <!-- doc-ref-ignore -->

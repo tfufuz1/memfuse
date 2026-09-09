@@ -97,7 +97,10 @@ async fn test_consolidation_pass_cascades_edge_invalidation() {
 
     // b. Run consolidation pass over doc1 and doc2
     // doc1 (older, index 0) will be flagged as near-duplicate of doc2 (newer, index 1)
-    let turns = vec![(doc1_id, duplicate_emb.clone()), (doc2_id, duplicate_emb.clone())];
+    let turns = vec![
+        (doc1_id, duplicate_emb.clone()),
+        (doc2_id, duplicate_emb.clone()),
+    ];
     let consolidation_config = ConsolidationConfig {
         min_turns_per_segment: 1,
         max_turns_per_segment: 20,

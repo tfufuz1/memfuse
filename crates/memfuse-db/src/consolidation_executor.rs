@@ -90,7 +90,9 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
                         error = %e,
                         "Consolidation pass: cascade edge invalidation failed"
                     );
-                    result.cascade_errors.push(format!("DocId {:?}: {}", doc_id, e));
+                    result
+                        .cascade_errors
+                        .push(format!("DocId {:?}: {}", doc_id, e));
                 }
             }
         }
@@ -99,12 +101,12 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
     Ok(result)
 }
 
-/// Führt den vollständigen Sleep-Cycle (Structural Consolidation Pass und optional Generative Synthesis Pass) aus.
+/// Führt die vollständige Hintergrund-Konsolidierung (Structural Consolidation Pass und optional Generative Synthesis Pass) aus.
 ///
 /// 1. Structural Consolidation Pass: Segmentierung & Near-Duplicate Tombstoning.
 /// 2. Generative Synthesis Pass (falls `synthesis_config` und `llm` angegeben): Wissenssynthese über stabile Graph-Communities.
 ///    Synthetisierte MetaChunks werden in die Collection eingefügt.
-pub async fn execute_sleep_cycle<S: StorageEngine>(
+pub async fn execute_background_consolidation<S: StorageEngine>(
     collection: &Collection<S>,
     turns: &[(DocId, Vec<f32>)],
     consolidation_config: &ConsolidationConfig,
@@ -216,4 +218,25 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
     };
 
     Ok((consolidation_result, synthesis_result))
+}
+
+/// Deprecated legacy wrapper for `execute_background_consolidation`.
+#[deprecated(note = "use execute_background_consolidation instead")]
+pub async fn execute_sleep_cycle<S: StorageEngine>(
+    collection: &Collection<S>,
+    turns: &[(DocId, Vec<f32>)],
+    consolidation_config: &ConsolidationConfig,
+    synthesis_config: Option<&SynthesisConfig>,
+    llm: Option<&dyn LlmTextGenerator>,
+    stability_tracker: Option<&mut CommunityStabilityTracker>,
+) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
+    execute_background_consolidation(
+        collection,
+        turns,
+        consolidation_config,
+        synthesis_config,
+        llm,
+        stability_tracker,
+    )
+    .await
 }
