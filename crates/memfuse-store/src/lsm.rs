@@ -3375,4 +3375,103 @@ mod tests {
             "last_hmac must be restored to pre-commit state after commit failure"
         );
     }
+
+    #[tokio::test]
+    async fn test_flush_cleanup_on_sstable_create_failure() {
+        let (storage, tmp) = test_storage().await;
+        let tx = TxId::new(1);
+        storage.put(tx, b"key1", b"val1").await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        // Pre-create the expected SSTable file path as a directory so SstableBuilder::create_with_key_manager fails
+        let seq = storage.next_seq_no.load(Ordering::Relaxed);
+        let count = storage.segment_counter.load(Ordering::Relaxed);
+        let sst_path = tmp
+            .path()
+            .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
+        tokio::fs::create_dir(&sst_path).await.unwrap();
+
+        let res = storage.force_flush().await;
+        assert!(res.is_err(), "Flush must return error when SSTable creation fails");
+
+        let state = storage.state.read().await;
+        assert!(
+            state.immutable_memtables.is_empty(),
+            "immutable_memtables must be cleaned up and empty after flush failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_flush_cleanup_on_sstable_finish_failure() {
+        let (storage, tmp) = test_storage().await;
+        let tx = TxId::new(1);
+        storage.put(tx, b"key1", b"val1").await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::fs::Permissions;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o555)).unwrap();
+
+            let res = storage.force_flush().await;
+            assert!(res.is_err(), "Flush must fail when directory is read-only");
+
+            let _ = std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o755));
+
+            let state = storage.state.read().await;
+            assert!(
+                state.immutable_memtables.is_empty(),
+                "immutable_memtables must be cleaned up and empty after flush finish failure"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tmp;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_flush_repeated_failures_no_memory_leak() {
+        let (storage, tmp) = test_storage().await;
+
+        // Put initial entry
+        let tx = TxId::new(1);
+        storage.put(tx, b"leak_key", b"leak_val").await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        let initial_usage = storage.budget.memory_used();
+
+        #[cfg(unix)]
+        {
+            use std::fs::Permissions;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o555)).unwrap();
+
+            for _ in 0..100 {
+                let res = storage.force_flush().await;
+                assert!(res.is_err());
+            }
+
+            let _ = std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o755));
+
+            let state = storage.state.read().await;
+            assert!(
+                state.immutable_memtables.is_empty(),
+                "immutable_memtables must remain empty after 100 flush failures"
+            );
+            drop(state);
+
+            let usage_after_failures = storage.budget.memory_used();
+            assert_eq!(
+                usage_after_failures, initial_usage,
+                "Resource budget memory usage must not leak across repeated flush failures"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tmp;
+            let _ = initial_usage;
+        }
+    }
 }
