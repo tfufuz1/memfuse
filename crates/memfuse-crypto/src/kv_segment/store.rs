@@ -513,4 +513,30 @@ mod tests {
             max_evictions
         );
     }
+
+    #[test]
+    fn test_store_edge_cases() {
+        let store = TenantIsolatedKvStore::default();
+        let tenant = TenantId::try_new(10).unwrap();
+
+        // Non-existent segment / tenant byte retrieval
+        assert!(store.get_segment_bytes(tenant, 999).is_none());
+
+        // Evict 0 bytes
+        let freed_zero = store.evict_lru_fair(0);
+        assert_eq!(freed_zero, 0);
+
+        // Evict on empty store
+        let freed_empty = store.evict_lru_fair(500);
+        assert_eq!(freed_empty, 0);
+
+        // Insert duplicate segment_id -> should overwrite
+        let seg1 = KvSegment::new(tenant, 1, vec![1, 2, 3]);
+        let seg2 = KvSegment::new(tenant, 1, vec![4, 5, 6, 7]);
+        store.insert_segment(tenant, seg1);
+        store.insert_segment(tenant, seg2);
+
+        assert_eq!(store.get_tenant_segment_len(tenant), 1);
+        assert_eq!(store.get_segment_bytes(tenant, 1), Some(vec![4, 5, 6, 7]));
+    }
 }

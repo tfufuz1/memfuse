@@ -214,4 +214,30 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_kv_segment_metadata_and_debug() {
+        let tenant = TenantId::try_new(42).unwrap();
+        let data = vec![1, 2, 3, 4, 5];
+
+        #[cfg(feature = "kv-encryption")]
+        let segment = KvSegment::new_with_metadata(tenant, 100, data, None, Some(128));
+        #[cfg(not(feature = "kv-encryption"))]
+        let segment = KvSegment::new_with_metadata(tenant, 100, data, Some(128));
+
+        assert_eq!(segment.tenant_id, tenant);
+        assert_eq!(segment.segment_id, 100);
+        assert_eq!(segment.rope_offset, Some(128));
+        assert_eq!(segment.len(), 5);
+        assert!(!segment.is_empty());
+
+        let debug_str = format!("{:?}", segment);
+        assert!(debug_str.contains("*** REDACTED ***"));
+        assert!(debug_str.contains("tenant_id"));
+        assert!(debug_str.contains("segment_id"));
+
+        let empty_segment = KvSegment::new(tenant, 101, vec![]);
+        assert!(empty_segment.is_empty());
+        assert_eq!(empty_segment.len(), 0);
+    }
 }
