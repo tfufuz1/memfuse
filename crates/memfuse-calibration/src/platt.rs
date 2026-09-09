@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T20:20:00Z (SESSION: 80a3120b)
+// ZWECK: Parametric Platt Scaling (logistic calibration) mapping logit/scores to probabilities.
+// INVARIANTEN: Sigmoid output strictly bounded in [0.0, 1.0], fallbacks on NaN/infinite logits.
+// NICHT-OFFENSICHTLICH: Target smoothing (Platt, 1999) prevents overfitting on separable training samples.
+// SIEHE AUCH: crates/memfuse-calibration/src/isotonic.rs, crates/memfuse-calibration/src/lib.rs
+
 //! Platt-Scaling (Logistic Calibration): `sigmoid(A * logit + B)`.
 //!
 //! Passt rohe Scores/Logits via Maximum-Likelihood-Schätzung und
