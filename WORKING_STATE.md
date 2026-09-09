@@ -15,8 +15,11 @@
 
 Stand letzter Prüfung: 2026-09-09
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-mcp/src/config.rs` | 216 | `AGT-MCP-98350010` | `SMELL` | `MAJOR` | `2026-09-09T12:35:54Z` | // AI-TAG[SMELL][MAJOR] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T12:35:54Z) (SESSION: 5665b844) |
 
 
 ## Crate-Inventar & Status
@@ -40,7 +43,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-router` | 5 | 4610 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6176 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 7 | 4346 | 🟢 Clean |  |
+| `memfuse-mcp` | 7 | 4357 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
