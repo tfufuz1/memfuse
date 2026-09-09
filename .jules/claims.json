@@ -41,6 +41,13 @@
       "timestamp": "2026-09-09T15:42:26.576534363+00:00",
       "session_id": "14951270737769827256",
       "active": true
+    },
+    {
+      "krate": "memfuse-calibration",
+      "issue": "JULES-20260909-DEEP",
+      "timestamp": "2026-09-09T19:16:13.540544356+00:00",
+      "session_id": "2427328989946067360",
+      "active": true
     }
   ]
 }
