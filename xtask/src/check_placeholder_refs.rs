@@ -76,7 +76,7 @@ pub fn check_placeholder_refs_in_content(
     // Regex für Platzhalter-Muster nach Ankern: ADR-0?X+\b, \bTBD\b, \bTODO-ADR\b, <[^>]+>
     let placeholder_re =
         Regex::new(r"(ADR-0?X+\b|\bTBD\b|\bTODO-ADR\b|<[^>]+>)").expect("Valid placeholder regex");
-    let adr_re = Regex::new(r"ADR-(\d+)").expect("Valid adr regex");
+    let adr_re = Regex::new(r"(?i)ADR-(\d+)").expect("Valid adr regex");
 
     let anchors = ["adr_ref:", "DECISION-REF:"];
 
