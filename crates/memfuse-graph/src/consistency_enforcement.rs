@@ -325,4 +325,62 @@ mod tests {
         let suggestions = enforcer.suggest_tombstone_candidates(&candidate_edges);
         assert_eq!(suggestions, candidate_edges);
     }
+
+    #[test]
+    fn test_check_before_insert() {
+        let mut enforcer = ConsistencyEnforcer::new(1);
+        let assertion = EdgeAssertion {
+            subject: 1,
+            predicate_hash: [7u8; 32],
+            object_repr: b"value".to_vec(),
+        };
+
+        let res = enforcer.check_before_insert(&assertion);
+        assert!(res.is_some());
+        let cp = res.expect("check_before_insert should return Some");
+        assert_eq!(cp.pattern_hash, assertion.pattern_hash());
+        assert_eq!(cp.contradiction_count, 1);
+        assert!(cp.suppressed); // threshold = 1
+        assert!(enforcer.is_suppressed(assertion.pattern_hash()));
+    }
+
+    #[test]
+    fn test_zero_threshold_suppresses_immediately() {
+        let mut enforcer = ConsistencyEnforcer::new(0);
+        let hash = [88u8; 32];
+        let cp = enforcer.record_contradiction(hash, TxId::new(10));
+        assert!(cp.suppressed);
+        assert!(enforcer.is_suppressed(hash));
+    }
+
+    #[test]
+    fn test_get_pattern_nonexistent() {
+        let enforcer = ConsistencyEnforcer::default();
+        let hash = [99u8; 32];
+        assert!(enforcer.get_pattern(&hash).is_none());
+        assert!(!enforcer.is_suppressed(hash));
+        assert_eq!(
+            enforcer.suppression_threshold(),
+            ConsistencyEnforcer::DEFAULT_SUPPRESSION_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn test_detect_contradiction_delegate() {
+        let enforcer = ConsistencyEnforcer::default();
+        let detector = ExactPredicateConflictDetector;
+
+        let a = EdgeAssertion {
+            subject: 10,
+            predicate_hash: [1u8; 32],
+            object_repr: vec![1, 2],
+        };
+        let b = EdgeAssertion {
+            subject: 10,
+            predicate_hash: [1u8; 32],
+            object_repr: vec![3, 4],
+        };
+
+        assert!(enforcer.detect_contradiction(&detector, &a, &b));
+    }
 }
