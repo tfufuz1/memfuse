@@ -413,8 +413,7 @@ pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
 
 /// Global fault injection flag to simulate a WAL `append_batch` failure for a specific transaction ID during tests.
 #[cfg(feature = "fault-injection")]
-pub static FAIL_APPEND_FOR_TX: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+pub static FAIL_APPEND_FOR_TX: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Wal {
     fn handle_wal_entry_parse_error(

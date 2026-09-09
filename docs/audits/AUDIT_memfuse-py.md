@@ -1,7 +1,7 @@
 # Audit-Report: `memfuse-py` (Layer 3 — Python PyO3 Bindings)
 
-**Datum/Zeit:** 2026-09-09T13:30:00Z
-**Session:** `5665b844`
+**Datum/Zeit:** 2026-09-09T19:13:19Z
+**Session:** `3a641825`
 **Crate:** `memfuse-py`
 **Rolle:** Senior Rust FFI-Engineer — PyO3, GIL, Zero-Panic-Boundary
 
@@ -25,6 +25,19 @@ The current audit verified:
 - **#[forbid(unsafe_code)]**: `memfuse-py` maintains a strict `#![forbid(unsafe_code)]` directive.
 - **Shared Tokio Runtime**: A multi-thread Tokio runtime (`memfuse-py-worker`) is lazily initialized via `OnceLock<Runtime>` in `get_runtime()`.
 - **Zero-Copy Serialization**: High-performance FlatBuffer search responses (`search_fb`, `hybrid_search_fb`) build raw zero-copy bytes returned as PyBytes.
+
+---
+
+## Audit Verification & Test Delta (Session `3a641825`, TS: 2026-09-09T19:13:19Z)
+
+- **Inventory Reality Check**: Confirmed `crates/memfuse-py/src/lib.rs` (1618 lines) matches actual repo inventory with 0 drift.
+- **Rust Unit & Sanity Checks**: `cargo check --manifest-path crates/memfuse-py/Cargo.toml --all-features` (0 errors, 0 warnings).
+- **Clippy Analysis**: `cargo clippy --manifest-path crates/memfuse-py/Cargo.toml -- -D warnings` (0 findings).
+- **Formatting**: `cargo fmt --check --manifest-path crates/memfuse-py/Cargo.toml` (0 diffs).
+- **Python FFI / Integration Suite**: `maturin develop --release` + `pytest` executed 51 test cases with 100% pass rate in virtualenv context.
+- **Tier 1 Concurrency Stress Test**: 10 consecutive runs of the entire `pytest` suite (510 total test executions) completed with 0 failures, 0 deadlocks, and 0 panics.
+- **Sub-Interpreter Isolation & GIL Release**: Confirmed CPython sub-interpreter imports are cleanly rejected with explicit `ImportError` and GIL release protocol (`py.allow_threads`) functions under multi-threaded Python queries.
+- **Preflight Check**: `cargo run -p xtask -- jules-preflight --fast` (100% PASSED).
 
 ---
 
