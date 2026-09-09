@@ -1359,6 +1359,7 @@ impl StorageEngine for LsmStorage {
         cursor: Option<&'a [u8]>,
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
+            let cur_bytes = cursor.map(Bytes::copy_from_slice);
             const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
             let max_entries = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
             let safety_limit = max_entries;
@@ -1523,14 +1524,6 @@ impl StorageEngine for LsmStorage {
                     "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
                     map.len(),
                     max_entries
-                )));
-            }
-
-            if map.len() > safety_limit {
-                return Err(MemFuseError::invalid_input(format!(
-                    "scan_prefix_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                     narrow the range or use a smaller limit",
-                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                 )));
             }
 
@@ -1713,12 +1706,17 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                     processed_count += 1;
                     if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
                         return Err(MemFuseError::invalid_input(format!(
-                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                             narrow the range or use a smaller limit",
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
                             map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                         )));
                     }
@@ -1762,12 +1760,17 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
+                        if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                            return Err(MemFuseError::LimitExceeded {
+                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                            });
+                        }
                     }
                     processed_count += 1;
                     if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
                         return Err(MemFuseError::invalid_input(format!(
-                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                             narrow the range or use a smaller limit",
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
                             map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                         )));
                     }
@@ -1809,6 +1812,12 @@ impl StorageEngine for LsmStorage {
                     let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
+                    }
+                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        });
                     }
                 }
                 processed_count += 1;

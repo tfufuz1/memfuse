@@ -48,6 +48,13 @@
       "timestamp": "2026-09-09T19:18:31.235542664+00:00",
       "session_id": "16226146975018763893",
       "active": true
+    },
+    {
+      "krate": "memfuse-db",
+      "issue": "JULES-20260909-FIX",
+      "timestamp": "2026-09-09T20:31:21.235131386+00:00",
+      "session_id": "2567090070726996880",
+      "active": true
     }
   ]
 }
