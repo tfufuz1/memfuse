@@ -27,6 +27,11 @@ const DISKANN_MAGIC: &[u8; 4] = b"DANN";
 const DISKANN_VERSION: u16 = 1;
 const DISKANN_FOOTER_MAGIC: &[u8; 4] = b"DANF";
 const DISKANN_INTEGRITY_KEY: &[u8; 32] = b"memfuse_diskann_integrity_key_32";
+
+const PENDING_WAL_MAGIC: &[u8; 4] = b"PWAL";
+const PENDING_WAL_VERSION: u8 = 1;
+const PENDING_WAL_HEADER_SIZE: usize = 5;
+const MAX_PENDING_WAL_DIM: usize = 65_536;
 /// Minimaler Pending-Flush-Threshold (untere Grenze der adaptiven Formel).
 /// Siehe ADR-068 für die vollständige Stufenregelung.
 const PENDING_FLUSH_THRESHOLD_MIN: u64 = 50;
@@ -531,35 +536,79 @@ impl DiskAnnIndex {
         Ok(pruned)
     }
 
+    /// Appends a vector insertion record to `pending.wal` with HMAC-SHA256 integrity protection.
+    ///
+    /// # Binary Format
+    /// - File Header (written on new/empty file creation): `[PWAL: 4 bytes] [version=1: 1 byte]`
+    /// - Entry Layout:
+    ///   - `id`: `u64` LE (8 bytes)
+    ///   - `dim`: `u32` LE (4 bytes)
+    ///   - `embedding`: `[f32 LE; dim]` (`dim * 4` bytes)
+    ///   - `hmac`: `[u8; 32]` (32-byte HMAC-SHA256 computed over `id_bytes || dim_bytes || embedding_bytes`)
     async fn append_to_pending_wal(
         path: &std::path::Path,
         id: DocId,
         embedding: &[f32],
     ) -> Result<()> {
         use tokio::io::AsyncWriteExt;
+
+        let is_new = match tokio::fs::metadata(path).await {
+            Ok(meta) => meta.len() == 0,
+            Err(_) => true,
+        };
+
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
             .await
             .map_err(MemFuseError::Io)?;
-        file.write_all(&id.inner().to_le_bytes())
-            .await
-            .map_err(MemFuseError::Io)?;
-        file.write_all(&(embedding.len() as u32).to_le_bytes())
-            .await
-            .map_err(MemFuseError::Io)?;
-        for &val in embedding {
-            file.write_all(&val.to_le_bytes())
+
+        if is_new {
+            file.write_all(PENDING_WAL_MAGIC)
+                .await
+                .map_err(MemFuseError::Io)?;
+            file.write_all(&[PENDING_WAL_VERSION])
                 .await
                 .map_err(MemFuseError::Io)?;
         }
+
+        let dim = embedding.len() as u32;
+        let id_bytes = id.inner().to_le_bytes();
+        let dim_bytes = dim.to_le_bytes();
+
+        let mut entry_bytes = Vec::with_capacity(8 + 4 + (embedding.len() * 4));
+        entry_bytes.extend_from_slice(&id_bytes);
+        entry_bytes.extend_from_slice(&dim_bytes);
+        for &val in embedding {
+            entry_bytes.extend_from_slice(&val.to_le_bytes());
+        }
+
+        let mut hmac = memfuse_security::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+        hmac.update(&entry_bytes);
+        let computed_hmac = hmac.finalize();
+
+        file.write_all(&entry_bytes)
+            .await
+            .map_err(MemFuseError::Io)?;
+        file.write_all(&computed_hmac)
+            .await
+            .map_err(MemFuseError::Io)?;
         file.sync_all().await.map_err(MemFuseError::Io)?;
         Ok(())
     }
 
+    /// Reads and verifies uncommitted vector entries from `pending.wal`.
+    ///
+    /// # Integrity & Defensive Parsing
+    /// 1. Validates the 5-byte file header (`PWAL` magic + version 1). Rejects unversioned/legacy formats.
+    /// 2. Validates `dim` against `MAX_PENDING_WAL_DIM` (65,536) prior to buffer allocation to prevent allocation-DoS attacks.
+    /// 3. Reads entry payload and entry HMAC, computing the expected HMAC-SHA256 over `(id || dim || embedding)`.
+    /// 4. Compares HMACs using constant-time comparison (`subtle::ConstantTimeEq`). Corrupted entries are logged via `tracing::error!` with byte offset and skipped, continuing to read subsequent valid entries.
     fn read_pending_wal(path: &std::path::Path) -> Result<Vec<(DocId, Vec<f32>)>> {
         use std::io::Read;
+        use subtle::ConstantTimeEq;
+
         if !path.exists() {
             return Ok(Vec::new());
         }
@@ -567,29 +616,99 @@ impl DiskAnnIndex {
             Ok(f) => f,
             Err(_) => return Ok(Vec::new()),
         };
+
+        let file_len = match file.metadata() {
+            Ok(m) => m.len() as usize,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        if file_len == 0 {
+            return Ok(Vec::new());
+        }
+
+        if file_len < PENDING_WAL_HEADER_SIZE {
+            return Err(MemFuseError::Storage(
+                "Unbekanntes oder veraltetes pending.wal-Format, bitte vor Upgrade leeren".into(),
+            ));
+        }
+
+        let mut magic_buf = [0u8; 4];
+        let mut version_buf = [0u8; 1];
+        if file.read_exact(&mut magic_buf).is_err() || file.read_exact(&mut version_buf).is_err() {
+            return Err(MemFuseError::Storage(
+                "Unbekanntes oder veraltetes pending.wal-Format, bitte vor Upgrade leeren".into(),
+            ));
+        }
+
+        if magic_buf != *PENDING_WAL_MAGIC || version_buf[0] != PENDING_WAL_VERSION {
+            return Err(MemFuseError::Storage(
+                "Unbekanntes oder veraltetes pending.wal-Format, bitte vor Upgrade leeren".into(),
+            ));
+        }
+
         let mut recovered = Vec::new();
+        let mut offset = PENDING_WAL_HEADER_SIZE;
         let mut buf_id = [0u8; 8];
         let mut buf_dim = [0u8; 4];
+
         while file.read_exact(&mut buf_id).is_ok() {
+            let entry_offset = offset;
+            offset += 8;
+
             if file.read_exact(&mut buf_dim).is_err() {
                 tracing::warn!("Truncated dim in pending.wal");
                 break;
             }
+            offset += 4;
+
             let doc_id = DocId::from(u64::from_le_bytes(buf_id));
             let dim = u32::from_le_bytes(buf_dim) as usize;
-            let mut vec_bytes = vec![0u8; dim * 4];
+
+            if dim == 0 || dim > MAX_PENDING_WAL_DIM {
+                tracing::warn!(
+                    dim,
+                    offset = entry_offset,
+                    "pending.wal: Eintrag mit unplausibler Dimension verworfen"
+                );
+                break;
+            }
+
+            let vec_byte_len = dim * 4;
+            let mut vec_bytes = vec![0u8; vec_byte_len];
             if file.read_exact(&mut vec_bytes).is_err() {
                 tracing::warn!("Truncated vector payload in pending.wal");
                 break;
             }
-            let mut vec = Vec::with_capacity(dim);
-            #[allow(clippy::chunks_exact_to_as_chunks)]
-            for chunk in vec_bytes.chunks_exact(4) {
-                if let Ok(b) = chunk.try_into() {
-                    vec.push(f32::from_le_bytes(b));
-                }
+            offset += vec_byte_len;
+
+            let mut buf_hmac = [0u8; 32];
+            if file.read_exact(&mut buf_hmac).is_err() {
+                tracing::warn!("Truncated HMAC in pending.wal");
+                break;
             }
-            recovered.push((doc_id, vec));
+            offset += 32;
+
+            let mut hmac = memfuse_security::wal_crypto::WalHmac::new(DISKANN_INTEGRITY_KEY)?;
+            hmac.update(&buf_id);
+            hmac.update(&buf_dim);
+            hmac.update(&vec_bytes);
+            let computed_hmac = hmac.finalize();
+
+            if computed_hmac.ct_eq(&buf_hmac).into() {
+                let mut vec = Vec::with_capacity(dim);
+                for chunk in vec_bytes.chunks_exact(4) {
+                    if let Ok(b) = chunk.try_into() {
+                        vec.push(f32::from_le_bytes(b));
+                    }
+                }
+                recovered.push((doc_id, vec));
+            } else {
+                tracing::error!(
+                    offset = entry_offset,
+                    doc_id = %doc_id.inner(),
+                    "pending.wal: HMAC-Mismatch bei Eintrag, Eintrag verworfen"
+                );
+            }
         }
         Ok(recovered)
     }
@@ -2767,10 +2886,7 @@ mod tests {
                 distance: f32::NAN,
             },
         ];
-        let vectors = vec![
-            vec![0.0, 0.0, 0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+        let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0, 0.0]];
 
         let pruned = index.prune_in_memory(&mut candidates, &vectors, 4, 1.2)?;
         // Both candidates must be retained (fail-open) and prune_in_memory must not panic
@@ -2830,6 +2946,104 @@ mod tests {
         let results = index.search(&query, 2).await?;
         assert!(!results.is_empty());
         assert_eq!(results[0].doc_id, DocId::from(1));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_wal_roundtrip_hmac() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let wal_path = temp_dir.path().join("test_roundtrip.pending.wal");
+
+        let doc_id = DocId::from(42u64);
+        let embedding = vec![1.0f32, 2.0, 3.0, 4.0];
+
+        DiskAnnIndex::append_to_pending_wal(&wal_path, doc_id, &embedding).await?;
+        let recovered = DiskAnnIndex::read_pending_wal(&wal_path)?;
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].0, doc_id);
+        assert_eq!(recovered[0].1, embedding);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_wal_corrupt_payload_skips_entry() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let wal_path = temp_dir.path().join("test_corrupt.pending.wal");
+
+        let doc1 = DocId::from(100u64);
+        let vec1 = vec![1.0f32, 1.1, 1.2, 1.3];
+        let doc2 = DocId::from(200u64);
+        let vec2 = vec![2.0f32, 2.1, 2.2, 2.3];
+
+        DiskAnnIndex::append_to_pending_wal(&wal_path, doc1, &vec1).await?;
+        DiskAnnIndex::append_to_pending_wal(&wal_path, doc2, &vec2).await?;
+
+        // Corrupt a byte in the embedding payload of entry 1
+        let mut data = tokio::fs::read(&wal_path).await.map_err(MemFuseError::Io)?;
+        // Header is 5 bytes. Entry 1 starts at byte 5.
+        // ID: 8 bytes, Dim: 4 bytes -> Embedding starts at byte 5 + 12 = 17.
+        data[18] ^= 0xFF;
+        tokio::fs::write(&wal_path, &data).await.map_err(MemFuseError::Io)?;
+
+        let recovered = DiskAnnIndex::read_pending_wal(&wal_path)?;
+
+        // Entry 1 should be skipped due to HMAC mismatch, Entry 2 recovered
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].0, doc2);
+        assert_eq!(recovered[0].1, vec2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_wal_absurd_dim_prevents_allocation() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let wal_path = temp_dir.path().join("test_absurd_dim.pending.wal");
+
+        let mut data = Vec::new();
+        data.extend_from_slice(PENDING_WAL_MAGIC);
+        data.push(PENDING_WAL_VERSION);
+
+        // Entry with ID=1, Dim=0xFFFFFFF0 (~17GB allocation attempt without check)
+        data.extend_from_slice(&1u64.to_le_bytes());
+        let absurd_dim: u32 = 0xFFFFFFF0;
+        data.extend_from_slice(&absurd_dim.to_le_bytes());
+
+        tokio::fs::write(&wal_path, &data).await.map_err(MemFuseError::Io)?;
+
+        let recovered = DiskAnnIndex::read_pending_wal(&wal_path)?;
+
+        // Must break gracefully without OOM or panic and return empty list
+        assert!(recovered.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pending_wal_rejects_legacy_unversioned_file() -> Result<()> {
+        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
+        let wal_path = temp_dir.path().join("legacy.pending.wal");
+
+        // Legacy format: raw u64 id, u32 dim, f32s without PWAL magic header
+        let mut data = Vec::new();
+        data.extend_from_slice(&1u64.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&1.0f32.to_le_bytes());
+        data.extend_from_slice(&2.0f32.to_le_bytes());
+
+        tokio::fs::write(&wal_path, &data).await.map_err(MemFuseError::Io)?;
+
+        let result = DiskAnnIndex::read_pending_wal(&wal_path);
+        assert!(result.is_err());
+        let err_str = result.err().unwrap().to_string();
+        assert!(
+            err_str.contains("Unbekanntes oder veraltetes pending.wal-Format"),
+            "Error string was: {}",
+            err_str
+        );
 
         Ok(())
     }

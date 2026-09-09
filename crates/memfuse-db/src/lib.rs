@@ -71,7 +71,9 @@
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
-use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope, LayerCleanupProof};
+use memfuse_crypto::deletion_proof::{
+    DeletionLayer, DeletionProof, DeletionScope, LayerCleanupProof,
+};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -802,6 +804,11 @@ impl MemFuse {
 
         self.storage.commit(tx).await?;
 
+        // INV-DELETION-1: Verifiziere physische Leere DURCH RE-SCAN, bevor ein
+        // LayerCleanupProof für die betroffenen Layer konstruiert wird.
+        let remaining_col_data = self.storage.scan_prefix(col_data_prefix.as_bytes()).await?;
+        let remaining_txt_data = self.storage.scan_prefix(txt_data_prefix.as_bytes()).await?;
+
         // 3c. NACH erfolgreichem commit: DeletionProof erzeugen
         let mut hasher = blake3::Hasher::new();
         hasher.update(name.as_bytes());
@@ -815,14 +822,30 @@ impl MemFuse {
             tenant_id,
         };
 
+        let layer_proofs = vec![
+            LayerCleanupProof::new_after_verified_empty(
+                DeletionLayer::LsmMemtable,
+                remaining_col_data.len(),
+            ),
+            LayerCleanupProof::new_after_verified_empty(
+                DeletionLayer::SsTableAllLevels,
+                remaining_txt_data.len(),
+            ),
+        ]
+        .into_iter()
+        .collect::<Result<Vec<_>>>()
+        .map_err(|e| {
+            memfuse_core::MemFuseError::Internal(format!(
+                "CRITICAL: Collection '{name}' was physically sanitized and committed at tx {}, but DeletionProof generation failed: {e}. Data is permanently deleted.",
+                tx.inner()
+            ))
+        })?;
+
         let proof = DeletionProof::create(
             scope,
             deleted_keys,
             tx,
-            vec![
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
-            ],
+            layer_proofs,
             vec![],
             proof_key,
         )
