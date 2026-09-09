@@ -55,6 +55,7 @@ mod check_jules_context_freshness;
 mod check_placeholder_refs;
 mod check_recall_stability;
 mod check_type_registry;
+mod check_unwrap_baseline_trend;
 mod check_vetoes;
 mod claim;
 mod gen_prompter_data;
