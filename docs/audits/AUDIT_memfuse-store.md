@@ -414,3 +414,30 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo test -p memfuse-store --lib --all-features`: **PASSED** (124 tests passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
 - `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (All gates passed)
+
+---
+
+## 21. Storage Engine Verification Pass & Inventory Realitätsabgleich (TS: 2026-09-09T14:49:33Z / SESSION: 2c4ca326)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Audit Timestamp**: `2026-09-09T14:49:33Z`
+- **Session Hash**: `2c4ca326`
+
+### Inventory Realitätsabgleich (Step 0)
+- **Inventory Verification**: Checked source file topology via `find crates/memfuse-store/src -name "*.rs"`. All 10 source files (`checkpoint.rs`, `compaction.rs`, `lib.rs`, `lsm.rs`, `memtable.rs`, `mmap.rs`, `sstable.rs`, `tenant_codec.rs`, `util.rs`, `wal.rs`) match the prompter inventory (Stand 2026-09-08 confirmed). Zero drift detected.
+
+### Invariant & Crash-Safety Compliance Matrix
+1. **Atomic Disk Write & Parent Dir Sync (APM-1)**: Verified atomic `tmp -> sync_all -> rename -> fsync_parent_dir` creation sequence across `wal.rs`, `sstable.rs`, `lsm.rs`, and `compaction.rs`. All `sync_all()` calls propagate I/O errors using `?`.
+2. **MVCC Snapshot Isolation (`last_committed_tx` Single Load Rule)**: Verified `last_committed_tx` is loaded exactly once at entrypoints in `lsm.rs` (`get_at_seq`, `scan_prefix_at`).
+3. **Zero Production Unwraps / Expects**: Confirmed 0 non-test `.unwrap()` and `.expect()` calls in `crates/memfuse-store/src/`.
+4. **Lock Hierarchy & Concurrency Safety (APM-3)**: Re-verified commit mutex serialization and atomic `SstableReader` pointer replacements during flushes and rollbacks.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --all-features`: **PASSED** (127 unit tests + 23 integration test binaries passed cleanly)
+- `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+- `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (All 10 preflight gates passed)

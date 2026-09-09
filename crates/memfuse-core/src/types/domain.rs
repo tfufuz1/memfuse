@@ -95,6 +95,12 @@ impl TenantId {
         self.0
     }
 
+    /// Backwards compatibility method returning raw `u64`.
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+
     /// Returns `true` if this tenant ID is `SYSTEM` (0).
     #[inline]
     pub fn is_system(self) -> bool {
@@ -153,6 +159,13 @@ impl CollectionId {
     pub const fn inner(self) -> u64 {
         self.0
     }
+
+    /// Deprecated backwards compatibility alias for .
+    #[deprecated(note = "Nutze inner()")]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
 }
 
 impl From<u64> for CollectionId {
@@ -192,6 +205,13 @@ impl DocId {
     /// Returns the inner raw `u64` identifier.
     #[inline]
     pub const fn inner(self) -> u64 {
+        self.0
+    }
+
+    /// Deprecated backwards compatibility alias for .
+    #[deprecated(note = "Nutze inner()")]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 
@@ -244,6 +264,13 @@ impl EntityId {
     /// Returns the inner raw `u64` identifier.
     #[inline]
     pub const fn inner(self) -> u64 {
+        self.0
+    }
+
+    /// Deprecated backwards compatibility alias for .
+    #[deprecated(note = "Nutze inner()")]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 
@@ -352,6 +379,13 @@ impl TxId {
     /// Returns the inner raw `u64` transaction identifier.
     #[inline]
     pub const fn inner(self) -> u64 {
+        self.0
+    }
+
+    /// Deprecated backwards compatibility alias for .
+    #[deprecated(note = "Nutze inner()")]
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 
