@@ -15,7 +15,7 @@
 //!    Sicherheits-Alarm). Synchron, blockierend, garantiert vor Rückkehr
 //!    vollständig abgeschlossen — bewusst anders als der reguläre Worker-Pfad.
 
-use crate::segment::KvSegment;
+use super::segment::KvSegment;
 use parking_lot::RwLock;
 use std::sync::mpsc;
 use std::sync::Arc;
