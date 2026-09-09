@@ -29,10 +29,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-calibration",
-      "issue": "JULES-20260909-KORREK",
-      "timestamp": "2026-09-09T14:51:48.511363226+00:00",
-      "session_id": "6690384352205422628",
+      "krate": "memfuse-mcp",
+      "issue": "JULES-20260909-TEST",
+      "timestamp": "2026-09-09T14:50:26.226246210+00:00",
+      "session_id": "17893647405335683469",
       "active": true
     }
   ]
