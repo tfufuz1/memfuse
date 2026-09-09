@@ -12337,11 +12337,11 @@
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "2140209121f51cd4"
+    "hash": "13ad43dc6eeb359b"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "2cb666bf281e2b67"
+    "hash": "2140209121f51cd4"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
@@ -12353,7 +12353,15 @@
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
+    "hash": "39333771d2bbbac6"
+  },
+  {
+    "file": "crates/memfuse-py/src/lib.rs",
     "hash": "45c552d69e2c6bb1"
+  },
+  {
+    "file": "crates/memfuse-py/src/lib.rs",
+    "hash": "47acce9e621c4ebc"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
@@ -12361,7 +12369,7 @@
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "615ee6069ec9f554"
+    "hash": "64eab372e11d535a"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
@@ -12389,15 +12397,11 @@
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "b434a9519c547c5b"
+    "hash": "a1de276136cedafa"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "d359bb84a7523bc8"
-  },
-  {
-    "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "d594d0edc7f7a74c"
+    "hash": "aeaf81a15f5d9f91"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
@@ -12405,15 +12409,11 @@
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "d6a1021ecd636f13"
-  },
-  {
-    "file": "crates/memfuse-py/src/lib.rs",
     "hash": "f43bc76ace602326"
   },
   {
     "file": "crates/memfuse-py/src/lib.rs",
-    "hash": "f5d6d5ca5295ee71"
+    "hash": "fb31a4d4a91a09b3"
   },
   {
     "file": "crates/memfuse-router/benches/router_bench.rs",

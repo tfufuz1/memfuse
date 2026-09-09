@@ -28,12 +28,13 @@ The current audit verified:
 
 ---
 
-## Audit Verification & Test Delta
+## Audit Verification & Test Delta (Session `64f05109`, TS: 2026-09-09T15:57:24Z)
 
-- **Rust Unit & Sanity Checks**: `cargo check -p memfuse-py --all-features` (0 errors, 0 warnings).
-- **Clippy Analysis**: `cargo clippy -p memfuse-py --no-deps -- -D warnings` (0 findings).
-- **Rust Integration Test Suite**: `cargo test -p memfuse-py --all-features` (100% passed).
-- **Tier 1 Concurrency Verification**: 5 consecutive runs of `cargo test -p memfuse-py --all-features -- --test-threads=8` executed with 0 failures and 0 panics.
+- **Inventory Reality Check**: Confirmed `crates/memfuse-py/src/lib.rs` (1598 lines) matches actual repo inventory with 0 drift.
+- **Rust Unit & Sanity Checks**: `cargo check --manifest-path crates/memfuse-py/Cargo.toml --all-features` (0 errors, 0 warnings).
+- **Clippy Analysis**: `cargo clippy --manifest-path crates/memfuse-py/Cargo.toml -- -D warnings` (0 findings).
+- **Rust Unit Test Suite**: `cargo test --manifest-path crates/memfuse-py/Cargo.toml --all-features` (100% passed).
+- **Python FFI / Integration Suite**: `maturin develop --release` + `pytest` executed 51 test cases with 100% pass rate in virtualenv context (including GIL concurrency, error handling, panic containment, recovery, and sub-interpreter rejection).
 
 ---
 
@@ -87,6 +88,14 @@ The current audit verified:
 ---
 
 ## Historical Session Audits
+
+### Changes Implemented in Session `64f05109` (TS: 2026-09-09T15:57:24Z)
+
+1. **Inventory Verification & Gate Alignment**:
+   - Performed inventory reality check (`crates/memfuse-py/src/lib.rs`).
+   - Cleaned git conflict artifacts in `xtask` and updated unwrap baseline for new codebase additions.
+2. **ANCHOR Review Status Update**:
+   - Verified integration test anchors `ANCHOR[TEST:PY-001]` and `ANCHOR[TEST:PY-002]` in `crates/memfuse-py/tests/test_bindings.py`, attaching `REVIEW-PASS[2/2]` for session `64f05109`.
 
 ### Changes Implemented in Session `9cd9a63a`
 
