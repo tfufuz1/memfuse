@@ -13,6 +13,13 @@
       "timestamp": "2026-09-08T23:16:34.515682512+00:00",
       "session_id": "8107571721804661471",
       "active": true
+    },
+    {
+      "krate": "memfuse-crypto",
+      "issue": "JULES-20260909-DEEP",
+      "timestamp": "2026-09-09T12:38:53.443329243+00:00",
+      "session_id": "10548224694413037390",
+      "active": true
     }
   ]
 }
