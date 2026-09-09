@@ -3025,15 +3025,23 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "cbc639cd4a1dd57a"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "d260e70311200bf7"
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
-    "hash": "d4a2cb816ccbbc17"
+    "hash": "eca0a23ab2dd5ce4"
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "f2a038cded1c121e"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "f68f61eab5a1e369"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_cipher.rs",

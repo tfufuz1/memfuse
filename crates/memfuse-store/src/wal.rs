@@ -1001,7 +1001,9 @@ impl Wal {
 
         let mut file = self.file.lock().await;
 
-        let write_header = !self.header_written.load(std::sync::atomic::Ordering::Acquire)
+        let write_header = !self
+            .header_written
+            .load(std::sync::atomic::Ordering::Acquire)
             && self.size.load(std::sync::atomic::Ordering::Acquire) == 0;
 
         let total_bytes = if write_header {
