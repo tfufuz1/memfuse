@@ -36,22 +36,38 @@ pub fn run_regression_gate(
         ));
     }
 
-    let results_content = fs::read_to_string(results_path)
-        .map_err(|e| format!("Failed to read results file {}: {}", results_path.display(), e))?;
-    let current_metrics: CombinedMetrics = serde_json::from_str(&results_content)
-        .map_err(|e| format!("Failed to parse JSON from {}: {}", results_path.display(), e))?;
+    let results_content = fs::read_to_string(results_path).map_err(|e| {
+        format!(
+            "Failed to read results file {}: {}",
+            results_path.display(),
+            e
+        )
+    })?;
+    let current_metrics: CombinedMetrics = serde_json::from_str(&results_content).map_err(|e| {
+        format!(
+            "Failed to parse JSON from {}: {}",
+            results_path.display(),
+            e
+        )
+    })?;
 
     if !baseline_path.exists() || update_baseline {
         if let Some(parent) = baseline_path.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create parent directory for baseline: {}", e))?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    format!("Failed to create parent directory for baseline: {}", e)
+                })?;
             }
         }
         let baseline_json = serde_json::to_string_pretty(&current_metrics)
             .map_err(|e| format!("Failed to serialize baseline metrics: {}", e))?;
-        fs::write(baseline_path, baseline_json)
-            .map_err(|e| format!("Failed to write baseline file {}: {}", baseline_path.display(), e))?;
+        fs::write(baseline_path, baseline_json).map_err(|e| {
+            format!(
+                "Failed to write baseline file {}: {}",
+                baseline_path.display(),
+                e
+            )
+        })?;
 
         let msg = format!(
             "Baseline file '{}' updated with current metrics.",

@@ -1751,7 +1751,12 @@ impl GraphIndex for CsrGraph {
             let deleted_nodes = self.get_deleted_node_indices().await;
             self.compact();
             let inner = self.inner.read();
-            Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config, &deleted_nodes))
+            Ok(crate::ppr::compute_ppr(
+                &inner,
+                seed_nodes,
+                config,
+                &deleted_nodes,
+            ))
         })
     }
 

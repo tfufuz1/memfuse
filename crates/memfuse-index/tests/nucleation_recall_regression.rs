@@ -159,7 +159,9 @@ async fn extract_raw_layer0_connections(
     for idx in 0..node_count {
         let node_id = idx as u64;
         let record = mmap.get_node_record(idx).expect("get_node_record failed");
-        let conns = mmap.get_connections(&record, 0).expect("get_connections failed");
+        let conns = mmap
+            .get_connections(&record, 0)
+            .expect("get_connections failed");
         conn_map.insert(node_id, conns);
     }
     conn_map
@@ -307,7 +309,10 @@ async fn test_nucleation_node_degree_no_isolation() {
 
     for (&node_id, raw_after) in &conns_after {
         if !tombstone_set.contains(&node_id) {
-            let raw_before = conns_before.get(&node_id).map(|v| v.as_slice()).unwrap_or(&[]);
+            let raw_before = conns_before
+                .get(&node_id)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
             let active_before = raw_before
                 .iter()
                 .filter(|&&nbr| !tombstone_set.contains(&(nbr as u64)))

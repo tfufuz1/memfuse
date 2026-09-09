@@ -619,7 +619,15 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
     // Änderungsbereich via git diff-tree
     if git_available {
         let diff_files_opt = std::process::Command::new("git")
-            .args(["-C", git_root_str, "diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"])
+            .args([
+                "-C",
+                git_root_str,
+                "diff-tree",
+                "--no-commit-id",
+                "-r",
+                "--name-only",
+                "HEAD",
+            ])
             .output()
             .ok()
             .filter(|o| o.status.success())

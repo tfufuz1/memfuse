@@ -547,7 +547,11 @@ impl RouterEngine {
                     None => (profile.min_relevance_score, 0.05),
                 };
                 let non_conformity = (1.0 - (score / quantile.max(f32::EPSILON))).clamp(0.0, 1.0);
-                let selection_margin = if quantile > 0.0 { score / quantile } else { 1.0 };
+                let selection_margin = if quantile > 0.0 {
+                    score / quantile
+                } else {
+                    1.0
+                };
 
                 let confidence = ConfidenceMetrics {
                     score_lower: if is_calibrated {
