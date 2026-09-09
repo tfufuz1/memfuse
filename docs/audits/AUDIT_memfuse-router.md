@@ -61,7 +61,13 @@ TOTAL                             288                 5    98.26%          23   
 
 ---
 
-## 5. Session Log & Verification (2026-09-09)
+## 5. Session Log & Verification (2026-09-09 — Task JULES-20260909-TEST)
+- **Inventory Reality Check**: Confirmed 0 drift in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `lyapunov.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`).
+- **FILE-CONTEXT Headers**: Added/updated mandatory `FILE-CONTEXT` headers in all modified files with `TS: 2026-09-09T14:49:00Z` and `SESSION: d7f5877a`.
+- **Test Suite Expansion**: Added `test_lyapunov_update_empty_scores_or_uninitialized_baseline` covering Lyapunov watcher boundary cases, empty score vectors, auto-baseline behavior, and score clamping. Total unit/integration test count expanded to **70 tests**.
+- **Verification**: `cargo test -p memfuse-router --all-features` passes 100% cleanly (70/70 tests green). 0 clippy warnings, 0 compiler warnings, 0 unsafe blocks.
+
+## 5b. Session Log & Verification (2026-09-09)
 - **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `lyapunov.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Inventory state confirmed identical to 2026-09-08 snapshot (zero drift).
 - **Domain & APM Deep Analysis**: Verified ML-Scoring domain invariants (`APM-22`, `APM-23`, `APM-24`). Confirmed conformal quantile bounds, outcome-driven recalibration, and Lyapunov distributional drift watcher integration.
 - **Chaos & Concurrency Verification**: Executed 10x 8-thread concurrency stress tests and hot-reload atomic snapshot isolation tests with 0 failures or race conditions.

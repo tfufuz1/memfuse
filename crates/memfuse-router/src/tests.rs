@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
+// ZWECK: Unit- und Integrationstest-Suite für memfuse-router.
+// INVARIANTEN: Determinismus, NaN-Safety, Hot-Reload Concurrent Safety.
+// SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
+
 //! Unit tests for memfuse-router.
 
 #[cfg(test)]
@@ -2362,6 +2368,28 @@ mod tests {
                 other
             ),
         }
+    }
+
+    #[test]
+    fn test_lyapunov_update_empty_scores_or_uninitialized_baseline() {
+        use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
+
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        // Empty update without baseline returns InsufficientData
+        let res_empty = watcher.update(&[]);
+        assert_eq!(res_empty, LyapunovResult::InsufficientData);
+
+        // Update with less than 30 auto-baseline scores returns InsufficientData
+        let res_small = watcher.update(&[0.1, 0.2]);
+        assert_eq!(res_small, LyapunovResult::InsufficientData);
+        assert_eq!(watcher.baseline_distribution.len(), 2);
+
+        // Score boundary clamping in histogram bins
+        let mut watcher_clamped = LyapunovDriftWatcher::new(5);
+        watcher_clamped.set_baseline(&vec![0.5; 50]);
+        // Scores out of [0.0, 1.0] bound (-0.5, 1.5, NaN) clamped safely without panic
+        let res_clamped = watcher_clamped.update(&[-0.5, 1.5, f32::NAN]);
+        assert_eq!(res_clamped, LyapunovResult::InsufficientData);
     }
 
     #[tokio::test]
