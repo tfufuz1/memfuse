@@ -324,12 +324,13 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-    /// Scans a range of keys between `start` and `end` bounds.
+    /// Scans a range of keys between `start` and `end` bounds, optionally capped at `limit`.
     #[allow(clippy::type_complexity)]
     fn scan<'a>(
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 }
 
@@ -1197,6 +1198,7 @@ mod capability_coverage {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }

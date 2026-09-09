@@ -1352,6 +1352,15 @@ impl StorageEngine for LsmStorage {
         Box::pin(async move { self.scan_prefix_at(prefix, u64::MAX).await })
     }
 
+    /// Scans a prefix with a limit and pagination cursor.
+    ///
+    /// # Complexity & Bounding Strategy
+    /// Reads entries matching `prefix` starting after `cursor` from active MemTable, immutable
+    /// MemTables, and SSTables. To avoid materializing all matching entries unbounded into RAM,
+    /// each source is scanned only up to a candidate capacity of `limit + 1` entries above `cursor`.
+    /// The candidates across sources are then merged in a `BTreeMap`.
+    /// - Memory Complexity: O(N * limit) where N is the number of storage sources (SSTables + MemTables).
+    /// - Time Complexity: O(N * limit * log(limit)) instead of O(M^2) across paginated calls over M entries.
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -1406,6 +1415,7 @@ impl StorageEngine for LsmStorage {
                 }
 
                 let entries = sst.scan_prefix(prefix).await?;
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in entries {
                     if let Some(cb) = cursor {
                         if k.as_ref() <= cb {
@@ -1443,8 +1453,9 @@ impl StorageEngine for LsmStorage {
                 }
             }
 
-            // Collect from immutable memtables
+            // Collect bounded candidates from immutable memtables
             for mt in &state.immutable_memtables {
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in mt.iter() {
                     if let Some(cb) = cursor {
                         if k.as_ref() <= cb {
@@ -1482,7 +1493,8 @@ impl StorageEngine for LsmStorage {
                 }
             }
 
-            // Collect from active memtable
+            // Collect bounded candidates from active memtable
+            let mut found_count = 0usize;
             for (k, v, seq, tx) in state.memtable.iter() {
                 if let Some(cb) = cursor {
                     if k.as_ref() <= cb {
@@ -1880,6 +1892,7 @@ impl StorageEngine for LsmStorage {
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
             use std::ops::Bound;
@@ -1892,11 +1905,18 @@ impl StorageEngine for LsmStorage {
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
                 let entries = sst.scan_range(start.map(|s| s), end.map(|e| e)).await?;
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in entries {
                     if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
                         let entry = map.entry(k.to_vec()).or_insert((v.to_vec(), seq));
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
+                        }
+                        found_count += 1;
+                        if let Some(lim) = limit {
+                            if found_count >= lim {
+                                break;
+                            }
                         }
                     }
                 }
@@ -1904,6 +1924,7 @@ impl StorageEngine for LsmStorage {
 
             // 2. Immutable memtables (older → newer)
             for mt in &state.immutable_memtables {
+                let mut found_count = 0usize;
                 for (k, v, seq, tx) in mt.iter() {
                     if tx > last_tx && tx < TxId::INTERNAL_BASE {
                         continue;
@@ -1922,11 +1943,18 @@ impl StorageEngine for LsmStorage {
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.to_vec(), seq);
                         }
+                        found_count += 1;
+                        if let Some(lim) = limit {
+                            if found_count >= lim {
+                                break;
+                            }
+                        }
                     }
                 }
             }
 
             // 3. Active memtable
+            let mut found_count = 0usize;
             for (k, v, seq, tx) in state.memtable.iter() {
                 if tx > last_tx && tx < TxId::INTERNAL_BASE {
                     continue;
@@ -1945,15 +1973,27 @@ impl StorageEngine for LsmStorage {
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.to_vec(), seq);
                     }
+                    found_count += 1;
+                    if let Some(lim) = limit {
+                        if found_count >= lim {
+                            break;
+                        }
+                    }
                 }
             }
 
-            // 4. Filter tombstones
-            let results = map
-                .into_iter()
-                .filter(|(_, (_, seq))| (seq & TOMBSTONE_BIT) == 0)
-                .map(|(k, (v, _))| (k, v))
-                .collect();
+            // 4. Filter tombstones and apply limit
+            let mut results = Vec::new();
+            for (k, (v, seq)) in map {
+                if (seq & TOMBSTONE_BIT) == 0 {
+                    results.push((k, v));
+                    if let Some(lim) = limit {
+                        if results.len() == lim {
+                            break;
+                        }
+                    }
+                }
+            }
 
             Ok(results)
         })
@@ -2223,7 +2263,7 @@ mod tests {
         // Scan [c, g] inclusive
         use std::ops::Bound;
         let results = storage
-            .scan(Bound::Included(b"c"), Bound::Included(b"g"))
+            .scan(Bound::Included(b"c"), Bound::Included(b"g"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 5); // c, d, e, f, g
@@ -2232,14 +2272,14 @@ mod tests {
 
         // Scan (c, g) exclusive
         let results = storage
-            .scan(Bound::Excluded(b"c"), Bound::Excluded(b"g"))
+            .scan(Bound::Excluded(b"c"), Bound::Excluded(b"g"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 3); // d, e, f
 
         // Scan unbounded start to d inclusive
         let results = storage
-            .scan(Bound::Unbounded, Bound::Included(b"d"))
+            .scan(Bound::Unbounded, Bound::Included(b"d"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 4); // a, b, c, d
@@ -2250,10 +2290,46 @@ mod tests {
         storage.commit(tx2).await.expect("commit"); // expect
 
         let results = storage
-            .scan(Bound::Included(b"d"), Bound::Included(b"f"))
+            .scan(Bound::Included(b"d"), Bound::Included(b"f"), None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 2); // d, f (e deleted)
+    }
+
+    #[tokio::test]
+    async fn test_bounded_scan_and_prefix_bounded_limits_candidate_evaluation() {
+        let (storage, _tmp) = test_storage().await;
+        let tx = TxId::new(1);
+
+        // Populate 100 items: k:00..k:99
+        for i in 0..100 {
+            let key = format!("k:{:02}", i);
+            let val = format!("v:{:02}", i);
+            storage
+                .put(tx, key.as_bytes(), val.as_bytes())
+                .await
+                .expect("put");
+        }
+        storage.commit(tx).await.expect("commit");
+
+        // 1. scan with limit = 5
+        let res_scan = storage
+            .scan(std::ops::Bound::Unbounded, std::ops::Bound::Unbounded, Some(5))
+            .await
+            .expect("scan");
+        assert_eq!(res_scan.len(), 5);
+        assert_eq!(res_scan[0].0, b"k:00");
+        assert_eq!(res_scan[4].0, b"k:04");
+
+        // 2. scan_prefix_bounded with limit = 5
+        let (res_prefix, next_cursor) = storage
+            .scan_prefix_bounded(b"k:", 5, None)
+            .await
+            .expect("scan_prefix_bounded");
+        assert_eq!(res_prefix.len(), 5);
+        assert_eq!(res_prefix[0].0, b"k:00");
+        assert_eq!(res_prefix[4].0, b"k:04");
+        assert_eq!(next_cursor, Some(b"k:04".to_vec()));
     }
 
     #[tokio::test]
