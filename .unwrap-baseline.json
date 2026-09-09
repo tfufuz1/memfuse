@@ -3097,10 +3097,6 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
-    "hash": "1e45948a0aa3c62e"
-  },
-  {
-    "file": "crates/memfuse-crypto/src/kv_segment/store.rs",
     "hash": "4ff89f100114af66"
   },
   {
@@ -14614,6 +14610,10 @@
   {
     "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "ec413500d1daf55c"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "ec8ba0cf9d8b0025"
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
