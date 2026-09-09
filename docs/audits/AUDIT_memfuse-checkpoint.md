@@ -216,3 +216,22 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
   - **Phase 2 (Concurrency Stress):** 10 iterations with 8 threads executed cleanly without deadlocks or race conditions.
   - **Phase 3 (Fault-Injection & Stress):** 100 iterations of multi-session isolation stress testing (`test_concurrent_two_session_rollback_race_stress_100_iterations`) and panic isolation tests passed 100%.
   - **Domain APMs:** APM-12, 17, 18, 19, 20, 21, 31, 41 verified; lock hierarchy, time-travel serialization barriers, and instance-scoped orphan registries maintain absolute transaction safety and zero-panic drop semantics.
+
+---
+
+## 13. Audit Session Log & Deep Tiefen-Audit (TS: 2026-09-09T14:46:43Z) (SESSION: 43566621)
+
+- **Audit-Datum:** 2026-09-09T14:46:43Z
+- **Session-Hash:** `43566621`
+- **Compiler/Toolchain:** Rust 1.98.1 / Cargo 1.98.1
+- **Inventar-Realitätsabgleich (Schritt 0):** Inventarabgleich: keine Abweichung, Stand 2026-09-08 bestätigt (`crates/memfuse-checkpoint/src/lib.rs`).
+- **Crate-Status:**
+  - `cargo check -p memfuse-checkpoint --all-features` → PASSED (0 Fehler, 0 Warnungen)
+  - `cargo clippy -p memfuse-checkpoint -- -D warnings` → PASSED (0 Findings)
+  - `cargo fmt --check -p memfuse-checkpoint` → PASSED
+  - `cargo test -p memfuse-checkpoint --all-features` → PASSED (47 Unit-Tests + 32 Integrationstests grün)
+  - Unsafe Code Check → PASSED (`#![forbid(unsafe_code)]` strikt eingehalten)
+- **Tiefen-Audit & Test-Ausbau Verifikationsergebnisse:**
+  - **Neuer Test-Ausbau:** Unit-Tests für `InstanceOrphanRegistry::drain_orphan_pins`, `InstanceOrphanRegistry::drain_orphaned_checkpoints`, und `PersistentCheckpointStore::skipped_rollback_count` ergänzt.
+  - **Proptests & Concurrency:** Proptests (`prop_manifest_roundtrip`, `prop_monotonic_timestamp_ms_increases_or_equals`) und Multi-Thread Concurrency Tests vollständig verifiziert.
+  - **Domain APMs:** APM-12, 17, 18, 19, 20, 21, 31, 41 eingehalten; RAII Auto-Rollback und Pinning-Sicherheit vollständig bestätigt.
