@@ -25,7 +25,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use memfuse_core::{MemFuseError, Result};
-use memfuse_crypto::crypto::KeyManager;
+use memfuse_security::crypto::KeyManager;
 use parking_lot::RwLock;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
