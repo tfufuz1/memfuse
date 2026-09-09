@@ -3,7 +3,9 @@
 //! Integration tests for GDPR Art. 17 DeletionProof generation during collection drop.
 
 use memfuse_core::{CollectionId, DistanceMetric, StorageEngine, TenantId, TxId};
-use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
+use memfuse_crypto::deletion_proof::{
+    DeletionLayer, DeletionProof, DeletionScope, LayerCleanupProof,
+};
 use memfuse_db::{MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
@@ -231,7 +233,10 @@ async fn test_deleted_keys_hash_is_deterministic() {
         scope.clone(),
         keys_order_1,
         TxId::new(50),
-        vec![DeletionLayer::LsmMemtable, DeletionLayer::SsTableAllLevels],
+        vec![
+            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
+            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
+        ],
         vec![],
         proof_key,
     )
@@ -241,7 +246,10 @@ async fn test_deleted_keys_hash_is_deterministic() {
         scope,
         keys_order_2,
         TxId::new(50),
-        vec![DeletionLayer::LsmMemtable, DeletionLayer::SsTableAllLevels],
+        vec![
+            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
+            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
+        ],
         vec![],
         proof_key,
     )

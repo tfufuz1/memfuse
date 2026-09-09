@@ -194,9 +194,25 @@ pub enum MemFuseError {
     /// Optimistic concurrency control stale read or version conflict.
     #[error("Stale read / OCC conflict: {0}")]
     StaleRead(String),
+
+    /// Scan or query result limit exceeded.
+    #[error("Limit exceeded: {context} (limit: {limit})")]
+    LimitExceeded {
+        /// Configured or default result limit.
+        limit: usize,
+        /// Context description of the scan or operation.
+        context: String,
+    },
 }
 
 impl MemFuseError {
+    /// Creates a `LimitExceeded` error.
+    pub fn limit_exceeded(limit: usize, context: impl Into<String>) -> Self {
+        Self::LimitExceeded {
+            limit,
+            context: context.into(),
+        }
+    }
     /// Creates a `CapabilityUnsupported` error.
     pub fn capability_unsupported(
         capability: impl Into<String>,

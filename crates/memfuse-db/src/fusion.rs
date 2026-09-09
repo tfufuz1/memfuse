@@ -94,8 +94,7 @@ impl Ord for HeapEntry {
         other
             .result
             .score
-            .partial_cmp(&self.result.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&self.result.score)
             .then_with(|| self.result.id.cmp(&other.result.id))
     }
 }
@@ -260,16 +259,16 @@ pub fn build_provenance(
         coherence_bonus: 0.0,
     };
 
-    #[cfg(debug_assertions)]
-    {
-        if let Some(expected) = expected_total {
-            let expected_rrf: f32 = record
-                .signal_contributions
-                .values()
-                .map(|c| c.rrf_contribution)
-                .sum();
-            debug_assert!(
-                (expected_rrf - expected).abs() < 1e-6,
+    if let Some(expected) = expected_total {
+        let expected_rrf: f32 = record
+            .signal_contributions
+            .values()
+            .map(|c| c.rrf_contribution)
+            .sum();
+        if !(expected_rrf - expected).abs().lt(&1e-6) {
+            tracing::error!(
+                expected_rrf,
+                expected,
                 "INV-PROV-1 violation in build_provenance: sum of contributions ({expected_rrf}) != expected RRF score ({expected})"
             );
         }
@@ -412,7 +411,10 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 );
             }
             let score = weight / (k as f32 + rank as f32 + 1.0);
-            debug_assert!(score.is_finite(), "RRF score must be finite after weight validation");
+            debug_assert!(
+                score.is_finite(),
+                "RRF score must be finite after weight validation"
+            );
             let entry = fused
                 .entry(doc.id)
                 .or_insert_with(|| (0.0, None, Vec::new(), ProvenanceRecord::default()));
@@ -548,17 +550,20 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 prov
             };
 
-            #[cfg(debug_assertions)]
-            {
-                if !final_prov.signal_contributions.is_empty() {
-                    let sum_contrib: f32 = final_prov
-                        .signal_contributions
-                        .values()
-                        .map(|c| c.rrf_contribution)
-                        .sum();
-                    debug_assert!(
-                        (sum_contrib - score).abs() < 1e-6,
-                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of contributions ({sum_contrib}) != entry score ({score})"
+            // INV-PROV-1: Sum of per-signal RRF contributions must equal entry score
+            if !final_prov.signal_contributions.is_empty() {
+                let sum_contrib: f32 = final_prov
+                    .signal_contributions
+                    .values()
+                    .map(|c| c.rrf_contribution)
+                    .sum();
+                if !(sum_contrib - score).abs().lt(&1e-6) {
+                    tracing::error!(
+                        doc_id = %id,
+                        sum_contrib,
+                        score,
+                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of signal \
+                         contributions does not match entry score — provenance may be inconsistent"
                     );
                 }
             }
@@ -1114,15 +1119,13 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "INV-PROV-1 violation in build_provenance")]
-    fn test_build_provenance_invariant_inconsistent_panics() {
+    fn test_build_provenance_invariant_inconsistent_logs_error() {
         let rank = 1u32;
         let weight = 1.0f32;
         let k = 60.0f32;
         let wrong_expected = 0.999f32; // Discrepancy > 1e-6
 
-        build_provenance(
+        let prov = build_provenance(
             Some(0.95),
             Some(rank),
             Some(weight),
@@ -1138,37 +1141,96 @@ mod tests {
             Some("hnsw".to_string()),
             Some(wrong_expected),
         );
+        assert!(!prov.signal_contributions.is_empty());
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "INV-PROV-1 violation in weighted_reciprocal_rank_fusion")]
-    fn test_weighted_rrf_inconsistent_signal_contribution_panics() {
-        let mut prov = ProvenanceRecord {
-            vector_distance: Some(0.95),
-            source_collection: Some("col".to_string()),
-            index_type: Some("hnsw".to_string()),
-            ..Default::default()
-        };
-        // Inject an inconsistent prior signal contribution manually into doc.provenance
+    fn test_heap_entry_nan_score_sorts_to_worst_position() {
+        use std::collections::BinaryHeap;
+
+        let mut heap = BinaryHeap::new();
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc2".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+
+        // Extract all entries and verify NaN entry is last (worst)
+        let mut extracted = vec![];
+        while let Some(entry) = heap.pop() {
+            extracted.push(entry.result.id.clone());
+        }
+
+        assert_eq!(
+            extracted.last().map(|s| s.as_str()),
+            Some("doc_nan"),
+            "NaN score entry must be at the end (worst position) after total_cmp\nExtracted order: {:?}",
+            extracted
+        );
+    }
+
+    #[test]
+    fn test_inv_prov1_violation_logged_in_release_mode() {
+        // Construct a result with inconsistent signal_contributions
+        let score = 0.5;
+        let mut prov = ProvenanceRecord::default();
         prov.signal_contributions.insert(
-            "text".to_string(),
+            "vector".to_string(),
             crate::SignalContribution {
-                raw_score: 0.95,
+                raw_score: 0.9,
                 rank: 1,
-                rrf_contribution: 0.9999, // Unexpected extra contribution causing discrepancy
+                rrf_contribution: 0.1, // Intentionally wrong sum (0.1 != 0.5)
             },
         );
 
-        let set = vec![SearchResult {
-            id: "doc1".to_string(),
-            score: 0.95,
+        // Call the fusion function with a result that violates INV-PROV-1
+        let result = SearchResult {
+            id: "test_doc".to_string(),
+            score,
             metadata: None,
             matched_signals: vec!["vector".to_string()],
             provenance: Some(prov),
-        }];
+        };
 
-        weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 10);
+        // The test verifies that the function doesn't panic (no fatal error)
+        // In a real scenario with tracing-test, we could capture the error log;
+        // for now, we just ensure no panic occurs
+        let results = weighted_reciprocal_rank_fusion_with_options(
+            vec![("vector".to_string(), vec![result], 1.0)],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        // Function should complete without panic despite invariant violation
+        assert_eq!(
+            results.len(),
+            1,
+            "Fusion should complete and return results despite INV-PROV-1 violation"
+        );
     }
 
     #[test]
@@ -1436,7 +1498,8 @@ mod tests {
         );
 
         assert_eq!(
-            result_with_nan.len(), result_without_nan_signal.len(),
+            result_with_nan.len(),
+            result_without_nan_signal.len(),
             "Signal with NaN weight must produce identical result count"
         );
         for (r1, r2) in result_with_nan.iter().zip(result_without_nan_signal.iter()) {

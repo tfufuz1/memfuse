@@ -317,15 +317,15 @@ pub trait StorageEngine: Send + Sync + 'static {
     }
 
     /// Scans a range of keys between `start` and `end` bounds, bounded to at most `limit`
-    /// entries, resumable via an opaque `cursor` (the last returned key from a previous
-    /// call). Returns the batch and, if more entries may exist beyond `limit`, the next
-    /// cursor to resume from.
+    /// entries, resumable via an opaque `cursor` (the last returned key from a previous call).
+    /// Returns the batch and, if more entries may exist beyond `limit`, the next cursor
+    /// to resume from.
     ///
     /// # Contract
     /// Implementors SHOULD avoid materializing more than O(limit) entries internally where
     /// feasible. The default implementation below does NOT provide this guarantee (it
-    /// delegates to the unbounded `scan()` and slices the result) — implementors with an
-    /// efficient underlying merge structure (e.g. LSM storage) MUST override this method.
+    /// delegates to the unbounded `scan()` and slices the result).
+    /// **Implementors with an efficient underlying merge structure MUST override this method.**
     #[allow(clippy::type_complexity)]
     fn scan_bounded<'a>(
         &'a self,

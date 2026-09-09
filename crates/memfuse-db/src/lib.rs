@@ -71,7 +71,9 @@
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
-use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
+use memfuse_crypto::deletion_proof::{
+    DeletionLayer, DeletionProof, DeletionScope, LayerCleanupProof,
+};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -155,9 +157,9 @@ pub use maintenance_scheduler::MaintenanceScheduler;
 
 pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewriter};
 
+pub use collection::crud::MAX_SCAN_RESULTS;
 #[cfg(feature = "graph-connectivity-health")]
 pub use collection::maintenance::PercolationResult;
-pub use collection::crud::MAX_SCAN_RESULTS;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]
@@ -819,7 +821,10 @@ impl MemFuse {
             scope,
             deleted_keys,
             tx,
-            vec![DeletionLayer::LsmMemtable, DeletionLayer::SsTableAllLevels],
+            vec![
+                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
+                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
+            ],
             vec![],
             proof_key,
         )
@@ -1159,7 +1164,11 @@ impl MemFuse {
 
     /// Scans storage for key-value pairs matching a prefix.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn scan_prefix(&self, prefix: &str, limit: Option<usize>) -> Result<Vec<(String, Value)>> {
+    pub async fn scan_prefix(
+        &self,
+        prefix: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<(String, Value)>> {
         self.default_col().await?.scan_prefix(prefix, limit).await
     }
 

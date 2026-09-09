@@ -110,7 +110,7 @@ impl<S: StorageEngine> AuditLog<S> {
         validate_task_id(task_id)?;
 
         let prefix = format!("audit:{}:step:", task_id);
-        let raw = self.collection.scan_prefix(&prefix).await?;
+        let raw = self.collection.scan_prefix(&prefix, None).await?;
 
         let mut entries: Vec<AuditEntry> = raw
             .into_iter()
@@ -137,7 +137,7 @@ impl<S: StorageEngine> AuditLog<S> {
 pub async fn migrate_legacy_audit_entries<S: StorageEngine, V: memfuse_core::VectorIndex>(
     collection: &Collection<S, V>,
 ) -> Result<MigrationStats> {
-    let raw = collection.scan_prefix("audit:").await?;
+    let raw = collection.scan_prefix("audit:", None).await?;
     let mut stats = MigrationStats::default();
 
     for (key, val) in raw {

@@ -126,6 +126,28 @@ const MAX_LABEL_LENGTH: usize = 256;
 /// Maximum batch size for batch insertion/upsertion (10,000 items).
 const MAX_BATCH_SIZE: usize = 10_000;
 
+/// Validates that a relationship label is non-empty, contains no null bytes, and does not exceed maximum length.
+fn validate_label(label: &str) -> PyResult<()> {
+    if label.trim().is_empty() {
+        return Err(MemFuseValueError::new_err(
+            "Relationship label cannot be empty or whitespace-only",
+        ));
+    }
+    if label.contains('\0') {
+        return Err(MemFuseValueError::new_err(
+            "Relationship label cannot contain null bytes",
+        ));
+    }
+    if label.len() > MAX_LABEL_LENGTH {
+        return Err(MemFuseValueError::new_err(format!(
+            "Relationship label exceeds maximum length of {} bytes. Got: {}",
+            MAX_LABEL_LENGTH,
+            label.len()
+        )));
+    }
+    Ok(())
+}
+
 /// Validates that a string ID is non-empty, contains no null bytes, and does not exceed maximum length.
 fn validate_id(id: &str) -> PyResult<()> {
     if id.trim().is_empty() {
@@ -381,7 +403,8 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             | "ParseError"
             | "Bincode"
             | "InvalidSequenceNumber"
-            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
+            | "CheckpointNotFound"
+            | "LimitExceeded" => MemFuseValueError::new_err(dto.message.clone()),
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
             }
@@ -838,23 +861,7 @@ macro_rules! memfuse_crud_methods {
             ) -> PyResult<()> {
                 let from_str = validate_id_obj(from)?;
                 let to_str = validate_id_obj(to)?;
-                if label.trim().is_empty() {
-                    return Err(MemFuseValueError::new_err(
-                        "Relationship label cannot be empty or whitespace-only",
-                    ));
-                }
-                if label.contains('\0') {
-                    return Err(MemFuseValueError::new_err(
-                        "Relationship label cannot contain null bytes",
-                    ));
-                }
-                if label.len() > MAX_LABEL_LENGTH {
-                    return Err(MemFuseValueError::new_err(format!(
-                        "Relationship label exceeds maximum length of {} bytes. Got: {}",
-                        MAX_LABEL_LENGTH,
-                        label.len()
-                    )));
-                }
+                validate_label(label)?;
                 let rt = &self.runtime;
                 let label_owned = label.to_string();
                 run_blocking_ffi(py, || {
@@ -1413,6 +1420,21 @@ mod tests {
 
         let max_id = "a".repeat(MAX_ID_LENGTH);
         assert!(validate_id(&max_id).is_ok());
+    }
+
+    #[test]
+    fn test_validate_label_length_and_empty() {
+        pyo3::prepare_freethreaded_python();
+        assert!(validate_label("").is_err());
+        assert!(validate_label("   ").is_err());
+        assert!(validate_label("label\0null").is_err());
+        assert!(validate_label("valid_label").is_ok());
+
+        let long_label = "l".repeat(MAX_LABEL_LENGTH + 1);
+        assert!(validate_label(&long_label).is_err());
+
+        let max_label = "l".repeat(MAX_LABEL_LENGTH);
+        assert!(validate_label(&max_label).is_ok());
     }
 
     #[test]

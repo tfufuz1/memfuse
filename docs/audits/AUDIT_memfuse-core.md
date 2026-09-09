@@ -195,3 +195,19 @@ cargo check --workspace --exclude memfuse-tauri
 - **Unsafe-Code Policy:** `#![deny(unsafe_code)]` at crate root `lib.rs`. Zero `unsafe` blocks in production code outside flatbuffers generated glue.
 - **Zero-Panic Propagation:** Controlled error propagation via `MemFuseError`.
 - **Quality Gate Stack & Tests:** 156 unit + 2 integration + 5 robustness tests (163 total) passing 100% green. Gate stack and preflight checks passed.
+
+## 14. Tier 1 Deep Audit & Verification Pass (2026-09-09 — SESSION 4b5ed819 / Task JULES-20260909-DEEP)
+
+### Inventar-Realitätsabgleich (Stand 2026-09-09)
+- **Bekanntes Prompter-Inventar (Stand 2026-09-08):** 17 Dateien in `crates/memfuse-core/src/` (`error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits/embedding.rs`, `traits/mod.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`).
+- **Tatsächlicher Dateibestand:** Exakte Übereinstimmung (17 Dateien). Inventarabgleich: keine Abweichung, Stand 2026-09-08/09 bestätigt.
+
+### Tier 1 Concurrency, Fault Injection & Property Tests Verification
+- **Concurrency Rauchtest:** 5/5 aufeinanderfolgende Läufe mit `--test-threads=8` ohne Hänger, Nichtdeterminismus oder Panics bestanden.
+- **Property-Based Tests (`proptest`):** 11/11 Proptests (`prop_snapshot_registry_min_active`, `prop_snapshot_pin_unpin_interleaving`, `prop_snapshot_register_unregister_stress`, `prop_tx_buffer_isolation`, `prop_tx_buffer_partial_discard_isolation`, `prop_tx_id_overflow_isolation`, `prop_tx_id_range_isolation`, `prop_tx_buffer_stage_drain_stage_lifecycle`, `prop_fusion_weights_never_panics`, `prop_ipc_parser_no_panic_on_garbage`, `prop_tx_buffer_reap_is_complete`) zu 100% grün.
+- **TxId Boundary Exhaustion Simulation:** `test_tx_id_range_boundary_exhaustion_simulation` verifizierte kontrollierte Rückgaben von `MemFuseError::Transaction` ohne Overflow oder Wraparound.
+- **SnapshotRegistry GC Race Stress:** 10/10 Läufe des Concurrency Stresstests `snapshot_registry` bestanden mit 0 Panics oder Data Races.
+
+### Summary Sign-off
+- **Quality Gate Stack:** 156 Unit- + 2 Integrations- + 5 Robustness-Tests (163 gesamt) bestanden zu 100% grün. Clippy-Prüfung (`-D warnings`), Formatting-Check und Preflight-Gates vollständig bestanden.
+- **Audit Sign-off:** `memfuse-core` (Layer 0) erneut als bit-akkurat, zero-panic konform, thread-sicher und DAG-konform bestätigt.

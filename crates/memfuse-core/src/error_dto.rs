@@ -268,6 +268,14 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                 message: msg.clone(),
                 details: None,
             },
+            MemFuseError::LimitExceeded { limit, context } => Self {
+                kind: "LimitExceeded".to_string(),
+                message: err.to_string(),
+                details: Some(serde_json::json!({
+                    "limit": limit,
+                    "context": context,
+                })),
+            },
         }
     }
 }
