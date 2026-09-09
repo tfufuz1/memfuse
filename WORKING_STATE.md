@@ -15,30 +15,27 @@
 
 Stand letzter Prüfung: 2026-09-10
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **0 offene Tags**
 
-| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
-|---|---|---|---|---|---|---|
-| `crates/memfuse-db/tests/consolidation_integration_test.rs` | 122 | `AGT-DB-7c141164` | `TEST` | `MAJOR` | `2026-09-09T12:43:24Z` | // AI-TAG[TEST][MAJOR] test_execute_sleep_cycle_with_synthesis_pass uses identical embeddings causing near-duplicate tombstoning (ID: AGT-DB-7c141164) (TS: 2026-09-09T12:43:24Z) (SESSION: 82e80d01) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9943 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 1 | 1671 | 🟢 Clean |  |
+| `memfuse-core` | 0 | 9987 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-calibration` | 1 | 1692 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5468 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 1 | 10328 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 1 | 4440 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-graph` | 1 | 10334 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-security` | 1 | 4645 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
 | `memfuse-text` | 1 | 5337 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
-| `memfuse-index` | 2 | 15317 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 2 | 15540 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 16429 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 2 | 17016 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1940 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 27614 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 5 | 4610 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-db` | 4 | 27860 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 5 | 4655 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 5 | 4917 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6176 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5793 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |

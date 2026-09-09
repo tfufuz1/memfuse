@@ -1593,6 +1593,7 @@ mod tests {
             &'a self,
             _s: std::ops::Bound<&'a [u8]>,
             _e: std::ops::Bound<&'a [u8]>,
+            _: Option<usize>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move { Ok(Vec::new()) })
         }
@@ -1649,7 +1650,7 @@ mod tests {
         assert!(!storage.pinned.lock().contains(&seq_no));
     }
 
-    // RESOLVED: AGT-CHECKPOINT-a3ccc9fe — Instance-scoped InstanceOrphanRegistry replaces process-global singleton, eliminating parallel unit test race conditions (TS: 2026-09-03T20:10:00Z) (SESSION: 2c814094)
+    // RESOLVED: AGT-CHECKPOINT-a3ccc9fe — Instance-scoped InstanceOrphanRegistry replaces process-global singleton, eliminating parallel unit test race conditions (TS: 2026-09-09T21:00:00Z) (SESSION: a3ccc9fe)
     #[test]
     fn test_orphan_registry_persists_across_drop() {
         let registry = Arc::new(InstanceOrphanRegistry::new(""));
@@ -1862,8 +1863,6 @@ mod tests {
 
     #[tokio::test]
     async fn checkpoint_guard_rollback_on_drop() {
-        #[allow(deprecated)]
-        clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
         let store =
             PersistentCheckpointStore::new(storage.clone(), "test_guard_rollback_on_drop").unwrap();
@@ -1897,15 +1896,20 @@ mod tests {
         );
     }
 
+    static TEST_GLOBAL_ORPHAN_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     #[test]
     fn test_deprecated_global_orphan_path_warns() {
+        let _guard = TEST_GLOBAL_ORPHAN_MUTEX.lock();
         #[allow(deprecated)]
         {
+            clear_all_orphaned_checkpoints();
             register_pinned_seq_no_orphan(PinnedSeqNoOrphan {
                 seq_no: 99999,
                 timestamp_ms: 1000,
             });
             let _orphans = get_orphaned_checkpoints();
+            clear_all_orphaned_checkpoints();
         }
     }
 
@@ -2061,8 +2065,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_rollback_tracking_and_await() {
-        #[allow(deprecated)]
-        clear_all_orphaned_checkpoints();
         let storage = Arc::new(MockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "test_auto_rollback").unwrap();
         store.clear_all_orphaned_checkpoints();

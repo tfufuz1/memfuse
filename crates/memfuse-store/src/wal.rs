@@ -389,6 +389,7 @@ pub struct Wal {
     path: PathBuf,
     pub(crate) file: tokio::sync::Mutex<tokio::fs::File>,
     size: std::sync::atomic::AtomicU64,
+    header_written: std::sync::atomic::AtomicBool,
     key_manager: Option<Arc<KeyManager>>,
     fallback_integrity_key: Option<[u8; 32]>,
     allow_legacy_integrity_key_fallback: bool,
@@ -525,6 +526,7 @@ impl Wal {
         let wal = Self {
             path: path.clone(),
             size: std::sync::atomic::AtomicU64::new(metadata.len()),
+            header_written: std::sync::atomic::AtomicBool::new(metadata.len() > 0),
             file: tokio::sync::Mutex::new(file),
             key_manager: derived_key_manager,
             fallback_integrity_key,
@@ -972,14 +974,7 @@ impl Wal {
             }
         }
 
-        let mut total_bytes = Vec::new();
-        let current_size = self.size();
-
-        // Write V3 header if file is currently empty (size == 0)
-        if current_size == 0 {
-            total_bytes.extend_from_slice(&WAL_V3_HEADER);
-        }
-
+        let mut payload_bytes = Vec::new();
         let mut last_hmac_val = [0u8; 32];
 
         if let Some(km) = &self.key_manager {
@@ -993,18 +988,33 @@ impl Wal {
             let (encrypted, nonce) = km.encrypt_auto_nonce(&batch_plaintext)?;
             let chunk_len = (12 + encrypted.len()) as u32;
 
-            total_bytes.extend_from_slice(&chunk_len.to_le_bytes());
-            total_bytes.extend_from_slice(&nonce);
-            total_bytes.extend_from_slice(&encrypted);
+            payload_bytes.extend_from_slice(&chunk_len.to_le_bytes());
+            payload_bytes.extend_from_slice(&nonce);
+            payload_bytes.extend_from_slice(&encrypted);
         } else {
             for entry in entries {
                 let bytes = entry.to_bytes()?;
-                total_bytes.extend_from_slice(&bytes);
+                payload_bytes.extend_from_slice(&bytes);
                 last_hmac_val = entry.checksum;
             }
         }
 
         let mut file = self.file.lock().await;
+
+        let write_header = !self
+            .header_written
+            .load(std::sync::atomic::Ordering::Acquire)
+            && self.size.load(std::sync::atomic::Ordering::Acquire) == 0;
+
+        let total_bytes = if write_header {
+            let mut buf = Vec::with_capacity(WAL_V3_HEADER.len() + payload_bytes.len());
+            buf.extend_from_slice(&WAL_V3_HEADER);
+            buf.extend_from_slice(&payload_bytes);
+            buf
+        } else {
+            payload_bytes
+        };
+
         file.write_all(&total_bytes).await.map_err(|e| {
             MemFuseError::Storage(format!(
                 "WAL batch write failed for {}: {}",
@@ -1026,6 +1036,11 @@ impl Wal {
                 e
             ))
         })?;
+
+        if write_header {
+            self.header_written
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
 
         self.size.fetch_add(
             total_bytes.len() as u64,
@@ -1550,6 +1565,8 @@ impl Wal {
             total_bytes.len() as u64,
             std::sync::atomic::Ordering::SeqCst,
         );
+        self.header_written
+            .store(true, std::sync::atomic::Ordering::Release);
         let mut last_hmac = self.last_hmac.lock().await;
         *last_hmac = last_hmac_val;
 
@@ -1582,6 +1599,10 @@ impl Wal {
         // in-memory size never exceeds physical file length on disk
         // (closing the TOCTOU window during async OS file.set_len).
         self.size.store(offset, std::sync::atomic::Ordering::SeqCst);
+        if offset < 4 {
+            self.header_written
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
 
         file.set_len(offset)
             .await
@@ -3131,5 +3152,69 @@ mod tests {
         let (res_trunc, res_poll) = tokio::join!(truncater, poller);
         res_trunc.expect("truncater panicked");
         res_poll.expect("poller panicked");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_append_batch_header_atomicity() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("concurrent_header.wal");
+
+        let wal = Arc::new(Wal::open(&wal_path).await.expect("open wal"));
+
+        let num_tasks = 8;
+        let mut handles = Vec::new();
+
+        for i in 0..num_tasks {
+            let wal_clone = wal.clone();
+            handles.push(tokio::spawn(async move {
+                let op = WalOp::Put {
+                    tx_id: TxId::new(i + 1),
+                    key: format!("key_{}", i).into_bytes(),
+                    value: format!("val_{}", i).into_bytes(),
+                };
+                let (batch, _) = wal_clone
+                    .prepare_batch(vec![(op, i + 1)])
+                    .await
+                    .expect("prepare_batch");
+                wal_clone.append_batch(&batch).await.expect("append_batch");
+            }));
+        }
+
+        for h in handles {
+            h.await.expect("join handle");
+        }
+
+        let file_bytes = fs::read(&wal_path).await.expect("read wal file");
+
+        // Assert header is present at start
+        assert!(
+            file_bytes.len() >= 4,
+            "WAL file must be at least 4 bytes long"
+        );
+        assert_eq!(
+            &file_bytes[0..4],
+            &WAL_V3_HEADER,
+            "WAL file must start with WAL_V3_HEADER"
+        );
+
+        // Count header occurrences across entire file
+        let header_count = file_bytes
+            .windows(4)
+            .filter(|window| *window == WAL_V3_HEADER)
+            .count();
+        assert_eq!(
+            header_count, 1,
+            "WAL_V3_HEADER must appear exactly once at the start of the file, but was found {header_count} times"
+        );
+
+        // Reopen and replay to verify no stream corruption
+        let wal_reopen = Wal::open(&wal_path).await.expect("reopen wal");
+        let replayed = wal_reopen.replay().await.expect("replay must succeed");
+        assert_eq!(
+            replayed.len(),
+            num_tasks as usize,
+            "Replay must yield all {} entries",
+            num_tasks
+        );
     }
 }

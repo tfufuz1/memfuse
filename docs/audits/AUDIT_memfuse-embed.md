@@ -255,7 +255,7 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
 - **APM-24 (Provenance Loss):** Candidate original indices are explicitly preserved in `RerankResult.original_index`, preventing provenance loss during sorting.
 
 ### 14.3 Performance & Quality Findings
-- **PERF Finding:** `lib.rs` re-instantiates `ort::session::Session` from file inside `spawn_blocking` on every `embed_async` call (`AI-TAG[PERF][MAJOR]` ID: `AGT-EMBED-f07dcaf8`). Recommends refactoring `TextEmbedder` to hold shared session references similar to `OnnxReranker`.
+- **PERF Finding [RESOLVED (TS: 2026-09-09T21:51:02Z) (SESSION: 75ca9d31)]:** Verified `lib.rs` holds `Arc<parking_lot::Mutex<ort::session::Session>>` cached once per `TextEmbedder` instance during `load_with_config` and reuses it across `embed_async` calls via `spawn_blocking` (`ID: AGT-EMBED-f07dcaf8`).
 - **Review Pass:** Added `REVIEW-PASS[2/2]` in `reranker.rs` (SESSION: `8efa6210`).
 - **Verification Suite:** `cargo test -p memfuse-embed --all-features` (18/18 passed), `cargo clippy -p memfuse-embed --all-features -- -D warnings` (clean), `cargo fmt --check -p memfuse-embed` (clean), `cargo check --workspace --exclude memfuse-tauri` (clean).
 

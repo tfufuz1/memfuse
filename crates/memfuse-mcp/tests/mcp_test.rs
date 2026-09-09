@@ -959,14 +959,8 @@ async fn test_e2e_stdio_demo_flow() -> Result<(), Box<dyn std::error::Error>> {
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to capture stdin")?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture stdout")?;
+    let mut stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let mut reader = tokio::io::BufReader::new(stdout);
 
     // 1. Send tools/list request (matching README demo step 2)
@@ -988,7 +982,7 @@ async fn test_e2e_stdio_demo_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(resp_list["id"], 1);
     let tools = resp_list["result"]["tools"]
         .as_array()
-        .ok_or_else(|| "expected tools array")?;
+        .ok_or("expected tools array")?;
     let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(tool_names.contains(&"memfuse_search"));
     assert!(tool_names.contains(&"memfuse_insert"));
@@ -1021,7 +1015,7 @@ async fn test_e2e_stdio_demo_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(resp_insert["id"], 2);
     let insert_text = resp_insert["result"]["content"][0]["text"]
         .as_str()
-        .ok_or_else(|| "expected insert text")?;
+        .ok_or("expected insert text")?;
     let insert_payload: serde_json::Value = serde_json::from_str(insert_text)?;
     assert_eq!(insert_payload["ok"], true);
     assert_eq!(insert_payload["id"], "doc-firma-01");
@@ -1053,11 +1047,11 @@ async fn test_e2e_stdio_demo_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(resp_search["id"], 3);
     let search_text = resp_search["result"]["content"][0]["text"]
         .as_str()
-        .ok_or_else(|| "expected search text")?;
+        .ok_or("expected search text")?;
     let search_results: serde_json::Value = serde_json::from_str(search_text)?;
     let arr = search_results
         .as_array()
-        .ok_or_else(|| "expected search results array")?;
+        .ok_or("expected search results array")?;
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["id"], "doc-firma-01");
     assert_eq!(arr[0]["content_provenance"], "retrieved_untrusted_data");
