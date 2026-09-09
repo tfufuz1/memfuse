@@ -4,8 +4,8 @@
 // NICHT-OFFENSICHTLICH: Handles extreme passphrase lengths, unicode, truncated ciphertexts, and 100MB payloads without panics.
 // STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
-use memfuse_crypto::wal_crypto::EncryptedWal;
-use memfuse_crypto::CryptoKey;
+use memfuse_security::wal_crypto::EncryptedWal;
+use memfuse_security::CryptoKey;
 
 #[test]
 fn test_key_separation_encryption_vs_hmac() {

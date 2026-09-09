@@ -3,7 +3,7 @@
 // INVARIANTEN: Unique random nonces generated per encrypt_auto_nonce call even across identical KeyManager instances.
 // STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
-use memfuse_crypto::crypto::KeyManager;
+use memfuse_security::crypto::KeyManager;
 
 #[test]
 fn test_nonce_reuse_vulnerability_demonstration() {

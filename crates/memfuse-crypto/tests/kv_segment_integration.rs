@@ -5,8 +5,8 @@
 #![cfg(feature = "kv-encryption")]
 
 use memfuse_core::TenantId;
-use memfuse_crypto::{CryptoKey, KvSegmentCipher, ModelFingerprint};
-use memfuse_kv_bridge::{KvSegment, TenantIsolatedKvStore};
+use memfuse_security::kv_segment::{KvSegment, TenantIsolatedKvStore};
+use memfuse_security::{CryptoKey, KvSegmentCipher, ModelFingerprint};
 use std::mem::ManuallyDrop;
 use zeroize::Zeroize;
 

@@ -4,12 +4,12 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung). |
-| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
-| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
 | `TS:2026-09-08T00:00:00Z` | `crates/memfuse-crypto/src/kv_cipher.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Dedicated AEAD encryption and key isolation for KV-cache segments (memfuse-kv-bridge). |
-| `TS:2026-09-08T00:00:00Z` | `crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Integrationstest für KvSegment-Verschlüsselung, Zeroize und Prozess-Speicherabbild-Prüfung (P9). |
-| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
+| `TS:2026-09-08T00:00:00Z` | `crates/memfuse-crypto/tests/kv_segment_integration.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Integrationstest für KvSegment-Verschlüsselung, Zeroize und Prozess-Speicherabbild-Prüfung (P9). |
+| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
 | `TS:2026-09-07T12:00:00Z` | `crates/memfuse-db/src/temporal_filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bi-temporaler Validity-Filter für Post-RRF Fusion-Ergebnisse in Retrieval-Pipelines. |
 | `TS:2026-09-07T08:30:00Z` | `crates/memfuse-db/src/consolidation_executor.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verbindet Structural Consolidation Pass-Ergebnisse mit der Collection-Mutation-API. |
 | `TS:2026-09-07T00:00:00Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cryptographic deletion proof for GDPR Article 17 compliance verification across storage layers. |
@@ -73,7 +73,8 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/reaper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-09-09T12:36:33Z` | `crates/memfuse-agent/src/lib.rs` | `REVIEW-PASS` | `AGT-AGENT-266186df` | `3db4fa31` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-AGENT-266186df) (TS: 2026-09-09T12:36:33Z) (SESSION: 3db4fa31) |
+| `2026-09-09T12:35:54Z (SESSION: 5665b844)` | `crates/memfuse-mcp/src/config.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Dynamic Provider Construction for Embedding & LLM backends (Ollama, ONNX, Candle, Mock) |
+| `2026-09-09T12:35:54Z` | `crates/memfuse-mcp/src/config.rs` | `AI-TAG` | `AGT-MCP-98350010` | `5665b844` | `OPEN` | `0` | // AI-TAG[SMELL][MAJOR] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T12:35:54Z) (SESSION: 5665b844) |
 | `2026-09-09T00:00:00Z (SESSION: CANDLE-EMBEDDING-PROVIDER)` | `crates/memfuse-candle/src/embedding_provider.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Trait-based EmbeddingProvider implementation for CandleEmbedClient. |
 | `2026-09-09T00:00:00Z (SESSION: CANDLE-EMBEDDING-PROVIDER)` | `crates/memfuse-candle/tests/embedding_provider_conformance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Conformance integration tests for CandleEmbedClient as EmbeddingProvider. |
 | `2026-09-07T06:15:00Z` | `crates/memfuse-index/src/diskann.rs` | `AI-TAG` | `-` | `f04imm01` | `RESOLVED` | `-` | /// AI-TAG[RESOLVED] Echte inkrementelle Streaming-DiskANN Implementierung mit Beam-Search, RNG-Pruning und Rückwärts-Kanten-Kompression. (TS:2026-09-07T06:15:00Z) (SESSION: f04imm01) |
