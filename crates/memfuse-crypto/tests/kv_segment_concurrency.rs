@@ -103,8 +103,8 @@ fn test_concurrent_emergency_wipe_race() {
         store.insert_segment(tenant, KvSegment::new(tenant, i, vec![0x11; 64]));
     }
 
-    let segs_ref1 = Arc::clone(&store);
-    let segs_ref2 = Arc::clone(&store);
+    let store_ref1 = Arc::clone(&store);
+    let store_ref2 = Arc::clone(&store);
 
     let handle1 = thread::spawn(move || {
         emergency_wipe(&store_ref1);
