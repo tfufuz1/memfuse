@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
-// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T12:43:43Z (SESSION: 76e16dcf)
 
 use ahash::AHashMap;
 use memfuse_core::TenantId;
@@ -12,6 +12,10 @@ use crate::segment::KvSegment;
 ///
 /// INV-TENANT-Analogon für KV-Bridge: Ein Tenant kann niemals Segmente
 /// eines anderen Tenants lesen. Strukturell erzwungen durch getrennte Maps.
+// AI-TAG[API][MAJOR] Missing unencrypted segment retrieval API on TenantIsolatedKvStore (ID: AGT-KV-BRIDGE-7e1f286d) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf)
+// BEFUND: `TenantIsolatedKvStore` bietet `get_segments` (IDs) und `get_decrypted_segment` (nur bei feature `kv-encryption`), aber keine Methode um unverschlüsselte Segmentdaten im Klartext-Modus zu lesen.
+// RISIKO: Aufrufer können ohne `kv-encryption` Feature die in den `KvSegment`s gespeicherten Tensor-Bytes nicht aus dem Store auslesen.
+// EMPFEHLUNG: Öffentliche Methode `get_segment_bytes(&self, tenant: TenantId, segment_id: u64) -> Option<Vec<u8>>` ergänzen.
 pub struct TenantIsolatedKvStore {
     segments: RwLock<AHashMap<TenantId, Vec<KvSegment>>>,
 }
@@ -24,6 +28,10 @@ impl TenantIsolatedKvStore {
         }
     }
 
+    // AI-TAG[API][MINOR] Duplicate segment_id allowed on insertion without overwrite or validation (ID: AGT-KV-BRIDGE-6016eb9a) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf)
+    // BEFUND: `insert_segment` fügt Segmente via `.push()` ohne Überprüfung auf bereits existierende `segment_id` ein.
+    // RISIKO: Mehrfache Einfügungen derselben `segment_id` führen zu Redundanz, verfälschen `get_tenant_segment_len` und verbrauchen unnötig Speicher.
+    // EMPFEHLUNG: Existierende Segmente mit gleicher `segment_id` ersetzen oder `Result<(), MemFuseError>` bei Kollision zurückgeben.
     /// Fügt ein Segment für einen bestimmten Tenant ein.
     pub fn insert_segment(&self, tenant: TenantId, segment: KvSegment) {
         let mut map = self.segments.write();

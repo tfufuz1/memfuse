@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung).
-// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T12:43:43Z (SESSION: 76e16dcf)
 
 //! # KV-Cache-Bridge Sicherheitsschicht
 //!

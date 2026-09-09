@@ -3438,6 +3438,7 @@ dependencies = [
  "memfuse-core",
  "memfuse-crypto",
  "parking_lot",
+ "proptest",
  "tokio",
  "tracing",
  "zeroize",

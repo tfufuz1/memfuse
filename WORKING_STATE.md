@@ -15,8 +15,15 @@
 
 Stand letzter Prüfung: 2026-09-09
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **5 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-kv-bridge/src/eviction_worker.rs` | 30 | `AGT-KV-BRIDGE-edaee52e` | `CONCURRENCY` | `MAJOR` | `2026-09-09T12:43:43Z` | // AI-TAG[CONCURRENCY][MAJOR] EvictionWorker is !Sync due to mpsc::Sender field (ID: AGT-KV-BRIDGE-edaee52e) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf) |
+| `crates/memfuse-kv-bridge/src/eviction_worker.rs` | 40 | `AGT-KV-BRIDGE-ba40758c` | `ARCH` | `MAJOR` | `2026-09-09T12:43:43Z` | // AI-TAG[ARCH][MAJOR] EvictionWorker accepts flat Vec instead of TenantIsolatedKvStore (ID: AGT-KV-BRIDGE-ba40758c) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf) |
+| `crates/memfuse-kv-bridge/src/segment.rs` | 138 | `AGT-KV-BRIDGE-fae9dd56` | `CRYPTO` | `MAJOR` | `2026-09-09T12:43:43Z` | // AI-TAG[CRYPTO][MAJOR] Dummy zero nonce fallback masks missing payload state (ID: AGT-KV-BRIDGE-fae9dd56) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf) |
+| `crates/memfuse-kv-bridge/src/store.rs` | 15 | `AGT-KV-BRIDGE-7e1f286d` | `API` | `MAJOR` | `2026-09-09T12:43:43Z` | // AI-TAG[API][MAJOR] Missing unencrypted segment retrieval API on TenantIsolatedKvStore (ID: AGT-KV-BRIDGE-7e1f286d) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf) |
+| `crates/memfuse-kv-bridge/src/store.rs` | 31 | `AGT-KV-BRIDGE-6016eb9a` | `API` | `MINOR` | `2026-09-09T12:43:43Z` | // AI-TAG[API][MINOR] Duplicate segment_id allowed on insertion without overwrite or validation (ID: AGT-KV-BRIDGE-6016eb9a) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf) |
 
 
 ## Crate-Inventar & Status
@@ -27,17 +34,17 @@ Ergebnis: **0 offene Tags**
 | `memfuse-calibration` | 1 | 1034 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-crypto` | 1 | 3142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
-| `memfuse-graph` | 1 | 10198 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 10203 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-candle` | 2 | 1285 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
-| `memfuse-index` | 2 | 15023 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-kv-bridge` | 2 | 728 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
+| `memfuse-candle` | 2 | 1284 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
+| `memfuse-index` | 2 | 15032 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-kv-bridge` | 2 | 973 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
 | `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 16018 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-embed` | 3 | 1891 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 26845 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 5 | 4080 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 4595 | 🟢 Clean |  |
+| `memfuse-store` | 2 | 16026 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-embed` | 3 | 1893 | 🧊 Optional |  |
+| `memfuse-db` | 4 | 26850 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 5 | 4096 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-router` | 5 | 4610 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6176 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-mcp` | 7 | 4346 | 🟢 Clean |  |

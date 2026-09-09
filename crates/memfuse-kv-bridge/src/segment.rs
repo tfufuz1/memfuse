@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk).
-// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T12:43:43Z (SESSION: 76e16dcf)
 
 use memfuse_core::TenantId;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -135,6 +135,10 @@ impl KvSegment {
         if let Some(payload) = &self.encrypted_payload {
             cipher.decrypt(&payload.layer)
         } else if let Some(model_fp) = &self.model_fingerprint {
+            // AI-TAG[CRYPTO][MAJOR] Dummy zero nonce fallback masks missing payload state (ID: AGT-KV-BRIDGE-fae9dd56) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf)
+            // BEFUND: Falls `encrypted_payload` `None` ist, wird ein Layer mit `nonce: [0u8; 12]` rekonstruiert.
+            // RISIKO: AES-GCM-SIV Entschlüsselung schlägt mit nichtssagendem Auth-Tag-Fehler fehl, statt einen klaren InvalidState-Fehler anzuzeigen.
+            // EMPFEHLUNG: Rückgabe eines expliziten CryptoError::InvalidInput / MissingPayload statt Blind-Fallback auf Null-Nonce.
             // Reconstruct layer if payload reference was split
             let layer = EncryptedKvLayer {
                 ciphertext: self.data.clone(),

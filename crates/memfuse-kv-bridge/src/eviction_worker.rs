@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall).
-// STAND: TS:2026-09-07T12:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T12:43:43Z (SESSION: 76e16dcf)
 
 //! # Eviction-Architektur
 //!
@@ -27,12 +27,20 @@ enum EvictionCommand {
 
 /// Regelmäßiger Eviction-Pfad (VRAM > 80%-Trigger). NICHT im Async-Executor,
 /// da regelmäßige Zeroize-Operationen den Tokio-Scheduler blockieren würden.
+// AI-TAG[CONCURRENCY][MAJOR] EvictionWorker is !Sync due to mpsc::Sender field (ID: AGT-KV-BRIDGE-edaee52e) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf)
+// BEFUND: `mpsc::Sender` implementiert `!Sync`. Dadurch kann `&EvictionWorker` nicht thread-übergreifend in Multithread-Kontexten (z.B. Tokio Tasks) geteilt werden.
+// RISIKO: Aufrufer können `EvictionWorker` nicht direkt in `Arc<EvictionWorker>` über mehrere Threads hinweg nutzen, ohne einen eigenen Mutex um den Sender zu legen.
+// EMPFEHLUNG: Ersetze `std::sync::mpsc` durch einen `Sync`-Kanal (z.B. `crossbeam_channel` oder `tokio::sync::mpsc`) oder schütze `sender` mit `Mutex`.
 pub struct EvictionWorker {
     sender: mpsc::Sender<EvictionCommand>,
     handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl EvictionWorker {
+    // AI-TAG[ARCH][MAJOR] EvictionWorker accepts flat Vec instead of TenantIsolatedKvStore (ID: AGT-KV-BRIDGE-ba40758c) (TS: 2026-09-09T12:43:43Z) (SESSION: 76e16dcf)
+    // BEFUND: `EvictionWorker::spawn` akzeptiert `Arc<RwLock<Vec<KvSegment>>>`, während `TenantIsolatedKvStore` `AHashMap<TenantId, Vec<KvSegment>>` nutzt.
+    // RISIKO: `EvictionWorker` ist entkoppelt von `TenantIsolatedKvStore` und kann keine multi-tenant Eviction auf dem eigentlichen KV-Store durchführen.
+    // EMPFEHLUNG: Bridge / Adapter oder direkte Anbindung von `EvictionWorker` an `TenantIsolatedKvStore` implementieren.
     /// Spawnt den Eviction-Worker auf einem dedizierten OS-Thread.
     pub fn spawn(segments: Arc<RwLock<Vec<KvSegment>>>) -> Self {
         let (sender, receiver) = mpsc::channel::<EvictionCommand>();
