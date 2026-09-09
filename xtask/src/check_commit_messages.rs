@@ -1,7 +1,14 @@
-// MemFuse — Commit-Message Validation & CI Gate (Gate 14)
+// MemFuse — Commit-Message Validation & CI Gate (Gate 16)
 //
 // Prüft, ob neue Commits im aktuellen Branch/PR gegenüber dem Base-Branch
 // aussagekräftige Commit-Messages gemäß Conventional Commits enthalten.
+//
+// HISTORIC WIRING GAP AUDIT:
+// Implementiert am 08.09.2026 (Commit `fed2e886`, PR #1759), aber bis 10.09.2026 nicht
+// in `.github/workflows/context-gates.yml` verdrahtet. Dadurch wurden zwischen 09.09. 14:14
+// und 09.09. 22:34 sechs Commits mit der Message "Shell-Commit" auf `main` gemerged
+// (`84dc93a6`, `b8f09c11`, `674069e8`, `5c5e0e31`, `dc71d703`, `ff9ffecd`).
+// Am 10.09.2026 als Gate 16 in `context-gates.yml` eingebunden und gegen leere Ranges gehärtet.
 
 use regex::Regex;
 use std::env;
@@ -77,6 +84,13 @@ pub fn check_commit_messages() -> Result<(), String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.trim().is_empty() {
+        return Err(format!(
+            "Commit-Range '{}' ist leer — prüfe fetch-depth in actions/checkout",
+            range
+        ));
+    }
+
     let mut violations = Vec::new();
 
     for line in stdout.lines() {
