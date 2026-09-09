@@ -69,6 +69,33 @@ impl LayerCleanupProof {
         }
     }
 
+    /// Erzeugt einen Proof für `layer` NUR, wenn `verification` bestätigt,
+    /// dass die physische Bereinigung tatsächlich abgeschlossen ist.
+    ///
+    /// `verification` MUSS eine echte Post-Condition-Prüfung durchführen
+    /// (z. B. eine erneute Abfrage des betroffenen Storage-Layers, die
+    /// belegt, dass keine der zu löschenden Daten mehr vorhanden sind),
+    /// KEINE bloße Behauptung. Ein `Ok(false)`-Rückgabewert oder ein
+    /// `Err` aus `verification` führt zu einem `Err` hier — es wird in
+    /// diesem Fall NIEMALS ein Proof erzeugt (INV-DELETION-1).
+    pub fn verify_and_create<F>(
+        layer: DeletionLayer,
+        verification: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce() -> Result<bool>,
+    {
+        if verification()? {
+            Ok(Self::unchecked_new(layer))
+        } else {
+            Err(MemFuseError::Internal(format!(
+                "INV-DELETION-1 violation: physical cleanup verification \
+                 failed for layer {layer:?} — refusing to create \
+                 LayerCleanupProof"
+            )))
+        }
+    }
+
     /// Gibt den zugrundeliegenden DeletionLayer zurück.
     pub fn layer(&self) -> &DeletionLayer {
         &self.layer

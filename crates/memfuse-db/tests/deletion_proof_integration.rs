@@ -229,6 +229,18 @@ async fn test_deleted_keys_hash_is_deterministic() {
         b"__col:test_col:\x00doc_c".to_vec(),
     ];
 
+    // LayerCleanupProof Erzeugung via verify_and_create:
+    let lsm_proof_1 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("lsm proof 1");
+    let sstable_proof_1 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("sstable proof 1");
+
     let proof_1 = DeletionProof::create(
         scope.clone(),
         keys_order_1,
@@ -242,6 +254,17 @@ async fn test_deleted_keys_hash_is_deterministic() {
         proof_key,
     )
     .expect("create proof 1");
+
+    let lsm_proof_2 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("lsm proof 2");
+    let sstable_proof_2 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("sstable proof 2");
 
     let proof_2 = DeletionProof::create(
         scope,
