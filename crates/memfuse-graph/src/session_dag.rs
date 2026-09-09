@@ -119,6 +119,9 @@ pub struct DagEdge {
 /// Maximum allowed byte size for prompt/response strings (10 MB).
 pub const MAX_DAG_STRING_BYTES: usize = 10 * 1024 * 1024;
 
+/// Maximale Pfadtiefe in einem SessionDag (Schutz vor Zyklen und Tiefenexplosion).
+pub const MAX_DAG_TRAVERSAL_DEPTH: usize = 10_000;
+
 /// Session-DAG for a single agent conversation tree.
 ///
 /// # Invariants
@@ -276,8 +279,23 @@ impl SessionBranchTree {
 
         let mut path = Vec::new();
         let mut current = head;
+        let mut visited = std::collections::HashSet::new();
 
         loop {
+            if !visited.insert(current) {
+                tracing::error!(
+                    node = %current,
+                    "SessionDAG: Zyklus in path_to_head entdeckt — Traversierung abgebrochen"
+                );
+                break;
+            }
+            if path.len() >= MAX_DAG_TRAVERSAL_DEPTH {
+                tracing::error!(
+                    depth = path.len(),
+                    "SessionDAG: Maximale Traversierungstiefe erreicht — mögliche Korruption"
+                );
+                break;
+            }
             if let Some(node) = nodes.get(&current) {
                 path.push(node.clone());
             }
@@ -404,6 +422,12 @@ impl SessionBranchTree {
                 })?;
                 nodes.insert(node.step_id, node);
             }
+        }
+
+        if !nodes.contains_key(&active_head) {
+            return Err(MemFuseError::InvalidInput(format!(
+                "SessionDAG: active_head node {active_head} nicht in geladenen nodes gefunden"
+            )));
         }
 
         Ok(Self {
@@ -763,5 +787,84 @@ mod tests {
         let serialized_edge = bincode::serialize(&edge).unwrap(); // unwrap allowed
         let deserialized_edge: DagEdge = bincode::deserialize(&serialized_edge).unwrap(); // unwrap allowed
         assert_eq!(edge, deserialized_edge);
+    }
+
+    #[test]
+    fn test_path_to_head_detects_cycle() {
+        let dag = SessionBranchTree::new("Root Prompt".into(), "Root Resp".into());
+        // Manually construct corrupt cycle between node 1 and node 2 (A->B and B->A)
+        let node1 = AgentStateNode {
+            step_id: 1,
+            prompt: "P1".into(),
+            response: "R1".into(),
+            snapshot_tx_id: None,
+            tool_outputs: vec![],
+            compacted: false,
+        };
+        let node2 = AgentStateNode {
+            step_id: 2,
+            prompt: "P2".into(),
+            response: "R2".into(),
+            snapshot_tx_id: None,
+            tool_outputs: vec![],
+            compacted: false,
+        };
+
+        {
+            let mut guard = dag.lock_nodes_write();
+            guard.nodes_mut().insert(1, node1);
+            guard.nodes_mut().insert(2, node2);
+            guard.edges_write().push(DagEdge {
+                parent: 1,
+                child: 2,
+                label: "corrupt".into(),
+            });
+            guard.edges_write().push(DagEdge {
+                parent: 2,
+                child: 1,
+                label: "corrupt".into(),
+            });
+            *guard.active_head_write() = 2;
+        }
+
+        let path = dag.path_to_head();
+        assert!(!path.is_empty());
+    }
+
+    #[test]
+    fn test_path_to_head_depth_limit() {
+        let dag = SessionBranchTree::new("Root Prompt".into(), "Root Resp".into());
+        let total_nodes = MAX_DAG_TRAVERSAL_DEPTH + 100;
+        {
+            let mut guard = dag.lock_nodes_write();
+            for i in 1..total_nodes {
+                let node = AgentStateNode {
+                    step_id: i as u64,
+                    prompt: format!("Prompt {i}"),
+                    response: format!("Resp {i}"),
+                    snapshot_tx_id: None,
+                    tool_outputs: vec![],
+                    compacted: false,
+                };
+                guard.nodes_mut().insert(i as u64, node);
+                guard.edges_write().push(DagEdge {
+                    parent: (i - 1) as u64,
+                    child: i as u64,
+                    label: "main".into(),
+                });
+            }
+            *guard.active_head_write() = (total_nodes - 1) as u64;
+        }
+
+        let path = dag.path_to_head();
+        assert_eq!(path.len(), MAX_DAG_TRAVERSAL_DEPTH);
+    }
+
+    #[test]
+    fn test_set_active_head_invalid_node_returns_error() {
+        let dag = SessionBranchTree::new("Root Prompt".into(), "Root Resp".into());
+        let res = dag.set_active_head(99999);
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), MemFuseError::InvalidInput(_)));
     }
 }
