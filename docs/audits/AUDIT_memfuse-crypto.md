@@ -393,3 +393,26 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` inkl
 - **Produktionscode Safety:**
   - Zero `unsafe` Blöcke unter `crates/memfuse-crypto/src/` (`#![forbid(unsafe_code)]` im Produktionscode aktiv).
   - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
+
+---
+
+## 21. Re-Audit & Verification (2026-09-09)
+
+**Datum:** 2026-09-09T15:45:00Z (SESSION: bf12a00e)
+**Status:** **ALL CHECKS GREEN (VERIFIED — 0 OPEN FINDINGS)**
+
+Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` (`memfuse-security`):
+- **Inventarabgleich & Drift (Schritt 0):**
+  - Tatsächlicher Repo-Zustand: 11 `.rs`-Dateien unter `crates/memfuse-crypto/src/` (`anti_tamper.rs`, `crypto.rs`, `deletion_proof.rs`, `error.rs`, `kv_cipher.rs`, `kv_segment/mod.rs`, `kv_segment/segment.rs`, `kv_segment/store.rs`, `kv_segment/eviction_worker.rs`, `lib.rs`, `wal_crypto.rs`).
+  - `Inventar-Drift: Datei crates/memfuse-crypto/src/kv_segment/ (mod.rs, segment.rs, store.rs, eviction_worker.rs) im Prompter-Inventar vom 2026-09-08 nicht erfasst`.
+  - Fehler in `eviction_worker.rs` und `tests/kv_segment_concurrency.rs` (Variable-Naming-Mistakes/Missing Bindings) behoben.
+- **Kompilierung & Statische Analyse:**
+  - `cargo check -p memfuse-security --all-features` -> 0 Fehler, 0 Warnungen
+  - `cargo clippy -p memfuse-security -- -D warnings` -> 0 Findings
+  - `cargo fmt --check -p memfuse-security` -> 0 Formatting Diffs
+- **Test-Abdeckung & Safety:**
+  - `cargo test -p memfuse-security --all-features` -> 115 Tests erfolgreich ausgeführt (73 Unit-Tests in `lib.rs`, 3 Anti-Tamper Matrix, 10 Key Separation, 3 KV Segment Concurrency, 1 KV Segment Integration, 3 KV Segment Proptests, 5 Namespace Isolation, 4 Nonce Reuse, 2 Nonce Stress, 7 Proptests, 6 RFC Vectors).
+  - Zero `unsafe` Blöcke im Produktionscode unter `crates/memfuse-crypto/src/` (`#![forbid(unsafe_code)]` aktiv).
+  - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
+- **Workspace-Integrität:**
+  - `cargo check --workspace --exclude memfuse-tauri` -> 0 Fehler, 0 Warnungen.

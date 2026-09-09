@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T13:00:00Z (SESSION: c74a1828)
+// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
 // ZWECK: Candle LLM text generator client implementing LlmTextGenerator.
 // INVARIANTEN: Thread-safe model access via Mutex; spawn_blocking for CPU inference execution.
 
