@@ -736,7 +736,7 @@ fn generate_full_working_state(tags: &[TagItem], crates: &[CrateInfo]) -> String
     out.push_str("> **Hinweis**: Diese Datei ist zu 100 % autogeneriert durch `cargo xtask sync-docs` aus Inline-Code-Tags. Keinen Text manuell editieren. Bei Git-Merge-Konflikten stets `just sync-docs` ausführen.\n\n");
 
     out.push_str(&generate_session_continuity_section(tags));
-    out.push_str("\n");
+    out.push('\n');
 
     out.push_str("## Offene AI-TAGs & ANCHORs\n\n");
     out.push_str(&generate_ai_tags_section(tags));
@@ -1348,6 +1348,7 @@ pub fn get_git_file_last_modified(file_path: &str) -> Result<String, String> {
     Ok(stdout)
 }
 
+#[allow(clippy::needless_range_loop)]
 pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
