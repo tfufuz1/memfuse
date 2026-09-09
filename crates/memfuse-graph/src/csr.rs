@@ -16,6 +16,7 @@
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use crate::consistency_enforcement::{ConsistencyEnforcer, EdgeAssertion};
+use crate::GraphIndexExt;
 use memfuse_core::{
     BoxFuture, DocId, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
     StorageEngine, TxId,
@@ -99,6 +100,8 @@ pub const MAX_VISITED_NODES: usize = 10_000;
 
 /// LSM-Key-Prefix für alle Graph-Entities.
 const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
+/// LSM-Key-Prefix für gelöschte Graph-Entities (Tombstones).
+const GRAPH_ENTITY_DELETED_PREFIX: &[u8] = b"graph:entity:deleted:";
 /// LSM-Key-Prefix für alle Graph-Edges.
 const GRAPH_EDGE_PREFIX: &[u8] = b"__graph:edge:";
 /// LSM-Key-Prefix für alle Community-Assignments.
@@ -1022,12 +1025,26 @@ impl CsrGraph {
     pub async fn load_from_storage<S: StorageEngine + ?Sized>(storage: &S) -> Result<Self> {
         let graph = Self::new();
 
+        // 0. Deleted Entities (Tombstones) laden
+        let deleted_entries = storage.scan_prefix(GRAPH_ENTITY_DELETED_PREFIX).await?;
+        let mut deleted_entity_ids = HashSet::new();
+        for (raw_key, _) in deleted_entries {
+            if let Some(key_payload) = raw_key.get(GRAPH_ENTITY_DELETED_PREFIX.len()..) {
+                if let Ok(key_str) = std::str::from_utf8(key_payload) {
+                    deleted_entity_ids.insert(EntityId::from(key_str));
+                }
+            }
+        }
+
         // 1. Entities laden
         let entity_entries = storage.scan_prefix(GRAPH_ENTITY_PREFIX).await?;
         let mut entity_count = 0usize;
         for (_, raw_value) in entity_entries {
             let entity: Entity = bincode::deserialize(&raw_value)
                 .map_err(|e| MemFuseError::Internal(format!("graph entity deserialize: {e}")))?;
+            if deleted_entity_ids.contains(&entity.id) {
+                continue;
+            }
             graph.load_entity_direct(entity)?;
             entity_count += 1;
         }
@@ -1453,6 +1470,117 @@ impl CsrGraph {
                 .values()
                 .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
                 .sum::<usize>()
+    }
+
+    /// Removes an entity node and all its incident (outgoing and incoming) edges from the graph.
+    pub async fn remove_entity(&self, tx: TxId, entity: EntityId) -> Result<()> {
+        GraphIndexExt::remove_entity(self, tx, entity).await
+    }
+}
+
+impl GraphIndexExt for CsrGraph {
+    fn remove_entity<'a>(&'a self, tx: TxId, entity: EntityId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let (target_idx, outgoing_targets, incoming_sources) = {
+                let inner = self.inner.read();
+                let idx = match inner.id_map.get(&entity) {
+                    Some(&i) => i,
+                    None => return Ok(()),
+                };
+
+                let mut outgoing = Vec::new();
+                let mut incoming = Vec::new();
+
+                // a. Outgoing edges (entity -> *)
+                if idx < inner.offsets.len() - 1 {
+                    for j in inner.offsets[idx]..inner.offsets[idx + 1] {
+                        let t_idx = inner.targets[j];
+                        if !inner.tombstoned_edges.contains(&(idx, t_idx)) {
+                            if let Some(&t_id) = inner.reverse_map.get(t_idx) {
+                                outgoing.push(t_id);
+                            }
+                        }
+                    }
+                }
+                if let Some(pending) = inner.pending_edges.get(&idx) {
+                    for edge in pending {
+                        if !inner.tombstoned_edges.contains(&(idx, edge.target)) {
+                            if let Some(&t_id) = inner.reverse_map.get(edge.target) {
+                                outgoing.push(t_id);
+                            }
+                        }
+                    }
+                }
+
+                // b. Incoming edges (* -> entity)
+                let num_nodes = inner.reverse_map.len();
+                for node_idx in 0..num_nodes {
+                    let source_id = match inner.reverse_map.get(node_idx) {
+                        Some(&id) => id,
+                        None => continue,
+                    };
+
+                    if node_idx < inner.offsets.len() - 1 {
+                        for j in inner.offsets[node_idx]..inner.offsets[node_idx + 1] {
+                            if inner.targets[j] == idx
+                                && !inner.tombstoned_edges.contains(&(node_idx, idx))
+                            {
+                                incoming.push(source_id);
+                            }
+                        }
+                    }
+                    if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                        for edge in pending {
+                            if edge.target == idx
+                                && !inner.tombstoned_edges.contains(&(node_idx, idx))
+                            {
+                                incoming.push(source_id);
+                            }
+                        }
+                    }
+                }
+
+                (idx, outgoing, incoming)
+            };
+
+            // Tombstone outgoing edges (entity -> to)
+            for to_id in outgoing_targets {
+                GraphIndex::remove_edge(self, tx, entity, to_id).await?;
+            }
+
+            // Tombstone incoming edges (from -> entity)
+            for from_id in incoming_sources {
+                GraphIndex::remove_edge(self, tx, from_id, entity).await?;
+            }
+
+            // c. Den Knoten selbst aus inner.id_map entfernen
+            {
+                let mut inner = self.inner.write();
+                inner.id_map.remove(&entity);
+                if target_idx < inner.entities.len() {
+                    inner.entities[target_idx] = None;
+                }
+                inner.communities.remove(&entity);
+                inner.is_dirty = true;
+            }
+
+            // LSM-Storage Marker / Deletion schreiben
+            if let Some(ref storage) = self.storage {
+                let entity_key = [GRAPH_ENTITY_PREFIX, entity.as_bytes().as_slice()].concat();
+                storage.delete(tx, &entity_key).await?;
+
+                let deleted_key =
+                    [GRAPH_ENTITY_DELETED_PREFIX, entity.as_bytes().as_slice()].concat();
+                storage
+                    .put(tx, &deleted_key, &tx.inner().to_le_bytes())
+                    .await?;
+            }
+
+            // d. Committe die Änderungen
+            GraphIndex::commit(self, tx).await?;
+
+            Ok(())
+        })
     }
 }
 
@@ -4371,5 +4499,144 @@ mod tests {
                 "Insertion {i} on default CsrGraph without consistency enforcer should always succeed"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_delete_entity_removes_outgoing_edges() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let a = EntityId::new(10);
+        let b = EntityId::new(20);
+        let c = EntityId::new(30);
+
+        graph
+            .add_entity(tx, Entity::new(a, "A", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(b, "B", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(c, "C", "Node"))
+            .await
+            .unwrap();
+
+        graph
+            .add_edge(tx, Edge::new(a, b, "rel"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(a, c, "rel"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let initial_n = graph.traverse(a, 1).await.unwrap();
+        assert_eq!(initial_n.len(), 2);
+
+        let tx_del = TxId::new(2);
+        graph.remove_entity(tx_del, a).await.unwrap();
+
+        let after_n = graph.traverse(a, 1).await.unwrap();
+        assert!(
+            after_n.is_empty(),
+            "Traversal from deleted entity A must yield no outgoing edges"
+        );
+
+        let ppr_config = memfuse_core::PprConfig::default();
+        let ppr_res = graph.personalized_page_rank(&[a], &ppr_config).await.unwrap();
+        assert!(
+            ppr_res.is_empty() || ppr_res.iter().all(|(id, _)| *id == a),
+            "PPR from deleted entity A must return no neighbor scores"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_entity_removes_incoming_edges() {
+        let graph = CsrGraph::new();
+        let tx = TxId::new(1);
+        let a = EntityId::new(100);
+        let b = EntityId::new(200);
+
+        graph
+            .add_entity(tx, Entity::new(a, "A", "Node"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(b, "B", "Node"))
+            .await
+            .unwrap();
+
+        graph
+            .add_edge(tx, Edge::new(a, b, "rel"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        let n_before = graph.traverse(a, 1).await.unwrap();
+        assert_eq!(n_before.len(), 1);
+        assert_eq!(n_before[0].0, b);
+
+        let tx_del = TxId::new(2);
+        graph.remove_entity(tx_del, b).await.unwrap();
+
+        let n_after = graph.traverse(a, 1).await.unwrap();
+        assert!(
+            n_after.is_empty(),
+            "Traversal from A must find no valid edge to deleted entity B"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_entity_delete_persists_after_restart() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage: Arc<dyn StorageEngine> = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+
+        let graph = CsrGraph::with_config_and_storage(CsrGraphConfig::default(), storage.clone());
+        let tx = TxId::new(1);
+        let a = EntityId::new(1000);
+        let b = EntityId::new(2000);
+
+        graph
+            .add_entity(tx, Entity::new(a, "NodeA", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(b, "NodeB", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(a, b, "rel"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        let tx_del = TxId::new(2);
+        graph.remove_entity(tx_del, a).await.unwrap();
+        storage.commit(tx_del).await.unwrap();
+        storage.flush().await.unwrap();
+
+        drop(graph);
+
+        let reloaded_graph = CsrGraph::load_from_storage(storage.as_ref())
+            .await
+            .unwrap();
+
+        assert!(!reloaded_graph.entity_exists(a), "Deleted entity A must not exist after restart");
+        assert!(reloaded_graph.entity_exists(b), "Entity B must still exist after restart");
+
+        let n_res = reloaded_graph.traverse(a, 1).await.unwrap();
+        assert!(n_res.is_empty(), "Traversal from deleted entity A must return no edges after restart");
     }
 }
