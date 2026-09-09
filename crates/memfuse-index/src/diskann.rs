@@ -2767,10 +2767,7 @@ mod tests {
                 distance: f32::NAN,
             },
         ];
-        let vectors = vec![
-            vec![0.0, 0.0, 0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+        let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0, 0.0]];
 
         let pruned = index.prune_in_memory(&mut candidates, &vectors, 4, 1.2)?;
         // Both candidates must be retained (fail-open) and prune_in_memory must not panic
