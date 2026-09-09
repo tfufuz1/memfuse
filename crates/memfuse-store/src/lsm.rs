@@ -230,6 +230,7 @@ pub struct LsmStorage {
     task_tracker: tokio_util::task::TaskTracker,
     flush_counter: AtomicU64,
     segment_counter: AtomicU64,
+    budget_tracking_drift_bytes: std::sync::atomic::AtomicU64,
 }
 
 impl LsmStorage {
@@ -463,6 +464,7 @@ impl LsmStorage {
             task_tracker,
             flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
             segment_counter: AtomicU64::new(0),
+            budget_tracking_drift_bytes: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -510,6 +512,13 @@ impl LsmStorage {
         F: std::future::Future<Output = ()> + Send + 'static,
     {
         self.task_tracker.spawn(future);
+    }
+
+    /// Returns the accumulated total memory budget tracking drift in bytes caused by
+    /// unbudgeted memtable puts during commit when memory limit was exceeded.
+    pub fn budget_tracking_drift_bytes(&self) -> u64 {
+        self.budget_tracking_drift_bytes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Rolls back the entire storage state to a specific transaction ID.
@@ -1074,7 +1083,15 @@ impl StorageEngine for LsmStorage {
             for (key, value, seq) in mem_updates {
                 let entry_size = key.len() + value.len() + 8;
                 if let Err(e) = self.budget.consume_memory(entry_size as u64) {
-                    tracing::warn!("Memory budget tracking warning during commit: {e}");
+                    self.budget_tracking_drift_bytes
+                        .fetch_add(entry_size as u64, std::sync::atomic::Ordering::Relaxed);
+                    tracing::warn!(
+                        drift_bytes = entry_size,
+                        total_drift_bytes = self
+                            .budget_tracking_drift_bytes
+                            .load(std::sync::atomic::Ordering::Relaxed),
+                        "Memory budget tracking warning during commit: {e}"
+                    );
                 }
                 state
                     .memtable
@@ -3484,5 +3501,46 @@ mod tests {
             let _ = tmp;
             let _ = initial_usage;
         }
+    }
+
+    #[tokio::test]
+    async fn test_commit_tracks_budget_drift_on_consume_memory_failure() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 1, // 1 MB limit = 1,048,576 bytes
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        assert_eq!(storage.budget_tracking_drift_bytes(), 0);
+
+        let key = b"drift_key";
+        let value = vec![b'v'; 60000]; // 60,000 bytes (< 65535 limit)
+        let expected_entry_size = (key.len() + value.len() + 8) as u64;
+
+        let tx = TxId::new(1);
+        storage.put(tx, key, &value).await.expect("put succeeds");
+
+        // Fill memory budget after put() has been staged, but BEFORE commit().
+        // Limit is 1,048,576 bytes. Fill to 990,000 bytes (< 95% threshold 996,147).
+        // 990,000 + 60,008 = 1,050,008 > 1,048,576 (exceeds budget limit).
+        // commit()'s has_memory_capacity() check: 990,000 < 996,147 -> PASSES.
+        // consume_memory(60008) in Phase 3: 1,050,008 > 1,048,576 -> ERR!
+        storage.budget.consume_memory(990_000).expect("fill budget to 990,000");
+
+        // commit must succeed (durability preserved) despite consume_memory failing in Phase 3
+        let commit_res = storage.commit(tx).await;
+        assert!(commit_res.is_ok(), "commit must succeed even when consume_memory fails");
+
+        // verify drift counter accurately recorded entry size
+        assert_eq!(
+            storage.budget_tracking_drift_bytes(),
+            expected_entry_size,
+            "budget drift metric must equal entry_size after consume_memory failure"
+        );
     }
 }
