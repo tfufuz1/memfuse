@@ -3141,16 +3141,16 @@ description = "Core crate"
             ("memfuse-graph", 1),
             ("memfuse-kv-bridge", 2),
             ("memfuse-text", 1),
-            ("memfuse-embed", 2),
+            ("memfuse-embed", 3),
             ("memfuse-index", 2),
             ("memfuse-ollama", 2),
             ("memfuse-store", 2),
-            ("memfuse-db", 3),
-            ("memfuse-bench", 4),
-            ("memfuse-router", 4),
-            ("memfuse-tauri", 4),
-            ("memfuse-agent", 5),
-            ("memfuse-mcp", 6),
+            ("memfuse-db", 4),
+            ("memfuse-bench", 5),
+            ("memfuse-router", 5),
+            ("memfuse-tauri", 5),
+            ("memfuse-agent", 6),
+            ("memfuse-mcp", 7),
         ]
         .into_iter()
         .collect();
