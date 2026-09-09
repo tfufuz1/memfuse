@@ -77,6 +77,7 @@ impl RerankConfig {
 }
 
 /// Interne Backend-Varianten für den CrossEncoderReranker.
+#[allow(clippy::large_enum_variant)]
 enum RerankerBackend {
     /// Passthrough-Backend, falls das `onnx`-Feature deaktiviert ist.
     #[allow(dead_code)]
