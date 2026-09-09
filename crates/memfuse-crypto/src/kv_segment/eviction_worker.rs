@@ -15,7 +15,7 @@
 //!    Sicherheits-Alarm). Synchron, blockierend, garantiert vor Rückkehr
 //!    vollständig abgeschlossen — bewusst anders als der reguläre Worker-Pfad.
 
-use crate::segment::KvSegment;
+use super::segment::KvSegment;
 use parking_lot::RwLock;
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -27,13 +27,15 @@ enum EvictionCommand {
 
 /// Regelmäßiger Eviction-Pfad (VRAM > 80%-Trigger). NICHT im Async-Executor,
 /// da regelmäßige Zeroize-Operationen den Tokio-Scheduler blockieren würden.
+// AI-TAG[CONCURRENCY][MAJOR][RESOLVED] EvictionWorker is Sync via Mutex protection of sender and handle (ID: AGT-CRYPTO-edaee52e) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
 pub struct EvictionWorker {
-    sender: mpsc::Sender<EvictionCommand>,
-    handle: Option<std::thread::JoinHandle<()>>,
+    sender: parking_lot::Mutex<mpsc::Sender<EvictionCommand>>,
+    handle: parking_lot::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl EvictionWorker {
     /// Spawnt den Eviction-Worker auf einem dedizierten OS-Thread.
+    // AI-TAG[ARCH][MAJOR] EvictionWorker accepts flat Vec instead of TenantIsolatedKvStore (ID: AGT-CRYPTO-ba40758c) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
     pub fn spawn(segments: Arc<RwLock<Vec<KvSegment>>>) -> Self {
         let (sender, receiver) = mpsc::channel::<EvictionCommand>();
         let handle = std::thread::Builder::new()
@@ -77,8 +79,8 @@ impl EvictionWorker {
             .expect("failed to spawn kv-eviction-worker thread");
 
         Self {
-            sender,
-            handle: Some(handle),
+            sender: parking_lot::Mutex::new(sender),
+            handle: parking_lot::Mutex::new(Some(handle)),
         }
     }
 
@@ -86,13 +88,14 @@ impl EvictionWorker {
     pub fn trigger_eviction(&self, target_free_bytes: usize) {
         let _ = self
             .sender
+            .lock()
             .send(EvictionCommand::EvictLru { target_free_bytes });
     }
 
     /// Beendet den Worker-Thread geordnet.
-    pub fn shutdown(&mut self) {
-        let _ = self.sender.send(EvictionCommand::Shutdown);
-        if let Some(handle) = self.handle.take() {
+    pub fn shutdown(&self) {
+        let _ = self.sender.lock().send(EvictionCommand::Shutdown);
+        if let Some(handle) = self.handle.lock().take() {
             let _ = handle.join();
         }
     }
@@ -222,5 +225,11 @@ mod tests {
             0,
             "emergency_wipe must immediately clear all segments"
         );
+    }
+
+    #[test]
+    fn test_eviction_worker_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<EvictionWorker>();
     }
 }

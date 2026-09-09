@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T12:50:00Z (SESSION: 1b2550ba)
+// ZWECK: Haupt-Routing-Engine für Hybrid-Search-Kontext auf SLM-Profile.
+// INVARIANTEN: Atomare Snapshot-Sicherheit bei Hot-Reload, NaN-Safety bei Distanz-Eingaben.
+// NICHT-OFFENSICHTLICH: EntityId::from_doc_id Vermeidung von String-Rehashing; Bounded Pending Map.
+// SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
+
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
 use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
