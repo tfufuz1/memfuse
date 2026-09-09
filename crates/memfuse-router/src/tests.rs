@@ -2518,7 +2518,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cascade_confidence_uses_conformal_alpha() {
+    fn test_cascade_confidence_uses_conformal_alpha() -> Result<(), Box<dyn std::error::Error>> {
         use crate::profile::ProfileCalibrationState;
         use crate::router::COMMUNITY_RELEVANCE_BOOST;
         use memfuse_core::{ConfigFingerprint, ContextChunk, DocId};
@@ -2534,16 +2534,14 @@ mod tests {
         )
         .with_fingerprint(fp.clone());
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir()?;
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let db = rt
-            .block_on(MemFuse::open_with_config(dir.path(), config))
-            .unwrap();
-        let collection = rt.block_on(db.collection("default")).unwrap();
+        let rt = tokio::runtime::Runtime::new()?;
+        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config))?;
+        let collection = rt.block_on(db.collection("default"))?;
 
         let router = RouterEngine::new(collection, vec![profile.clone()], None);
 
@@ -2566,17 +2564,15 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
-        let (_, _, metrics) = router
-            .select_profile_cascade(&chunks, &[profile], &mut calibration)
-            .expect("Cascade succeeds");
+        let (_, _, metrics) = router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
 
         let score = 0.5 * COMMUNITY_RELEVANCE_BOOST;
         assert!(metrics.calibrated);
         let expected_lower = score * (1.0 - 0.15); // score * 0.85
         let expected_upper = score * (1.0 + 0.15); // score * 1.15
 
-        let lower = metrics.score_lower.expect("score_lower present");
-        let upper = metrics.score_upper.expect("score_upper present");
+        let lower = metrics.score_lower.ok_or("score_lower missing")?;
+        let upper = metrics.score_upper.ok_or("score_upper missing")?;
 
         assert!(
             (lower - expected_lower).abs() < 1e-5,
@@ -2586,10 +2582,12 @@ mod tests {
             (upper - expected_upper).abs() < 1e-5,
             "Expected {expected_upper}, got {upper}"
         );
+
+        Ok(())
     }
 
     #[test]
-    fn test_cascade_non_conformity_score_not_zero() {
+    fn test_cascade_non_conformity_score_not_zero() -> Result<(), Box<dyn std::error::Error>> {
         use crate::profile::ProfileCalibrationState;
         use memfuse_core::{ContextChunk, DocId};
         use std::collections::HashMap;
@@ -2602,16 +2600,14 @@ mod tests {
             0.1,
         );
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir()?;
         let config = MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let db = rt
-            .block_on(MemFuse::open_with_config(dir.path(), config))
-            .unwrap();
-        let collection = rt.block_on(db.collection("default")).unwrap();
+        let rt = tokio::runtime::Runtime::new()?;
+        let db = rt.block_on(MemFuse::open_with_config(dir.path(), config))?;
+        let collection = rt.block_on(db.collection("default"))?;
 
         let router = RouterEngine::new(collection, vec![profile.clone()], None);
 
@@ -2631,9 +2627,7 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
-        let (_, _, metrics) = router
-            .select_profile_cascade(&chunks, &[profile], &mut calibration)
-            .expect("Cascade succeeds");
+        let (_, _, metrics) = router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
 
         assert!(
             metrics.non_conformity_score != 0.0,
@@ -2645,5 +2639,7 @@ mod tests {
             "Expected {expected_nc}, got {}",
             metrics.non_conformity_score
         );
+
+        Ok(())
     }
 }
