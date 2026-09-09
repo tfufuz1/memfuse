@@ -17,7 +17,7 @@ Layer 2:  memfuse-candle — Native Candle GGUF ML inference backend for MemFuse
           memfuse-ollama —  (deps: memfuse-calibration, memfuse-core)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-security)
 Layer 3:  memfuse-embed —  (deps: memfuse-calibration, memfuse-candle, memfuse-core)
-Layer 4:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-security, memfuse-store, memfuse-text)
+Layer 4:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-crypto, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)
 Layer 5:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
           memfuse-tauri — DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
