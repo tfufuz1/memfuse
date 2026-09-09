@@ -118,4 +118,58 @@ mod tests {
         assert_eq!(index.edges_for_doc(doc1), vec![edge]);
         assert_eq!(index.edges_for_doc(doc2), vec![edge]);
     }
+
+    #[test]
+    fn test_record_provenance_empty_docs() {
+        let index = DocEdgeIndex::new();
+        let edge = (EntityId::new(1), EntityId::new(2));
+        let prov = EdgeProvenance::new(edge, vec![], TxId::new(100));
+
+        index.record_provenance(&prov);
+        assert!(index.edges_for_doc(DocId::new(999)).is_empty());
+    }
+
+    #[test]
+    fn test_doc_edge_index_nonexistent_doc() {
+        let index = DocEdgeIndex::new();
+        assert!(index.edges_for_doc(DocId::new(404)).is_empty());
+
+        index.remove_doc(DocId::new(404)); // must not panic
+        assert!(index.edges_for_doc(DocId::new(404)).is_empty());
+    }
+
+    #[test]
+    fn test_doc_edge_index_duplicate_records() {
+        let index = DocEdgeIndex::new();
+        let doc = DocId::new(1);
+        let edge = (EntityId::new(10), EntityId::new(20));
+
+        index.record(doc, edge);
+        index.record(doc, edge);
+
+        let edges = index.edges_for_doc(doc);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0], edge);
+    }
+
+    #[test]
+    fn test_edge_provenance_serde_roundtrip() {
+        let edge = (EntityId::new(42), EntityId::new(84));
+        let prov = EdgeProvenance::new(
+            edge,
+            vec![DocId::new(1001), DocId::new(1002)],
+            TxId::new(500),
+        );
+
+        let json = serde_json::to_string(&prov)
+            .ok()
+            .expect("serialization failed");
+        let deserialized: EdgeProvenance = serde_json::from_str(&json)
+            .ok()
+            .expect("deserialization failed");
+
+        assert_eq!(deserialized.edge_id, prov.edge_id);
+        assert_eq!(deserialized.source_doc_ids, prov.source_doc_ids);
+        assert_eq!(deserialized.created_at_tx, prov.created_at_tx);
+    }
 }

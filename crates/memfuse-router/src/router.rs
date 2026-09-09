@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T12:50:00Z (SESSION: 1b2550ba)
+// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
 // ZWECK: Haupt-Routing-Engine für Hybrid-Search-Kontext auf SLM-Profile.
 // INVARIANTEN: Atomare Snapshot-Sicherheit bei Hot-Reload, NaN-Safety bei Distanz-Eingaben.
 // NICHT-OFFENSICHTLICH: EntityId::from_doc_id Vermeidung von String-Rehashing; Bounded Pending Map.

@@ -71,8 +71,8 @@
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
+use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_index::{HnswConfig, HnswIndex};
-use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -92,9 +92,11 @@ pub mod temporal_filter;
 
 #[cfg(feature = "background-maintenance")]
 pub use background_workers::start_decay_cleanup_worker;
+#[allow(deprecated)]
 pub use background_workers::{
     start_consolidation_worker, start_expiry_cleanup_worker, start_orphan_cleanup_worker,
 };
+#[allow(deprecated)]
 pub use consolidation_executor::{
     execute_background_consolidation, execute_consolidation_pass, execute_sleep_cycle,
 };
@@ -115,6 +117,7 @@ pub mod reaper {
     pub use crate::background_workers::*;
 }
 #[deprecated(note = "use start_consolidation_worker instead")]
+#[allow(deprecated)]
 pub use background_workers::start_consolidation_reaper;
 
 pub use synthesis_phase::run_synthesis_pass;
