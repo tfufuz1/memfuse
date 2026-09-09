@@ -112,6 +112,7 @@ pub fn start_consolidation_worker<S: StorageEngine>(
 
 /// Deprecated legacy alias for `start_consolidation_worker`.
 #[deprecated(note = "use start_consolidation_worker instead")]
+#[allow(deprecated)]
 pub fn start_consolidation_reaper<S: StorageEngine>(
     collection: Arc<Collection<S>>,
     consolidation_config: ConsolidationConfig,
