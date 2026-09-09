@@ -1176,10 +1176,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use tokio::task::JoinSet;
     use super::MAX_SCAN_RESULTS;
     use std::ops::Bound;
+    use std::sync::Arc;
+    use tokio::task::JoinSet;
 
     #[tokio::test]
     async fn test_scan_prefix_respects_default_limit() {
@@ -1270,7 +1270,10 @@ mod tests {
                 .unwrap();
         }
 
-        let results = col.scan(Bound::Unbounded, Bound::Unbounded, None).await.unwrap();
+        let results = col
+            .scan(Bound::Unbounded, Bound::Unbounded, None)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 50);
         assert!(results.len() <= MAX_SCAN_RESULTS);
     }
@@ -1295,7 +1298,10 @@ mod tests {
                 .unwrap();
         }
 
-        let results = col.scan(Bound::Unbounded, Bound::Unbounded, Some(10)).await.unwrap();
+        let results = col
+            .scan(Bound::Unbounded, Bound::Unbounded, Some(10))
+            .await
+            .unwrap();
         assert_eq!(results.len(), 10);
     }
 
@@ -1313,7 +1319,13 @@ mod tests {
         .unwrap();
         let col = db.collection("test_scan_exceed").await.unwrap();
 
-        let res = col.scan(Bound::Unbounded, Bound::Unbounded, Some(MAX_SCAN_RESULTS + 1)).await;
+        let res = col
+            .scan(
+                Bound::Unbounded,
+                Bound::Unbounded,
+                Some(MAX_SCAN_RESULTS + 1),
+            )
+            .await;
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
         assert!(err_msg.contains("exceeds MAX_SCAN_RESULTS"));
@@ -1423,10 +1435,7 @@ mod tests {
         // Insert 10,005 items via put_kv
         for i in 0..10_005 {
             collection
-                .put_kv(
-                    &format!("pfx_{i:05}"),
-                    &serde_json::json!({ "idx": i }),
-                )
+                .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
                 .unwrap();
         }

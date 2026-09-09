@@ -132,7 +132,10 @@ async fn test_collection_scan_prefix_isolation() {
     assert_eq!(users.len(), 2);
     assert!(users.iter().all(|(k, _)| k.starts_with("user/")));
 
-    let items = col.scan_prefix("item/", None).await.expect("scan_prefix item");
+    let items = col
+        .scan_prefix("item/", None)
+        .await
+        .expect("scan_prefix item");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].0, "user/1".to_string().replace("user/1", "item/1")); // Verification of key name
     assert_eq!(items[0].0, "item/1");
