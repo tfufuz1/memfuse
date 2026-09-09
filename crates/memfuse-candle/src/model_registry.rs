@@ -1,3 +1,8 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T13:00:00Z (SESSION: c74a1828)
+// ZWECK: Model fingerprinting and CandleQuantization definitions.
+// INVARIANTEN: SHA-256 over weight blob concatenated with quantization string; distinct quant tiers yield distinct fingerprints.
+
 use memfuse_core::MemFuseError;
 use sha2::{Digest, Sha256};
 use std::fmt;

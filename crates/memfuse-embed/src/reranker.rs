@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-08-29T17:16:44Z (SESSION: f50ed9ef)
+// STAND: 2026-09-09T13:42:00Z (SESSION: 26be4fbf)
 // ZWECK: Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 // INVARIANTEN: Falls onnx-Feature inaktiv, greift transparenter Passthrough-Fallback.
 // NICHT-OFFENSICHTLICH: OnnxReranker nutzt ein eigenes Arc<Mutex<Session>> getrennt von TextEmbedder.
@@ -83,7 +83,7 @@ enum RerankerBackend {
     Passthrough,
     /// Echtes Inferenz-Backend über ONNX Runtime.
     #[cfg(feature = "onnx")]
-    Onnx(OnnxReranker),
+    Onnx(Box<OnnxReranker>),
 }
 
 // ── With ONNX feature: Real Reranker Implementation ───────────────────────
@@ -527,7 +527,7 @@ impl CrossEncoderReranker {
             let onnx = OnnxReranker::new(config.clone())?;
             Ok(Self {
                 _config: config,
-                backend: RerankerBackend::Onnx(onnx),
+                backend: RerankerBackend::Onnx(Box::new(onnx)),
                 calibration_buffer: parking_lot::Mutex::new(Vec::new()),
                 calibration_warmup: warmup,
                 fitted_calibration: parking_lot::RwLock::new(calibration),
@@ -870,8 +870,54 @@ mod tests {
         assert_eq!(config.calibration, cal);
 
         let reranker = CrossEncoderReranker::passthrough().with_calibration(cal.clone());
+        assert_eq!(reranker.config().calibration, cal);
         assert_eq!(reranker._config.calibration, cal);
         assert_eq!(reranker.fitted_calibration(), cal);
+    }
+
+    #[tokio::test]
+    async fn test_rerank_exact_boundary_candidates() -> Result<(), Box<dyn std::error::Error>> {
+        let reranker = CrossEncoderReranker::passthrough();
+
+        // 1 element boundary
+        let single_candidate = vec!["single_doc".to_string()];
+        let res_single = reranker.rerank("query", &single_candidate).await?;
+        assert_eq!(res_single.len(), 1);
+        assert_eq!(res_single[0].original_index, 0);
+
+        // MAX_CANDIDATES boundary (exact limit)
+        let max_candidates: Vec<String> = (0..MAX_CANDIDATES).map(|i| format!("doc_{i}")).collect();
+        let res_max = reranker.rerank("query", &max_candidates).await?;
+        assert_eq!(res_max.len(), MAX_CANDIDATES);
+        assert_eq!(res_max[0].original_index, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_calibration_extreme_logits_and_non_finite_inputs() {
+        let reranker = CrossEncoderReranker::passthrough();
+
+        // Check identity calibration behavior on extreme values
+        let val_max = reranker.calibrate(f32::MAX);
+        assert!((val_max - 1.0).abs() < 1e-4);
+
+        let val_min_pos = reranker.calibrate(f32::MIN_POSITIVE);
+        assert!((val_min_pos - 0.5).abs() < 1e-4);
+
+        let val_neg_inf = reranker.calibrate(f32::NEG_INFINITY);
+        assert_eq!(val_neg_inf, 0.0);
+
+        let val_pos_inf = reranker.calibrate(f32::INFINITY);
+        assert_eq!(val_pos_inf, 1.0);
+
+        let val_nan = reranker.calibrate(f32::NAN);
+        assert_eq!(val_nan, 0.5);
+
+        // Record non-finite outcomes without panicking
+        reranker.record_outcome(f32::NAN, false);
+        reranker.record_outcome(f32::INFINITY, true);
+        reranker.record_outcome(f32::NEG_INFINITY, false);
+        assert_eq!(reranker.calibration_observation_count(), 3);
     }
 
     #[test]
