@@ -84,6 +84,9 @@ pub const MAX_VALUE_SIZE: usize = 134_217_728;
 /// Maximum batch size for `delete_many` operations (10,000 items).
 pub const MAX_BATCH_SIZE: usize = 10_000;
 
+/// Maximum factor for internal merge set size relative to limit in bounded scans.
+pub const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
+
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
 async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> Result<()> {
@@ -1388,7 +1391,20 @@ impl StorageEngine for LsmStorage {
 
                 let entries = sst.scan_prefix(prefix).await?;
                 for (k, v, seq, tx) in entries {
+                    if let Some(ref cb) = cur_bytes {
+                        if &k <= cb {
+                            continue;
+                        }
+                    }
                     if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                        if !map.contains_key(&k) {
+                            if let Some(k_max) = get_k_max(&map) {
+                                if k > k_max {
+                                    has_more_beyond_limit = true;
+                                    break;
+                                }
+                            }
+                        }
                         let entry = map.entry(k).or_insert_with(|| (v.clone(), seq));
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v, seq);
@@ -1408,7 +1424,20 @@ impl StorageEngine for LsmStorage {
             // Collect from immutable memtables
             for mt in &state.immutable_memtables {
                 for (k, v, seq, tx) in mt.iter() {
+                    if let Some(ref cb) = cur_bytes {
+                        if &k <= cb {
+                            continue;
+                        }
+                    }
                     if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                        if !map.contains_key(&k) {
+                            if let Some(k_max) = get_k_max(&map) {
+                                if k > k_max {
+                                    has_more_beyond_limit = true;
+                                    break;
+                                }
+                            }
+                        }
                         let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
                         if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                             *entry = (v.clone(), seq);
@@ -1427,7 +1456,20 @@ impl StorageEngine for LsmStorage {
 
             // Collect from active memtable
             for (k, v, seq, tx) in state.memtable.iter() {
+                if let Some(ref cb) = cur_bytes {
+                    if &k <= cb {
+                        continue;
+                    }
+                }
                 if k.starts_with(prefix) && (tx <= last_tx || tx >= TxId::INTERNAL_BASE) {
+                    if !map.contains_key(&k) {
+                        if let Some(k_max) = get_k_max(&map) {
+                            if k > k_max {
+                                has_more_beyond_limit = true;
+                                break;
+                            }
+                        }
+                    }
                     let entry = map.entry(k.clone()).or_insert_with(|| (v.clone(), seq));
                     if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
                         *entry = (v.clone(), seq);
@@ -1451,14 +1493,16 @@ impl StorageEngine for LsmStorage {
                 )));
             }
 
-            let range_bound = if let Some(cur) = cursor {
-                std::ops::Bound::Excluded(Bytes::copy_from_slice(cur))
-            } else {
-                std::ops::Bound::Unbounded
-            };
+            if map.len() > safety_limit {
+                return Err(MemFuseError::invalid_input(format!(
+                    "scan_prefix_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                     narrow the range or use a smaller limit",
+                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                )));
+            }
 
             let mut results = Vec::new();
-            let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
+            let mut iter = map.into_iter();
 
             for (k, (v, seq)) in iter.by_ref() {
                 if (seq & TOMBSTONE_BIT) == 0 {
@@ -1470,12 +1514,13 @@ impl StorageEngine for LsmStorage {
             }
 
             let next_cursor = if results.len() == limit {
-                // Check if there are remaining valid entries in the iterator
-                let mut has_more = false;
-                for (_k, (_v, seq)) in iter {
-                    if (seq & TOMBSTONE_BIT) == 0 {
-                        has_more = true;
-                        break;
+                let mut has_more = has_more_beyond_limit;
+                if !has_more {
+                    for (_k, (_v, seq)) in iter {
+                        if (seq & TOMBSTONE_BIT) == 0 {
+                            has_more = true;
+                            break;
+                        }
                     }
                 }
                 if has_more {
@@ -1724,6 +1769,211 @@ impl StorageEngine for LsmStorage {
             }
 
             Ok(results)
+        })
+    }
+
+    fn scan_bounded<'a>(
+        &'a self,
+        start: std::ops::Bound<&'a [u8]>,
+        end: std::ops::Bound<&'a [u8]>,
+        limit: usize,
+        cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            use std::ops::Bound;
+
+            let effective_start = match cursor {
+                Some(c) => Bound::Excluded(c),
+                None => start,
+            };
+
+            let safety_limit = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+            let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
+            let state = self.state.read().await;
+            let sstables = self.sstables.read().await;
+
+            let mut processed_count = 0usize;
+            let mut has_more_beyond_limit = false;
+
+            let get_k_max = |m: &std::collections::BTreeMap<Vec<u8>, (Vec<u8>, u64)>| -> Option<Vec<u8>> {
+                let mut count = 0usize;
+                for (k, (_, seq)) in m.iter() {
+                    if (seq & TOMBSTONE_BIT) == 0 {
+                        count += 1;
+                        if count == limit {
+                            return Some(k.clone());
+                        }
+                    }
+                }
+                None
+            };
+
+            // 1. SSTables (filtered by visibility tx <= last_tx)
+            for sst in sstables.iter() {
+                let entries = sst.scan_range(effective_start.map(|s| s), end.map(|e| e)).await?;
+                for (k, v, seq, tx) in entries {
+                    let k_vec = k.to_vec();
+                    if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
+                        if !map.contains_key(&k_vec) {
+                            if let Some(k_max) = get_k_max(&map) {
+                                if k_vec > k_max {
+                                    has_more_beyond_limit = true;
+                                    break;
+                                }
+                            }
+                        }
+                        let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.to_vec(), seq);
+                        }
+                    }
+                    processed_count += 1;
+                    if processed_count % 1000 == 0 && map.len() > safety_limit {
+                        return Err(MemFuseError::invalid_input(format!(
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                             narrow the range or use a smaller limit",
+                            map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        )));
+                    }
+                }
+                if map.len() > safety_limit {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                         narrow the range or use a smaller limit",
+                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    )));
+                }
+            }
+
+            // 2. Immutable memtables (older → newer)
+            for mt in &state.immutable_memtables {
+                for (k, v, seq, tx) in mt.iter() {
+                    if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                        continue;
+                    }
+                    let in_range = match effective_start {
+                        Bound::Included(s) => k.as_ref() >= s,
+                        Bound::Excluded(s) => k.as_ref() > s,
+                        Bound::Unbounded => true,
+                    } && match end {
+                        Bound::Included(e) => k.as_ref() <= e,
+                        Bound::Excluded(e) => k.as_ref() < e,
+                        Bound::Unbounded => true,
+                    };
+                    if in_range {
+                        let k_vec = k.to_vec();
+                        if !map.contains_key(&k_vec) {
+                            if let Some(k_max) = get_k_max(&map) {
+                                if k_vec > k_max {
+                                    has_more_beyond_limit = true;
+                                    break;
+                                }
+                            }
+                        }
+                        let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
+                        if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                            *entry = (v.to_vec(), seq);
+                        }
+                    }
+                    processed_count += 1;
+                    if processed_count % 1000 == 0 && map.len() > safety_limit {
+                        return Err(MemFuseError::invalid_input(format!(
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                             narrow the range or use a smaller limit",
+                            map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        )));
+                    }
+                }
+                if map.len() > safety_limit {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                         narrow the range or use a smaller limit",
+                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    )));
+                }
+            }
+
+            // 3. Active memtable
+            for (k, v, seq, tx) in state.memtable.iter() {
+                if tx > last_tx && tx < TxId::INTERNAL_BASE {
+                    continue;
+                }
+                let in_range = match effective_start {
+                    Bound::Included(s) => k.as_ref() >= s,
+                    Bound::Excluded(s) => k.as_ref() > s,
+                    Bound::Unbounded => true,
+                } && match end {
+                    Bound::Included(e) => k.as_ref() <= e,
+                    Bound::Excluded(e) => k.as_ref() < e,
+                    Bound::Unbounded => true,
+                };
+                if in_range {
+                    let k_vec = k.to_vec();
+                    if !map.contains_key(&k_vec) {
+                        if let Some(k_max) = get_k_max(&map) {
+                            if k_vec > k_max {
+                                has_more_beyond_limit = true;
+                                break;
+                            }
+                        }
+                    }
+                    let entry = map.entry(k_vec).or_insert((v.to_vec(), seq));
+                    if (seq & !TOMBSTONE_BIT) > (entry.1 & !TOMBSTONE_BIT) {
+                        *entry = (v.to_vec(), seq);
+                    }
+                }
+                processed_count += 1;
+                if processed_count % 1000 == 0 && map.len() > safety_limit {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                         narrow the range or use a smaller limit",
+                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    )));
+                }
+            }
+
+            if map.len() > safety_limit {
+                return Err(MemFuseError::invalid_input(format!(
+                    "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                     narrow the range or use a smaller limit",
+                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                )));
+            }
+
+            // 4. Apply limit (cursor is already handled via effective_start)
+            let mut results = Vec::new();
+            let mut iter = map.into_iter();
+
+            for (k, (v, seq)) in iter.by_ref() {
+                if (seq & TOMBSTONE_BIT) == 0 {
+                    results.push((k, v));
+                    if results.len() == limit {
+                        break;
+                    }
+                }
+            }
+
+            let next_cursor = if results.len() == limit {
+                let mut has_more = has_more_beyond_limit;
+                if !has_more {
+                    for (_k, (_v, seq)) in iter {
+                        if (seq & TOMBSTONE_BIT) == 0 {
+                            has_more = true;
+                            break;
+                        }
+                    }
+                }
+                if has_more {
+                    results.last().map(|(k, _)| k.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            Ok((results, next_cursor))
         })
     }
 
