@@ -1,26 +1,18 @@
 #[allow(dead_code)]
-fn chrono_or_today() -> String {
-    if let Ok(content) = fs::read_to_string("WORKING_STATE.md") {
-        let re = Regex::new(r"Stand:\s*(\d{4}-\d{2}-\d{2})").unwrap();
-        if let Some(caps) = re.captures(&content) {
-            let existing_date = caps[1].to_string();
-            if let Ok(output) = std::process::Command::new("date")
-                .args(["-u", "+%Y-%m-%d"])
-                .output()
+fn chrono_or_today_with_tags(tags: &[TagItem]) -> String {
+    let mut latest_tag_date = String::new();
+    for tag in tags {
+        if tag.timestamp.len() >= 10 {
+            let date_part = &tag.timestamp[..10];
+            if date_part.chars().filter(|c| *c == '-').count() == 2
+                && date_part > latest_tag_date.as_str()
             {
-                if output.status.success() {
-                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !s.is_empty() {
-                        if existing_date >= s {
-                            return existing_date;
-                        }
-                        return s;
-                    }
-                }
+                latest_tag_date = date_part.to_string();
             }
-            return existing_date;
         }
     }
+
+    let mut system_today = String::new();
     if let Ok(output) = std::process::Command::new("date")
         .args(["-u", "+%Y-%m-%d"])
         .output()
@@ -28,11 +20,26 @@ fn chrono_or_today() -> String {
         if output.status.success() {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {
-                return s;
+                system_today = s;
             }
         }
     }
-    get_git_file_last_modified("WORKING_STATE.md").unwrap_or_else(|_| "2026-09-02".to_string())
+
+    if system_today.is_empty() {
+        system_today = get_git_file_last_modified("WORKING_STATE.md")
+            .unwrap_or_else(|_| "2026-09-02".to_string());
+    }
+
+    if !latest_tag_date.is_empty() && latest_tag_date > system_today {
+        latest_tag_date
+    } else {
+        system_today
+    }
+}
+
+#[allow(dead_code)]
+fn chrono_or_today() -> String {
+    chrono_or_today_with_tags(&[])
 }
 // ANCHOR[DEBT:XTASK-DATE-001] STATUS:DONE (ID: AGT-XTASK-2c814094) (TS: 2026-08-29T15:22:34Z) (SESSION: 2c814094)
 // AUFGABE: chrono_or_today() lieferte statischen String "2026-08-27" — behoben durch Systemaufruf
@@ -731,7 +738,7 @@ fn generate_full_working_state(tags: &[TagItem], crates: &[CrateInfo]) -> String
     out.push_str("# MemFuse — Working State\n");
     out.push_str(&format!(
         "*Automatisch generierte Projektion des Code-Zustands — Stand: {}*\n\n",
-        chrono_or_today()
+        chrono_or_today_with_tags(tags)
     ));
     out.push_str("> **Hinweis**: Diese Datei ist zu 100 % autogeneriert durch `cargo xtask sync-docs` aus Inline-Code-Tags. Keinen Text manuell editieren. Bei Git-Merge-Konflikten stets `just sync-docs` ausführen.\n\n");
 
@@ -850,7 +857,10 @@ fn generate_ai_tags_section(tags: &[TagItem]) -> String {
     });
 
     let mut out = String::new();
-    out.push_str(&format!("Stand letzter Prüfung: {}\n", chrono_or_today()));
+    out.push_str(&format!(
+        "Stand letzter Prüfung: {}\n",
+        chrono_or_today_with_tags(tags)
+    ));
     out.push_str("Befehl: `cargo xtask sync-docs` / `grep -rn \"AI-TAG\\[SMELL\\]\\[CRITICAL\\]\" crates/ --include=\"*.rs\" | grep -v RESOLVED`\n");
     out.push_str(&format!(
         "Ergebnis: **{} offene Tags**\n\n",
@@ -1998,7 +2008,20 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
             }
         };
 
-        let required_passes = 2;
+        let is_unsafe_file = anchor.file_path.contains("distance.rs")
+            || anchor.file_path.contains("diskann.rs")
+            || anchor.file_path.contains("persistence.rs")
+            || anchor.file_path.contains("anti_tamper.rs");
+
+        let is_security_anchor = anchor.raw.contains("ANCHOR[SECURITY:")
+            || anchor.raw.contains("SECURITY")
+            || anchor.category.as_deref() == Some("SECURITY");
+
+        let required_passes = if is_unsafe_file || is_security_anchor {
+            3
+        } else {
+            2
+        };
 
         let matching_passes: Vec<&TagItem> = tags
             .iter()
@@ -2736,6 +2759,77 @@ description = "Core crate"
             is_resolved: false,
         });
         assert!(run_check_review_coverage(&tags_diff_sessions));
+    }
+
+    #[test]
+    fn test_check_review_coverage_unsafe_and_security_requires_3_passes() {
+        let anchor_unsafe = TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 10,
+            tag_type: "ANCHOR".to_string(),
+            raw: "// ANCHOR[PERF:DIST-001] STATUS:DONE (ID: AGT-INDEX-distance1) (TS:2026-08-29T09:14:07Z) (SESSION:a3f29c1d)".to_string(),
+            timestamp: "2026-08-29T09:14:07Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-distance1".to_string()),
+            session: Some("a3f29c1d".to_string()),
+            status: Some("DONE".to_string()),
+            description: "SIMD distance optimization".to_string(),
+            is_resolved: true,
+        };
+
+        let pass1 = TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 11,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[1/3] STATUS:PASS (ID: AGT-INDEX-distance1) (TS:2026-08-29T10:00:00Z) (SESSION:b8e4f1a2)".to_string(),
+            timestamp: "2026-08-29T10:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-distance1".to_string()),
+            session: Some("b8e4f1a2".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Review 1".to_string(),
+            is_resolved: false,
+        };
+
+        let pass2 = TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 12,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[2/3] STATUS:PASS (ID: AGT-INDEX-distance1) (TS:2026-08-29T11:00:00Z) (SESSION:c9f5e2b3)".to_string(),
+            timestamp: "2026-08-29T11:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-distance1".to_string()),
+            session: Some("c9f5e2b3".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Review 2".to_string(),
+            is_resolved: false,
+        };
+
+        let pass3 = TagItem {
+            file_path: "crates/memfuse-index/src/distance.rs".to_string(),
+            line_num: 13,
+            tag_type: "REVIEW-PASS".to_string(),
+            raw: "// REVIEW-PASS[3/3] STATUS:PASS (ID: AGT-INDEX-distance1) (TS:2026-08-29T12:00:00Z) (SESSION:d0a6f3c4)".to_string(),
+            timestamp: "2026-08-29T12:00:00Z".to_string(),
+            category: None,
+            severity: None,
+            id: Some("AGT-INDEX-distance1".to_string()),
+            session: Some("d0a6f3c4".to_string()),
+            status: Some("PASS".to_string()),
+            description: "Review 3".to_string(),
+            is_resolved: false,
+        };
+
+        // 2 passes on unsafe file should FAIL (3 required)
+        let tags_2_passes = vec![anchor_unsafe.clone(), pass1.clone(), pass2.clone()];
+        assert!(!run_check_review_coverage(&tags_2_passes));
+
+        // 3 passes on unsafe file should PASS
+        let tags_3_passes = vec![anchor_unsafe, pass1, pass2, pass3];
+        assert!(run_check_review_coverage(&tags_3_passes));
     }
 
     #[test]
