@@ -256,6 +256,10 @@ impl Default for TenantIsolatedKvStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn test_tenant_isolation_no_cross_read() {
@@ -345,7 +349,10 @@ mod tests {
 
         // Target 1000 bytes: requires freeing 2 segments (1024 bytes) across tenants
         let freed = store.evict_lru_fair(1000);
-        assert!(freed >= 1000, "freed bytes ({freed}) must be >= target_free_bytes (1000)");
+        assert!(
+            freed >= 1000,
+            "freed bytes ({freed}) must be >= target_free_bytes (1000)"
+        );
 
         // Fair round-robin evicts 1 segment from Tenant A and 1 segment from Tenant B
         assert_eq!(store.get_tenant_segment_len(tenant_a), 2);
@@ -354,84 +361,71 @@ mod tests {
 
     #[test]
     fn test_evict_lru_fair_releases_lock_between_batches() {
-        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-        use std::sync::Arc;
-        use std::time::{Duration, Instant};
-
         let store = Arc::new(TenantIsolatedKvStore::new());
 
-        // Create 5 tenants with 200 segments each (1000 bytes per segment).
-        // Total segments = 1000.
-        // MAX_ROUNDS_PER_LOCK_ACQUISITION = 4.
-        // In 4 rounds, at most 4 * 5 = 20 segments are evicted per lock acquisition cycle.
-        // Evicting 500 segments (500,000 bytes) requires at least 25 lock acquisition cycles.
-        let num_tenants = 5;
-        for t in 1..=num_tenants {
-            let tenant = TenantId::try_new(t).unwrap();
-            for seg_id in 1..=200 {
-                store.insert_segment(tenant, KvSegment::new(tenant, seg_id, vec![0xAA; 1000]));
-            }
+        let tenant_a = TenantId::try_new(1).unwrap();
+        let tenant_b = TenantId::try_new(2).unwrap();
+        let tenant_c = TenantId::try_new(3).unwrap();
+        let tenant_unaffected = TenantId::try_new(99).unwrap();
+
+        // Populate store with 30 segments for Tenant A, 30 for Tenant B, and 50 for Tenant C.
+        // Each round evicts 1 segment per tenant = 3 segments = 768 bytes per round.
+        // 12 rounds will evict 12 segments per tenant (36 segments total = 9,216 bytes).
+        // 12 rounds requires 3 lock acquisition cycles (since MAX_ROUNDS_PER_LOCK_ACQUISITION = 4).
+        for i in 1..=30 {
+            store.insert_segment(tenant_a, KvSegment::new(tenant_a, i, vec![0x11; 256]));
+            store.insert_segment(tenant_b, KvSegment::new(tenant_b, i + 100, vec![0x22; 256]));
+        }
+        for i in 1..=50 {
+            store.insert_segment(tenant_c, KvSegment::new(tenant_c, i + 200, vec![0x33; 256]));
         }
 
-        // Add unaffected Tenant Z with 500 segments so it isn't emptied quickly.
-        let tenant_z = TenantId::try_new(99).unwrap();
-        for seg_id in 1..=500 {
-            store.insert_segment(tenant_z, KvSegment::new(tenant_z, seg_id, vec![0xBB; 1000]));
-        }
-
-        let eviction_started = Arc::new(AtomicBool::new(false));
+        let is_evicting = Arc::new(AtomicBool::new(false));
         let eviction_done = Arc::new(AtomicBool::new(false));
         let reads_during_eviction = Arc::new(AtomicUsize::new(0));
 
-        let store_reader = Arc::clone(&store);
-        let eviction_started_reader = Arc::clone(&eviction_started);
-        let eviction_done_reader = Arc::clone(&eviction_done);
+        let store_clone = Arc::clone(&store);
+        let is_evicting_clone = Arc::clone(&is_evicting);
+        let eviction_done_clone = Arc::clone(&eviction_done);
         let reads_during_eviction_clone = Arc::clone(&reads_during_eviction);
 
-        // Reader thread
-        let reader_handle = std::thread::spawn(move || {
-            // Wait until eviction starts
-            while !eviction_started_reader.load(Ordering::SeqCst) {
-                std::thread::yield_now();
-            }
-
-            let start = Instant::now();
-            while !eviction_done_reader.load(Ordering::SeqCst) {
-                if start.elapsed() > Duration::from_secs(5) {
-                    break;
-                }
-                // Try reading tenant_z segment count or list
-                let len = store_reader.get_tenant_segment_len(tenant_z);
-                if len > 0 && !eviction_done_reader.load(Ordering::SeqCst) {
+        // Spawn reader thread continuously attempting to read for Tenant C and unaffected tenant.
+        let reader_handle = thread::spawn(move || {
+            while !eviction_done_clone.load(Ordering::SeqCst) {
+                let len = store_clone.get_tenant_segment_len(tenant_c);
+                assert!(
+                    len >= 38,
+                    "Tenant C should have at least 38 segments remaining (got {len})"
+                );
+                let segs = store_clone.get_segments(tenant_unaffected);
+                assert!(segs.is_empty(), "Unaffected tenant 99 must have 0 segments");
+                if is_evicting_clone.load(Ordering::SeqCst) {
                     reads_during_eviction_clone.fetch_add(1, Ordering::SeqCst);
                 }
+                thread::yield_now();
             }
         });
 
-        let store_evict = Arc::clone(&store);
-        let eviction_started_clone = Arc::clone(&eviction_started);
-        let eviction_done_clone = Arc::clone(&eviction_done);
+        // Give reader thread time to start running
+        thread::sleep(Duration::from_millis(10));
 
-        // Eviction thread
-        let evict_handle = std::thread::spawn(move || {
-            eviction_started_clone.store(true, Ordering::SeqCst);
-            let freed = store_evict.evict_lru_fair(500_000);
-            eviction_done_clone.store(true, Ordering::SeqCst);
-            freed
-        });
+        // Start eviction requiring 9,216 bytes (36 segments across tenants)
+        is_evicting.store(true, Ordering::SeqCst);
+        let freed = store.evict_lru_fair(9_216);
+        is_evicting.store(false, Ordering::SeqCst);
+        eviction_done.store(true, Ordering::SeqCst);
 
-        let freed_bytes = evict_handle.join().expect("eviction thread failed");
-        reader_handle.join().expect("reader thread failed");
+        reader_handle.join().expect("reader thread panicked");
 
+        assert!(freed >= 9_216, "must free at least 9,216 bytes");
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 18);
+        assert_eq!(store.get_tenant_segment_len(tenant_b), 18);
+        assert_eq!(store.get_tenant_segment_len(tenant_c), 38);
+
+        let successful_reads = reads_during_eviction.load(Ordering::SeqCst);
         assert!(
-            freed_bytes >= 500_000,
-            "evict_lru_fair must free target bytes (got {freed_bytes})"
-        );
-
-        let reads_count = reads_during_eviction.load(Ordering::SeqCst);
-        assert!(
-            reads_count > 0,
-            "Concurrent read access must succeed during multi-batch eviction (reads_during_eviction = {reads_count})"
+            successful_reads > 0,
+            "Reader thread must execute at least one successful read while eviction is in progress (got {successful_reads} reads)"
         );
     }
 }

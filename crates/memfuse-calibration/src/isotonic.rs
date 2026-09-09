@@ -296,6 +296,24 @@ mod tests {
     }
 
     #[test]
+    fn test_pava_duplicate_scores_deterministic() {
+        let mut cal = IsotonicCalibrator::new(5, 2000);
+        let obs = vec![
+            (0.5, true),
+            (0.5, false),
+            (0.5, true),
+            (0.5, false),
+            (0.5, true),
+            (0.8, true),
+        ];
+        for (score, outcome) in obs {
+            cal.record_outcome(score, outcome);
+        }
+        let prob = cal.calibrated_probability(0.5).unwrap();
+        assert!((prob - 0.6).abs() < 1e-5, "Expected 0.6, got {prob}");
+    }
+
+    #[test]
     fn test_pava_monotone_output() {
         let mut cal = IsotonicCalibrator::new(5, 2000);
         // Nicht-monotone Inputs → PAVA muss monotone Ausgabe erzeugen

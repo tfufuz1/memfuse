@@ -2616,4 +2616,51 @@ mod tests {
             proptest::prop_assert!(ts2 >= ts1);
         }
     }
+
+    #[test]
+    fn test_instance_orphan_registry_drain_pins_and_checkpoints() {
+        let registry = InstanceOrphanRegistry::new("");
+        registry.register_orphan_sync(PinnedSeqNoOrphan {
+            seq_no: 100,
+            timestamp_ms: 1000,
+        });
+        registry.register_checkpoint_sync(StateCheckpoint {
+            tx_id: TxId::new(200),
+            timestamp_ms: 2000,
+            namespace: Some("test_drain".to_string()),
+        });
+
+        assert_eq!(registry.get_orphan_pins().len(), 1);
+        assert_eq!(registry.get_orphaned_checkpoints().len(), 1);
+
+        let drained_pins = registry.drain_orphan_pins();
+        assert_eq!(drained_pins.len(), 1);
+        assert_eq!(drained_pins[0].seq_no, 100);
+        assert!(registry.get_orphan_pins().is_empty());
+
+        let drained_cps = registry.drain_orphaned_checkpoints();
+        assert_eq!(drained_cps.len(), 1);
+        assert_eq!(drained_cps[0].tx_id, TxId::new(200));
+        assert!(registry.get_orphaned_checkpoints().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_store_skipped_rollback_count_and_checkpoint_counter() {
+        let storage = Arc::new(MockStorage::new());
+        let store = PersistentCheckpointStore::new(storage, "test_skipped").unwrap();
+
+        assert_eq!(store.skipped_rollback_count(), 0);
+        assert_eq!(store.checkpoint_guard_skipped_rollback_count(), 0);
+
+        let ts = store.monotonic_timestamp_ms();
+        assert!(ts > 0);
+
+        {
+            let _guard = store.create_guard(TxId::new(300)).unwrap();
+            // Drop without commit or rollback
+        }
+
+        assert_eq!(store.skipped_rollback_count(), 1);
+        assert_eq!(store.checkpoint_guard_skipped_rollback_count(), 1);
+    }
 }
