@@ -70,8 +70,9 @@
 #[cfg(feature = "sandbox")]
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
-use memfuse_core::{DocId, Result, StorageEngine, TxId};
+use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
 use memfuse_index::{HnswConfig, HnswIndex};
+use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -79,6 +80,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+pub mod background_workers;
 pub mod chunker;
 pub mod collection;
 pub mod consolidation_executor;
@@ -88,7 +90,14 @@ pub mod memory_consolidation;
 pub mod synthesis_phase;
 pub mod temporal_filter;
 
-pub use consolidation_executor::{execute_consolidation_pass, execute_sleep_cycle};
+#[cfg(feature = "background-maintenance")]
+pub use background_workers::start_decay_cleanup_worker;
+pub use background_workers::{
+    start_consolidation_worker, start_expiry_cleanup_worker, start_orphan_cleanup_worker,
+};
+pub use consolidation_executor::{
+    execute_background_consolidation, execute_consolidation_pass, execute_sleep_cycle,
+};
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
     ConsolidationSession, ContextCompactor, StatusToken,
@@ -100,7 +109,14 @@ pub use memory_consolidation::{
     ConsolidationConfig, ConsolidationPhaseResult, MetaChunk, SynthesisConfig,
     SynthesisPhaseResult, TurnSegment,
 };
-pub use reaper::start_consolidation_reaper;
+
+#[deprecated(note = "use background_workers instead")]
+pub mod reaper {
+    pub use crate::background_workers::*;
+}
+#[deprecated(note = "use start_consolidation_worker instead")]
+pub use background_workers::start_consolidation_reaper;
+
 pub use synthesis_phase::run_synthesis_pass;
 
 #[cfg(feature = "sandbox")]
@@ -118,7 +134,6 @@ pub mod homeostat;
 pub mod maintenance_config;
 pub mod maintenance_scheduler;
 pub mod multistep;
-pub mod reaper;
 pub mod transaction;
 
 // Jarvis-Erweiterungs-Module (Feature-gated)
@@ -682,14 +697,14 @@ impl MemFuse {
         let col_arc = Arc::new(col);
         write_guard.insert(name.to_string(), Arc::clone(&col_arc));
 
-        let reaper_handle = reaper::start_expiry_reaper(
+        let worker_handle = background_workers::start_expiry_cleanup_worker(
             Arc::clone(&col_arc),
             self.expiry_reaper_interval,
             self.cancel_token.clone(),
         );
         self.task_tracker.spawn(async move {
-            if let Err(e) = reaper_handle.await {
-                tracing::warn!(error = %e, "Reaper handle task failed or was cancelled");
+            if let Err(e) = worker_handle.await {
+                tracing::warn!(error = %e, "Expiry cleanup worker task failed or was cancelled");
             }
         });
 
@@ -735,40 +750,86 @@ impl MemFuse {
         Ok(sorted_names)
     }
 
-    /// Drops a collection, removing all its data from storage.
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn drop_collection(&self, name: &str) -> Result<()> {
+    /// Drops a collection, removing all its data from storage, and returns a cryptographic DeletionProof.
+    #[tracing::instrument(level = "trace", skip(self, proof_key))]
+    pub async fn drop_collection(
+        &self,
+        name: &str,
+        tenant_id: TenantId,
+        proof_key: &[u8],
+    ) -> Result<DeletionProof> {
         if name == "default" {
             return Err(memfuse_core::MemFuseError::invalid_input(
                 "Cannot drop default collection",
             ));
         }
 
+        // 3a. Collect all affected key bytes BEFORE physical deletion (INV-DELETION-1)
+        let col_data_prefix = format!("__col:{}:", name);
+        let txt_data_prefix = format!("__txt:{}:", name);
+        let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
+
+        let mut deleted_keys: Vec<Vec<u8>> = Vec::new();
+
+        let col_entries = self.storage.scan_prefix(col_data_prefix.as_bytes()).await?;
+        for (k, _) in col_entries {
+            deleted_keys.push(k);
+        }
+
+        let txt_entries = self.storage.scan_prefix(txt_data_prefix.as_bytes()).await?;
+        for (k, _) in txt_entries {
+            deleted_keys.push(k);
+        }
+
+        deleted_keys.push(col_idx_key.clone());
+
+        // 3b. Perform physical deletion in LSM storage
         let tx = self.allocate_tx()?;
 
-        // 1. Delete all collection data keys (prefix-based)
-        let col_data_prefix = format!("__col:{}:", name);
         self.storage
             .delete_prefix(tx, col_data_prefix.as_bytes())
             .await?;
 
-        // 2. Delete all text index data keys for this collection
-        let txt_data_prefix = format!("__txt:{}:", name);
         self.storage
             .delete_prefix(tx, txt_data_prefix.as_bytes())
             .await?;
 
-        // 3. Delete the index key itself
-        let col_idx_key = [b"__col_idx:\x00", name.as_bytes()].concat();
         self.storage.delete(tx, &col_idx_key).await?;
 
-        // 4. Commit deleting operations in persistent storage first
         self.storage.commit(tx).await?;
 
-        // 5. Remove from in-memory collection registry ONLY after successful commit
+        // 3c. NACH erfolgreichem commit: DeletionProof erzeugen
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(name.as_bytes());
+        let hash_bytes = hasher.finalize();
+        let col_id_u64 =
+            u64::from_le_bytes(hash_bytes.as_bytes()[0..8].try_into().unwrap_or([1; 8]));
+        let collection_id = CollectionId::try_new(col_id_u64).unwrap_or(CollectionId::new(1));
+
+        let scope = DeletionScope::Collection {
+            collection_id,
+            tenant_id,
+        };
+
+        let proof = DeletionProof::create(
+            scope,
+            deleted_keys,
+            tx,
+            vec![DeletionLayer::LsmMemtable, DeletionLayer::SsTableAllLevels],
+            vec![],
+            proof_key,
+        )
+        .map_err(|e| {
+            memfuse_core::MemFuseError::Internal(format!(
+                "CRITICAL: Collection '{name}' was physically sanitized and committed at tx {}, but DeletionProof generation failed: {e}. Data is permanently deleted.",
+                tx.inner()
+            ))
+        })?;
+
+        // 3e. Remove from in-memory collection registry ONLY after successful commit and proof creation
         self.collections.write().await.remove(name);
 
-        Ok(())
+        Ok(proof)
     }
 
     // --- Legacy Backwards Compatibility Methods (Wraps "default" collection) ---
@@ -1713,7 +1774,10 @@ mod tests {
             .await
             .expect("ins"); // expect
 
-        db.drop_collection("drop-me").await.expect("drop"); // expect
+        let tenant_id = TenantId::try_new(1).expect("tenant_id"); // expect
+        db.drop_collection("drop-me", tenant_id, &[0u8; 32])
+            .await
+            .expect("drop"); // expect
 
         let col2 = db.collection("drop-me").await.expect("re-create"); // expect
         assert_eq!(col2.len().await, 0);

@@ -244,6 +244,21 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
                 .await?;
         }
 
+        let entity_deletes = {
+            let mut guard = match self.staged_graph_entity_deletes.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            std::mem::take(&mut *guard)
+        };
+
+        for entity_id in entity_deletes {
+            self.collection
+                .graph_index
+                .remove_entity(self.tx_id, entity_id)
+                .await?;
+        }
+
         Ok(())
     }
 
@@ -299,7 +314,11 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
                 Ok(g) => g,
                 Err(p) => p.into_inner(),
             };
-            !ents.is_empty() || !edgs.is_empty() || !e_dels.is_empty()
+            let ent_dels = match self.staged_graph_entity_deletes.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            !ents.is_empty() || !edgs.is_empty() || !e_dels.is_empty() || !ent_dels.is_empty()
         };
 
         // Execute staged text and graph staging before prepare/commit

@@ -10,7 +10,7 @@
 <!-- §7 = Non-Obvious Decisions (would cause wrong code without this knowledge) -->
 
 <a id="1"></a>
-## Verifizierter Codestand · HEAD `b89e356e` · Stand 2026-09-08
+## Verifizierter Codestand · HEAD `b448084` · Stand 2026-09-08
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
@@ -30,13 +30,12 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
   - `memfuse-crypto`: Encryption at rest & cryptographic deletion proofs (`DeletionProof`) (`crates/memfuse-crypto`)
   - `memfuse-kv-bridge`: KV-Cache-Bridge Sicherheitsschicht (`KvSegment`, `TenantIsolatedKvStore`, `EvictionWorker`) (`crates/memfuse-kv-bridge`)
   - `memfuse-checkpoint`: Snapshot & backup management (`crates/memfuse-checkpoint`)
-  - `memfuse-graph`: CSR-Graph, `ImmunMemory` (F-04), `PathRAGEngine`, `EdgeProvenance` (`crates/memfuse-graph`)
+  - `memfuse-graph`: CSR-Graph, `ConsistencyEnforcer` (F-04), `PathRAGEngine`, `EdgeProvenance` (`crates/memfuse-graph`)
   - `memfuse-text`: BM25 full-text search & DACH compound splitting (`crates/memfuse-text`)
   - `memfuse-candle`: Native Candle GGUF ML inference backend (`crates/memfuse-candle`)
 - **Layer 2 — Subsysteme**:
   - `memfuse-embed`: Text embeddings & Cross-Encoder reranking (`crates/memfuse-embed`, optional)
   - `memfuse-index`: HNSW vector index, SQ8 quantization, DiskANN (`crates/memfuse-index`)
-  - `memfuse-kv-bridge`: KV-Cache-Bridge security layer & tenant isolation (`crates/memfuse-kv-bridge`)
   - `memfuse-ollama`: Ollama HTTP client & context prefix engine (`crates/memfuse-ollama`)
   - `memfuse-store`: LSM-Tree storage engine & WAL (`crates/memfuse-store`)
 - **Layer 3 — Hauptdatenbank**:
@@ -67,11 +66,11 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `Kaskadierende CSR-Invalidierung` | `crates/memfuse-db/src/collection/crud.rs:958` | Kaskadierendes Tombstoning verknüpfter Graph-Kanten bei Dokument-Superseding via `DocEdgeIndex` |
 | `memfuse-calibration` | `crates/memfuse-calibration/` | Scaler (Platt, Isotonic, Replicator) & P8 Compliance |
 | `PathRAGEngine` | `crates/memfuse-graph/src/path_rag.rs:35` | Bidirektionale Graph-Retrieval Search Engine |
-| `ImmunMemory` (F-04) | `crates/memfuse-graph/src/immune.rs:84` | Immunologische Widerspruchserkennung & Edge-Suppression |
+| `ConsistencyEnforcer` (F-04) | `crates/memfuse-graph/src/consistency_enforcement.rs:86` | Widerspruchserkennung & Edge-Suppression (ADR-069) |
 | `memfuse-candle` | `crates/memfuse-candle/` | Workspace-Member (Layer 1), GGUF Inferenz-Backend |
 | `ConsolidationSession` | `crates/memfuse-db/src/context_compaction.rs:188` | Context Compaction mit Transaktionssicherheit |
-| `FreeEnergyThermostat` (F-01) | `crates/memfuse-db/src/thermostat.rs:44` | Thermodynamisches Adaptive-Decay hinter `physio-features` |
-| `SleepCycleEngine` | `crates/memfuse-db/src/sleep_cycle.rs:72` | NREM/REM Konsolidierung und Community-Synthese |
+| `AdaptiveDecayController` (F-01) | `crates/memfuse-db/src/decay_controller.rs:64` | Thermodynamisches Adaptive-Decay hinter `decay-thermostat` / `adaptive-decay` (ADR-069) |
+| `ConsolidationEngine` | `crates/memfuse-db/src/consolidation_executor.rs:107` | Hintergrund-Konsolidierung und Community-Synthese (`execute_sleep_cycle`) |
 | `MarkdownChunker` | `crates/memfuse-db/src/chunker.rs` | Strukturiertes Dokumentsplitting vor Vektor-Embedding |
 | `MultiStepEngine` | `crates/memfuse-db/src/multistep.rs` | Mehrstufige Iterative Search Engine mit RRF-Signal-Fusion |
 | `CheckpointGuard` | `crates/memfuse-checkpoint/src/lib.rs` | RAII-Checkpoint & Persistent Store Management |
@@ -79,8 +78,6 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `McpSandbox` | `crates/memfuse-mcp/src/lib.rs` | Read-Only MCP-Server Sandbox & Write Authorization Guard |
 | `ContextPrefixEngine` | `crates/memfuse-ollama/src/context_prefixer.rs` | Context Prefix Compression Engine |
 | `CSRGraph` & PPR | `crates/memfuse-graph/src/csr.rs` | Compressed Sparse Row Graph mit Personalized PageRank |
-| `EdgeProvenance` | `crates/memfuse-graph/src/provenance.rs:11` | Herkunftsnachweis & Dokument-Indizierung für Graph-Kanten |
-| `memfuse-kv-bridge` | `crates/memfuse-kv-bridge/` | KV-Cache-Bridge Security-Layer, KvSegment & Tenant Isolation |
 | `PersistentAgentWorkflow` | `crates/memfuse-agent/src/lib.rs` | Multi-Step Agent Execution Loop mit State Graph & Checkpointing |
 
 ### Fehlt / Nicht integriert ❌
@@ -119,6 +116,9 @@ gegenprüfen — wurde in den letzten 20 Commits etwas implementiert, das hier n
 als "Fehlt" steht?
 
 Eine veraltete AGENTS.md ist schlimmer als keine — sie führt Agenten aktiv in die Irre.
+
+**Dokumentations-Governance & HEAD-Zitierung:**
+Jedes Dokument, das einen Repository-Zustand als 'verifiziert' beschreibt, MUSS den HEAD-Commit-Hash im Format `HEAD <vollständiger-hash>, <ISO-Datum> <Uhrzeit mit Zeitzone>` exakt aus `git log -1 --format='%H %ci'` übernehmen — kein manuelles Abtippen von Kurz-Hashes.
 
 ---
 
@@ -161,14 +161,14 @@ Bei Claim-Konflikt: STOP — warten oder koordinieren, nicht überschreiben.
 - **WAL HMAC key**: ALWAYS via `load_or_create_integrity_key()` — NEVER hardcoded
 - **AI-TAG & ID Schema**: Alle neuen Tags verwenden das hash-basierte Schema `AGT-<CRATE>-<8-hex-hash>` (z.B. `AGT-STORE-a3f29c1d`). Bestehende `AGT-<CRATE>-NNN` IDs haben Bestandsschutz.
 - **Tag-Zeitstempel- & Session-Pflicht**: Alle `AI-TAG`, `ANCHOR` und `REVIEW-PASS` Kommentare tragen zwingend sekundengenaue ISO-8601-UTC-Zeitstempel im Format `(TS: YYYY-MM-DDTHH:MM:SSZ)` und das `(SESSION: <8-hex-hash>)` Token (siehe `rules/tag_taxonomy.md`).
-- **Trait-Default-Pflichttest**: Für jedes `pub trait` mit einer Default-Methode-Implementierung MUSS im selben PR, der einen neuen Implementor dieses Traits hinzufügt, ein Integrationstest existieren, der beweist, dass die Default-Implementierung NICHT still greift (entweder weil sie explizit überschrieben wurde, oder weil ein Test explizit den Default-Fehlerpfad als erwartetes, dokumentiertes Verhalten prüft). Referenz im Code: `capability_coverage` in `crates/memfuse-core/src/traits.rs` (prüft z.B. `VectorIndex::search_at` & `GraphIndex::traverse_at`).
+- **Trait-Default-Pflichttest**: Für jedes `pub trait` mit einer Default-Methode-Implementierung MUSS im selben PR, der einen neuen Implementor dieses Traits hinzufügt, ein Integrationstest existieren, der beweist, dass die Default-Implementierung NICHT still greift (entweder weil sie explizit überschrieben wurde, oder weil ein Test explizit den Default-Fehlerpfad als erwartetes, dokumentiertes Verhalten prüft). Referenz im Code: `capability_coverage` in `crates/memfuse-core/src/traits.rs` (prüft z.B. `VectorIndex::search_at` & `GraphIndex::traverse_at`). <!-- doc-ref-ignore -->
 - **Typ-Dopplungs-Prävention**: Vor Anlegen eines neuen Typs oder Traits: `docs/TYPE_REGISTRY.md` nach ähnlichem Namen/Zweck durchsuchen. Bei Kollision: bestehenden Typ erweitern statt Duplikat anlegen, oder Kollision explizit per ADR begründen.
 - **Audit-Finding-Verifikation**: Jeder Finding aus einem extern zugelieferten Audit-Dokument oder Prompt MUSS vor Implementierung am AKTUELLEN Quellcode gegengelesen werden (siehe `.jules/AUDIT_INTAKE_PROTOCOL.md`). Falls der Finding nicht mehr zutrifft (Code bereits geändert, Test existiert bereits, Fix bereits gemerged): Finding im PR-Kommentar/Log explizit als "entkräftet" markieren mit Begründung — NICHT stillschweigend ignorieren und NICHT blind implementieren.
 - **Sync-Docs Nix-Fallback**: `just sync-docs` verwendet `nix develop -c` — bei fehlendem Nix direkt `cargo xtask sync-docs` aufrufen. Beide Pfade sind in der justfile mit `||`-Fallback abgesichert.
-- **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt).
+- **Keine HTTP in memfuse-mcp**: Laut ADR-010 ausschließlich stdio JSON-RPC 2.0. Das GLOSSARY.md definierte dies fälschlicherweise als HTTP/JSON-RPC — die korrekte Definition gilt aus ADR-010 und AGENTS.md, nicht aus dem Glossar (wenn Konflikt). <!-- doc-ref-ignore -->
 - **Typ-Existenz vor Anlage prüfen**: `find crates/ -name "*.rs" | xargs grep -l "<TYPNAME>"` und `grep "<TYPNAME>" docs/TYPE_REGISTRY.md` ausführen, bevor ein neuer Typ angelegt wird.
 - **ADR-Nummernvergabe**: Vor Vergabe einer neuen ADR-Nummer IMMER `ls docs/decisions/ | grep -oP '(?<=ADR-)\d+' | sort -n | tail -1` live ausführen, NIEMALS eine Nummer aus einem älteren Prompt oder einer älteren Analyse übernehmen (schützt vor Duplikaten durch parallele Sessions, siehe ADR-020, ADR-046).
-- **Namenskonventionen & Standard-Terminologie**: Gemäß [ADR-069](docs/decisions/ADR-069-standard-terminologie-norm.md) sind biologische Metaphern und Anbieter-Branding in Typnamen, Feature-Flags (`physio-*`) und Architektur-Labels untersagt; neue Features und Muster folgen verbindlich der MemFuse-Standard-Terminologie ("MemFuse [Funktion] Pattern").
+- **Namenskonventionen & Standard-Terminologie**: Gemäß [ADR-069](docs/decisions/ADR-069-standard-terminologie-norm.md) sind biologische Metaphern und Anbieter-Branding in Typnamen, Feature-Flags (`physio-*`) und Architektur-Labels untersagt; neue Features und Muster folgen verbindlich der MemFuse-Standard-Terminologie ("MemFuse [Funktion] Pattern"). <!-- doc-ref-ignore -->
 - **TOMBSTONE_BIT-Disziplin (ADR-041)**: Bit 63 strikt maskieren (`seq & !TOMBSTONE_BIT`) vor `max_seq` Vergleichen.
 - **SSTable Flush-Sichtbarkeit (ADR-043)**: `last_committed_tx` vor `sstables.push()` in `LsmStorage::flush` aktualisieren.
 - **MCP Write-Authorization & Sandbox Policy (ADR-044)**: DB-Schreibzugriffe im MCP Server sind standardmäßig GESPERRT (Read-Only Policy).

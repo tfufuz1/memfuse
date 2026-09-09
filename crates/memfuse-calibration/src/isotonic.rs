@@ -93,6 +93,10 @@ impl IsotonicCalibrator {
         }
     }
 
+    // AI-TAG[SMELL][MAJOR] PAVA duplicate raw score observation pooling (ID: AGT-CALIBRATION-16f90c35) (TS: 2026-09-09T12:37:35Z) (SESSION: 20c1aaf4)
+    // BEFUND: Identische raw_score-Beobachtungen mit unterschiedlichen Ergebnissen (0.0 vs 1.0) erzeugen unzusammengefasste Blöcke mit gleichem X-Wert in cached_model, wenn sie in aufsteigender Ergebnisfolge sortiert werden (last_avg <= prev_avg ist false bei 1.0 <= 0.0).
+    // RISIKO: binary_search_by bei Nachschlagen eines identischen raw_score kann nicht-deterministisch entweder den niedrigen oder hohen Wahrscheinlichkeitsblock zurückgeben.
+    // EMPFEHLUNG: Beobachtungen mit identischem raw_score vor dem PAVA-Durchlauf zusammenfassen oder kaskadierende Block-Aggregation bei gleichen Scores erzwingen.
     /// PAVA — Pool-Adjacent Violators Algorithm, O(n) amortisiert.
     fn rebuild_model(&mut self) {
         let mut sorted: Vec<(f32, f32)> = self

@@ -3274,6 +3274,7 @@ dependencies = [
  "candle-transformers",
  "memfuse-calibration",
  "memfuse-core",
+ "proptest",
  "serde",
  "sha2",
  "tempfile",
@@ -3331,6 +3332,7 @@ dependencies = [
  "memfuse-graph",
  "memfuse-index",
  "memfuse-ollama",
+ "memfuse-security",
  "memfuse-store",
  "memfuse-text",
  "parking_lot",
@@ -3351,6 +3353,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "memfuse-calibration",
+ "memfuse-candle",
  "memfuse-core",
  "ndarray 0.15.6",
  "ort",
@@ -7779,6 +7782,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "memfuse-bench",
  "regex",
  "serde",
  "serde_json",

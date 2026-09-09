@@ -107,7 +107,7 @@ fn select_local_cluster_region(vectors: &[Vec<f32>], fraction: f64) -> Vec<u64> 
 }
 
 #[tokio::test]
-async fn test_nucleation_recall_regression() {
+async fn test_partial_rebuild_recall_regression() {
     // 1. Baue Index mit 2000 zufälligen 128-dim Vektoren
     let vectors = generate_random_vectors(2000, 128, 42);
     let index = build_hnsw_index(&vectors).await;

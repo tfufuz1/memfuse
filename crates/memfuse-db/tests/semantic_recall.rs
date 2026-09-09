@@ -204,10 +204,10 @@ fn get_cluster_topics() -> Vec<ClusterTopic> {
         },
         ClusterTopic {
             id: 17,
-            name: "Garbage Collection Reaper",
+            name: "Garbage Collection Expiry Cleanup",
             keywords: vec![
                 "ttl-expiration",
-                "reaper",
+                "expiry-cleanup",
                 "tombstone-cleanup",
                 "vacuum",
                 "expired-keys",

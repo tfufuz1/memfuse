@@ -124,25 +124,18 @@ impl KvSegment {
     /// Entschlüsselt die Daten des Segments, falls es verschlüsselt ist.
     /// Gibt bei Klartext-Segmenten direkt einen Klon der `data`-Bytes zurück.
     #[cfg(feature = "kv-encryption")]
-    pub fn decrypt_data(
-        &self,
-        cipher: &KvSegmentCipher,
-    ) -> Result<Vec<u8>, crate::CryptoError> {
+    pub fn decrypt_data(&self, cipher: &KvSegmentCipher) -> Result<Vec<u8>, crate::CryptoError> {
         if !self.encrypted {
             return Ok(self.data.clone());
         }
 
         if let Some(payload) = &self.encrypted_payload {
             cipher.decrypt(&payload.layer)
-        } else if let Some(model_fp) = &self.model_fingerprint {
-            // Reconstruct layer if payload reference was split
-            let layer = EncryptedKvLayer {
-                ciphertext: self.data.clone(),
-                nonce: [0u8; 12], // Dummy or missing nonce guard
-                tenant_id: self.tenant_id,
-                model_fingerprint: model_fp.clone(),
-            };
-            cipher.decrypt(&layer)
+        } else if self.model_fingerprint.is_some() {
+            // AI-TAG[CRYPTO][MAJOR][RESOLVED] Fail fast on missing encrypted payload/nonce instead of dummy zero nonce (ID: AGT-CRYPTO-fae9dd56) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
+            Err(crate::CryptoError::Crypto(
+                "Missing encrypted payload nonce for encrypted segment decryption".into(),
+            ))
         } else {
             Err(crate::CryptoError::Crypto(
                 "Missing model fingerprint for encrypted segment decryption".into(),

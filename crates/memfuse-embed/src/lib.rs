@@ -36,6 +36,17 @@ use tracing::{debug, info, warn};
 pub mod reranker;
 pub use reranker::{CrossEncoderReranker, PlattScaledSigmoid, RerankConfig, RerankResult};
 
+#[cfg(feature = "candle-backend")]
+pub use memfuse_candle::CandleEmbedClient;
+
+#[cfg(feature = "candle-backend")]
+/// Creates a trait object `Box<dyn EmbeddingProvider>` wrapping a `CandleEmbedClient`.
+pub fn create_candle_embedder(
+    client: CandleEmbedClient,
+) -> Box<dyn memfuse_core::EmbeddingProvider> {
+    Box::new(client)
+}
+
 /// Counter tracking the number of ONNX session load operations (for test verification).
 #[cfg(feature = "onnx")]
 pub static SESSION_LOAD_COUNT: std::sync::atomic::AtomicUsize =

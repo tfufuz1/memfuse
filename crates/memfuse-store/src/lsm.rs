@@ -1018,8 +1018,9 @@ impl StorageEngine for LsmStorage {
             }
 
             // --- PHASE 2: Group Commit to WAL ---
-            let wal_entries = state.wal.prepare_batch(wal_ops).await?;
+            let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
             if let Err(e) = state.wal.append_batch(&wal_entries).await {
+                let _ = state.wal.restore_last_hmac(prev_hmac_snapshot).await;
                 // FATAL I/O ERROR: Physical Rollback to last committed transaction state
                 drop(state);
                 let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
@@ -1180,76 +1181,103 @@ impl StorageEngine for LsmStorage {
                 (old_memtable, old_wal_path)
             }; // write lock freigegeben
 
-            let sst_path = {
-                let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
-                let seq = self.next_seq_no.load(Ordering::Relaxed);
+            let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
+            let seq = self.next_seq_no.load(Ordering::Relaxed);
+            let sst_path =
                 self.config
                     .path
-                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000))
-            };
-            let mut builder =
-                SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone())
-                    .await?;
+                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
 
-            for (k, v, seq, tx) in old_memtable.iter_latest() {
-                builder.add(&k, &v, seq, tx).await?;
-            }
-            builder
-                .finish()
+            // ── Phase 3: Expensive I/O & Atomic Transition ──────────────────────────
+            let phase3_res: Result<()> = async {
+                let mut builder =
+                    SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone())
+                        .await?;
+
+                for (k, v, seq, tx) in old_memtable.iter_latest() {
+                    builder.add(&k, &v, seq, tx).await?;
+                }
+                builder
+                    .finish()
+                    .await
+                    .map_err(|e| MemFuseError::Storage(format!("SSTable finish failed: {}", e)))?;
+
+                let reader = SstableReader::open_with_key_manager(
+                    &sst_path,
+                    Arc::clone(&self.block_cache),
+                    self.key_manager.clone(),
+                )
                 .await
-                .map_err(|e| MemFuseError::Storage(format!("SSTable finish failed: {}", e)))?;
+                .map_err(|e| {
+                    MemFuseError::Storage(format!("SSTable open after flush failed: {}", e))
+                })?;
 
-            let reader = SstableReader::open_with_key_manager(
-                &sst_path,
-                Arc::clone(&self.block_cache),
-                self.key_manager.clone(),
-            )
-            .await
-            .map_err(|e| {
-                MemFuseError::Storage(format!("SSTable open after flush failed: {}", e))
-            })?;
+                // Atomic transition: remove from immutable memtables and add to SSTables
+                let mut state = self.state.write().await;
+                let mut sstables = self.sstables.write().await;
 
-            // Atomic transition: remove from immutable memtables and add to SSTables
-            let mut state = self.state.write().await;
-            let mut sstables = self.sstables.write().await;
+                state
+                    .immutable_memtables
+                    .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
-            state
-                .immutable_memtables
-                .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
-
-            // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
-            let sst_max_tx = reader.metadata().max_tx_id;
-            if sst_max_tx < TxId::INTERNAL_BASE {
-                let mut current = self.last_committed_tx.load(Ordering::Acquire);
-                while sst_max_tx > current {
-                    match self.last_committed_tx.compare_exchange_weak(
-                        current,
-                        sst_max_tx,
-                        Ordering::SeqCst,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => break,
-                        Err(actual) => current = actual,
+                // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
+                let sst_max_tx = reader.metadata().max_tx_id;
+                if sst_max_tx < TxId::INTERNAL_BASE {
+                    let mut current = self.last_committed_tx.load(Ordering::Acquire);
+                    while sst_max_tx > current {
+                        match self.last_committed_tx.compare_exchange_weak(
+                            current,
+                            sst_max_tx,
+                            Ordering::SeqCst,
+                            Ordering::Relaxed,
+                        ) {
+                            Ok(_) => break,
+                            Err(actual) => current = actual,
+                        }
                     }
                 }
+
+                sstables.push(Arc::new(reader));
+                sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
+
+                drop(sstables);
+                drop(state);
+
+                // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
+                if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
+                    tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
+                }
+
+                let bytes_freed = old_memtable.size() as u64;
+                self.budget.release_memory(bytes_freed);
+
+                tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
+                Ok(())
+            }
+            .await;
+
+            if let Err(ref e) = phase3_res {
+                // Cleanup on Phase 3 failure:
+                // 1. Remove old_memtable from state.immutable_memtables
+                let mut state = self.state.write().await;
+                state
+                    .immutable_memtables
+                    .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
+                drop(state);
+
+                // 2. Adjust budget usage
+                let bytes_freed = old_memtable.size() as u64;
+                self.budget.release_memory(bytes_freed);
+
+                // 3. Clean up partial/corrupt SSTable file if created
+                if sst_path.exists() {
+                    let _ = tokio::fs::remove_file(&sst_path).await;
+                }
+
+                tracing::error!("Flush failed, cleanup performed: {}", e);
             }
 
-            sstables.push(Arc::new(reader));
-            sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
-
-            drop(sstables);
-            drop(state);
-
-            // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
-            if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
-                tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
-            }
-
-            let bytes_freed = old_memtable.size() as u64;
-            self.budget.release_memory(bytes_freed);
-
-            tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
-            Ok(())
+            phase3_res
         })
     }
 
@@ -3308,5 +3336,145 @@ mod tests {
             stored_val, expected_val,
             "Stored value must match winning task's value"
         );
+    }
+
+    #[tokio::test]
+    async fn test_lsm_commit_append_failure_restores_hmac() {
+        let (storage, _tmp) = test_storage().await;
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"k1", b"v1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let state = storage.state.read().await;
+        let hmac_before = state.wal.last_hmac_snapshot().await;
+        let wal_path = state.wal.path().to_path_buf();
+
+        // Replace file with read-only handle to simulate WAL append failure
+        {
+            let ro_file = tokio::fs::OpenOptions::new()
+                .read(true)
+                .write(false)
+                .open(&wal_path)
+                .await
+                .unwrap();
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = ro_file;
+        }
+        drop(state);
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"k2", b"v2").await.unwrap();
+        let commit_res = storage.commit(tx2).await;
+        assert!(commit_res.is_err(), "Commit must fail when WAL write fails");
+
+        let state = storage.state.read().await;
+        let hmac_after = state.wal.last_hmac_snapshot().await;
+        assert_eq!(
+            hmac_after, hmac_before,
+            "last_hmac must be restored to pre-commit state after commit failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_flush_cleanup_on_sstable_create_failure() {
+        let (storage, tmp) = test_storage().await;
+        let tx = TxId::new(1);
+        storage.put(tx, b"key1", b"val1").await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        // Pre-create the expected SSTable file path as a directory so SstableBuilder::create_with_key_manager fails
+        let seq = storage.next_seq_no.load(Ordering::Relaxed);
+        let count = storage.segment_counter.load(Ordering::Relaxed);
+        let sst_path = tmp
+            .path()
+            .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
+        tokio::fs::create_dir(&sst_path).await.unwrap();
+
+        let res = storage.force_flush().await;
+        assert!(
+            res.is_err(),
+            "Flush must return error when SSTable creation fails"
+        );
+
+        let state = storage.state.read().await;
+        assert!(
+            state.immutable_memtables.is_empty(),
+            "immutable_memtables must be cleaned up and empty after flush failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_flush_cleanup_on_sstable_finish_failure() {
+        let (storage, tmp) = test_storage().await;
+        let tx = TxId::new(1);
+        storage.put(tx, b"key1", b"val1").await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::fs::Permissions;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o555)).unwrap();
+
+            let res = storage.force_flush().await;
+            assert!(res.is_err(), "Flush must fail when directory is read-only");
+
+            let _ = std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o755));
+
+            let state = storage.state.read().await;
+            assert!(
+                state.immutable_memtables.is_empty(),
+                "immutable_memtables must be cleaned up and empty after flush finish failure"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tmp;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_flush_repeated_failures_no_memory_leak() {
+        let (storage, tmp) = test_storage().await;
+
+        // Put initial entry
+        let tx = TxId::new(1);
+        storage.put(tx, b"leak_key", b"leak_val").await.unwrap();
+        storage.commit(tx).await.unwrap();
+
+        let initial_usage = storage.budget.memory_used();
+
+        #[cfg(unix)]
+        {
+            use std::fs::Permissions;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o555)).unwrap();
+
+            for _ in 0..100 {
+                let res = storage.force_flush().await;
+                assert!(res.is_err());
+            }
+
+            let _ = std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o755));
+
+            let state = storage.state.read().await;
+            assert!(
+                state.immutable_memtables.is_empty(),
+                "immutable_memtables must remain empty after 100 flush failures"
+            );
+            drop(state);
+
+            let usage_after_failures = storage.budget.memory_used();
+            assert_eq!(
+                usage_after_failures, initial_usage,
+                "Resource budget memory usage must not leak across repeated flush failures"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tmp;
+            let _ = initial_usage;
+        }
     }
 }

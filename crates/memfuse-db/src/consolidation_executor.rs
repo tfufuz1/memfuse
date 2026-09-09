@@ -29,10 +29,11 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
             segments_created: 0,
             duplicates_tombstoned: Vec::new(),
             cascade_edge_tombstones_needed: Vec::new(),
+            cascade_errors: Vec::new(),
         });
     }
 
-    let result = run_consolidation_pass(turns, config);
+    let mut result = run_consolidation_pass(turns, config);
 
     // Tombstones auf echte Collection anwenden
     for doc_id in &result.duplicates_tombstoned {
@@ -65,24 +66,47 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
         }
     }
 
-    // Graph-Cascade: nur loggen (Implementierung in memfuse-graph Crate-Grenze)
-    // INVARIANTE P1-DAG: Crate ruft memfuse-graph nicht direkt an (Zyklen vermeiden)
+    // Kaskadierende Graph-Edge-Tombstones für supersedete Dokumente anwenden (INV-GRAPH-PROV-1)
     if !result.cascade_edge_tombstones_needed.is_empty() {
-        tracing::info!(
-            count = result.cascade_edge_tombstones_needed.len(),
-            "Consolidation pass: cascade graph edge tombstones needed — caller must invoke graph cleanup"
-        );
+        let tx = collection.allocate_tx()?;
+        for doc_id in &result.cascade_edge_tombstones_needed {
+            match memfuse_graph::cascade_invalidate_edges_for_superseded_doc(
+                &collection.graph_index,
+                *doc_id,
+                tx.inner(),
+            )
+            .await
+            {
+                Ok(report) => {
+                    tracing::debug!(
+                        doc_id = ?doc_id,
+                        tombstoned_edges = report.tombstoned_edge_count,
+                        "Consolidation pass: cascade edge invalidation successful"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        doc_id = ?doc_id,
+                        error = %e,
+                        "Consolidation pass: cascade edge invalidation failed"
+                    );
+                    result
+                        .cascade_errors
+                        .push(format!("DocId {:?}: {}", doc_id, e));
+                }
+            }
+        }
     }
 
     Ok(result)
 }
 
-/// Führt den vollständigen Sleep-Cycle (Structural Consolidation Pass und optional Generative Synthesis Pass) aus.
+/// Führt die vollständige Hintergrund-Konsolidierung (Structural Consolidation Pass und optional Generative Synthesis Pass) aus.
 ///
 /// 1. Structural Consolidation Pass: Segmentierung & Near-Duplicate Tombstoning.
 /// 2. Generative Synthesis Pass (falls `synthesis_config` und `llm` angegeben): Wissenssynthese über stabile Graph-Communities.
 ///    Synthetisierte MetaChunks werden in die Collection eingefügt.
-pub async fn execute_sleep_cycle<S: StorageEngine>(
+pub async fn execute_background_consolidation<S: StorageEngine>(
     collection: &Collection<S>,
     turns: &[(DocId, Vec<f32>)],
     consolidation_config: &ConsolidationConfig,
@@ -194,4 +218,25 @@ pub async fn execute_sleep_cycle<S: StorageEngine>(
     };
 
     Ok((consolidation_result, synthesis_result))
+}
+
+/// Deprecated legacy wrapper for `execute_background_consolidation`.
+#[deprecated(note = "use execute_background_consolidation instead")]
+pub async fn execute_sleep_cycle<S: StorageEngine>(
+    collection: &Collection<S>,
+    turns: &[(DocId, Vec<f32>)],
+    consolidation_config: &ConsolidationConfig,
+    synthesis_config: Option<&SynthesisConfig>,
+    llm: Option<&dyn LlmTextGenerator>,
+    stability_tracker: Option<&mut CommunityStabilityTracker>,
+) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
+    execute_background_consolidation(
+        collection,
+        turns,
+        consolidation_config,
+        synthesis_config,
+        llm,
+        stability_tracker,
+    )
+    .await
 }

@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T12:50:00Z (SESSION: 1b2550ba)
+// ZWECK: Haupt-Routing-Engine für Hybrid-Search-Kontext auf SLM-Profile.
+// INVARIANTEN: Atomare Snapshot-Sicherheit bei Hot-Reload, NaN-Safety bei Distanz-Eingaben.
+// NICHT-OFFENSICHTLICH: EntityId::from_doc_id Vermeidung von String-Rehashing; Bounded Pending Map.
+// SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
+
 //! Core routing engine for matching hybrid search context to SLM profiles.
 
 use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
@@ -10,10 +17,17 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Mindestanzahl Calibration-Samples für verlässliche Conformal-Quantile.
 /// Unterhalb dieses Wertes gelten alle Konfidenzmetriken als "unkalibriert".
 pub(crate) const CALIBRATION_WARMUP_WINDOW: u32 = 30;
+
+/// Maximale TTL für ausstehende Routing-Entscheidungen bevor sie bereinigt werden.
+pub(crate) const PENDING_DECISION_TTL: Duration = Duration::from_secs(300);
+
+/// Maximale Kapazität der Map ausstehender Routing-Entscheidungen.
+pub(crate) const MAX_PENDING_DECISIONS: usize = 10_000;
 
 /// Calibrated confidence metrics for a routing decision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,7 +66,7 @@ pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
     profiles: RwLock<Vec<SlmProfile>>,
     pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
-    pending_decisions: RwLock<HashMap<DecisionId, String>>,
+    pub(crate) pending_decisions: RwLock<HashMap<DecisionId, (String, Instant)>>,
     lyapunov_watchers: RwLock<HashMap<String, LyapunovDriftWatcher>>,
 }
 
@@ -190,6 +204,17 @@ impl RouterEngine {
         }
     }
 
+    fn evict_stale_decisions(&self) {
+        let now = Instant::now();
+        let cutoff = now.checked_sub(PENDING_DECISION_TTL);
+        let mut map = self.pending_decisions.write();
+        if map.len() >= MAX_PENDING_DECISIONS {
+            if let Some(cutoff) = cutoff {
+                map.retain(|_, (_, ts)| *ts > cutoff);
+            }
+        }
+    }
+
     /// Muss vom Aufrufer (Agent-Loop) nach Abschluss des SLM-Aufrufs aufgerufen werden.
     /// Liefert das tatsächliche Ergebnis zurück und trainiert die Kalibrierung
     /// mit einem echten Ground-Truth-Signal.
@@ -198,7 +223,7 @@ impl RouterEngine {
     /// false wenn die DecisionId unbekannt ist (z.B. nach Restart).
     pub fn record_outcome(&self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool {
         let profile_name = match self.pending_decisions.write().remove(&decision_id) {
-            Some(name) => name,
+            Some((name, _ts)) => name,
             None => {
                 tracing::warn!(
                     ?decision_id,
@@ -253,6 +278,8 @@ impl RouterEngine {
         query_embedding: &[f32],
         query_text: &str,
     ) -> Result<RoutingDecision> {
+        self.evict_stale_decisions();
+
         if query_embedding.iter().any(|v| !v.is_finite()) {
             return Err(MemFuseError::InvalidInput(
                 "query_embedding contains non-finite values (NaN/Inf)".to_string(),
@@ -377,7 +404,7 @@ impl RouterEngine {
         let decision_id = DecisionId::new();
         self.pending_decisions
             .write()
-            .insert(decision_id, selected_profile.name.clone());
+            .insert(decision_id, (selected_profile.name.clone(), Instant::now()));
 
         // 4. Construct ContextWindow using ContextManager tailored to selected_profile.token_budget and min_relevance_score
         let raw_chunks: Vec<ContextChunk> = chunks.into_iter().map(|(c, _)| c).collect();
@@ -522,25 +549,32 @@ impl RouterEngine {
             };
 
             if score >= threshold {
-                let q_threshold = calibration
-                    .get(&profile.name)
-                    .map(|st| st.conformal.quantile_threshold)
-                    .unwrap_or(profile.min_relevance_score);
+                let (quantile, alpha) = match calibration.get(&profile.name) {
+                    Some(st) => (st.conformal.quantile_threshold, st.conformal.alpha),
+                    None => (profile.min_relevance_score, 0.05),
+                };
+                let non_conformity = (1.0 - (score / quantile.max(f32::EPSILON))).clamp(0.0, 1.0);
+                let selection_margin = if quantile > 0.0 {
+                    score / quantile
+                } else {
+                    1.0
+                };
+
                 let confidence = ConfidenceMetrics {
                     score_lower: if is_calibrated {
-                        Some(score * 0.9)
+                        Some(score * (1.0 - alpha))
                     } else {
                         None
                     },
                     score_upper: if is_calibrated {
-                        Some(score * 1.1)
+                        Some(score * (1.0 + alpha))
                     } else {
                         None
                     },
                     calibrated: is_calibrated,
-                    quantile_threshold: q_threshold,
-                    non_conformity_score: 0.0,
-                    selection_margin: 1.0,
+                    quantile_threshold: quantile,
+                    non_conformity_score: non_conformity,
+                    selection_margin,
                 };
                 return Ok((orig_idx, profile.clone(), confidence));
             }
@@ -555,11 +589,23 @@ impl RouterEngine {
                 ));
             }
         };
-        let _fallback_score = compute_profile_score(fallback_profile, chunks);
+        let fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
-        let q_threshold = state
-            .map(|st| st.conformal.quantile_threshold)
-            .unwrap_or(fallback_profile.min_relevance_score);
+        let (q_threshold, alpha, is_calibrated) = match state {
+            Some(st) => (
+                st.conformal.quantile_threshold,
+                st.conformal.alpha,
+                st.is_calibrated(fallback_profile.fingerprint.as_ref()),
+            ),
+            None => (fallback_profile.min_relevance_score, 0.05, false),
+        };
+        let non_conformity =
+            (1.0 - (fallback_score / q_threshold.max(f32::EPSILON))).clamp(0.0, 1.0);
+        let selection_margin = if q_threshold > 0.0 {
+            fallback_score / q_threshold
+        } else {
+            1.0
+        };
 
         tracing::warn!(
             profile = %fallback_profile.name,
@@ -567,12 +613,20 @@ impl RouterEngine {
         );
 
         let confidence = ConfidenceMetrics {
-            score_lower: None,
-            score_upper: None,
-            calibrated: false,
+            score_lower: if is_calibrated {
+                Some(fallback_score * (1.0 - alpha))
+            } else {
+                None
+            },
+            score_upper: if is_calibrated {
+                Some(fallback_score * (1.0 + alpha))
+            } else {
+                None
+            },
+            calibrated: is_calibrated,
             quantile_threshold: q_threshold,
-            non_conformity_score: 0.0,
-            selection_margin: 1.0,
+            non_conformity_score: non_conformity,
+            selection_margin,
         };
 
         Ok((fallback_idx, fallback_profile.clone(), confidence))

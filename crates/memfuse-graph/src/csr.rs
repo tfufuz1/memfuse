@@ -16,6 +16,7 @@
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use crate::consistency_enforcement::{ConsistencyEnforcer, EdgeAssertion};
+use crate::GraphIndexExt;
 use memfuse_core::{
     BoxFuture, DocId, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
     StorageEngine, TxId,
@@ -99,6 +100,8 @@ pub const MAX_VISITED_NODES: usize = 10_000;
 
 /// LSM-Key-Prefix für alle Graph-Entities.
 const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
+/// LSM-Key-Prefix für gelöschte Graph-Entities (Tombstones).
+const GRAPH_ENTITY_DELETED_PREFIX: &[u8] = b"graph:entity:deleted:";
 /// LSM-Key-Prefix für alle Graph-Edges.
 const GRAPH_EDGE_PREFIX: &[u8] = b"__graph:edge:";
 /// LSM-Key-Prefix für alle Community-Assignments.
@@ -648,6 +651,7 @@ impl CsrGraph {
         self.inner.read()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_write(&self) -> parking_lot::RwLockWriteGuard<'_, GraphInner> {
         self.inner.write()
     }
@@ -689,6 +693,7 @@ impl CsrGraph {
 
     /// Atomically tombstones a list of edges with WAL sequence provenance (INV-GRAPH-PROV-1),
     /// returning newly tombstoned edges and affected node IDs.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn tombstone_edges_direct(
         &self,
         edges: &[(EntityId, EntityId)],
@@ -1022,12 +1027,26 @@ impl CsrGraph {
     pub async fn load_from_storage<S: StorageEngine + ?Sized>(storage: &S) -> Result<Self> {
         let graph = Self::new();
 
+        // 0. Deleted Entities (Tombstones) laden
+        let deleted_entries = storage.scan_prefix(GRAPH_ENTITY_DELETED_PREFIX).await?;
+        let mut deleted_entity_ids = HashSet::new();
+        for (raw_key, _) in deleted_entries {
+            if let Some(key_payload) = raw_key.get(GRAPH_ENTITY_DELETED_PREFIX.len()..) {
+                if let Ok(key_str) = std::str::from_utf8(key_payload) {
+                    deleted_entity_ids.insert(EntityId::from(key_str));
+                }
+            }
+        }
+
         // 1. Entities laden
         let entity_entries = storage.scan_prefix(GRAPH_ENTITY_PREFIX).await?;
         let mut entity_count = 0usize;
         for (_, raw_value) in entity_entries {
             let entity: Entity = bincode::deserialize(&raw_value)
                 .map_err(|e| MemFuseError::Internal(format!("graph entity deserialize: {e}")))?;
+            if deleted_entity_ids.contains(&entity.id) {
+                continue;
+            }
             graph.load_entity_direct(entity)?;
             entity_count += 1;
         }
@@ -1416,6 +1435,37 @@ impl CsrGraph {
         result
     }
 
+    /// Collects internal node indices of entities that are marked as deleted in storage.
+    pub async fn get_deleted_node_indices(&self) -> HashSet<usize> {
+        if self.storage.is_none() {
+            return HashSet::new();
+        }
+        let entity_ids: Vec<(usize, EntityId)> = {
+            let inner = self.inner.read();
+            inner.reverse_map.iter().copied().enumerate().collect()
+        };
+        let mut deleted_indices = HashSet::new();
+        for (idx, entity_id) in entity_ids {
+            if self.is_entity_deleted(entity_id).await {
+                deleted_indices.insert(idx);
+            }
+        }
+        deleted_indices
+    }
+
+    /// Calculates Personalized PageRank (PPR) using a reusable [`crate::PprContext`] buffer to avoid allocations.
+    pub async fn personalized_page_rank_with_context_async(
+        &self,
+        seed_nodes: &[EntityId],
+        config: &memfuse_core::PprConfig,
+        ctx: &mut crate::PprContext,
+    ) -> Vec<(EntityId, f32)> {
+        let deleted_nodes = self.get_deleted_node_indices().await;
+        self.compact();
+        let inner = self.inner.read();
+        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, &deleted_nodes, ctx)
+    }
+
     /// Calculates Personalized PageRank (PPR) using a reusable [`crate::PprContext`] buffer to avoid allocations.
     pub fn personalized_page_rank_with_context(
         &self,
@@ -1425,7 +1475,8 @@ impl CsrGraph {
     ) -> Vec<(EntityId, f32)> {
         self.compact();
         let inner = self.inner.read();
-        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, ctx)
+        let deleted_nodes = HashSet::new();
+        crate::ppr::compute_ppr_with_context(&inner, seed_nodes, config, &deleted_nodes, ctx)
     }
 
     /// Returns the number of committed entities in the graph.
@@ -1443,6 +1494,16 @@ impl CsrGraph {
         }
     }
 
+    /// Prüft ob eine Entity per Tombstone als gelöscht markiert wurde.
+    /// Nutzt den Key "graph:entity:deleted:{entity_id}" im LSM-Storage (wenn vorhanden).
+    pub async fn is_entity_deleted(&self, entity: EntityId) -> bool {
+        if let Some(storage) = &self.storage {
+            let key = format!("graph:entity:deleted:{}", entity.0);
+            return storage.get(key.as_bytes()).await.ok().flatten().is_some();
+        }
+        false
+    }
+
     /// Returns the number of edges in the graph.
     pub fn edge_count(&self) -> usize {
         let inner = self.inner.read();
@@ -1453,6 +1514,117 @@ impl CsrGraph {
                 .values()
                 .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
                 .sum::<usize>()
+    }
+
+    /// Removes an entity node and all its incident (outgoing and incoming) edges from the graph.
+    pub async fn remove_entity(&self, tx: TxId, entity: EntityId) -> Result<()> {
+        GraphIndexExt::remove_entity(self, tx, entity).await
+    }
+}
+
+impl GraphIndexExt for CsrGraph {
+    fn remove_entity<'a>(&'a self, tx: TxId, entity: EntityId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let (target_idx, outgoing_targets, incoming_sources) = {
+                let inner = self.inner.read();
+                let idx = match inner.id_map.get(&entity) {
+                    Some(&i) => i,
+                    None => return Ok(()),
+                };
+
+                let mut outgoing = Vec::new();
+                let mut incoming = Vec::new();
+
+                // a. Outgoing edges (entity -> *)
+                if idx < inner.offsets.len() - 1 {
+                    for j in inner.offsets[idx]..inner.offsets[idx + 1] {
+                        let t_idx = inner.targets[j];
+                        if !inner.tombstoned_edges.contains(&(idx, t_idx)) {
+                            if let Some(&t_id) = inner.reverse_map.get(t_idx) {
+                                outgoing.push(t_id);
+                            }
+                        }
+                    }
+                }
+                if let Some(pending) = inner.pending_edges.get(&idx) {
+                    for edge in pending {
+                        if !inner.tombstoned_edges.contains(&(idx, edge.target)) {
+                            if let Some(&t_id) = inner.reverse_map.get(edge.target) {
+                                outgoing.push(t_id);
+                            }
+                        }
+                    }
+                }
+
+                // b. Incoming edges (* -> entity)
+                let num_nodes = inner.reverse_map.len();
+                for node_idx in 0..num_nodes {
+                    let source_id = match inner.reverse_map.get(node_idx) {
+                        Some(&id) => id,
+                        None => continue,
+                    };
+
+                    if node_idx < inner.offsets.len() - 1 {
+                        for j in inner.offsets[node_idx]..inner.offsets[node_idx + 1] {
+                            if inner.targets[j] == idx
+                                && !inner.tombstoned_edges.contains(&(node_idx, idx))
+                            {
+                                incoming.push(source_id);
+                            }
+                        }
+                    }
+                    if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                        for edge in pending {
+                            if edge.target == idx
+                                && !inner.tombstoned_edges.contains(&(node_idx, idx))
+                            {
+                                incoming.push(source_id);
+                            }
+                        }
+                    }
+                }
+
+                (idx, outgoing, incoming)
+            };
+
+            // Tombstone outgoing edges (entity -> to)
+            for to_id in outgoing_targets {
+                GraphIndex::remove_edge(self, tx, entity, to_id).await?;
+            }
+
+            // Tombstone incoming edges (from -> entity)
+            for from_id in incoming_sources {
+                GraphIndex::remove_edge(self, tx, from_id, entity).await?;
+            }
+
+            // c. Den Knoten selbst aus inner.id_map entfernen
+            {
+                let mut inner = self.inner.write();
+                inner.id_map.remove(&entity);
+                if target_idx < inner.entities.len() {
+                    inner.entities[target_idx] = None;
+                }
+                inner.communities.remove(&entity);
+                inner.is_dirty = true;
+            }
+
+            // LSM-Storage Marker / Deletion schreiben
+            if let Some(ref storage) = self.storage {
+                let entity_key = [GRAPH_ENTITY_PREFIX, entity.as_bytes().as_slice()].concat();
+                storage.delete(tx, &entity_key).await?;
+
+                let deleted_key =
+                    [GRAPH_ENTITY_DELETED_PREFIX, entity.as_bytes().as_slice()].concat();
+                storage
+                    .put(tx, &deleted_key, &tx.inner().to_le_bytes())
+                    .await?;
+            }
+
+            // d. Committe die Änderungen
+            GraphIndex::commit(self, tx).await?;
+
+            Ok(())
+        })
     }
 }
 
@@ -1482,12 +1654,18 @@ impl GraphIndex for CsrGraph {
             }
             // Lazy index allocation: Entity indices are assigned in commit(),
             // avoiding premature mutation of id_map/reverse_map on rollback.
-            let mut inner = self.inner.write();
-            inner
-                .staged_entities
-                .entry(tx)
-                .or_default()
-                .insert(entity.id, entity);
+            {
+                let mut inner = self.inner.write();
+                inner
+                    .staged_entities
+                    .entry(tx)
+                    .or_default()
+                    .insert(entity.id, entity.clone());
+            }
+
+            if let Some(ref storage) = self.storage {
+                self.persist_entity(storage.as_ref(), tx, &entity).await?;
+            }
             Ok(())
         })
     }
@@ -1541,7 +1719,6 @@ impl GraphIndex for CsrGraph {
                 }
             }
 
-            let mut inner = self.inner.write();
             let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
             // Register source document provenance for cascading invalidation
@@ -1553,21 +1730,37 @@ impl GraphIndex for CsrGraph {
             // Lazy index allocation: Store EntityIds directly in staged_edges.
             // Internal indices via get_or_create_index are allocated only during commit(),
             // ensuring rollback does not leak entity indices into id_map/reverse_map.
-            inner
-                .staged_edges
-                .entry(tx)
-                .or_default()
-                .entry(edge.from)
-                .or_default()
-                .push(StagedEdgePayload {
-                    target: edge.to,
+            {
+                let mut inner = self.inner.write();
+                inner
+                    .staged_edges
+                    .entry(tx)
+                    .or_default()
+                    .entry(edge.from)
+                    .or_default()
+                    .push(StagedEdgePayload {
+                        target: edge.to,
+                        weight: edge.weight,
+                        tx_valid_from,
+                        tx_valid_to: edge.tx_valid_to,
+                        business_valid_from: edge.business_valid_from,
+                        business_valid_to: edge.business_valid_to,
+                        source_doc_id: edge.source_doc_id,
+                    });
+            }
+
+            if let Some(ref storage) = self.storage {
+                let payload = PersistedEdgePayload {
                     weight: edge.weight,
                     tx_valid_from,
                     tx_valid_to: edge.tx_valid_to,
                     business_valid_from: edge.business_valid_from,
                     business_valid_to: edge.business_valid_to,
                     source_doc_id: edge.source_doc_id,
-                });
+                };
+                self.persist_edge(storage.as_ref(), tx, &edge.from, &edge.to, &payload)
+                    .await?;
+            }
             Ok(())
         })
     }
@@ -1578,9 +1771,15 @@ impl GraphIndex for CsrGraph {
         config: &'a memfuse_core::PprConfig,
     ) -> BoxFuture<'a, Result<Vec<(EntityId, f32)>>> {
         Box::pin(async move {
+            let deleted_nodes = self.get_deleted_node_indices().await;
             self.compact();
             let inner = self.inner.read();
-            Ok(crate::ppr::compute_ppr(&inner, seed_nodes, config))
+            Ok(crate::ppr::compute_ppr(
+                &inner,
+                seed_nodes,
+                config,
+                &deleted_nodes,
+            ))
         })
     }
 
@@ -1938,52 +2137,6 @@ impl GraphIndex for CsrGraph {
                  Rollback-Korrelation kann verletzt sein."
             );
             }
-            let (entities_to_commit, edges_to_commit, removals_to_commit) = {
-                let inner = self.inner.read();
-                let entities = inner.staged_entities.get(&tx).cloned();
-                let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
-                    let mut list = Vec::new();
-                    for (&from_id, to_list) in tx_edges {
-                        for edge in to_list {
-                            list.push((
-                                from_id,
-                                edge.target,
-                                PersistedEdgePayload {
-                                    weight: edge.weight,
-                                    tx_valid_from: edge.tx_valid_from,
-                                    tx_valid_to: edge.tx_valid_to,
-                                    business_valid_from: edge.business_valid_from,
-                                    business_valid_to: edge.business_valid_to,
-                                    source_doc_id: edge.source_doc_id,
-                                },
-                            ));
-                        }
-                    }
-                    list
-                });
-                let removals = inner.staged_removals.get(&tx).cloned();
-                (entities, edges, removals)
-            };
-
-            if let Some(ref storage) = self.storage {
-                if let Some(ref entities) = entities_to_commit {
-                    for entity in entities.values() {
-                        self.persist_entity(storage.as_ref(), tx, entity).await?;
-                    }
-                }
-                if let Some(ref edges) = edges_to_commit {
-                    for (from_id, to_id, payload) in edges {
-                        self.persist_edge(storage.as_ref(), tx, from_id, to_id, payload)
-                            .await?;
-                    }
-                }
-                if let Some(ref removals) = removals_to_commit {
-                    for (from_id, to_id) in removals {
-                        self.delete_edge_persistence(storage.as_ref(), tx, from_id, to_id)
-                            .await?;
-                    }
-                }
-            }
 
             let mut inner = self.inner.write();
 
@@ -2081,12 +2234,18 @@ impl GraphIndex for CsrGraph {
                  möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet."
             );
             }
-            let mut inner = self.inner.write();
-            inner
-                .staged_removals
-                .entry(tx)
-                .or_default()
-                .push((from, to));
+            {
+                let mut inner = self.inner.write();
+                inner
+                    .staged_removals
+                    .entry(tx)
+                    .or_default()
+                    .push((from, to));
+            }
+            if let Some(ref storage) = self.storage {
+                self.delete_edge_persistence(storage.as_ref(), tx, &from, &to)
+                    .await?;
+            }
             Ok(())
         })
     }
@@ -2246,24 +2405,22 @@ impl crate::path_rag::PathGraph for CsrGraph {
                 let start_edge = inner.offsets[u_idx];
                 let end_edge = inner.offsets[u_idx + 1];
                 for edge_idx in start_edge..end_edge {
-                    if inner.targets[edge_idx] == target_idx {
-                        if !inner.tombstoned_edges.contains(&(u_idx, target_idx)) {
-                            if seen.insert(u_id) {
-                                result.push((u_id, inner.weights[edge_idx]));
-                            }
-                        }
+                    if inner.targets[edge_idx] == target_idx
+                        && !inner.tombstoned_edges.contains(&(u_idx, target_idx))
+                        && seen.insert(u_id)
+                    {
+                        result.push((u_id, inner.weights[edge_idx]));
                     }
                 }
             }
 
             if let Some(pending) = inner.pending_edges.get(&u_idx) {
                 for edge in pending {
-                    if edge.target == target_idx {
-                        if !inner.tombstoned_edges.contains(&(u_idx, target_idx)) {
-                            if seen.insert(u_id) {
-                                result.push((u_id, edge.weight));
-                            }
-                        }
+                    if edge.target == target_idx
+                        && !inner.tombstoned_edges.contains(&(u_idx, target_idx))
+                        && seen.insert(u_id)
+                    {
+                        result.push((u_id, edge.weight));
                     }
                 }
             }
@@ -2273,7 +2430,7 @@ impl crate::path_rag::PathGraph for CsrGraph {
     }
 }
 
-impl<'a> crate::path_rag::PathGraph for &'a CsrGraph {
+impl crate::path_rag::PathGraph for &CsrGraph {
     fn neighbors_with_weights(&self, node: EntityId) -> Vec<(EntityId, f32)> {
         (*self).neighbors_with_weights(node)
     }
@@ -4371,5 +4528,40 @@ mod tests {
                 "Insertion {i} on default CsrGraph without consistency enforcer should always succeed"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_csr_is_entity_deleted_returns_false_for_live_entity() {
+        use memfuse_store::{LsmConfig, LsmStorage};
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let graph = CsrGraph::with_storage(storage.clone());
+        let entity_live = EntityId::new(10);
+        let entity_deleted = EntityId::new(20);
+
+        // No storage marker exists for entity_live -> returns false
+        assert!(!graph.is_entity_deleted(entity_live).await);
+
+        // Put deletion tombstone key in LSM storage for entity_deleted
+        let tx = TxId::new(1);
+        let tombstone_key = format!("graph:entity:deleted:{}", entity_deleted.0);
+        storage
+            .put(tx, tombstone_key.as_bytes(), b"deleted")
+            .await
+            .unwrap();
+        storage.commit(tx).await.unwrap();
+
+        // Marker exists -> returns true
+        assert!(graph.is_entity_deleted(entity_deleted).await);
+        // Live entity still returns false
+        assert!(!graph.is_entity_deleted(entity_live).await);
     }
 }
