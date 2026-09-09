@@ -25,7 +25,7 @@ pub mod hnsw;
 pub mod persistence;
 pub mod quantize;
 
-pub mod nucleation;
+pub mod partial_rebuild;
 
 #[cfg(feature = "experimental-diskann")]
 pub use diskann::{DiskAnnConfig, DiskAnnFallbackPolicy, DiskAnnIndex};

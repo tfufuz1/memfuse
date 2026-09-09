@@ -1,4 +1,4 @@
-//! F-02: Lokaler Nukleations-Trigger für HNSW-Hot-Path-Regionen.
+//! F-02: Lokaler Partial-Rebuild-Trigger für HNSW-Hot-Path-Regionen.
 //!
 //! FEATURE-FLAG: `partial-index-rebuild` (default: off).
 //! ARCHITEKTUR: Ergänzt den globalen `HNSW_REBUILD_DELETION_RATIO`-Trigger.
@@ -10,9 +10,9 @@
 
 use std::collections::{HashMap, VecDeque};
 
-/// Konfiguration für den Nukleations-Trigger.
+/// Konfiguration für den Partial-Rebuild-Trigger.
 #[derive(Debug, Clone)]
-pub struct NucleationConfig {
+pub struct PartialRebuildConfig {
     /// Kritische Übersättigungs-Schwelle θ_c. Default: 3.0 (3× globale Dichte).
     pub critical_ratio: f32,
     /// Ringpuffer-Größe N für Traversal-Statistik. Default: 1000.
@@ -21,7 +21,7 @@ pub struct NucleationConfig {
     pub min_global_ratio: f32,
 }
 
-impl Default for NucleationConfig {
+impl Default for PartialRebuildConfig {
     fn default() -> Self {
         Self {
             critical_ratio: 3.0,
@@ -34,13 +34,13 @@ impl Default for NucleationConfig {
 /// Ringpuffer für besuchte HNSW-Knoten-IDs während ef_search-Traversierungen.
 #[derive(Debug)]
 pub struct TraversalTracker {
-    config: NucleationConfig,
+    config: PartialRebuildConfig,
     visited_ring: VecDeque<Vec<u64>>, // Ein Vec<u64> pro Traversierungsaufruf
 }
 
 impl TraversalTracker {
     /// Erstellt einen neuen TraversalTracker mit der gegebenen Konfiguration.
-    pub fn new(config: NucleationConfig) -> Self {
+    pub fn new(config: PartialRebuildConfig) -> Self {
         Self {
             visited_ring: VecDeque::with_capacity(config.traversal_window),
             config,
@@ -115,14 +115,14 @@ impl TraversalTracker {
 
 /// Entscheidet ob ein lokaler Partial-Rebuild ausgelöst werden soll.
 ///
-/// Returns `Some(hot_node_ids)` wenn Nukleation ausgelöst werden soll,
+/// Returns `Some(hot_node_ids)` wenn Partial-Rebuild ausgelöst werden soll,
 /// `None` wenn kein Rebuild nötig.
 #[cfg(feature = "partial-index-rebuild")]
-pub fn should_trigger_nucleation(
+pub fn should_trigger_partial_rebuild(
     tracker: &TraversalTracker,
     tombstone_map: &HashMap<u64, bool>,
     global_tombstone_ratio: f32,
-    config: &NucleationConfig,
+    config: &PartialRebuildConfig,
 ) -> Option<Vec<u64>> {
     if global_tombstone_ratio < config.min_global_ratio {
         return None;
@@ -140,8 +140,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_nucleation_tracker_records_traversals() {
-        let config = NucleationConfig {
+    fn test_partial_rebuild_tracker_records_traversals() {
+        let config = PartialRebuildConfig {
             traversal_window: 5,
             ..Default::default()
         };
@@ -161,8 +161,8 @@ mod tests {
     }
 
     #[test]
-    fn test_nucleation_no_trigger_below_min_global_ratio() {
-        let config = NucleationConfig {
+    fn test_partial_rebuild_no_trigger_below_min_global_ratio() {
+        let config = PartialRebuildConfig {
             min_global_ratio: 0.05,
             critical_ratio: 3.0,
             ..Default::default()
@@ -179,14 +179,14 @@ mod tests {
 
         // Global ratio 0.005 < min_global_ratio (0.05)
         #[cfg(feature = "partial-index-rebuild")]
-        let res = should_trigger_nucleation(&tracker, &tombstone_map, 0.005, &config);
+        let res = should_trigger_partial_rebuild(&tracker, &tombstone_map, 0.005, &config);
         #[cfg(feature = "partial-index-rebuild")]
         assert!(res.is_none());
     }
 
     #[test]
-    fn test_nucleation_trigger_on_local_oversaturation() {
-        let config = NucleationConfig {
+    fn test_partial_rebuild_trigger_on_local_oversaturation() {
+        let config = PartialRebuildConfig {
             critical_ratio: 3.0,
             min_global_ratio: 0.01,
             ..Default::default()
@@ -213,7 +213,7 @@ mod tests {
         // Global ratio = 0.05 (5%), Local ratio = 0.30 (30%) -> S_local = 6.0 > theta_c (3.0)
         #[cfg(feature = "partial-index-rebuild")]
         {
-            let res = should_trigger_nucleation(&tracker, &tombstone_map, 0.05, &config);
+            let res = should_trigger_partial_rebuild(&tracker, &tombstone_map, 0.05, &config);
             assert!(res.is_some());
             let triggered_nodes = res.unwrap(); // unwrap
             assert_eq!(triggered_nodes.len(), 10);

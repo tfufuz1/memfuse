@@ -99,9 +99,9 @@ pub struct HnswConfig {
     /// Sample size used for ScalarQuantizer recalibration during rebuilds.
     /// Default is 10,000 to balance speed and accuracy.
     pub quantizer_recalibration_sample_size: usize,
-    /// Nucleation configuration for hot-path local rebuilds (F-02).
+    /// Partial rebuild configuration for hot-path local rebuilds (F-02).
     #[cfg(feature = "partial-index-rebuild")]
-    pub nucleation_config: crate::nucleation::NucleationConfig,
+    pub partial_rebuild_config: crate::partial_rebuild::PartialRebuildConfig,
 }
 
 impl Default for HnswConfig {
@@ -118,7 +118,7 @@ impl Default for HnswConfig {
             quantize: false,
             quantizer_recalibration_sample_size: 10_000,
             #[cfg(feature = "partial-index-rebuild")]
-            nucleation_config: crate::nucleation::NucleationConfig::default(),
+            partial_rebuild_config: crate::partial_rebuild::PartialRebuildConfig::default(),
         }
     }
 }
@@ -227,10 +227,10 @@ impl HnswConfigBuilder {
         self
     }
 
-    /// Sets the nucleation configuration for local hot-path rebuilds (F-02).
+    /// Sets the partial rebuild configuration for local hot-path rebuilds (F-02).
     #[cfg(feature = "partial-index-rebuild")]
-    pub fn nucleation_config(mut self, config: crate::nucleation::NucleationConfig) -> Self {
-        self.config.nucleation_config = config;
+    pub fn partial_rebuild_config(mut self, config: crate::partial_rebuild::PartialRebuildConfig) -> Self {
+        self.config.partial_rebuild_config = config;
         self
     }
 
@@ -324,7 +324,7 @@ pub struct HnswIndexCore {
     pub rebuild_count: AtomicU64,
     pub visited_dead_nodes: AtomicU64,
     #[cfg(feature = "partial-index-rebuild")]
-    pub traversal_tracker: RwLock<crate::nucleation::TraversalTracker>,
+    pub traversal_tracker: RwLock<crate::partial_rebuild::TraversalTracker>,
 }
 
 impl HnswIndex {
@@ -335,8 +335,8 @@ impl HnswIndex {
         Ok(Self {
             inner: std::sync::Arc::new(HnswIndexCore {
                 #[cfg(feature = "partial-index-rebuild")]
-                traversal_tracker: RwLock::new(crate::nucleation::TraversalTracker::new(
-                    config.nucleation_config.clone(),
+                traversal_tracker: RwLock::new(crate::partial_rebuild::TraversalTracker::new(
+                    config.partial_rebuild_config.clone(),
                 )),
                 config,
                 validation_error: None,
@@ -372,8 +372,8 @@ impl HnswIndex {
         Self {
             inner: std::sync::Arc::new(HnswIndexCore {
                 #[cfg(feature = "partial-index-rebuild")]
-                traversal_tracker: RwLock::new(crate::nucleation::TraversalTracker::new(
-                    config.nucleation_config.clone(),
+                traversal_tracker: RwLock::new(crate::partial_rebuild::TraversalTracker::new(
+                    config.partial_rebuild_config.clone(),
                 )),
                 config,
                 validation_error,
@@ -644,16 +644,16 @@ impl HnswIndex {
         self.inner.rebuild().await
     }
 
-    /// Rebuilds specific region node IDs (Partial-Rebuild for Nucleation F-02).
+    /// Rebuilds specific region node IDs (Partial-Rebuild F-02).
     /// Preserves cross-region neighborhood connections (INV-NUC-1).
     pub async fn rebuild_region(&self, region_node_ids: Vec<u64>) -> Result<()> {
         self.inner.rebuild_region(region_node_ids).await
     }
 
-    /// Checks if nucleation should be triggered for oversaturated hot-path regions
+    /// Checks if partial rebuild should be triggered for oversaturated hot-path regions
     /// and spawns an async partial rebuild if so.
     #[cfg(feature = "partial-index-rebuild")]
-    pub fn check_and_trigger_nucleation(&self) -> Option<tokio::task::JoinHandle<Result<()>>> {
+    pub fn check_and_trigger_partial_rebuild(&self) -> Option<tokio::task::JoinHandle<Result<()>>> {
         let global_tombstone_ratio = self.deleted_ratio() as f32;
         let tracker = self.inner.traversal_tracker.read();
 
@@ -666,14 +666,14 @@ impl HnswIndex {
             tombstone_map.insert(id, deleted_guard.contains(id));
         }
 
-        // Convert AHashMap to HashMap for should_trigger_nucleation parameter
+        // Convert AHashMap to HashMap for should_trigger_partial_rebuild parameter
         let std_map: std::collections::HashMap<u64, bool> = tombstone_map.into_iter().collect();
 
-        let regions = crate::nucleation::should_trigger_nucleation(
+        let regions = crate::partial_rebuild::should_trigger_partial_rebuild(
             &tracker,
             &std_map,
             global_tombstone_ratio,
-            &self.inner.config.nucleation_config,
+            &self.inner.config.partial_rebuild_config,
         );
 
         if let Some(region_node_ids) = regions {
@@ -681,7 +681,7 @@ impl HnswIndex {
             Some(tokio::spawn(async move {
                 let res = inner.rebuild_region(region_node_ids).await;
                 if let Err(ref e) = res {
-                    tracing::error!("Failed local partial rebuild for nucleation: {}", e);
+                    tracing::error!("Failed local partial rebuild: {}", e);
                 }
                 res
             }))
@@ -1805,7 +1805,7 @@ impl HnswIndexCore {
         Ok(())
     }
 
-    /// Performs a local partial rebuild on a region of nodes (F-02 Nucleation Trigger).
+    /// Performs a local partial rebuild on a region of nodes (F-02 Partial-Rebuild Trigger).
     ///
     /// Cleans up tombstoned nodes within the region and rewires connections while
     /// preserving cross-region neighborhood boundary connections (INV-NUC-1).
@@ -2446,7 +2446,7 @@ impl VectorIndex for HnswIndex {
         }
 
         #[cfg(feature = "partial-index-rebuild")]
-        self.check_and_trigger_nucleation();
+        self.check_and_trigger_partial_rebuild();
 
         self.inner.last_tx_id.store(tx.inner(), Ordering::SeqCst);
         Ok(())
@@ -3932,8 +3932,8 @@ mod tests {
 
     #[tokio::test]
     #[cfg(feature = "partial-index-rebuild")]
-    async fn test_hnsw_nucleation_integration() {
-        let nucleation_config = crate::nucleation::NucleationConfig {
+    async fn test_hnsw_partial_rebuild_integration() {
+        let partial_rebuild_config = crate::partial_rebuild::PartialRebuildConfig {
             critical_ratio: 2.0,
             traversal_window: 100,
             min_global_ratio: 0.01,
@@ -3941,7 +3941,7 @@ mod tests {
 
         let config = HnswConfigBuilder::new(4)
             .rebuild_threshold(0.0) // Disable automatic global rebuilds
-            .nucleation_config(nucleation_config)
+            .partial_rebuild_config(partial_rebuild_config)
             .build()
             .unwrap();
 
@@ -3969,10 +3969,10 @@ mod tests {
         index.delete(tx2, DocId::new(2)).await.unwrap();
         index.delete(tx2, DocId::new(99)).await.unwrap();
 
-        // Commit triggers check_and_trigger_nucleation
+        // Commit triggers check_and_trigger_partial_rebuild
         index.commit(tx2).await.unwrap();
 
-        // Allow async nucleation task to finish
+        // Allow async partial rebuild task to finish
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // Verify remaining docs in index
