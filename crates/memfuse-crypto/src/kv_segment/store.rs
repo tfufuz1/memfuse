@@ -141,7 +141,7 @@ impl TenantIsolatedKvStore {
                     let evicted = segs.remove(lru_idx);
                     freed += evicted.len();
                     tracing::debug!(
-                        tenant_id = tenant.as_u64(),
+                        tenant_id = tenant.0,
                         segment_id = evicted.segment_id,
                         freed_bytes = evicted.len(),
                         "KV eviction worker: evicted segment"
