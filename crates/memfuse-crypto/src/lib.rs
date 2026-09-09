@@ -23,6 +23,7 @@ pub mod crypto;
 pub mod deletion_proof;
 pub mod error;
 pub mod kv_cipher;
+pub mod kv_segment;
 pub mod wal_crypto;
 
 pub use crypto::KeyManager as CryptoKey;

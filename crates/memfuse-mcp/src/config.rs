@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND:       2026-09-09T12:35:54Z (SESSION: 5665b844)
+// ZWECK:       Dynamic Provider Construction for Embedding & LLM backends (Ollama, ONNX, Candle, Mock)
+// INVARIANTEN: Direct provider instantiation without leaking implementation details; fallback capability checking
+// HOTSPOTS:    create_embedding_provider(), create_llm_text_generator()
+// SIEHE AUCH:  ADR-010, memfuse-core/src/traits/mod.rs
+
 use memfuse_core::{EmbeddingProvider, LlmTextGenerator, MemFuseError};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -206,6 +213,10 @@ pub fn create_llm_text_generator(
 ) -> Result<Arc<dyn LlmTextGenerator>, MemFuseError> {
     match provider_type.to_lowercase().trim() {
         "ollama" => {
+            // AI-TAG[SMELL][MAJOR] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T12:35:54Z) (SESSION: 5665b844)
+            // BEFUND: OllamaConfig::default() is reassigned via config.base_url and config.model instead of struct init expression.
+            // RISIKO: Violates Clippy pedantic lint clippy::field_reassign_with_default, causing build failures when clippy warnings are denied.
+            // EMPFEHLUNG: Refactor to OllamaConfig { base_url: ollama_url.to_string(), model: llm_model.to_string(), ..Default::default() }.
             let mut config = memfuse_ollama::OllamaConfig::default();
             config.base_url = ollama_url.to_string();
             config.model = llm_model.to_string();
