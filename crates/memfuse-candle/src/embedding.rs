@@ -1,7 +1,5 @@
 use crate::model_registry::ModelFingerprint;
 use candle_core::Device;
-use memfuse_core::traits::embedding::EmbeddingError;
-use memfuse_core::traits::{BoxFuture, EmbeddingProvider};
 use memfuse_core::{MemFuseError, Result};
 use std::sync::Arc;
 
@@ -160,43 +158,10 @@ impl CandleEmbedInner for DefaultCandleEmbedModel {
     }
 }
 
-impl EmbeddingProvider for CandleEmbedClient {
-    fn provider_name(&self) -> &str {
-        "candle"
-    }
-
-    fn embedding_dim(&self) -> usize {
-        self.dim
-    }
-
-    fn embed<'a>(
-        &'a self,
-        text: &'a str,
-    ) -> BoxFuture<'a, std::result::Result<Vec<f32>, EmbeddingError>> {
-        let model = Arc::clone(&self.model);
-        let tokenizer = self.tokenizer.clone();
-        let device = self.device.clone();
-        let text_owned = text.to_string();
-
-        Box::pin(async move {
-            tokio::task::spawn_blocking(move || {
-                let mut guard = model.blocking_lock();
-                guard
-                    .embed(&text_owned, &tokenizer, &device)
-                    .map_err(|e| EmbeddingError::ComputationFailed(e.to_string()))
-            })
-            .await
-            .map_err(|e| {
-                EmbeddingError::ComputationFailed(format!("Candle task join error: {e}"))
-            })?
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memfuse_core::traits::TextEmbeddingEngine;
+    use memfuse_core::traits::{EmbeddingProvider, TextEmbeddingEngine};
 
     struct MockEmbedModel {
         dim: usize,

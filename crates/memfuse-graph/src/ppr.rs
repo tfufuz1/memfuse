@@ -49,9 +49,10 @@ pub(crate) fn compute_ppr(
     inner: &GraphInner,
     seed_nodes: &[EntityId],
     config: &PprConfig,
+    deleted_nodes: &HashSet<usize>,
 ) -> Vec<(EntityId, f32)> {
     let mut ctx = PprContext::new();
-    compute_ppr_with_context(inner, seed_nodes, config, &mut ctx)
+    compute_ppr_with_context(inner, seed_nodes, config, deleted_nodes, &mut ctx)
 }
 
 /// Calculates Personalized PageRank (PPR) over a compacted `GraphInner` state using a reusable [`PprContext`].
@@ -65,6 +66,7 @@ pub(crate) fn compute_ppr_with_context(
     inner: &GraphInner,
     seed_nodes: &[EntityId],
     config: &PprConfig,
+    deleted_nodes: &HashSet<usize>,
     ctx: &mut PprContext,
 ) -> Vec<(EntityId, f32)> {
     let n = inner.reverse_map.len();
@@ -74,12 +76,13 @@ pub(crate) fn compute_ppr_with_context(
 
     ctx.prepare(n);
 
-    // 1. Identify valid seed internal indices (must exist and have committed entity)
+    // 1. Identify valid seed internal indices (must exist, have committed entity, and not be deleted)
     let mut seen_seeds = HashSet::new();
 
     for &seed in seed_nodes {
         if let Some(&idx) = inner.id_map.get(&seed) {
             if idx < n
+                && !deleted_nodes.contains(&idx)
                 && inner.entities.get(idx).is_some_and(|e| e.is_some())
                 && seen_seeds.insert(idx)
             {
@@ -105,7 +108,7 @@ pub(crate) fn compute_ppr_with_context(
     let weights = &inner.weights;
 
     for i in 0..n {
-        if !inner.entities.get(i).is_some_and(|e| e.is_some()) {
+        if deleted_nodes.contains(&i) || !inner.entities.get(i).is_some_and(|e| e.is_some()) {
             continue;
         }
 
@@ -121,7 +124,10 @@ pub(crate) fn compute_ppr_with_context(
             let target = targets[edge_idx];
             let weight = weights[edge_idx];
 
-            if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+            if !deleted_nodes.contains(&target)
+                && inner.entities.get(target).is_some_and(|e| e.is_some())
+                && weight > 0.0
+            {
                 sum += weight;
             }
         }
@@ -153,10 +159,13 @@ pub(crate) fn compute_ppr_with_context(
     for _iter in 0..max_iters {
         ctx.next_ranks[..n].fill(0.0);
 
-        // Rank mass accumulated at dead-end (dangling) nodes
+        // Rank mass accumulated at dead-end (dangling) nodes (excluding deleted nodes)
         let mut dangling_sum = 0.0f32;
         for i in 0..n {
-            if inner.entities.get(i).is_some_and(|e| e.is_some()) && ctx.out_weight_sums[i] == 0.0 {
+            if !deleted_nodes.contains(&i)
+                && inner.entities.get(i).is_some_and(|e| e.is_some())
+                && ctx.out_weight_sums[i] == 0.0
+            {
                 dangling_sum += ctx.ranks[i];
             }
         }
@@ -169,6 +178,10 @@ pub(crate) fn compute_ppr_with_context(
 
         // Rank distribution across outgoing edges directly from CSR
         for i in 0..n {
+            if deleted_nodes.contains(&i) {
+                ctx.next_ranks[i] = 0.0; // Phantom-Node erhält keinen Rang
+                continue;
+            }
             let sum_w = ctx.out_weight_sums[i];
             let r_i = ctx.ranks[i];
             if sum_w > 0.0 && r_i > 0.0 {
@@ -184,7 +197,10 @@ pub(crate) fn compute_ppr_with_context(
                     let target = targets[edge_idx];
                     let weight = weights[edge_idx];
 
-                    if inner.entities.get(target).is_some_and(|e| e.is_some()) && weight > 0.0 {
+                    if !deleted_nodes.contains(&target)
+                        && inner.entities.get(target).is_some_and(|e| e.is_some())
+                        && weight > 0.0
+                    {
                         ctx.next_ranks[target] += share * weight;
                     }
                 }
@@ -216,10 +232,31 @@ pub(crate) fn compute_ppr_with_context(
         );
     }
 
-    // 5. Build and sort result vector
+    // 5. Re-normalize ranks so total non-deleted rank sum equals 1.0
+    let sum: f32 = ctx.ranks[..n]
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| !deleted_nodes.contains(idx))
+        .map(|(_, &r)| r)
+        .sum();
+    if sum > 0.0 {
+        let norm_denom = sum.max(f32::EPSILON);
+        for (idx, r) in ctx.ranks[..n].iter_mut().enumerate() {
+            if !deleted_nodes.contains(&idx) {
+                *r /= norm_denom;
+            } else {
+                *r = 0.0;
+            }
+        }
+    }
+
+    // 6. Build and sort result vector (excluding deleted nodes)
     let mut results = Vec::new();
     for (idx, &rank) in ctx.ranks[..n].iter().enumerate() {
-        if rank > 0.0 && inner.entities.get(idx).is_some_and(|e| e.is_some()) {
+        if !deleted_nodes.contains(&idx)
+            && rank > 0.0
+            && inner.entities.get(idx).is_some_and(|e| e.is_some())
+        {
             if let Some(&id) = inner.reverse_map.get(idx) {
                 results.push((id, rank));
             }
@@ -1122,6 +1159,170 @@ mod tests {
         assert!(
             elapsed.as_millis() < 500,
             "Max iterations ceiling must terminate execution promptly without hanging"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ppr_ignores_deleted_entities() {
+        use memfuse_core::StorageEngine;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let graph = CsrGraph::with_storage(storage.clone());
+        let tx = TxId::new(1);
+
+        let id_a = EntityId::new(1);
+        let id_b = EntityId::new(2);
+        let id_c = EntityId::new(3);
+
+        graph
+            .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_b, "Node B", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_c, "Node C", "Type"))
+            .await
+            .unwrap();
+
+        // A -> B -> C
+        graph
+            .add_edge(tx, Edge::new(id_a, id_b, "link"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_b, id_c, "link"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        // Mark Node B (id_b=2) as deleted in storage
+        let tx_del = TxId::new(2);
+        let tombstone_key = format!("graph:entity:deleted:{}", id_b.0);
+        storage
+            .put(tx_del, tombstone_key.as_bytes(), b"deleted")
+            .await
+            .unwrap();
+        storage.commit(tx_del).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph
+            .personalized_page_rank(&[id_a], &config)
+            .await
+            .unwrap();
+
+        // Node B must NOT be present in results
+        let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
+        assert!(
+            !ids.contains(&id_b),
+            "Deleted node B must be filtered out of PPR results"
+        );
+
+        // Total rank mass of live nodes must conserve to 1.0
+        let total_mass: f32 = results.iter().map(|(_, r)| r).sum();
+        assert!(
+            (total_mass - 1.0).abs() < 1e-4,
+            "Total rank mass must be conserved and re-normalized to 1.0, got {total_mass}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ppr_phantom_node_no_rank_mass() {
+        use memfuse_core::StorageEngine;
+        use memfuse_store::{LsmConfig, LsmStorage};
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Arc::new(
+            LsmStorage::new(LsmConfig {
+                path: dir.path().to_path_buf(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+        );
+        let graph = CsrGraph::with_storage(storage.clone());
+        let tx = TxId::new(1);
+
+        let id_a = EntityId::new(1);
+        let id_phantom_b = EntityId::new(2);
+        let id_c = EntityId::new(3);
+        let id_d = EntityId::new(4);
+
+        graph
+            .add_entity(tx, Entity::new(id_a, "Node A", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_phantom_b, "Phantom B", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_c, "Node C", "Type"))
+            .await
+            .unwrap();
+        graph
+            .add_entity(tx, Entity::new(id_d, "Node D", "Type"))
+            .await
+            .unwrap();
+
+        // A -> B, C -> B, D -> B (Phantom B has many incoming edges)
+        graph
+            .add_edge(tx, Edge::new(id_a, id_phantom_b, "in1"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_c, id_phantom_b, "in2"))
+            .await
+            .unwrap();
+        graph
+            .add_edge(tx, Edge::new(id_d, id_phantom_b, "in3"))
+            .await
+            .unwrap();
+        // A -> C
+        graph
+            .add_edge(tx, Edge::new(id_a, id_c, "link"))
+            .await
+            .unwrap();
+        graph.commit(tx).await.unwrap();
+
+        // Mark Node B as deleted
+        let tx_del = TxId::new(2);
+        let tombstone_key = format!("graph:entity:deleted:{}", id_phantom_b.0);
+        storage
+            .put(tx_del, tombstone_key.as_bytes(), b"deleted")
+            .await
+            .unwrap();
+        storage.commit(tx_del).await.unwrap();
+
+        let config = PprConfig::default();
+        let results = graph
+            .personalized_page_rank(&[id_a, id_c, id_d], &config)
+            .await
+            .unwrap();
+
+        // Deleted phantom node B must receive no rank and must not appear in results
+        assert!(
+            !results.iter().any(|(id, _)| *id == id_phantom_b),
+            "Phantom node B must not appear in PPR results despite many incoming edges"
+        );
+
+        let total_mass: f32 = results.iter().map(|(_, r)| r).sum();
+        assert!(
+            (total_mass - 1.0).abs() < 1e-4,
+            "Rank mass must conserve to 1.0 across remaining live nodes, got {total_mass}"
         );
     }
 }

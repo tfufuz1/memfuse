@@ -29,10 +29,11 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
             segments_created: 0,
             duplicates_tombstoned: Vec::new(),
             cascade_edge_tombstones_needed: Vec::new(),
+            cascade_errors: Vec::new(),
         });
     }
 
-    let result = run_consolidation_pass(turns, config);
+    let mut result = run_consolidation_pass(turns, config);
 
     // Tombstones auf echte Collection anwenden
     for doc_id in &result.duplicates_tombstoned {
@@ -65,13 +66,36 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
         }
     }
 
-    // Graph-Cascade: nur loggen (Implementierung in memfuse-graph Crate-Grenze)
-    // INVARIANTE P1-DAG: Crate ruft memfuse-graph nicht direkt an (Zyklen vermeiden)
+    // Kaskadierende Graph-Edge-Tombstones für supersedete Dokumente anwenden (INV-GRAPH-PROV-1)
     if !result.cascade_edge_tombstones_needed.is_empty() {
-        tracing::info!(
-            count = result.cascade_edge_tombstones_needed.len(),
-            "Consolidation pass: cascade graph edge tombstones needed — caller must invoke graph cleanup"
-        );
+        let tx = collection.allocate_tx()?;
+        for doc_id in &result.cascade_edge_tombstones_needed {
+            match memfuse_graph::cascade_invalidate_edges_for_superseded_doc(
+                &collection.graph_index,
+                *doc_id,
+                tx.inner(),
+            )
+            .await
+            {
+                Ok(report) => {
+                    tracing::debug!(
+                        doc_id = ?doc_id,
+                        tombstoned_edges = report.tombstoned_edge_count,
+                        "Consolidation pass: cascade edge invalidation successful"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        doc_id = ?doc_id,
+                        error = %e,
+                        "Consolidation pass: cascade edge invalidation failed"
+                    );
+                    result
+                        .cascade_errors
+                        .push(format!("DocId {:?}: {}", doc_id, e));
+                }
+            }
+        }
     }
 
     Ok(result)

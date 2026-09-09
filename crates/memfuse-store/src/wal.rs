@@ -387,7 +387,7 @@ impl Default for WalConfig {
 /// Write-Ahead Log for crash recovery.
 pub struct Wal {
     path: PathBuf,
-    file: tokio::sync::Mutex<tokio::fs::File>,
+    pub(crate) file: tokio::sync::Mutex<tokio::fs::File>,
     size: std::sync::atomic::AtomicU64,
     key_manager: Option<Arc<KeyManager>>,
     fallback_integrity_key: Option<[u8; 32]>,
@@ -1031,12 +1031,14 @@ impl Wal {
     }
 
     /// Prepares a batch of entries, ensuring correct HMAC chaining between them.
-    pub async fn prepare_batch(&self, ops: Vec<(WalOp, u64)>) -> Result<Vec<WalEntry>> {
+    /// Returns the prepared entries along with a snapshot of the pre-prepare HMAC chain link.
+    pub async fn prepare_batch(&self, ops: Vec<(WalOp, u64)>) -> Result<(Vec<WalEntry>, [u8; 32])> {
         let mut last_hmac = self.last_hmac.lock().await;
+        let prev_hmac = *last_hmac;
         let integrity_key = self.get_integrity_key()?;
 
         let mut entries = Vec::with_capacity(ops.len());
-        let mut current_chain = *last_hmac;
+        let mut current_chain = prev_hmac;
 
         for (op, seq_no) in ops {
             let entry = WalEntry::try_new(op, seq_no, &integrity_key, current_chain)?;
@@ -1046,7 +1048,14 @@ impl Wal {
 
         *last_hmac = current_chain;
 
-        Ok(entries)
+        Ok((entries, prev_hmac))
+    }
+
+    /// Restores the in-memory last HMAC to a previous snapshot state.
+    pub async fn restore_last_hmac(&self, hmac: [u8; 32]) -> Result<()> {
+        let mut guard = self.last_hmac.lock().await;
+        *guard = hmac;
+        Ok(())
     }
 
     fn get_integrity_key(&self) -> Result<[u8; 32]> {
@@ -2227,7 +2236,7 @@ mod tests {
             ),
         ];
 
-        let entries = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
+        let (entries, _) = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
         assert_eq!(entries.len(), 3);
 
         // Serialize all 3 entries into a single bytes payload
@@ -2305,7 +2314,7 @@ mod tests {
             ),
         ];
 
-        let batch = wal.prepare_batch(ops).await.expect("prepare batch"); // expect
+        let (batch, _) = wal.prepare_batch(ops).await.expect("prepare batch"); // expect
         assert_eq!(batch.len(), 3);
 
         wal.append_batch(&batch).await.expect("append batch"); // expect
@@ -2365,7 +2374,7 @@ mod tests {
             ),
         ];
 
-        let batch = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
+        let (batch, _) = wal.prepare_batch(ops).await.expect("prepare_batch"); // expect
         wal.append_batch(&batch).await.expect("append_batch"); // expect
 
         let wal_reopen = Wal::open_with_key_manager(&wal_path, Some(km))
@@ -2501,7 +2510,7 @@ mod tests {
                     2,
                 ),
             ];
-            let batch1 = wal.prepare_batch(ops1).await.expect("prepare 1"); // expect
+            let (batch1, _) = wal.prepare_batch(ops1).await.expect("prepare 1"); // expect
             wal.append_batch(&batch1).await.expect("append 1"); // expect
 
             // Batch 2: 2 entries
@@ -2523,7 +2532,7 @@ mod tests {
                     4,
                 ),
             ];
-            let batch2 = wal.prepare_batch(ops2).await.expect("prepare 2"); // expect
+            let (batch2, _) = wal.prepare_batch(ops2).await.expect("prepare 2"); // expect
             wal.append_batch(&batch2).await.expect("append 2"); // expect
         }
 
@@ -2852,8 +2861,8 @@ mod tests {
         });
 
         let (res1, res2) = tokio::join!(handle1, handle2);
-        let batch1 = res1.expect("join 1"); // expect
-        let batch2 = res2.expect("join 2"); // expect
+        let (batch1, _) = res1.expect("join 1"); // expect
+        let (batch2, _) = res2.expect("join 2"); // expect
 
         let prev1 = batch1[0].prev_hmac;
         let prev2 = batch2[0].prev_hmac;
@@ -2967,6 +2976,75 @@ mod tests {
             &raw_disk_bytes[0..4],
             &WAL_V3_HEADER,
             "Migrated file must start with WAL_V3_HEADER"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hmac_chain_intact_after_append_failure() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("append_failure.wal");
+
+        let wal = Wal::open(&wal_path).await.expect("open wal");
+
+        // 1. Initial write
+        let op1 = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"k1".to_vec(),
+            value: b"v1".to_vec(),
+        };
+        let (batch1, _) = wal
+            .prepare_batch(vec![(op1, 1)])
+            .await
+            .expect("prepare batch 1");
+        wal.append_batch(&batch1).await.expect("append batch 1");
+
+        let hmac_before = wal.last_hmac_snapshot().await;
+
+        // 2. Prepare a second batch that advances last_hmac
+        let op2 = WalOp::Put {
+            tx_id: TxId::new(2),
+            key: b"k2".to_vec(),
+            value: b"v2".to_vec(),
+        };
+        let (batch2, prev_hmac) = wal
+            .prepare_batch(vec![(op2, 2)])
+            .await
+            .expect("prepare batch 2");
+        assert_ne!(
+            wal.last_hmac_snapshot().await,
+            hmac_before,
+            "prepare_batch should advance in-memory last_hmac"
+        );
+        assert_eq!(prev_hmac, hmac_before);
+
+        // 3. Simulate append failure by replacing file with a read-only file handle
+        {
+            let ro_file = tokio::fs::OpenOptions::new()
+                .read(true)
+                .write(false)
+                .open(&wal_path)
+                .await
+                .expect("open read-only");
+            let mut guard = wal.file.lock().await;
+            *guard = ro_file;
+        }
+
+        let append_res = wal.append_batch(&batch2).await;
+        assert!(
+            append_res.is_err(),
+            "append_batch must fail on read-only file handle"
+        );
+
+        // Restore last_hmac as lsm commit would do upon append failure
+        wal.restore_last_hmac(prev_hmac)
+            .await
+            .expect("restore last hmac");
+
+        // 4. Verify last_hmac_snapshot is back to hmac_before
+        let hmac_after = wal.last_hmac_snapshot().await;
+        assert_eq!(
+            hmac_after, hmac_before,
+            "last_hmac_snapshot must match value before failed prepare_batch"
         );
     }
 }

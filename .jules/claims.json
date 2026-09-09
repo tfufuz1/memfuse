@@ -8,17 +8,17 @@
       "active": true
     },
     {
-      "krate": "memfuse-crypto",
-      "issue": "SECURITY-CONSOLIDATION",
-      "timestamp": "2026-09-08T23:34:37.484813992+00:00",
-      "session_id": "1981725836358996356",
+      "krate": "memfuse-tauri",
+      "issue": "ADR077-DEPRECATION-MARKER",
+      "timestamp": "2026-09-08T23:16:34.515682512+00:00",
+      "session_id": "8107571721804661471",
       "active": true
     },
     {
-      "krate": "memfuse-kv-bridge",
-      "issue": "SECURITY-CONSOLIDATION",
-      "timestamp": "2026-09-08T23:34:37.793927740+00:00",
-      "session_id": "1981725836358996356",
+      "krate": "memfuse-graph",
+      "issue": "DAG-SAFETY-01",
+      "timestamp": "2026-09-09T12:11:05.729331433+00:00",
+      "session_id": "3482155607226682189",
       "active": true
     }
   ]
