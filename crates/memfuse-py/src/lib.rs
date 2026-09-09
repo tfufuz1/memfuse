@@ -864,16 +864,17 @@ macro_rules! memfuse_crud_methods {
             }
 
             /// Scans documents matching a given key prefix.
-            #[pyo3(signature = (prefix=""))]
+            #[pyo3(signature = (prefix="", limit=None))]
             pub fn scan_prefix(
                 &self,
                 py: Python<'_>,
                 prefix: &str,
+                limit: Option<usize>,
             ) -> PyResult<Vec<(String, PyObject)>> {
                 let rt = &self.runtime;
                 let prefix_owned = prefix.to_string();
                 let results = run_blocking_ffi(py, || {
-                    rt.block_on(self.inner.scan_prefix(&prefix_owned))
+                    rt.block_on(self.inner.scan_prefix(&prefix_owned, limit))
                         .map_err(memfuse_err)
                 })?;
                 let mut py_res = Vec::with_capacity(results.len());
@@ -887,12 +888,13 @@ macro_rules! memfuse_crud_methods {
             ///
             /// Accepts optional string keys for start and end bounds (inclusive).
             /// Pass `None` for unbounded.
-            #[pyo3(signature = (start=None, end=None))]
+            #[pyo3(signature = (start=None, end=None, limit=None))]
             pub fn scan(
                 &self,
                 py: Python<'_>,
                 start: Option<&str>,
                 end: Option<&str>,
+                limit: Option<usize>,
             ) -> PyResult<Vec<(String, PyObject)>> {
                 let rt = &self.runtime;
                 let start_bytes: Option<Vec<u8>> = start.map(|s| s.as_bytes().to_vec());
@@ -908,7 +910,7 @@ macro_rules! memfuse_crud_methods {
                         Some(b) => Bound::Included(b.as_slice()),
                         None => Bound::Unbounded,
                     };
-                    rt.block_on(self.inner.scan(start_bound, end_bound))
+                    rt.block_on(self.inner.scan(start_bound, end_bound, limit))
                         .map_err(memfuse_err)
                 })?;
                 let mut py_res = Vec::with_capacity(results.len());

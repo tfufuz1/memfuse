@@ -157,6 +157,7 @@ pub use multistep::{MultiStepConfig, MultiStepEngine, MultiStepResult, QueryRewr
 
 #[cfg(feature = "graph-connectivity-health")]
 pub use collection::maintenance::PercolationResult;
+pub use collection::crud::MAX_SCAN_RESULTS;
 pub use collection::query_builder::{HybridQueryBuilder, SearchStrategy, SignalWeights};
 pub use collection::Collection;
 #[allow(deprecated)]
@@ -1158,8 +1159,8 @@ impl MemFuse {
 
     /// Scans storage for key-value pairs matching a prefix.
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn scan_prefix(&self, prefix: &str) -> Result<Vec<(String, Value)>> {
-        self.default_col().await?.scan_prefix(prefix).await
+    pub async fn scan_prefix(&self, prefix: &str, limit: Option<usize>) -> Result<Vec<(String, Value)>> {
+        self.default_col().await?.scan_prefix(prefix, limit).await
     }
 
     /// Returns the number of vectors in the index.
@@ -1180,8 +1181,9 @@ impl MemFuse {
         &self,
         start: std::ops::Bound<&[u8]>,
         end: std::ops::Bound<&[u8]>,
+        limit: Option<usize>,
     ) -> Result<Vec<(String, Value)>> {
-        self.default_col().await?.scan(start, end).await
+        self.default_col().await?.scan(start, end, limit).await
     }
 
     /// Returns combined statistics for the vector index and storage engine.
@@ -1513,7 +1515,7 @@ mod tests {
 
         // Scan for relations of doc-1
         let results = db
-            .scan_prefix("__rel:doc-1:references:")
+            .scan_prefix("__rel:doc-1:references:", None)
             .await
             .expect("scan"); // expect
         assert_eq!(results.len(), 2);
@@ -1527,7 +1529,7 @@ mod tests {
 
         // Check backward edge setup automatically
         let backward_results = db
-            .scan_prefix("__rel:doc-2:references:")
+            .scan_prefix("__rel:doc-2:references:", None)
             .await
             .expect("scan bwd"); // expect
         assert_eq!(backward_results.len(), 1);
@@ -1598,7 +1600,7 @@ mod tests {
 
         // 5. Scan prefix
         let edges = db
-            .scan_prefix("__rel:agent-1:assigned_to:")
+            .scan_prefix("__rel:agent-1:assigned_to:", None)
             .await
             .expect("scan"); // expect
         assert_eq!(edges.len(), 2);
