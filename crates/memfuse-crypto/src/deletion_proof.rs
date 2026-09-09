@@ -31,13 +31,42 @@ pub struct LayerCleanupProof {
 }
 
 impl LayerCleanupProof {
-    /// Fabrikfunktion — MUSS unmittelbar nach erfolgreicher, verifizierter physischer
-    /// Bereinigung (LSM-Compaction, WAL-Truncation, HNSW-Purge, ...) aufgerufen werden,
-    /// um einen Proof für den jeweiligen Layer zu erzeugen.
-    pub fn new_after_physical_cleanup(layer: DeletionLayer) -> Self {
+    /// Interne Konstruktionsfunktion.
+    ///
+    /// # Safety / Invariant
+    /// Diese Funktion darf NUR innerhalb dieses Moduls als interner Baustein (z. B. für
+    /// [`LayerCleanupProof::verify_and_create`]) verwendet werden, niemals direkt von extern.
+    pub(crate) fn unchecked_new(layer: DeletionLayer) -> Self {
         Self {
             layer,
             _private: (),
+        }
+    }
+
+    /// Erzeugt einen Proof für `layer` NUR, wenn `verification` bestätigt,
+    /// dass die physische Bereinigung tatsächlich abgeschlossen ist.
+    ///
+    /// `verification` MUSS eine echte Post-Condition-Prüfung durchführen
+    /// (z. B. eine erneute Abfrage des betroffenen Storage-Layers, die
+    /// belegt, dass keine der zu löschenden Daten mehr vorhanden sind),
+    /// KEINE bloße Behauptung. Ein `Ok(false)`-Rückgabewert oder ein
+    /// `Err` aus `verification` führt zu einem `Err` hier — es wird in
+    /// diesem Fall NIEMALS ein Proof erzeugt (INV-DELETION-1).
+    pub fn verify_and_create<F>(
+        layer: DeletionLayer,
+        verification: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce() -> Result<bool>,
+    {
+        if verification()? {
+            Ok(Self::unchecked_new(layer))
+        } else {
+            Err(MemFuseError::Internal(format!(
+                "INV-DELETION-1 violation: physical cleanup verification \
+                 failed for layer {layer:?} — refusing to create \
+                 LayerCleanupProof"
+            )))
         }
     }
 
@@ -231,8 +260,8 @@ mod tests {
             keys,
             TxId(100),
             vec![
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::HnswIndex),
+                LayerCleanupProof::verify_and_create(DeletionLayer::LsmMemtable, || Ok(true)).unwrap(),
+                LayerCleanupProof::verify_and_create(DeletionLayer::HnswIndex, || Ok(true)).unwrap(),
             ],
             vec![ExcludedScope::LlmParameterMemory],
             &test_key(),
@@ -240,6 +269,25 @@ mod tests {
         .unwrap();
 
         assert!(proof.verify(&test_key()).unwrap());
+    }
+
+    #[test]
+    fn test_verify_and_create_false_verification_returns_err() {
+        let res = LayerCleanupProof::verify_and_create(DeletionLayer::LsmMemtable, || Ok(false));
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("INV-DELETION-1 violation"));
+        assert!(err_msg.contains("LsmMemtable"));
+    }
+
+    #[test]
+    fn test_verify_and_create_err_verification_propagates() {
+        let res = LayerCleanupProof::verify_and_create(DeletionLayer::HnswIndex, || {
+            Err(MemFuseError::Internal("Custom storage query error".to_string()))
+        });
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("Custom storage query error"));
     }
 
     #[test]
@@ -263,9 +311,10 @@ mod tests {
             scope,
             vec![b"k1".to_vec()],
             TxId(10),
-            vec![LayerCleanupProof::new_after_physical_cleanup(
+            vec![LayerCleanupProof::verify_and_create(
                 DeletionLayer::LsmMemtable,
-            )],
+                || Ok(true),
+            ).unwrap()],
             vec![ExcludedScope::LlmParameterMemory],
             &test_key(),
         )
@@ -397,9 +446,9 @@ mod tests {
         };
 
         let cleanup_proofs = vec![
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::HnswIndex),
+            LayerCleanupProof::verify_and_create(DeletionLayer::LsmMemtable, || Ok(true)).unwrap(),
+            LayerCleanupProof::verify_and_create(DeletionLayer::SsTableAllLevels, || Ok(true)).unwrap(),
+            LayerCleanupProof::verify_and_create(DeletionLayer::HnswIndex, || Ok(true)).unwrap(),
         ];
 
         let proof = DeletionProof::create(

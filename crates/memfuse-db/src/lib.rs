@@ -817,14 +817,27 @@ impl MemFuse {
             tenant_id,
         };
 
+        // 3c. Post-condition verification for physical cleanup: query storage after commit
+        // Bekannte Grenze: LsmMemtable und SsTableAllLevels teilen sich dieselbe kombinierte Verifikation,
+        // da scan_prefix über beide Storage-Ebenen hinweg merged.
+        let col_entries_after = self.storage.scan_prefix(col_data_prefix.as_bytes()).await?;
+        let txt_entries_after = self.storage.scan_prefix(txt_data_prefix.as_bytes()).await?;
+
+        let lsm_memtable_proof = LayerCleanupProof::verify_and_create(
+            DeletionLayer::LsmMemtable,
+            || Ok(col_entries_after.is_empty() && txt_entries_after.is_empty()),
+        )?;
+
+        let sstable_proof = LayerCleanupProof::verify_and_create(
+            DeletionLayer::SsTableAllLevels,
+            || Ok(col_entries_after.is_empty() && txt_entries_after.is_empty()),
+        )?;
+
         let proof = DeletionProof::create(
             scope,
             deleted_keys,
             tx,
-            vec![
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
-            ],
+            vec![lsm_memtable_proof, sstable_proof],
             vec![],
             proof_key,
         )

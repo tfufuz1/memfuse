@@ -229,27 +229,44 @@ async fn test_deleted_keys_hash_is_deterministic() {
         b"__col:test_col:\x00doc_c".to_vec(),
     ];
 
+    // LayerCleanupProof Erzeugung via verify_and_create:
+    let lsm_proof_1 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("lsm proof 1");
+    let sstable_proof_1 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("sstable proof 1");
+
     let proof_1 = DeletionProof::create(
         scope.clone(),
         keys_order_1,
         TxId::new(50),
-        vec![
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
-        ],
+        vec![lsm_proof_1, sstable_proof_1],
         vec![],
         proof_key,
     )
     .expect("create proof 1");
 
+    let lsm_proof_2 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("lsm proof 2");
+    let sstable_proof_2 = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Ok(true), // Test-Stub, KEINE echte Verifikation
+    )
+    .expect("sstable proof 2");
+
     let proof_2 = DeletionProof::create(
         scope,
         keys_order_2,
         TxId::new(50),
-        vec![
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
-        ],
+        vec![lsm_proof_2, sstable_proof_2],
         vec![],
         proof_key,
     )
@@ -266,4 +283,69 @@ async fn test_deleted_keys_hash_is_deterministic() {
 
     assert!(proof_1.verify(proof_key).unwrap());
     assert!(proof_2.verify(proof_key).unwrap());
+}
+
+/// Test: verify_and_create with a verification closure returning Ok(false) yields Err
+/// and demonstrably creates no LayerCleanupProof.
+#[tokio::test]
+async fn test_verify_and_create_false_returns_err_and_no_proof() {
+    let result = LayerCleanupProof::verify_and_create(
+        DeletionLayer::LsmMemtable,
+        || Ok(false),
+    );
+
+    assert!(result.is_err(), "verify_and_create must return Err when verification is false");
+    let err = result.unwrap_err();
+    let err_msg = err.to_string();
+    assert!(
+        err_msg.contains("INV-DELETION-1 violation"),
+        "Error message must cite INV-DELETION-1 violation, got: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("LsmMemtable"),
+        "Error message must cite the affected layer, got: {err_msg}"
+    );
+}
+
+/// Test: verify_and_create with Err(...) returned from closure propagates error unchanged.
+#[tokio::test]
+async fn test_verify_and_create_propagates_verification_error() {
+    use memfuse_core::MemFuseError;
+
+    let expected_err_str = "Storage scan failed during cleanup verification";
+    let result = LayerCleanupProof::verify_and_create(
+        DeletionLayer::SsTableAllLevels,
+        || Err(MemFuseError::Internal(expected_err_str.to_string())),
+    );
+
+    assert!(result.is_err(), "verify_and_create must propagate Err from verification closure");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains(expected_err_str),
+        "Error message must contain exact closure error, got: {err_msg}"
+    );
+}
+
+/// Regressionstest: Success path of drop_collection on a clean, real collection
+/// produces a valid, signature-verifiable DeletionProof.
+#[tokio::test]
+async fn test_drop_collection_success_regression() {
+    let (db, _tmp) = setup_db(3).await;
+    let tenant_id = TenantId::try_new(55).unwrap();
+    let proof_key = b"regression-test-proof-key-12345678";
+
+    let col = db.collection("reg_col").await.expect("create col");
+    col.insert("doc_1", &[0.1, 0.2, 0.3], Some(json!({"foo": "bar"})))
+        .await
+        .expect("insert");
+
+    let proof = db
+        .drop_collection("reg_col", tenant_id, proof_key)
+        .await
+        .expect("drop_collection must succeed on clean collection");
+
+    assert_eq!(proof.tenant_id(), tenant_id);
+    assert!(proof.covered_layers.contains(&DeletionLayer::LsmMemtable));
+    assert!(proof.covered_layers.contains(&DeletionLayer::SsTableAllLevels));
+    assert!(proof.verify(proof_key).expect("verify signature"));
 }
