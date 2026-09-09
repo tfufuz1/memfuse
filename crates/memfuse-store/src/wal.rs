@@ -411,6 +411,11 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 /// Maximum size for a single WAL entry payload (64MB).
 pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
 
+/// Global fault injection flag to simulate a WAL `append_batch` failure for a specific transaction ID during tests.
+#[cfg(feature = "fault-injection")]
+pub static FAIL_APPEND_FOR_TX: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 impl Wal {
     fn handle_wal_entry_parse_error(
         e: MemFuseError,
@@ -955,6 +960,17 @@ impl Wal {
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
+        }
+
+        #[cfg(feature = "fault-injection")]
+        {
+            let fail_tx = FAIL_APPEND_FOR_TX.load(std::sync::atomic::Ordering::SeqCst);
+            if fail_tx != 0 && entries.iter().any(|e| e.tx_id().inner() == fail_tx) {
+                FAIL_APPEND_FOR_TX.store(0, std::sync::atomic::Ordering::SeqCst);
+                return Err(MemFuseError::Storage(
+                    "Simulated WAL append_batch I/O failure via fault injection".into(),
+                ));
+            }
         }
 
         let mut total_bytes = Vec::new();
