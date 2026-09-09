@@ -1998,7 +1998,24 @@ pub fn run_check_review_coverage(tags: &[TagItem]) -> bool {
             }
         };
 
-        let required_passes = 2;
+        let is_unsafe_file = anchor.file_path.contains("memfuse-index/src/distance.rs")
+            || anchor.file_path.contains("memfuse-index/src/diskann.rs")
+            || anchor
+                .file_path
+                .contains("memfuse-index/src/persistence.rs")
+            || anchor
+                .file_path
+                .contains("memfuse-crypto/src/anti_tamper.rs");
+
+        let is_security_type = anchor.category.as_deref() == Some("SECURITY")
+            || anchor.raw.contains("[SECURITY:")
+            || anchor.raw.contains("[SECURITY]");
+
+        let required_passes = if is_unsafe_file || is_security_type {
+            3
+        } else {
+            2
+        };
 
         let matching_passes: Vec<&TagItem> = tags
             .iter()
