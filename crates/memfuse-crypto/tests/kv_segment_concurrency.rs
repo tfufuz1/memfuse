@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Concurrency Stress Test für TenantIsolatedKvStore und EvictionWorker unter hoher Parallellast.
-// STAND: TS:2026-09-09T13:17:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T16:15:00Z (SESSION: dafac391)
 
 use memfuse_core::TenantId;
 use memfuse_security::kv_segment::{

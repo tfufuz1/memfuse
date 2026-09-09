@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall).
-// STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
+// STAND: TS:2026-09-09T16:10:00Z (SESSION: dafac391)
 
 //! # Eviction-Architektur
 //!
@@ -106,7 +106,7 @@ mod tests {
 
         let worker = EvictionWorker::spawn(Arc::clone(&store));
 
-        // Trigger eviction of 500 bytes (should evict seg1 at index 0)
+        // Trigger eviction of 500 bytes (should evict seg 1 at index 0)
         let start = std::time::Instant::now();
         worker.trigger_eviction(500);
         let elapsed = start.elapsed();
