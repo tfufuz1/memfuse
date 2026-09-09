@@ -16,7 +16,6 @@
 //!    vollständig abgeschlossen — bewusst anders als der reguläre Worker-Pfad.
 
 use super::store::TenantIsolatedKvStore;
-use parking_lot::RwLock;
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -94,6 +93,7 @@ pub fn emergency_wipe(store: &TenantIsolatedKvStore) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kv_segment::KvSegment;
     use memfuse_core::TenantId;
     use std::time::Duration;
 
@@ -103,8 +103,10 @@ mod tests {
         let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
         let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
 
-        let segments = Arc::new(RwLock::new(vec![seg1, seg2]));
-        let worker = EvictionWorker::spawn(Arc::clone(&segments));
+        let store = Arc::new(TenantIsolatedKvStore::new());
+        store.insert_segment(tenant, seg1);
+        store.insert_segment(tenant, seg2);
+        let worker = EvictionWorker::spawn(Arc::clone(&store));
 
         // Trigger eviction of 500 bytes (should evict seg1 at index 0)
         let start = std::time::Instant::now();
@@ -121,14 +123,14 @@ mod tests {
         let mut freed = false;
         for _ in 0..100 {
             std::thread::sleep(Duration::from_millis(10));
-            if segments.read().len() == 1 {
+            if store.get_tenant_segment_len(tenant) == 1 {
                 freed = true;
                 break;
             }
         }
 
         assert!(freed, "Worker should have evicted 1 segment in background");
-        assert_eq!(segments.read()[0].segment_id, 2);
+        assert_eq!(store.get_segments(tenant), vec![2]);
     }
 
     #[test]
@@ -147,8 +149,11 @@ mod tests {
         assert!(seg_a.last_accessed() > seg_b.last_accessed());
         assert!(seg_a.last_accessed() > seg_c.last_accessed());
 
-        let segments = Arc::new(RwLock::new(vec![seg_a, seg_b, seg_c]));
-        let worker = EvictionWorker::spawn(Arc::clone(&segments));
+        let store = Arc::new(TenantIsolatedKvStore::new());
+        store.insert_segment(tenant, seg_a);
+        store.insert_segment(tenant, seg_b);
+        store.insert_segment(tenant, seg_c);
+        let worker = EvictionWorker::spawn(Arc::clone(&store));
 
         // Trigger eviction of 500 bytes (requires evicting 1 segment)
         worker.trigger_eviction(500);
@@ -157,7 +162,7 @@ mod tests {
         let mut freed = false;
         for _ in 0..100 {
             std::thread::sleep(Duration::from_millis(10));
-            if segments.read().len() == 2 {
+            if store.get_tenant_segment_len(tenant) == 2 {
                 freed = true;
                 break;
             }
@@ -165,12 +170,10 @@ mod tests {
 
         assert!(freed, "Worker should have evicted 1 segment");
 
-        let remaining = segments.read();
-        let remaining_ids: Vec<u64> = remaining.iter().map(|s| s.segment_id).collect();
+        let remaining_ids = store.get_segments(tenant);
 
         // Under LRU: Segment B (clock 2, least recently used) was evicted.
         // Segment A (clock 4, most recently used) MUST be retained.
-        // (Note: Under old FIFO logic, Segment A at index 0 would have been incorrectly evicted).
         assert!(
             remaining_ids.contains(&10),
             "Segment A (most recently used) must NOT be evicted"
@@ -188,15 +191,17 @@ mod tests {
         let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
         let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
 
-        let segments = RwLock::new(vec![seg1, seg2]);
-        assert_eq!(segments.read().len(), 2);
+        let store = TenantIsolatedKvStore::new();
+        store.insert_segment(tenant, seg1);
+        store.insert_segment(tenant, seg2);
+        assert_eq!(store.get_tenant_segment_len(tenant), 2);
 
         // Synchronous emergency wipe
-        emergency_wipe(&segments);
+        emergency_wipe(&store);
 
         // Immediately after return, all segments MUST be gone
         assert_eq!(
-            segments.read().len(),
+            store.get_tenant_segment_len(tenant),
             0,
             "emergency_wipe must immediately clear all segments"
         );
