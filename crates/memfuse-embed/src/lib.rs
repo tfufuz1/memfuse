@@ -41,7 +41,9 @@ pub use memfuse_candle::CandleEmbedClient;
 
 #[cfg(feature = "candle-backend")]
 /// Creates a trait object `Box<dyn EmbeddingProvider>` wrapping a `CandleEmbedClient`.
-pub fn create_candle_embedder(client: CandleEmbedClient) -> Box<dyn memfuse_core::EmbeddingProvider> {
+pub fn create_candle_embedder(
+    client: CandleEmbedClient,
+) -> Box<dyn memfuse_core::EmbeddingProvider> {
     Box::new(client)
 }
 

@@ -2434,7 +2434,11 @@ mod tests {
 
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         collection
-            .insert("doc1", &vec_data, Some(json!({"text": "eviction test content"})))
+            .insert(
+                "doc1",
+                &vec_data,
+                Some(json!({"text": "eviction test content"})),
+            )
             .await?;
 
         let profile = SlmProfile::new(
@@ -2448,8 +2452,8 @@ mod tests {
         let router = RouterEngine::new(collection, vec![profile], None);
 
         // Fill pending_decisions with MAX_PENDING_DECISIONS stale entries older than TTL (300s)
-        let stale_timestamp = std::time::Instant::now()
-            - (PENDING_DECISION_TTL + std::time::Duration::from_secs(10));
+        let stale_timestamp =
+            std::time::Instant::now() - (PENDING_DECISION_TTL + std::time::Duration::from_secs(10));
         {
             let mut map = router.pending_decisions.write();
             for _ in 0..MAX_PENDING_DECISIONS {
@@ -2470,7 +2474,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pending_decisions_max_capacity_enforced() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_pending_decisions_max_capacity_enforced() -> Result<(), Box<dyn std::error::Error>>
+    {
         use crate::router::{MAX_PENDING_DECISIONS, PENDING_DECISION_TTL};
 
         let dir = tempfile::tempdir()?;
@@ -2483,7 +2488,11 @@ mod tests {
 
         let vec_data = vec![1.0, 0.0, 0.0, 0.0];
         collection
-            .insert("doc1", &vec_data, Some(json!({"text": "capacity test content"})))
+            .insert(
+                "doc1",
+                &vec_data,
+                Some(json!({"text": "capacity test content"})),
+            )
             .await?;
 
         let profile = SlmProfile::new(
@@ -2497,8 +2506,8 @@ mod tests {
         let router = RouterEngine::new(collection, vec![profile], None);
 
         // Fill pending_decisions with MAX_PENDING_DECISIONS + 1 stale entries without record_outcome
-        let stale_timestamp = std::time::Instant::now()
-            - (PENDING_DECISION_TTL + std::time::Duration::from_secs(10));
+        let stale_timestamp =
+            std::time::Instant::now() - (PENDING_DECISION_TTL + std::time::Duration::from_secs(10));
         {
             let mut map = router.pending_decisions.write();
             for _ in 0..=(MAX_PENDING_DECISIONS) {
@@ -2564,7 +2573,8 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
-        let (_, _, metrics) = router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
+        let (_, _, metrics) =
+            router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
 
         let score = 0.5 * COMMUNITY_RELEVANCE_BOOST;
         assert!(metrics.calibrated);
@@ -2627,7 +2637,8 @@ mod tests {
         };
         let chunks = vec![(chunk, Some(1))];
 
-        let (_, _, metrics) = router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
+        let (_, _, metrics) =
+            router.select_profile_cascade(&chunks, &[profile], &mut calibration)?;
 
         assert!(
             metrics.non_conformity_score != 0.0,
