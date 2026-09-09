@@ -16,6 +16,7 @@
 // SIEHE AUCH: DECISIONS.md ADR-004, crates/memfuse-db/AGENTS.md §relate()
 
 use crate::consistency_enforcement::{ConsistencyEnforcer, EdgeAssertion};
+use crate::GraphIndexExt;
 use memfuse_core::{
     BoxFuture, DocId, Entity, EntityId, GraphIndex, GraphIndexStats, MemFuseError, Result,
     StorageEngine, TxId,
@@ -99,6 +100,8 @@ pub const MAX_VISITED_NODES: usize = 10_000;
 
 /// LSM-Key-Prefix für alle Graph-Entities.
 const GRAPH_ENTITY_PREFIX: &[u8] = b"__graph:entity:";
+/// LSM-Key-Prefix für gelöschte Graph-Entities (Tombstones).
+const GRAPH_ENTITY_DELETED_PREFIX: &[u8] = b"graph:entity:deleted:";
 /// LSM-Key-Prefix für alle Graph-Edges.
 const GRAPH_EDGE_PREFIX: &[u8] = b"__graph:edge:";
 /// LSM-Key-Prefix für alle Community-Assignments.
@@ -1022,12 +1025,26 @@ impl CsrGraph {
     pub async fn load_from_storage<S: StorageEngine + ?Sized>(storage: &S) -> Result<Self> {
         let graph = Self::new();
 
+        // 0. Deleted Entities (Tombstones) laden
+        let deleted_entries = storage.scan_prefix(GRAPH_ENTITY_DELETED_PREFIX).await?;
+        let mut deleted_entity_ids = HashSet::new();
+        for (raw_key, _) in deleted_entries {
+            if let Some(key_payload) = raw_key.get(GRAPH_ENTITY_DELETED_PREFIX.len()..) {
+                if let Ok(key_str) = std::str::from_utf8(key_payload) {
+                    deleted_entity_ids.insert(EntityId::from(key_str));
+                }
+            }
+        }
+
         // 1. Entities laden
         let entity_entries = storage.scan_prefix(GRAPH_ENTITY_PREFIX).await?;
         let mut entity_count = 0usize;
         for (_, raw_value) in entity_entries {
             let entity: Entity = bincode::deserialize(&raw_value)
                 .map_err(|e| MemFuseError::Internal(format!("graph entity deserialize: {e}")))?;
+            if deleted_entity_ids.contains(&entity.id) {
+                continue;
+            }
             graph.load_entity_direct(entity)?;
             entity_count += 1;
         }
@@ -1495,6 +1512,117 @@ impl CsrGraph {
                 .values()
                 .map(|tx_map| tx_map.values().map(|v| v.len()).sum::<usize>())
                 .sum::<usize>()
+    }
+
+    /// Removes an entity node and all its incident (outgoing and incoming) edges from the graph.
+    pub async fn remove_entity(&self, tx: TxId, entity: EntityId) -> Result<()> {
+        GraphIndexExt::remove_entity(self, tx, entity).await
+    }
+}
+
+impl GraphIndexExt for CsrGraph {
+    fn remove_entity<'a>(&'a self, tx: TxId, entity: EntityId) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let (target_idx, outgoing_targets, incoming_sources) = {
+                let inner = self.inner.read();
+                let idx = match inner.id_map.get(&entity) {
+                    Some(&i) => i,
+                    None => return Ok(()),
+                };
+
+                let mut outgoing = Vec::new();
+                let mut incoming = Vec::new();
+
+                // a. Outgoing edges (entity -> *)
+                if idx < inner.offsets.len() - 1 {
+                    for j in inner.offsets[idx]..inner.offsets[idx + 1] {
+                        let t_idx = inner.targets[j];
+                        if !inner.tombstoned_edges.contains(&(idx, t_idx)) {
+                            if let Some(&t_id) = inner.reverse_map.get(t_idx) {
+                                outgoing.push(t_id);
+                            }
+                        }
+                    }
+                }
+                if let Some(pending) = inner.pending_edges.get(&idx) {
+                    for edge in pending {
+                        if !inner.tombstoned_edges.contains(&(idx, edge.target)) {
+                            if let Some(&t_id) = inner.reverse_map.get(edge.target) {
+                                outgoing.push(t_id);
+                            }
+                        }
+                    }
+                }
+
+                // b. Incoming edges (* -> entity)
+                let num_nodes = inner.reverse_map.len();
+                for node_idx in 0..num_nodes {
+                    let source_id = match inner.reverse_map.get(node_idx) {
+                        Some(&id) => id,
+                        None => continue,
+                    };
+
+                    if node_idx < inner.offsets.len() - 1 {
+                        for j in inner.offsets[node_idx]..inner.offsets[node_idx + 1] {
+                            if inner.targets[j] == idx
+                                && !inner.tombstoned_edges.contains(&(node_idx, idx))
+                            {
+                                incoming.push(source_id);
+                            }
+                        }
+                    }
+                    if let Some(pending) = inner.pending_edges.get(&node_idx) {
+                        for edge in pending {
+                            if edge.target == idx
+                                && !inner.tombstoned_edges.contains(&(node_idx, idx))
+                            {
+                                incoming.push(source_id);
+                            }
+                        }
+                    }
+                }
+
+                (idx, outgoing, incoming)
+            };
+
+            // Tombstone outgoing edges (entity -> to)
+            for to_id in outgoing_targets {
+                GraphIndex::remove_edge(self, tx, entity, to_id).await?;
+            }
+
+            // Tombstone incoming edges (from -> entity)
+            for from_id in incoming_sources {
+                GraphIndex::remove_edge(self, tx, from_id, entity).await?;
+            }
+
+            // c. Den Knoten selbst aus inner.id_map entfernen
+            {
+                let mut inner = self.inner.write();
+                inner.id_map.remove(&entity);
+                if target_idx < inner.entities.len() {
+                    inner.entities[target_idx] = None;
+                }
+                inner.communities.remove(&entity);
+                inner.is_dirty = true;
+            }
+
+            // LSM-Storage Marker / Deletion schreiben
+            if let Some(ref storage) = self.storage {
+                let entity_key = [GRAPH_ENTITY_PREFIX, entity.as_bytes().as_slice()].concat();
+                storage.delete(tx, &entity_key).await?;
+
+                let deleted_key =
+                    [GRAPH_ENTITY_DELETED_PREFIX, entity.as_bytes().as_slice()].concat();
+                storage
+                    .put(tx, &deleted_key, &tx.inner().to_le_bytes())
+                    .await?;
+            }
+
+            // d. Committe die Änderungen
+            GraphIndex::commit(self, tx).await?;
+
+            Ok(())
+        })
     }
 }
 
