@@ -42,7 +42,7 @@ impl EvictionWorker {
                 while let Ok(cmd) = receiver.recv() {
                     match cmd {
                         EvictionCommand::EvictLru { target_free_bytes } => {
-                            let freed = store.evict_lru_global(target_free_bytes);
+                            let freed = store.evict_lru_fair(target_free_bytes);
                             tracing::debug!(
                                 freed_bytes = freed,
                                 "KV eviction worker: LRU evict done"
