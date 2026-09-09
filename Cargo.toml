@@ -18,7 +18,6 @@ members = [
     "crates/memfuse-calibration",
     "benchmarks/memfuse-bench",
     "crates/memfuse-candle",
-    "crates/memfuse-kv-bridge",
     "xtask",
 ]
 
@@ -72,7 +71,8 @@ memfuse-index = { path = "crates/memfuse-index" }
 memfuse-db = { path = "crates/memfuse-db" }
 memfuse-text = { path = "crates/memfuse-text" }
 memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
-memfuse-crypto = { path = "crates/memfuse-crypto" }
+memfuse-crypto = { package = "memfuse-security", path = "crates/memfuse-crypto" }
+memfuse-security = { path = "crates/memfuse-crypto" }
 memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-embed = { path = "crates/memfuse-embed" }
 memfuse-tauri = { path = "crates/memfuse-tauri" }
@@ -82,7 +82,6 @@ memfuse-ollama = { path = "crates/memfuse-ollama" }
 memfuse-router = { path = "crates/memfuse-router" }
 memfuse-calibration = { path = "crates/memfuse-calibration" }
 memfuse-candle = { path = "crates/memfuse-candle" }
-memfuse-kv-bridge = { path = "crates/memfuse-kv-bridge" }
 
 # ── Archived Zone ──────────────────────────────────────────────────────────────
 # memfuse-cluster, memfuse-sandbox, memfuse-saos-agent wurden in Phase 0 ausgelagert.

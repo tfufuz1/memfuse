@@ -3318,30 +3318,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memfuse-crypto"
-version = "0.1.0"
-dependencies = [
- "aes-gcm-siv",
- "bincode",
- "blake3",
- "criterion",
- "hkdf",
- "hmac",
- "memfuse-core",
- "memfuse-crypto",
- "proptest",
- "rand 0.8.8",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "zeroize",
-]
-
-[[package]]
 name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
@@ -3351,11 +3327,11 @@ dependencies = [
  "memfuse-calibration",
  "memfuse-checkpoint",
  "memfuse-core",
- "memfuse-crypto",
  "memfuse-embed",
  "memfuse-graph",
  "memfuse-index",
  "memfuse-ollama",
+ "memfuse-security",
  "memfuse-store",
  "memfuse-text",
  "parking_lot",
@@ -3416,8 +3392,8 @@ dependencies = [
  "bincode",
  "criterion",
  "memfuse-core",
- "memfuse-crypto",
  "memfuse-graph",
+ "memfuse-security",
  "memmap2",
  "parking_lot",
  "proptest",
@@ -3431,19 +3407,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memfuse-kv-bridge"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "memfuse-core",
- "memfuse-crypto",
- "parking_lot",
- "tokio",
- "tracing",
- "zeroize",
-]
-
-[[package]]
 name = "memfuse-mcp"
 version = "0.1.0"
 dependencies = [
@@ -3451,10 +3414,10 @@ dependencies = [
  "memfuse-agent",
  "memfuse-candle",
  "memfuse-core",
- "memfuse-crypto",
  "memfuse-db",
  "memfuse-embed",
  "memfuse-ollama",
+ "memfuse-security",
  "parking_lot",
  "rand 0.8.8",
  "serde",
@@ -3512,6 +3475,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "memfuse-security"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm-siv",
+ "ahash",
+ "bincode",
+ "blake3",
+ "criterion",
+ "hkdf",
+ "hmac",
+ "memfuse-core",
+ "memfuse-security",
+ "parking_lot",
+ "proptest",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "memfuse-store"
 version = "0.1.0"
 dependencies = [
@@ -3521,7 +3510,7 @@ dependencies = [
  "criterion",
  "lru",
  "memfuse-core",
- "memfuse-crypto",
+ "memfuse-security",
  "memmap2",
  "parking_lot",
  "proptest",
