@@ -991,6 +991,45 @@ mod tests {
         ece
     }
 
+    #[test]
+    fn test_ece_reduction_after_platt_calibration() {
+        let reranker = CrossEncoderReranker::passthrough();
+        assert!(!reranker.is_calibrated());
+
+        // Generate synthetic miscalibrated logits: A=2.5, B=-0.8
+        let scale = 2.5f32;
+        let shift = -0.8f32;
+        let mut observations = Vec::new();
+
+        for i in -50..=50 {
+            let logit = i as f32 * 0.1;
+            let true_z = scale * logit + shift;
+            let true_p = 1.0 / (1.0 + (-true_z).exp());
+            let is_rel = (i as f32 * 0.01 + 0.5) > (1.0 - true_p);
+            observations.push((logit, is_rel));
+            reranker.record_outcome(logit, is_rel);
+        }
+
+        assert!(reranker.is_calibrated());
+
+        let uncalibrated_eval: Vec<(f32, bool)> = observations
+            .iter()
+            .map(|&(x, label)| (PlattScaler::identity().apply(x), label))
+            .collect();
+        let ece_uncalibrated = compute_ece(&uncalibrated_eval, 10);
+
+        let calibrated_eval: Vec<(f32, bool)> = observations
+            .iter()
+            .map(|&(x, label)| (reranker.calibrate(x), label))
+            .collect();
+        let ece_calibrated = compute_ece(&calibrated_eval, 10);
+
+        assert!(
+            ece_calibrated <= ece_uncalibrated,
+            "Calibrated ECE ({ece_calibrated}) must be <= uncalibrated ECE ({ece_uncalibrated})"
+        );
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
         #[test]

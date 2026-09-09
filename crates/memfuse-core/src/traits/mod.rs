@@ -333,7 +333,7 @@ pub trait StorageEngine: Send + Sync + 'static {
         limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 
-    /// Scans a range of keys between `start` and `end` bounds with a limit and optional pagination cursor.
+    /// Scans a range of keys with start and end bounds, limit, and pagination cursor.
     #[allow(clippy::type_complexity)]
     fn scan_bounded<'a>(
         &'a self,
@@ -345,7 +345,7 @@ pub trait StorageEngine: Send + Sync + 'static {
         Box::pin(async move {
             Err(crate::error::MemFuseError::capability_unsupported(
                 "scan_bounded",
-                "Storage-level bounded scan (scan_bounded) is not supported by default",
+                "Bounded range scan (scan_bounded) is not supported by default",
             ))
         })
     }

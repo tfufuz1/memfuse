@@ -312,7 +312,7 @@ fn check_subinterpreter_guard(py: Python<'_>) -> PyResult<()> {
     Ok(())
 }
 
-// AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-06T11:19:12Z) (SESSION: 831f9286)
+// AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348)
 // BEFUND: Resolved by decoupling `crates/memfuse-py` into an independent workspace with its own `[profile.release]` setting `panic = "unwind"`.
 // BEHOBEN: `std::panic::catch_unwind` in `run_blocking_ffi` intercepts panics in release builds, converting them into catchable PyRuntimeError exceptions without aborting CPython via SIGABRT.
 // Siehe docs/decisions/ADR-064-memfuse-py-separater-workspace-panic-strategie.md
@@ -1567,7 +1567,7 @@ mod tests {
     }
 }
 
-// AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-03T19:29:58Z) (SESSION: 94a6a82c)
+// AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348)
 // RESOLVED: _trigger_panic_for_test now calls run_blocking_ffi internally triggering a panic in the closure to test FFI panic containment.
 /// Internal helper function for testing FFI panic isolation.
 #[pyfunction]
