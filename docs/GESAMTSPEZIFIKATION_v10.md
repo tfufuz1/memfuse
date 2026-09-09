@@ -1,8 +1,9 @@
 # MemFuse — Gesamtspezifikation v10.0
 ## Einzige normative Wahrheitsquelle · Synthetisiert aus 12 Strategiedokumenten
+> **Änderungsvermerk (Konsolidierung v10 / v10.1):** 2026-09-09 — Konsolidierung aller v10/v10.1 Spezifikationsinhalte, Behebung verwaister Pfad-Referenzen (u.a. `OFFEN-11`), Entfernung von Root-Duplikaten gemäß ADR-078.
 > **Ersetzt:** alle Vorgängerdokumente (v4.0–v9.0, alle docs/NEW_STRATEGY/*.md)
-> **Stand:** 2026-09-08
-> **HEAD zum Zeitpunkt der Synthese:** `e3feb1137d561cd3098face7e8bea00e35798e03`
+> **Stand:** 2026-09-09
+> **HEAD zum Zeitpunkt der Synthese:** `HEAD 92b22c9535eb0a9be2faeaefbc2cc86ea9a7ffc2, 2026-09-09 12:47:04 +0000`
 > **Syntheseprinzip:** Jede Aussage ist entweder (a) per grep/read am Live-Code
 > verifiziert, oder (b) als verbindliche Entscheidung aus dem Entscheidungsdokument
 > (v9.0 §1–§3, Entscheidungen v1/v2) übernommen, oder (c) als offener Punkt mit
@@ -228,7 +229,7 @@ Gemäß v9.0 existieren strikt zwei Feature-Kategorien (KERN vs. ENTFERNEN/VETO)
 | OFFEN-08 | Governance | Zwei-Stufen-Prozess (Claude/Jules) in `AGENTS.md` noch nicht dokumentiert | P2 | Governance-Standard |
 | OFFEN-09 | Prompter | Prompter v25 Bootstrap-Präfix und Claim-Step nicht hart im HTML-Baukasten verankert | P2 | P17-Garantie |
 | OFFEN-10 | `memfuse-tauri` | Deprecated per ADR-077, physische Entfernung aus Repo steht aus (Frist: 2026-11-07) | P3 | Vision-Clean-Up |
-| OFFEN-11 | `memfuse-db` | F-03 EdgeReinforcement Flush-Hook in `physio_scheduler.rs` noch Platzhalter | P3 | Scheduler-Ausbau |
+| OFFEN-11 | `memfuse-db` | F-03 EdgeReinforcement Flush-Hook in `crates/memfuse-db/src/maintenance_scheduler.rs` implementiert | P3 | Scheduler-Ausbau |
 | OFFEN-12 | `memfuse-embed` | `ImportanceClassifier` zurückgestellt bis Benchmark-Baseline steht | P3 | LongMemEval |
 
 ---
