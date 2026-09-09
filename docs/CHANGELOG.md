@@ -217,6 +217,7 @@
 | `` | `crates/memfuse-db/tests/diskann_collection_fallback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection Integration Fallback Test (Pflichttest 3). |
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-index/benches/nucleation_recall_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-index/tests/diskann_corruption_fallback_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Corruption detection and DiskAnnFallbackPolicy test (Pflichttest 2). |
 | `` | `crates/memfuse-index/tests/diskann_fault_injection_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fault-Injection Test for DiskANN rebuild failures (Pflichttest 1). |
 | `` | `crates/memfuse-store/examples/chaos_writer.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |
