@@ -4,12 +4,12 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung). |
-| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
-| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KV-Cache-Bridge Sicherheitsschicht (KvSegment, Tenant-Isolation, Eviction-Worker, Segment-Verschlüsselung). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/segment.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | KvSegment mit Zeroize-Garantie (ZeroizeOnDrop, nie unverschlüsselt auf Disk). |
+| `TS:2026-09-08T00:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/store.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation). |
 | `TS:2026-09-08T00:00:00Z` | `crates/memfuse-crypto/src/kv_cipher.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Dedicated AEAD encryption and key isolation for KV-cache segments (memfuse-kv-bridge). |
-| `TS:2026-09-08T00:00:00Z` | `crates/memfuse-kv-bridge/tests/kv_encryption_integration.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Integrationstest für KvSegment-Verschlüsselung, Zeroize und Prozess-Speicherabbild-Prüfung (P9). |
-| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-kv-bridge/src/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
+| `TS:2026-09-08T00:00:00Z` | `crates/memfuse-crypto/tests/kv_segment_integration.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Integrationstest für KvSegment-Verschlüsselung, Zeroize und Prozess-Speicherabbild-Prüfung (P9). |
+| `TS:2026-09-07T12:00:00Z (SESSION: a413a598)` | `crates/memfuse-crypto/src/kv_segment/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
 | `TS:2026-09-07T12:00:00Z` | `crates/memfuse-db/src/temporal_filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Bi-temporaler Validity-Filter für Post-RRF Fusion-Ergebnisse in Retrieval-Pipelines. |
 | `TS:2026-09-07T08:30:00Z` | `crates/memfuse-db/src/consolidation_executor.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verbindet Structural Consolidation Pass-Ergebnisse mit der Collection-Mutation-API. |
 | `TS:2026-09-07T00:00:00Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cryptographic deletion proof for GDPR Article 17 compliance verification across storage layers. |
@@ -217,6 +217,7 @@
 | `` | `crates/memfuse-db/tests/diskann_collection_fallback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Collection Integration Fallback Test (Pflichttest 3). |
 | `` | `crates/memfuse-db/tests/hnsw_delete_and_backfill.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Verifiziert, dass ein Fehler beim HNSW-Delete nicht verschluckt wird und Vektorsuchen bei Tombstones durch Backfill k valide Ergebnisse liefern. |
 | `` | `crates/memfuse-index/benches/hnsw_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-index/benches/nucleation_recall_bench.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-index/tests/diskann_corruption_fallback_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Corruption detection and DiskAnnFallbackPolicy test (Pflichttest 2). |
 | `` | `crates/memfuse-index/tests/diskann_fault_injection_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fault-Injection Test for DiskANN rebuild failures (Pflichttest 1). |
 | `` | `crates/memfuse-store/examples/chaos_writer.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |

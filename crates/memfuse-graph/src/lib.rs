@@ -68,3 +68,13 @@ pub use provenance::{DocEdgeIndex, EdgeProvenance};
 pub use session_dag::{
     AgentStateNode, DagEdge, NodeIdx, NodesGuard, NodesWriteGuard, SessionBranchTree,
 };
+
+/// Extension trait for [`memfuse_core::GraphIndex`] providing entity removal functionality.
+pub trait GraphIndexExt: memfuse_core::GraphIndex {
+    /// Removes an entity node and all its incident (outgoing and incoming) edges from the graph.
+    fn remove_entity<'a>(
+        &'a self,
+        tx: memfuse_core::TxId,
+        entity: EntityId,
+    ) -> memfuse_core::BoxFuture<'a, memfuse_core::Result<()>>;
+}

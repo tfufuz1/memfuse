@@ -7,8 +7,8 @@
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md ADR-002
 
 use memfuse_core::{MemFuseError, Result, TxId};
-use memfuse_crypto::crypto::KeyManager;
-use memfuse_crypto::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
+use memfuse_security::crypto::KeyManager;
+use memfuse_security::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1032,10 +1032,7 @@ impl Wal {
 
     /// Prepares a batch of entries, ensuring correct HMAC chaining between them.
     /// Returns the prepared entries along with a snapshot of the pre-prepare HMAC chain link.
-    pub async fn prepare_batch(
-        &self,
-        ops: Vec<(WalOp, u64)>,
-    ) -> Result<(Vec<WalEntry>, [u8; 32])> {
+    pub async fn prepare_batch(&self, ops: Vec<(WalOp, u64)>) -> Result<(Vec<WalEntry>, [u8; 32])> {
         let mut last_hmac = self.last_hmac.lock().await;
         let prev_hmac = *last_hmac;
         let integrity_key = self.get_integrity_key()?;
@@ -2995,7 +2992,10 @@ mod tests {
             key: b"k1".to_vec(),
             value: b"v1".to_vec(),
         };
-        let (batch1, _) = wal.prepare_batch(vec![(op1, 1)]).await.expect("prepare batch 1");
+        let (batch1, _) = wal
+            .prepare_batch(vec![(op1, 1)])
+            .await
+            .expect("prepare batch 1");
         wal.append_batch(&batch1).await.expect("append batch 1");
 
         let hmac_before = wal.last_hmac_snapshot().await;
@@ -3006,7 +3006,10 @@ mod tests {
             key: b"k2".to_vec(),
             value: b"v2".to_vec(),
         };
-        let (batch2, prev_hmac) = wal.prepare_batch(vec![(op2, 2)]).await.expect("prepare batch 2");
+        let (batch2, prev_hmac) = wal
+            .prepare_batch(vec![(op2, 2)])
+            .await
+            .expect("prepare batch 2");
         assert_ne!(
             wal.last_hmac_snapshot().await,
             hmac_before,
@@ -3027,10 +3030,15 @@ mod tests {
         }
 
         let append_res = wal.append_batch(&batch2).await;
-        assert!(append_res.is_err(), "append_batch must fail on read-only file handle");
+        assert!(
+            append_res.is_err(),
+            "append_batch must fail on read-only file handle"
+        );
 
         // Restore last_hmac as lsm commit would do upon append failure
-        wal.restore_last_hmac(prev_hmac).await.expect("restore last hmac");
+        wal.restore_last_hmac(prev_hmac)
+            .await
+            .expect("restore last hmac");
 
         // 4. Verify last_hmac_snapshot is back to hmac_before
         let hmac_after = wal.last_hmac_snapshot().await;

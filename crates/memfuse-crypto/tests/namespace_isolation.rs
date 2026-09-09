@@ -9,7 +9,7 @@
 //! filenames are identical across different namespaces/shards. Two WAL files
 //! named `wal-100.log` in different shards MUST NOT share encryption keys.
 
-use memfuse_crypto::crypto::KeyManager;
+use memfuse_security::crypto::KeyManager;
 
 /// When file_id includes the full namespace path (e.g. "shard-a/wal-100.log"
 /// vs "shard-b/wal-100.log"), the derived sub-keys MUST be different.

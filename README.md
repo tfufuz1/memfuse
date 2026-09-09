@@ -1,17 +1,16 @@
-# MemFuse Brain
+# MemFuse
 
-**Das Cognitive Operating System für lokale KI-Agenten. Air-gapped, souverän, Pure-Rust.**
+**Souveräne, lokal betriebene Gedächtnisschicht für KI-Agenten — hochperformante, kryptographisch isolierte Embedded AI Memory Library (Python & Rust).**
 
-MemFuse Brain ist eine Desktop-Applikation und ein eingebettetes kognitives Betriebssystem,
-das Ihre Firmendokumente (PDF, Word, Markdown, E-Mails) durchsuchbar macht und
-über ein lokal laufendes Sprachmodell (via Ollama) Fragen dazu beantwortet —
-komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
+MemFuse ist eine souveräne, lokal betriebene Embedded AI Memory Library für KI-Agenten — primär Python (`memfuse-py`) und Rust. Sie bietet eine hochperformante, kryptographisch isolierte Gedächtnisschicht, die Ihre Dokumente und Daten durchsuchbar macht und über ein lokal laufendes Sprachmodell (z. B. via Ollama) Fragen dazu beantwortet — komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 
 > ⚠️ **Status: Aktive Entwicklung.** Kern-Suchengine ist produktionsreif
-> verifiziert (LSM-Tree, HNSW, BM25, CSR-Graph-Persistenz). Desktop-App (Tauri),
-> MCP-Server und Ollama-Integration sind im Workspace vollständig integriert.
+> verifiziert (LSM-Tree, HNSW, BM25, CSR-Graph-Persistenz). PyPI-Paket (`memfuse`)
+> dient als primärer Vertriebsweg. Die Tauri-Desktop-App (`memfuse-tauri`) ist
+> **deprecated** und wird am **2026-11-07** entfernt (siehe [ADR-077](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation)).
+> Bitte nutzen Sie `memfuse-py`.
 
-## Warum MemFuse Brain?
+## Warum MemFuse?
 
 - **Air-Gapped by Design** — keine Cloud, keine Telemetrie, kein API-Key nötig
 - **Lokal & Backend-flexibel** — läuft vollständig auf Ihrem Rechner; erfordert aktuell Ollama als LLM-/Embedding-Backend (separat zu installieren, siehe Installation unten); eine ONNX-basierte Embedding-Alternative (`memfuse-embed`) ist im Code bereits vorhanden.
@@ -26,29 +25,78 @@ komplett offline, ohne dass ein einziges Byte Ihrer Daten das Gerät verlässt.
 - **MCP Sandbox** — Sichere Tool-Isolation, Zeroize-Encryption für volatile Tool-Outputs
   (MemFuse Volatile-Output Isolation)
 - **Session DAG** — MemFuse Session-DAG Pattern: Konversationsverzweigung als persistierter,
-  azyklischer Graph mit vollständiger Tauri-UI-Anbindung (Erstellen von Branches ab
-  jeder Nachricht, Umschalten des aktiven Branches & Historien-Navigation)
+  azyklischer Graph (Erstellen von Branches ab jeder Nachricht, Umschalten des aktiven Branches & Historien-Navigation)
 - **Deutsche Morphologie** — versteht "Urlaubsantragsprozess" auch als
   "Urlaub", "Antrag", "Prozess" für bessere Trefferqualität
 - **Verschlüsselt** — AES-256-GCM auf Disk, HMAC-Anti-Tamper im WAL
 
 ## Installation
 
-### Systemanforderungen
+### Als Python-Library (empfohlen)
+
+Das PyPI-Paket `memfuse` bildet die primäre Schnittstelle für Python-Entwickler:
+
+```bash
+pip install memfuse
+```
+
+Minimales Codebeispiel:
+
+```python
+import memfuse
+
+# Datenbank initialisieren
+db = memfuse.PyMemFuse("./data")
+collection = db.collection("documents")
+
+# Dokument einfügen
+collection.insert("doc_1", "MemFuse bietet hochperformante eingebettete Vektorsuche.")
+
+# Hybridsuche ausführen
+results = collection.hybrid_search("Vektorsuche")
+for res in results:
+    print(res.id, res.score, res.text)
+```
+
+### Für Rust-Entwickler
+
+Der Kern von MemFuse ist als wiederverwendbare Rust-Bibliothek verfügbar:
+
+```toml
+[dependencies]
+memfuse-db = "0.1.0"
+```
+
+```rust
+use memfuse_db::MemFuse;
+
+let db = MemFuse::open("./meine_daten").await?;
+let col = db.collection("dokumente").await?;
+
+col.insert("doc-1", &embedding, Some(serde_json::json!({"text": "..."}))).await?;
+
+let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).await?;
+```
+
+### Desktop-App (deprecated, Entfernung 2026-11-07)
+
+> ⚠️ **Deprecation-Hinweis (ADR-077):** Die Tauri-Desktop-App (`memfuse-tauri`) wird am **2026-11-07** aus dem Repository entfernt. Bitte migrieren Sie auf `memfuse-py` oder die Rust-Library `memfuse-db`.
+
+#### Systemanforderungen
 
 - Windows 10/11, macOS 11+, oder eine gängige Linux-Distribution
 - [Ollama](https://ollama.com) muss separat installiert und gestartet sein
-  (MemFuse Brain nutzt Ollama als lokales LLM- & Embedding-Backend)
+  (MemFuse nutzt Ollama als lokales LLM- & Embedding-Backend)
 - Mindestens ein Ollama-Modell heruntergeladen, z.B.:
 ```bash
   ollama pull llama3.2
   ollama pull nomic-embed-text
 ```
 
-### Aus dem Quellcode bauen
+#### Aus dem Quellcode bauen
 
 ```bash
-# Bauen der Tauri Desktop App
+# Bauen der Tauri Desktop App (deprecated)
 cd crates/memfuse-tauri
 cargo tauri build
 
@@ -62,12 +110,18 @@ MemFuse ist ein Workspace mit 18 Rust-Crates in 5 Layern.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│  MemFuse Brain (Tauri Desktop App / Layer 4)              │
-│  ┌─────────────┐  ┌────────────────────┐  ┌─────────────┐ │
-│  │ Chat-UI      │  │ Dokumenten-Import  │  │ MCP Server  │ │
-│  └──────┬───────┘  └─────────┬──────────┘  └──────┬──────┘ │
-│         │                     │                    │      │
-│  ┌──────▼─────────────────────▼────────────────────▼────┐ │
+│  Zugangswege & Anbindungen                                │
+│  ┌───────────────────────┐  ┌──────────────────────────┐  │
+│  │  memfuse-py (Python)  │  │  MCP Server              │  │
+│  │  (Primär / Empfohlen) │  │  (memfuse-mcp)           │  │
+│  └───────────┬───────────┘  └────────────┬─────────────┘  │
+│              │                           │                │
+│              │   ┌───────────────────────┴──────────────┐ │
+│              │   │ memfuse-tauri (Desktop App)          │ │
+│              │   │ (deprecated, Entfernung 2026-11-07)  │ │
+│              │   └───────────────────────┬──────────────┘ │
+│              │                           │                │
+│  ┌───────────▼───────────────────────────▼──────────────┐ │
 │  │  memfuse-ollama (lokales LLM & Embedding Backend)     │ │
 │  └──────┬───────────────────────────────────────────────┘ │
 │         │                                                 │
@@ -94,7 +148,8 @@ MemFuse ist ein Workspace mit 18 Rust-Crates in 5 Layern.
 | memfuse-agent | Agent Workflow Engine |
 | memfuse-ollama | Ollama Client & Embeddings |
 | memfuse-mcp | MCP Server |
-| memfuse-tauri | Desktop App Shell |
+| memfuse-py | Python FFI Bindings (PyO3) — Primärer Zugangsweg |
+| memfuse-tauri | Desktop App Shell (deprecated, Entfernung 2026-11-07) |
 | memfuse-checkpoint | Backup & Snapshot Management |
 | memfuse-kv-bridge | KV-Cache-Bridge Sicherheitsschicht (Zeroize, Tenant-Isolation) |
 | memfuse-bench | Synthetic Benchmark Harness |
@@ -110,39 +165,18 @@ MemFuse ist ein Workspace mit 18 Rust-Crates in 5 Layern.
 
 ### Grounding & Quellenattribuierung (RAG Grounding)
 
-RAG-Antworten in MemFuse Brain sind instruiert, Antworten **ausschließlich** auf Basis der im `<context>`-Block bereitgestellten Informationen zu formulieren und Fakten mit Quellenangaben im Format `[Dateiname]` oder `[Dateiname, Abschnitt]` zu belegen. Wenn eine Information nicht im Kontext enthalten ist, antwortet das Modell mit der festen Fallback-Phrase: *"Diese Information ist in den importierten Dokumenten nicht enthalten."*
+RAG-Antworten in MemFuse sind instruiert, Antworten **ausschließlich** auf Basis der im `<context>`-Block bereitgestellten Informationen zu formulieren und Fakten mit Quellenangaben im Format `[Dateiname]` oder `[Dateiname, Abschnitt]` zu belegen. Wenn eine Information nicht im Kontext enthalten ist, antwortet das Modell mit der festen Fallback-Phrase: *"Diese Information ist in den importierten Dokumenten nicht enthalten."*
 
 > ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
-## Workspace Crates (18 Active Crates)
+## Workspace Crates (17 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
-- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-crypto` (AES-GCM), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting), `memfuse-kv-bridge` (KV-Cache-Bridge Sicherheitsschicht)
+- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-security` (AES-GCM & KV-Segment Security), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
-- **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker)
-- **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell)
+- **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker), `memfuse-py` (Python PyO3 FFI Bindings)
+- **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell — deprecated, Entfernung 2026-11-07)
 - **Layer 5**: `memfuse-bench` (Reproduzierbarer Benchmark-Harness für Retrieval-Genauigkeit)
-
-## Für Entwickler: Rust-Crates
-
-Der Kern von MemFuse Brain ist als eigenständige, wiederverwendbare
-Rust-Bibliothek verfügbar:
-
-```toml
-[dependencies]
-memfuse-db = "0.1.0"
-```
-
-```rust
-use memfuse_db::MemFuse;
-
-let db = MemFuse::open("./meine_daten").await?;
-let col = db.collection("dokumente").await?;
-
-col.insert("doc-1", &embedding, Some(serde_json::json!({"text": "..."}))).await?;
-
-let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).await?;
-```
 
 ## MCP-Server (für Claude Desktop & andere MCP-Clients)
 
@@ -161,7 +195,7 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten --a
 MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 ```
 
-## Roadmap — Cognitive Operating System
+## Roadmap — Embedded Agentic Memory Engine
 
 ### ✅ Phase 1: RAG-Fundament (abgeschlossen)
 - [x] LSM-Tree-Storage mit MVCC, WAL, Crash-Recovery
@@ -175,7 +209,7 @@ MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- -
 - [x] Context Compaction (MemFuse Context-Window Compaction)
 - [x] Session DAG Branching (MemFuse Session-DAG Pattern)
 - [x] MCP Sandbox Isolation (MemFuse Volatile-Output Isolation)
-- [x] Desktop-App (memfuse-tauri), MCP-Server, Python-Bindings
+- [x] MCP-Server, Python-Bindings (`memfuse-py`)
 
 ### 🔄 Phase 2: Cognitive Memory (Teilweise implementiert, Q4 2026)
 - [x] Kognitive Gedächtnistypen: Episodic / Semantic / Procedural / Working Memory (`MemoryType`-Enum)
@@ -196,16 +230,15 @@ MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- -
 - [ ] CausalEdge: Kausale Graph-Dimension
 - [ ] Verified Forgetting: Kryptographischer Löschbeweis
 
-### 📋 Phase 4: Enterprise (Q2 2027)
-- [ ] OAuth 2.0 für MCP-Server
-- [ ] RBAC und Multi-Tenant-Isolation
-- [ ] Immutable Audit-Trail für Compliance
+### 📋 Phase 4: PyPI Release & Ecosystem Integration (Q2 2027)
+- [ ] Erstes offizielles PyPI-Release (`pip install memfuse`) mit vollständigen Binar-Wheels für Linux, macOS und Windows
+- [ ] PyO3 Sub-Interpreter-Isolationsprüfungen (PEP 684) & Asyncio-Loop-Bridging
 - [ ] Benchmark-Suite vs. Mem0, Zep/Graphiti, MemOS
 
 ## Positionierung
 
 MemFuse ist kein Ersatz für Cloud-Vektordatenbanken (Qdrant, Pinecone).
-MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LLM-Agenten** — in-process, air-gapped, Pure-Rust.
+MemFuse ist eine neue Kategorie: **Die lokale Embedded AI Memory Library für KI-Agenten** — in-process, air-gapped, Pure-Rust.
 
 | Kriterium | MemFuse | Mem0 | Zep/Graphiti | Chroma+ES+Neo4j |
 |-----------|---------|------|--------------|-----------------|
@@ -218,6 +251,10 @@ MemFuse ist eine neue Kategorie: **Das lokale Cognitive Operating System für LL
 | Kein Docker | ✅ | ❌ | ❌ | ❌ |
 
 *\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Zitierte Fehlerreduktions-Prozentangaben entstammen der Fachliteratur [Referenzwert aus Fachliteratur zu Contextual-Retrieval-Verfahren — nicht am MemFuse-Korpus validiert]. MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes Benchmark-Harness auf einem 9-Dokumenten Synthetik-Korpus bereit (Details in [`benchmarks/README.md`](benchmarks/README.md)).*
+
+## Architektur-Entscheidungen (ADRs)
+
+Die vollständige Begründung zur Fokussierung auf die Python/Rust-Library und der Deprecation der Desktop-Anwendung ist in [ADR-077 in DECISIONS.md](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation) dokumentiert.
 
 ## Lizenz
 
