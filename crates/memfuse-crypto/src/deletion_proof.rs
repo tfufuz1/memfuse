@@ -31,10 +31,38 @@ pub struct LayerCleanupProof {
 }
 
 impl LayerCleanupProof {
+    /// Erzeugt einen Proof NUR, wenn `remaining_live_entries == 0` — also nur dann,
+    /// wenn der Aufrufer nachweislich (durch einen Re-Scan des betroffenen
+    /// Storage-Bereichs NACH der physischen Bereinigung) verifiziert hat, dass für
+    /// diesen Layer keine lebenden Einträge mehr existieren. Ein Proof für einen
+    /// Layer mit `remaining_live_entries > 0` ist ein Widerspruch zu INV-DELETION-1
+    /// und wird abgelehnt statt stillschweigend akzeptiert.
+    ///
+    /// # Errors
+    /// Gibt `MemFuseError::Internal` zurück, wenn `remaining_live_entries != 0`.
+    pub fn new_after_verified_empty(
+        layer: DeletionLayer,
+        remaining_live_entries: usize,
+    ) -> Result<Self> {
+        if remaining_live_entries != 0 {
+            return Err(MemFuseError::Internal(format!(
+                "INV-DELETION-1 violation: attempted to construct LayerCleanupProof for \
+                 layer {layer:?} but verification found {remaining_live_entries} \
+                 remaining live entries — physical cleanup is incomplete or was not \
+                 performed before proof construction"
+            )));
+        }
+        Ok(Self { layer, _private: () })
+    }
+
     /// Fabrikfunktion — MUSS unmittelbar nach erfolgreicher, verifizierter physischer
     /// Bereinigung (LSM-Compaction, WAL-Truncation, HNSW-Purge, ...) aufgerufen werden,
     /// um einen Proof für den jeweiligen Layer zu erzeugen.
-    pub fn new_after_physical_cleanup(layer: DeletionLayer) -> Self {
+    #[deprecated(
+        note = "use new_after_verified_empty, which requires proof of an actual empty post-cleanup scan"
+    )]
+    #[allow(dead_code)]
+    pub(crate) fn new_after_physical_cleanup(layer: DeletionLayer) -> Self {
         Self {
             layer,
             _private: (),
@@ -231,8 +259,9 @@ mod tests {
             keys,
             TxId(100),
             vec![
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::HnswIndex),
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0)
+                    .unwrap(),
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::HnswIndex, 0).unwrap(),
             ],
             vec![ExcludedScope::LlmParameterMemory],
             &test_key(),
@@ -240,6 +269,19 @@ mod tests {
         .unwrap();
 
         assert!(proof.verify(&test_key()).unwrap());
+    }
+
+    #[test]
+    fn test_layer_cleanup_proof_rejects_nonzero_remaining_entries() {
+        let res = LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 3);
+        assert!(res.is_err());
+        match res {
+            Err(MemFuseError::Internal(msg)) => {
+                assert!(msg.contains("INV-DELETION-1 violation"));
+                assert!(msg.contains("found 3 remaining live entries"));
+            }
+            _ => panic!("Expected MemFuseError::Internal"),
+        }
     }
 
     #[test]
@@ -263,9 +305,10 @@ mod tests {
             scope,
             vec![b"k1".to_vec()],
             TxId(10),
-            vec![LayerCleanupProof::new_after_physical_cleanup(
-                DeletionLayer::LsmMemtable,
-            )],
+            vec![
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0)
+                    .unwrap(),
+            ],
             vec![ExcludedScope::LlmParameterMemory],
             &test_key(),
         )
@@ -397,9 +440,10 @@ mod tests {
         };
 
         let cleanup_proofs = vec![
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::HnswIndex),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::SsTableAllLevels, 0)
+                .unwrap(),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::HnswIndex, 0).unwrap(),
         ];
 
         let proof = DeletionProof::create(
