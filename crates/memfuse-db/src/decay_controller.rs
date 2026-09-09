@@ -104,7 +104,7 @@ impl AdaptiveDecayController {
     }
 
     /// Gibt true wenn Chunk unter Eviction-Schwelle.
-    /// Wird von Reaper (reaper.rs) für TTL-Sweep verwendet.
+    /// Wird von Background Workers (background_workers.rs) für Sweep verwendet.
     #[inline]
     pub fn should_evict(
         &self,

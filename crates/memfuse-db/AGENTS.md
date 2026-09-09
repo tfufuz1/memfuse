@@ -20,7 +20,7 @@ Ist die primäre High-Level-API für lokale Agenten.
 | `chunker.rs` | `MarkdownChunker` — Strukturiertes Aufteilen von Markdown-Dokumenten |
 | `multistep.rs` | `MultiStepEngine`, `QueryRewriter` — LLM-gestützte iterative Suche |
 | `transaction.rs` | `CommitIntent` — High-Level Transaktionssteuerung |
-| `reaper.rs` | Background Tasks: Expiry Reaper, Orphan Reaper |
+| `background_workers.rs` | Background Tasks: Expiry Cleanup Worker, Orphan Cleanup Worker |
 
 ## 3. Kritische Invarianten
 
