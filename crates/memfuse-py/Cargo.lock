@@ -898,9 +898,12 @@ dependencies = [
 name = "memfuse-db"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "libc",
  "memfuse-calibration",
  "memfuse-checkpoint",
  "memfuse-core",
+ "memfuse-crypto",
  "memfuse-graph",
  "memfuse-index",
  "memfuse-ollama",
@@ -909,9 +912,11 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
