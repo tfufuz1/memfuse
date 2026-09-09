@@ -19,6 +19,7 @@ Ergebnis: **1 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
+| `crates/memfuse-db/src/collection/crud.rs` | 1451 | `AGT-DB-cb16e356` | `APM-20` | `MAJOR` | `2026-09-09T19:20:31Z` | // AI-TAG[APM-20][MAJOR] LimitExceeded behavior on default scan limit (ID: AGT-DB-cb16e356) (TS: 2026-09-09T19:20:31Z) (SESSION: 9859c87a) |
 | `crates/memfuse-db/tests/consolidation_integration_test.rs` | 122 | `AGT-DB-7c141164` | `TEST` | `MAJOR` | `2026-09-09T12:43:24Z` | // AI-TAG[TEST][MAJOR] test_execute_sleep_cycle_with_synthesis_pass uses identical embeddings causing near-duplicate tombstoning (ID: AGT-DB-7c141164) (TS: 2026-09-09T12:43:24Z) (SESSION: 82e80d01) |
 
 
