@@ -71,7 +71,7 @@
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
-use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
+use memfuse_crypto::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope, LayerCleanupProof};
 use memfuse_index::{HnswConfig, HnswIndex};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
@@ -819,7 +819,10 @@ impl MemFuse {
             scope,
             deleted_keys,
             tx,
-            vec![DeletionLayer::LsmMemtable, DeletionLayer::SsTableAllLevels],
+            vec![
+                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
+                LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
+            ],
             vec![],
             proof_key,
         )
