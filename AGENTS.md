@@ -10,7 +10,7 @@
 <!-- §7 = Non-Obvious Decisions (would cause wrong code without this knowledge) -->
 
 <a id="1"></a>
-## Verifizierter Codestand · HEAD `b89e356e` · Stand 2026-09-08
+## Verifizierter Codestand · HEAD `b448084` · Stand 2026-09-08
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
@@ -30,13 +30,12 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
   - `memfuse-crypto`: Encryption at rest & cryptographic deletion proofs (`DeletionProof`) (`crates/memfuse-crypto`)
   - `memfuse-kv-bridge`: KV-Cache-Bridge Sicherheitsschicht (`KvSegment`, `TenantIsolatedKvStore`, `EvictionWorker`) (`crates/memfuse-kv-bridge`)
   - `memfuse-checkpoint`: Snapshot & backup management (`crates/memfuse-checkpoint`)
-  - `memfuse-graph`: CSR-Graph, `ImmunMemory` (F-04), `PathRAGEngine`, `EdgeProvenance` (`crates/memfuse-graph`)
+  - `memfuse-graph`: CSR-Graph, `ConsistencyEnforcer` (F-04), `PathRAGEngine`, `EdgeProvenance` (`crates/memfuse-graph`)
   - `memfuse-text`: BM25 full-text search & DACH compound splitting (`crates/memfuse-text`)
   - `memfuse-candle`: Native Candle GGUF ML inference backend (`crates/memfuse-candle`)
 - **Layer 2 — Subsysteme**:
   - `memfuse-embed`: Text embeddings & Cross-Encoder reranking (`crates/memfuse-embed`, optional)
   - `memfuse-index`: HNSW vector index, SQ8 quantization, DiskANN (`crates/memfuse-index`)
-  - `memfuse-kv-bridge`: KV-Cache-Bridge security layer & tenant isolation (`crates/memfuse-kv-bridge`)
   - `memfuse-ollama`: Ollama HTTP client & context prefix engine (`crates/memfuse-ollama`)
   - `memfuse-store`: LSM-Tree storage engine & WAL (`crates/memfuse-store`)
 - **Layer 3 — Hauptdatenbank**:
@@ -67,11 +66,11 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `Kaskadierende CSR-Invalidierung` | `crates/memfuse-db/src/collection/crud.rs:958` | Kaskadierendes Tombstoning verknüpfter Graph-Kanten bei Dokument-Superseding via `DocEdgeIndex` |
 | `memfuse-calibration` | `crates/memfuse-calibration/` | Scaler (Platt, Isotonic, Replicator) & P8 Compliance |
 | `PathRAGEngine` | `crates/memfuse-graph/src/path_rag.rs:35` | Bidirektionale Graph-Retrieval Search Engine |
-| `ImmunMemory` (F-04) | `crates/memfuse-graph/src/immune.rs:84` | Immunologische Widerspruchserkennung & Edge-Suppression |
+| `ConsistencyEnforcer` (F-04) | `crates/memfuse-graph/src/consistency_enforcement.rs:86` | Widerspruchserkennung & Edge-Suppression (ADR-069) |
 | `memfuse-candle` | `crates/memfuse-candle/` | Workspace-Member (Layer 1), GGUF Inferenz-Backend |
 | `ConsolidationSession` | `crates/memfuse-db/src/context_compaction.rs:188` | Context Compaction mit Transaktionssicherheit |
-| `FreeEnergyThermostat` (F-01) | `crates/memfuse-db/src/thermostat.rs:44` | Thermodynamisches Adaptive-Decay hinter `physio-features` |
-| `SleepCycleEngine` | `crates/memfuse-db/src/sleep_cycle.rs:72` | NREM/REM Konsolidierung und Community-Synthese |
+| `AdaptiveDecayController` (F-01) | `crates/memfuse-db/src/decay_controller.rs:64` | Thermodynamisches Adaptive-Decay hinter `decay-thermostat` / `adaptive-decay` (ADR-069) |
+| `ConsolidationEngine` | `crates/memfuse-db/src/consolidation_executor.rs:107` | Hintergrund-Konsolidierung und Community-Synthese (`execute_sleep_cycle`) |
 | `MarkdownChunker` | `crates/memfuse-db/src/chunker.rs` | Strukturiertes Dokumentsplitting vor Vektor-Embedding |
 | `MultiStepEngine` | `crates/memfuse-db/src/multistep.rs` | Mehrstufige Iterative Search Engine mit RRF-Signal-Fusion |
 | `CheckpointGuard` | `crates/memfuse-checkpoint/src/lib.rs` | RAII-Checkpoint & Persistent Store Management |
@@ -79,8 +78,6 @@ MemFuse ist in ein Schichten-Modell (Layer 0–6) gegliedert. Sämtliche Workspa
 | `McpSandbox` | `crates/memfuse-mcp/src/lib.rs` | Read-Only MCP-Server Sandbox & Write Authorization Guard |
 | `ContextPrefixEngine` | `crates/memfuse-ollama/src/context_prefixer.rs` | Context Prefix Compression Engine |
 | `CSRGraph` & PPR | `crates/memfuse-graph/src/csr.rs` | Compressed Sparse Row Graph mit Personalized PageRank |
-| `EdgeProvenance` | `crates/memfuse-graph/src/provenance.rs:11` | Herkunftsnachweis & Dokument-Indizierung für Graph-Kanten |
-| `memfuse-kv-bridge` | `crates/memfuse-kv-bridge/` | KV-Cache-Bridge Security-Layer, KvSegment & Tenant Isolation |
 | `PersistentAgentWorkflow` | `crates/memfuse-agent/src/lib.rs` | Multi-Step Agent Execution Loop mit State Graph & Checkpointing |
 
 ### Fehlt / Nicht integriert ❌
