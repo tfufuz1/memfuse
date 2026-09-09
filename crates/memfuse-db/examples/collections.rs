@@ -110,7 +110,8 @@ async fn main() -> memfuse_core::Result<()> {
     );
 
     // --- Drop a collection ---
-    db.drop_collection("tools").await?;
+    let tenant_id = memfuse_core::TenantId::new(1);
+    db.drop_collection("tools", tenant_id, &[0u8; 32]).await?;
     let remaining = db.list_collections().await?;
     println!("\n=== After dropping 'tools' ===");
     for name in &remaining {

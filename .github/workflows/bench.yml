@@ -5,14 +5,21 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: 'Update baseline_metrics.json with results from real dataset execution'
+        required: false
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  bench-dry-run:
-    name: Benchmark Compilation & Dry Run
+  fixture-smoke-test:
+    name: Fixture-Smoke-Test & Harness Dry-Run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +29,11 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+
+      - name: Fixture Evaluation & Benchmark Unit Tests
+        run: |
+          # Execute fixture-based evaluation tests and harness verification
+          cargo test --locked -p memfuse-bench
 
       - name: Benchmark Harness Dry-Run Test
         run: |
@@ -54,16 +66,63 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Run Retrieval Accuracy Benchmark Harness
+      - name: Cache LongMemEval Dataset
+        id: cache-longmemeval
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/memfuse-bench/tests/data/
+          key: longmemeval-dataset-v1-${{ hashFiles('benchmarks/memfuse-bench/src/long_mem_eval.rs') }}
+          restore-keys: |
+            longmemeval-dataset-v1-
+
+      - name: Download LongMemEval Dataset (if cache miss)
+        if: steps.cache-longmemeval.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p benchmarks/memfuse-bench/tests/data/
+          pip install huggingface_hub --quiet
+          python3 -c "
+          from huggingface_hub import hf_hub_download
+          import shutil, os
+          path = hf_hub_download(
+              repo_id='xiaowu0162/longmemeval',
+              filename='longmemeval_s.jsonl',
+              repo_type='dataset'
+          )
+          shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl')
+          print(f'LongMemEval-S downloaded successfully: {os.path.getsize(path)} Bytes')
+          " || echo "⚠️ HuggingFace download failed — fixture fallback active"
+
+      - name: Run LongMemEval Benchmark Execution
+        run: |
+          DATASET="benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl"
+          FIXTURE="benchmarks/memfuse-bench/tests/fixtures/long_mem_eval_fixture.json"
+          [ -f "$DATASET" ] && ACTUAL="$DATASET" || ACTUAL="$FIXTURE"
+          echo "Using Dataset: $ACTUAL ($(wc -c < $ACTUAL) Bytes)"
+          cargo run --locked -p memfuse-bench --release -- long-mem-eval \
+            --dataset "$ACTUAL" \
+            --output benchmarks/results/long_mem_eval_results.json
+
+      - name: Run Synthetic Retrieval Accuracy Benchmark Harness
         run: cargo run --locked -p memfuse-bench --release
 
+      - name: Evaluate Benchmark Regression Gate (xtask)
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "Updating baseline on main branch..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --update
+          else
+            echo "Evaluating regression gate against main baseline..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json
+          fi
+
       - name: Upload Retrieval Accuracy Benchmark Results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: retrieval-accuracy-benchmark-results
           path: |
-            benchmarks/results/results.json
-            benchmarks/results/summary.md
+            benchmarks/results/
+            benchmarks/memfuse-bench/baseline_metrics.json
             benchmarks/memfuse-bench/baseline_recall.json
 
   benchmark-regression:
@@ -100,58 +159,104 @@ jobs:
           pip install huggingface_hub --quiet
 
           # LongMemEval-S: Original-Repo (xiaowu0162/longmemeval)
-          # Datenquelle-Entscheidung: Original-Repo, nicht "cleaned"-Mirror
-          # (Begründung: Baseline muss mit README-Dokumentation übereinstimmen)
           python3 -c "
           from huggingface_hub import hf_hub_download
-          import shutil, os
-          path = hf_hub_download(
-              repo_id='xiaowu0162/longmemeval',
-              filename='longmemeval_s.jsonl',
-              repo_type='dataset',
-              token=os.environ.get('HF_TOKEN')
-          )
-          shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl')
-          print(f'LongMemEval-S heruntergeladen: {os.path.getsize(path)} Bytes')
-          " || echo "⚠️ HuggingFace-Download fehlgeschlagen — Fixture-Fallback aktiv"
+          import shutil, os, sys
+          try:
+              path = hf_hub_download(
+                  repo_id='xiaowu0162/longmemeval',
+                  filename='longmemeval_s.jsonl',
+                  repo_type='dataset',
+                  token=os.environ.get('HF_TOKEN')
+              )
+              shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl')
+              print(f'LongMemEval-S heruntergeladen: {os.path.getsize(path)} Bytes')
+          except Exception as e:
+              print(f'Error downloading LongMemEval-S: {e}', file=sys.stderr)
+              sys.exit(1)
+          " || {
+            echo "LongMemEval/LoCoMo-Datensatz-Download fehlgeschlagen — Regressionsgate kann nicht verlässlich ausgeführt werden"
+            exit 1
+          }
 
           # LoCoMo: Öffentlich verfügbar
           python3 -c "
           from huggingface_hub import hf_hub_download
-          import shutil, os
-          path = hf_hub_download(
-              repo_id='LoCoMo-Dataset/LoCoMo',
-              filename='test.json',
-              repo_type='dataset',
-              token=os.environ.get('HF_TOKEN')
-          )
-          shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/locomo_test.json')
-          print(f'LoCoMo heruntergeladen: {os.path.getsize(path)} Bytes')
-          " || echo "⚠️ LoCoMo-Download fehlgeschlagen — Fixture-Fallback aktiv"
+          import shutil, os, sys
+          try:
+              path = hf_hub_download(
+                  repo_id='LoCoMo-Dataset/LoCoMo',
+                  filename='test.json',
+                  repo_type='dataset',
+                  token=os.environ.get('HF_TOKEN')
+              )
+              shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/locomo_test.json')
+              print(f'LoCoMo heruntergeladen: {os.path.getsize(path)} Bytes')
+          except Exception as e:
+              print(f'Error downloading LoCoMo: {e}', file=sys.stderr)
+              sys.exit(1)
+          " || {
+            echo "LongMemEval/LoCoMo-Datensatz-Download fehlgeschlagen — Regressionsgate kann nicht verlässlich ausgeführt werden"
+            exit 1
+          }
+
+      - name: Verify Dataset Existence Before Execution
+        run: |
+          LME="benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl"
+          LOCOMO="benchmarks/memfuse-bench/tests/data/locomo_test.json"
+          if [ ! -s "$LME" ] || [ ! -s "$LOCOMO" ]; then
+            echo "LongMemEval/LoCoMo-Datensatz-Download fehlgeschlagen — Regressionsgate kann nicht verlässlich ausgeführt werden"
+            exit 1
+          fi
+          echo "Beide Datensätze vorhanden."
 
       - name: Run LongMemEval Benchmark Execution
         run: |
           DATASET="benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl"
-          FIXTURE="benchmarks/memfuse-bench/tests/fixtures/long_mem_eval_fixture.json"
-          [ -f "$DATASET" ] && ACTUAL="$DATASET" || ACTUAL="$FIXTURE"
-          echo "Verwende Dataset: $ACTUAL ($(wc -c < $ACTUAL) Bytes)"
+          echo "Verwende Dataset: $DATASET ($(wc -c < "$DATASET") Bytes)"
           cargo run --locked -p memfuse-bench --release -- long-mem-eval \
-            --dataset "$ACTUAL" \
+            --dataset "$DATASET" \
             --output benchmarks/results/long_mem_eval_results.json
 
       - name: Run LoCoMo Benchmark Execution
         run: |
           DATASET="benchmarks/memfuse-bench/tests/data/locomo_test.json"
-          FIXTURE="benchmarks/memfuse-bench/tests/fixtures/locomo_fixture.json"
-          [ -f "$DATASET" ] && ACTUAL="$DATASET" || ACTUAL="$FIXTURE"
-          echo "Verwende Dataset: $ACTUAL ($(wc -c < $ACTUAL) Bytes)"
+          echo "Verwende Dataset: $DATASET ($(wc -c < "$DATASET") Bytes)"
           cargo run --locked -p memfuse-bench --release -- locomo \
-            --dataset "$ACTUAL" \
+            --dataset "$DATASET" \
             --output benchmarks/results/locomo_results.json
 
       - name: Evaluate Metrics Against Versioned Baseline
         run: |
-          cargo run --locked -p memfuse-bench --release --bin compare-baseline -- --current benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "Updating baseline on main branch..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05 --update
+          else
+            echo "Evaluating regression gate against main baseline..."
+            cargo run -p xtask -- bench-gate --results benchmarks/results/current_metrics.json --baseline benchmarks/memfuse-bench/baseline_metrics.json --threshold 0.05
+          fi
+
+      - name: Update Baseline Metrics (when explicitly requested via workflow_dispatch)
+        if: ${{ github.event.inputs.update_baseline == 'true' }}
+        run: |
+          echo "Updating baseline_metrics.json with real dataset results..."
+          python3 -c "
+          import json, datetime, subprocess
+          commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
+          now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          with open('benchmarks/results/current_metrics.json', 'r') as f:
+              metrics = json.load(f)
+          metrics['_status'] = 'real-dataset-baseline'
+          metrics['_note'] = f'Erzeugt gegen echte Datensätze am {now} (Commit {commit_hash})'
+          metrics['_dataset_source'] = 'xiaowu0162/longmemeval (longmemeval_s.jsonl, Original-Repo)'
+          metrics['_locomo_source'] = 'LoCoMo-Dataset/LoCoMo (test.json)'
+          metrics['_generated_at'] = now
+          metrics['_commit_hash'] = commit_hash
+          with open('benchmarks/memfuse-bench/baseline_metrics.json', 'w') as f:
+              json.dump(metrics, f, indent=2)
+              f.write('\n')
+          print('baseline_metrics.json erfolgreich aktualisiert.')
+          "
 
       - name: Upload Retrieval Quality Regression Artifacts
         if: always()

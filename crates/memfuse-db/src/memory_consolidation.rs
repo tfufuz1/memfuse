@@ -69,6 +69,8 @@ pub struct ConsolidationPhaseResult {
     /// Zur Einhaltung der P1-DAG-Integrität liefert dieses Modul NUR die Liste und ruft `memfuse-graph`
     /// nicht selbst auf, um Crate-Zyklen zu vermeiden.
     pub cascade_edge_tombstones_needed: Vec<DocId>,
+    /// Aggregierte Fehler beim Kaskadieren von Graph-Kanten-Tombstones.
+    pub cascade_errors: Vec<String>,
 }
 
 /// Berechnet die Cosine-Similarity zwischen zwei Vektoren ohne `panic!` oder `unwrap()`.
@@ -265,6 +267,7 @@ pub fn run_consolidation_pass(
             segments_created: 0,
             duplicates_tombstoned: Vec::new(),
             cascade_edge_tombstones_needed: Vec::new(),
+            cascade_errors: Vec::new(),
         };
     }
 
@@ -297,6 +300,7 @@ pub fn run_consolidation_pass(
         segments_created: segments.len(),
         duplicates_tombstoned: duplicates,
         cascade_edge_tombstones_needed,
+        cascade_errors: Vec::new(),
     }
 }
 

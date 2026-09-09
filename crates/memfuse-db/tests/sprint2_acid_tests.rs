@@ -8,7 +8,7 @@
 //!
 //! DECISION-REF: sprint_2_data_integrity_acid.md — Verifikationsplan
 
-use memfuse_core::StorageEngine;
+use memfuse_core::{StorageEngine, TenantId};
 use memfuse_db::{DistanceMetric, MemFuse, MemFuseConfig};
 use serde_json::json;
 use tempfile::TempDir;
@@ -52,7 +52,8 @@ async fn test_drop_collection_frees_storage() {
     assert_eq!(col.len().await, 2, "Collection should have 2 documents");
 
     // 2. Collection droppen
-    db.drop_collection("to_drop")
+    let tenant_id = TenantId::try_new(1).unwrap();
+    db.drop_collection("to_drop", tenant_id, &[0u8; 32])
         .await
         .expect("drop collection");
 
@@ -79,7 +80,8 @@ async fn test_drop_collection_frees_storage() {
 #[tokio::test]
 async fn test_drop_default_collection_is_rejected() {
     let (db, _tmp) = setup_db(3).await;
-    let result = db.drop_collection("default").await;
+    let tenant_id = TenantId::try_new(1).unwrap();
+    let result = db.drop_collection("default", tenant_id, &[0u8; 32]).await;
     assert!(
         result.is_err(),
         "Dropping the default collection must return an error"
@@ -109,7 +111,10 @@ async fn test_drop_collection_removes_all_data() {
     assert!(!before.is_empty(), "Data keys must exist before drop");
 
     // 2. drop_collection() aufrufen
-    db.drop_collection(name).await.expect("drop collection");
+    let tenant_id = TenantId::try_new(1).unwrap();
+    db.drop_collection(name, tenant_id, &[0u8; 32])
+        .await
+        .expect("drop collection");
 
     // 3. storage.scan_prefix("__col:<name>:") muss LEER sein
     let after = db

@@ -2,6 +2,7 @@
 name = "memfuse-tauri"
 version.workspace = true
 edition.workspace = true
+description = "DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren."
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
