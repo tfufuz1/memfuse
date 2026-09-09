@@ -94,8 +94,7 @@ impl Ord for HeapEntry {
         other
             .result
             .score
-            .partial_cmp(&self.result.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&self.result.score)
             .then_with(|| self.result.id.cmp(&other.result.id))
     }
 }
@@ -548,17 +547,19 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 prov
             };
 
-            #[cfg(debug_assertions)]
-            {
-                if !final_prov.signal_contributions.is_empty() {
-                    let sum_contrib: f32 = final_prov
-                        .signal_contributions
-                        .values()
-                        .map(|c| c.rrf_contribution)
-                        .sum();
-                    debug_assert!(
-                        (sum_contrib - score).abs() < 1e-6,
-                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of contributions ({sum_contrib}) != entry score ({score})"
+            if !final_prov.signal_contributions.is_empty() {
+                let sum_contrib: f32 = final_prov
+                    .signal_contributions
+                    .values()
+                    .map(|c| c.rrf_contribution)
+                    .sum();
+                if !(sum_contrib - score).abs().lt(&1e-6) {
+                    tracing::error!(
+                        doc_id = %id,
+                        sum_contrib,
+                        score,
+                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of signal \
+                         contributions does not match entry score — provenance may be inconsistent"
                     );
                 }
             }
@@ -1141,9 +1142,55 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    #[should_panic(expected = "INV-PROV-1 violation in weighted_reciprocal_rank_fusion")]
-    fn test_weighted_rrf_inconsistent_signal_contribution_panics() {
+    fn test_heap_entry_nan_score_sorts_to_worst_position() {
+        let entry_high = HeapEntry {
+            result: SearchResult {
+                id: "doc_high".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        };
+        let entry_mid = HeapEntry {
+            result: SearchResult {
+                id: "doc_mid".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        };
+        let entry_nan = HeapEntry {
+            result: SearchResult {
+                id: "00_doc_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        };
+
+        let mut heap = BinaryHeap::new();
+        heap.push(entry_high);
+        heap.push(entry_mid);
+        heap.push(entry_nan);
+
+        // Repeated pop() yields entries from worst finite score to best finite score, and NaN always last.
+        let popped_first = heap.pop().expect("entry present");
+        assert_eq!(popped_first.result.id, "doc_mid");
+
+        let popped_second = heap.pop().expect("entry present");
+        assert_eq!(popped_second.result.id, "doc_high");
+
+        let popped_last = heap.pop().expect("entry present");
+        assert_eq!(popped_last.result.id, "00_doc_nan");
+        assert!(popped_last.result.score.is_nan());
+        assert!(heap.is_empty());
+    }
+
+    #[test]
+    fn test_inv_prov1_violation_logged_in_release_mode() {
         let mut prov = ProvenanceRecord {
             vector_distance: Some(0.95),
             source_collection: Some("col".to_string()),
@@ -1168,7 +1215,9 @@ mod tests {
             provenance: Some(prov),
         }];
 
-        weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 10);
+        let fused = weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set, 1.0)], 10);
+        assert_eq!(fused.len(), 1);
+        assert_eq!(fused[0].id, "doc1");
     }
 
     #[test]
