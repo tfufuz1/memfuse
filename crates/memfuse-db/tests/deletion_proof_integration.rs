@@ -3,8 +3,8 @@
 //! Integration tests for GDPR Art. 17 DeletionProof generation during collection drop.
 
 use memfuse_core::{CollectionId, DistanceMetric, StorageEngine, TenantId, TxId};
-use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_db::{MemFuse, MemFuseConfig};
+use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use serde_json::json;
 use tempfile::TempDir;
 

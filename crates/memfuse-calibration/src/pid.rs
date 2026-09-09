@@ -51,6 +51,10 @@ impl Default for PidController {
 }
 
 impl PidController {
+    // AI-TAG[SMELL][MAJOR] PID controller NaN/Inf measured_latency validation (ID: AGT-CALIBRATION-fca75496) (TS: 2026-09-09T12:37:35Z) (SESSION: 20c1aaf4)
+    // BEFUND: In update() wird measured_latency_ms nicht auf is_finite() geprüft. Eine NaN- oder Inf-Latenzmessung propagiert in self.integral und self.prev_error und korrumpiert den Reglerzustand dauerhaft.
+    // RISIKO: Nach einer einzelnen fehlerhaften oder NaN-Latenzmessung schlägt jegliche künftige Pool-Größen-Berechnung fehl.
+    // EMPFEHLUNG: Am Anfang von update() prüfen: if !measured_latency_ms.is_finite() { return self.current_pool_size.unwrap_or(current_pool_size); }.
     /// Verarbeitet eine neue Latenz-Messung und gibt die neue Pool-Größe zurück.
     ///
     /// ANTI-WINDUP: Integral wird auf [-max_integral, max_integral] geclipped.

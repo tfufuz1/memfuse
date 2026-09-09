@@ -117,6 +117,9 @@ als "Fehlt" steht?
 
 Eine veraltete AGENTS.md ist schlimmer als keine — sie führt Agenten aktiv in die Irre.
 
+**Dokumentations-Governance & HEAD-Zitierung:**
+Jedes Dokument, das einen Repository-Zustand als 'verifiziert' beschreibt, MUSS den HEAD-Commit-Hash im Format `HEAD <vollständiger-hash>, <ISO-Datum> <Uhrzeit mit Zeitzone>` exakt aus `git log -1 --format='%H %ci'` übernehmen — kein manuelles Abtippen von Kurz-Hashes.
+
 ---
 
 <a id="6"></a>

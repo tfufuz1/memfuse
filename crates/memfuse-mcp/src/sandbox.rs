@@ -76,7 +76,10 @@ impl VolatileToolResult {
     }
 
     /// Entschlüsselt und gibt den Klartext zeroized zurück.
-    pub fn decrypt(&self, key: &memfuse_security::CryptoKey) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+    pub fn decrypt(
+        &self,
+        key: &memfuse_security::CryptoKey,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>> {
         if self.nonce.len() != 12 {
             return Err(MemFuseError::Internal(
                 "Sandbox decrypt: Invalid nonce length".into(),

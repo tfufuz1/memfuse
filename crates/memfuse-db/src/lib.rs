@@ -71,8 +71,8 @@
 use memfuse_core::BoxFuture;
 pub use memfuse_core::TextEmbeddingEngine;
 use memfuse_core::{CollectionId, DocId, Result, StorageEngine, TenantId, TxId};
-use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_index::{HnswConfig, HnswIndex};
+use memfuse_security::deletion_proof::{DeletionLayer, DeletionProof, DeletionScope};
 use memfuse_store::LsmStorage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

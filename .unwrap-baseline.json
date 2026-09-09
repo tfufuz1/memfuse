@@ -1024,6 +1024,14 @@
     "hash": "9518406a375f2cba"
   },
   {
+    "file": "crates/memfuse-calibration/tests/calibration_deep_tests.rs",
+    "hash": "ca5eeb4eb134d9ab"
+  },
+  {
+    "file": "crates/memfuse-calibration/tests/calibration_deep_tests.rs",
+    "hash": "f6232589b327df8d"
+  },
+  {
     "file": "crates/memfuse-candle/src/embedding.rs",
     "hash": "11f00c02aad47158"
   },
@@ -1074,6 +1082,62 @@
   {
     "file": "crates/memfuse-candle/tests/embedding_provider_conformance.rs",
     "hash": "f0c15ac23eea687d"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gasp_mutant_test.rs",
+    "hash": "1fea7d6abed87e4e"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gasp_mutant_test.rs",
+    "hash": "455b2e8513d697c6"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gasp_mutant_test.rs",
+    "hash": "610cc190c0696d5b"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gasp_mutant_test.rs",
+    "hash": "751df3c40ee4db2a"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gasp_mutant_test.rs",
+    "hash": "789a000ff46c8ff2"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gguf_loader_test.rs",
+    "hash": "59f248ddbe32e141"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/gguf_loader_test.rs",
+    "hash": "b768ba2736a2035a"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "0a26ee6b5571478c"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "1580855ca9bd1a63"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "30d2662546da2103"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "36c48f6a41b872a3"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "b5323db1282a64f5"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "e2a5daf0e84b2873"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/proptest_candle.rs",
+    "hash": "eb56f6a339bf3476"
   },
   {
     "file": "crates/memfuse-checkpoint/benches/checkpoint_bench.rs",
