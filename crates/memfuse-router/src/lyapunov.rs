@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
+// ZWECK: Proaktiver Distributional-Drift-Wächter via Lyapunov-Exponenten über KL-Divergenzen.
+// INVARIANTEN: Orthogonal zu ConfigFingerprint; λ_t > 0.0 indiziert Verteilungsverschiebung.
+// SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
+
 //! Proaktiver Distributional-Drift-Wächter (Feature F-11) via Lyapunov-Exponenten.
 //!
 //! ARCHITEKTUR & ENTSCHEIDUNG:
