@@ -534,6 +534,10 @@ fn calculate_metrics(
     queries: &[GroundTruthQuery],
     retrieved_results: &[Vec<String>],
 ) -> BenchmarkMetrics {
+    if queries.is_empty() {
+        return BenchmarkMetrics::default();
+    }
+
     let mut rec1_hits = 0;
     let mut rec3_hits = 0;
     let mut rec5_hits = 0;

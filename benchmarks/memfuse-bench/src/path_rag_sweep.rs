@@ -162,15 +162,48 @@ pub async fn run_pathrag_sweep_long_mem_eval(
         let total = suite.scenarios.len() as f64;
         metrics.push(PathRagSweepMetric {
             threshold: t,
-            recall_at_5: rec5_hits as f64 / total,
-            recall_at_10: rec10_hits as f64 / total,
-            precision_at_5: prec5_sum / total,
-            precision_at_10: prec10_sum / total,
+            recall_at_5: if total > 0.0 {
+                rec5_hits as f64 / total
+            } else {
+                0.0
+            },
+            recall_at_10: if total > 0.0 {
+                rec10_hits as f64 / total
+            } else {
+                0.0
+            },
+            precision_at_5: if total > 0.0 { prec5_sum / total } else { 0.0 },
+            precision_at_10: if total > 0.0 { prec10_sum / total } else { 0.0 },
             total_queries: suite.scenarios.len(),
         });
     }
 
     Ok(metrics)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pad_vector_various_dimensions() {
+        // 1. Target dim larger than input
+        let input = vec![1.0, 2.0, 3.0];
+        let padded = pad_vector(&input, 5);
+        assert_eq!(padded, vec![1.0, 2.0, 3.0, 0.0, 0.0]);
+
+        // 2. Target dim equal to input
+        let padded_equal = pad_vector(&input, 3);
+        assert_eq!(padded_equal, vec![1.0, 2.0, 3.0]);
+
+        // 3. Target dim smaller than input (truncated)
+        let padded_trunc = pad_vector(&input, 2);
+        assert_eq!(padded_trunc, vec![1.0, 2.0]);
+
+        // 4. Empty input
+        let padded_empty = pad_vector(&[], 4);
+        assert_eq!(padded_empty, vec![0.0, 0.0, 0.0, 0.0]);
+    }
 }
 
 pub async fn run_pathrag_sweep_locomo(

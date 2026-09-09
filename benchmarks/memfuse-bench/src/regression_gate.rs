@@ -189,4 +189,36 @@ mod tests {
         assert!(res.updated);
         assert!(baseline_path.exists());
     }
+
+    #[test]
+    fn test_regression_gate_error_cases() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let missing_results = temp_dir.path().join("missing.json");
+        let corrupt_results = temp_dir.path().join("corrupt.json");
+        let baseline_path = temp_dir.path().join("nested/dir/baseline.json");
+
+        // 1. Missing results file
+        let err1 = run_regression_gate(&missing_results, &baseline_path, 0.05, false);
+        assert!(err1.is_err());
+        assert!(err1.unwrap_err().contains("Results file not found"));
+
+        // 2. Corrupt results JSON
+        fs::write(&corrupt_results, "not json").unwrap();
+        let err2 = run_regression_gate(&corrupt_results, &baseline_path, 0.05, false);
+        assert!(err2.is_err());
+        assert!(err2.unwrap_err().contains("Failed to parse JSON"));
+
+        // 3. Create baseline in nested non-existent directory
+        let valid_results = temp_dir.path().join("valid.json");
+        fs::write(
+            &valid_results,
+            r#"{"long_mem_eval":{"overall_accuracy":0.8,"total_cases":10}}"#,
+        )
+        .unwrap();
+
+        let res = run_regression_gate(&valid_results, &baseline_path, 0.05, false).unwrap();
+        assert!(res.passed);
+        assert!(res.updated);
+        assert!(baseline_path.exists());
+    }
 }

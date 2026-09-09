@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T14:46:37Z (SESSION: 74eb6216)
+// ZWECK: Adaptive Reranking candidate pool-size regulation via PID latency control.
+// INVARIANTEN: Pool size bounded by [min_pool_size, max_pool_size], non-finite latency measurements ignored.
+// NICHT-OFFENSICHTLICH: Anti-windup integral clamping prevents overshoot under sustained latency spikes.
+// SIEHE AUCH: crates/memfuse-calibration/src/lib.rs
+
 //! F-08: PID-Regler für Reranking-Kandidatenpool-Größe.
 //!
 //! Hält Reranking-Latenz auf `target_latency_ms` durch adaptive Pool-Größe.
@@ -51,10 +58,7 @@ impl Default for PidController {
 }
 
 impl PidController {
-    // AI-TAG[SMELL][MAJOR] PID controller NaN/Inf measured_latency validation (ID: AGT-CALIBRATION-fca75496) (TS: 2026-09-09T12:37:35Z) (SESSION: 20c1aaf4)
-    // BEFUND: In update() wird measured_latency_ms nicht auf is_finite() geprüft. Eine NaN- oder Inf-Latenzmessung propagiert in self.integral und self.prev_error und korrumpiert den Reglerzustand dauerhaft.
-    // RISIKO: Nach einer einzelnen fehlerhaften oder NaN-Latenzmessung schlägt jegliche künftige Pool-Größen-Berechnung fehl.
-    // EMPFEHLUNG: Am Anfang von update() prüfen: if !measured_latency_ms.is_finite() { return self.current_pool_size.unwrap_or(current_pool_size); }.
+    // RESOLVED: AGT-CALIBRATION-fca75496 — validate measured_latency_ms.is_finite() at start of update() (TS: 2026-09-09T14:46:37Z) (SESSION: 74eb6216)
     /// Verarbeitet eine neue Latenz-Messung und gibt die neue Pool-Größe zurück.
     ///
     /// ANTI-WINDUP: Integral wird auf [-max_integral, max_integral] geclipped.
@@ -150,5 +154,72 @@ mod tests {
         let res_max = pid.update(200, 0.0);
         assert_eq!(res_max, 150);
         assert_eq!(pid.current_pool_size, Some(150));
+    }
+
+    #[test]
+    fn test_pid_nan_latency_preserves_state_and_returns_current_pool() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let ref_integral = pid.integral;
+        let ref_prev_error = pid.prev_error;
+        let ref_current_pool_size = pid.current_pool_size;
+        let expected_pool = ref_current_pool_size.expect("current_pool_size should be set");
+
+        let result = pid.update(999, f32::NAN);
+
+        assert_eq!(result, expected_pool);
+        assert_eq!(pid.integral, ref_integral);
+        assert_eq!(pid.prev_error, ref_prev_error);
+        assert_eq!(pid.current_pool_size, ref_current_pool_size);
+    }
+
+    #[test]
+    fn test_pid_positive_infinity_latency_preserves_state() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let ref_integral = pid.integral;
+        let ref_prev_error = pid.prev_error;
+        let ref_current_pool_size = pid.current_pool_size;
+        let expected_pool = ref_current_pool_size.expect("current_pool_size should be set");
+
+        let result = pid.update(999, f32::INFINITY);
+
+        assert_eq!(result, expected_pool);
+        assert_eq!(pid.integral, ref_integral);
+        assert_eq!(pid.prev_error, ref_prev_error);
+        assert_eq!(pid.current_pool_size, ref_current_pool_size);
+    }
+
+    #[test]
+    fn test_pid_negative_infinity_latency_preserves_state() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let ref_integral = pid.integral;
+        let ref_prev_error = pid.prev_error;
+        let ref_current_pool_size = pid.current_pool_size;
+        let expected_pool = ref_current_pool_size.expect("current_pool_size should be set");
+
+        let result = pid.update(999, f32::NEG_INFINITY);
+
+        assert_eq!(result, expected_pool);
+        assert_eq!(pid.integral, ref_integral);
+        assert_eq!(pid.prev_error, ref_prev_error);
+        assert_eq!(pid.current_pool_size, ref_current_pool_size);
+    }
+
+    #[test]
+    fn test_pid_nan_on_fresh_controller_returns_input_pool_size() {
+        let mut pid = PidController::default();
+        assert_eq!(pid.current_pool_size, None);
+
+        let result = pid.update(77, f32::NAN);
+
+        assert_eq!(result, 77);
+        assert_eq!(pid.integral, 0.0);
+        assert_eq!(pid.prev_error, 0.0);
+        assert_eq!(pid.current_pool_size, None);
     }
 }

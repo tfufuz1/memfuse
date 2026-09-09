@@ -72,6 +72,7 @@ memfuse-db = { path = "crates/memfuse-db" }
 memfuse-text = { path = "crates/memfuse-text" }
 memfuse-checkpoint = { path = "crates/memfuse-checkpoint" }
 memfuse-security = { path = "crates/memfuse-crypto" }
+memfuse-crypto = { path = "crates/memfuse-crypto", package = "memfuse-security" }
 memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-embed = { path = "crates/memfuse-embed" }
 memfuse-tauri = { path = "crates/memfuse-tauri" }

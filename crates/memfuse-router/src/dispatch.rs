@@ -1,6 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
+// ZWECK: Client-seitiger MCP-Dispatch-Mechanismus über Stdio JSON-RPC 2.0 (ADR-010).
+// INVARIANTEN: Sendet ausschließlich ContextWindow (keine ungetrimmten Rohergebnisse).
+// SIEHE AUCH: docs/decisions/ADR-010-mcp-transport.md, rules/tag_taxonomy.md
+
 //! Client-side MCP dispatch mechanism for sending routed context to SLM endpoints.
-// STAND: 2026-09-02T17:10:00Z (SESSION: 20260902)
-// ZWECK: Stdio JSON-RPC 2.0 Dispatcher für SLM-Endpunkte gemäß ADR-010.
 
 use crate::router::RoutingDecision;
 use memfuse_core::ipc::{JsonRpcRequest, JsonRpcResponse};

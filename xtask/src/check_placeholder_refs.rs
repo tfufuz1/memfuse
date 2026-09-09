@@ -76,6 +76,7 @@ pub fn check_placeholder_refs_in_content(
     // Regex für Platzhalter-Muster nach Ankern: ADR-0?X+\b, \bTBD\b, \bTODO-ADR\b, <[^>]+>
     let placeholder_re =
         Regex::new(r"(ADR-0?X+\b|\bTBD\b|\bTODO-ADR\b|<[^>]+>)").expect("Valid placeholder regex");
+    let adr_re = Regex::new(r"(?i)ADR-(\d+)").expect("Valid adr regex");
 
     let anchors = ["adr_ref:", "DECISION-REF:"];
 
@@ -106,16 +107,21 @@ pub fn check_placeholder_refs_in_content(
 
                     if !is_null {
                         let path_part = first_word.split('#').next().unwrap_or(first_word);
-                        let file_exists =
-                            root.join(path_part).exists() || Path::new(path_part).exists();
+                        let is_decisions_file = path_part == "DECISIONS.md" || path_part.is_empty();
+                        let file_exists = if is_decisions_file {
+                            false
+                        } else {
+                            root.join(path_part).is_file() || Path::new(path_part).is_file()
+                        };
+
                         let found_in_decisions = if !file_exists {
                             let decisions_file = root.join("DECISIONS.md");
                             if decisions_file.is_file() {
                                 if let Ok(dec_content) = fs::read_to_string(&decisions_file) {
-                                    let adr_re = Regex::new(r"ADR-(\d+)").unwrap();
                                     if let Some(caps) = adr_re.captures(first_word) {
-                                        let pattern = format!("ADR-{}", &caps[1]);
-                                        dec_content.contains(&pattern)
+                                        let search_re =
+                                            Regex::new(&format!(r"(?i)ADR-{}", &caps[1])).unwrap();
+                                        search_re.is_match(&dec_content)
                                     } else {
                                         false
                                     }

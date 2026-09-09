@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall).
-// STAND: TS:2026-09-07T12:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T16:10:00Z (SESSION: dafac391)
 
 //! # Eviction-Architektur
 //!
@@ -93,23 +93,20 @@ pub fn emergency_wipe(store: &TenantIsolatedKvStore) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kv_segment::KvSegment;
+    use crate::kv_segment::segment::KvSegment;
     use memfuse_core::TenantId;
     use std::time::Duration;
 
     #[test]
     fn test_eviction_worker_nonblocking_trigger() {
-        let tenant = TenantId::try_new(1).unwrap();
-        let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
-        let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
-
         let store = Arc::new(TenantIsolatedKvStore::new());
-        store.insert_segment(tenant, seg1);
-        store.insert_segment(tenant, seg2);
+        let tenant = TenantId::try_new(1).unwrap();
+        store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 512]));
+        store.insert_segment(tenant, KvSegment::new(tenant, 2, vec![0x22; 512]));
 
         let worker = EvictionWorker::spawn(Arc::clone(&store));
 
-        // Trigger eviction of 500 bytes (should evict seg1 at index 0)
+        // Trigger eviction of 500 bytes (should evict seg 1 at index 0)
         let start = std::time::Instant::now();
         worker.trigger_eviction(500);
         let elapsed = start.elapsed();
@@ -136,24 +133,18 @@ mod tests {
 
     #[test]
     fn test_lru_eviction_order_not_fifo() {
-        let tenant = TenantId::try_new(1).unwrap();
-        // A is created first (clock 1)
-        let seg_a = KvSegment::new(tenant, 10, vec![0x11; 512]);
-        // B is created second (clock 2)
-        let seg_b = KvSegment::new(tenant, 20, vec![0x22; 512]);
-        // C is created third (clock 3)
-        let seg_c = KvSegment::new(tenant, 30, vec![0x33; 512]);
-
-        // A is read/touched last -> clock updated to 4 (most recently used)
-        seg_a.touch();
-
-        assert!(seg_a.last_accessed() > seg_b.last_accessed());
-        assert!(seg_a.last_accessed() > seg_c.last_accessed());
-
         let store = Arc::new(TenantIsolatedKvStore::new());
-        store.insert_segment(tenant, seg_a);
-        store.insert_segment(tenant, seg_b);
-        store.insert_segment(tenant, seg_c);
+        let tenant = TenantId::try_new(1).unwrap();
+
+        // Insert A, B, C
+        store.insert_segment(tenant, KvSegment::new(tenant, 10, vec![0x11; 512]));
+        std::thread::sleep(Duration::from_millis(1));
+        store.insert_segment(tenant, KvSegment::new(tenant, 20, vec![0x22; 512]));
+        std::thread::sleep(Duration::from_millis(1));
+        store.insert_segment(tenant, KvSegment::new(tenant, 30, vec![0x33; 512]));
+
+        // Touch A so it becomes most recently used
+        let _ = store.get_segment_bytes(tenant, 10);
 
         let worker = EvictionWorker::spawn(Arc::clone(&store));
 
@@ -189,13 +180,11 @@ mod tests {
 
     #[test]
     fn test_emergency_wipe_synchronous_completion() {
-        let tenant = TenantId::try_new(1).unwrap();
-        let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
-        let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
-
         let store = TenantIsolatedKvStore::new();
-        store.insert_segment(tenant, seg1);
-        store.insert_segment(tenant, seg2);
+        let tenant = TenantId::try_new(1).unwrap();
+        store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 512]));
+        store.insert_segment(tenant, KvSegment::new(tenant, 2, vec![0x22; 512]));
+
         assert_eq!(store.get_tenant_segment_len(tenant), 2);
 
         // Synchronous emergency wipe

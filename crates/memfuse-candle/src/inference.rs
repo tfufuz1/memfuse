@@ -1,3 +1,8 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
+// ZWECK: Candle LLM text generator client implementing LlmTextGenerator.
+// INVARIANTEN: Thread-safe model access via Mutex; spawn_blocking for CPU inference execution.
+
 use crate::model_registry::ModelFingerprint;
 use candle_core::Device;
 use memfuse_core::traits::BoxFuture;
