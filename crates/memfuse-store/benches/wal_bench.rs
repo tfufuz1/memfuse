@@ -42,7 +42,7 @@ fn bench_wal_encryption(c: &mut Criterion) {
                         })
                         .collect();
 
-                    let entries = wal.prepare_batch(ops).await.unwrap();
+                    let (entries, _) = wal.prepare_batch(ops).await.unwrap();
 
                     // Single entry loop: call append() for each entry individually
                     for entry in black_box(&entries) {
@@ -80,7 +80,7 @@ fn bench_wal_encryption(c: &mut Criterion) {
                         })
                         .collect();
 
-                    let entries = wal.prepare_batch(ops).await.unwrap();
+                    let (entries, _) = wal.prepare_batch(ops).await.unwrap();
 
                     // Batch encryption: single append_batch() call
                     wal.append_batch(black_box(&entries)).await.unwrap();
