@@ -381,7 +381,8 @@ fn memfuse_err(e: memfuse_core::MemFuseError) -> PyErr {
             | "ParseError"
             | "Bincode"
             | "InvalidSequenceNumber"
-            | "CheckpointNotFound" => MemFuseValueError::new_err(dto.message.clone()),
+            | "CheckpointNotFound"
+            | "LimitExceeded" => MemFuseValueError::new_err(dto.message.clone()),
             "Storage" | "Io" | "WalCorruption" | "ChecksumMismatch" => {
                 MemFuseIOError::new_err(dto.message.clone())
             }

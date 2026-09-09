@@ -411,7 +411,10 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 );
             }
             let score = weight / (k as f32 + rank as f32 + 1.0);
-            debug_assert!(score.is_finite(), "RRF score must be finite after weight validation");
+            debug_assert!(
+                score.is_finite(),
+                "RRF score must be finite after weight validation"
+            );
             let entry = fused
                 .entry(doc.id)
                 .or_insert_with(|| (0.0, None, Vec::new(), ProvenanceRecord::default()));
@@ -1485,7 +1488,8 @@ mod tests {
         );
 
         assert_eq!(
-            result_with_nan.len(), result_without_nan_signal.len(),
+            result_with_nan.len(),
+            result_without_nan_signal.len(),
             "Signal with NaN weight must produce identical result count"
         );
         for (r1, r2) in result_with_nan.iter().zip(result_without_nan_signal.iter()) {
