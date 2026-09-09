@@ -199,6 +199,12 @@ impl Default for LsmConfig {
     }
 }
 
+/// Proof that `commit_mutex` is currently held by the calling task.
+/// Can only be constructed while holding the mutex guard.
+struct CommitGuard<'a> {
+    _lock: &'a tokio::sync::MutexGuard<'a, ()>,
+}
+
 struct LsmState {
     memtable: Arc<MemTable>,
     immutable_memtables: Vec<Arc<MemTable>>,
@@ -510,7 +516,8 @@ impl LsmStorage {
     /// This is a destructive operation that removes all data after the target TX.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
-        self.rollback_to_tx_locked(target_tx).await
+        let commit_guard = CommitGuard { _lock: &_commit_lock };
+        self.rollback_to_tx_locked(target_tx, &commit_guard).await
     }
 
     /// Internal rollback implementation.
@@ -518,7 +525,7 @@ impl LsmStorage {
     /// # Safety / Concurrency Invariant
     /// **MUST ONLY** be called while holding `commit_mutex`. Calling this function without
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
-    async fn rollback_to_tx_locked(&self, target_tx: TxId) -> Result<()> {
+    async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
         let mut state = self.state.write().await;
 
         // 1. Truncate WAL to the position after target_tx
@@ -1024,7 +1031,8 @@ impl StorageEngine for LsmStorage {
                 // FATAL I/O ERROR: Physical Rollback to last committed transaction state
                 drop(state);
                 let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
-                if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx).await {
+                let commit_guard = CommitGuard { _lock: &_commit_lock };
+                if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx, &commit_guard).await {
                     tracing::error!(
                         "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
                         rollback_err
