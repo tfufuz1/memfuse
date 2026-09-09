@@ -94,9 +94,12 @@ fn is_type_or_crate_implemented(item: &str, root: &Path) -> bool {
         return false;
     }
 
-    // If item is a crate name (e.g., memfuse-kv-bridge)
+    // If item is a crate name (e.g., memfuse-security or memfuse-core)
     if item.starts_with("memfuse-") {
         if root.join("crates").join(item).exists() {
+            return true;
+        }
+        if get_workspace_crates().iter().any(|c| c.name == item) {
             return true;
         }
     }
