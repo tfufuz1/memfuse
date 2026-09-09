@@ -25,7 +25,7 @@ scope_note: >
   Reines Tombstone-Pruning (ohne Re-Wiring) ist NICHT vom ursprünglichen Veto
   erfasst, unterliegt aber eigenem Gate (siehe adr_ref). Feature bleibt
   non-default via physio-nucleation bis Recall-Regressionstest 30 Tage stabil.
-adr_ref: DECISIONS.md#adr-070
+adr_ref: DECISIONS.md#ADR-070
 last_verified: 2026-09-08
 
 ## VETO-F10
@@ -57,5 +57,5 @@ reason: >
   des bi-temporalen Gedächtnissubstrats zu validieren.
 scope_note: >
   Formale Veto-Sperre mit 6 Monaten Wiedervorlagefrist (2027-03-08).
-adr_ref: DECISIONS.md#adr-077
+adr_ref: DECISIONS.md#ADR-077
 last_verified: 2026-09-08
