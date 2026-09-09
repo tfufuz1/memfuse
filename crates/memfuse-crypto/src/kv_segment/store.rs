@@ -196,10 +196,8 @@ impl TenantIsolatedKvStore {
 
                 // Apply rotation offset to avoid systematic low-ID tenant eviction bias
                 if !tenants.is_empty() {
-                    let offset = self
-                        .eviction_round_offset
-                        .fetch_add(1, Ordering::Relaxed)
-                        % tenants.len();
+                    let offset =
+                        self.eviction_round_offset.fetch_add(1, Ordering::Relaxed) % tenants.len();
                     tenants.rotate_left(offset);
                 }
 
