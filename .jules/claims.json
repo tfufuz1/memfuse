@@ -41,6 +41,13 @@
       "timestamp": "2026-09-09T15:42:26.576534363+00:00",
       "session_id": "14951270737769827256",
       "active": true
+    },
+    {
+      "krate": "memfuse-kv-bridge",
+      "issue": "JULES-20260909-TEST",
+      "timestamp": "2026-09-09T19:19:34.360813163+00:00",
+      "session_id": "11619563904679100861",
+      "active": true
     }
   ]
 }
