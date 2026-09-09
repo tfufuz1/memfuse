@@ -2,7 +2,7 @@
 
 **Crate:** `memfuse-candle` (Layer 2 — Native Candle GGUF ML Inferenz-Backend)
 **Datum:** 2026-09-09
-**Session:** `c74a1828`
+**Session:** `6cae458a`
 **Status:** 🟢 Clean / Audited
 
 ---
@@ -33,6 +33,11 @@
 - **Gefunden:** `pub mod gasp` und dazugehörige re-exports in `lib.rs` waren unter `#[cfg(feature = "candle")]` bedingt eingebunden, obwohl `gasp.rs` immer kompilierbar ist und Tests in `tests/` direkt darauf zugreifen.
 - **Fix:** Unbedingter Export von `pub mod gasp` in `lib.rs`, sodass `cargo test -p memfuse-candle` ohne optionale Feature-Flags fehlerfrei kompilierte und ausführte.
 
+### APM-16 NaN Safety Hardening in `gasp.rs`
+- **Befund:** In `GaspValidator::compute_raw_grounding_score` wurde `raw_score.clamp(0.0, 1.0)` direkt aufgerufen. Falls ein Zwischenwert NaN/non-finite wird, würde std `clamp` paniken.
+- **Fix:** `if raw_score.is_nan() || !raw_score.is_finite()` Abfrage vor dem Klemmen eingefügt, die kontrolliert `0.0` zurückgibt (Session `6cae458a`).
+- **Test:** `test_gasp_nan_score_protection` verifiziert.
+
 ---
 
 ## 3. Tiefen-Audit Testergebnisse
@@ -47,7 +52,7 @@
 
 ### Phase 2: Concurrency & Stress Testing
 - **Befehl:** `cargo test -p memfuse-candle`
-- **Ergebnis:** 26/26 Tests grün. Keine Thread-Deadlocks oder Lock Contention in `Arc<tokio::sync::Mutex<...>>` Wrappern.
+- **Ergebnis:** 27/27 Tests grün. Keine Thread-Deadlocks oder Lock Contention in `Arc<tokio::sync::Mutex<...>>` Wrappern.
 
 ---
 
@@ -56,5 +61,5 @@
 - `cargo check -p memfuse-candle`: 0 Fehler, 0 Warnungen
 - `cargo clippy -p memfuse-candle -- -D warnings`: 0 Findings
 - `cargo fmt --check -p memfuse-candle`: 0 Diffs
-- `cargo test -p memfuse-candle`: 26 Tests grün
+- `cargo test -p memfuse-candle`: 27 Tests grün
 - `cargo run -p xtask -- jules-preflight --fast`: PASSED
