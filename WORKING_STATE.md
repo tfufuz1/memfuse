@@ -15,8 +15,11 @@
 
 Stand letzter Prüfung: 2026-09-09
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-mcp/src/config.rs` | 216 | `AGT-MCP-98350010` | `SMELL` | `MAJOR` | `2026-09-09T12:35:54Z` | // AI-TAG[SMELL][MAJOR] Field reassignment on Default::default instance triggers clippy::field_reassign_with_default (ID: AGT-MCP-98350010) (TS: 2026-09-09T12:35:54Z) (SESSION: 5665b844) |
 
 
 ## Crate-Inventar & Status
@@ -24,22 +27,23 @@ Ergebnis: **0 offene Tags**
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
 | `memfuse-core` | 0 | 9881 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 1 | 1034 | 🟢 Clean |  |
+| `memfuse-calibration` | 1 | 1396 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5421 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 1 | 10204 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 1 | 3857 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-crypto` | 1 | 3142 | 🟢 Clean | Encryption at Rest utilities for MemFuse |
+| `memfuse-graph` | 1 | 10203 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-text` | 1 | 5331 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1284 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 2 | 15032 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-kv-bridge` | 2 | 728 | 🟢 Clean | KV-Cache-Bridge security layer (KvSegment, Tenant isolation, Eviction worker) |
 | `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 16128 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 2 | 16026 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1893 | 🧊 Optional |  |
 | `memfuse-db` | 4 | 26850 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4096 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 5 | 4610 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6176 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5792 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 7 | 4349 | 🟢 Clean |  |
+| `memfuse-mcp` | 7 | 4357 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

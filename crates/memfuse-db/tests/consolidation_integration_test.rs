@@ -2,7 +2,7 @@ use memfuse_core::traits::LlmTextGenerator;
 use memfuse_core::BoxFuture;
 use memfuse_core::DocId;
 use memfuse_db::{
-    execute_consolidation_pass, execute_sleep_cycle, start_consolidation_reaper,
+    execute_background_consolidation, execute_consolidation_pass, start_consolidation_worker,
     CommunityStabilityTracker, ConsolidationConfig, MemFuse, MemFuseConfig, SynthesisConfig,
 };
 use std::time::Duration;
@@ -56,20 +56,20 @@ async fn test_consolidation_pass_tombstones_duplicates() {
 }
 
 #[tokio::test]
-async fn test_consolidation_reaper_periodic_execution_and_cancellation() {
+async fn test_consolidation_worker_periodic_execution_and_cancellation() {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 4,
         ..Default::default()
     };
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
-    let collection = db.collection("consolidation_reaper_test").await.unwrap();
+    let collection = db.collection("consolidation_worker_test").await.unwrap();
 
     let duplicate_emb = vec![0.0, 1.0, 0.0, 0.0];
 
     // Insert 10 identical chunks
     for i in 1..=10 {
-        let doc_id_str = format!("reaper_chunk_{}", i);
+        let doc_id_str = format!("worker_chunk_{}", i);
         collection
             .insert(&doc_id_str, &duplicate_emb, None)
             .await
@@ -79,14 +79,14 @@ async fn test_consolidation_reaper_periodic_execution_and_cancellation() {
     assert_eq!(collection.len().await, 10);
 
     let cancel_token = tokio_util::sync::CancellationToken::new();
-    let handle = start_consolidation_reaper(
+    let handle = start_consolidation_worker(
         collection.clone(),
         ConsolidationConfig::default(),
         Duration::from_millis(20),
         cancel_token.clone(),
     );
 
-    // Wait for the reaper ticker to execute consolidation
+    // Wait for the worker ticker to execute consolidation
     let mut consolidated = false;
     for _ in 0..50 {
         sleep(Duration::from_millis(20)).await;
@@ -99,10 +99,10 @@ async fn test_consolidation_reaper_periodic_execution_and_cancellation() {
     cancel_token.cancel();
     let handle_res = handle.await;
 
-    assert!(handle_res.is_ok(), "Reaper task should exit cleanly");
+    assert!(handle_res.is_ok(), "Worker task should exit cleanly");
     assert!(
         consolidated,
-        "Consolidation reaper should consolidate duplicate chunks down to 1"
+        "Consolidation worker should consolidate duplicate chunks down to 1"
     );
 }
 
@@ -119,8 +119,12 @@ impl LlmTextGenerator for TestLlmGenerator {
     }
 }
 
+// AI-TAG[TEST][MAJOR] test_execute_sleep_cycle_with_synthesis_pass uses identical embeddings causing near-duplicate tombstoning (ID: AGT-DB-7c141164) (TS: 2026-09-09T12:43:24Z) (SESSION: 82e80d01)
+// BEFUND: Alle 5 Turn-Embeddings verwenden denselben Vektor emb_a = [1.0, 0.0, 0.0, 0.0]. Cosine Similarity = 1.0 > 0.99 (near_duplicate_cosine_threshold), wodurch 4 von 5 Dokumenten in Zyklus 1 gelöscht/tombstoned werden.
+// RISIKO: In Zyklus 2 verbleibt nur 1 Knoten im Graph, so dass Community-Größe = 1 < 3 (min_community_size) ist und assert_eq!(synth_2.synthesized.len(), 1) fehlschlägt (left: 0, right: 1).
+// EMPFEHLUNG: Verschiedene, aber kohärente Vektoren (z.B. [1.0, 0.0, 0.0, 0.0], [0.9, 0.1, 0.0, 0.0] etc.) im Test verwenden.
 #[tokio::test]
-async fn test_execute_sleep_cycle_with_synthesis_pass() {
+async fn test_execute_background_consolidation_with_synthesis_pass() {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
         dimension: 4,
@@ -129,22 +133,25 @@ async fn test_execute_sleep_cycle_with_synthesis_pass() {
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
     let collection = db.collection("synthesis_test").await.unwrap();
 
-    let emb_a = vec![1.0, 0.0, 0.0, 0.0];
     let mut turns = Vec::new();
 
     // Insert 5 turns into collection and build a graph cluster among them
     for i in 1..=5 {
         let doc_id_str = format!("turn_{}", i);
+        let mut emb = vec![1.0, 0.5 * (i as f32), 0.0, 0.0];
+        let norm = (emb[0] * emb[0] + emb[1] * emb[1]).sqrt();
+        emb[0] /= norm;
+        emb[1] /= norm;
         collection
             .insert(
                 &doc_id_str,
-                &emb_a,
+                &emb,
                 Some(serde_json::json!({ "text": format!("Memory content {}", i) })),
             )
             .await
             .unwrap();
         let doc_id = DocId::from_key(&doc_id_str).unwrap();
-        turns.push((doc_id, emb_a.clone()));
+        turns.push((doc_id, emb));
     }
 
     // Connect nodes into a graph cluster
@@ -163,7 +170,7 @@ async fn test_execute_sleep_cycle_with_synthesis_pass() {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
         segment_cohesion_threshold: 0.70,
-        near_duplicate_cosine_threshold: 0.99, // high so turns aren't tombstoned in consolidation pass
+        near_duplicate_cosine_threshold: 1.0, // high so turns aren't tombstoned in consolidation pass
     };
 
     let synthesis_config = SynthesisConfig {
@@ -176,7 +183,7 @@ async fn test_execute_sleep_cycle_with_synthesis_pass() {
     let mut tracker = CommunityStabilityTracker::new();
 
     // First cycle: stability count = 1 (< required 2)
-    let (consolidation_res_1, synthesis_res_1) = execute_sleep_cycle(
+    let (consolidation_res_1, synthesis_res_1) = execute_background_consolidation(
         &collection,
         &turns,
         &consolidation_config,
@@ -196,7 +203,7 @@ async fn test_execute_sleep_cycle_with_synthesis_pass() {
     );
 
     // Second cycle: stability count = 2 (>= required 2)
-    let (_consolidation_res_2, synthesis_res_2) = execute_sleep_cycle(
+    let (_consolidation_res_2, synthesis_res_2) = execute_background_consolidation(
         &collection,
         &turns,
         &consolidation_config,

@@ -1,13 +1,13 @@
 # MemFuse — Feature-Veto-Register
 > Maschinenlesbar. Wird von `.jules/`-Bootstrap-Sequenz eingelesen und von
 > `xtask check-vetoes` gegen neue Commits geprüft (siehe Aufgabe 2).
-> Fristen in `conditional_review_due` werden aktiv im CI überwacht (Warnung 7 Tage vor Ablauf, harter Fehler bei Fristüberschreitung).
+> Fristen in `review_date` (bzw. `conditional_review_due`) werden aktiv im CI überwacht (Warnung 14 Tage vor Ablauf, harter Fehler bei Fristüberschreitung).
 > Änderung nur via ADR in `DECISIONS.md` mit explizitem Bezug auf den Veto-Eintrag.
 
 ## Format
 Jeder Eintrag: `feature_id`, `status` (permanent_rejected | conditionally_accepted),
 `keywords` (Commit-Message/Code-Grep-Trigger), `reason`, `adr_ref` (falls vorhanden),
-`conditional_review_due` (optionales Review-Frist-Datum YYYY-MM-DD für conditionally_accepted Einträge).
+`review_date` (optionales Review-Frist-Datum YYYY-MM-DD für conditionally_accepted Einträge).
 
 ---
 
@@ -15,6 +15,7 @@ Jeder Eintrag: `feature_id`, `status` (permanent_rejected | conditionally_accept
 
 feature_id: F-02
 status: conditionally_accepted
+review_date: 2026-10-07
 conditional_review_due: 2026-10-07
 keywords: ["partial hnsw rebuild", "nucleation", "rebuild_region", "F-02"]
 reason: >
@@ -25,6 +26,7 @@ scope_note: >
   Reines Tombstone-Pruning (ohne Re-Wiring) ist NICHT vom ursprünglichen Veto
   erfasst, unterliegt aber eigenem Gate (siehe adr_ref). Feature bleibt
   non-default via physio-nucleation bis Recall-Regressionstest 30 Tage stabil.
+  Automatisierte 30-Tage-Stabilitätsmessung läuft täglich über .github/workflows/nucleation-recall-history.yml, Verlauf in benchmarks/results/nucleation_recall_history.jsonl, Statusprüfung via cargo xtask check-recall-stability.
 adr_ref: DECISIONS.md#adr-070
 last_verified: 2026-09-08
 
@@ -49,6 +51,7 @@ last_verified: 2026-09-07
 
 feature_id: OP-03
 status: conditionally_accepted
+review_date: 2027-03-08
 conditional_review_due: 2027-03-08
 keywords: ["voice assistant", "jarvis", "realtime-audio", "speech-to-text", "voice/jarvis"]
 reason: >

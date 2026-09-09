@@ -168,7 +168,7 @@ async fn extract_raw_layer0_connections(
 }
 
 #[tokio::test]
-async fn test_nucleation_recall_regression() {
+async fn test_partial_rebuild_recall_regression() {
     // 1. Deterministischer Testkorpus: 5.000 Vektoren, dim 128, fixed seed 42
     let vectors = generate_vectors(5_000, 128, 42);
 
@@ -209,6 +209,12 @@ async fn test_nucleation_recall_regression() {
         println!("Muster (i) Random 20% Tombstones:");
         println!("  Recall@10 vor rebuild_region():  {:.4}", recall_before);
         println!("  Recall@10 nach rebuild_region(): {:.4}", recall_after);
+        eprintln!(
+            "RECALL_METRIC before={:.4} after={:.4} drop_pp={:.4}",
+            recall_before,
+            recall_after,
+            recall_before - recall_after
+        );
 
         assert!(
             recall_after >= recall_before - RECALL_TOLERANCE_BAND,
@@ -270,7 +276,7 @@ async fn test_nucleation_recall_regression() {
 /// 1. Verifiziert, dass kein betroffener Knoten auf Grad 0 fällt (vollständig isolierter Knoten = Navigierbarkeits-Totalausfall).
 /// 2. Verifiziert, dass alle aktiven Knoten weiterhin über HNSW-Traversierung auffindbar sind.
 #[tokio::test]
-async fn test_nucleation_node_degree_no_isolation() {
+async fn test_partial_rebuild_node_degree_no_isolation() {
     let temp_dir = tempfile::tempdir().expect("tempdir failed");
     let path_before = temp_dir.path().join("before.hnsw");
     let path_after = temp_dir.path().join("after.hnsw");

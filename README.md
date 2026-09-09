@@ -252,6 +252,14 @@ MemFuse ist eine neue Kategorie: **Die lokale Embedded AI Memory Library für KI
 
 *\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Zitierte Fehlerreduktions-Prozentangaben entstammen der Fachliteratur [Referenzwert aus Fachliteratur zu Contextual-Retrieval-Verfahren — nicht am MemFuse-Korpus validiert]. MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes Benchmark-Harness auf einem 9-Dokumenten Synthetik-Korpus bereit (Details in [`benchmarks/README.md`](benchmarks/README.md)).*
 
+## Benchmarks & Evaluierung
+
+MemFuse nutzt ein reproduzierbares Benchmark-Harness in `benchmarks/memfuse-bench` zur kontinuierlichen Validierung der Retrieval-Qualität. In den CI-Pipelines (`.github/workflows/bench.yml`) wird `longmemeval_s` (aus `xiaowu0162/longmemeval`) zusammen mit `locomo` als automatisierte Qualitätsschranke (Regression Gate) verwendet.
+
+Die Begrenzung der CI-Baseline auf `longmemeval_s` (anstelle von `_m`) stellt einen bewussten Kosten- und Laufzeit-Kompromiss dar: Sie gewährleistet schnelle Feedback-Zyklen und vertretbare Ressourcenanforderungen bei automatisierten Pull-Request-Gates, während die umfangreichere `_m`-Variante für optionale, manuelle Tiefenläufe reserviert bleibt.
+
+Detaillierte Anleitungen zur lokalen Ausführung und methodische Details sind in [`benchmarks/README.md`](benchmarks/README.md) dokumentiert.
+
 ## Architektur-Entscheidungen (ADRs)
 
 Die vollständige Begründung zur Fokussierung auf die Python/Rust-Library und der Deprecation der Desktop-Anwendung ist in [ADR-077 in DECISIONS.md](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation) dokumentiert.

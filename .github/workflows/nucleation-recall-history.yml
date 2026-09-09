@@ -1,0 +1,88 @@
+name: Nucleation Recall History Measurement
+
+on:
+  schedule:
+    # Täglich um 03:00 Uhr UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  measure-and-record-recall:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Nucleation Recall Regression Test
+        id: run-test
+        run: |
+          cargo test -p memfuse-index --features partial-index-rebuild nucleation_recall_regression -- --nocapture 2>&1 | tee test_output.log
+
+      - name: Parse Metric and Append to History
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          python3 -c "
+          import json, sys, os, datetime
+
+          with open('test_output.log', 'r') as f:
+              output = f.read()
+
+          metric_lines = [l.strip() for l in output.splitlines() if 'RECALL_METRIC' in l]
+          if not metric_lines:
+              print('❌ RECALL_METRIC line not found in test output', file=sys.stderr)
+              sys.exit(1)
+
+          parts = metric_lines[-1].split()
+          kv = dict(p.split('=') for p in parts if '=' in p)
+          date_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
+          commit_sha = os.environ.get('GITHUB_SHA', '')
+
+          entry = {
+              'date': date_str,
+              'recall_before': float(kv['before']),
+              'recall_after': float(kv['after']),
+              'drop_pp': float(kv['drop_pp']),
+              'commit_sha': commit_sha,
+          }
+
+          os.makedirs('benchmarks/results', exist_ok=True)
+          history_path = 'benchmarks/results/nucleation_recall_history.jsonl'
+          with open(history_path, 'a') as f:
+              f.write(json.dumps(entry) + '\n')
+
+          print(f'Recorded entry in {history_path}: {json.dumps(entry)}')
+          "
+
+      - name: Commit and Push Updated Recall History
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/results/nucleation_recall_history.jsonl
+          if git diff --staged --quiet; then
+            echo "No changes to nucleation_recall_history.jsonl"
+          else
+            git commit -m "chore(bench): record daily nucleation recall metric ($(date -u +%Y-%m-%d))"
+            git push origin HEAD:${{ github.ref_name || 'main' }}
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Status Gate Check
+        continue-on-error: true
+        run: cargo run -p xtask -- check-recall-stability

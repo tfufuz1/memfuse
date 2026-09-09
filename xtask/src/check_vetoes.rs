@@ -13,7 +13,7 @@ use chrono::NaiveDate;
 use std::fs;
 use std::process::Command;
 
-pub const CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS: i64 = 7;
+pub const CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS: i64 = 14;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VetoEntry {
@@ -62,12 +62,21 @@ pub fn parse_vetoes(content: &str) -> Result<Vec<VetoEntry>, String> {
             } else if trimmed.starts_with("status:") {
                 parsing_reason = false;
                 status = trimmed.trim_start_matches("status:").trim().to_string();
-            } else if trimmed.starts_with("conditional_review_due:") {
+            } else if trimmed.starts_with("review_date:")
+                || trimmed.starts_with("conditional_review_due:")
+            {
                 parsing_reason = false;
-                let due = trimmed
-                    .trim_start_matches("conditional_review_due:")
-                    .trim()
-                    .to_string();
+                let due = if trimmed.starts_with("review_date:") {
+                    trimmed
+                        .trim_start_matches("review_date:")
+                        .trim()
+                        .to_string()
+                } else {
+                    trimmed
+                        .trim_start_matches("conditional_review_due:")
+                        .trim()
+                        .to_string()
+                };
                 if !due.is_empty() {
                     conditional_review_due = Some(due);
                 }
@@ -148,12 +157,9 @@ pub fn check_conditional_review_deadlines_at(
 
                     if days_until_due < 0 {
                         result.errors.push(format!(
-                            "❌ HARTER CI-FEHLER: VETO {} ('{}'): Review-Frist {} ist am {} verstrichen. Erforderliche Anschluss-Entscheidung siehe adr_ref: {}",
+                            "❌ VETO-FRIST ÜBERSCHRITTEN: {} — Wiedervorlage war am {}, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern.",
                             entry.feature_id,
-                            entry.reason_summary(),
-                            due_str,
-                            today_str,
-                            adr
+                            due_str
                         ));
                     } else if days_until_due <= CONDITIONAL_REVIEW_WARNING_THRESHOLD_DAYS {
                         result.warnings.push(format!(
@@ -303,9 +309,10 @@ reason: >
         let res = check_conditional_review_deadlines_at(&entries, "2026-10-08");
         assert!(res.warnings.is_empty());
         assert_eq!(res.errors.len(), 1);
-        assert!(res.errors[0].contains("F-02"));
-        assert!(res.errors[0].contains("2026-10-07"));
-        assert!(res.errors[0].contains("ADR-0XX-test.md"));
+        assert_eq!(
+            res.errors[0],
+            "❌ VETO-FRIST ÜBERSCHRITTEN: F-02 — Wiedervorlage war am 2026-10-07, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern."
+        );
     }
 
     #[test]
@@ -319,13 +326,13 @@ reason: >
             conditional_review_due: Some("2026-10-07".to_string()),
         }];
 
-        // 5 days before due date (within 7-day threshold)
-        let res = check_conditional_review_deadlines_at(&entries, "2026-10-02");
+        // 10 days before due date (within 14-day threshold)
+        let res = check_conditional_review_deadlines_at(&entries, "2026-09-27");
         assert_eq!(res.warnings.len(), 1);
         assert!(res.errors.is_empty());
         assert!(res.warnings[0].contains("F-02"));
         assert!(res.warnings[0].contains("2026-10-07"));
-        assert!(res.warnings[0].contains("5 Tag(en)"));
+        assert!(res.warnings[0].contains("10 Tag(en)"));
     }
 
     #[test]
@@ -339,10 +346,47 @@ reason: >
             conditional_review_due: Some("2026-10-07".to_string()),
         }];
 
-        // 22 days before due date (> 7 days)
+        // 22 days before due date (> 14 days)
         let res = check_conditional_review_deadlines_at(&entries, "2026-09-15");
         assert!(res.warnings.is_empty());
         assert!(res.errors.is_empty());
+    }
+
+    #[test]
+    fn test_review_date_field_parsing_and_deadline_check() {
+        let content = r#"
+## VETO-OP3
+feature_id: OP-03
+status: conditionally_accepted
+review_date: 2026-10-07
+adr_ref: DECISIONS.md#adr-077
+reason: >
+  Test OP-03 review date
+"#;
+        let entries = parse_vetoes(content).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].conditional_review_due.as_deref(),
+            Some("2026-10-07")
+        );
+
+        // Expired check
+        let expired_res = check_conditional_review_deadlines_at(&entries, "2026-10-10");
+        assert_eq!(expired_res.errors.len(), 1);
+        assert_eq!(
+            expired_res.errors[0],
+            "❌ VETO-FRIST ÜBERSCHRITTEN: OP-03 — Wiedervorlage war am 2026-10-07, bitte ADR mit Entscheidung erstellen oder Frist explizit per neuem ADR verlängern."
+        );
+
+        // Warning check (within 14 days)
+        let warning_res = check_conditional_review_deadlines_at(&entries, "2026-09-25");
+        assert_eq!(warning_res.warnings.len(), 1);
+        assert!(warning_res.warnings[0].contains("12 Tag(en)"));
+
+        // Far future check
+        let ok_res = check_conditional_review_deadlines_at(&entries, "2026-08-01");
+        assert!(ok_res.warnings.is_empty());
+        assert!(ok_res.errors.is_empty());
     }
 
     #[test]

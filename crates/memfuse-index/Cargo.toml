@@ -29,7 +29,7 @@ experimental-diskann = []
 # docs/decisions/ nach "Nucleation" durchsuchen). Der aktuelle rebuild_region()
 # implementiert reines Tombstone-Pruning ohne Re-Wiring — Risiko: Grad-Verlust ohne
 # Navigierbarkeits-Wiederherstellung. NICHT als default-Feature aktivieren bis
-# test_nucleation_recall_regression() in crates/memfuse-index/tests/nucleation_recall_regression.rs
+# test_partial_rebuild_recall_regression() in crates/memfuse-index/tests/partial_rebuild_recall_regression.rs
 # für > 30 Tage stabil grün ist UND ein ADR das ursprüngliche Veto explizit revidiert oder
 # bestätigt einschränkt.
 partial-index-rebuild = []
@@ -62,7 +62,7 @@ name = "flush_threshold_amplification"
 harness = false
 
 [[bench]]
-name = "nucleation_recall_bench"
+name = "partial_rebuild_recall_bench"
 harness = false
 required-features = ["partial-index-rebuild"]
 

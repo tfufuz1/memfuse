@@ -1,7 +1,7 @@
 // FILE-CONTEXT
-// ZWECK: Hintergrund-Reaper-Tasks zur TTL-Löschung und Bereinigung verwaister Transaktionen (Orphan Reaper).
+// ZWECK: Hintergrund-Worker-Tasks zur TTL-Löschung, Entropie-Pruning und Bereinigung verwaister Transaktionen (Orphan Cleanup).
 // INVARIANTEN: Geordnete Abschaltung via CancellationToken; Beschränkung der pro Tick verarbeiteten Elemente.
-// NICHT-OFFENSICHTLICH: Orphan Reaper triggert bei HNSW-Indextrennung automatischen Rebuild mit Timeout.
+// NICHT-OFFENSICHTLICH: Orphan Cleanup Worker triggert bei HNSW-Indextrennung automatischen Rebuild mit Timeout.
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 use crate::collection::{Collection, StoredDocument};
@@ -18,18 +18,18 @@ use std::time::Duration;
 #[cfg(feature = "background-maintenance")]
 use crate::decay_controller::{AdaptiveDecayController, DecayControllerConfig};
 
-/// Maximum number of orphan transactions processed in a single reaper tick
+/// Maximum number of orphan transactions processed in a single worker tick
 /// to avoid starving foreground operations.
 pub const MAX_ORPHANS_PER_TICK: usize = 100;
 
-/// Maximum number of expired documents processed in a single expiry reaper tick.
+/// Maximum number of expired documents processed in a single expiry cleanup tick.
 pub const MAX_EXPIRED_PER_TICK: usize = 100;
 
 /// Starts a background task for periodic consolidation.
 #[deprecated(
     note = "Konsolidiert in MaintenanceScheduler — siehe maintenance_scheduler.rs. Wird nach Migrationsfrist entfernt."
 )]
-pub fn start_consolidation_reaper<S: StorageEngine>(
+pub fn start_consolidation_worker<S: StorageEngine>(
     collection: Arc<Collection<S>>,
     consolidation_config: ConsolidationConfig,
     interval: Duration,
@@ -42,7 +42,7 @@ pub fn start_consolidation_reaper<S: StorageEngine>(
         tracing::info!(
             collection = %collection.name(),
             interval = ?interval,
-            "Consolidation reaper task started"
+            "Consolidation worker task started"
         );
 
         loop {
@@ -56,7 +56,7 @@ pub fn start_consolidation_reaper<S: StorageEngine>(
                             tracing::error!(
                                 collection = %collection.name(),
                                 error = %err,
-                                "Consolidation reaper: failed to scan collection"
+                                "Consolidation worker: failed to scan collection"
                             );
                             continue;
                         }
@@ -85,7 +85,7 @@ pub fn start_consolidation_reaper<S: StorageEngine>(
                                     collection = %collection.name(),
                                     tombstoned = res.duplicates_tombstoned.len(),
                                     segments = res.segments_created,
-                                    "Consolidation reaper: consolidated duplicate turns"
+                                    "Consolidation worker: consolidated duplicate turns"
                                 );
                             }
                         }
@@ -93,7 +93,7 @@ pub fn start_consolidation_reaper<S: StorageEngine>(
                             tracing::error!(
                                 collection = %collection.name(),
                                 error = %err,
-                                "Consolidation reaper: pass execution failed"
+                                "Consolidation worker: pass execution failed"
                             );
                         }
                     }
@@ -101,7 +101,7 @@ pub fn start_consolidation_reaper<S: StorageEngine>(
                 _ = cancel_token.cancelled() => {
                     tracing::info!(
                         collection = %collection.name(),
-                        "Consolidation reaper task shutting down via token"
+                        "Consolidation worker task shutting down via token"
                     );
                     break;
                 }
@@ -110,8 +110,19 @@ pub fn start_consolidation_reaper<S: StorageEngine>(
     })
 }
 
+/// Deprecated legacy alias for `start_consolidation_worker`.
+#[deprecated(note = "use start_consolidation_worker instead")]
+pub fn start_consolidation_reaper<S: StorageEngine>(
+    collection: Arc<Collection<S>>,
+    consolidation_config: ConsolidationConfig,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    start_consolidation_worker(collection, consolidation_config, interval, cancel_token)
+}
+
 /// Starts a background task to periodically clean up expired documents with TTL.
-pub fn start_expiry_reaper<S: StorageEngine>(
+pub fn start_expiry_cleanup_worker<S: StorageEngine>(
     collection: Arc<Collection<S>>,
     interval: Duration,
     cancel_token: tokio_util::sync::CancellationToken,
@@ -123,7 +134,7 @@ pub fn start_expiry_reaper<S: StorageEngine>(
         tracing::info!(
             collection = %collection.name(),
             interval = ?interval,
-            "Expiry reaper task started"
+            "Expiry cleanup worker task started"
         );
         loop {
             tokio::select! {
@@ -133,7 +144,7 @@ pub fn start_expiry_reaper<S: StorageEngine>(
                             tracing::info!(
                                 collection = %collection.name(),
                                 reaped = reaped,
-                                "Expiry reaper cleaned up expired documents"
+                                "Expiry cleanup worker cleaned up expired documents"
                             );
                         }
                         Ok(_) => {}
@@ -141,7 +152,7 @@ pub fn start_expiry_reaper<S: StorageEngine>(
                             tracing::error!(
                                 collection = %collection.name(),
                                 error = %err,
-                                "Error during expiry reaper execution"
+                                "Error during expiry cleanup worker execution"
                             );
                         }
                     }
@@ -149,7 +160,7 @@ pub fn start_expiry_reaper<S: StorageEngine>(
                 _ = cancel_token.cancelled() => {
                     tracing::info!(
                         collection = %collection.name(),
-                        "Expiry reaper task shutting down via token"
+                        "Expiry cleanup worker task shutting down via token"
                     );
                     break;
                 }
@@ -158,13 +169,20 @@ pub fn start_expiry_reaper<S: StorageEngine>(
     })
 }
 
+/// Deprecated legacy alias for `start_expiry_cleanup_worker`.
+#[deprecated(note = "use start_expiry_cleanup_worker instead")]
+pub fn start_expiry_reaper<S: StorageEngine>(
+    collection: Arc<Collection<S>>,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    start_expiry_cleanup_worker(collection, interval, cancel_token)
+}
+
 /// Starts a background task for decay-controller-driven importance-score eviction.
 /// Nur aktiv wenn `background-maintenance` Feature-Flag gesetzt.
 #[cfg(feature = "background-maintenance")]
-#[deprecated(
-    note = "Konsolidiert in MaintenanceScheduler — siehe maintenance_scheduler.rs. Wird nach Migrationsfrist entfernt."
-)]
-pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
+pub fn start_decay_cleanup_worker<S: StorageEngine, V: VectorIndex>(
     collection: Arc<Collection<S, V>>,
     decay_config: DecayControllerConfig,
     interval: Duration,
@@ -177,10 +195,10 @@ pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    match collection.reap_by_thermostat(&decay_controller, 100).await {
-                        Ok(n) if n > 0 => tracing::info!(evicted = n, "Decay controller reaper evicted chunks"),
+                    match collection.evict_decayed_chunks(&decay_controller, 100).await {
+                        Ok(n) if n > 0 => tracing::info!(evicted = n, "Decay controller worker evicted chunks"),
                         Ok(_) => {},
-                        Err(e) => tracing::error!(error = %e, "Decay controller reaper error"),
+                        Err(e) => tracing::error!(error = %e, "Decay controller worker error"),
                     }
                 }
                 _ = cancel_token.cancelled() => break,
@@ -189,11 +207,23 @@ pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
     })
 }
 
+/// Deprecated legacy alias for `start_decay_cleanup_worker`.
+#[cfg(feature = "background-maintenance")]
+#[deprecated(note = "use start_decay_cleanup_worker instead")]
+pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
+    collection: Arc<Collection<S, V>>,
+    decay_config: DecayControllerConfig,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    start_decay_cleanup_worker(collection, decay_config, interval, cancel_token)
+}
+
 /// Starts a background task to periodically clean up orphan transactions.
 ///
-/// This reaper handles the cleanup of transactions that have exceeded their
+/// This worker handles the cleanup of transactions that have exceeded their
 /// configured timeout without being committed or rolled back.
-pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
+pub fn start_orphan_cleanup_worker<T: Clone + Send + Sync + 'static>(
     buffer: Arc<TxBuffer<T>>,
     hnsw_index: Arc<memfuse_index::hnsw::HnswIndex>,
     interval: Duration,
@@ -204,7 +234,7 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         tracing::info!(
-            "Orphan reaper started (timeout: {:?}, interval: {:?})",
+            "Orphan cleanup worker started (timeout: {:?}, interval: {:?})",
             buffer.tx_timeout(),
             interval
         );
@@ -220,7 +250,7 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
 
                     if !expired.is_empty() {
                         tracing::warn!(
-                            "Orphan reaper cleaned up {} expired transactions",
+                            "Orphan cleanup worker cleaned up {} expired transactions",
                             expired.len()
                         );
                     }
@@ -241,12 +271,23 @@ pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
                     }
                 }
                 _ = cancel_token.cancelled() => {
-                    tracing::info!("Orphan reaper shutting down via token");
+                    tracing::info!("Orphan cleanup worker shutting down via token");
                     break;
                 }
             }
         }
     })
+}
+
+/// Deprecated legacy alias for `start_orphan_cleanup_worker`.
+#[deprecated(note = "use start_orphan_cleanup_worker instead")]
+pub fn start_orphan_reaper<T: Clone + Send + Sync + 'static>(
+    buffer: Arc<TxBuffer<T>>,
+    hnsw_index: Arc<memfuse_index::hnsw::HnswIndex>,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    start_orphan_cleanup_worker(buffer, hnsw_index, interval, cancel_token)
 }
 
 #[cfg(test)]
@@ -257,7 +298,7 @@ mod tests {
     use tokio::time::sleep;
 
     #[tokio::test]
-    async fn test_expiry_reaper_task_cleans_documents() {
+    async fn test_expiry_cleanup_worker_task_cleans_documents() {
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
         use memfuse_store::LsmStorage;
@@ -300,8 +341,11 @@ mod tests {
         col.insert("d2", &vec, None).await.unwrap(); // unwrap
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
-        let handle =
-            start_expiry_reaper(col.clone(), Duration::from_millis(10), cancel_token.clone());
+        let handle = start_expiry_cleanup_worker(
+            col.clone(),
+            Duration::from_millis(10),
+            cancel_token.clone(),
+        );
 
         let mut cleaned = false;
         for _ in 0..50 {
@@ -316,11 +360,14 @@ mod tests {
         cancel_token.cancel();
         let _ = handle.await;
 
-        assert!(cleaned, "Expiry reaper task should delete expired document");
+        assert!(
+            cleaned,
+            "Expiry cleanup worker task should delete expired document"
+        );
     }
 
     #[tokio::test]
-    async fn test_orphan_reaper_removes_expired() {
+    async fn test_orphan_cleanup_worker_removes_expired() {
         let buffer = Arc::new(TxBuffer::<String>::new_with_config(
             64,
             Duration::from_millis(50),
@@ -339,7 +386,7 @@ mod tests {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let config = memfuse_index::hnsw::HnswConfig::default();
         let hnsw_index = Arc::new(memfuse_index::hnsw::HnswIndex::try_new(config).unwrap()); // unwrap
-        let _reaper = start_orphan_reaper(
+        let _worker = start_orphan_cleanup_worker(
             buffer.clone(),
             hnsw_index.clone(),
             Duration::from_millis(10),
@@ -358,12 +405,12 @@ mod tests {
         cancel_token.cancel();
         assert!(
             removed,
-            "Expired transaction should have been reaped within 500ms"
+            "Expired transaction should have been cleaned up within 500ms"
         );
     }
 
     #[tokio::test]
-    async fn reaper_deletes_expired_documents() {
+    async fn trigger_expiry_cleanup_deletes_expired_documents() {
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
         use memfuse_store::LsmStorage;
@@ -411,13 +458,13 @@ mod tests {
         .await
         .unwrap(); // unwrap
 
-        col.trigger_reaper().await.unwrap(); // unwrap
+        col.trigger_expiry_cleanup().await.unwrap(); // unwrap
         let result = col.get("doc1").await.unwrap(); // unwrap
         assert!(result.is_none(), "Expired document must be deleted");
     }
 
     #[tokio::test]
-    async fn test_reaper_immediate_cancellation() {
+    async fn test_worker_immediate_cancellation() {
         use memfuse_graph::CsrGraph;
         use memfuse_index::HnswIndex;
         use memfuse_store::LsmStorage;
@@ -453,13 +500,13 @@ mod tests {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         cancel_token.cancel(); // cancel before starting
 
-        let handle = start_expiry_reaper(col, Duration::from_secs(60), cancel_token);
+        let handle = start_expiry_cleanup_worker(col, Duration::from_secs(60), cancel_token);
         let res = handle.await;
         assert!(res.is_ok(), "Task should exit cleanly upon cancellation");
     }
 
     #[tokio::test]
-    async fn test_thermostat_reaper_eviction_thresholds() {
+    async fn test_decay_eviction_thresholds() {
         use crate::decay_controller::{AdaptiveDecayController, DecayControllerConfig};
         use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
         use memfuse_graph::CsrGraph;
@@ -538,7 +585,7 @@ mod tests {
 
         // Reap with decay controller sweep
         let evicted = col
-            .reap_by_thermostat(&decay_controller, 100)
+            .evict_decayed_chunks(&decay_controller, 100)
             .await
             .unwrap(); // unwrap
         assert_eq!(evicted, 10, "All 10 old low-score chunks should be evicted");
@@ -558,7 +605,7 @@ mod tests {
 
     #[cfg(feature = "background-maintenance")]
     #[tokio::test]
-    async fn test_start_thermostat_reaper_background_task() {
+    async fn test_start_decay_cleanup_worker_background_task() {
         use crate::decay_controller::DecayControllerConfig;
         use memfuse_core::{DecayFunction, ImportanceScore, MemoryImportance, TxId};
         use memfuse_graph::CsrGraph;
@@ -609,7 +656,7 @@ mod tests {
         next_tx.store(100_000, Ordering::SeqCst);
 
         let cancel_token = tokio_util::sync::CancellationToken::new();
-        let handle = start_thermostat_reaper(
+        let handle = start_decay_cleanup_worker(
             col.clone(),
             DecayControllerConfig::default(),
             Duration::from_millis(10),
@@ -631,7 +678,7 @@ mod tests {
 
         assert!(
             evicted,
-            "Decay controller reaper task should evict low score document"
+            "Decay controller worker task should evict low score document"
         );
     }
 }

@@ -20,6 +20,7 @@ memfuse-calibration = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+proptest = "1.4"
 
 [features]
 default = []

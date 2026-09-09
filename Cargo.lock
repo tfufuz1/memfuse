@@ -3274,6 +3274,7 @@ dependencies = [
  "candle-transformers",
  "memfuse-calibration",
  "memfuse-core",
+ "proptest",
  "serde",
  "sha2",
  "tempfile",

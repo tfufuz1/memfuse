@@ -1654,12 +1654,18 @@ impl GraphIndex for CsrGraph {
             }
             // Lazy index allocation: Entity indices are assigned in commit(),
             // avoiding premature mutation of id_map/reverse_map on rollback.
-            let mut inner = self.inner.write();
-            inner
-                .staged_entities
-                .entry(tx)
-                .or_default()
-                .insert(entity.id, entity);
+            {
+                let mut inner = self.inner.write();
+                inner
+                    .staged_entities
+                    .entry(tx)
+                    .or_default()
+                    .insert(entity.id, entity.clone());
+            }
+
+            if let Some(ref storage) = self.storage {
+                self.persist_entity(storage.as_ref(), tx, &entity).await?;
+            }
             Ok(())
         })
     }
@@ -1713,7 +1719,6 @@ impl GraphIndex for CsrGraph {
                 }
             }
 
-            let mut inner = self.inner.write();
             let tx_valid_from = edge.tx_valid_from.or(Some(tx));
 
             // Register source document provenance for cascading invalidation
@@ -1725,21 +1730,37 @@ impl GraphIndex for CsrGraph {
             // Lazy index allocation: Store EntityIds directly in staged_edges.
             // Internal indices via get_or_create_index are allocated only during commit(),
             // ensuring rollback does not leak entity indices into id_map/reverse_map.
-            inner
-                .staged_edges
-                .entry(tx)
-                .or_default()
-                .entry(edge.from)
-                .or_default()
-                .push(StagedEdgePayload {
-                    target: edge.to,
+            {
+                let mut inner = self.inner.write();
+                inner
+                    .staged_edges
+                    .entry(tx)
+                    .or_default()
+                    .entry(edge.from)
+                    .or_default()
+                    .push(StagedEdgePayload {
+                        target: edge.to,
+                        weight: edge.weight,
+                        tx_valid_from,
+                        tx_valid_to: edge.tx_valid_to,
+                        business_valid_from: edge.business_valid_from,
+                        business_valid_to: edge.business_valid_to,
+                        source_doc_id: edge.source_doc_id,
+                    });
+            }
+
+            if let Some(ref storage) = self.storage {
+                let payload = PersistedEdgePayload {
                     weight: edge.weight,
                     tx_valid_from,
                     tx_valid_to: edge.tx_valid_to,
                     business_valid_from: edge.business_valid_from,
                     business_valid_to: edge.business_valid_to,
                     source_doc_id: edge.source_doc_id,
-                });
+                };
+                self.persist_edge(storage.as_ref(), tx, &edge.from, &edge.to, &payload)
+                    .await?;
+            }
             Ok(())
         })
     }
@@ -2116,52 +2137,6 @@ impl GraphIndex for CsrGraph {
                  Rollback-Korrelation kann verletzt sein."
             );
             }
-            let (entities_to_commit, edges_to_commit, removals_to_commit) = {
-                let inner = self.inner.read();
-                let entities = inner.staged_entities.get(&tx).cloned();
-                let edges = inner.staged_edges.get(&tx).map(|tx_edges| {
-                    let mut list = Vec::new();
-                    for (&from_id, to_list) in tx_edges {
-                        for edge in to_list {
-                            list.push((
-                                from_id,
-                                edge.target,
-                                PersistedEdgePayload {
-                                    weight: edge.weight,
-                                    tx_valid_from: edge.tx_valid_from,
-                                    tx_valid_to: edge.tx_valid_to,
-                                    business_valid_from: edge.business_valid_from,
-                                    business_valid_to: edge.business_valid_to,
-                                    source_doc_id: edge.source_doc_id,
-                                },
-                            ));
-                        }
-                    }
-                    list
-                });
-                let removals = inner.staged_removals.get(&tx).cloned();
-                (entities, edges, removals)
-            };
-
-            if let Some(ref storage) = self.storage {
-                if let Some(ref entities) = entities_to_commit {
-                    for entity in entities.values() {
-                        self.persist_entity(storage.as_ref(), tx, entity).await?;
-                    }
-                }
-                if let Some(ref edges) = edges_to_commit {
-                    for (from_id, to_id, payload) in edges {
-                        self.persist_edge(storage.as_ref(), tx, from_id, to_id, payload)
-                            .await?;
-                    }
-                }
-                if let Some(ref removals) = removals_to_commit {
-                    for (from_id, to_id) in removals {
-                        self.delete_edge_persistence(storage.as_ref(), tx, from_id, to_id)
-                            .await?;
-                    }
-                }
-            }
 
             let mut inner = self.inner.write();
 
@@ -2259,12 +2234,18 @@ impl GraphIndex for CsrGraph {
                  möglicherweise unalloziert oder aus Wall-Clock-Nanosekunden abgeleitet."
             );
             }
-            let mut inner = self.inner.write();
-            inner
-                .staged_removals
-                .entry(tx)
-                .or_default()
-                .push((from, to));
+            {
+                let mut inner = self.inner.write();
+                inner
+                    .staged_removals
+                    .entry(tx)
+                    .or_default()
+                    .push((from, to));
+            }
+            if let Some(ref storage) = self.storage {
+                self.delete_edge_persistence(storage.as_ref(), tx, &from, &to)
+                    .await?;
+            }
             Ok(())
         })
     }
