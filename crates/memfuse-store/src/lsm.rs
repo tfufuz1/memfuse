@@ -1945,22 +1945,25 @@ impl StorageEngine for LsmStorage {
             let mut processed_count = 0usize;
             let mut has_more_beyond_limit = false;
 
-            let get_k_max = |m: &std::collections::BTreeMap<Vec<u8>, (Vec<u8>, u64)>| -> Option<Vec<u8>> {
-                let mut count = 0usize;
-                for (k, (_, seq)) in m.iter() {
-                    if (seq & TOMBSTONE_BIT) == 0 {
-                        count += 1;
-                        if count == limit {
-                            return Some(k.clone());
+            let get_k_max =
+                |m: &std::collections::BTreeMap<Vec<u8>, (Vec<u8>, u64)>| -> Option<Vec<u8>> {
+                    let mut count = 0usize;
+                    for (k, (_, seq)) in m.iter() {
+                        if (seq & TOMBSTONE_BIT) == 0 {
+                            count += 1;
+                            if count == limit {
+                                return Some(k.clone());
+                            }
                         }
                     }
-                }
-                None
-            };
+                    None
+                };
 
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
-                let entries = sst.scan_range(effective_start.map(|s| s), end.map(|e| e)).await?;
+                let entries = sst
+                    .scan_range(effective_start.map(|s| s), end.map(|e| e))
+                    .await?;
                 for (k, v, seq, tx) in entries {
                     let k_vec = k.to_vec();
                     if tx <= last_tx || tx >= TxId::INTERNAL_BASE {
@@ -1990,7 +1993,8 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::invalid_input(format!(
                         "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                          narrow the range or use a smaller limit",
-                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                     )));
                 }
             }
@@ -2038,7 +2042,8 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::invalid_input(format!(
                         "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                          narrow the range or use a smaller limit",
-                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                     )));
                 }
             }
@@ -2077,7 +2082,8 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::invalid_input(format!(
                         "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                          narrow the range or use a smaller limit",
-                        map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                     )));
                 }
             }
@@ -2086,7 +2092,8 @@ impl StorageEngine for LsmStorage {
                 return Err(MemFuseError::invalid_input(format!(
                     "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
                      narrow the range or use a smaller limit",
-                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    map.len(),
+                    MAX_INTERNAL_MERGE_ENTRIES_FACTOR
                 )));
             }
 
@@ -3199,7 +3206,12 @@ mod tests {
             let tx = TxId::new(tx_num);
             let entries: Vec<(Vec<u8>, Vec<u8>)> = chunk
                 .iter()
-                .map(|i| (format!("k:{:06}", i).into_bytes(), format!("v:{:06}", i).into_bytes()))
+                .map(|i| {
+                    (
+                        format!("k:{:06}", i).into_bytes(),
+                        format!("v:{:06}", i).into_bytes(),
+                    )
+                })
                 .collect();
             storage.put_batch(tx, &entries).await.unwrap();
             storage.commit(tx).await.unwrap();
@@ -3225,7 +3237,12 @@ mod tests {
 
         // Populate 50 items
         let entries: Vec<(Vec<u8>, Vec<u8>)> = (0..50)
-            .map(|i| (format!("k:{:02}", i).into_bytes(), format!("v:{:02}", i).into_bytes()))
+            .map(|i| {
+                (
+                    format!("k:{:02}", i).into_bytes(),
+                    format!("v:{:02}", i).into_bytes(),
+                )
+            })
             .collect();
 
         storage.put_batch(tx, &entries).await.unwrap();
@@ -3243,12 +3260,7 @@ mod tests {
 
         loop {
             let (batch, next_cursor) = storage
-                .scan_bounded(
-                    Bound::Unbounded,
-                    Bound::Unbounded,
-                    7,
-                    cursor.as_deref(),
-                )
+                .scan_bounded(Bound::Unbounded, Bound::Unbounded, 7, cursor.as_deref())
                 .await
                 .unwrap();
 

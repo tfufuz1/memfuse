@@ -2986,7 +2986,9 @@ mod tests {
         // Header is 5 bytes. Entry 1 starts at byte 5.
         // ID: 8 bytes, Dim: 4 bytes -> Embedding starts at byte 5 + 12 = 17.
         data[18] ^= 0xFF;
-        tokio::fs::write(&wal_path, &data).await.map_err(MemFuseError::Io)?;
+        tokio::fs::write(&wal_path, &data)
+            .await
+            .map_err(MemFuseError::Io)?;
 
         let recovered = DiskAnnIndex::read_pending_wal(&wal_path)?;
 
@@ -3012,7 +3014,9 @@ mod tests {
         let absurd_dim: u32 = 0xFFFFFFF0;
         data.extend_from_slice(&absurd_dim.to_le_bytes());
 
-        tokio::fs::write(&wal_path, &data).await.map_err(MemFuseError::Io)?;
+        tokio::fs::write(&wal_path, &data)
+            .await
+            .map_err(MemFuseError::Io)?;
 
         let recovered = DiskAnnIndex::read_pending_wal(&wal_path)?;
 
@@ -3034,7 +3038,9 @@ mod tests {
         data.extend_from_slice(&1.0f32.to_le_bytes());
         data.extend_from_slice(&2.0f32.to_le_bytes());
 
-        tokio::fs::write(&wal_path, &data).await.map_err(MemFuseError::Io)?;
+        tokio::fs::write(&wal_path, &data)
+            .await
+            .map_err(MemFuseError::Io)?;
 
         let result = DiskAnnIndex::read_pending_wal(&wal_path);
         assert!(result.is_err());
