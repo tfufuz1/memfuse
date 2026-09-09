@@ -1634,6 +1634,12 @@ impl DiskAnnIndex {
             )));
         }
 
+        if !query.iter().all(|v| v.is_finite()) {
+            return Err(MemFuseError::invalid_input(
+                "Query vector contains non-finite (NaN or Infinity) components".to_string(),
+            ));
+        }
+
         let fallback_opt = self.inner.hnsw_fallback.read().clone();
         if let Some(hnsw) = fallback_opt {
             return hnsw.search(query, k).await;
