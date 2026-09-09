@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
+// ZWECK: Serde-Hilfsfunktionen für deterministische JSON-Serialisierung.
+// INVARIANTEN: HashSet<u64> wird vor Serialisierung unstable-sortiert für Determinismus.
+// SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
+
 //! Serde helpers for memfuse-router.
 
 pub mod sorted_u64_set {

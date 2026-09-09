@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
 // ZWECK: SLM-Profildefinitionen und konformale Quantil-Kalibrierung (Gibbs & Candès).
 // INVARIANTEN: INV-ROUTER-1 (quantile_threshold in [0.0, 1.0]), INV-P8-1 (Fingerprint-Invalidation).
 // NICHT-OFFENSICHTLICH: Fast O(1) HashSet Community-Filter + deterministische JSON-Sortierung.

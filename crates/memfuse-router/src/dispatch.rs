@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
 // ZWECK: Client-seitiger MCP-Dispatch-Mechanismus über Stdio JSON-RPC 2.0 (ADR-010).
 // INVARIANTEN: Sendet ausschließlich ContextWindow (keine ungetrimmten Rohergebnisse).
 // SIEHE AUCH: docs/decisions/ADR-010-mcp-transport.md, rules/tag_taxonomy.md

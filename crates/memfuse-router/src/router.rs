@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T14:49:00Z (SESSION: d7f5877a)
+// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
 // ZWECK: Haupt-Routing-Engine für Hybrid-Search-Kontext auf SLM-Profile.
 // INVARIANTEN: Atomare Snapshot-Sicherheit bei Hot-Reload, NaN-Safety bei Distanz-Eingaben.
 // NICHT-OFFENSICHTLICH: EntityId::from_doc_id Vermeidung von String-Rehashing; Bounded Pending Map.
@@ -771,16 +771,15 @@ mod tests {
     use memfuse_core::TokenBudget;
 
     #[tokio::test]
-    async fn test_calibration_stats_initial_state() {
-        let dir = tempfile::tempdir().unwrap();
+    async fn test_calibration_stats_initial_state(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let config = memfuse_db::MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = memfuse_db::MemFuse::open_with_config(dir.path(), config)
-            .await
-            .unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = memfuse_db::MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
 
         let profile1 = SlmProfile::new(
             "p1",
@@ -806,6 +805,7 @@ mod tests {
         assert_eq!(stats["p2"].times_selected, 0);
         assert_eq!(stats["p2"].calibrated_min_score, 0.8);
         assert_eq!(stats["p2"].original_min_score, 0.8);
+        Ok(())
     }
 
     #[test]
@@ -821,16 +821,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reset_calibration_per_profile() {
-        let dir = tempfile::tempdir().unwrap();
+    async fn test_reset_calibration_per_profile(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
         let config = memfuse_db::MemFuseConfig {
             dimension: 4,
             ..Default::default()
         };
-        let db = memfuse_db::MemFuse::open_with_config(dir.path(), config)
-            .await
-            .unwrap();
-        let collection = db.collection("default").await.unwrap();
+        let db = memfuse_db::MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
 
         let profile = SlmProfile::new(
             "p1",
@@ -851,5 +850,6 @@ mod tests {
 
         router.reset_calibration("p1");
         assert_eq!(router.calibration_stats()["p1"].times_selected, 0);
+        Ok(())
     }
 }
