@@ -1451,10 +1451,7 @@ mod tests {
         // Insert 10,005 items via put_kv
         for i in 0..10_005 {
             collection
-                .put_kv(
-                    &format!("pfx_{i:05}"),
-                    &serde_json::json!({ "idx": i }),
-                )
+                .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
                 .unwrap();
         }
