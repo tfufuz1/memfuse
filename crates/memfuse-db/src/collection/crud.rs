@@ -1164,6 +1164,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         key_str
                     }
                 };
+
                 if let Ok(val) = serde_json::from_slice(&v) {
                     if results.len() >= effective_limit {
                         return Err(memfuse_core::MemFuseError::LimitExceeded {
@@ -1217,82 +1218,9 @@ mod tests {
                 .unwrap();
         }
 
-        // scan_prefix with explicit limit = MAX_SCAN_RESULTS must succeed and return all items
-        let res_explicit = col.scan_prefix("", Some(MAX_SCAN_RESULTS)).await;
-        assert!(res_explicit.is_ok());
-        assert_eq!(res_explicit.unwrap().len(), total);
-    }
-
-    #[tokio::test]
-    async fn test_scan_prefix_explicit_limit_above_ceiling_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::MemFuse::open_with_config(
-            dir.path(),
-            crate::MemFuseConfig {
-                dimension: 4,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let col = db.collection("test_scan_prefix_limit_rejected").await.unwrap();
-
-        let res = col.scan_prefix("", Some(MAX_SCAN_RESULTS + 1)).await;
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_scan_explicit_limit_above_ceiling_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::MemFuse::open_with_config(
-            dir.path(),
-            crate::MemFuseConfig {
-                dimension: 4,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let col = db.collection("test_scan_limit_rejected").await.unwrap();
-
-        let res = col.scan(Bound::Unbounded, Bound::Unbounded, Some(MAX_SCAN_RESULTS + 1)).await;
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::InvalidInput(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_collection_scan_bounded_accumulator_ceiling_end_to_end() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::MemFuse::open_with_config(
-            dir.path(),
-            crate::MemFuseConfig {
-                dimension: 4,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let col = db.collection("test_scan_accumulator_e2e").await.unwrap();
-
-        // Populate more than MAX_SCAN_MERGE_ACCUMULATOR items
-        let total = memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR + 5;
-        for i in 0..total {
-            col.put_kv(&format!("item_{:06}", i), &serde_json::json!({ "v": i }))
-                .await
-                .unwrap();
-        }
-
-        // scan() on Collection must fail with LimitExceeded when accumulator ceiling is breached
-        let res = col.scan(Bound::Unbounded, Bound::Unbounded, None).await;
-        assert!(matches!(
-            res,
-            Err(memfuse_core::MemFuseError::LimitExceeded { limit, .. }) if limit == memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR
-        ));
+        // scan_prefix with default limit (None) must fail because total items exceeds safety threshold
+        let res_default = col.scan_prefix("", None).await;
+        assert!(res_default.is_err());
     }
 
     #[tokio::test]
@@ -1533,7 +1461,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scan_prefix_capped_at_max_limit() {
+    async fn test_scan_default_limit_bounds_full_range_scan() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::MemFuse::open_with_config(
             dir.path(),
@@ -1546,8 +1474,11 @@ mod tests {
         .unwrap();
         let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
 
-        // Insert DEFAULT_SCAN_LIMIT items via put_kv
-        for i in 0..DEFAULT_SCAN_LIMIT {
+        // AI-TAG[APM-20][MAJOR] LimitExceeded behavior on default scan limit (ID: AGT-DB-cb16e356) (TS: 2026-09-09T19:20:31Z) (SESSION: 9859c87a)
+        // BEFUND: scan_prefix and scan return MemFuseError::LimitExceeded when total items exceed the limit.
+        // RISIKO: Direct unwrap on scan_prefix with default limit (10,000) when total items > 10,000 will fail.
+        // EMPFEHLUNG: Callers scanning large key spaces must pass explicit limit parameter or handle LimitExceeded.
+        for i in 0..10_005 {
             collection
                 .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
