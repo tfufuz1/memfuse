@@ -1,3 +1,9 @@
+// FILE-CONTEXT
+// STAND: 2026-09-09T13:00:00Z (SESSION: c74a1828)
+// ZWECK: Native Candle ML vector embedding client implementation.
+// INVARIANTEN: Thread safety via Arc<tokio::sync::Mutex<Box<dyn CandleEmbedInner>>>; vector dimension matches model.dim.
+// NICHT-OFFENSICHTLICH: CandleEmbedInner trait enables mock-based unit testing without binary weights in CI.
+
 use crate::model_registry::ModelFingerprint;
 use candle_core::Device;
 use memfuse_core::{MemFuseError, Result};
