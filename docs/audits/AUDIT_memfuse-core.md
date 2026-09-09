@@ -144,7 +144,7 @@ cargo check --workspace --exclude memfuse-tauri
 - **Quality Gate Stack:** 146 unit + 2 integration + 5 robustness tests passing 100% green. Gate stack and workspace compilation checks passed cleanly.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) verified stable, thread-safe, zero-panic compliant, and DAG compliant.
 
-## 11. Tier 1 Deep Audit & Verification (2026-09-09 — Task JULES-20260909-DEEP)
+## 11. Tier 1 Deep Audit & Verification — konsolidiert (2026-09-09 — Sessions: 96e5c38b, 4b5ed819 / Task JULES-20260909-DEEP)
 
 ### Inventar-Realitätsabgleich (Stand 2026-09-09)
 - **Bekanntes Prompter-Inventar (Stand 2026-09-08):** `error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits/embedding.rs`, `traits/mod.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs` (17 Dateien).
@@ -153,9 +153,9 @@ cargo check --workspace --exclude memfuse-tauri
 
 ### Tier 1 Concurrency, Fault Injection & Property Tests Verification
 - **Property-Based Tests (`proptest`):** 11/11 proptests (`prop_snapshot_registry_min_active`, `prop_snapshot_pin_unpin_interleaving`, `prop_snapshot_register_unregister_stress`, `prop_tx_buffer_partial_discard_isolation`, `prop_tx_buffer_isolation`, `prop_tx_id_overflow_isolation`, `prop_tx_id_range_isolation`, `prop_tx_buffer_stage_drain_stage_lifecycle`, `prop_fusion_weights_never_panics`, `prop_ipc_parser_no_panic_on_garbage`, `prop_tx_buffer_reap_is_complete`) 100% grün.
-- **Concurrency Stress Runs:** 10/10 iterations with `--test-threads=8` passed with zero panics, hangs, or race conditions.
+- **Concurrency Stress Runs:** 10/10 iterations with `--test-threads=8` in Session 96e5c38b (15:04 Uhr) sowie 5/5 aufeinanderfolgende Läufe inkl. Concurrency Rauchtest in Session 4b5ed819 (21:39 Uhr) bestanden mit zero panics, hangs oder race conditions.
 - **TxId Boundary Exhaustion Simulation:** `test_tx_id_range_boundary_exhaustion_simulation` verified controlled `MemFuseError::Transaction` returns without overflow or wraparound.
-- **SnapshotRegistry GC Race Stress:** `test_snapshot_registry_robustness_and_concurrency` verified zero race conditions or invalid sequence unpins under concurrent thread access.
+- **SnapshotRegistry GC Race Stress:** `test_snapshot_registry_robustness_and_concurrency` (10/10 Läufe in Session 4b5ed819) verified zero race conditions or invalid sequence unpins under concurrent thread access.
 
 ### Code Coverage Metrics (`cargo-llvm-cov`)
 - **Gesamtzeilenabdeckung (`memfuse-core`):** **75.27%** (5183 Zeilen gesamt, 1282 unbereinigte Flachcode- / FlatBuffers-Zeilen).
@@ -175,7 +175,7 @@ cargo check --workspace --exclude memfuse-tauri
   - `types/saos.rs`: **92.60%**
 
 ### Summary Sign-off
-- **Quality Gate Stack:** 156 unit + 2 integration + 5 robustness tests passing 100% green. Zero clippy warnings (`-D warnings`), zero formatting issues, zero open `AI-TAG` findings.
+- **Quality Gate Stack:** 156 unit + 2 integration + 5 robustness tests (163 total) passing 100% green. Zero clippy warnings (`-D warnings`), zero formatting issues, zero open `AI-TAG` findings.
 - **Audit Sign-off:** `memfuse-core` (Layer 0) re-verified fully bit-accurate, zero-panic compliant, thread-safe, and fully ready as the foundation of MemFuse.
 
 ## 12. TenantId Helper Method Enhancement (2026-09-09 — SESSION a69d21e4)
@@ -196,18 +196,4 @@ cargo check --workspace --exclude memfuse-tauri
 - **Zero-Panic Propagation:** Controlled error propagation via `MemFuseError`.
 - **Quality Gate Stack & Tests:** 156 unit + 2 integration + 5 robustness tests (163 total) passing 100% green. Gate stack and preflight checks passed.
 
-## 14. Tier 1 Deep Audit & Verification Pass (2026-09-09 — SESSION 4b5ed819 / Task JULES-20260909-DEEP)
-
-### Inventar-Realitätsabgleich (Stand 2026-09-09)
-- **Bekanntes Prompter-Inventar (Stand 2026-09-08):** 17 Dateien in `crates/memfuse-core/src/` (`error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits/embedding.rs`, `traits/mod.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`).
-- **Tatsächlicher Dateibestand:** Exakte Übereinstimmung (17 Dateien). Inventarabgleich: keine Abweichung, Stand 2026-09-08/09 bestätigt.
-
-### Tier 1 Concurrency, Fault Injection & Property Tests Verification
-- **Concurrency Rauchtest:** 5/5 aufeinanderfolgende Läufe mit `--test-threads=8` ohne Hänger, Nichtdeterminismus oder Panics bestanden.
-- **Property-Based Tests (`proptest`):** 11/11 Proptests (`prop_snapshot_registry_min_active`, `prop_snapshot_pin_unpin_interleaving`, `prop_snapshot_register_unregister_stress`, `prop_tx_buffer_isolation`, `prop_tx_buffer_partial_discard_isolation`, `prop_tx_id_overflow_isolation`, `prop_tx_id_range_isolation`, `prop_tx_buffer_stage_drain_stage_lifecycle`, `prop_fusion_weights_never_panics`, `prop_ipc_parser_no_panic_on_garbage`, `prop_tx_buffer_reap_is_complete`) zu 100% grün.
-- **TxId Boundary Exhaustion Simulation:** `test_tx_id_range_boundary_exhaustion_simulation` verifizierte kontrollierte Rückgaben von `MemFuseError::Transaction` ohne Overflow oder Wraparound.
-- **SnapshotRegistry GC Race Stress:** 10/10 Läufe des Concurrency Stresstests `snapshot_registry` bestanden mit 0 Panics oder Data Races.
-
-### Summary Sign-off
-- **Quality Gate Stack:** 156 Unit- + 2 Integrations- + 5 Robustness-Tests (163 gesamt) bestanden zu 100% grün. Clippy-Prüfung (`-D warnings`), Formatting-Check und Preflight-Gates vollständig bestanden.
-- **Audit Sign-off:** `memfuse-core` (Layer 0) erneut als bit-akkurat, zero-panic konform, thread-sicher und DAG-konform bestätigt.
+## 14. [Konsolidiert in §11 — keine neue Prüftiefe gegenüber Session 96e5c38b / Task JULES-20260909-DEEP identifiziert, siehe Anmerkung TS: 2026-09-09]

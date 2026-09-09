@@ -46,6 +46,7 @@ fn chrono_or_today() -> String {
 // GATE:    grep -v "2026-08-27" WORKING_STATE.md
 mod bench_gate;
 mod check_agents_integrity;
+mod check_audit_duplication;
 mod check_commit_messages;
 mod check_doc_references;
 mod check_duplicate_intent;
@@ -2100,6 +2101,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-audit-duplication" => {
+            if let Err(e) = check_audit_duplication::run_check_audit_duplication(0.85) {
+                eprintln!("❌ check-audit-duplication failed: {}", e);
+                process::exit(1);
+            }
+        }
         "check-recall-stability" => {
             let success = check_recall_stability::run_check_recall_stability(&args[2..]);
             if !success {
@@ -2298,7 +2305,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, check-audit-duplication, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
             process::exit(1);
         }
     }
