@@ -4,7 +4,7 @@
 // STAND: TS:2026-08-30T19:50:00Z (SESSION: 20260830)
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use memfuse_crypto::CryptoKey;
+use memfuse_security::CryptoKey;
 
 fn bench_aes_256_gcm_siv_encrypt(c: &mut Criterion) {
     let km = CryptoKey::try_new("bench-passphrase", b"bench-salt-123456").unwrap();
