@@ -188,6 +188,28 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
 
 ---
 
+## 16. Session Audit Log (2026-09-09 / Session: fdf816df)
+
+**Datum**: 2026-09-09
+**Session**: fdf816df
+**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
+
+### Durchgeführte Aktionen:
+1. **Schritt 0 — Inventar-Realitätsabgleich**:
+   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 7 Dateien: `bin/memfuse-mcp-server.rs`, `config.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
+   - **Befund**: `Inventarabgleich: keine Abweichung, Stand 2026-09-08 bestätigt`.
+2. **Edge-Case & Protocol Deserialization Strengthening**:
+   - `test_protocol_request_deserialization_no_panic` und `test_protocol_response_serialization_no_panic` in `crates/memfuse-mcp/src/tests.rs` ergänzt.
+   - Verifizierung von JSON-RPC 2.0 Deserialisierungs-Robustheit gegen leere Inputs, fehlerhafte Version-Header, ungültige ID-Formate und Steuerzeichen.
+3. **Workspace- & Gate-Verifikation**:
+   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
+   - `cargo clippy -p memfuse-mcp --no-deps -- -D warnings` -> 0 Findings
+   - `cargo fmt --check -p memfuse-mcp` -> OK
+   - `cargo test -p memfuse-mcp --all-features` -> 52 unit tests passed, 27 integration tests passed (79 total)
+   - `cargo check --workspace --exclude memfuse-tauri` -> OK
+
+---
+
 ## 15. Session Audit Log (2026-09-09 / Session: 5665b844)
 
 **Datum**: 2026-09-09
