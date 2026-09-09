@@ -254,3 +254,52 @@ fn test_compare_metrics_files_errors() {
     assert!(err4.is_err());
     assert!(err4.unwrap_err().contains("Failed to parse baseline JSON"));
 }
+
+#[test]
+fn test_nan_inf_metric_values_trigger_regression() {
+    let baseline = CombinedMetrics {
+        long_mem_eval: Some(LongMemEvalMetricsSummary {
+            overall_accuracy: 0.85,
+            total_cases: 100,
+        }),
+        locomo: None,
+    };
+
+    // 1. NaN current value
+    let current_nan = CombinedMetrics {
+        long_mem_eval: Some(LongMemEvalMetricsSummary {
+            overall_accuracy: f64::NAN,
+            total_cases: 100,
+        }),
+        locomo: None,
+    };
+    let res_nan = compare_metrics(&current_nan, &baseline, 0.05);
+    assert!(res_nan.has_regression);
+    assert!(res_nan
+        .errors
+        .iter()
+        .any(|e| e.contains("invalid float value (NaN/Inf)")));
+
+    // 2. Infinite current value
+    let current_inf = CombinedMetrics {
+        long_mem_eval: Some(LongMemEvalMetricsSummary {
+            overall_accuracy: f64::INFINITY,
+            total_cases: 100,
+        }),
+        locomo: None,
+    };
+    let res_inf = compare_metrics(&current_inf, &baseline, 0.05);
+    assert!(res_inf.has_regression);
+    assert!(res_inf
+        .errors
+        .iter()
+        .any(|e| e.contains("invalid float value (NaN/Inf)")));
+
+    // 3. Negative threshold
+    let res_neg_thresh = compare_metrics(&baseline, &baseline, -0.05);
+    assert!(res_neg_thresh.has_regression);
+    assert!(res_neg_thresh
+        .errors
+        .iter()
+        .any(|e| e.contains("Invalid threshold value")));
+}

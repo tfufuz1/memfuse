@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall).
-// STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
+// STAND: TS:2026-09-09T16:10:00Z (SESSION: dafac391)
 
 //! # Eviction-Architektur
 //!
@@ -101,17 +101,12 @@ mod tests {
     fn test_eviction_worker_nonblocking_trigger() {
         let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
-        let store = Arc::new(TenantIsolatedKvStore::new());
         store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 512]));
         store.insert_segment(tenant, KvSegment::new(tenant, 2, vec![0x22; 512]));
 
-        let store = Arc::new(TenantIsolatedKvStore::new());
-        store.insert_segment(tenant, seg1);
-        store.insert_segment(tenant, seg2);
-
         let worker = EvictionWorker::spawn(Arc::clone(&store));
 
-        // Trigger eviction of 500 bytes (should evict seg1 at index 0)
+        // Trigger eviction of 500 bytes (should evict seg 1 at index 0)
         let start = std::time::Instant::now();
         worker.trigger_eviction(500);
         let elapsed = start.elapsed();
@@ -140,7 +135,6 @@ mod tests {
     fn test_lru_eviction_order_not_fifo() {
         let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
-        let store = Arc::new(TenantIsolatedKvStore::new());
 
         // Insert A, B, C
         store.insert_segment(tenant, KvSegment::new(tenant, 10, vec![0x11; 512]));
@@ -151,11 +145,6 @@ mod tests {
 
         // Touch A so it becomes most recently used
         let _ = store.get_segment_bytes(tenant, 10);
-
-        let store = Arc::new(TenantIsolatedKvStore::new());
-        store.insert_segment(tenant, seg_a);
-        store.insert_segment(tenant, seg_b);
-        store.insert_segment(tenant, seg_c);
 
         let worker = EvictionWorker::spawn(Arc::clone(&store));
 
@@ -193,13 +182,8 @@ mod tests {
     fn test_emergency_wipe_synchronous_completion() {
         let store = TenantIsolatedKvStore::new();
         let tenant = TenantId::try_new(1).unwrap();
-        let store = TenantIsolatedKvStore::new();
         store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0x11; 512]));
         store.insert_segment(tenant, KvSegment::new(tenant, 2, vec![0x22; 512]));
-
-        let store = TenantIsolatedKvStore::new();
-        store.insert_segment(tenant, seg1);
-        store.insert_segment(tenant, seg2);
 
         assert_eq!(store.get_tenant_segment_len(tenant), 2);
 

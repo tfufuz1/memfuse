@@ -1,7 +1,7 @@
 # AUDIT REPORT: `memfuse-index`
 
 **Crate:** `crates/memfuse-index`
-**Datum:** 31. August 2026 (Aktualisiert: 1. September 2026)
+**Datum:** 31. August 2026 (Aktualisiert: 9. September 2026)
 **Auditor:** Senior Rust Performance & Numerics Audit Engineer
 **Status:** AUDIT COMPLETED / APPROVED WITH CRITICAL FIXES APPLIED
 
@@ -240,7 +240,7 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 | Disk-Full ENOSPC | OK | Err propagiert via `MemFuseError::Storage` / `Io` | — |
 | OOM / Backpressure | OK | Bound via `MAX_SEARCH_K` & atomar gesteuerte Data-Structures | — |
 | SIGBUS mmap-truncate | OK | Read-only Mmap; POSIX Unlink/Rename schützt aktive Handles | — |
-| SIGKILL recovery | OK | Sauber; atomare Datei-Ersetzung garantiert Konsistenz | — |
+| SIGKILL recovery | OK | Sauber; atomare Datei-Ersetzung garantiert Konsistency | — |
 
 ---
 
@@ -304,9 +304,6 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 **VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Performance-, SIMD-Paritäts- und Safety-Invarianten für Layer 1.
 
 ---
-*Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
-
----
 
 ## 17. Audit-Update — Test-Coverage-Ausbau & Edge-Case-Verifikation (2026-09-09T14:50:00Z, SESSION: 92d7bb7d)
 
@@ -329,3 +326,26 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 
 ### 17.3 Verdict
 **VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Safety- und Test-Invarianten.
+
+---
+
+## 18. Audit-Update — APM-16 Hardening & Boundary Validation (2026-09-09T15:55:00Z, SESSION: 8fae2834)
+
+### 18.1 Inventar- & Realitätsabgleich (Schritt 0)
+- **Kommando:** `find crates/memfuse-index/src -name "*.rs" | sort`
+- **Gefundene Dateien (7):** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `partial_rebuild.rs`, `persistence.rs`, `quantize.rs`.
+- **Inventar-Status:** Inventar-Drift `partial_rebuild.rs` bestätigt (ersetzt `nucleation.rs` aus dem Snapshot vom 2026-09-08).
+
+### 18.2 Durchgeführte APM-16 Härtungen & Verifizierungen
+1. **APM-16 Protection in `partial_rebuild.rs`:**
+   - `find_oversaturated_regions`: Explizite Prüfungen für `critical_ratio` (`is_nan()`, `<= 0.0`), `global_density` (`is_nan()`, `is_infinite()`, `<= 0.0`) und `s_local` (`is_finite()`).
+   - `should_trigger_partial_rebuild`: Explizite Prüfungen für `global_tombstone_ratio` (`is_nan()`, `is_infinite()`) und `config.min_global_ratio` (`is_nan()`).
+2. **Neue Unit-Tests:**
+   - `test_partial_rebuild_nan_inf_safety`: Prüft, dass NaN/negative `critical_ratio` Werte keinesfalls fehlerhafte Partial-Rebuilds auslösen.
+   - `test_should_trigger_partial_rebuild_nan_ratio`: Prüft, dass non-finite `global_tombstone_ratio` Werte (NaN, Inf, -Inf) sicher mit `None` behandelt werden.
+3. **Full Suite Verification:**
+   - `cargo test -p memfuse-index --all-features`: 100% passed (92 Unit/Integration-Tests grün).
+   - `cargo check -p memfuse-index --all-features`: 0 Fehler, 0 Warnungen.
+
+### 18.3 Verdict
+**VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Performance-, SIMD-Paritäts- und APM-16 Safety-Invarianten für Layer 1.

@@ -1067,9 +1067,12 @@ impl PyMemFuse {
         let name_owned = name.to_string();
         let tenant_id = memfuse_core::TenantId::try_new(1).map_err(memfuse_err)?;
         run_blocking_ffi(py, || {
-            rt.block_on(self.inner.drop_collection(&name_owned, tenant_id, &[0u8; 32]))
-                .map(|_| ())
-                .map_err(memfuse_err)
+            rt.block_on(
+                self.inner
+                    .drop_collection(&name_owned, tenant_id, &[0u8; 32]),
+            )
+            .map(|_| ())
+            .map_err(memfuse_err)
         })
     }
 
@@ -1438,7 +1441,8 @@ mod tests {
     fn test_gil_not_held_during_blocking_ops() {
         use numpy::PyArrayMethods;
         pyo3::prepare_freethreaded_python();
-        let temp_dir = std::env::temp_dir().join(format!("memfuse_gil_test_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("memfuse_gil_test_{}", std::process::id()));
         let db_path = temp_dir.to_str().unwrap();
 
         Python::with_gil(|py| {
@@ -1471,35 +1475,41 @@ mod tests {
                 let db_ref = db_py.clone_ref(py);
                 let errors_clone = errors.clone();
 
-                let worker_code = pyo3::types::PyCFunction::new_closure(
-                    py,
-                    None,
-                    None,
-                    move |_args, _kwargs| {
+                let worker_code =
+                    pyo3::types::PyCFunction::new_closure(py, None, None, move |_args, _kwargs| {
                         Python::with_gil(|py| {
                             let prefix = if i % 2 == 0 { "pref_a_" } else { "pref_b_" };
                             for _ in 0..10 {
-                                let res: PyResult<PyObject> = db_ref.call_method1(py, "scan_prefix", (prefix,));
+                                let res: PyResult<PyObject> =
+                                    db_ref.call_method1(py, "scan_prefix", (prefix,));
                                 match res {
                                     Ok(res_obj) => {
                                         let list = res_obj.extract::<Vec<(String, PyObject)>>(py);
                                         if let Ok(l) = list {
                                             if l.len() != 10 {
-                                                errors_clone.lock().unwrap().push(format!("Expected 10 docs, got {}", l.len()));
+                                                errors_clone.lock().unwrap().push(format!(
+                                                    "Expected 10 docs, got {}",
+                                                    l.len()
+                                                ));
                                             }
                                         } else {
-                                            errors_clone.lock().unwrap().push("Failed to extract scan_prefix result".into());
+                                            errors_clone.lock().unwrap().push(
+                                                "Failed to extract scan_prefix result".into(),
+                                            );
                                         }
                                     }
                                     Err(e) => {
-                                        errors_clone.lock().unwrap().push(format!("scan_prefix error: {}", e));
+                                        errors_clone
+                                            .lock()
+                                            .unwrap()
+                                            .push(format!("scan_prefix error: {}", e));
                                     }
                                 }
                             }
                         });
                         Ok::<(), pyo3::PyErr>(())
-                    },
-                ).unwrap();
+                    })
+                    .unwrap();
 
                 let t = threading.call_method1("Thread", (worker_code,)).unwrap();
                 t.call_method0("start").unwrap();
@@ -1511,7 +1521,10 @@ mod tests {
             for t in threads {
                 t.call_method1("join", (4.0,)).unwrap();
                 let is_alive: bool = t.call_method0("is_alive").unwrap().extract().unwrap();
-                assert!(!is_alive, "Thread timed out; GIL was likely held during blocking operations");
+                assert!(
+                    !is_alive,
+                    "Thread timed out; GIL was likely held during blocking operations"
+                );
             }
 
             let end_time: f64 = time.call_method0("time").unwrap().extract().unwrap();
@@ -1519,7 +1532,11 @@ mod tests {
             assert!(elapsed < 5.0, "Test took {:.2}s, expected < 5.0s", elapsed);
 
             let err_list = errors.lock().unwrap();
-            assert!(err_list.is_empty(), "Errors during thread execution: {:?}", *err_list);
+            assert!(
+                err_list.is_empty(),
+                "Errors during thread execution: {:?}",
+                *err_list
+            );
         });
 
         let _ = std::fs::remove_dir_all(temp_dir);
