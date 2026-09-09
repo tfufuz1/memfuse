@@ -40,6 +40,7 @@ fn chrono_or_today() -> String {
 mod bench_gate;
 mod check_agents_integrity;
 mod check_commit_messages;
+mod check_doc_references;
 mod check_duplicate_intent;
 mod check_duplicate_symbols;
 mod check_jules_context_freshness;
@@ -619,7 +620,15 @@ fn generate_session_continuity_section(tags: &[TagItem]) -> String {
     // Änderungsbereich via git diff-tree
     if git_available {
         let diff_files_opt = std::process::Command::new("git")
-            .args(["-C", git_root_str, "diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"])
+            .args([
+                "-C",
+                git_root_str,
+                "diff-tree",
+                "--no-commit-id",
+                "-r",
+                "--name-only",
+                "HEAD",
+            ])
             .output()
             .ok()
             .filter(|o| o.status.success())
@@ -2053,6 +2062,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-doc-references" => {
+            if let Err(e) = check_doc_references::run_check_doc_references() {
+                eprintln!("❌ check-doc-references failed: {}", e);
+                process::exit(1);
+            }
+        }
         "check-duplicate-intent" => {
             if let Err(e) = check_duplicate_intent::check_duplicate_intent() {
                 eprintln!("❌ check-duplicate-intent failed: {}", e);
@@ -2239,7 +2254,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
             process::exit(1);
         }
     }
@@ -3130,16 +3145,15 @@ description = "Core crate"
     fn test_workspace_crate_layers_regression() {
         let _guard = TEST_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let crates = get_workspace_crates();
-        assert_eq!(crates.len(), 18, "Expected 18 workspace crates");
+        assert_eq!(crates.len(), 17, "Expected 17 workspace crates");
 
         let expected_layers: std::collections::HashMap<&str, u8> = [
             ("memfuse-core", 0),
             ("memfuse-calibration", 1),
             ("memfuse-candle", 2),
             ("memfuse-checkpoint", 1),
-            ("memfuse-crypto", 1),
+            ("memfuse-security", 1),
             ("memfuse-graph", 1),
-            ("memfuse-kv-bridge", 2),
             ("memfuse-text", 1),
             ("memfuse-embed", 3),
             ("memfuse-index", 2),

@@ -340,7 +340,7 @@
 *   **Konsequenzen**:
     - README, SOURCE_OF_TRUTH, ARCHITECTURE werden auf "Cognitive OS"
       umformuliert (nicht nur "Memory Engine")
-    - docs/memfuse_strategic_roadmap.md wird auf 4-Phasen-Plan aktualisiert
+    - docs/memfuse_strategic_roadmap.md wird auf 4-Phasen-Plan aktualisiert <!-- doc-ref-ignore -->
     - Phase-2-Features (Gedächtnistypen, temporaler Graph) als ADR-geplant
 
 ---
@@ -361,12 +361,12 @@
     2. **4-Signal Indexierung**: HNSW + Contextual-BM25 + CSR-Graph +
        Metadaten parallel indexiert
     3. **Hybrid Retrieval via RRF**: Alle Signale über reciprocal_rank_fusion()
-       fusioniert (memfuse-db/fusion.rs)
-    4. **Multi-Step Expansion**: MultiStepEngine (memfuse-db/multistep.rs)
+       fusioniert (memfuse-db/fusion.rs) <!-- doc-ref-ignore -->
+    4. **Multi-Step Expansion**: MultiStepEngine (memfuse-db/multistep.rs) <!-- doc-ref-ignore -->
        führt bis zu 3 iterative Retrieval-Schleifen aus
     5. **Cross-Encoder Reranking**: CrossEncoderReranker (memfuse-embed,
        --features onnx) reordnet Top-K Kandidaten (optionaler Schritt)
-    6. **Context Compaction**: ContextCompactor (memfuse-db/compaction.rs)
+    6. **Context Compaction**: ContextCompactor (memfuse-db/compaction.rs) <!-- doc-ref-ignore -->
        ersetzt alte Tool-Outputs durch StatusToken
 *   **Alternativen**: Jeder Schritt einzeln opt-in — zu komplex für Nutzer
 *   **Begründung**: Empirisch (Anthropic, 2024): Contextual Embeddings →
@@ -443,7 +443,7 @@
 *   **Begründung**: Option B bzw. Klärung via ADR-024 stellt sicher, dass Entwickler und Nutzer exakt wissen, welche Signale snapshot-isoliert sind (Storage + Text) und welche auf dem aktuellen In-Memory-Stand arbeiten (Vektor + Graph), ohne falsche API-Versprechungen zu machen.
 *   **Konsequenzen**:
     - Aktualisierung der Invariantentabelle in `docs/ARCHITECTURE.md`.
-    - Aktualisierung der Trait-Default-Fehlermeldungen in `crates/memfuse-core/src/traits.rs`.
+    - Aktualisierung der Trait-Default-Fehlermeldungen in `crates/memfuse-core/src/traits.rs`. <!-- doc-ref-ignore -->
     - Hinzufügen expliziter Integrationstests, die das dokumentierte Verhalten absichern.
 
 ---
@@ -604,7 +604,7 @@
 
 *   **Datum**: 2026-08-28
 *   **Status**: ✅ Final
-*   **Kontext**: Der bisherige `ContextCompactor` in `memfuse-db/src/compaction.rs` ersetzte veraltete Tool-Outputs durch Status-Token (ADR-021). Dies entsprach einer Kürzung/Löschung ohne kognitiven Wissenserhalt. Für Phase 3 der Roadmap ("Memory Consolidation") wird die Zusammenfassung alter Chunks via LLM unter Erhaltung der Provenienz benötigt.
+*   **Kontext**: Der bisherige `ContextCompactor` in `memfuse-db/src/compaction.rs` ersetzte veraltete Tool-Outputs durch Status-Token (ADR-021). Dies entsprach einer Kürzung/Löschung ohne kognitiven Wissenserhalt. Für Phase 3 der Roadmap ("Memory Consolidation") wird die Zusammenfassung alter Chunks via LLM unter Erhaltung der Provenienz benötigt. <!-- doc-ref-ignore -->
 *   **Entscheidung**:
     - Erweiterung der `CompactionStrategy` Enum um die additive Variante `LlmSummarize { max_input_chunks: usize }`.
     - Implementierung der asynchronen Methode `consolidate_via_llm(&self, chunks: &[ContextChunk], ollama: &OllamaClient) -> Result<CompactedContext>` in `compaction.rs`.
@@ -702,7 +702,7 @@
 
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Implementiert (2026-09-03)
-*   **Entscheidung**: Die Datenstruktur `Collection<S: StorageEngine = LsmStorage>` in `crates/memfuse-db/src/collection.rs` wird generisch über den `VectorIndex`-Trait-Implementor erweitert: `Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>`. Dadurch wird die starre Kopplung an `Arc<HnswIndex>` aufgehoben und die Nutzung alternativer Vektor-Indizes (wie z. B. `DiskAnnIndex` aus `memfuse-index`) ermöglicht.
+*   **Entscheidung**: Die Datenstruktur `Collection<S: StorageEngine = LsmStorage>` in `crates/memfuse-db/src/collection.rs` wird generisch über den `VectorIndex`-Trait-Implementor erweitert: `Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>`. Dadurch wird die starre Kopplung an `Arc<HnswIndex>` aufgehoben und die Nutzung alternativer Vektor-Indizes (wie z. B. `DiskAnnIndex` aus `memfuse-index`) ermöglicht. <!-- doc-ref-ignore -->
 *   **Alternativen**:
     - **Option A (Dynamischer Trait-Object Trait-Dispatch `Arc<dyn VectorIndex>)`**: Verworfen, da `VectorIndex` in manchen Pfaden dynamischen Trait-Funktions-Dispatch mit Performance-Overhead auf dem Hot-Path verbindet und die Typensicherheit bei konkreter Vektorindex-Instanziierung einbüßt.
     - **Option B (Status Quo belassen)**: Verworfen, da `DiskAnnIndex` als out-of-core Vektorindex vollständig implementiert ist, aber wegen der harten `Arc<HnswIndex>`-Typisierung in `Collection` ungenutzte technische Schuld darstellte.
@@ -749,12 +749,12 @@
 
 ---
 
-# ADR-040: collection.rs Modularisierung (God Object Auflösung)
+# ADR-040: collection.rs Modularisierung (God Object Auflösung) <!-- doc-ref-ignore -->
 
 *   **Datum**: 2026-08-29
 *   **Status**: ✅ Final
-*   **Entscheidung**: `collection.rs` wird in Submodule unter `crates/memfuse-db/src/collection/` aufgeteilt.
-*   **Alternativen**: Belassen von `collection.rs` als monolithischer ~2.900 LOC Crate-Teil.
+*   **Entscheidung**: `collection.rs` wird in Submodule unter `crates/memfuse-db/src/collection/` aufgeteilt. <!-- doc-ref-ignore -->
+*   **Alternativen**: Belassen von `collection.rs` als monolithischer ~2.900 LOC Crate-Teil. <!-- doc-ref-ignore -->
 *   **Begründung**: Beseitigt AUD-08 ("God Object") und verbessert Lesbarkeit sowie Wartbarkeit. Öffentliche API und alle Typnamen bleiben exakt unverändert. Alle Re-Exports werden über `crates/memfuse-db/src/collection/mod.rs` bereitgestellt (identische öffentliche Oberfläche wie bisher).
 
 ---
@@ -1048,7 +1048,7 @@
 *   **Datum**: 2026-09-05
 *   **Status**: ✅ Final
 *   **Entscheidung**:
-    - Die Fault-Injection-Testsuite wird ausschließlich als Test-only Integrationstests (`tests/`) sowie ein Hilfsbinary (`examples/chaos_writer.rs`) in `crates/memfuse-store` umgesetzt.
+    - Die Fault-Injection-Testsuite wird ausschließlich als Test-only Integrationstests (`tests/`) sowie ein Hilfsbinary (`examples/chaos_writer.rs`) in `crates/memfuse-store` umgesetzt. <!-- doc-ref-ignore -->
     - Es wird KEIN neues Workspace-Crate angelegt und KEINE Änderung an Quellcode unter `crates/memfuse-store/src/**` vorgenommen.
 - **Alternativen**:
     - *Eigenes `chimera-chaos`-artiges Crate mit Produktions-Hooks (`FaultInjector::inject_sync`)*: Verworfen, da dies ASK-pflichtige API- und Hot-Path-Änderungen erfordert hätte, ohne dass dafür ein belegter Bedarf existierte.
@@ -1309,7 +1309,7 @@ Gemäß Gesamtspezifikation v7.0 (K14 / §7.3) erfordert Increment 2 die Möglic
    - Sofern ein Aufrufer (z.B. `memfuse-mcp`) diesen Offset noch nicht liefert, wird `None` übergeben. Dies wird als expliziter Folgepunkt dokumentiert, anstatt einen erfundenen Platzhalterwert vorzutäuschen.
 
 4. **Kombinierte Zeroize- und Speicherabbild-Garantie (Integrationstest):**
-   - Ein Integrationstest (`tests/kv_encryption_integration.rs`) simuliert eine In-Memory-Prozessabbild-Inspektion und weist nach, dass der Rohspeicher des Segments zu keinem Zeitpunkt den Klartext-Tensor enthält.
+   - Ein Integrationstest (`tests/kv_encryption_integration.rs`) simuliert eine In-Memory-Prozessabbild-Inspektion und weist nach, dass der Rohspeicher des Segments zu keinem Zeitpunkt den Klartext-Tensor enthält. <!-- doc-ref-ignore -->
    - Der Test bestätigt zudem, dass `Zeroize::zeroize` nach dem Entschlüsseln alle Puffer im Speicher rückstandslos wischt.
 
 ## Konsequenzen

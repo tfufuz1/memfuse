@@ -79,7 +79,10 @@ fn bench_nucleation_recall_curve(c: &mut Criterion) {
         let ground_truth = brute_force_knn(&vectors, &tombstone_set, &queries, 10);
 
         group.bench_function(
-            BenchmarkId::new("rebuild_region_recall_k10", format!("{}pct_deleted", ratio_percent)),
+            BenchmarkId::new(
+                "rebuild_region_recall_k10",
+                format!("{}pct_deleted", ratio_percent),
+            ),
             |b| {
                 b.iter_batched(
                     || {
@@ -128,7 +131,8 @@ fn bench_nucleation_recall_curve(c: &mut Criterion) {
                             let mut total_hits = 0;
                             for (i, query) in queries.iter().enumerate() {
                                 let results = index.search(query, 10).await.expect("search failed");
-                                let gt_set: HashSet<DocId> = ground_truth[i].iter().copied().collect();
+                                let gt_set: HashSet<DocId> =
+                                    ground_truth[i].iter().copied().collect();
                                 total_hits += results
                                     .iter()
                                     .filter(|res| gt_set.contains(&res.doc_id))

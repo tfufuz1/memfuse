@@ -240,9 +240,10 @@ pub(crate) fn compute_ppr_with_context(
         .map(|(_, &r)| r)
         .sum();
     if sum > 0.0 {
+        let norm_denom = sum.max(f32::EPSILON);
         for (idx, r) in ctx.ranks[..n].iter_mut().enumerate() {
             if !deleted_nodes.contains(&idx) {
-                *r /= sum;
+                *r /= norm_denom;
             } else {
                 *r = 0.0;
             }
