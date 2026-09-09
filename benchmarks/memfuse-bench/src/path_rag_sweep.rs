@@ -162,10 +162,18 @@ pub async fn run_pathrag_sweep_long_mem_eval(
         let total = suite.scenarios.len() as f64;
         metrics.push(PathRagSweepMetric {
             threshold: t,
-            recall_at_5: rec5_hits as f64 / total,
-            recall_at_10: rec10_hits as f64 / total,
-            precision_at_5: prec5_sum / total,
-            precision_at_10: prec10_sum / total,
+            recall_at_5: if total > 0.0 {
+                rec5_hits as f64 / total
+            } else {
+                0.0
+            },
+            recall_at_10: if total > 0.0 {
+                rec10_hits as f64 / total
+            } else {
+                0.0
+            },
+            precision_at_5: if total > 0.0 { prec5_sum / total } else { 0.0 },
+            precision_at_10: if total > 0.0 { prec10_sum / total } else { 0.0 },
             total_queries: suite.scenarios.len(),
         });
     }
