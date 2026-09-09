@@ -129,6 +129,22 @@ fn test_isotonic_nan_and_extreme_inputs() {
     assert!(prob_neg_inf.is_some());
 }
 
+#[test]
+fn test_isotonic_duplicate_raw_score_pooling() {
+    let mut cal = IsotonicCalibrator::new(4, 50);
+    // Duplicate raw scores with conflicting outcomes
+    cal.record_outcome(0.5, true);
+    cal.record_outcome(0.5, false);
+    cal.record_outcome(0.5, true);
+    cal.record_outcome(0.5, false);
+
+    // Warmup reached (4 obs)
+    assert!(cal.is_calibrated());
+    let prob = cal.calibrated_probability(0.5).unwrap();
+    // Pre-aggregation merges all four score 0.5 obs into 1 block with avg 0.5
+    assert!((prob - 0.5).abs() < 1e-5, "Expected 0.5, got {prob}");
+}
+
 // ============================================================================
 // 2. PLATT SCALER TESTS
 // ============================================================================
@@ -233,6 +249,25 @@ fn test_pid_controller_min_max_clamping() {
 
     let max_clamped = pid.update(100, 0.0);
     assert_eq!(max_clamped, 50);
+}
+
+#[test]
+fn test_pid_controller_non_finite_latency_safety() {
+    let mut pid = PidController::default();
+    let initial_pool = 100;
+    let pool_before = pid.update(initial_pool, 200.0);
+
+    // Pass NaN latency
+    let pool_nan = pid.update(pool_before, f32::NAN);
+    assert_eq!(pool_nan, pool_before);
+
+    // Pass Infinity latency
+    let pool_inf = pid.update(pool_before, f32::INFINITY);
+    assert_eq!(pool_inf, pool_before);
+
+    // Subsequent normal measurement should function normally without state corruption
+    let pool_normal = pid.update(pool_before, 300.0);
+    assert!(pool_normal < pool_before);
 }
 
 // ============================================================================

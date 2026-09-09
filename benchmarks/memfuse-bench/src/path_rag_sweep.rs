@@ -173,6 +173,31 @@ pub async fn run_pathrag_sweep_long_mem_eval(
     Ok(metrics)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pad_vector_various_dimensions() {
+        // 1. Target dim larger than input
+        let input = vec![1.0, 2.0, 3.0];
+        let padded = pad_vector(&input, 5);
+        assert_eq!(padded, vec![1.0, 2.0, 3.0, 0.0, 0.0]);
+
+        // 2. Target dim equal to input
+        let padded_equal = pad_vector(&input, 3);
+        assert_eq!(padded_equal, vec![1.0, 2.0, 3.0]);
+
+        // 3. Target dim smaller than input (truncated)
+        let padded_trunc = pad_vector(&input, 2);
+        assert_eq!(padded_trunc, vec![1.0, 2.0]);
+
+        // 4. Empty input
+        let padded_empty = pad_vector(&[], 4);
+        assert_eq!(padded_empty, vec![0.0, 0.0, 0.0, 0.0]);
+    }
+}
+
 pub async fn run_pathrag_sweep_locomo(
     locomo_dataset_path: &Path,
     thresholds: &[f64],

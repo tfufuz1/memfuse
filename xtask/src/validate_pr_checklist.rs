@@ -415,14 +415,12 @@ fn check_silent_io_in_diff(diff: &str) -> Vec<String> {
     for line in diff.lines() {
         if line.starts_with("diff --git") {
             current_file = line.split(" b/").last().unwrap_or("").to_string();
-        } else if line.starts_with('+') && !line.starts_with("+++") {
-            if re.is_match(line) {
-                violations.push(format!(
-                    "  {}: {}",
-                    current_file,
-                    line.trim_start_matches('+').trim()
-                ));
-            }
+        } else if line.starts_with('+') && !line.starts_with("+++") && re.is_match(line) {
+            violations.push(format!(
+                "  {}: {}",
+                current_file,
+                line.trim_start_matches('+').trim()
+            ));
         }
     }
 

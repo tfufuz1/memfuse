@@ -45,7 +45,7 @@
 -   Agents must NEVER self-assess a status as "green" without CI proof.
 
 ### 4. Tag-Taxonomie (Inline-Kommentar-System)
-Die kanonische Definition aller Tag-Typen (`AI-TAG`, `ANCHOR`, `REVIEW-PASS`, `FILE-CONTEXT`) sowie des Zeitstempel-, SESSION-Token- und ID-Schemas befindet sich ausnahmslos in [`rules/tag_taxonomy.md`](rules/tag_taxonomy.md).
+Verbindliche, kanonische Definition aller Tag-Typen (`AI-TAG`, `ANCHOR`, `REVIEW-PASS`, `FILE-CONTEXT`), ihrer Pflichtfelder (`TS:`, `SESSION:`, `ID:`) und CI-Gates siehe `rules/tag_taxonomy.md`.
 
 ### 5. Exit Criteria (Definition of Done)
 A code change is complete when:

@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Tenant-isolierter KV-Segment-Store (INV-TENANT Isolation).
-// STAND: TS:2026-09-08T00:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
 
 use ahash::AHashMap;
 use memfuse_core::TenantId;
@@ -128,7 +128,7 @@ impl TenantIsolatedKvStore {
             for (tenant, segs) in map.iter() {
                 for (idx, seg) in segs.iter().enumerate() {
                     let acc = seg.last_accessed();
-                    if oldest_time.map_or(true, |t| acc < t) {
+                    if oldest_time.is_none_or(|t| acc < t) {
                         lru_tenant = Some(*tenant);
                         lru_idx = idx;
                         oldest_time = Some(acc);
@@ -150,7 +150,7 @@ impl TenantIsolatedKvStore {
                         // Avoid holding the mutable reference while removing
                     }
                 }
-                if map.get(&tenant).map_or(false, |s| s.is_empty()) {
+                if map.get(&tenant).is_some_and(|s| s.is_empty()) {
                     map.remove(&tenant);
                 }
             } else {
