@@ -9036,6 +9036,38 @@
     "hash": "fffd93024004b9f3"
   },
   {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "0cb9481c23d8c1e4"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "5271ee621632e71b"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "6a31e5dcfcdc79f7"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "9230a853c7023d59"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "a92b3a68cee95701"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "b541f779ca5c1b79"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "dbd4f1b2c1541a6b"
+  },
+  {
+    "file": "crates/memfuse-index/benches/nucleation_recall_bench.rs",
+    "hash": "ebaeaf878ba00ead"
+  },
+  {
     "file": "crates/memfuse-index/benches/sq8_bench.rs",
     "hash": "02813dae7d358391"
   },
@@ -10638,6 +10670,70 @@
   {
     "file": "crates/memfuse-index/tests/nucleation_recall.rs",
     "hash": "fe665b0cace80ad0"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "0a38b86b4ece910e"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "146e59646a07c5d2"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "179d358f97cec72d"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "1830b33c05745d86"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "21198293f544933d"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "3a4e89a6b4cb89b7"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "5cfbc73d8c004400"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "704769652f3b0554"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "914ad53305d942cd"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "c02f6bbfaf48caf4"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "cde39a037724c1e4"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "d67513c8716f9071"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "dd0a0fa5b6a61b84"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "e156b2a06fc5a037"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "e86b7226523b5b2b"
+  },
+  {
+    "file": "crates/memfuse-index/tests/nucleation_recall_regression.rs",
+    "hash": "edb0e2d86dbf4221"
   },
   {
     "file": "crates/memfuse-index/tests/poisoning.rs",
