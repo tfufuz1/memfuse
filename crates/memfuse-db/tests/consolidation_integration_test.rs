@@ -133,22 +133,25 @@ async fn test_execute_sleep_cycle_with_synthesis_pass() {
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
     let collection = db.collection("synthesis_test").await.unwrap();
 
-    let emb_a = vec![1.0, 0.0, 0.0, 0.0];
     let mut turns = Vec::new();
 
     // Insert 5 turns into collection and build a graph cluster among them
     for i in 1..=5 {
         let doc_id_str = format!("turn_{}", i);
+        let mut emb = vec![1.0, 0.5 * (i as f32), 0.0, 0.0];
+        let norm = (emb[0] * emb[0] + emb[1] * emb[1]).sqrt();
+        emb[0] /= norm;
+        emb[1] /= norm;
         collection
             .insert(
                 &doc_id_str,
-                &emb_a,
+                &emb,
                 Some(serde_json::json!({ "text": format!("Memory content {}", i) })),
             )
             .await
             .unwrap();
         let doc_id = DocId::from_key(&doc_id_str).unwrap();
-        turns.push((doc_id, emb_a.clone()));
+        turns.push((doc_id, emb));
     }
 
     // Connect nodes into a graph cluster
@@ -167,7 +170,7 @@ async fn test_execute_sleep_cycle_with_synthesis_pass() {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
         segment_cohesion_threshold: 0.70,
-        near_duplicate_cosine_threshold: 0.99, // high so turns aren't tombstoned in consolidation pass
+        near_duplicate_cosine_threshold: 1.0, // high so turns aren't tombstoned in consolidation pass
     };
 
     let synthesis_config = SynthesisConfig {
