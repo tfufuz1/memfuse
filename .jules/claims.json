@@ -34,6 +34,13 @@
       "timestamp": "2026-09-09T14:50:26.226246210+00:00",
       "session_id": "17893647405335683469",
       "active": true
+    },
+    {
+      "krate": "memfuse-py",
+      "issue": "JULES-20260909-IMPL",
+      "timestamp": "2026-09-09T15:51:40.215707762+00:00",
+      "session_id": "16205500207790629477",
+      "active": true
     }
   ]
 }
