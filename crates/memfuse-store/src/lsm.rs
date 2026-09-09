@@ -1183,10 +1183,10 @@ impl StorageEngine for LsmStorage {
 
             let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
             let seq = self.next_seq_no.load(Ordering::Relaxed);
-            let sst_path = self
-                .config
-                .path
-                .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
+            let sst_path =
+                self.config
+                    .path
+                    .join(format!("sst-{:020}-{:06}.sst", seq, count % 1_000_000));
 
             // ── Phase 3: Expensive I/O & Atomic Transition ──────────────────────────
             let phase3_res: Result<()> = async {
