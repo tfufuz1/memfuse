@@ -71,11 +71,7 @@ pub fn apply_resonance_bonus(
         })
         .collect();
 
-    results.sort_by(|a, b| {
-        b.score
-            .total_cmp(&a.score)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
 
     results
 }
@@ -1449,7 +1445,11 @@ mod tests {
                 id: "doc_three_signals_high".to_string(),
                 score: 0.8,
                 metadata: None,
-                matched_signals: vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
+                matched_signals: vec![
+                    "vector".to_string(),
+                    "text".to_string(),
+                    "graph".to_string(),
+                ],
                 provenance: None,
             },
             SearchResult {
@@ -1463,7 +1463,12 @@ mod tests {
                 id: "doc_all_signals".to_string(),
                 score: 0.4,
                 metadata: None,
-                matched_signals: vec!["vector".to_string(), "text".to_string(), "graph".to_string(), "custom".to_string()],
+                matched_signals: vec![
+                    "vector".to_string(),
+                    "text".to_string(),
+                    "graph".to_string(),
+                    "custom".to_string(),
+                ],
                 provenance: None,
             },
         ];
@@ -1497,10 +1502,8 @@ mod tests {
         );
 
         // Verify exact boosted score calculations
-        let score_map: std::collections::HashMap<&str, f32> = boosted
-            .iter()
-            .map(|r| (r.id.as_str(), r.score))
-            .collect();
+        let score_map: std::collections::HashMap<&str, f32> =
+            boosted.iter().map(|r| (r.id.as_str(), r.score)).collect();
 
         assert!((score_map["doc_three_signals_high"] - 1.0078461).abs() < 1e-5);
         assert!((score_map["doc_two_signals_mid"] - 0.606066).abs() < 1e-5);
