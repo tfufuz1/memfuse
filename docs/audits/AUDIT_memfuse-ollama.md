@@ -194,3 +194,23 @@ test result: ok. 54 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fin
 
 ### 5. Domänen-Risiko-Analyse (ML-Scoring / Kalibrierung)
 - **APM-22 (Score-Konfidenz) & APM-24 (Provenienzverlust):** `score_importance` gibt einen punktuellen float-Wert zurück. Tag `AGT-OLLAMA-14c0c140` in `importance.rs` dokumentiert die Empfehlung zur Erweiterung um Konfidenz- und Modell-Metadaten.
+
+---
+
+## 15. Audit-Update: 2026-09-09
+
+**Session:** `991a304e` | **Timestamp:** `2026-09-09T15:46:22Z`
+
+### 1. Inventar-Realitätsabgleich
+- Quellcode-Inventar (6 Dateien): `client.rs`, `context_prefixer.rs`, `embedding.rs`, `importance.rs`, `lib.rs`, `model_info.rs`.
+- Inventarabgleich mit Prompter-Momentaufnahme (Stand 2026-09-08) ergab **keine Abweichungen**.
+
+### 2. Security & Prompt-Injection Audit
+- **XML-Escaping (`xml_escape`):** Escapet zuverlässig alle 5 XML-Sonderzeichen (`<`, `>`, `&`, `"`, `'`).
+- **Prompt-Isolierung (`build_rag_prompt`):** Konsequente strukturelle Kapselung von Systemkontext, Instruktionen, RAG-Kontext und Nutzeranfrage in XML-Tags (`<system>`, `<instructions>`, `<context>`, `<user_query>`).
+- **HTTP-Timeout & Resilienz:** Konfigurierte Timeouts (`request_timeout`, `connect_timeout`) und Retry-Backoff für netzwerkbasierte Fehler (5xx / Connection Refused).
+- **NDJSON Stream Parsing:** Split-Chunk-Handling in `chat_with_rag_streaming` schützt vor Deserialisierungsfehlern bei segmentierten TCP-Paketen.
+
+### 3. Test-Suitergebnisse
+- 75 Unit- & Integrationstests in `memfuse-ollama` erfolgreich bestanden (0 FAILED).
+- Workspace-Kompilierbarkeit und DAG-Integrität bestätigt.

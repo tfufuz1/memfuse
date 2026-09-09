@@ -17,7 +17,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-09-09T15:40:26Z (SESSION: 9a78b5c9)
 // ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
 // INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()

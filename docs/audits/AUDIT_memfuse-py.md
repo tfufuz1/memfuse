@@ -1,7 +1,7 @@
 # Audit-Report: `memfuse-py` (Layer 3 — Python PyO3 Bindings)
 
-**Datum/Zeit:** 2026-09-09T15:57:24Z
-**Session:** `64f05109`
+**Datum/Zeit:** 2026-09-09T13:30:00Z
+**Session:** `5665b844`
 **Crate:** `memfuse-py`
 **Rolle:** Senior Rust FFI-Engineer — PyO3, GIL, Zero-Panic-Boundary
 
@@ -114,3 +114,15 @@ The current audit verified:
    - Added `test_empty_collection_name_and_query_validation` testing `MemFuseValueError` raising behavior on empty collection names and empty hybrid search queries.
 3. **`crates/memfuse-py/tests/test_bindings.py` & `crates/memfuse-py/AGENTS.md`**:
    - Annotated `test_open_and_close` and `test_hybrid_search` with `ANCHOR[TEST:PY-001]` and `ANCHOR[TEST:PY-002]` tags updating review status to `IN-PROGRESS (REVIEW-PASS 1/2)`.
+
+### Changes Implemented in Session `5665b844` (TS:2026-09-09T13:30:00Z)
+
+1. **`crates/memfuse-crypto`**:
+   - Fixed `TenantId` compilation error by replacing `tenant.as_u64()` with `tenant.inner()` in `store.rs` and removed unused `parking_lot::RwLock` import in `eviction_worker.rs`.
+2. **`crates/memfuse-py/src/lib.rs`**:
+   - Added `test_validate_id_obj_numeric_bounds` testing `validate_id_obj` for negative integers, `u64::MAX` bounds, and type mismatch errors.
+   - Added `test_memfuse_err_conflict_and_sandbox` testing PyErr mapping for `MemFuseError::Conflict` -> `PyRuntimeError` and `MemFuseError::Sandbox` -> `PyPermissionError`.
+3. **`crates/memfuse-py/tests/test_errors.py` & `crates/memfuse-py/tests/test_bindings.py`**:
+   - Added `test_batch_size_limit_validation` testing empty batch and `MAX_BATCH_SIZE` limit enforcement.
+   - Added `test_metadata_depythonize_failure` testing serialization error handling on invalid Python dict payloads.
+   - Added `test_context_manager_protocol` testing context manager `__enter__` and `__exit__` error propagation semantics.

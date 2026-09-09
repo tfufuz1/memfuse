@@ -1053,6 +1053,10 @@
   },
   {
     "file": "crates/memfuse-candle/src/gasp.rs",
+    "hash": "2f7d988ff458b837"
+  },
+  {
+    "file": "crates/memfuse-candle/src/gasp.rs",
     "hash": "4df3a2df5fdb8144"
   },
   {
@@ -3029,7 +3033,7 @@
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",
-    "hash": "5bf7eada6d89c49f"
+    "hash": "5c568223ba910b2c"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_segment/eviction_worker.rs",

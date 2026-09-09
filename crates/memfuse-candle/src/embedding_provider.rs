@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T00:00:00Z (SESSION: CANDLE-EMBEDDING-PROVIDER)
+// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
 // ZWECK: Trait-based EmbeddingProvider implementation for CandleEmbedClient.
 // INVARIANTEN: No block-on in async context; spawn_blocking for CPU inference; embedding_dim strictly matches model dimension.
 

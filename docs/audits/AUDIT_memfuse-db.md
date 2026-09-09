@@ -368,3 +368,16 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 - [x] `cargo check --workspace --exclude memfuse-tauri` → 0 Fehler
 - [x] Step 0 Inventar-Realitätsabgleich durchgeführt (27 src Dateien verifiziert)
 - [x] Inline `AI-TAG`s mit ISO-8601 UTC Zeitstempel und Hash-IDs angelegt
+
+---
+
+## 13. Feature Flag Forwarding Fix (2026-09-09)
+
+**Datum:** 09. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: 2c31404a)
+**Aktion:** Behebung von `AGT-DB-897f3a5c` in `crates/memfuse-db/Cargo.toml`
+
+### Befund & Maßnahme:
+- **Befund:** Feature-Flag `edge-reinforcement-learning = []` in `memfuse-db/Cargo.toml` leitete das Feature nicht an `memfuse-graph/edge-reinforcement-learning` weiter. Dadurch führte `cargo check -p memfuse-db --all-features` zu Kompilierungsfehlern bezüglich fehlender Typen aus `memfuse_graph::edge_reinforcement`.
+- **Fix:** `edge-reinforcement-learning = ["memfuse-graph/edge-reinforcement-learning"]` in `crates/memfuse-db/Cargo.toml` konfiguriert und Tag `AGT-DB-897f3a5c` als RESOLVED markiert.
+- **Verifikation:** `cargo check -p memfuse-db --all-features` kompiliert fehlerfrei.
