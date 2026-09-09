@@ -86,7 +86,10 @@ impl LayerCleanupProof {
         F: FnOnce() -> Result<bool>,
     {
         if verification()? {
-            Ok(Self::unchecked_new(layer))
+            Ok(Self {
+                layer,
+                _private: (),
+            })
         } else {
             Err(MemFuseError::Internal(format!(
                 "INV-DELETION-1 violation: physical cleanup verification \
