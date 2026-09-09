@@ -1053,6 +1053,10 @@
   },
   {
     "file": "crates/memfuse-candle/src/gasp.rs",
+    "hash": "2f7d988ff458b837"
+  },
+  {
+    "file": "crates/memfuse-candle/src/gasp.rs",
     "hash": "4df3a2df5fdb8144"
   },
   {
