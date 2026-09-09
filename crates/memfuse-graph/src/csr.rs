@@ -651,6 +651,7 @@ impl CsrGraph {
         self.inner.read()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_write(&self) -> parking_lot::RwLockWriteGuard<'_, GraphInner> {
         self.inner.write()
     }
@@ -692,6 +693,7 @@ impl CsrGraph {
 
     /// Atomically tombstones a list of edges with WAL sequence provenance (INV-GRAPH-PROV-1),
     /// returning newly tombstoned edges and affected node IDs.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn tombstone_edges_direct(
         &self,
         edges: &[(EntityId, EntityId)],
@@ -2422,24 +2424,22 @@ impl crate::path_rag::PathGraph for CsrGraph {
                 let start_edge = inner.offsets[u_idx];
                 let end_edge = inner.offsets[u_idx + 1];
                 for edge_idx in start_edge..end_edge {
-                    if inner.targets[edge_idx] == target_idx {
-                        if !inner.tombstoned_edges.contains(&(u_idx, target_idx)) {
-                            if seen.insert(u_id) {
-                                result.push((u_id, inner.weights[edge_idx]));
-                            }
-                        }
+                    if inner.targets[edge_idx] == target_idx
+                        && !inner.tombstoned_edges.contains(&(u_idx, target_idx))
+                        && seen.insert(u_id)
+                    {
+                        result.push((u_id, inner.weights[edge_idx]));
                     }
                 }
             }
 
             if let Some(pending) = inner.pending_edges.get(&u_idx) {
                 for edge in pending {
-                    if edge.target == target_idx {
-                        if !inner.tombstoned_edges.contains(&(u_idx, target_idx)) {
-                            if seen.insert(u_id) {
-                                result.push((u_id, edge.weight));
-                            }
-                        }
+                    if edge.target == target_idx
+                        && !inner.tombstoned_edges.contains(&(u_idx, target_idx))
+                        && seen.insert(u_id)
+                    {
+                        result.push((u_id, edge.weight));
                     }
                 }
             }
@@ -2449,7 +2449,7 @@ impl crate::path_rag::PathGraph for CsrGraph {
     }
 }
 
-impl<'a> crate::path_rag::PathGraph for &'a CsrGraph {
+impl crate::path_rag::PathGraph for &CsrGraph {
     fn neighbors_with_weights(&self, node: EntityId) -> Vec<(EntityId, f32)> {
         (*self).neighbors_with_weights(node)
     }

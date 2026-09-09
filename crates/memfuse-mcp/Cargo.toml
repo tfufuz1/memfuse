@@ -13,7 +13,7 @@ test-utils = ["memfuse-core/test-utils"]
 [dependencies]
 memfuse-db = { workspace = true }
 memfuse-core = { workspace = true }
-memfuse-crypto = { workspace = true }
+memfuse-security = { workspace = true }
 memfuse-ollama = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
 memfuse-agent = { workspace = true, optional = true }

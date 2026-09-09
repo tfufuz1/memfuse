@@ -7,7 +7,7 @@
 //! d) Extract Block 3 from WAL A and insert into WAL B (Cross-file Replay)
 
 use memfuse_core::{MemFuseError, TxId};
-use memfuse_crypto::crypto::KeyManager;
+use memfuse_security::crypto::KeyManager;
 use memfuse_store::wal::{Wal, WalOp, WAL_V3_HEADER};
 use std::sync::Arc;
 use tempfile::tempdir;
