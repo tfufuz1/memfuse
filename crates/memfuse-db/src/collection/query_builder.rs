@@ -489,6 +489,8 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
 
         #[cfg(feature = "reranking")]
         if let Some(reranker) = self.reranker {
+            // RESOLVED: AGT-DB-8ddf8937 (TS: 2026-09-10T00:00:00Z SESSION: 8ddf8937)
+            // Explicitly bind query text for Cross-Encoder reranking
             let text_str = self.text.as_deref().unwrap_or("");
             if !results.is_empty() && !text_str.is_empty() {
                 let _current_pool = results.len();
