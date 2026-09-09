@@ -305,3 +305,27 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 
 ---
 *Audit abgeschlossen und verifiziert für `crates/memfuse-index`.*
+
+---
+
+## 17. Audit-Update — Test-Coverage-Ausbau & Edge-Case-Verifikation (2026-09-09T14:50:00Z, SESSION: 92d7bb7d)
+
+### 17.1 Inventar- & Realitätsabgleich (Schritt 0)
+- **Kommando:** `find crates/memfuse-index/src -name "*.rs" | sort`
+- **Gefundene Dateien (7):** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `partial_rebuild.rs`, `persistence.rs`, `quantize.rs`.
+- **Inventar-Status:** **Inventar-Drift erfasst und dokumentiert**. `partial_rebuild.rs` ist im Quellcode vorhanden und ersetzt `nucleation.rs` aus dem Snapshot vom 2026-09-08.
+
+### 17.2 Durchgeführte Test-Erweiterungen & Verifizierungen
+1. **`partial_rebuild.rs` Edge Cases:**
+   - `test_partial_rebuild_zero_window_size`: Verifiziert, dass ein Traversal-Window von 0 Traversal-Einträge ignoriert und nicht panikt.
+   - `test_partial_rebuild_empty_traversals_and_zero_tombstones`: Verifiziert das Verhalten bei leeren Traversierungen sowie einer Tombstone-Map ohne Tombstones.
+   - `test_partial_rebuild_ring_buffer_eviction`: Verifiziert die korrekte Eviction der ältesten Traversierungseinträge im Ringpuffer, sobald `traversal_window` überschritten wird.
+2. **Quality & Gate Checks:**
+   - `cargo test -p memfuse-index --lib`: 90/90 Tests grün.
+   - `cargo check -p memfuse-index --all-features`: 0 Fehler, 0 Warnungen.
+   - `cargo clippy -p memfuse-index --all-features --no-deps -- -D warnings`: 0 Findings.
+   - `cargo fmt --check -p memfuse-index`: 0 Diffs.
+   - `cargo run -p xtask -- jules-preflight --fast`: PASSED.
+
+### 17.3 Verdict
+**VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Safety- und Test-Invarianten.
