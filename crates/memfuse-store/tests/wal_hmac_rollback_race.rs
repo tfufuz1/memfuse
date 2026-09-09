@@ -1,5 +1,4 @@
 #![cfg(feature = "fault-injection")]
-
 // FILE-CONTEXT: Integration test verifying concurrent commit lock serialization during WAL HMAC rollback. (TS: 2026-09-08) (SESSION: b448084)
 //! Integration test for WAL HMAC rollback concurrency and lock serialization.
 //!
@@ -28,7 +27,11 @@ async fn test_concurrent_commit_during_wal_rollback_preserves_hmac_chain() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config).await.expect("LsmStorage creation failed"));
+    let storage = Arc::new(
+        LsmStorage::new(config)
+            .await
+            .expect("LsmStorage creation failed"),
+    );
 
     // 1. Initial setup: commit tx0 to establish baseline HMAC chain and state
     let tx0 = TxId::new(1);
@@ -89,7 +92,10 @@ async fn test_concurrent_commit_during_wal_rollback_preserves_hmac_chain() {
     );
 
     // b) Verify Key-Value state: successful_key is present, failing_key is absent
-    let val_failing = storage.get(b"failing_key").await.expect("get failing_key failed");
+    let val_failing = storage
+        .get(b"failing_key")
+        .await
+        .expect("get failing_key failed");
     assert_eq!(
         val_failing, None,
         "Failing transaction key must be completely rolled back"
@@ -116,10 +122,7 @@ async fn test_concurrent_commit_during_wal_rollback_preserves_hmac_chain() {
     );
 
     // c) Verify WAL replay integrity: replaying the log must succeed with a valid HMAC chain
-    let replay_entries = storage
-        .scan_prefix(b"")
-        .await
-        .expect("scan_prefix failed");
+    let replay_entries = storage.scan_prefix(b"").await.expect("scan_prefix failed");
     assert_eq!(
         replay_entries.len(),
         2,
