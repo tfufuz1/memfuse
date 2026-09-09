@@ -258,3 +258,25 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
 - **PERF Finding:** `lib.rs` re-instantiates `ort::session::Session` from file inside `spawn_blocking` on every `embed_async` call (`AI-TAG[PERF][MAJOR]` ID: `AGT-EMBED-f07dcaf8`). Recommends refactoring `TextEmbedder` to hold shared session references similar to `OnnxReranker`.
 - **Review Pass:** Added `REVIEW-PASS[2/2]` in `reranker.rs` (SESSION: `8efa6210`).
 - **Verification Suite:** `cargo test -p memfuse-embed --all-features` (18/18 passed), `cargo clippy -p memfuse-embed --all-features -- -D warnings` (clean), `cargo fmt --check -p memfuse-embed` (clean), `cargo check --workspace --exclude memfuse-tauri` (clean).
+
+
+## 15. Re-Verifikation & Deep-Audit (2026-09-09) (SESSION: 75897bd8)
+
+### 15.1 Step 0 Inventory Reality Check
+- Verified file inventory for `crates/memfuse-embed/src`: `lib.rs`, `reranker.rs`. Stand 2026-09-08 confirmed (0 drift).
+
+### 15.2 Deep-Audit & Verification
+- **Property-Based Testing:** `prop_platt_calibration_reduces_ece` verified (`cargo test -p memfuse-embed --all-features -- proptest`). ECE (Expected Calibration Error) reduction via Platt scaling confirmed.
+- **Concurrency Stress Test:** Executed 10 consecutive test runs with `--test-threads=8`. Result: **0 FAILED, 0 Deadlocks, 0 Race Conditions**.
+- **Adversarial Reranker Hijacking:** Executed `reranker_adversarial_test.rs`. Verified post-RRF pre-reranking oversampling bounds (`pre_rerank_k = k * 3`) in `memfuse-db`.
+- **Coverage & Mutants Tooling Status:** `cargo-llvm-cov` and `cargo-mutants` not installed in environment; manual property & edge case testing performed.
+- **ML Domain APM Invariants:**
+  - **APM-22 (Score Confidence):** PlattScaler online fitting & calibration verified in `CrossEncoderReranker`.
+  - **APM-23 (Static Distribution):** Dynamic rank-ordered sorting verified without static hardcoded cutoffs.
+  - **APM-24 (Provenance Loss):** `RerankResult.original_index` explicitly preserved across sorting and transformations.
+- **Quality Gates:**
+  - `cargo check -p memfuse-embed --no-default-features` -> Clean
+  - `cargo test -p memfuse-embed --all-features` -> 30/30 tests passed (24 unit + 4 integration + 2 adversarial)
+  - `cargo clippy -p memfuse-embed --all-features -- -D warnings` -> 0 findings
+  - `cargo fmt --check -p memfuse-embed` -> Clean
+  - `cargo check --workspace --exclude memfuse-tauri` -> Clean

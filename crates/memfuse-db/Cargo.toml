@@ -49,6 +49,10 @@ replicator-dynamics-weights = ["memfuse-calibration/replicator-dynamics-weights"
 coherence-bonus-fusion = []
 adaptive-candidate-pool-sizing = []
 volatile-vault = []
+# AI-TAG[SMELL][MAJOR] Feature-Flag forwarding mismatch for edge-reinforcement-learning (ID: AGT-DB-897f3a5c) (TS: 2026-09-09T12:43:24Z) (SESSION: 82e80d01)
+# BEFUND: edge-reinforcement-learning ist in memfuse-db/Cargo.toml als empty list [] definiert anstelle von ["memfuse-graph/edge-reinforcement-learning"].
+# RISIKO: cargo check -p memfuse-db --all-features schlägt fehl mit ungebundenen Typen aus memfuse_graph::edge_reinforcement.
+# EMPFEHLUNG: In Cargo.toml edge-reinforcement-learning = ["memfuse-graph/edge-reinforcement-learning"] konfigurieren.
 edge-reinforcement-learning = []
 
 [[bench]]

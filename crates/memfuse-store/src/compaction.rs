@@ -28,7 +28,7 @@
 
 use crate::sstable::{BlockCache, SstableBuilder, SstableReader};
 use memfuse_core::{Result, SnapshotRegistry, TOMBSTONE_BIT};
-use memfuse_crypto::crypto::KeyManager;
+use memfuse_security::crypto::KeyManager;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

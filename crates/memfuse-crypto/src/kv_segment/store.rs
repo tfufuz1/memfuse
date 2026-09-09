@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use memfuse_core::TenantId;
 use parking_lot::RwLock;
 
-use crate::segment::KvSegment;
+use super::segment::KvSegment;
 
 /// Tenant-isolierter KV-Segment-Store.
 ///
@@ -34,13 +34,13 @@ impl TenantIsolatedKvStore {
     #[cfg(feature = "kv-encryption")]
     pub fn insert_encrypted_segment(
         &self,
-        cipher: &memfuse_crypto::KvSegmentCipher,
+        cipher: &crate::KvSegmentCipher,
         tenant: TenantId,
         segment_id: u64,
-        model_fingerprint: memfuse_crypto::ModelFingerprint,
+        model_fingerprint: crate::ModelFingerprint,
         rope_offset: Option<usize>,
         plaintext: &[u8],
-    ) -> Result<(), memfuse_crypto::CryptoError> {
+    ) -> Result<(), crate::CryptoError> {
         let segment = KvSegment::new_encrypted(
             cipher,
             tenant,
@@ -74,10 +74,10 @@ impl TenantIsolatedKvStore {
     #[cfg(feature = "kv-encryption")]
     pub fn get_decrypted_segment(
         &self,
-        cipher: &memfuse_crypto::KvSegmentCipher,
+        cipher: &crate::KvSegmentCipher,
         tenant: TenantId,
         segment_id: u64,
-    ) -> Result<Option<Vec<u8>>, memfuse_crypto::CryptoError> {
+    ) -> Result<Option<Vec<u8>>, crate::CryptoError> {
         let map = self.segments.read();
         if let Some(list) = map.get(&tenant) {
             if let Some(seg) = list.iter().find(|s| s.segment_id == segment_id) {
