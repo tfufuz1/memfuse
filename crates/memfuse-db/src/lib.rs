@@ -804,6 +804,11 @@ impl MemFuse {
 
         self.storage.commit(tx).await?;
 
+        // INV-DELETION-1: Verifiziere physische Leere DURCH RE-SCAN, bevor ein
+        // LayerCleanupProof für die betroffenen Layer konstruiert wird.
+        let remaining_col_data = self.storage.scan_prefix(col_data_prefix.as_bytes()).await?;
+        let remaining_txt_data = self.storage.scan_prefix(txt_data_prefix.as_bytes()).await?;
+
         // 3c. NACH erfolgreichem commit: DeletionProof erzeugen
         let mut hasher = blake3::Hasher::new();
         hasher.update(name.as_bytes());
@@ -817,27 +822,30 @@ impl MemFuse {
             tenant_id,
         };
 
-        // 3c. Post-condition verification for physical cleanup: query storage after commit
-        // Bekannte Grenze: LsmMemtable und SsTableAllLevels teilen sich dieselbe kombinierte Verifikation,
-        // da scan_prefix über beide Storage-Ebenen hinweg merged.
-        let col_entries_after = self.storage.scan_prefix(col_data_prefix.as_bytes()).await?;
-        let txt_entries_after = self.storage.scan_prefix(txt_data_prefix.as_bytes()).await?;
-
-        let lsm_memtable_proof = LayerCleanupProof::verify_and_create(
-            DeletionLayer::LsmMemtable,
-            || Ok(col_entries_after.is_empty() && txt_entries_after.is_empty()),
-        )?;
-
-        let sstable_proof = LayerCleanupProof::verify_and_create(
-            DeletionLayer::SsTableAllLevels,
-            || Ok(col_entries_after.is_empty() && txt_entries_after.is_empty()),
-        )?;
+        let layer_proofs = vec![
+            LayerCleanupProof::new_after_verified_empty(
+                DeletionLayer::LsmMemtable,
+                remaining_col_data.len(),
+            ),
+            LayerCleanupProof::new_after_verified_empty(
+                DeletionLayer::SsTableAllLevels,
+                remaining_txt_data.len(),
+            ),
+        ]
+        .into_iter()
+        .collect::<Result<Vec<_>>>()
+        .map_err(|e| {
+            memfuse_core::MemFuseError::Internal(format!(
+                "CRITICAL: Collection '{name}' was physically sanitized and committed at tx {}, but DeletionProof generation failed: {e}. Data is permanently deleted.",
+                tx.inner()
+            ))
+        })?;
 
         let proof = DeletionProof::create(
             scope,
             deleted_keys,
             tx,
-            vec![lsm_memtable_proof, sstable_proof],
+            layer_proofs,
             vec![],
             proof_key,
         )
