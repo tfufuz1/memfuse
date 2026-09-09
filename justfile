@@ -115,6 +115,10 @@ dag-check:
 check-vetoes:
     nix develop -c cargo xtask check-vetoes || cargo xtask check-vetoes
 
+# Checks ADR deprecation and removal deadlines
+check-adr-deadlines:
+    nix develop -c cargo xtask check-adr-deadlines || cargo xtask check-adr-deadlines
+
 # Triple-Test-Gate: Tests müssen 3x hintereinander grün sein (DONE-Definition)
 triple-test: check
     #!/usr/bin/env bash
