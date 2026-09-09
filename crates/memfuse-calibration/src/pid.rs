@@ -155,4 +155,71 @@ mod tests {
         assert_eq!(res_max, 150);
         assert_eq!(pid.current_pool_size, Some(150));
     }
+
+    #[test]
+    fn test_pid_nan_latency_preserves_state_and_returns_current_pool() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let ref_integral = pid.integral;
+        let ref_prev_error = pid.prev_error;
+        let ref_current_pool_size = pid.current_pool_size;
+        let expected_pool = ref_current_pool_size.expect("current_pool_size should be set");
+
+        let result = pid.update(999, f32::NAN);
+
+        assert_eq!(result, expected_pool);
+        assert_eq!(pid.integral, ref_integral);
+        assert_eq!(pid.prev_error, ref_prev_error);
+        assert_eq!(pid.current_pool_size, ref_current_pool_size);
+    }
+
+    #[test]
+    fn test_pid_positive_infinity_latency_preserves_state() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let ref_integral = pid.integral;
+        let ref_prev_error = pid.prev_error;
+        let ref_current_pool_size = pid.current_pool_size;
+        let expected_pool = ref_current_pool_size.expect("current_pool_size should be set");
+
+        let result = pid.update(999, f32::INFINITY);
+
+        assert_eq!(result, expected_pool);
+        assert_eq!(pid.integral, ref_integral);
+        assert_eq!(pid.prev_error, ref_prev_error);
+        assert_eq!(pid.current_pool_size, ref_current_pool_size);
+    }
+
+    #[test]
+    fn test_pid_negative_infinity_latency_preserves_state() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let ref_integral = pid.integral;
+        let ref_prev_error = pid.prev_error;
+        let ref_current_pool_size = pid.current_pool_size;
+        let expected_pool = ref_current_pool_size.expect("current_pool_size should be set");
+
+        let result = pid.update(999, f32::NEG_INFINITY);
+
+        assert_eq!(result, expected_pool);
+        assert_eq!(pid.integral, ref_integral);
+        assert_eq!(pid.prev_error, ref_prev_error);
+        assert_eq!(pid.current_pool_size, ref_current_pool_size);
+    }
+
+    #[test]
+    fn test_pid_nan_on_fresh_controller_returns_input_pool_size() {
+        let mut pid = PidController::default();
+        assert_eq!(pid.current_pool_size, None);
+
+        let result = pid.update(77, f32::NAN);
+
+        assert_eq!(result, 77);
+        assert_eq!(pid.integral, 0.0);
+        assert_eq!(pid.prev_error, 0.0);
+        assert_eq!(pid.current_pool_size, None);
+    }
 }
