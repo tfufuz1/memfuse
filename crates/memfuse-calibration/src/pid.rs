@@ -59,6 +59,9 @@ impl Default for PidController {
 
 impl PidController {
     // RESOLVED: AGT-CALIBRATION-fca75496 — validate measured_latency_ms.is_finite() at start of update() (TS: 2026-09-09T14:46:37Z) (SESSION: 74eb6216)
+    // REGRESSION TESTS: test_pid_nan_latency_returns_unchanged_pool_size, test_pid_positive_infinity_latency_returns_unchanged_pool_size,
+    //                   test_pid_negative_infinity_latency_returns_unchanged_pool_size, test_pid_state_unchanged_after_nan_input,
+    //                   test_pid_recovers_correctly_after_nan_then_valid_input, test_pid_multiple_consecutive_nan_calls_stable
     /// Verarbeitet eine neue Latenz-Messung und gibt die neue Pool-Größe zurück.
     ///
     /// ANTI-WINDUP: Integral wird auf [-max_integral, max_integral] geclipped.
@@ -242,5 +245,81 @@ mod tests {
         assert_eq!(pid.integral, 0.0);
         assert_eq!(pid.prev_error, 0.0);
         assert_eq!(pid.current_pool_size, None);
+    }
+
+    #[test]
+    fn test_pid_nan_latency_returns_unchanged_pool_size() {
+        let mut pid = PidController::default();
+        let pool_after_valid = pid.update(100, 250.0);
+        assert_ne!(pool_after_valid, 100);
+
+        // Pass a different current_pool_size (999) to verify self.current_pool_size.unwrap_or(...) is returned
+        let pool_after_nan = pid.update(999, f32::NAN);
+        assert_eq!(pool_after_nan, pool_after_valid);
+    }
+
+    #[test]
+    fn test_pid_positive_infinity_latency_returns_unchanged_pool_size() {
+        let mut pid = PidController::default();
+        let pool_after_valid = pid.update(100, 250.0);
+        assert_ne!(pool_after_valid, 100);
+
+        let pool_after_inf = pid.update(999, f32::INFINITY);
+        assert_eq!(pool_after_inf, pool_after_valid);
+    }
+
+    #[test]
+    fn test_pid_negative_infinity_latency_returns_unchanged_pool_size() {
+        let mut pid = PidController::default();
+        let pool_after_valid = pid.update(100, 250.0);
+        assert_ne!(pool_after_valid, 100);
+
+        let pool_after_neg_inf = pid.update(999, f32::NEG_INFINITY);
+        assert_eq!(pool_after_neg_inf, pool_after_valid);
+    }
+
+    #[test]
+    fn test_pid_state_unchanged_after_nan_input() {
+        let mut pid = PidController::default();
+        pid.update(100, 250.0);
+
+        let integral_before = pid.integral;
+        let prev_error_before = pid.prev_error;
+
+        pid.update(999, f32::NAN);
+
+        assert_eq!(pid.integral, integral_before);
+        assert_eq!(pid.prev_error, prev_error_before);
+    }
+
+    #[test]
+    fn test_pid_recovers_correctly_after_nan_then_valid_input() {
+        let mut pid_with_nan = PidController::default();
+        let pool_nan_1 = pid_with_nan.update(100, 250.0);
+        pid_with_nan.update(999, f32::NAN);
+        let pool_nan_3 = pid_with_nan.update(pool_nan_1, 180.0);
+
+        let mut pid_without_nan = PidController::default();
+        let pool_no_nan_1 = pid_without_nan.update(100, 250.0);
+        let pool_no_nan_2 = pid_without_nan.update(pool_no_nan_1, 180.0);
+
+        assert_eq!(pool_nan_3, pool_no_nan_2);
+        assert_eq!(pid_with_nan.integral, pid_without_nan.integral);
+        assert_eq!(pid_with_nan.prev_error, pid_without_nan.prev_error);
+    }
+
+    #[test]
+    fn test_pid_multiple_consecutive_nan_calls_stable() {
+        let mut pid = PidController::default();
+        let initial_pool = pid.update(100, 250.0);
+
+        let res1 = pid.update(999, f32::NAN);
+        let res2 = pid.update(888, f32::NAN);
+        let res3 = pid.update(777, f32::NAN);
+
+        assert_eq!(res1, initial_pool);
+        assert_eq!(res2, initial_pool);
+        assert_eq!(res3, initial_pool);
+        assert_eq!(pid.current_pool_size, Some(initial_pool));
     }
 }

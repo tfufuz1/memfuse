@@ -3,11 +3,9 @@
 // ZWECK: Deep integration, proptest, and adversarial test suite for memfuse-calibration.
 // INVARIANTEN: INV-CAL-1 (no silent fallback before warmup), INV-CAL-2 (invalidation resets observations/weights), P8 compliance.
 
-use memfuse_calibration::{
-    ConfigFingerprint, IsotonicCalibrator, PidController, PlattScaler,
-};
 #[cfg(feature = "replicator-dynamics-weights")]
 use memfuse_calibration::{record_retrieval_feedback, ReplicatorState};
+use memfuse_calibration::{ConfigFingerprint, IsotonicCalibrator, PidController, PlattScaler};
 use proptest::prelude::*;
 #[cfg(feature = "replicator-dynamics-weights")]
 use std::collections::HashMap;
