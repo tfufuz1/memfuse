@@ -15,6 +15,10 @@ use memfuse_core::{
 /// übergeben wird. Verhindert unbeabsichtigten Vollscan bei generischen Präfixen.
 pub const DEFAULT_SCAN_LIMIT: usize = 10_000;
 
+/// Harte Obergrenze für den maximal erlaubten `limit`-Parameter in scan() und scan_prefix().
+/// Verhindert unbegrenzte Materialisierung im Speicher selbst wenn explizit ein riesiges Limit angefragt wird.
+pub const HARD_SCAN_CEILING: usize = 100_000;
+
 /// Alias for backwards compatibility with earlier MAX_SCAN_RESULTS references.
 pub const MAX_SCAN_RESULTS: usize = DEFAULT_SCAN_LIMIT;
 
@@ -1009,7 +1013,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         prefix: &str,
         limit: Option<usize>,
     ) -> Result<Vec<(String, serde_json::Value)>> {
-        let effective_limit = limit.unwrap_or(DEFAULT_SCAN_LIMIT);
+        let effective_limit = limit.unwrap_or(DEFAULT_SCAN_LIMIT).min(HARD_SCAN_CEILING);
 
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -1079,7 +1083,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         end: std::ops::Bound<&[u8]>,
         limit: Option<usize>,
     ) -> Result<Vec<(String, serde_json::Value)>> {
-        let effective_limit = limit.unwrap_or(DEFAULT_SCAN_LIMIT);
+        let effective_limit = limit.unwrap_or(DEFAULT_SCAN_LIMIT).min(HARD_SCAN_CEILING);
 
         use std::ops::Bound;
 
@@ -1122,7 +1126,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Bound::Unbounded => Bound::Unbounded,
         };
 
-        let kvs = self.storage.scan(start_bytes, end_bytes).await?;
+        let kvs = self
+            .storage
+            .scan(start_bytes, end_bytes, Some(effective_limit + 1))
+            .await?;
         let mut results = Vec::new();
         for (k, v) in kvs {
             let key_str = String::from_utf8_lossy(&k).to_string();
@@ -1456,11 +1463,111 @@ mod tests {
                 .unwrap();
         }
 
-        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
-        assert_eq!(
-            scanned.len(),
-            DEFAULT_SCAN_LIMIT,
-            "scan_prefix must be capped at DEFAULT_SCAN_LIMIT (10,000)"
-        );
+        let scanned = collection.scan_prefix("pfx_", None).await;
+        assert!(matches!(
+            scanned,
+            Err(memfuse_core::MemFuseError::LimitExceeded {
+                limit: DEFAULT_SCAN_LIMIT,
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_scan_and_scan_prefix_hard_ceiling_enforcement() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let collection = Arc::new(db.collection("test_hard_ceiling").await.unwrap());
+
+        // Insert 10 items
+        for i in 0..10 {
+            collection
+                .put_kv(&format!("ceil_{i:02}"), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        // Requesting huge limit e.g. 50_000_000 must cap effective_limit at HARD_SCAN_CEILING (100_000)
+        // If dataset has 10 items (< HARD_SCAN_CEILING), scan completes returning 10 items.
+        let results_prefix = collection
+            .scan_prefix("ceil_", Some(50_000_000))
+            .await
+            .unwrap();
+        assert_eq!(results_prefix.len(), 10);
+
+        let results_range = collection
+            .scan(Bound::Unbounded, Bound::Unbounded, Some(50_000_000))
+            .await
+            .unwrap();
+        assert_eq!(results_range.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_scan_exceeding_effective_limit_returns_limit_exceeded() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_exceed_limit").await.unwrap();
+
+        let limit = 20;
+        for i in 0..(limit + 5) {
+            col.put_kv(&format!("k_{i:02}"), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        let res_prefix = col.scan_prefix("k_", Some(limit)).await;
+        assert!(matches!(
+            res_prefix,
+            Err(memfuse_core::MemFuseError::LimitExceeded { limit: 20, .. })
+        ));
+
+        let res_scan = col.scan(Bound::Unbounded, Bound::Unbounded, Some(limit)).await;
+        assert!(matches!(
+            res_scan,
+            Err(memfuse_core::MemFuseError::LimitExceeded { limit: 20, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_multi_batch_sublinear_scan_count() {
+        // Test that BATCH_SIZE=1000 iteration over M total items does not issue quadratic scans per source
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("test_sublinear").await.unwrap();
+
+        let total = 2500;
+        for i in 0..total {
+            col.put_kv(&format!("item_{:04}", i), &serde_json::json!({ "v": i }))
+                .await
+                .unwrap();
+        }
+
+        // With total = 2500 and BATCH_SIZE = 1000, requesting limit = 2500 should succeed with 3 iterations (1000, 1000, 500)
+        let results = col.scan_prefix("item_", Some(total)).await.unwrap();
+        assert_eq!(results.len(), total);
     }
 }

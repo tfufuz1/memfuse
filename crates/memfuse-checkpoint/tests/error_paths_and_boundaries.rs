@@ -101,6 +101,7 @@ impl StorageEngine for FaultyMockStorage {
         &'a self,
         _start: std::ops::Bound<&'a [u8]>,
         _end: std::ops::Bound<&'a [u8]>,
+        _: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move { Ok(Vec::new()) })
     }
