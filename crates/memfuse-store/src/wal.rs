@@ -7,8 +7,8 @@
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md ADR-002
 
 use memfuse_core::{MemFuseError, Result, TxId};
-use memfuse_crypto::crypto::KeyManager;
-use memfuse_crypto::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
+use memfuse_security::crypto::KeyManager;
+use memfuse_security::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
