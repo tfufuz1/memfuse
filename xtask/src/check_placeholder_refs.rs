@@ -105,13 +105,14 @@ pub fn check_placeholder_refs_in_content(
                         || first_word == "~";
 
                     if !is_null {
+                        let path_only = first_word.split('#').next().unwrap_or(first_word);
                         let file_exists =
-                            root.join(first_word).exists() || Path::new(first_word).exists();
+                            root.join(path_only).exists() || Path::new(path_only).exists();
                         let found_in_decisions = if !file_exists {
                             let decisions_file = root.join("DECISIONS.md");
                             if decisions_file.is_file() {
                                 if let Ok(dec_content) = fs::read_to_string(&decisions_file) {
-                                    let adr_re = Regex::new(r"ADR-(\d+)").unwrap();
+                                    let adr_re = Regex::new(r"(?i)ADR-(\d+)").unwrap();
                                     if let Some(caps) = adr_re.captures(first_word) {
                                         let pattern = format!("ADR-{}", &caps[1]);
                                         dec_content.contains(&pattern)
