@@ -17,13 +17,10 @@ pub mod gguf_loader;
 pub mod inference;
 pub mod model_registry;
 
-#[cfg(feature = "candle")]
 pub mod gasp;
 
 pub use embedding::CandleEmbedClient;
 pub use embedding_provider::MAX_CANDLE_EMBED_BATCH_SIZE;
+pub use gasp::{GaspConfig, GaspValidator, DEFAULT_GROUNDING_THRESHOLD};
 pub use inference::CandleLlmClient;
 pub use model_registry::{compute_fingerprint, CandleQuantization, ModelFingerprint};
-
-#[cfg(feature = "candle")]
-pub use gasp::{GaspConfig, GaspValidator, DEFAULT_GROUNDING_THRESHOLD};

@@ -107,11 +107,11 @@ fn test_concurrent_emergency_wipe_race() {
     let segs_ref2 = Arc::clone(&store);
 
     let handle1 = thread::spawn(move || {
-        emergency_wipe(&segs_ref1);
+        emergency_wipe(&store_ref1);
     });
 
     let handle2 = thread::spawn(move || {
-        emergency_wipe(&segs_ref2);
+        emergency_wipe(&store_ref2);
     });
 
     handle1.join().unwrap();
