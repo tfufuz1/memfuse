@@ -109,6 +109,7 @@ async fn test_collection_scan_prefix_batches_via_mock_storage() {
             &'a self,
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
+            _: Option<usize>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move { Ok(vec![]) })
         }
@@ -330,6 +331,7 @@ async fn test_relate_rollback_semantics_on_storage_commit_failure() {
             &'a self,
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
+            _: Option<usize>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move { Ok(vec![]) })
         }
@@ -443,6 +445,7 @@ async fn test_relate_rollback_semantics_on_graph_commit_failure() {
             &'a self,
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
+            _: Option<usize>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move { Ok(vec![]) })
         }
@@ -2743,6 +2746,7 @@ async fn test_put_kv_if_absent_rollback_failure_returns_conflict_error() {
             &'a self,
             _: std::ops::Bound<&'a [u8]>,
             _: std::ops::Bound<&'a [u8]>,
+            _: Option<usize>,
         ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
             Box::pin(async move { Ok(vec![]) })
         }

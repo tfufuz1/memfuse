@@ -119,7 +119,7 @@ impl LlmTextGenerator for TestLlmGenerator {
     }
 }
 
-// RESOLVED: AGT-DB-7c141164 — Updated turn embeddings to normalized distinct vectors [1.0, 0.5*i, 0, 0], resolving near-duplicate tombstoning in consolidation test (TS: 2026-09-09T20:33:05Z)
+// RESOLVED: AGT-DB-7c141164 — Updated turn embeddings to normalized distinct vectors with cosine similarity < 0.99 and > 0.5, resolving near-duplicate tombstoning in consolidation test (TS: 2026-09-09T20:33:05Z)
 #[tokio::test]
 async fn test_execute_background_consolidation_with_synthesis_pass() {
     let dir = tempdir().unwrap();
@@ -130,20 +130,25 @@ async fn test_execute_background_consolidation_with_synthesis_pass() {
     let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
     let collection = db.collection("synthesis_test").await.unwrap();
 
+    // Distinct, normalized, coherent embeddings (cosine sim < 0.99 and > 0.5)
+    let emb_a = vec![1.0, 0.0, 0.0, 0.0];
+    let emb_b = vec![0.9, 0.436, 0.0, 0.0];
+    let emb_c = vec![0.8, 0.0, 0.6, 0.0];
+    let emb_d = vec![0.7, 0.3, 0.0, 0.648];
+    let emb_e = vec![0.6, 0.0, 0.5, 0.624];
+
+    let raw_embs = [emb_a, emb_b, emb_c, emb_d, emb_e];
     let mut turns = Vec::new();
 
     // Insert 5 turns into collection and build a graph cluster among them
-    for i in 1..=5 {
-        let doc_id_str = format!("turn_{}", i);
-        let mut emb = vec![1.0, 0.5 * (i as f32), 0.0, 0.0];
-        let norm = (emb[0] * emb[0] + emb[1] * emb[1]).sqrt();
-        emb[0] /= norm;
-        emb[1] /= norm;
+    for (i, emb) in raw_embs.into_iter().enumerate() {
+        let turn_idx = i + 1;
+        let doc_id_str = format!("turn_{}", turn_idx);
         collection
             .insert(
                 &doc_id_str,
                 &emb,
-                Some(serde_json::json!({ "text": format!("Memory content {}", i) })),
+                Some(serde_json::json!({ "text": format!("Memory content {}", turn_idx) })),
             )
             .await
             .unwrap();
@@ -167,7 +172,7 @@ async fn test_execute_background_consolidation_with_synthesis_pass() {
         min_turns_per_segment: 3,
         max_turns_per_segment: 20,
         segment_cohesion_threshold: 0.70,
-        near_duplicate_cosine_threshold: 1.0, // high so turns aren't tombstoned in consolidation pass
+        near_duplicate_cosine_threshold: 0.95,
     };
 
     let synthesis_config = SynthesisConfig {
