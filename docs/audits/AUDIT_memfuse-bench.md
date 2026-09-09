@@ -90,3 +90,14 @@
 - **`main.rs`**: Safe handling in `calculate_metrics` für leere Abfragemengen (`queries.is_empty()`), um `0/0` NaN-Ergebnisse zu unterbinden; Hinzufügen des `FILE-CONTEXT` Headers.
 - **`path_rag_sweep.rs`**: Zero-Division Safety in `run_pathrag_sweep_long_mem_eval`.
 - **Unit Tests**: Umfassende Abdeckung von NaN-, Inf- und ungültigen Threshold-Eingaben in `compare_baseline_test.rs` und `long_mem_eval.rs`.
+
+---
+
+## Session-Update (PathRAG Sweep Test Coverage Expansion)
+**Stand / Zeitstempel**: `2026-09-09T19:35:00Z` (SESSION: 55e0009e)
+**Scope**: Integration & Unit Test Abdeckung `path_rag_sweep.rs` (`run_pathrag_sweep_long_mem_eval`, `run_pathrag_sweep_locomo`).
+
+### Durchgeführte Tests & Ergebnisse
+- **`external_benchmarks_test.rs`**: Ergänzung von `test_pathrag_sweep_long_mem_eval_execution` und `test_pathrag_sweep_locomo_execution` zum Testen von `run_pathrag_sweep_long_mem_eval` und `run_pathrag_sweep_locomo` mit realistischen Thresholds (`&[0.1, 0.5]`), leeren Thresholds (`&[]`), Fixture-Evaluierung sowie Fehlerfortpflanzung bei nicht existierenden Datensatzpfaden.
+- **Coverage-Ergebnis**: Zeilen-Abdeckung in `path_rag_sweep.rs` stieg von **7.38%** auf **92.21%** (Region-Coverage von **9.27%** auf **88.05%**). Gesamte Crate-Zeilenabdeckung stieg auf **76.84%**.
+- **Verifikation**: `cargo test -p memfuse-bench --all-features` (26/26 Tests grün), `cargo check --workspace --exclude memfuse-tauri` clean.

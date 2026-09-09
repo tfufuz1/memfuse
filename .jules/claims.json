@@ -43,10 +43,10 @@
       "active": true
     },
     {
-      "krate": "memfuse-db",
+      "krate": "memfuse-router",
       "issue": "JULES-20260909-DEEP",
-      "timestamp": "2026-09-09T19:19:55.400136327+00:00",
-      "session_id": "606444052072589059",
+      "timestamp": "2026-09-09T19:18:31.235542664+00:00",
+      "session_id": "16226146975018763893",
       "active": true
     }
   ]

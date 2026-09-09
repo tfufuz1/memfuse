@@ -272,3 +272,38 @@ All 5 files in `crates/memfuse-text/src/` (`bm25.rs`, `inverted.rs`, `lib.rs`, `
    - `#![forbid(unsafe_code)]` remains strictly enforced.
    - UTF-8 slicing safety (APM-7) verified across all tokenizer and compound splitter paths.
    - Zero unhandled unwraps/expects outside test code.
+
+---
+
+## Tiefen-Audit & Concurrency Verification Pass 2026-09-09 (Session 409f0cc1)
+
+**Session:** `409f0cc1` (TS: `2026-09-09T19:16:48Z`)
+**Audit-Typ:** Tier 2 Deep Audit & Concurrency Verification Pass
+**Crate:** `crates/memfuse-text`
+**Task-ID:** `JULES-20260909-DEEP`
+
+### Executive Summary & Verdict
+Full deep audit and concurrency verification pass completed for `crates/memfuse-text`. All 5 source modules (`bm25.rs`, `inverted.rs`, `lib.rs`, `morphology.rs`, `tokenizer.rs`) were evaluated against domain APMs, safety invariants, and concurrency determinism.
+
+**Verdict: GO** — Zero compiler errors or warnings, zero clippy findings, 100% test pass rate across all 79 unit/integration/property tests, and 5/5 multi-threaded concurrency stress test runs passed with 0 failures or deadlocks.
+
+### Gate-Stack & Verification Results
+1. **Inventory Alignment:** Confirmed matching file tree (`bm25.rs`, `inverted.rs`, `lib.rs`, `morphology.rs`, `tokenizer.rs`). Zero inventory drift.
+2. **Domain APM Verification:**
+   - `APM-14` (Tie-Breaker Determinism): InvertedIndex search enforces DocId ascending order on score ties.
+   - `APM-16` (NaN/Inf Propagation): RSJ BM25 IDF clamped to $10^{-6}$ with zero NaN/Inf exposure.
+   - `APM-22` (Score Confidence): Scores are raw BM25 relevance metrics for RRF fusion.
+   - `APM-23` (Stats Drift): Atomic updates on `total_docs`, `total_tokens`, `avg_doc_len_x1000`.
+   - `APM-24` (Provenance Preservation): Postings lists preserve document provenance.
+   - `APM-36` (Text Length Bounds): Enforces `MAX_TEXT_BYTES` (10 MiB) limit.
+3. **Gate-Stack Execution:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Errors, 0 Warnings**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **79 passed, 0 failed**
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Clean build**
+   - `cargo run -p xtask -- jules-preflight --fast` $\rightarrow$ **ALL GATES PASSED**
+4. **Concurrency & Property Stress:**
+   - 5/5 consecutive multi-threaded runs (`--test-threads=8`) passed cleanly.
+   - `fuzz_german_compound_splitter_utf8_panic_free_10k` (10,000 multi-byte Unicode iterations) passed without panics.
+   - KMU Compound Suite: 54/55 passed (98.2% recall, >90% requirement).

@@ -234,8 +234,9 @@ async fn test_deleted_keys_hash_is_deterministic() {
         keys_order_1,
         TxId::new(50),
         vec![
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::SsTableAllLevels, 0)
+                .unwrap(),
         ],
         vec![],
         proof_key,
@@ -247,8 +248,9 @@ async fn test_deleted_keys_hash_is_deterministic() {
         keys_order_2,
         TxId::new(50),
         vec![
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::LsmMemtable),
-            LayerCleanupProof::new_after_physical_cleanup(DeletionLayer::SsTableAllLevels),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            LayerCleanupProof::new_after_verified_empty(DeletionLayer::SsTableAllLevels, 0)
+                .unwrap(),
         ],
         vec![],
         proof_key,
@@ -266,4 +268,28 @@ async fn test_deleted_keys_hash_is_deterministic() {
 
     assert!(proof_1.verify(proof_key).unwrap());
     assert!(proof_2.verify(proof_key).unwrap());
+}
+
+/// Test 4d: Explicit integration test for drop_collection verifying physical emptiness before proof generation.
+#[tokio::test]
+async fn test_drop_collection_verifies_physical_emptiness_before_proof() {
+    let (db, _tmp) = setup_db(3).await;
+    let tenant_id = TenantId::try_new(123).unwrap();
+    let proof_key = b"emptiness-verification-test-key";
+    let col_name = "verified_empty_col";
+
+    let col = db.collection(col_name).await.expect("create col");
+    col.insert("d1", &[1.0, 0.0, 0.0], Some(json!({"data": "doc 1"})))
+        .await
+        .expect("insert d1");
+    col.insert("d2", &[0.0, 1.0, 0.0], Some(json!({"data": "doc 2"})))
+        .await
+        .expect("insert d2");
+
+    let proof = db
+        .drop_collection(col_name, tenant_id, proof_key)
+        .await
+        .expect("drop_collection should succeed when storage is verifiably empty");
+
+    assert!(proof.verify(proof_key).expect("verify signature"));
 }
