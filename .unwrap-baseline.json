@@ -1024,6 +1024,14 @@
     "hash": "9518406a375f2cba"
   },
   {
+    "file": "crates/memfuse-calibration/tests/calibration_deep_tests.rs",
+    "hash": "ca5eeb4eb134d9ab"
+  },
+  {
+    "file": "crates/memfuse-calibration/tests/calibration_deep_tests.rs",
+    "hash": "f6232589b327df8d"
+  },
+  {
     "file": "crates/memfuse-candle/src/embedding.rs",
     "hash": "11f00c02aad47158"
   },
