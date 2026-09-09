@@ -1758,7 +1758,8 @@ impl GraphIndex for CsrGraph {
                     business_valid_to: edge.business_valid_to,
                     source_doc_id: edge.source_doc_id,
                 };
-                self.persist_edge(storage.as_ref(), tx, &edge.from, &edge.to, &payload).await?;
+                self.persist_edge(storage.as_ref(), tx, &edge.from, &edge.to, &payload)
+                    .await?;
             }
             Ok(())
         })
@@ -2242,7 +2243,8 @@ impl GraphIndex for CsrGraph {
                     .push((from, to));
             }
             if let Some(ref storage) = self.storage {
-                self.delete_edge_persistence(storage.as_ref(), tx, &from, &to).await?;
+                self.delete_edge_persistence(storage.as_ref(), tx, &from, &to)
+                    .await?;
             }
             Ok(())
         })
