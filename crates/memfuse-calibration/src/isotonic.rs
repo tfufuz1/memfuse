@@ -325,4 +325,13 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_with_defaults_initialization() {
+        let cal = IsotonicCalibrator::with_defaults();
+        assert_eq!(cal.warmup_required, DEFAULT_WARMUP_REQUIRED);
+        assert_eq!(cal.max_observations, DEFAULT_MAX_OBSERVATIONS);
+        assert_eq!(cal.observation_count(), 0);
+        assert!(!cal.is_calibrated());
+    }
 }
