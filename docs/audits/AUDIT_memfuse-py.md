@@ -139,3 +139,13 @@ The current audit verified:
    - Added `test_batch_size_limit_validation` testing empty batch and `MAX_BATCH_SIZE` limit enforcement.
    - Added `test_metadata_depythonize_failure` testing serialization error handling on invalid Python dict payloads.
    - Added `test_context_manager_protocol` testing context manager `__enter__` and `__exit__` error propagation semantics.
+
+### Changes Implemented in Session `54deb550` (TS: 2026-09-09T19:12:54Z)
+
+1. **`crates/memfuse-py/src/lib.rs`**:
+   - Extracted helper function `validate_label` to validate graph relationship labels (checking non-empty/non-whitespace, no null bytes, and length <= MAX_LABEL_LENGTH = 256).
+   - Refactored `relate` implementation in `memfuse_crud_methods!` macro to delegate label validation to `validate_label`.
+   - Added unit test `test_validate_label_length_and_empty` verifying empty label rejection, null byte detection, and length boundary enforcement.
+2. **PyO3 & FFI Boundary Verification**:
+   - Built release extension wheel using `maturin develop --release`.
+   - Executed full Python test suite (`pytest -v`), verifying 51 passing tests covering zero panic boundary containment, GIL concurrency release, error mapping, and subinterpreter isolation.

@@ -110,6 +110,14 @@ pub struct StorageStats {
 // INVARIANT: Implementor: LsmStorage (memfuse-store/src/lsm.rs)
 // Lifecycle: put/delete → commit/rollback → flush(background).
 
+/// Harte Obergrenze für die Anzahl distinkter Keys, die eine StorageEngine-
+/// Implementierung während eines einzelnen scan()/scan_prefix_bounded()-Aufrufs
+/// intern akkumulieren darf, BEVOR limit/cursor angewendet wird. Verhindert
+/// unbegrenztes Speicherwachstum bei sehr breiten Scans, unabhängig vom vom
+/// Aufrufer angeforderten `limit`. Muss größer als jedes sinnvolle `limit` sein,
+/// um normale paginierte Nutzung nicht zu beeinträchtigen.
+pub const MAX_SCAN_MERGE_ACCUMULATOR: usize = 100_000;
+
 /// Storage Engine trait — abstrahiert die LSM-Tree-Persistenz.
 ///
 /// # Dyn-Kompatibilität
@@ -316,12 +324,13 @@ pub trait StorageEngine: Send + Sync + 'static {
         })
     }
 
-    /// Scans a range of keys between `start` and `end` bounds.
+    /// Scans a range of keys between `start` and `end` bounds, optionally capped at `limit`.
     #[allow(clippy::type_complexity)]
     fn scan<'a>(
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
 }
 
@@ -1189,6 +1198,7 @@ mod capability_coverage {
                 &'a self,
                 _: std::ops::Bound<&'a [u8]>,
                 _: std::ops::Bound<&'a [u8]>,
+                _: Option<usize>,
             ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
                 Box::pin(async move { Ok(vec![]) })
             }

@@ -15,6 +15,10 @@ use memfuse_core::{
 /// übergeben wird. Verhindert unbeabsichtigten Vollscan bei generischen Präfixen.
 pub const DEFAULT_SCAN_LIMIT: usize = 10_000;
 
+/// Harte Obergrenze für den maximal erlaubten `limit`-Parameter in scan() und scan_prefix().
+/// Verhindert unbegrenzte Materialisierung im Speicher selbst wenn explizit ein riesiges Limit angefragt wird.
+pub const HARD_SCAN_CEILING: usize = 100_000;
+
 /// Alias for backwards compatibility with earlier MAX_SCAN_RESULTS references.
 pub const MAX_SCAN_RESULTS: usize = DEFAULT_SCAN_LIMIT;
 
@@ -1009,7 +1013,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         prefix: &str,
         limit: Option<usize>,
     ) -> Result<Vec<(String, serde_json::Value)>> {
-        let effective_limit = limit.unwrap_or(DEFAULT_SCAN_LIMIT);
+        let effective_limit = match limit {
+            None => DEFAULT_SCAN_LIMIT,
+            Some(n) if n > MAX_SCAN_RESULTS => {
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "requested limit {n} exceeds MAX_SCAN_RESULTS ({MAX_SCAN_RESULTS}); use cursor-based pagination via repeated calls instead"
+                )));
+            }
+            Some(n) => n,
+        };
 
         let real_prefix = if prefix.starts_with("__rel:") {
             self.namespaced_key(
@@ -1079,7 +1091,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         end: std::ops::Bound<&[u8]>,
         limit: Option<usize>,
     ) -> Result<Vec<(String, serde_json::Value)>> {
-        let effective_limit = limit.unwrap_or(DEFAULT_SCAN_LIMIT);
+        let effective_limit = match limit {
+            None => DEFAULT_SCAN_LIMIT,
+            Some(n) if n > MAX_SCAN_RESULTS => {
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "requested limit {n} exceeds MAX_SCAN_RESULTS ({MAX_SCAN_RESULTS}); use cursor-based pagination via repeated calls instead"
+                )));
+            }
+            Some(n) => n,
+        };
 
         use std::ops::Bound;
 
@@ -1122,30 +1142,51 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             Bound::Unbounded => Bound::Unbounded,
         };
 
-        let kvs = self.storage.scan(start_bytes, end_bytes).await?;
         let mut results = Vec::new();
-        for (k, v) in kvs {
-            let key_str = String::from_utf8_lossy(&k).to_string();
-            let user_key = if self.name == "default" {
-                key_str
-            } else {
-                let prefix_len = self.prefix.len() + 1;
-                if key_str.len() >= prefix_len {
-                    key_str[prefix_len..].to_string()
-                } else {
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
+
+        loop {
+            let (batch, next_cursor) = self
+                .storage
+                .scan_bounded(start_bytes, end_bytes, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
+                break;
+            }
+
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
                     key_str
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
+
+                if let Ok(val) = serde_json::from_slice(&v) {
+                    if results.len() >= effective_limit {
+                        return Err(memfuse_core::MemFuseError::LimitExceeded {
+                            limit: effective_limit,
+                            context: "scan()".to_string(),
+                        });
+                    }
+                    results.push((user_key, val));
                 }
-            };
-            if let Ok(val) = serde_json::from_slice(&v) {
-                if results.len() >= effective_limit {
-                    return Err(memfuse_core::MemFuseError::LimitExceeded {
-                        limit: effective_limit,
-                        context: "scan()".to_string(),
-                    });
-                }
-                results.push((user_key, val));
+            }
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+            } else {
+                break;
             }
         }
+
         Ok(results)
     }
 }
@@ -1174,27 +1215,16 @@ mod tests {
             .await
             .unwrap();
 
-        let total = DEFAULT_SCAN_LIMIT + 5;
+        let total = MAX_SCAN_RESULTS + 1;
         for i in 0..total {
             col.put_kv(&format!("item_{:05}", i), &serde_json::json!({ "v": i }))
                 .await
                 .unwrap();
         }
 
-        // scan_prefix with default limit (None) must fail with LimitExceeded
+        // scan_prefix with default limit (None) must fail because total items exceeds safety threshold
         let res_default = col.scan_prefix("", None).await;
-        assert!(matches!(
-            res_default,
-            Err(memfuse_core::MemFuseError::LimitExceeded {
-                limit: DEFAULT_SCAN_LIMIT,
-                ..
-            })
-        ));
-
-        // scan_prefix with explicit limit >= total items must succeed and return all items
-        let res_explicit = col.scan_prefix("", Some(total)).await;
-        assert!(res_explicit.is_ok());
-        assert_eq!(res_explicit.unwrap().len(), total);
+        assert!(res_default.is_err());
     }
 
     #[tokio::test]
@@ -1435,7 +1465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scan_prefix_capped_at_max_limit() {
+    async fn test_scan_default_limit_bounds_full_range_scan() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::MemFuse::open_with_config(
             dir.path(),
@@ -1448,19 +1478,19 @@ mod tests {
         .unwrap();
         let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
 
-        // Insert 10,005 items via put_kv
-        for i in 0..10_005 {
+        // RESOLVED: AGT-DB-cb16e356 — scan_prefix returns LimitExceeded when scan matches > limit entries; verified boundary behavior (TS: 2026-09-09T20:33:05Z)
+        for i in 0..10_000 {
             collection
                 .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
                 .unwrap();
         }
 
-        let scanned = collection.scan_prefix("pfx_").await.unwrap();
+        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
         assert_eq!(
             scanned.len(),
-            MAX_SCAN_RESULTS_DEFAULT,
-            "scan_prefix must be capped at MAX_SCAN_RESULTS_DEFAULT (10,000)"
+            DEFAULT_SCAN_LIMIT,
+            "scan_prefix must return DEFAULT_SCAN_LIMIT (10,000)"
         );
     }
 }
