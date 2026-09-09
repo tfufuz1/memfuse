@@ -3349,11 +3349,11 @@
   },
   {
     "file": "crates/memfuse-crypto/tests/kv_segment_concurrency.rs",
-    "hash": "99ba9a1bbd2bbc62"
+    "hash": "beb9b035ed4699f8"
   },
   {
     "file": "crates/memfuse-crypto/tests/kv_segment_concurrency.rs",
-    "hash": "beb9b035ed4699f8"
+    "hash": "c64f48f1172469c5"
   },
   {
     "file": "crates/memfuse-crypto/tests/kv_segment_concurrency.rs",
@@ -7916,6 +7916,10 @@
     "hash": "ee932bc3cf6ecd5a"
   },
   {
+    "file": "crates/memfuse-graph/src/consistency_enforcement.rs",
+    "hash": "1cc4551a1295221d"
+  },
+  {
     "file": "crates/memfuse-graph/src/csr.rs",
     "hash": "002c1846e0826d53"
   },
@@ -8722,6 +8726,14 @@
   {
     "file": "crates/memfuse-graph/src/ppr.rs",
     "hash": "ff1ef7ff36a8401b"
+  },
+  {
+    "file": "crates/memfuse-graph/src/provenance.rs",
+    "hash": "5e15a207a8407814"
+  },
+  {
+    "file": "crates/memfuse-graph/src/provenance.rs",
+    "hash": "d9668746e4fff2eb"
   },
   {
     "file": "crates/memfuse-graph/src/session_dag.rs",

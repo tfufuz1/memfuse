@@ -1,6 +1,6 @@
 // FILE-CONTEXT
 // ZWECK: Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall).
-// STAND: TS:2026-09-07T12:00:00Z (SESSION: a413a598)
+// STAND: TS:2026-09-09T13:20:00Z (SESSION: 5665b844)
 
 //! # Eviction-Architektur
 //!
@@ -93,12 +93,13 @@ pub fn emergency_wipe(store: &TenantIsolatedKvStore) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kv_segment::KvSegment;
+    use crate::kv_segment::segment::KvSegment;
     use memfuse_core::TenantId;
     use std::time::Duration;
 
     #[test]
     fn test_eviction_worker_nonblocking_trigger() {
+        let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
         let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
         let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
@@ -136,6 +137,7 @@ mod tests {
 
     #[test]
     fn test_lru_eviction_order_not_fifo() {
+        let store = Arc::new(TenantIsolatedKvStore::new());
         let tenant = TenantId::try_new(1).unwrap();
         // A is created first (clock 1)
         let seg_a = KvSegment::new(tenant, 10, vec![0x11; 512]);
@@ -189,6 +191,7 @@ mod tests {
 
     #[test]
     fn test_emergency_wipe_synchronous_completion() {
+        let store = TenantIsolatedKvStore::new();
         let tenant = TenantId::try_new(1).unwrap();
         let seg1 = KvSegment::new(tenant, 1, vec![0x11; 512]);
         let seg2 = KvSegment::new(tenant, 2, vec![0x22; 512]);
@@ -196,6 +199,7 @@ mod tests {
         let store = TenantIsolatedKvStore::new();
         store.insert_segment(tenant, seg1);
         store.insert_segment(tenant, seg2);
+
         assert_eq!(store.get_tenant_segment_len(tenant), 2);
 
         // Synchronous emergency wipe
