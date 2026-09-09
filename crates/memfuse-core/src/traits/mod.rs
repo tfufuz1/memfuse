@@ -332,6 +332,23 @@ pub trait StorageEngine: Send + Sync + 'static {
         end: std::ops::Bound<&'a [u8]>,
         limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;
+
+    /// Scans a range of keys with start and end bounds, limit, and pagination cursor.
+    #[allow(clippy::type_complexity)]
+    fn scan_bounded<'a>(
+        &'a self,
+        _start: std::ops::Bound<&'a [u8]>,
+        _end: std::ops::Bound<&'a [u8]>,
+        _limit: usize,
+        _cursor: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
+        Box::pin(async move {
+            Err(crate::error::MemFuseError::capability_unsupported(
+                "scan_bounded",
+                "Bounded range scan (scan_bounded) is not supported by default",
+            ))
+        })
+    }
 }
 
 // INVARIANT: Implementor: HnswIndex (memfuse-index/src/hnsw.rs)
