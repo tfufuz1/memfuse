@@ -95,6 +95,12 @@ impl TenantId {
         self.0
     }
 
+    /// Alias for `inner()` for backward compatibility with `as_u64()`.
+    #[inline]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+
     /// Returns `true` if this tenant ID is `SYSTEM` (0).
     #[inline]
     pub fn is_system(self) -> bool {
