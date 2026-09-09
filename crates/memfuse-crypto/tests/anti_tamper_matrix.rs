@@ -4,7 +4,7 @@
 // NICHT-OFFENSICHTLICH: Verifies subtle::ConstantTimeEq usage in IntegrityVerifier via code inspection / behavioral tests.
 // STAND: TS:2026-08-30T19:45:00Z (SESSION: 20260830)
 
-use memfuse_crypto::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
+use memfuse_security::wal_crypto::{IntegrityVerifier, WalEntrySnapshot, WalHmac};
 
 fn create_valid_entry(
     key: &[u8],

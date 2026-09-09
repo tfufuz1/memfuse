@@ -4,8 +4,8 @@
 // STAND: TS:2026-08-31T21:13:05Z (SESSION: 8427f167)
 
 use memfuse_core::TenantId;
-use memfuse_crypto::wal_crypto::{EncryptedWal, IntegrityVerifier, WalEntrySnapshot, WalHmac};
-use memfuse_crypto::{CryptoKey, KvSegmentCipher, ModelFingerprint};
+use memfuse_security::wal_crypto::{EncryptedWal, IntegrityVerifier, WalEntrySnapshot, WalHmac};
+use memfuse_security::{CryptoKey, KvSegmentCipher, ModelFingerprint};
 use proptest::prelude::*;
 
 proptest! {

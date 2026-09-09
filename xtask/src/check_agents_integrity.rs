@@ -139,9 +139,9 @@ mod tests {
     }
 
     #[test]
-    fn test_is_type_or_crate_implemented_finds_kv_bridge() {
+    fn test_is_type_or_crate_implemented_finds_security() {
         let root = find_root_dir();
-        assert!(is_type_or_crate_implemented("memfuse-kv-bridge", &root));
+        assert!(is_type_or_crate_implemented("memfuse-security", &root));
     }
 
     #[test]

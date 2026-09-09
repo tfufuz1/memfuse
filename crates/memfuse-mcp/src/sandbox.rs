@@ -65,7 +65,7 @@ pub struct VolatileToolResult {
 
 impl VolatileToolResult {
     /// Speichert einen Tool-Output verschlüsselt.
-    pub fn encrypt(plaintext: &[u8], key: &memfuse_crypto::CryptoKey) -> Result<Self> {
+    pub fn encrypt(plaintext: &[u8], key: &memfuse_security::CryptoKey) -> Result<Self> {
         let (encrypted, nonce) = key
             .encrypt_auto_nonce(plaintext)
             .map_err(|e| MemFuseError::Internal(format!("Sandbox encrypt: {e}")))?;
@@ -76,7 +76,10 @@ impl VolatileToolResult {
     }
 
     /// Entschlüsselt und gibt den Klartext zeroized zurück.
-    pub fn decrypt(&self, key: &memfuse_crypto::CryptoKey) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+    pub fn decrypt(
+        &self,
+        key: &memfuse_security::CryptoKey,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>> {
         if self.nonce.len() != 12 {
             return Err(MemFuseError::Internal(
                 "Sandbox decrypt: Invalid nonce length".into(),
@@ -97,7 +100,7 @@ pub struct McpSandbox {
     /// Session-lokale volatile Ergebnisse (werden bei Session-Ende gedropt).
     volatile_results: Mutex<HashMap<String, VolatileToolResult>>,
     /// Session-Schlüssel (wird bei Drop zeroized).
-    session_key: memfuse_crypto::CryptoKey,
+    session_key: memfuse_security::CryptoKey,
 }
 
 impl McpSandbox {
@@ -109,7 +112,7 @@ impl McpSandbox {
         let mut passphrase = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut passphrase);
         let key =
-            memfuse_crypto::CryptoKey::try_new(&hex::encode(passphrase), &salt).map_err(|e| {
+            memfuse_security::CryptoKey::try_new(&hex::encode(passphrase), &salt).map_err(|e| {
                 MemFuseError::Internal(format!("McpSandbox: CryptoKey initialization failed: {e}"))
             })?;
 
@@ -316,7 +319,7 @@ mod tests {
     #[test]
     fn volatile_tool_result_roundtrip() {
         let key =
-            memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
+            memfuse_security::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
                 .unwrap(); // unwrap
         let plaintext = b"tool output data";
         let result = VolatileToolResult::encrypt(plaintext, &key).unwrap(); // unwrap
@@ -327,7 +330,7 @@ mod tests {
     #[test]
     fn test_volatile_result_error_path_zeroizes_intermediate_data() {
         let key =
-            memfuse_crypto::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
+            memfuse_security::CryptoKey::try_new("0123456789abcdef0123456789abcdef", b"salt1234")
                 .unwrap(); // unwrap
         let plaintext = b"sensitive payload that will drop early";
         let result = VolatileToolResult::encrypt(plaintext, &key).unwrap(); // unwrap
