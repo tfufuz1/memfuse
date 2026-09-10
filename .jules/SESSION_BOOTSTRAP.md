@@ -106,6 +106,61 @@ just sync-docs
 just sync-docs-check
 ```
 
+## Phase 6 — Pre-Submit Gate (BLOCKIEREND — kein Submit ohne ✅)
+
+> **Invariante:** Jede dieser Prüfungen muss explizit bestätigt sein, bevor
+> `submit` aufgerufen oder ein PR erstellt wird. Bei Fehlschlag: STOP, Fix,
+> Phase 6 von vorne.
+
+```bash
+# ── 6.1 REBASE-CHECK: Wurde gegen aktuellen main getestet? ──────────────────
+git fetch origin main
+if ! git merge-base --is-ancestor origin/main HEAD; then
+    echo "❌ STOP: main hat sich weiterentwickelt seit Sessionbeginn."
+    echo "   Ausführen: git rebase origin/main && cargo check --workspace --exclude memfuse-tauri"
+    echo "   Danach Phase 6 erneut durchlaufen."
+    exit 1
+fi
+echo "✅ 6.1 Branch ist aktuell gegenüber origin/main."
+
+# ── 6.2 COMPILE-VERIFIKATION: Nicht aus Erinnerung — live ausführen ──────────
+echo "→ 6.2 Compile-Gate..."
+if ! cargo check --workspace --exclude memfuse-tauri --quiet; then
+    echo "❌ STOP: Compile-Fehler. NICHT submitten."
+    exit 1
+fi
+echo "✅ 6.2 Workspace kompiliert."
+
+# ── 6.3 PHANTOM-FILE-CHECK: PR-Beschreibung vs. tatsächlicher Diff ───────────
+# Liste aller in der Commit-Message behaupteten .rs-Dateien prüfen
+# Ersetze DEINE_DATEILISTE durch die im PR-Body genannten Dateien.
+DIFF_FILES=$(git diff --name-only origin/main...HEAD)
+echo "→ 6.3 Phantom-File-Check. Dateien im Diff:"
+echo "$DIFF_FILES"
+echo "MANUELL PRÜFEN: Stimmen alle im PR-Body genannten Dateien mit obiger Liste überein?"
+echo "Bei Abweichung: PR-Body korrigieren, NIEMALS nicht-existente Dateien behaupten."
+
+# ── 6.4 CLAIM-RELEASE: Claim für bearbeiteten Scope freigeben ────────────────
+# Ersetze CRATE_NAME durch den tatsächlich bearbeiteten Crate.
+# cargo xtask claim --release --crate <CRATE_NAME>
+echo "→ 6.4 Claim-Release ausführen (Crate einsetzen):"
+echo "   cargo xtask claim --release --crate <DEIN_CRATE>"
+
+# ── 6.5 TEST-SMOKE: Kein Submit ohne zumindest doc-tests ─────────────────────
+echo "→ 6.5 Smoke-Test (doc-tests, schnell)..."
+cargo test --doc --workspace --exclude memfuse-tauri --quiet 2>&1 | tail -5
+echo "✅ 6.5 Doc-Tests bestanden."
+
+echo ""
+echo "════════════════════════════════════════════════"
+echo "✅ PHASE 6 BESTANDEN — Submit erlaubt."
+echo "════════════════════════════════════════════════"
+```
+
+> **Regel für Commit-Messages:** Jede in der PR-Beschreibung unter
+> "Hinzugefügt" oder "Getestet" genannte Datei MUSS in `git diff --name-only
+> origin/main...HEAD` erscheinen. Ausnahmen begründen, nie stillschweigend weglassen.
+
 ## Notfall-Eskalation (Prompt-Thrashing)
 
 Wenn derselbe Compiler-Fehler nach 2 Iterationen nicht behoben ist:
