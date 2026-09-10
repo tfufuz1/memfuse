@@ -2103,13 +2103,6 @@ fn main() {
                 process::exit(1);
             }
         }
-        "check-unwrap-baseline-trend" => {
-            let root = find_root_dir();
-            let success = check_unwrap_baseline_trend::run_check_unwrap_baseline_trend(&root);
-            if !success {
-                process::exit(1);
-            }
-        }
         "check-audit-duplication" => {
             if let Err(e) = check_audit_duplication::run_check_audit_duplication(0.85) {
                 eprintln!("❌ check-audit-duplication failed: {}", e);
@@ -2314,7 +2307,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, check-audit-duplication, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-doc-references, check-audit-duplication, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim");
             process::exit(1);
         }
     }
