@@ -23,11 +23,7 @@ Ergebnis: **0 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-<<<<<<< Updated upstream
-| `memfuse-core` | 0 | 9973 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-=======
-| `memfuse-core` | 0 | 9982 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
->>>>>>> Stashed changes
+| `memfuse-core` | 0 | 9985 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 1 | 1853 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5477 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-graph` | 1 | 10334 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
@@ -36,15 +32,9 @@ Ergebnis: **0 offene Tags**
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 2 | 15540 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3985 | 🟢 Clean |  |
-<<<<<<< Updated upstream
 | `memfuse-store` | 2 | 17367 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
 | `memfuse-db` | 4 | 28172 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-=======
-| `memfuse-store` | 2 | 17330 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 28148 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
->>>>>>> Stashed changes
 | `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 5 | 4975 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
