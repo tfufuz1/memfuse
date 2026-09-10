@@ -1873,6 +1873,99 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_valid_signal_count_excludes_invalid_weights_for_coherence_bonus() {
+        let set1 = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set2 = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set3 = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.7,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set_invalid = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.95,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+
+        let cfg = ResonanceConfig {
+            beta: 1.0,
+            gamma: 0.3,
+        };
+
+        // 4 total signals, but 1 is NaN weight => valid_signal_count should be 3
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![
+                ("signal1".to_string(), set1, 1.0),
+                ("signal2".to_string(), set2, 1.0),
+                ("signal3".to_string(), set3, 1.0),
+                ("signal_invalid".to_string(), set_invalid, f32::NAN),
+            ],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(fused.len(), 1);
+        let res = &fused[0];
+        assert_eq!(res.matched_signals.len(), 3);
+
+        let prov = match res.provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
+        // coherence = (3 / 3)^1.0 = 1.0; coherence_bonus = 0.3 * 1.0 = 0.3
+        // If total_signal_count = 4 was incorrectly used, coherence would be (3/4)^1.0 = 0.75, bonus = 0.225
+        assert!(
+            (prov.coherence_bonus - 0.3).abs() < 1e-6,
+            "coherence_bonus should be 0.3 based on valid_signal_count = 3, got {}",
+            prov.coherence_bonus
+        );
+    }
+
+    #[test]
+    fn test_merge_metadata_scalar_collision_converts_to_array() {
+        let mut target = Some(serde_json::json!("string_val_1"));
+        let source = Some(serde_json::json!("string_val_2"));
+
+        merge_metadata(&mut target, source);
+
+        assert_eq!(
+            target,
+            Some(serde_json::json!(["string_val_1", "string_val_2"])),
+            "Differing non-object scalars should be combined into an array"
+        );
+
+        let mut target_same = Some(serde_json::json!("identical_val"));
+        let source_same = Some(serde_json::json!("identical_val"));
+
+        merge_metadata(&mut target_same, source_same);
+
+        assert_eq!(
+            target_same,
+            Some(serde_json::json!("identical_val")),
+            "Identical non-object scalars should not convert to array"
+        );
+    }
+
+    #[test]
     fn test_provenance_attribution_sums_to_rrf() {
         let vec_set = (
             "vector".to_string(),
