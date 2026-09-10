@@ -2104,7 +2104,7 @@ fn main() {
             }
         }
         "check-unwrap-baseline-trend" => {
-            let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let root = find_root_dir();
             let success = check_unwrap_baseline_trend::run_check_unwrap_baseline_trend(&root);
             if !success {
                 process::exit(1);
