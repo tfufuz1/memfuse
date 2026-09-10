@@ -117,8 +117,12 @@ impl KeyManager {
             .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
 
         let mut sub_key = [0u8; 32];
-        let mut info = Vec::with_capacity(b"memfuse-file-key-v1:".len() + file_id.len());
+        // S-2 (präventiv): Einheitliche Längenpräfixierung aller variablen Felder.
+        // Aktuell nur file_id als variables Feld — Präfix jetzt schon, um zukünftige
+        // Erweiterungen (z.B. zweites Feld) ohne diese Falle zu schreiben.
+        let mut info = Vec::with_capacity(b"memfuse-file-key-v1:".len() + 4 + file_id.len());
         info.extend_from_slice(b"memfuse-file-key-v1:");
+        info.extend_from_slice(&(file_id.len() as u32).to_le_bytes());
         info.extend_from_slice(file_id);
 
         hk.expand(&info, &mut sub_key)
@@ -137,7 +141,12 @@ impl KeyManager {
     /// specific `(tenant_id, model_fingerprint)` tuple.
     ///
     /// Cryptographically enforces both tenant isolation and model quantization separation via HKDF-Expand.
-    // AI-TAG[SMELL][MINOR] TODO(audit-5.2): Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions. (ID: AGT-CRYPTO-56611e4c) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // BREAKING CHANGE (memfuse-kv-layer-v2):
+    // The HKDF info string now uses length-prefixed fields (audit S-2 fix).
+    // All KV-Cache segments encrypted before this commit are NOT readable without the old key.
+    // Migration: Re-encrypt all KV-Cache segments or evict/invalidate the cache entirely.
+    // Version marker: Update kv_cache version string to "memfuse-kv-layer-v2:" if needed
+    // to reject old segments with a clear error instead of silently producing garbage data.
     pub fn derive_kv_key(
         &self,
         tenant_id: memfuse_core::TenantId,
@@ -147,14 +156,28 @@ impl KeyManager {
             .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
 
         let mut sub_key = [0u8; 32];
+        // S-2 FIX: Length-prefix each variable field before concatenation.
+        // RFC 5869 best practice: variable-length fields without separators are ambiguous.
+        // Without length prefixes, ("abc", "def") and ("ab", "cdef") produce identical info strings.
+        // Encoding: 4-byte LE u32 length prefix for each variable-length field.
+        let model_id_bytes = model_fingerprint.model_id.as_bytes();
+        let quantization_bytes = model_fingerprint.quantization.as_bytes();
+
         let mut info = Vec::with_capacity(
-            64 + model_fingerprint.model_id.len() + model_fingerprint.quantization.len(),
+            b"memfuse-kv-layer-v1:".len()
+                + 8  // tenant_id (u64 LE)
+                + 32 // model hash
+                + 4 + model_id_bytes.len()      // u32 len prefix + data
+                + 4 + quantization_bytes.len(), // u32 len prefix + data
         );
         info.extend_from_slice(b"memfuse-kv-layer-v1:");
         info.extend_from_slice(&tenant_id.inner().to_le_bytes());
         info.extend_from_slice(&model_fingerprint.hash);
-        info.extend_from_slice(model_fingerprint.model_id.as_bytes());
-        info.extend_from_slice(model_fingerprint.quantization.as_bytes());
+        // Length-prefixed fields (S-2 fix): u32 LE prefix prevents concatenation ambiguity
+        info.extend_from_slice(&(model_id_bytes.len() as u32).to_le_bytes());
+        info.extend_from_slice(model_id_bytes);
+        info.extend_from_slice(&(quantization_bytes.len() as u32).to_le_bytes());
+        info.extend_from_slice(quantization_bytes);
 
         hk.expand(&info, &mut sub_key)
             .map_err(|e| CryptoError::Crypto(format!("HKDF KV sub-key expansion failed: {}", e)))?;
@@ -508,6 +531,55 @@ mod tests {
         let short_ciphertext = [0u8; 10]; // AES-GCM-SIV tag is 16 bytes
         let res = km.decrypt_auto_nonce(&short_ciphertext, &nonce);
         assert!(matches!(res, Err(CryptoError::Crypto(_))));
+    }
+
+    #[test]
+    fn test_derive_kv_key_length_prefix_prevents_collision() {
+        use memfuse_core::TenantId;
+        use crate::kv_cipher::ModelFingerprint;
+
+        // Setup: Zwei ModelFingerprint-Instanzen mit gleichem hash, aber unterschiedlicher
+        // Aufteilung von model_id/quantization die ohne Längenpräfix kollidieren würden.
+        let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1").unwrap();
+        let tenant = TenantId::try_new(42).unwrap();
+
+        let fp_a = ModelFingerprint {
+            hash: [0xAB; 32],
+            model_id: "llama-3.2-3b".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let fp_b = ModelFingerprint {
+            hash: [0xAB; 32],
+            model_id: "llama-3.2-3bQ4".to_string(),
+            quantization: "_K_M".to_string(), // Gleiche Konkatenation ohne Präfix
+        };
+
+        let key_a = km.derive_kv_key(tenant, &fp_a).unwrap();
+        let key_b = km.derive_kv_key(tenant, &fp_b).unwrap();
+
+        // Mit Längenpräfixierung MÜSSEN die Keys verschieden sein
+        assert_ne!(
+            key_a.inspect_key_bytes_for_test(), key_b.inspect_key_bytes_for_test(),
+            "HKDF-Subkeys dürfen bei unterschiedlichen (model_id, quantization)-Paaren nicht gleich sein"
+        );
+    }
+
+    #[test]
+    fn test_derive_kv_key_same_fingerprint_produces_same_key() {
+        use memfuse_core::TenantId;
+        use crate::kv_cipher::ModelFingerprint;
+
+        // Determinismus-Test: Gleiche Eingaben → gleicher Key (HKDF ist deterministisch)
+        let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1").unwrap();
+        let tenant = TenantId::try_new(1).unwrap();
+        let fp = ModelFingerprint {
+            hash: [0x12; 32],
+            model_id: "test-model".to_string(),
+            quantization: "Q8_0".to_string(),
+        };
+        let key_1 = km.derive_kv_key(tenant, &fp).unwrap();
+        let key_2 = km.derive_kv_key(tenant, &fp).unwrap();
+        assert_eq!(key_1.inspect_key_bytes_for_test(), key_2.inspect_key_bytes_for_test());
     }
 
     #[test]
