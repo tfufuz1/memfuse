@@ -42,10 +42,10 @@ impl Default for ResonanceConfig {
 #[cfg(feature = "coherence-bonus-fusion")]
 pub fn apply_resonance_bonus(
     results: Vec<SearchResult>,
-    total_signal_count: usize,
+    valid_signal_count: usize,
     config: &ResonanceConfig,
 ) -> Vec<SearchResult> {
-    if total_signal_count == 0 {
+    if valid_signal_count == 0 {
         return results;
     }
     let beta = config.beta.clamp(0.1, 2.0);
@@ -61,7 +61,7 @@ pub fn apply_resonance_bonus(
                 );
             }
             let signal_count = r.matched_signals.len();
-            let coherence = (signal_count as f32 / total_signal_count as f32).powf(beta);
+            let coherence = (signal_count as f32 / valid_signal_count as f32).powf(beta);
             let bonus = gamma * coherence;
             r.score *= 1.0 + bonus;
             if let Some(ref mut prov) = r.provenance {
@@ -292,12 +292,14 @@ pub fn reciprocal_rank_fusion(
     weighted_reciprocal_rank_fusion(weighted_sets, max_results)
 }
 
-/// Helper function to perform shallow merge of JSON metadata objects.
+/// Merges metadata from `source` into `target` using a First-Wins key-level policy for JSON objects.
 ///
-/// Erstes-Signal-gewinnt-Merge: Für jeden Metadata-Key wird der Wert des zuerst verarbeiteten
-/// Signal-Sets übernommen; nachfolgende Signal-Sets überschreiben existierende Keys NICHT.
-/// Da `result_sets` in der Reihenfolge (vector, text, graph) iteriert wird, hat Vektor-Metadata
-/// faktisch Vorrang vor Text- und Graph-Metadata bei Key-Kollisionen.
+/// # Metadata Merging Strategy
+/// - **Objects**: Key-level "First-Wins" merge. For key collisions, the value from the higher-priority
+///   signal set (`target`) is retained. Keys present in `source` but missing from `target` are inserted.
+/// - **Scalars / Non-Objects**: If either `target` or `source` is not a JSON object and their values differ,
+///   they are combined into a `serde_json::Value::Array([target, source])` to prevent silent metadata loss across search signals.
+/// - **Identical Non-Objects**: If both values are equal, `target` remains unchanged.
 fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_json::Value>) {
     match (target, source) {
         (Some(t_val), Some(s_val)) => {
@@ -307,18 +309,10 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                         t_obj.insert(k.clone(), v.clone());
                     }
                 }
-            } else {
-                // If target is not an object, we overwrite it with source (First-Wins doesn't strictly apply to non-objects as we can't merge them)
-                // or we could just leave it. But leaving it might drop source. Actually, if target is e.g. a string, we probably want to keep it.
-                // Wait, if we want to avoid silent drop, maybe we convert to array?
-                // Let's just overwrite it if target is not an object, to ensure we don't silently lose complex metadata.
-                // No, if target was first, First-Wins says we keep target. So doing nothing IS First-Wins for the entire value.
-                // But the audit report says "verwischen ... anstatt sie anderweitig zu mergen".
-                // We'll wrap them in an array if they differ.
-                if t_val != &s_val {
-                    let arr = vec![t_val.clone(), s_val.clone()];
-                    *t_val = serde_json::Value::Array(arr);
-                }
+            } else if t_val != &s_val {
+                // Non-object scalar collision: combine distinct values into an array to preserve metadata provenance.
+                let arr = vec![t_val.clone(), s_val.clone()];
+                *t_val = serde_json::Value::Array(arr);
             }
         }
         (t @ None, Some(s_val)) => {
@@ -369,8 +363,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         return Vec::new();
     }
 
-    let total_signal_count = result_sets.len();
-    let _ = total_signal_count;
+    let mut valid_signal_count = 0usize;
     let _ = &resonance_config;
 
     // Sort result sets according to configured metadata merge priority.
@@ -402,6 +395,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             );
             continue;
         }
+        valid_signal_count += 1;
         let signal_kind = SignalKind::from_name(&signal_name);
         for (rank, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {
@@ -603,10 +597,13 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
 
     #[cfg(feature = "coherence-bonus-fusion")]
     let results = if let Some(cfg) = resonance_config {
-        apply_resonance_bonus(results, total_signal_count, cfg)
+        apply_resonance_bonus(results, valid_signal_count, cfg)
     } else {
         results
     };
+
+    #[cfg(not(feature = "coherence-bonus-fusion"))]
+    let _ = valid_signal_count;
 
     results
 }
@@ -1692,6 +1689,96 @@ mod tests {
         assert!(
             contrib.raw_score.is_nan(),
             "Non-finite raw score should be preserved as NaN in signal contribution raw_score"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_valid_signal_count_excludes_invalid_weights_for_coherence_bonus() {
+        let set1 = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set2 = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set3 = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.7,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set_invalid = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.95,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+
+        let cfg = ResonanceConfig {
+            beta: 1.0,
+            gamma: 0.3,
+        };
+
+        // 4 total signals, but 1 is NaN weight => valid_signal_count should be 3
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![
+                ("signal1".to_string(), set1, 1.0),
+                ("signal2".to_string(), set2, 1.0),
+                ("signal3".to_string(), set3, 1.0),
+                ("signal_invalid".to_string(), set_invalid, f32::NAN),
+            ],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(fused.len(), 1);
+        let res = &fused[0];
+        assert_eq!(res.matched_signals.len(), 3);
+
+        let prov = res.provenance.as_ref().expect("provenance present");
+        // coherence = (3 / 3)^1.0 = 1.0; coherence_bonus = 0.3 * 1.0 = 0.3
+        // If total_signal_count = 4 was incorrectly used, coherence would be (3/4)^1.0 = 0.75, bonus = 0.225
+        assert!(
+            (prov.coherence_bonus - 0.3).abs() < 1e-6,
+            "coherence_bonus should be 0.3 based on valid_signal_count = 3, got {}",
+            prov.coherence_bonus
+        );
+    }
+
+    #[test]
+    fn test_merge_metadata_scalar_collision_converts_to_array() {
+        let mut target = Some(serde_json::json!("string_val_1"));
+        let source = Some(serde_json::json!("string_val_2"));
+
+        merge_metadata(&mut target, source);
+
+        assert_eq!(
+            target,
+            Some(serde_json::json!(["string_val_1", "string_val_2"])),
+            "Differing non-object scalars should be combined into an array"
+        );
+
+        let mut target_same = Some(serde_json::json!("identical_val"));
+        let source_same = Some(serde_json::json!("identical_val"));
+
+        merge_metadata(&mut target_same, source_same);
+
+        assert_eq!(
+            target_same,
+            Some(serde_json::json!("identical_val")),
+            "Identical non-object scalars should not convert to array"
         );
     }
 
