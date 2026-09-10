@@ -1,10 +1,10 @@
 {
   "claims": [
     {
-      "krate": "docs",
-      "issue": "GESAMTSPEZ-V10",
-      "timestamp": "2026-09-08T21:50:44.781466215+00:00",
-      "session_id": "6558016856048513528",
+      "krate": "memfuse-core",
+      "issue": "JULES-20260910-TEST",
+      "timestamp": "2026-09-10T19:39:12.341942514+00:00",
+      "session_id": "2902225699968435816",
       "active": false,
       "expires_at": "2026-09-09T01:50:44Z",
       "released_at": "2026-09-10T00:00:00Z"
