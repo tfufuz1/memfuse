@@ -198,7 +198,7 @@ impl IsotonicCalibrator {
 
     /// Expected Calibration Error über M=10 gleichbreite Bins.
     /// Ziel: ECE < 0.03 (arXiv:2605.18796).
-    // Caching: Rebuilds PAVA model only when new observations set `model_dirty` flag.
+    // AI-TAG[SMELL][MINOR] TODO(audit-M-3): Cache fitted PAVA step function and rebuild PAVA model only when new observations are recorded (dirty flag). (ID: AGT-CALIBRATION-b4b9ce8f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub fn expected_calibration_error(&mut self) -> Option<f32> {
         if !self.is_calibrated() {
             return None;

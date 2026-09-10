@@ -1,7 +1,7 @@
 # MemFuse Calibration Audit Report (`memfuse-calibration`)
 
 **Stand:** 2026-09-10
-**Session:** `c9240483` (vorherige Audit-Sessions: `383b2472`, `80a3120b`, `f31b920a`)
+**Session:** `f31b920a` (vorherige Audit-Sessions: `383b2472`, `80a3120b`)
 **Crate:** `memfuse-calibration` (Layer 1 — Calibration & Uncertainty Quantification)
 **Auditor Persona:** Senior Rust Performance-Engineer — Score-Kalibrierung & ECE-Metriken
 
@@ -110,14 +110,3 @@ In `replicator.rs` implementiert `ReplicatorState` das Multiplicative Weights Up
    - Platt Scaling: Target Smoothing und Logistic Bounds $[0.0, 1.0]$ verifiziert.
    - Replicator Dynamics: Weights Sum $= 1.0$, $w_i > 0.0$ strikt eingehalten.
 4. **Final Status:** **PASS** — `memfuse-calibration` vollständig gehärtet, 0 offene Befunde, 100% Quality Gate Compliance.
-
----
-
-## 9. Audit & Realitätsabgleich (Session `c9240483`, Stand: 2026-09-10)
-
-1. **Inventar-Realitätsabgleich:** 5/5 Quelldateien im Prompter-Inventar (`isotonic.rs`, `lib.rs`, `pid.rs`, `platt.rs`, `replicator.rs`) am Quellcode verifiziert. 0 Inventar-Drift.
-2. **Quality Gates & Cleanliness:** `cargo check -p memfuse-calibration --all-features`, `cargo clippy -p memfuse-calibration -- -D warnings`, `cargo fmt --check -p memfuse-calibration`, `cargo test -p memfuse-calibration --all-features` (61/61 Tests grün) und `cargo check --workspace --exclude memfuse-tauri` ohne Fehler oder Warnungen ausgeführt.
-3. **FILE-CONTEXT Header Update:** `FILE-CONTEXT`-Header in `isotonic.rs`, `pid.rs`, `platt.rs` und `replicator.rs` mit aktuellem Zeitstempel und Session-Hash `c9240483` aktualisiert.
-4. **TODO-Grammatik & Caching-Prüfung:** Obsolete `TODO(audit-M-3)` in `isotonic.rs:201` bereinigt (PAVA-Dirty-Caching via `model_dirty` ist aktiv in `calibrated_probability` und `expected_calibration_error`).
-5. **Coverage:** Overall Line Coverage liegt bei **97.58%** (867/888 lines).
-6. **Final Status:** **PASS** — Keine offenen Befunde, alle Invarianten (`INV-CAL-1`, `INV-CAL-2`, P8 Compliance) sowie Gate-Stack vollständig verifiziert.

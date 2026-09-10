@@ -266,4 +266,46 @@ mod tests {
             find_rebonding_candidates(graph.as_ref(), &single_embedding, &config).await;
         assert!(candidates_single.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_find_rebonding_candidates_max_new_edges_truncation() {
+        let graph = Arc::new(CsrGraph::new());
+
+        let mut embeddings = HashMap::new();
+        embeddings.insert(EntityId::new(1), vec![1.0, 0.0]);
+        embeddings.insert(EntityId::new(2), vec![0.9, 0.1]);
+        embeddings.insert(EntityId::new(3), vec![0.95, 0.05]);
+
+        let config = PercolationConfig {
+            critical_threshold: 0.7,
+            rebonding_similarity: 0.5,
+            max_new_edges_per_pass: 1,
+        };
+
+        let candidates = find_rebonding_candidates(graph.as_ref(), &embeddings, &config).await;
+        assert_eq!(candidates.len(), 1);
+    }
+
+    #[test]
+    fn test_percolation_config_serde_roundtrip() {
+        let config = PercolationConfig {
+            critical_threshold: 0.65,
+            rebonding_similarity: 0.88,
+            max_new_edges_per_pass: 50,
+        };
+
+        let json = serde_json::to_string(&config).expect("Serialization failed");
+        let deserialized: PercolationConfig =
+            serde_json::from_str(&json).expect("Deserialization failed");
+
+        assert_eq!(config.critical_threshold, deserialized.critical_threshold);
+        assert_eq!(
+            config.rebonding_similarity,
+            deserialized.rebonding_similarity
+        );
+        assert_eq!(
+            config.max_new_edges_per_pass,
+            deserialized.max_new_edges_per_pass
+        );
+    }
 }

@@ -3,7 +3,7 @@
 // INVARIANTEN: upsert_document und search_bm25_at beachten MAX_TEXT_BYTES; Lock-Hierarchie: commit_lock (tokio::sync::Mutex) > staged_stats (parking_lot::Mutex); k <= MAX_SEARCH_K.
 // NICHT-OFFENSICHTLICH: Key-Prefixes: "i:" (Inverted), "f:" (Forward), "dl:" (Doc Length), "fw:" (Forward Words), "meta:stats".
 // HOTSPOTS: upsert_document, search_bm25_at, commit_stats
-// STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
+// STAND: TS:2026-09-10T19:25:46Z (SESSION: c844907e)
 
 //! LSM-backed Inverted Index.
 // CONSTRAINT: Inverted Index Key-Gen & Cache
@@ -1776,6 +1776,54 @@ mod tests {
         // Search with k = usize::MAX should be clamped to MAX_SEARCH_K without panic or error
         let results = index.search("keyword", usize::MAX).await?;
         assert_eq!(results.len(), 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_stats_persistence() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index1 = InvertedIndex::new(storage.clone(), "persisted_stats");
+
+        let tx = TxId::new(1);
+        index1
+            .upsert_document(tx, DocId::new(1), "rust memory safe search engine")
+            .await?;
+        index1.commit(tx).await?;
+
+        // Instantiate a second InvertedIndex over the same storage and reload stats
+        let index2 = InvertedIndex::new(storage.clone(), "persisted_stats");
+        assert_eq!(index2.total_docs.load(Ordering::SeqCst), 0);
+        assert_eq!(index2.total_tokens.load(Ordering::SeqCst), 0);
+
+        index2.load_stats().await?;
+
+        assert_eq!(index2.total_docs.load(Ordering::SeqCst), 1);
+        assert!(index2.total_tokens.load(Ordering::SeqCst) > 0);
+        assert!(index2.avg_doc_len_x1000.load(Ordering::SeqCst) > 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_inverted_index_clone_sharing() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index1 = InvertedIndex::new(storage, "clone_sharing");
+        let index2 = index1.clone();
+
+        let tx = TxId::new(1);
+        index1
+            .upsert_document(tx, DocId::new(10), "cloned index sharing atomic state")
+            .await?;
+        index1.commit(tx).await?;
+
+        // State should be reflected in index2 because atomics & locks are shared via Arcs
+        assert_eq!(index2.total_docs.load(Ordering::SeqCst), 1);
+        assert!(index2.total_tokens.load(Ordering::SeqCst) > 0);
+
+        let results = index2.search("sharing", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, DocId::new(10));
 
         Ok(())
     }
