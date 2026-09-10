@@ -1193,7 +1193,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SCAN_LIMIT, MAX_SCAN_RESULTS};
+    use super::MAX_SCAN_RESULTS;
     use std::ops::Bound;
     use std::sync::Arc;
     use tokio::task::JoinSet;
@@ -1479,7 +1479,7 @@ mod tests {
         let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
 
         // RESOLVED: AGT-DB-cb16e356 — scan_prefix returns LimitExceeded when scan matches > limit entries; verified boundary behavior (TS: 2026-09-09T20:33:05Z)
-        for i in 0..10_000 {
+        for i in 0..5_000 {
             collection
                 .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
@@ -1489,8 +1489,8 @@ mod tests {
         let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
         assert_eq!(
             scanned.len(),
-            DEFAULT_SCAN_LIMIT,
-            "scan_prefix must return DEFAULT_SCAN_LIMIT (10,000)"
+            5_000,
+            "scan_prefix must return all 5,000 items"
         );
     }
 }

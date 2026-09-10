@@ -923,8 +923,19 @@ async fn run_long_mem_eval_cmd(
     for (case_idx, case) in cases.iter().enumerate() {
         for (turn_idx, (role, utterance, sess_idx)) in case.session_history.iter().enumerate() {
             let doc_id = format!("lme_doc_{}_{}_{}", case_idx, sess_idx, turn_idx);
+            // Cap text length to 32,000 bytes so serialized JSON payload stays comfortably under SSTable's 65,535 byte entry limit
+            let safe_text = if utterance.len() > 32_000 {
+                let mut truncated = utterance.clone();
+                truncated.truncate(32_000);
+                while !truncated.is_char_boundary(truncated.len()) {
+                    truncated.pop();
+                }
+                truncated
+            } else {
+                utterance.clone()
+            };
             let metadata = serde_json::json!({
-                "text": utterance,
+                "text": safe_text,
                 "speaker": role,
                 "case_id": case.question_id,
                 "session_idx": sess_idx,
@@ -1013,8 +1024,18 @@ async fn run_locomo_cmd(
     for (case_idx, case) in cases.iter().enumerate() {
         for (ev_idx, ev) in case.evidence.iter().enumerate() {
             let doc_id = format!("locomo_doc_{}_{}", case_idx, ev_idx);
+            let safe_text = if ev.len() > 32_000 {
+                let mut truncated = ev.clone();
+                truncated.truncate(32_000);
+                while !truncated.is_char_boundary(truncated.len()) {
+                    truncated.pop();
+                }
+                truncated
+            } else {
+                ev.clone()
+            };
             let metadata = serde_json::json!({
-                "text": ev,
+                "text": safe_text,
                 "case_id": case.question_id,
                 "sample_id": case.sample_id,
             });
