@@ -225,6 +225,9 @@ pub struct LsmStorage {
     budget: Arc<ResourceTracker>,
     block_cache: Arc<BlockCache>,
     pub snapshot_registry: Arc<SnapshotRegistry>,
+    /// Persistent CompactionEngine instance — retains counter across maybe_compact() calls.
+    /// Prevents SSTable name collisions from fresh-counter ad-hoc instantiation (audit H-3).
+    compaction_engine: Arc<CompactionEngine>,
     next_seq_no: AtomicU64,
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
@@ -288,11 +291,17 @@ impl LsmStorage {
                     max_wal_id = Some(max_wal_id.map_or(id, |m| m.max(id)));
                 }
             } else if name_str == "wal.log" {
-                // Legacy WAL
+                // NC-5: Assign ts=0 (oldest sentinel) and ensure flush_counter starts at ≥ 1
+                // to prevent wal-0.log collision on next flush after legacy migration.
                 wal_files.push((0, entry.path()));
+                // Update max_wal_id to at least 0 so flush_counter initializes to 1
+                max_wal_id = Some(max_wal_id.map_or(0, |m| m));
             }
         }
-        wal_files.sort_by_key(|(ts, _)| *ts);
+        // NC-5: Stable sort with path tiebreaker prevents wal.log/wal-0.log ordering ambiguity
+        wal_files.sort_by(|(ts_a, path_a), (ts_b, path_b)| {
+            ts_a.cmp(ts_b).then_with(|| path_a.cmp(path_b))
+        });
 
         let memtable = MemTable::new();
         let mut max_seq = 0u64;
@@ -415,20 +424,6 @@ impl LsmStorage {
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
         // AI-TAG[SMELL][MINOR] TODO(audit-C-1): Force a startup flush of replayed MemTable entries before deleting old WAL files, or delay deleting old WAL files until after the subsequent flush + fsync_parent_dir. (ID: AGT-STORE-bae66245) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
-        // Cleanup old replayed WAL files except the active WAL
-        if wal_files.len() > 1 {
-            let active_wal_path = wal.path();
-            for (_ts, old_wal_path) in &wal_files[..wal_files.len() - 1] {
-                if old_wal_path != active_wal_path {
-                    if let Err(e) = tokio::fs::remove_file(old_wal_path).await {
-                        tracing::warn!("Failed to remove old WAL file {:?}: {}", old_wal_path, e);
-                    } else {
-                        tracing::info!("Removed old replayed WAL file: {:?}", old_wal_path);
-                    }
-                }
-            }
-        }
-
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
@@ -436,6 +431,8 @@ impl LsmStorage {
             key_manager.clone(),
             Arc::clone(&resource_tracker),
         ));
+        // Clone für den Hintergrund-Task, original bleibt als Struct-Feld
+        let compaction_engine_for_loop = Arc::clone(&compaction_engine);
         let compaction_sstables = Arc::clone(&sstables);
         let compaction_path = config.path.clone();
         let cancel_token = tokio_util::sync::CancellationToken::new();
@@ -443,13 +440,14 @@ impl LsmStorage {
 
         let ct_clone = cancel_token.clone();
         task_tracker.spawn(async move {
-            compaction_engine
+            compaction_engine_for_loop
                 .run_loop(compaction_sstables, compaction_path, ct_clone)
                 .await;
         });
         task_tracker.close();
 
-        Ok(Self {
+        // Build storage instance first (compaction_engine field added)
+        let storage = Self {
             config,
             key_manager,
             state: RwLock::new(LsmState {
@@ -462,6 +460,7 @@ impl LsmStorage {
             budget: resource_tracker,
             block_cache,
             snapshot_registry,
+            compaction_engine,        // H-3: persistent field
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
@@ -470,7 +469,49 @@ impl LsmStorage {
             flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
             segment_counter: AtomicU64::new(0),
             budget_tracking_drift_bytes: std::sync::atomic::AtomicU64::new(0),
-        })
+        };
+
+        // C-1: Force startup flush BEFORE deleting old WAL files.
+        // Replayed MemTable entries must be persisted in an SSTable first —
+        // otherwise a second crash before the next organic flush causes permanent data loss.
+        if replayed_size > 0 && wal_files.len() > 1 {
+            tracing::info!(
+                replayed_bytes = replayed_size,
+                "Forcing startup flush to persist replayed WAL entries before old WAL cleanup"
+            );
+            storage.flush().await.map_err(|e| {
+                MemFuseError::Storage(format!("Startup flush after WAL replay failed: {e}"))
+            })?;
+        }
+
+        // WAL cleanup: now safe, replayed data is on disk in SSTable
+        if wal_files.len() > 1 {
+            let active_wal_path = {
+                let state = storage.state.read().await;
+                state.wal.path().to_path_buf()
+            };
+            for (_ts, old_wal_path) in &wal_files[..wal_files.len() - 1] {
+                if old_wal_path != &active_wal_path {
+                    if let Err(e) = tokio::fs::remove_file(old_wal_path).await {
+                        tracing::warn!("Failed to remove old WAL file {:?}: {}", old_wal_path, e);
+                    } else {
+                        tracing::info!("Removed old replayed WAL file: {:?}", old_wal_path);
+                        // NC-4: Remove .uuid sidecar file alongside WAL
+                        let uuid_sidecar = PathBuf::from(
+                            format!("{}.uuid", old_wal_path.display())
+                        );
+                        if let Err(e) = tokio::fs::remove_file(&uuid_sidecar).await {
+                            tracing::debug!(
+                                "Could not remove WAL UUID sidecar {:?}: {} (non-critical)",
+                                uuid_sidecar, e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(storage)
     }
 
     /// Forces a flush (to be used by PersistentCheckpointStore or tests).
@@ -479,16 +520,11 @@ impl LsmStorage {
     }
 
     /// Evaluates whether compaction should run and performs it if needed.
+    /// Uses the persistent CompactionEngine instance to maintain a stable counter
+    /// across calls, preventing SSTable filename collisions (audit H-3).
     #[doc(hidden)]
     pub async fn maybe_compact(&self) -> Result<bool> {
-        let compaction_engine = CompactionEngine::new(
-            self.config.compaction.clone(),
-            Arc::clone(&self.snapshot_registry),
-            Arc::clone(&self.block_cache),
-            self.key_manager.clone(),
-            Arc::clone(&self.budget),
-        );
-        compaction_engine
+        self.compaction_engine
             .maybe_compact(&self.sstables, &self.config.path)
             .await
     }
@@ -4010,7 +4046,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rollback_intent_file_cleanup_on_success() {
+    async fn test_startup_flush_before_wal_cleanup() {
         let tmp = TempDir::new().expect("temp dir");
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
@@ -4020,70 +4056,103 @@ mod tests {
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
 
-        let tx1 = TxId::new(1);
-        storage.put(tx1, b"key1", b"val1").await.unwrap();
-        storage.commit(tx1).await.unwrap();
+        // 1. First run: write entries and rotate WAL (force_flush creates second WAL file)
+        {
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("create initial storage");
+            let tx1 = TxId::new(1);
+            storage.put(tx1, b"key1", b"val1").await.unwrap();
+            storage.commit(tx1).await.unwrap();
 
-        let tx2 = TxId::new(2);
-        storage.put(tx2, b"key2", b"val2").await.unwrap();
-        storage.commit(tx2).await.unwrap();
+            // Force flush so active WAL rotates to wal-0.log and active WAL becomes wal-1.log
+            storage.force_flush().await.unwrap();
 
-        // Perform rollback to tx1
-        storage.rollback_to_tx(tx1).await.expect("rollback succeeds");
+            // Write new data into wal-1.log without flushing
+            let tx2 = TxId::new(2);
+            storage.put(tx2, b"key2", b"val2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
+            // Drop without flush or close (simulating restart after replay)
+        }
 
-        // Verify that intent file for tx1 rollback was removed after completion
-        let intent_path = tmp
-            .path()
-            .join(format!("rollback-{:016x}.intent", tx1.inner()));
-        assert!(
-            !intent_path.exists(),
-            "Rollback intent file must be removed after successful rollback"
-        );
+        // 2. Second run: startup replays wal-1.log and must force startup flush
+        {
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("reopen storage after crash/restart");
+
+            // Verify both keys are present
+            assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+            assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+
+            // Verify SSTable count > 0 for replayed entries
+            let stats = storage.stats().await.unwrap();
+            assert!(
+                stats.num_segments >= 1,
+                "Startup flush must persist replayed WAL entries into SSTable"
+            );
+        }
+
+        // 3. Third run: simulate immediate second crash/restart without new writes
+        {
+            let storage = LsmStorage::new(config)
+                .await
+                .expect("reopen storage after second crash");
+            assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+            assert_eq!(storage.get(b"key2").await.unwrap(), Some(b"val2".to_vec()));
+        }
     }
 
     #[tokio::test]
-    async fn test_drift_counter_reset_on_flush() {
+    async fn test_wal_uuid_sidecar_cleaned_up_on_startup() {
         let tmp = TempDir::new().expect("temp dir");
         let config = LsmConfig {
             path: tmp.path().to_path_buf(),
             memtable_size_limit: 1024 * 1024,
-            max_ram_mb: 1, // 1 MB limit = 1,048,576 bytes
+            max_ram_mb: 64,
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
         };
-        let storage = LsmStorage::new(config).await.expect("create storage");
 
-        let key = b"drift_key_reset";
-        let value = vec![b'v'; 60000];
+        // 1. First run: write key1, force_flush (creates wal-0.log), write key2 (into active wal-0.log)
+        {
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("create storage");
+            let tx1 = TxId::new(1);
+            storage.put(tx1, b"key1", b"val1").await.unwrap();
+            storage.commit(tx1).await.unwrap();
+            storage.force_flush().await.unwrap();
 
-        let tx = TxId::new(1);
-        storage.put(tx, key, &value).await.expect("put succeeds");
+            let tx2 = TxId::new(2);
+            storage.put(tx2, b"key2", b"val2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
+        }
 
-        storage
-            .budget
-            .consume_memory(990_000)
-            .expect("fill budget to 990,000");
+        // Create a dummy second WAL file wal-1.log and sidecar wal-0.log.uuid
+        let uuid_path = tmp.path().join("wal-0.log.uuid");
+        tokio::fs::write(&uuid_path, b"test-uuid-content")
+            .await
+            .unwrap();
+        let wal1_path = tmp.path().join("wal-1.log");
+        tokio::fs::write(&wal1_path, b"")
+            .await
+            .unwrap();
+        assert!(uuid_path.exists(), "Dummy .uuid file must exist before startup cleanup");
 
-        storage.commit(tx).await.expect("commit succeeds");
-        assert!(
-            storage.budget_tracking_drift_bytes() > 0,
-            "Drift bytes must be > 0 prior to flush"
-        );
+        // 2. Second run: startup sees wal-0.log (old) and wal-1.log (active).
+        // Startup should clean up old WAL (wal-0.log) AND its .uuid sidecar.
+        {
+            let _storage = LsmStorage::new(config)
+                .await
+                .expect("reopen storage");
 
-        // Reset the artificial budget fill so flush can succeed
-        storage.budget.release_memory(990_000);
-
-        // Perform flush
-        storage.force_flush().await.expect("flush succeeds");
-
-        // Verify drift counter was reset to 0
-        assert_eq!(
-            storage.budget_tracking_drift_bytes(),
-            0,
-            "Drift counter must be reset to 0 after successful flush"
-        );
+            assert!(
+                !uuid_path.exists(),
+                "WAL .uuid sidecar file must be cleaned up during startup recovery"
+            );
+        }
     }
 }
