@@ -373,3 +373,27 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 
 ### 19.3 Verdict
 **VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Safety- und Test-Invarianten.
+
+---
+
+## 20. Audit-Update — Inventory Realignment & Clippy Hardening (2026-09-10T19:30:00Z, SESSION: a9d67eae)
+
+### 20.1 Inventar- & Realitätsabgleich (Schritt 0)
+- **Kommando:** `find crates/memfuse-index/src -name "*.rs" | sort`
+- **Gefundene Dateien (7):** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `partial_rebuild.rs`, `persistence.rs`, `quantize.rs`.
+- **Inventar-Drift Befund:**
+  1. `Inventar-Drift: Datei crates/memfuse-index/src/partial_rebuild.rs im Prompter-Inventar vom 2026-09-10 nicht erfasst`.
+  2. `Inventar-Drift: Datei crates/memfuse-index/src/nucleation.rs umbenannt oder entfernt` (durch `partial_rebuild.rs` ersetzt).
+
+### 20.2 Durchgeführte Anpassungen & Verifizierungen
+1. **Clippy Fix in `diskann.rs`:**
+   - In `DiskAnnIndex::recover_pending_delta` wurde `vec_bytes.chunks_exact(4)` auf Rust 1.98 `as_chunks::<4>()` refaktoriert (`-D clippy::chunks-exact-to-as-chunks`).
+2. **Quality & Gate Checks:**
+   - `cargo check -p memfuse-index --all-features`: 0 Fehler, 0 Warnungen.
+   - `cargo clippy -p memfuse-index --all-features -- -D warnings`: 0 Findings.
+   - `cargo fmt --check -p memfuse-index`: 0 Diffs.
+   - `cargo test -p memfuse-index --lib`: 92/92 Tests bestanden.
+   - `cargo test -p memfuse-index --features experimental-diskann`: 100/100 Tests bestanden.
+
+### 20.3 Verdict
+**VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Performance-, SIMD-Paritäts- und Safety-Invarianten für Layer 1.
