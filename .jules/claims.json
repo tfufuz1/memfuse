@@ -82,13 +82,22 @@
       "released_at": "2026-09-10T00:00:00Z"
     },
     {
-      "krate": "memfuse-index",
+      "krate": "memfuse-calibration",
       "issue": "JULES-20260910-REVIEW",
-      "timestamp": "2026-09-10T19:23:07.780102131+00:00",
-      "session_id": "16724994487820320501",
+      "timestamp": "2026-09-10T19:10:20.130719692+00:00",
+      "session_id": "3924964487935478810",
       "active": false,
-      "expires_at": "2026-09-10T23:23:07.780077396+00:00",
-      "released_at": "2026-09-10T19:44:23.501030154+00:00"
+      "expires_at": "2026-09-10T23:10:20.130699356+00:00",
+      "released_at": "2026-09-10T19:16:39.281527504+00:00"
+    },
+    {
+      "krate": "memfuse-calibration",
+      "issue": "JULES-20260910-REVIEW",
+      "timestamp": "2026-09-10T19:16:52.591104830+00:00",
+      "session_id": "3924964487935478810",
+      "active": false,
+      "expires_at": "2026-09-10T23:16:52.591092025+00:00",
+      "released_at": "2026-09-10T19:16:55.196512806+00:00"
     }
   ]
 }
