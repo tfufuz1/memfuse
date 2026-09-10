@@ -661,7 +661,9 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                 .open(wal_path)
                 .await
             {
-                let _ = f.sync_all().await;
+                if let Err(e) = f.sync_all().await {
+                    tracing::warn!("Failed to fsync WAL file during recovery: {e}");
+                }
             }
             return Ok(true);
         }
