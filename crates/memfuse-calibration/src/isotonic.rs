@@ -22,6 +22,7 @@ use std::collections::VecDeque;
 const ECE_BINS: usize = 10;
 const DEFAULT_WARMUP_REQUIRED: u32 = 50;
 const DEFAULT_MAX_OBSERVATIONS: usize = 2000;
+const REBUILD_THRESHOLD_NEW_OBS: usize = 10;
 
 /// Isotonischer Kalibrator für nicht-parametrische Wahrscheinlichkeitskalibrierung.
 #[derive(Debug, Clone)]
@@ -31,6 +32,7 @@ pub struct IsotonicCalibrator {
     max_observations: usize,
     cached_model: Option<Vec<(f32, f32)>>, // (max_score_in_block, calibrated_prob)
     model_dirty: bool,
+    observations_since_rebuild: usize,
     fingerprint: Option<ConfigFingerprint>,
 }
 
@@ -43,6 +45,7 @@ impl IsotonicCalibrator {
             max_observations,
             cached_model: None,
             model_dirty: true,
+            observations_since_rebuild: 0,
             fingerprint: None,
         }
     }
@@ -59,6 +62,7 @@ impl IsotonicCalibrator {
         }
         self.observations.push_back((raw_score, outcome));
         self.model_dirty = true;
+        self.observations_since_rebuild += 1;
     }
 
     /// Gibt die Anzahl der aktuell gespeicherten Beobachtungen zurück.
@@ -77,10 +81,21 @@ impl IsotonicCalibrator {
         if !self.is_calibrated() {
             return None;
         }
-        if self.model_dirty {
+        if self.model_dirty
+            && (self.cached_model.is_none()
+                || self.observations_since_rebuild >= REBUILD_THRESHOLD_NEW_OBS)
+        {
             self.rebuild_model();
         }
         Some(self.lookup_isotonic(raw_score))
+    }
+
+    /// Erzwingt sofortiges PAVA-Rebuild, unabhängig vom Threshold.
+    /// Nützlich vor einer Shutdown-Sequenz oder wenn aktuelle Accuracy kritisch ist.
+    pub fn force_rebuild(&mut self) {
+        if self.model_dirty {
+            self.rebuild_model();
+        }
     }
 
     /// P8-PFLICHT: Vollständiger Reset bei Fingerprint-Änderung.
@@ -96,6 +111,7 @@ impl IsotonicCalibrator {
             self.observations.clear();
             self.cached_model = None;
             self.model_dirty = true;
+            self.observations_since_rebuild = 0;
             self.fingerprint = Some(new_fingerprint);
         }
     }
@@ -156,6 +172,7 @@ impl IsotonicCalibrator {
                 .collect(),
         );
         self.model_dirty = false;
+        self.observations_since_rebuild = 0;
     }
 
     fn lookup_isotonic(&self, raw_score: f32) -> f32 {
@@ -452,6 +469,66 @@ mod tests {
         assert!(
             (prob1 - expected).abs() < 1e-6,
             "Expected {expected}, got {prob1}"
+        );
+    }
+
+    #[test]
+    fn test_debounced_rebuild_threshold() {
+        let mut cal = IsotonicCalibrator::new(10, 100);
+        // Initial warmup with 10 observations (all false at 0.1..1.0)
+        for i in 1..=10 {
+            cal.record_outcome(i as f32 / 10.0, false);
+        }
+        // Initial rebuild happens on first calibrated_probability()
+        let initial_prob = cal.calibrated_probability(0.5).unwrap();
+        assert_eq!(initial_prob, 0.0);
+
+        // Record 9 (< REBUILD_THRESHOLD_NEW_OBS = 10) new observations that are all true
+        for _ in 0..9 {
+            cal.record_outcome(0.5, true);
+        }
+
+        // Must return cached prediction (0.0) without rebuilding
+        let prob_before_threshold = cal.calibrated_probability(0.5).unwrap();
+        assert_eq!(
+            prob_before_threshold, 0.0,
+            "Should return cached model prior to reaching rebuild threshold"
+        );
+
+        // Record 10th new observation (reaching REBUILD_THRESHOLD_NEW_OBS = 10)
+        cal.record_outcome(0.5, true);
+
+        // Next calibrated_probability call rebuilds model and incorporates new observations
+        let prob_after_threshold = cal.calibrated_probability(0.5).unwrap();
+        assert!(
+            prob_after_threshold > 0.0,
+            "Expected rebuilt model to incorporate new observations, got {prob_after_threshold}"
+        );
+    }
+
+    #[test]
+    fn test_force_rebuild_bypasses_threshold() {
+        let mut cal = IsotonicCalibrator::new(10, 100);
+        for i in 1..=10 {
+            cal.record_outcome(i as f32 / 10.0, false);
+        }
+        let initial_prob = cal.calibrated_probability(0.5).unwrap();
+        assert_eq!(initial_prob, 0.0);
+
+        // Record only 1 new observation (< threshold)
+        cal.record_outcome(0.5, true);
+
+        // Without force_rebuild, calibrated_probability returns cached result 0.0
+        assert_eq!(cal.calibrated_probability(0.5).unwrap(), 0.0);
+
+        // Force rebuild immediately
+        cal.force_rebuild();
+
+        // calibrated_probability now reflects the newly rebuilt model
+        let prob_forced = cal.calibrated_probability(0.5).unwrap();
+        assert!(
+            prob_forced > 0.0,
+            "Expected force_rebuild to immediately rebuild model, got {prob_forced}"
         );
     }
 }
