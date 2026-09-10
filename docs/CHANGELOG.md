@@ -83,13 +83,7 @@
 | `2026-09-09T21:51:02Z (SESSION: 75ca9d31)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-09-09T20:20:00Z (SESSION: 80a3120b)` | `crates/memfuse-calibration/src/platt.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Parametric Platt Scaling (logistic calibration) mapping logit/scores to probabilities. |
 | `2026-09-09T20:20:00Z (SESSION: 80a3120b)` | `crates/memfuse-calibration/src/replicator.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Replicator dynamics for online adaptive RRF signal weight allocation (F-07). |
-| `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/dispatch.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Client-seitiger MCP-Dispatch-Mechanismus über Stdio JSON-RPC 2.0 (ADR-010). |
 | `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/lyapunov.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Proaktiver Distributional-Drift-Wächter via Lyapunov-Exponenten über KL-Divergenzen. |
-| `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/outcome.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Outcome-Typen und DecisionId-Identifier für konformale Router-Kalibrierung. |
-| `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/profile.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SLM-Profildefinitionen und konformale Quantil-Kalibrierung (Gibbs & Candès). |
-| `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/router.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Haupt-Routing-Engine für Hybrid-Search-Kontext auf SLM-Profile. |
-| `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/serde_helpers.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Serde-Hilfsfunktionen für deterministische JSON-Serialisierung. |
-| `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/tests.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Unit- und Integrationstest-Suite für memfuse-router. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/embedding.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Native Candle ML vector embedding client implementation. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/embedding_provider.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Trait-based EmbeddingProvider implementation for CandleEmbedClient. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/gasp.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | GASP Grounding-Aware Sensitivity by Perturbation post-hoc hallucination validator. |
