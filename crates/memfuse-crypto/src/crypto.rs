@@ -534,14 +534,14 @@ mod tests {
     }
 
     #[test]
-    fn test_derive_kv_key_length_prefix_prevents_collision() {
+    fn test_derive_kv_key_length_prefix_prevents_collision() -> Result<()> {
         use memfuse_core::TenantId;
         use crate::kv_cipher::ModelFingerprint;
 
         // Setup: Zwei ModelFingerprint-Instanzen mit gleichem hash, aber unterschiedlicher
         // Aufteilung von model_id/quantization die ohne Längenpräfix kollidieren würden.
-        let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1").unwrap();
-        let tenant = TenantId::try_new(42).unwrap();
+        let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1")?;
+        let tenant = TenantId::try_new(42).map_err(|e| CryptoError::InvalidInput(e.to_string()))?;
 
         let fp_a = ModelFingerprint {
             hash: [0xAB; 32],
@@ -554,32 +554,34 @@ mod tests {
             quantization: "_K_M".to_string(), // Gleiche Konkatenation ohne Präfix
         };
 
-        let key_a = km.derive_kv_key(tenant, &fp_a).unwrap();
-        let key_b = km.derive_kv_key(tenant, &fp_b).unwrap();
+        let key_a = km.derive_kv_key(tenant, &fp_a)?;
+        let key_b = km.derive_kv_key(tenant, &fp_b)?;
 
         // Mit Längenpräfixierung MÜSSEN die Keys verschieden sein
         assert_ne!(
             key_a.inspect_key_bytes_for_test(), key_b.inspect_key_bytes_for_test(),
             "HKDF-Subkeys dürfen bei unterschiedlichen (model_id, quantization)-Paaren nicht gleich sein"
         );
+        Ok(())
     }
 
     #[test]
-    fn test_derive_kv_key_same_fingerprint_produces_same_key() {
+    fn test_derive_kv_key_same_fingerprint_produces_same_key() -> Result<()> {
         use memfuse_core::TenantId;
         use crate::kv_cipher::ModelFingerprint;
 
         // Determinismus-Test: Gleiche Eingaben → gleicher Key (HKDF ist deterministisch)
-        let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1").unwrap();
-        let tenant = TenantId::try_new(1).unwrap();
+        let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1")?;
+        let tenant = TenantId::try_new(1).map_err(|e| CryptoError::InvalidInput(e.to_string()))?;
         let fp = ModelFingerprint {
             hash: [0x12; 32],
             model_id: "test-model".to_string(),
             quantization: "Q8_0".to_string(),
         };
-        let key_1 = km.derive_kv_key(tenant, &fp).unwrap();
-        let key_2 = km.derive_kv_key(tenant, &fp).unwrap();
+        let key_1 = km.derive_kv_key(tenant, &fp)?;
+        let key_2 = km.derive_kv_key(tenant, &fp)?;
         assert_eq!(key_1.inspect_key_bytes_for_test(), key_2.inspect_key_bytes_for_test());
+        Ok(())
     }
 
     #[test]
