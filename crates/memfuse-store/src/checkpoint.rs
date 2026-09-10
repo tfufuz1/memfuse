@@ -20,7 +20,7 @@
 // ARCHITEKTUR: `memfuse-checkpoint` stellt den generischen `CheckpointGuard<S: StorageEngine>` und `PersistentCheckpointStore`
 //             bereit. `memfuse-store::checkpoint` bietet LSM-spezifische transactional rollbacks (TxId-skopiert).
 use crate::lsm::LsmStorage;
-use memfuse_core::{Result, TxId};
+use memfuse_core::{MemFuseError, Result, TxId};
 use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.

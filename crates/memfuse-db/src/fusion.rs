@@ -323,12 +323,6 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                         t_obj.insert(k.clone(), v.clone());
                     }
                 }
-            } else {
-                // Scalar-Kollision: Array-Konvertierung ist bewusste Entscheidung — siehe Doc-Kommentar.
-                if t_val != &s_val {
-                    let arr = vec![t_val.clone(), s_val.clone()];
-                    *t_val = serde_json::Value::Array(arr);
-                }
             } else if t_val != &s_val {
                 // Scalar-Kollision: bewusste Array-Konvertierung (flach gehalten), siehe Doc-Kommentar oben.
                 let arr = if let Some(s_arr) = s_val.as_array() {

@@ -1419,13 +1419,6 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
-                    processed_count += 1;
-                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
-                        return Err(MemFuseError::LimitExceeded {
-                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
-                            context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
-                        });
-                    }
                 }
             }
 
