@@ -63,3 +63,32 @@
 - `cargo fmt --check -p memfuse-candle`: 0 Diffs
 - `cargo test -p memfuse-candle`: 27 Tests grün
 - `cargo run -p xtask -- jules-preflight --fast`: PASSED
+
+---
+
+## 5. Audit-Re-Verifikation & Tier-2-Deep-Pass (2026-09-10)
+
+**Datum:** 2026-09-10
+**Session:** `9c15fdb4`
+**Task-ID:** `JULES-20260910-REVIEW`
+**Status:** 🟢 GO / Audited & Verified
+
+### Realitätsabgleich & Inventar-Verifikation
+- **Modul-Inventar:** `embedding.rs`, `embedding_provider.rs`, `gasp.rs`, `gguf_loader.rs`, `inference.rs`, `lib.rs`, `model_registry.rs`.
+- **Inventar-Status:** 7/7 Dateien in `src/` verifiziert. `embedding_provider.rs` als Inventar-Drift gegenüber Prompt-Snapshot vom 2026-09-08 erfasst und vollständig analysiert.
+- **FILE-CONTEXT Header:** Alle 7 Quellcodedateien besitzen valide `FILE-CONTEXT`-Header.
+
+### Code-Audit & Invarianten-Prüfung
+- **Zero Unsafe:** `#![forbid(unsafe_code)]` Konformität in der Crate-Architektur bestätigt (0 `unsafe` Blöcke in `src/`).
+- **Zero Production Unhandled Panics:** 0 `.unwrap()` oder `.expect()` Aufrufe im Produktionscode außerhalb von `#[cfg(test)]`.
+- **Async Thread Safety:** Alle CPU-intensiven Forward-Pass- und Embedding-Aufrufe sind strikt via `tokio::task::spawn_blocking` vom Tokio-Async-Reactor isoliert.
+- **NaN Safety & P8 Kalibrierung:** `GaspValidator` sichert NaN/Inf Scores durch Fallback auf 0.0 ab und synchronisiert `ConfigFingerprint` mit `IsotonicCalibrator`.
+
+### Testergebnisse & Verifikation
+- `cargo test -p memfuse-candle`: 27/27 Tests grün (14 Unit Tests, 3 Conformance Tests, 5 Mutant/Grounding Tests, 2 GGUF Header Tests, 3 Property Tests).
+- `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler, 0 Warnungen.
+- `cargo clippy -p memfuse-candle -- -D warnings`: 0 Findings.
+- `cargo fmt --check -p memfuse-candle`: 0 Diffs.
+- `just sync-docs-check`: PASSED.
+
+**Verdict:** 🟢 **GO** — `memfuse-candle` ist stabil, typ- und async-sicher sowie vollständig im Audit erfasst.
