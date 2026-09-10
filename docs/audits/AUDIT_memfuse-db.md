@@ -449,3 +449,27 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
    - `cargo clippy -p memfuse-db --no-deps --all-features -- -D warnings` → 0 Warnings
    - `cargo fmt --check -p memfuse-db` → 0 Diffs
    - `cargo test -p memfuse-db --all-features` → 100% grün
+
+---
+
+## 17. Inventar-Realitätsabgleich & Chaos-Engineering-Audit (2026-09-10)
+
+**Datum:** 10. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: b4f1c175)
+**Crate:** `memfuse-db` · Layer 2 Orchestrator & 4-Signal-Fusion
+
+### Inventar-Realitätsabgleich:
+- **Prompter-Inventar (Stand 2026-09-10):** 28 `.rs`-Dateien gelistet (inkl. `reaper.rs`).
+- **Tatsächlicher Repository-Zustand:** 27 `.rs`-Dateien in `crates/memfuse-db/src/`.
+- **Befund:** `Inventar-Drift: Datei reaper.rs umbenannt oder entfernt`.
+- **Analyse:** Die Funktionalität von `reaper.rs` wurde vollständig in `background_workers.rs` konsolidiert (`start_consolidation_reaper`, `start_expiry_reaper`, `start_thermostat_reaper`, `start_orphan_reaper`). Alle 27 Quellcode-Dateien im Repository sind ordnungsgemäß erfasst und verifiziert.
+
+### Concurrency- & Chaos-Engineering-Audit:
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write (WAL / SSTable) | **OK** | 2PC Rollback & `repair_on_open()` stellen Konsistency atomar wieder her | — |
+| Disk-Full ENOSPC | **OK** | Standard `MemFuseError::Storage` / `IoError` Propagierung ohne Panic | — |
+| OOM / Backpressure | **OK** | Scan-Limits (`DEFAULT_SCAN_LIMIT`, `HARD_SCAN_CEILING`) & Bounded Top-K Selection schützen Heap | — |
+| SIGBUS mmap-truncate | **N/A** | `memfuse-db` nutzt kein Direkt-Mmap (in `memfuse-index` / `memfuse-store` isoliert) | — |
+| SIGKILL recovery | **OK** | Interne 2PC Intent-Keys und LSM WAL-Chaining reparieren unvollständige Transaktionen beim Neustart | — |
