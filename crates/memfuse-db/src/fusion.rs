@@ -76,9 +76,9 @@ pub fn apply_resonance_bonus(
     // NC-6: NaN/Inf-Scores ans Ende (stable partition erhält Reihenfolge unter ihnen)
     results.sort_by(|a, b| {
         match (a.score.is_finite(), b.score.is_finite()) {
-            (true, false) => std::cmp::Ordering::Less,    // finite vor non-finite
+            (true, false) => std::cmp::Ordering::Less, // finite vor non-finite
             (false, true) => std::cmp::Ordering::Greater, // non-finite nach finite
-            _             => b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)),
+            _ => b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)),
         }
     });
 
@@ -1502,7 +1502,10 @@ mod tests {
 
         // NC-6: NaN-Score muss am ENDE der sortierten Liste landen (nicht vorne)
         assert_eq!(first_run.len(), 3);
-        assert_ne!(first_run[0].id, "doc_nan", "NaN-Score darf nicht an Listenspitze stehen");
+        assert_ne!(
+            first_run[0].id, "doc_nan",
+            "NaN-Score darf nicht an Listenspitze stehen"
+        );
         assert_eq!(first_run[0].id, "doc_top");
         assert_eq!(first_run[1].id, "doc_mid");
         assert_eq!(first_run.last().map(|r| r.id.as_str()), Some("doc_nan"));
@@ -1702,7 +1705,9 @@ mod tests {
         );
 
         assert!(
-            result_with_invalid_weights.iter().all(|r| r.score.is_finite()),
+            result_with_invalid_weights
+                .iter()
+                .all(|r| r.score.is_finite()),
             "No score in fusion results should be NaN or non-finite"
         );
         assert_eq!(result_with_invalid_weights.len(), 2);
@@ -1719,12 +1724,31 @@ mod tests {
             provenance: None,
         };
 
-        let s1 = ("sig1".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
-        let s2 = ("sig2".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
-        let s3 = ("sig3".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
-        let s4_invalid = ("sig4".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], f32::NAN);
+        let s1 = (
+            "sig1".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            1.0,
+        );
+        let s2 = (
+            "sig2".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            1.0,
+        );
+        let s3 = (
+            "sig3".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            1.0,
+        );
+        let s4_invalid = (
+            "sig4".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            f32::NAN,
+        );
 
-        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let cfg = ResonanceConfig {
+            beta: 0.5,
+            gamma: 0.3,
+        };
         let fused = weighted_reciprocal_rank_fusion_with_options(
             vec![s1, s2, s3, s4_invalid],
             10,
