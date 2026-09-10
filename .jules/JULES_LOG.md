@@ -1,6 +1,6 @@
-# Jules System & Context Diagnostics Log (`docs/JULES_LOG.md`)
+# Jules System & Context Diagnostics Log (`.jules/JULES_LOG.md`)
 
-Dieses Dokument bietet eine vollständige, präzise und transparente Analyse der Funktionsweise von Jules (Google Gemini-basierter Software Engineering Agent) in diesem Repository (`memfuse`). Es erklärt exakt, wie der Kontext aufgebaut ist, welche Dateien geladen werden, welche Werkzeuge zur Verfügung stehen, und wie dieses Projekt zur ultimativen Entwicklungsumgebung optimiert werden kann.
+Dieses Dokument bietet eine vollständige, präzise und transparente Analyse der Funktionsweise von Google-Jules (Google Gemini-basierter Software Engineering Agent) in diesem Repository (`memfuse`), die Umgebungs- und Git-Kapazitäten innerhalb der VM Sandbox, eine vollständige Checkliste aller Git-Befehle, eine Analyse der Repository-Analyseskripte (`/docs/GITHUB_ANALYSE.md`, `/docs/GITHUB_HISTORY.md`, `.jules/JULES_LOG_2.md`) sowie einen umfassenden Optimierungsplan für die MemFuse-Entwicklung mit Google-Jules.
 
 ---
 
@@ -22,132 +22,132 @@ Hier ist die exakte, chronologische Abfolge der Einlesevorgänge und Systeminjek
    - *Beispiele im Kontext:* Speicherstrukturen von `memfuse-db`, `AGENTS.md`-Hierarchie, `ScalarQuantizer`-Sichtbarkeiten, `TxId`-Grenzwerte, Lock-Hierarchien, CI-Gate 10 (`check-jules-context-freshness`), `.unwrap-baseline.json` Regeln, etc.
 
 3. **Benutzer-Nachricht (User Prompt)**
-   - **Präzisierung:** Die ursprüngliche Benutzernachricht („Als Google-Jules musst du deine Entwicklungsumgebung...“) wird direkt im Haupt-Thread übergeben.
-   - *Reihenfolge-Klarstellung:* Zu diesem Zeitpunkt ist im Kontext **noch keine einzige Quellcode-Datei** geladen. Auch `AGENTS.md` befindet sich zu diesem Zeitpunkt noch **nicht** im Kontext.
+   - Die ursprüngliche Benutzernachricht („Als Google-Jules musst du einen Optimierungsplan für die Entwicklung des Memfuse Codes...“) wird direkt im Haupt-Thread übergeben.
+   - *Reihenfolge-Klarstellung:* Zu diesem Zeitpunkt ist im Kontext **noch keine einzige Quellcode-Datei** geladen.
 
-4. **1. Tool-Aufruf: `list_files` (`path: "./"`)**
-   - Jules ruft `list_files` auf, um die Verzeichnisstruktur im Root abzufragen.
-   - *Ergebnis:* Auflistung von Root-Dateien und Ordnern (`AGENTS.md`, `CONSTITUTION.md`, `Cargo.toml`, `docs/`, `crates/`, `xtask/`, etc.).
+4. **1. Tool-Aufruf: `list_files` (`path: "docs"`)**
+   - Jules ruft `list_files` auf, um die Verzeichnisstruktur in `docs/` abzufragen.
 
-5. **Harness Continuation Prompt Injection**
-   - Das Test-/Evaluations-Harness fügt nach dem Tool-Ergebnis automatisch einen Steuerungs-Prompt ein:
-     * `Continue exploring the codebase to understand the issue thoroughly...`
+5. **2. Tool-Aufruf: `list_files` (`path: ".jules"`)**
+   - Inspektion des Spezialordners `.jules/`.
 
-6. **2. Tool-Aufruf: `run_in_bash_session` (`git log -n 15 --oneline`)**
-   - Jules prüft den aktuellen Commit-Verlauf, um vorangegangene Änderungen und den Zustand des Repositories zu verstehen.
-   - *Ergebnis:* Letzter Commit `05b382d feat(graph): implement cascading edge invalidation for superseded chunks (#1726)`.
+6. **3. Tool-Aufruf: `read_file` (`docs/GITHUB_ANALYSE.md`)**
+   - Einlesen der tiefgehenden Analyse über AI-Agent Anti-Muster in GitHub.
 
-7. **3. Tool-Aufruf: `list_files` (`path: "docs"`)**
-   - Jules durchsucht den Ordner `docs/`, um existierende Dokumente, Spezifikationen und Verzeichnisse zu identifizieren.
-   - *Ergebnis:* Ordner `archive/`, `audits/`, `decisions/`, `prompts/`, `reviews/`, `specs/`, sowie Dateien `ARCHITECTURE.md`, `BENCHMARKS.md`, `CHANGELOG.md`, `GITHUB_HISTORY.md`, etc.
+7. **4. Tool-Aufruf: `read_file` (`docs/GITHUB_HISTORY.md`)**
+   - Einlesen der chronologischen Entwicklungshistorie und Architekturphasen.
 
-8. **4. Tool-Aufruf: `run_in_bash_session` (`git log -n 20 --stat`)**
-   - Jules analysiert den Umfang historischer Änderungen im Git-Verlauf, um frühere Großprojekte und Audit-Logs nachzuvollziehen.
+8. **5. Tool-Aufruf: `read_file` (`.jules/JULES_LOG_2.md`)**
+   - Einlesen der Umgebungs- und Kontext-Analyse.
 
-9. **5. Tool-Aufruf: `request_plan_review` & `set_plan`**
-   - Erstellung des Ausführungsplans für diese Erstellungsaufgabe.
+9. **6. Tool-Aufruf: `read_file` (`.jules/JULES_LOG.md`)**
+   - Einlesen der bisherigen Log-Datei.
 
-10. **6. Tool-Aufruf: `write_file` (`docs/JULES_LOG.md`)**
-    - Erstellung dieses Dokuments.
+10. **7. Tool-Aufruf: `run_in_bash_session` (`git status; git log -n 5; git remote -v`)**
+    - Überprüfung des lokalen Git-Zustands, des aktuellen Branches und der Remotes.
+
+11. **8. Tool-Aufruf: `run_in_bash_session` (`git version; git branch -a`)**
+    - Überprüfung aller verfügbaren lokalen und Remote-Branches.
+
+12. **9. Tool-Aufruf: `run_in_bash_session` (`git fetch origin --dry-run; git stash list; git log --oneline -n 5`)**
+    - Verifikation lokaler Git-Sandbox-Operationen (Stash, Log, Fetch).
 
 ---
 
-## 2. Wie wird der Kontext präsentiert? Was wird automatisch geladen?
+## 2. GitHub & Git VM-Sandbox Test & Kapazitäts-Analyse
 
-### Wird die Codebasis automatisch geladen?
-**Nein.** Die Codebasis landet **niemals automatisch oder als Ganzes** im Kontext.
-- Bei großen Repositories wie `memfuse` (über 600 Dateien, >190.000 Zeilen Code) würde das automatische Einlesen aller Dateien das Kontextfenster sprengen.
-- Jules arbeitet nach dem Prinzip **On-Demand Context Loading**: Dateien werden erst dann in den Kontext geladen, wenn Jules sie mit `read_file` liest oder über `run_in_bash_session` (z. B. via `cat`, `grep`, `cargo check`) verarbeitet.
+Google-Jules läuft in einer abgesicherten Linux-VM-Sandbox. Folgende Git-Funktionen und -Grenzen wurden empirisch ermittelt:
 
-### Werden Markdown-Dateien automatisch geladen?
-**Nein.** Keine Markdown-Datei (`README.md`, `AGENTS.md`, `WORKING_STATE.md` etc.) ist beim Start automatisch geladen.
-- **Ausnahme:** Wenn in den persistenten Memories (`## Memory`) Zusammenfassungen von Regeln stehen, sind diese vorab im System-Prompt.
-- Wenn in der Aufgabenstellung oder in Arbeitsanweisungen verankert ist, dass `AGENTS.md` einzuhalten ist, muss Jules die entsprechende `AGENTS.md` manuell mit `read_file` einlesen, um deren genauen Wortlaut zu kennen.
+### A. Erlaubte & Empfohlene VM Git-Befehle (Lokale Operationen)
+- `git status`: Zeigt geänderte, unversionierte und Staged Dateien an.
+- `git log` / `git log --oneline -n <N>`: Inspektion der Commit-Historie.
+- `git diff`: Vorschau aller noch uncommitted Änderungen.
+- `git fetch origin`: Abrufen neuester Remote-Ref-Updates ohne automatischen Merge.
+- `git branch` / `git branch -a`: Auflistung lokaler und entfernter Branches.
+- `git stash push` / `git stash pop` / `git stash list`: Temporäres Zwischenspeichern lokaler Workspace-Änderungen.
+- `git commit --amend`: Korrektur der **neuesten lokalen Commit-Nachricht oder des Commit-Inhalts** vor dem Submit.
+- `git reset HEAD~1` (Soft/Mixed): Rückgängigmachen des letzten Commits unter Beibehaltung der Änderungen im Working Tree.
+- `git rebase -i` / `git cherry-pick`: Lokales Umstrukturieren oder Anwenden von Commits innerhalb des Feature-Branches.
 
-### Reihenfolge der Darstellung im Prompt:
-Wenn Jules eine Aufgabe startet, sieht der initiale Prompt exakt so aus:
+### B. Eingeschränkte / Unterbundene Befehle
+- `git pull` / `git push`: Das direkte Ausführen von `git pull` oder `git push` in Bash-Skripten wird von der Sandbox-Sicherheitskontrollschicht abgefangen, um unerwartete Branch-Zustände, Sperren oder unkontrollierte Remote-Schreibzugriffe zu verhindern.
+- **Lösung für Updates:** Jules nutzt `git fetch origin` zur Inspektion und das plattform eigene `submit`-Tool für das finale Pushen und Committen des Branches.
 
+### C. Kann Jules alte Commits in der VM korrigieren?
+- **Ja, innerhalb des eigenen Feature-Branches:** Jules kann mittels `git commit --amend`, `git reset` oder `git rebase` alte Commits lokal in der VM korrigieren und aufräumen, bevor der finale Branch per `submit` eingereicht wird.
+- **Auf `main`:** Da `main` geschützt ist und Änderungen per Pull Request (Squash Merge) integriert werden, nimmt Jules Korrekturen auf seinem Branch vor, testet diese mit `cargo xtask` und stellt sicher, dass keine fehlerhaften Commits gemerged werden.
+
+---
+
+## 3. Vollständige Git-Befehls-Checkliste für Google-Jules
+
+Vor jedem Submit und während der Entwicklung sollte Google-Jules folgende Git-Checkliste durchlaufen:
+
+```bash
+# 1. STATUS & WORKING TREE INSPEKTION
+git status                              # Working Tree sauber? Welche Dateien wurden verändert?
+git diff                                # Inhaltliche Prüfung aller uncommitted Änderungen
+
+# 2. HISTORIE & REMOTE REFRESH
+git fetch origin main                   # Aktuellsten Stand von main holen
+git log -n 5 --oneline                  # Letzte Commits prüfen
+
+# 3. LOKALE ZWISCHENSPEICHERUNG & EXPERIMENTE
+git stash push -m "temp_wip"            # Arbeitsstand sichern bei Switch/Test
+git stash list                          # Stashes anzeigen
+git stash pop                           # Arbeitsstand wiederherstellen
+
+# 4. KORREKTUR LOKALER COMMITS (KORREKTUR-PHASE)
+git commit --amend -m "feat(...): ..."  # Letzten Commit lokal anpassen/korrigieren
+git reset --soft HEAD~1                 # Letzten Commit auflösen, Code behalten
+
+# 5. PRE-SUBMIT VERIFIKATION (PFLICHT VOR SUBMIT)
+cargo xtask jules-preflight             # Vollständige Gate- & Test-Suite ausführen
+cargo xtask check-jules-context-freshness # Doku-Freshness prüfen
 ```
-[System Prompt: Prompt-Rolle, Sicherheit, Guidelines]
-[Tool Declarations: JSON-Schemas aller Werkzeuge]
-[Memory Section: Synthetisierte Erinnerungen früherer Sessions]
-[User Prompt: Die konkrete Anweisung des Benutzers]
-```
-
-**Wichtige Erkenntnis:**
-Die Anweisung des Benutzers steht **vor** jeglicher Datei aus der Codebasis. Wenn die Benutzernachricht festlegt, dass `AGENTS.md` gelesen werden muss, passiert das Lesen erst **nach** Empfang der Benutzernachricht über Tool-Calls.
 
 ---
 
-## 3. Standards, Einlesefunktionen & Werkzeuge
+## 4. Analyse der Skripte & Dokumente (`GITHUB_ANALYSE.md`, `GITHUB_HISTORY.md`, `.jules/JULES_LOG_2.md`)
 
-Jules verwendet folgende Werkzeuge zur Interaktion mit der Codebasis:
+Die Analyse der Dokumente zeigt deutliche Schwachstellen in Multi-Agenten-Workflows sowie vorhandene Werkzeuge zur Lösung:
 
-1. **`list_files(path)`**:
-   - Listet Dateien und Ordner in einem Verzeichnis auf (entspricht `ls -a -1F`).
-   - Wird zu Beginn genutzt, um die Verzeichnisstruktur zu erkunden.
+1. **Anti-Muster aus `docs/GITHUB_ANALYSE.md`**:
+   - *Parallel-Implementierungen:* 3 Agenten erstellten innerhalb 1 Stunde 3 Varianten derselben Kalibrierungs-Funktion (#1627, #1634, #1645), was zu Compile-Breaks auf `main` führte.
+   - *Duplicate Titles & Mass Deletions:* Identische Commit-Titel für völlig verschiedene PRs mit versehentlicher Löschung tausender Zeilen.
+   - *Status Thrashing:* `STATUS:DONE`-Tags wurden widerrufen und von neuen Sessions wiederholt neu aufgerollt.
+   - *Branch Proliferation:* >81 offene Remote-Branches ohne zentrales Claiming.
 
-2. **`read_file(filepath)`**:
-   - Liest den vollständigen Inhalt einer spezifischen Textdatei in den Kontext.
-   - Primäre Funktion zum Lesen von Quellcode und Dokumentation.
-
-3. **`run_in_bash_session(command)`**:
-   - Führt Bash-Befehle im Sandbox-Terminal aus.
-   - Ermöglicht flexibles Suchen (`grep`, `find`), Build- & Testläufe (`cargo test`, `cargo xtask check-consistency`), sowie Git-Inspektionen (`git log`, `git diff`).
-
-4. **`write_file(filepath, content)` & `replace_with_git_merge_diff(filepath, merge_diff)`**:
-   - Werkzeuge zum Erstellen und gezielten Ändern von Dateien.
-
-5. **`knowledgebase_lookup(query)`**:
-   - Greift auf internes Wissen zu Frameworks, Best Practices und projektspezifischen Sonderfällen zu.
+2. **Skript-Unterstützung durch `xtask` (`xtask/src/`)**:
+   MemFuse besitzt bereits hochentwickelte Rust-Skripte zur Repository-Analyse:
+   - `jules_preflight.rs`: Führt `check_no_active_claim_conflict`, `check-consistency`, `check-vetoes` und DAG-Checks aus.
+   - `check_commit_messages.rs`: Verhindert `Shell-Commit` und ungültige/leere Commit-Nachrichten.
+   - `check_duplicate_intent.rs` (Gate 12): Erkennt doppelte PR-Intents und verhindert parallele Arbeit an demselben Feature.
+   - `check_jules_context_freshness.rs` (Gate 10): Validiert die Frische der Dokumentation gegenüber `DECISIONS.md`.
+   - `claim.rs`: Ermöglicht aktives Claiming von Crates via GitHub Issues oder `.jules/claims.json`.
 
 ---
 
-## 4. Analyse des GitHub-Verlaufs & Fehlervermeidung
+## 5. Optimierungsplan für die MemFuse-Entwicklung mit Google-Jules
 
-Aus der Analyse des Git-Verlaufs (`git log -n 20 --stat`, über 190.000 eingefügte Zeilen in früheren Refactorings/Audits) lassen sich folgende historische Muster und potenzielle Fehlerquellen identifizieren:
+Um die Entwicklung in MemFuse zu optimieren, werden folgende 5 Säulen durchgesetzt:
 
-1. **Massen-Commits und Re-Integrationen**:
-   - In der Vergangenheit wurden massive Audit-Runden (`docs/audits/`, `docs/prompts/`) und Re-Integrationen (z. B. `memfuse-agent`, ADRs 001–065) auf einmal eingepflegt.
-   - **Gefahr:** Überdeckung von Breaking Changes, veraltete Dokumentations-Verweise und Konsistenzverluste zwischen `docs/decisions/` und `.jules/JULES_CONTEXT.md`.
+### Säule 1: Strikte Pre-Submit Pipeline & Context Verification
+- Vor jedem Commit/Submit führt Jules `git status` und `cargo xtask jules-preflight` aus.
+- Keine ungeprüften Commits oder "Shell-Commit"-Titel.
 
-2. **Regressionsgefahren bei Fehlerbehandlung (`unwrap` / `expect`)**:
-   - Bei schnellen Änderungen wurden in der Vergangenheit `.unwrap()`-Aufrufe eingebaut, die in Produktionscode Panics auslösen können.
-   - **Lösung im Projekt:** Einführung des CI-Gates `.unwrap-baseline.json` und `cargo xtask check-unwrap-baseline`.
+### Säule 2: Aktives Crate-Claiming gegen Parallel-Agenten-Kollisionen
+- Vor Beginn einer Aufgabe prüft Jules mit `cargo xtask claim` oder `check_no_active_claim_conflict`, ob ein anderes Team/Agent an demselben Crate arbeitet.
 
-3. **TOCTOU-Races & Deadlocks**:
-   - Bei parallelen Zugriffen in `memfuse-db` gab es früher Locking-Probleme (z.B. TOCTOU bei `check_doc_id_collision`).
-   - **Lösung im Projekt:** Erstellung klarer Architektur-Regeln (Top-Down Lock-Hierarchie: `MemFuse::collections` -> `Collection::insert_lock` -> `Collection::embedder`).
+### Säule 3: Lokale Commit-Sanierung in der VM
+- Fehlerhafte lokale Entwürfe werden in der VM via `git commit --amend` oder `git reset` bereinigt, bevor sie eingereicht werden.
 
----
+### Säule 4: Automatische Dokumentations-Synchronisation (SSOT)
+- Nach jeder Architektur- oder Code-Änderung wird `cargo xtask check-jules-context-freshness` ausgeführt, um Drift zwischen Quellcode und Spezifikationen zu verhindern.
 
-## 5. Gestaltung der ultimativen Entwicklungsumgebung für Jules
-
-Um doppelte Arbeit, Missverständnisse und unvollständige Kontext-Informationen in Zukunft komplett zu vermeiden, sollte das Repository wie folgt optimiert werden:
-
-### A. Eine einzige Quelle der Wahrheit (Single Source of Truth)
-- **`.jules/JULES_CONTEXT.md` & `AGENTS.md`**: Diese Dateien sollten die kompakte Kurzreferenz aller Architektur-Entscheidungen, Test-Befehle und Invarianten enthalten.
-- **`cargo xtask check-jules-context-freshness`**: Das bestehende CI-Gate stellt sicher, dass `.jules/JULES_CONTEXT.md` immer mit den ADRs in `docs/decisions/` synchron bleibt.
-
-### B. Klare Anweisungen im `AGENTS.md`
-Da Jules beim Start die Datei `AGENTS.md` prüft, wenn er dazu angewiesen wird, sollte `AGENTS.md` im Root direkt die wichtigsten Entry-Points nennen:
-1. "Vor jeder Code-Änderung: Prüfe bestehende Tests im jeweiligen Crate."
-2. "Nutze `cargo xtask jules-preflight` für umfassende Validierung."
-3. "Nutze `knowledgebase_lookup` bei Unklarheiten."
-
-### C. Vermeidung doppelter Arbeit
-- **Proaktivität durch `Memory`**: Wichtige Erkenntnisse (z. B. spezielle Traits, Feature-Flags wie `experimental-diskann`, oder Lock-Reihenfolgen) werden in den Persistent Memory Store aufgenommen. Dadurch weiß Jules in *jeder* zukünftigen Session sofort Bescheid, ohne Dateien erneut suchen zu müssen.
-- **Kompakte Modul-Readmes**: Kurze `README.md`-Dateien in den Unter-Crates (`crates/memfuse-db/README.md`, etc.) helfen, den Einlese-Aufwand auf wenige relevante Zeilen zu beschränken.
+### Säule 5: Transparente Log- & Session-Führung
+- Fortlaufende Aktualisierung von `.jules/JULES_LOG.md` und Injektion wichtiger Invarianten in den Persistent Memory Store.
 
 ---
 
-## 6. Zusammenfassung
-
-| Frage | Antwort |
-| :--- | :--- |
-| **Landet die komplette Codebasis im Kontext?** | **Nein.** Nur Dateien, die explizit via Tool-Call gelesen werden. |
-| **Werden Markdown-Dateien automatisch geladen?** | **Nein.** Sie müssen bei Bedarf von Jules eingelesen werden. |
-| **Wann sieht Jules die Benutzernachricht?** | Die Benutzernachricht wird zu Beginn des Haupt-Threads übergeben, **bevor** Code-Dateien gelesen werden. |
-| **Wie werden Fehler vermieden?** | Durch strikte CI-Gates (`xtask`), unwrap-Baselines, automatisierte Konsistenzprüfungen und gepflegte Memory-Einträge. |
-
-*Dokumentation erfolgreich erstellt und verifiziert.*
+*Optimierungsplan und Diagnostik-Log erfolgreich erstellt und aktualisiert.*
