@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T14:46:37Z (SESSION: 74eb6216)
+// STAND: 2026-09-10T19:29:31Z (SESSION: c9240483)
 // ZWECK: Adaptive Reranking candidate pool-size regulation via PID latency control.
 // INVARIANTEN: Pool size bounded by [min_pool_size, max_pool_size], non-finite latency measurements ignored.
 // NICHT-OFFENSICHTLICH: Anti-windup integral clamping prevents overshoot under sustained latency spikes.

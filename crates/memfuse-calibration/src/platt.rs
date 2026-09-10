@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T20:20:00Z (SESSION: 80a3120b)
+// STAND: 2026-09-10T19:29:31Z (SESSION: c9240483)
 // ZWECK: Parametric Platt Scaling (logistic calibration) mapping logit/scores to probabilities.
 // INVARIANTEN: Sigmoid output strictly bounded in [0.0, 1.0], fallbacks on NaN/infinite logits.
 // NICHT-OFFENSICHTLICH: Target smoothing (Platt, 1999) prevents overfitting on separable training samples.
