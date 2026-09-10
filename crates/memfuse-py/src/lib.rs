@@ -3,7 +3,7 @@
 // INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls; Tokio Runtime bound per interpreter module state.
 // NICHT-OFFENSICHTLICH: Per-interpreter Tokio runtime instance attached to Python module state (`PyRuntimeState`) to enforce sub-interpreter isolation (PEP 684).
 // HOTSPOTS: [160-205] memfuse_err mapping, [270-650] CRUD & search methods FFI boundary validation.
-// STAND: TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)
+// STAND: TS:2026-09-10T19:27:45Z (SESSION: 870cf830)
 
 //! # MemFuse Python Bindings
 //!
@@ -20,7 +20,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-09-03T10:00:00Z (SESSION: 14a123bc)
+// STAND:       2026-09-10T19:27:45Z (SESSION: 870cf830)
 // ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
 // INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
 // HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
@@ -1443,6 +1443,34 @@ mod tests {
         assert!(validate_vector(&[1.0, f32::NAN, 3.0]).is_err());
         assert!(validate_vector(&[1.0, f32::INFINITY, 3.0]).is_err());
         assert!(validate_vector(&[1.0, f32::NEG_INFINITY, 3.0]).is_err());
+    }
+
+    #[test]
+    fn test_validate_db_path_query_text_and_batch_size() {
+        pyo3::prepare_freethreaded_python();
+
+        // validate_db_path
+        assert!(validate_db_path("").is_err());
+        assert!(validate_db_path("   ").is_err());
+        assert!(validate_db_path("path\0null").is_err());
+        assert!(validate_db_path("/tmp/memfuse_db").is_ok());
+
+        // validate_query_text
+        assert!(validate_query_text("").is_err());
+        assert!(validate_query_text("   ").is_err());
+        assert!(validate_query_text("query\0null").is_err());
+        assert!(validate_query_text("valid query text").is_ok());
+
+        let long_query = "q".repeat(MAX_ID_LENGTH + 1);
+        assert!(validate_query_text(&long_query).is_err());
+        let max_query = "q".repeat(MAX_ID_LENGTH);
+        assert!(validate_query_text(&max_query).is_ok());
+
+        // validate_batch_size
+        assert!(validate_batch_size(0).is_err());
+        assert!(validate_batch_size(100).is_ok());
+        assert!(validate_batch_size(MAX_BATCH_SIZE).is_ok());
+        assert!(validate_batch_size(MAX_BATCH_SIZE + 1).is_err());
     }
 
     #[test]

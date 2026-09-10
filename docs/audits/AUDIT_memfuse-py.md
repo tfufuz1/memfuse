@@ -1,7 +1,7 @@
 # Audit-Report: `memfuse-py` (Layer 3 — Python PyO3 Bindings)
 
-**Datum/Zeit:** 2026-09-09T19:13:19Z
-**Session:** `3a641825`
+**Datum/Zeit:** 2026-09-10T19:27:45Z
+**Session:** `870cf830`
 **Crate:** `memfuse-py`
 **Rolle:** Senior Rust FFI-Engineer — PyO3, GIL, Zero-Panic-Boundary
 
@@ -24,6 +24,17 @@ The current audit verified:
 
 - **#[forbid(unsafe_code)]**: `memfuse-py` maintains a strict `#![forbid(unsafe_code)]` directive.
 - **Shared Tokio Runtime**: A multi-thread Tokio runtime (`memfuse-py-worker`) is lazily initialized via `OnceLock<Runtime>` in `get_runtime()`.
+---
+
+## Audit Verification & Test Delta (Session `870cf830`, TS: 2026-09-10T19:27:45Z)
+
+- **Inventory Reality Check**: Confirmed `crates/memfuse-py/src/lib.rs` matches actual repo inventory with 0 drift.
+- **Input Guard Extension**: Added Rust unit tests for `validate_db_path`, `validate_query_text`, and `validate_batch_size` in `crates/memfuse-py/src/lib.rs`.
+- **Python FFI / Integration Test**: Added `test_long_query_text_validation` in `crates/memfuse-py/tests/test_errors.py` verifying oversized query text handling.
+- **Rust Checks**: `cargo check --manifest-path crates/memfuse-py/Cargo.toml --all-features` (0 errors, 0 warnings).
+- **Clippy Analysis**: `cargo clippy --manifest-path crates/memfuse-py/Cargo.toml -- -D warnings` (0 findings).
+- **Formatting**: `cargo fmt --check --manifest-path crates/memfuse-py/Cargo.toml` (0 diffs).
+- **Python Integration Suite**: `maturin develop --release` + `pytest` executed 52 test cases with 100% pass rate in virtualenv context.
 - **Zero-Copy Serialization**: High-performance FlatBuffer search responses (`search_fb`, `hybrid_search_fb`) build raw zero-copy bytes returned as PyBytes.
 
 ---
