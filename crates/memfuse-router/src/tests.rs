@@ -2958,7 +2958,8 @@ mod tests {
         assert!(res_exit.is_err());
         let err_msg = res_exit.unwrap_err().to_string();
         assert!(
-            err_msg.contains("Fehler bei MCP-Dispatch") || err_msg.contains("Process closed stdout"),
+            err_msg.contains("Fehler bei MCP-Dispatch")
+                || err_msg.contains("Process closed stdout"),
             "Unexpected error message: {err_msg}"
         );
 
