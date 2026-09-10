@@ -288,8 +288,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs filtered semantic vector search in the collection.
-    // TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics.
-    // TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths.
+    // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5)
+    // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5)
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query, filter))]

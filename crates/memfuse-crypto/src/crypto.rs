@@ -137,7 +137,7 @@ impl KeyManager {
     /// specific `(tenant_id, model_fingerprint)` tuple.
     ///
     /// Cryptographically enforces both tenant isolation and model quantization separation via HKDF-Expand.
-    // TODO(audit-5.2): Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions.
+    // AI-TAG[SMELL][MINOR] TODO(audit-5.2): Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5)
     pub fn derive_kv_key(
         &self,
         tenant_id: memfuse_core::TenantId,

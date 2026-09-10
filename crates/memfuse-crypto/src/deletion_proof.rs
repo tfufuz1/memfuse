@@ -163,7 +163,7 @@ pub enum DeletionScope {
 
 /// Cryptographic proof of data deletion.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-// TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery.
+// AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5)
 pub struct DeletionProof {
     /// Version der HMAC-Signatur-Payload-Konstruktion.
     ///

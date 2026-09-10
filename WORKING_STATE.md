@@ -15,31 +15,58 @@
 
 Stand letzter Prüfung: 2026-09-10
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **25 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-calibration/src/isotonic.rs` | 201 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-3): Cache fitted PAVA step function and rebuild PAVA model only when new observations are recorded (dirty flag). (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-crypto/src/crypto.rs` | 140 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-5.2): Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-crypto/src/deletion_proof.rs` | 166 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-db/src/collection/search.rs` | 291 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-db/src/collection/search.rs` | 292 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-db/src/fusion.rs` | 43 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-6): Validate candidate scores with score.is_finite() before multiplying resonance bonus to prevent NaN score propagation. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-db/src/fusion.rs` | 318 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-1): Preserve scalar field types when metadata values are identical across sources instead of unconditionally converting scalars to JSON arrays. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-db/src/fusion.rs` | 381 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-4): Filter out non-positive weight or invalid signals before calculating total_signal_count in RRF rank mass normalization. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-router/src/lyapunov.rs` | 151 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-5): Increase Laplace smoothing epsilon (e.g. from 1e-12 to 1e-5) or add bounds clipping to prevent numerical instability during KL divergence calculations. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/compaction.rs` | 103 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/compaction.rs` | 218 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-4): Ensure associated .uuid sidecar files are deleted alongside parent .sst SSTable files during compaction cleanup. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 273 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-5): Enforce strict monotonic sequence IDs in WAL file naming instead of relying solely on sub-second timestamps to prevent wal.log vs wal-0.log collisions. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 417 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-C-1): Force a startup flush of replayed MemTable entries before deleting old WAL files, or delay deleting old WAL files until after the subsequent flush + fsync_parent_dir. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 531 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-4): Avoid creating a new SSTable when rolling back single-entry or small uncommitted transactions. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 545 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 857 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-9): Inspect uncommitted transaction buffers in put_if_absent to avoid race conditions with uncommitted concurrent writes. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 990 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-6): Periodically recalculate memtable byte size during flushes to prevent monotonic memory budget drift accumulation. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 1192 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-2): Check memtable.is_empty() before incrementing flush_counter to prevent counter drift and orphan WAL filenames on empty flushes. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 1371 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-1/M-5): Ensure range_bound is correctly declared in scope and found_count is incremented during prefix bounded scanning. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/lsm.rs` | 1514 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-7): Acquire snapshot read lock before capturing last_tx to eliminate split-brain read race with concurrent commits. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/wal.rs` | 390 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-8): Reject unencrypted V1 plaintext entries during replay when KeyManager is present and active. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/wal.rs` | 1048 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-C-3): Atomically check file header/size under file lock before writing header in append_batch to prevent double WAL headers. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/wal.rs` | 1603 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-6): Implement post-crash recovery to restore .v1.bak / .v2.bak backup files if primary WAL is corrupted or truncated during rewrite. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/wal.rs` | 1690 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-C-2): Call file.sync_all() immediately after file.set_len() to ensure length truncation is crash-persisted. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
+| `crates/memfuse-store/src/wal.rs` | 1739 | `-` | `SMELL` | `MINOR` | `2026-09-10T19:15:16Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning. (TS: 2026-09-10T19:15:16Z) (SESSION: 931776f5) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9987 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 1 | 1692 | 🟢 Clean |  |
-| `memfuse-checkpoint` | 1 | 5468 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-core` | 0 | 9973 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-calibration` | 1 | 1853 | 🟢 Clean |  |
+| `memfuse-checkpoint` | 1 | 5477 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-graph` | 1 | 10334 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 1 | 4645 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-text` | 1 | 5337 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-security` | 1 | 4832 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-text` | 1 | 5343 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 2 | 15540 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-ollama` | 2 | 3925 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 17016 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-embed` | 3 | 1940 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 27860 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 5 | 4655 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 4917 | 🟢 Clean |  |
-| `memfuse-tauri` | 5 | 6176 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
-| `memfuse-agent` | 6 | 5793 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 7 | 4396 | 🟢 Clean |  |
+| `memfuse-ollama` | 2 | 3985 | 🟢 Clean |  |
+| `memfuse-store` | 2 | 17369 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
+| `memfuse-db` | 4 | 28172 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-router` | 5 | 4975 | 🟢 Clean |  |
+| `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
+| `memfuse-agent` | 6 | 5794 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-mcp` | 7 | 4390 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
