@@ -661,7 +661,7 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                 .open(wal_path)
                 .await
             {
-                let _ = f.sync_all().await;
+                drop(f.sync_all().await);
             }
             return Ok(true);
         }
