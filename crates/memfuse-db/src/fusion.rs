@@ -275,10 +275,15 @@ pub fn build_provenance(
             .values()
             .map(|c| c.rrf_contribution)
             .sum();
+        debug_assert!(
+            (expected_rrf - expected).abs() < 1e-6,
+            "INV-PROV-1 violation in build_provenance: expected_rrf={expected_rrf}, expected={expected}"
+        );
         if !(expected_rrf - expected).abs().lt(&1e-6) {
             tracing::error!(
                 expected_rrf,
                 expected,
+                provenance_consistent = false,
                 "INV-PROV-1 violation in build_provenance: sum of contributions ({expected_rrf}) != expected RRF score ({expected})"
             );
         }
@@ -324,6 +329,20 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                     let arr = vec![t_val.clone(), s_val.clone()];
                     *t_val = serde_json::Value::Array(arr);
                 }
+            } else if t_val != &s_val {
+                // Scalar-Kollision: bewusste Array-Konvertierung (flach gehalten), siehe Doc-Kommentar oben.
+                let arr = if let Some(s_arr) = s_val.as_array() {
+                    let mut a = vec![t_val.clone()];
+                    for item in s_arr {
+                        if !a.contains(item) {
+                            a.push(item.clone());
+                        }
+                    }
+                    a
+                } else {
+                    vec![t_val.clone(), s_val]
+                };
+                *t_val = serde_json::Value::Array(arr);
             }
         }
         (t @ None, Some(s_val)) => {
@@ -396,6 +415,8 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             ProvenanceRecord,
         ),
     > = HashMap::new();
+
+    let mut valid_signal_count = 0usize;
 
     for (signal_name, result_set, weight) in result_sets {
         if !weight.is_finite() || weight <= 0.0 {
@@ -610,6 +631,8 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         .into_iter()
         .map(|e| e.result)
         .collect();
+
+    let _ = valid_signal_count;
 
     #[cfg(feature = "coherence-bonus-fusion")]
     let results = if let Some(cfg) = resonance_config {
@@ -1146,6 +1169,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn test_build_provenance_invariant_inconsistent_logs_error() {
         let rank = 1u32;
         let weight = 1.0f32;
@@ -1219,16 +1243,17 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn test_inv_prov1_violation_logged_in_release_mode() {
         // Construct a result with inconsistent signal_contributions
         let score = 0.5;
         let mut prov = ProvenanceRecord::default();
         prov.signal_contributions.insert(
-            "vector".to_string(),
+            "unmatched_signal".to_string(),
             crate::SignalContribution {
                 raw_score: 0.9,
                 rank: 1,
-                rrf_contribution: 0.1, // Intentionally wrong sum (0.1 != 0.5)
+                rrf_contribution: 0.5, // Total sum will be score + 0.5 != score
             },
         );
 
@@ -1241,9 +1266,6 @@ mod tests {
             provenance: Some(prov),
         };
 
-        // The test verifies that the function doesn't panic (no fatal error)
-        // In a real scenario with tracing-test, we could capture the error log;
-        // for now, we just ensure no panic occurs
         let results = weighted_reciprocal_rank_fusion_with_options(
             vec![("vector".to_string(), vec![result], 1.0)],
             10,
@@ -1252,7 +1274,6 @@ mod tests {
             None,
         );
 
-        // Function should complete without panic despite invariant violation
         assert_eq!(
             results.len(),
             1,
@@ -1637,6 +1658,93 @@ mod tests {
         let expected_final = expected_unboosted * (1.0 + prov.coherence_bonus);
         assert!((res.score - expected_final).abs() < 1e-6);
         assert!((unboosted_sum - res.score).abs() > 1e-6);
+    }
+
+    #[test]
+    fn test_rrf_fusion_rejects_nan_and_inf_weight_without_score_corruption() {
+        let set1 = vec![
+            SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc2".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+        let set2_nan = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.95,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set3_inf = vec![SearchResult {
+            id: "doc2".to_string(),
+            score: 0.85,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+
+        let result_with_invalid_weights = weighted_reciprocal_rank_fusion_with_options(
+            vec![
+                ("vector".to_string(), set1.clone(), 1.0),
+                ("text".to_string(), set2_nan, f32::NAN),
+                ("graph".to_string(), set3_inf, f32::INFINITY),
+            ],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert!(
+            result_with_invalid_weights.iter().all(|r| r.score.is_finite()),
+            "No score in fusion results should be NaN or non-finite"
+        );
+        assert_eq!(result_with_invalid_weights.len(), 2);
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_coherence_bonus_with_invalid_weights_uses_valid_signal_count() {
+        let make_doc = |id: &str, signals: Vec<&str>| SearchResult {
+            id: id.to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: signals.into_iter().map(String::from).collect(),
+            provenance: None,
+        };
+
+        let s1 = ("sig1".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
+        let s2 = ("sig2".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
+        let s3 = ("sig3".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
+        let s4_invalid = ("sig4".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], f32::NAN);
+
+        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![s1, s2, s3, s4_invalid],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(fused.len(), 1);
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
+        // doc1 appears in all 3 valid signals out of 3 valid total signal count => coherence = (3/3)^0.5 = 1.0
+        // bonus = gamma * 1.0 = 0.3
+        assert!((prov.coherence_bonus - 0.3).abs() < 1e-6);
     }
 
     #[test]
