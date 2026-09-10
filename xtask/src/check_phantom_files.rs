@@ -8,7 +8,9 @@ use std::process::Command;
 /// Extrahiert alle `.rs`-Dateinamen aus einem Text (Commit-Message oder PR-Body).
 fn extract_claimed_rs_files(text: &str) -> HashSet<String> {
     let re = Regex::new(r"\b([\w/.-]+\.rs)\b").unwrap();
-    re.captures_iter(text).map(|c| c[1].to_string()).collect()
+    re.captures_iter(text)
+        .map(|c| c[1].to_string())
+        .collect()
 }
 
 /// Gibt die tatsächlich geänderten Dateien im aktuellen Branch zurück.
@@ -49,8 +51,8 @@ fn get_recent_commit_messages(n: usize) -> Vec<(String, String)> {
 }
 
 pub fn run_check_phantom_files() -> bool {
-    let base_ref =
-        std::env::var("MEMFUSE_CI_BASE_REF").unwrap_or_else(|_| "origin/main".to_string());
+    let base_ref = std::env::var("MEMFUSE_CI_BASE_REF")
+        .unwrap_or_else(|_| "origin/main".to_string());
 
     println!("=== Gate: check-phantom-files (Basis: {}) ===", base_ref);
 
@@ -101,11 +103,7 @@ pub fn run_check_phantom_files() -> bool {
                     .to_string_lossy()
                     .to_string();
                 if !actual_files.contains(&basename) && !actual_files.contains(&claimed) {
-                    let short_hash = if hash.len() >= 8 {
-                        &hash[..8]
-                    } else {
-                        hash.as_str()
-                    };
+                    let short_hash = if hash.len() >= 8 { &hash[..8] } else { hash.as_str() };
                     phantoms.push((format!("Commit {}", short_hash), claimed));
                 }
             }
