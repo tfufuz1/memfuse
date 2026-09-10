@@ -24,6 +24,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
+/// Anzahl der Histogramm-Bins für die KL-Divergenzberechnung.
+const NUM_BINS: usize = 10;
+
 /// Grund für erkannte Verteilungsverschiebung (Distributional Drift).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DriftReason {
@@ -131,28 +134,29 @@ impl LyapunovDriftWatcher {
         }
 
         // 1. 10-Bin Histogramm Approximation der Verteilungen
-        let mut current_counts = [0usize; 10];
-        let mut baseline_counts = [0usize; 10];
+        let mut current_counts = [0usize; NUM_BINS];
+        let mut baseline_counts = [0usize; NUM_BINS];
 
         for &score in current_scores {
-            let bin = ((score.clamp(0.0, 1.0) * 10.0) as usize).min(9);
+            let bin = ((score.clamp(0.0, 1.0) * NUM_BINS as f32) as usize).min(NUM_BINS - 1);
             current_counts[bin] += 1;
         }
 
         for &score in &self.baseline_distribution {
-            let bin = ((score.clamp(0.0, 1.0) * 10.0) as usize).min(9);
+            let bin = ((score.clamp(0.0, 1.0) * NUM_BINS as f32) as usize).min(NUM_BINS - 1);
             baseline_counts[bin] += 1;
         }
 
-        // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Laplace/Epsilon Smoothing
-        let eps = 1e-10f32;
+        // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Laplace-1-Smoothing (Additive Smoothing)
+        let alpha = 1.0f32;
+        let k = NUM_BINS as f32;
         let n_curr = current_scores.len() as f32;
         let n_base = self.baseline_distribution.len() as f32;
 
         let mut d_t = 0.0f32;
-        for i in 0..10 {
-            let p_i = (current_counts[i] as f32 + eps) / (n_curr + 10.0 * eps);
-            let q_i = (baseline_counts[i] as f32 + eps) / (n_base + 10.0 * eps);
+        for i in 0..NUM_BINS {
+            let p_i = (current_counts[i] as f32 + alpha) / (n_curr + k * alpha);
+            let q_i = (baseline_counts[i] as f32 + alpha) / (n_base + k * alpha);
             d_t += p_i * (p_i / q_i).ln();
         }
         let d_t = d_t.max(0.0);
@@ -293,5 +297,58 @@ mod tests {
         // Update mit identischen Scores -> Darf nicht panicken oder NaN erzeugen
         let res = watcher.update(&baseline);
         assert!(matches!(res, LyapunovResult::Stable { .. }));
+    }
+
+    #[test]
+    fn test_laplace_smoothing_empty_baseline_bin_scenario() {
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        // n_base = 100, verteilt auf Bins 1..9 (Bin 0 ist leer: baseline_counts[0] = 0)
+        let mut baseline: Vec<f32> = Vec::with_capacity(100);
+        for i in 0..100 {
+            // Bin 0 abdecken vermeiden: Scores in [0.1, 1.0]
+            baseline.push(0.1 + (i as f32 / 100.0) * 0.9);
+        }
+        watcher.set_baseline(&baseline);
+
+        // n_curr = 100, davon 10 in Bin 0 ([0.0, 0.1)) und 90 verteilt in Bins 1..9
+        let mut current: Vec<f32> = Vec::with_capacity(100);
+        for _ in 0..10 {
+            current.push(0.05); // Bin 0
+        }
+        for i in 0..90 {
+            current.push(0.1 + (i as f32 / 90.0) * 0.9);
+        }
+
+        watcher.update(&current);
+        let latest_kl = match watcher.divergence_history.back().copied() {
+            Some(kl) => kl,
+            None => panic!("KL divergence should be present in history"),
+        };
+
+        // Mit Laplace-1-Smoothing sollte die KL-Divergenz selbst bei leeren Baseline-Bins moderat bleiben (< 0.5),
+        // im Gegensatz zu > 2.0 (oder astronimisch großen Werten) beim alten eps = 1e-10 Schema.
+        assert!(
+            latest_kl < 0.5,
+            "KL divergence with empty baseline bin should be bounded (< 0.5), got {latest_kl}"
+        );
+    }
+
+    #[test]
+    fn test_identical_distributions_zero_kl_divergence() {
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        let baseline: Vec<f32> = (0..100).map(|i| (i as f32) / 100.0).collect();
+        watcher.set_baseline(&baseline);
+
+        watcher.update(&baseline);
+        let latest_kl = match watcher.divergence_history.back().copied() {
+            Some(kl) => kl,
+            None => panic!("KL divergence should be present in history"),
+        };
+
+        // Bei identischer Verteilung muss d_t nahezu 0.0 sein (z.B. < 1e-5)
+        assert!(
+            latest_kl < 1e-5,
+            "KL divergence for identical distributions should be ~0.0, got {latest_kl}"
+        );
     }
 }
