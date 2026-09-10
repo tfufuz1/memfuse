@@ -511,6 +511,8 @@ mod tests {
             timestamp: "2026-09-08T20:00:00Z".to_string(),
             session_id: "s123".to_string(),
             active: true,
+            expires_at: None,
+            released_at: None,
         });
         db.save(&claims_path).unwrap();
 
