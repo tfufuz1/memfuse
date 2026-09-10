@@ -97,7 +97,6 @@
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/inference.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Candle LLM text generator client implementing LlmTextGenerator. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Crate root for memfuse-candle native GGUF inference backend. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/model_registry.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Model fingerprinting and CandleQuantization definitions. |
-| `2026-09-09T15:40:26Z (SESSION: 9a78b5c9)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-09-09T15:39:55Z (SESSION: 96e5c38b)` | `crates/memfuse-core/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Core types, traits, and error handling for MemFuse. |
 | `2026-09-09T15:39:55Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `96e5c38b` | `PASS` | `3` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-09-09T15:39:55Z) (SESSION: 96e5c38b) |
 | `2026-09-09T14:46:37Z (SESSION: 74eb6216)` | `crates/memfuse-calibration/src/isotonic.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Non-parametric probability calibration via PAVA (Pool-Adjacent Violators Algorithm). |
