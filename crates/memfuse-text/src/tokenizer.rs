@@ -3,7 +3,7 @@
 // INVARIANTEN: Tokenisierung muss deterministisch zwischen Indexierung und Query-Pfad identisch sein.
 // NICHT-OFFENSICHTLICH: Stoppwörter werden per OnceLock geladen; DefaultTokenizer filtert Alphatoken + Stoppwörter.
 // HOTSPOTS: tokenize, DefaultTokenizer::tokenize, GermanMorphTokenizer::tokenize
-// STAND: TS:2026-08-30T22:01:55Z (SESSION: cf1f75c6)
+// STAND: TS:2026-09-10T19:25:46Z (SESSION: c844907e)
 
 //! Tokenizer using `unicode-segmentation`.
 
@@ -409,5 +409,23 @@ mod tests {
                 "GermanMorphTokenizer must complete without panic for edge case input"
             );
         }
+    }
+
+    #[test]
+    fn test_tokenizer_multibyte_slicing_boundaries() {
+        // Multi-byte Unicode characters, emojis, and combined URLs/emails at slicing boundaries
+        let text =
+            "Prüfung über https://münchen.de/v1?q=äöü&x=🚀#anchor und user.äöü@sub.münchen.de!";
+        let default_tokens = DefaultTokenizer.tokenize(text);
+        assert!(!default_tokens.is_empty());
+
+        let german_tokens = GermanMorphTokenizer::new().tokenize(text);
+        assert!(!german_tokens.is_empty());
+        assert!(
+            german_tokens
+                .iter()
+                .any(|t| t.contains("pruefung") || t.contains("prüfung")),
+            "GermanMorphTokenizer must tokenize umlaut words across boundaries without panic"
+        );
     }
 }
