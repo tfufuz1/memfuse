@@ -405,4 +405,24 @@ mod tests {
             "with_defaults() must construct PathRAGEngine using DEFAULT_SUFFICIENCY_THRESHOLD"
         );
     }
+
+    #[test]
+    fn test_find_path_zero_max_hops() {
+        let a = EntityId::new(1);
+        let b = EntityId::new(2);
+        let graph = TestGraph::new(vec![(a, b, 0.9)]);
+        let engine = PathRAGEngine::new(graph, 0, 0.1);
+        // With max_hops = 0, no search steps run and different nodes return None
+        assert!(engine.find_path(a, b).is_none());
+        // Same node still returns immediate path
+        let same_path = engine.find_path(a, a);
+        assert!(same_path.is_some());
+    }
+
+    #[test]
+    fn test_to_rrf_signal_empty_paths() {
+        let engine = PathRAGEngine::with_defaults(TestGraph::new(vec![]));
+        let signal = engine.to_rrf_signal(&[]);
+        assert!(signal.is_empty());
+    }
 }
