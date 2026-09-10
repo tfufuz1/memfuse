@@ -59,6 +59,14 @@ pub enum WalVersion {
 const LEGACY_KEY_OBFUSCATION_MASK: u8 = 0x5A;
 const LEGACY_INTEGRITY_KEY_OBFUSCATED: [u8; 32] = *b"7?7</)?w34.?=(3.#w1?#w,kZZZZZZZZ";
 
+/// SICHERHEITSHINWEIS: Dieser Schlüssel bietet KEINE kryptografische Sicherheit.
+/// Die "Obfuskierung" (XOR mit einer fest im Binary kodierten Maske) ist trivial
+/// aus jedem Release-Binary rekonstruierbar und dient ausschließlich dazu, den
+/// Klartext-Schlüssel nicht direkt als grep-bares ASCII im Binary sichtbar zu
+/// machen (Schutz gegen oberflächliches Scannen, NICHT gegen gezielte Extraktion).
+/// `allow_legacy_integrity_key_fallback = true` darf NUR für befristete
+/// Migrationsszenarien aktiviert werden und NIEMALS dauerhaft in produktiven
+/// Umgebungen aktiv bleiben.
 pub(crate) const fn legacy_integrity_key() -> [u8; 32] {
     let mut out = [0u8; 32];
     let mut i = 0;
@@ -366,6 +374,14 @@ impl WalEntry {
 #[derive(Debug, Clone)]
 pub struct WalConfig {
     pub key_manager: Option<Arc<KeyManager>>,
+    /// SICHERHEITSHINWEIS: Dieser Schlüssel bietet KEINE kryptografische Sicherheit.
+    /// Die "Obfuskierung" (XOR mit einer fest im Binary kodierten Maske) ist trivial
+    /// aus jedem Release-Binary rekonstruierbar und dient ausschließlich dazu, den
+    /// Klartext-Schlüssel nicht direkt als grep-bares ASCII im Binary sichtbar zu
+    /// machen (Schutz gegen oberflächliches Scannen, NICHT gegen gezielte Extraktion).
+    /// `allow_legacy_integrity_key_fallback = true` darf NUR für befristete
+    /// Migrationsszenarien aktiviert werden und NIEMALS dauerhaft in produktiven
+    /// Umgebungen aktiv bleiben.
     pub allow_legacy_integrity_key_fallback: bool,
     /// Minimum allowed WAL version for replay. WAL files with a version below
     /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
@@ -468,6 +484,10 @@ impl Wal {
     pub async fn open_with_config(path: impl AsRef<Path>, config: WalConfig) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 
+        // Vor dem eigentlichen Öffnen der WAL-Datei: prüfen, ob ein Crash-Recovery aus
+        // einem .bak-Backup nötig ist (z. B. Crash zwischen set_len(0) und V3-Rewrite).
+        let _ = recover_from_bak_if_present(&path).await?;
+
         // SD-09-CRYPTO-002: Use a persisted UUID v4 as file_id instead of the
         // filename.  This makes the WAL's cryptographic sub-key independent of
         // the filesystem path — renaming or moving the file cannot cause nonce-
@@ -550,6 +570,19 @@ impl Wal {
                 };
                 let bak_path = PathBuf::from(format!("{}.{}", wal.path.display(), bak_suffix));
                 let copy_res = tokio::fs::copy(&wal.path, &bak_path).await;
+                if copy_res.is_ok() {
+                    // Backup-Datei fsyncen: Recovery-Sicherheit VOR der Truncation der Original-WAL.
+                    match tokio::fs::OpenOptions::new().write(true).open(&bak_path).await {
+                        Ok(bak_file) => {
+                            if let Err(e) = bak_file.sync_all().await {
+                                tracing::warn!("WAL backup fsync failed before rewrite: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Could not reopen WAL backup for fsync: {e}");
+                        }
+                    }
+                }
                 let rewrite_res = wal.rewrite_as_v3(&entries).await;
 
                 if copy_res.is_err() || rewrite_res.is_err() {
@@ -582,6 +615,48 @@ impl Wal {
     pub fn integrity_key_for_test(&self) -> Result<[u8; 32]> {
         self.get_integrity_key()
     }
+}
+
+/// Prüft, ob eine `.bak`-Datei (v1.bak, v2.bak) als Recovery-Quelle für `wal_path`
+/// herangezogen werden sollte, und führt die Wiederherstellung ggf. durch.
+///
+/// Rückgabe `Ok(true)`: Recovery wurde durchgeführt (Backup wurde an die Stelle der
+/// regulären WAL-Datei verschoben und gefsynct).
+/// Rückgabe `Ok(false)`: Kein Recovery nötig oder kein passendes Backup gefunden.
+pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> Result<bool> {
+    for suffix in &["v1.bak", "v2.bak"] {
+        let bak_path = PathBuf::from(format!("{}.{}", wal_path.display(), suffix));
+        if !tokio::fs::try_exists(&bak_path).await.unwrap_or(false) {
+            continue;
+        }
+        let wal_len = tokio::fs::metadata(wal_path).await.map(|m| m.len()).unwrap_or(0);
+        let bak_len = match tokio::fs::metadata(&bak_path).await {
+            Ok(m) => m.len(),
+            Err(_) => continue,
+        };
+        if wal_len == 0 && bak_len > 0 {
+            // Reguläre WAL ist leer, aber ein nicht-leeres Backup existiert:
+            // sehr wahrscheinlich ein Crash zwischen set_len(0) und dem Schreiben
+            // des neuen V3-Contents. Backup wiederherstellen.
+            match tokio::fs::rename(&bak_path, wal_path).await {
+                Ok(()) => {}
+                Err(_) => {
+                    // Cross-Device-Fallback: copy + remove statt rename.
+                    tokio::fs::copy(&bak_path, wal_path).await.map_err(|e| {
+                        MemFuseError::Storage(format!(
+                            "WAL backup recovery copy failed: {e}"
+                        ))
+                    })?;
+                    let _ = tokio::fs::remove_file(&bak_path).await;
+                }
+            }
+            if let Ok(f) = tokio::fs::OpenOptions::new().write(true).open(wal_path).await {
+                let _ = f.sync_all().await;
+            }
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Configures restrictive Windows file ACL permissions for `.wal_integrity_key`.
@@ -1360,6 +1435,7 @@ impl Wal {
                         if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
                             let mut legacy_verifier =
                                 IntegrityVerifier::new(&legacy_integrity_key());
+                            legacy_verifier.set_last_hmac(verifier.last_hmac_snapshot());
                             let legacy_res =
                                 match version {
                                     WalVersion::V3 => legacy_verifier
@@ -1400,25 +1476,31 @@ impl Wal {
                     decrypted_data = match km.decrypt_auto_nonce(&entry_data_raw[12..], &nonce) {
                         Ok(data) => data,
                         Err(e) => {
-                            if pos >= file_size {
-                                tracing::warn!(
-                                    "WAL truncation at tail (offset {}), decryption failed: {}",
-                                    chunk_start_pos,
-                                    e
-                                );
-                                break;
-                            }
                             if version == WalVersion::V1 {
-                                if WalEntry::from_bytes(&entry_data_raw).is_ok() {
-                                    entry_data_raw.clone()
-                                } else {
-                                    return Err(MemFuseError::Storage(format!(
-                                        "WAL file uses legacy V1 format which has no unified batch encryption; found active KeyManager for {}. Decryption failed ({}); unencrypted parsing failed. Format mismatch.",
-                                        self.path.display(),
-                                        e
-                                    )));
-                                }
+                                // SICHERHEIT: Ein aktiver KeyManager bedeutet, dass Verschlüsselung für diese
+                                // WAL verpflichtend ist. Ein Eintrag, der nur unverschlüsselt (V1-Klartext)
+                                // parsbar ist, wird NIEMALS stillschweigend akzeptiert — das wäre eine
+                                // Downgrade-Angriffsfläche für einen Schreibzugriff-Angreifer. Stattdessen wird
+                                // dies immer als Integritätsfehler behandelt, unabhängig davon, ob die rohen
+                                // Bytes zufällig als gültiger V1-Eintrag parsbar wären.
+                                return Err(MemFuseError::Storage(format!(
+                                    "WAL entry at {} claims V1/plaintext format while KeyManager is active for {} \
+                                     (decryption failed: {}) — refusing potential downgrade attack. \
+                                     Set allow_legacy_integrity_key_fallback / min_wal_version appropriately if \
+                                     this WAL genuinely predates encryption and requires migration.",
+                                    chunk_start_pos,
+                                    self.path.display(),
+                                    e
+                                )));
                             } else {
+                                if pos >= file_size {
+                                    tracing::warn!(
+                                        "WAL truncation at tail (offset {}), decryption failed: {}",
+                                        chunk_start_pos,
+                                        e
+                                    );
+                                    break;
+                                }
                                 return Err(MemFuseError::wal_corruption(
                                     chunk_start_pos,
                                     format!("Decryption failed: {}", e),
@@ -1470,6 +1552,7 @@ impl Wal {
                 if let Err(e) = verify_res {
                     if !using_legacy_key && self.allow_legacy_integrity_key_fallback {
                         let mut legacy_verifier = IntegrityVerifier::new(&legacy_integrity_key());
+                        legacy_verifier.set_last_hmac(verifier.last_hmac_snapshot());
                         let legacy_res = match version {
                             WalVersion::V3 => {
                                 legacy_verifier.verify_and_update_v3(&snapshot, chunk_start_pos)
@@ -1607,6 +1690,12 @@ impl Wal {
         file.set_len(offset)
             .await
             .map_err(|e| MemFuseError::Storage(format!("WAL truncate failed: {e}")))?;
+
+        // Truncation physisch auf Platte erzwingen, BEVOR der In-Memory-Cursor per seek()
+        // gesetzt wird. Ohne dies überlebt set_len() einen Crash u. U. nicht (Page-Cache-only).
+        file.sync_all()
+            .await
+            .map_err(|e| MemFuseError::Storage(format!("WAL truncate fsync failed: {e}")))?;
 
         file.seek(std::io::SeekFrom::Start(offset))
             .await
@@ -3215,6 +3304,251 @@ mod tests {
             num_tasks as usize,
             "Replay must yield all {} entries",
             num_tasks
+        );
+    }
+
+    #[tokio::test]
+    async fn test_truncate_is_durable_across_simulated_crash() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("truncate_durability.wal");
+
+        let wal = Wal::open(&wal_path).await.expect("open wal");
+
+        // Write several entries so file grows
+        for i in 1..=5 {
+            let op = WalOp::Put {
+                tx_id: TxId::new(i),
+                key: format!("k{}", i).into_bytes(),
+                value: format!("v{}", i).into_bytes(),
+            };
+            let entry = wal.create_entry(op, i).await.expect("create entry");
+            wal.append(&entry).await.expect("append entry");
+        }
+
+        let initial_size = tokio::fs::metadata(&wal_path).await.expect("meta").len();
+        assert!(initial_size > 4, "File size should be larger than header");
+
+        // Truncate to offset 4 (HEADER length)
+        let new_hmac = [0x77u8; 32];
+        wal.truncate(4, new_hmac).await.expect("truncate");
+
+        // Open via a new independent File handle (simulates restart after crash without the original Wal handle)
+        let file = tokio::fs::File::open(&wal_path).await.expect("reopen file");
+        let metadata = file.metadata().await.expect("metadata");
+        assert_eq!(
+            metadata.len(),
+            4,
+            "Physical file length on disk must equal truncated offset 4 after fsync"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_recover_from_bak_if_present_cases() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("test_recovery.wal");
+        let bak_path = dir.path().join("test_recovery.wal.v1.bak");
+
+        // Case (a): no backup present -> Ok(false), file untouched
+        tokio::fs::write(&wal_path, b"some content").await.unwrap();
+        let res = recover_from_bak_if_present(&wal_path).await.expect("recover");
+        assert!(!res);
+        assert_eq!(tokio::fs::read(&wal_path).await.unwrap(), b"some content");
+
+        // Case (c): backup present, regular file non-empty -> Ok(false), no override
+        tokio::fs::write(&bak_path, b"backup content").await.unwrap();
+        let res = recover_from_bak_if_present(&wal_path).await.expect("recover");
+        assert!(!res);
+        assert_eq!(tokio::fs::read(&wal_path).await.unwrap(), b"some content");
+
+        // Case (b): backup present, regular file empty (0 bytes) -> Ok(true), backup restored
+        tokio::fs::write(&wal_path, b"").await.unwrap();
+        let res = recover_from_bak_if_present(&wal_path).await.expect("recover");
+        assert!(res);
+        assert_eq!(tokio::fs::read(&wal_path).await.unwrap(), b"backup content");
+        assert!(!bak_path.exists(), "Backup file should be renamed/removed after recovery");
+    }
+
+    #[tokio::test]
+    async fn test_full_rewrite_crash_recovery_pipeline() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("rewrite_crash.wal");
+
+        // 1. Write legacy V1 entry
+        let op = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"k_crash".to_vec(),
+            value: b"v_crash".to_vec(),
+        };
+        let entry = WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("v1 entry");
+        let v1_bytes = entry.to_bytes().expect("to_bytes");
+        tokio::fs::write(&wal_path, &v1_bytes).await.expect("write v1 wal");
+
+        // 2. Simulate backup creation and fsync
+        let bak_path = dir.path().join("rewrite_crash.wal.v1.bak");
+        tokio::fs::copy(&wal_path, &bak_path).await.expect("copy backup");
+        let bak_file = tokio::fs::OpenOptions::new().write(true).open(&bak_path).await.expect("open bak");
+        bak_file.sync_all().await.expect("fsync bak");
+        drop(bak_file);
+
+        // 3. Simulate crash after truncating original WAL to 0 bytes before V3 rewrite finishes
+        let file = tokio::fs::OpenOptions::new().write(true).open(&wal_path).await.expect("open wal");
+        file.set_len(0).await.expect("truncate wal to 0");
+        file.sync_all().await.expect("fsync truncated wal");
+        drop(file);
+
+        // 4. Wal::open() on the path -> recover_from_bak_if_present recovers backup and replays successfully
+        let wal = Wal::open_with_config(
+            &wal_path,
+            WalConfig {
+                allow_legacy_integrity_key_fallback: true,
+                min_wal_version: WalVersion::V3,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("open and recover wal from backup");
+
+        let replayed = wal.replay().await.expect("replay recovered wal");
+        assert_eq!(replayed.len(), 1);
+        if let WalOp::Put { key, value, .. } = &replayed[0].1.op {
+            assert_eq!(key, b"k_crash");
+            assert_eq!(value, b"v_crash");
+        } else {
+            panic!("Expected Put op");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_v1_plaintext_rejected_when_key_manager_active() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("v1_downgrade.wal");
+
+        let km = Arc::new(
+            KeyManager::try_new("passphrase123", b"salt123456789012345678901234567890")
+                .expect("km"),
+        );
+
+        // 1. Manually construct an unencrypted V1 plaintext WAL entry
+        let op = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"unencrypted_key".to_vec(),
+            value: b"unencrypted_val".to_vec(),
+        };
+        let entry = WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("entry");
+        let entry_bytes = entry.to_bytes().expect("to_bytes");
+
+        // Write directly to file (bypassing Wal API)
+        tokio::fs::write(&wal_path, &entry_bytes).await.expect("write plaintext entry");
+
+        // 2. Opening/replaying with active KeyManager MUST reject the V1 plaintext entry
+        let open_res = Wal::open_with_key_manager(&wal_path, Some(km.clone())).await;
+        if let Ok(wal) = open_res {
+            let replay_res = wal.replay().await;
+            assert!(
+                replay_res.is_err(),
+                "Replaying unencrypted V1 entry with active KeyManager MUST return an error"
+            );
+            let err_msg = format!("{}", replay_res.unwrap_err());
+            assert!(
+                err_msg.contains("refusing potential downgrade attack"),
+                "Error message should mention downgrade attack refusal, got: {}",
+                err_msg
+            );
+        } else {
+            // Opening failed during initial replay in open_with_key_manager, which is also valid
+            let err_msg = format!("{}", open_res.unwrap_err());
+            assert!(
+                err_msg.contains("refusing potential downgrade attack"),
+                "Error message should mention downgrade attack refusal, got: {}",
+                err_msg
+            );
+        }
+
+        // 3. Opening/replaying WITHOUT KeyManager MUST succeed for the same V1 plaintext entry
+        let wal_no_km = Wal::open_with_config(
+            &wal_path,
+            WalConfig {
+                allow_legacy_integrity_key_fallback: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("open without key manager should succeed");
+
+        let replayed = wal_no_km.replay().await.expect("replay without key manager");
+        assert_eq!(replayed.len(), 1);
+        if let WalOp::Put { key, value, .. } = &replayed[0].1.op {
+            assert_eq!(key, b"unencrypted_key");
+            assert_eq!(value, b"unencrypted_val");
+        } else {
+            panic!("Expected Put op");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_split_brain_legacy_fallback_chain_continuity() {
+        let dir = tempdir().expect("tempdir");
+        let wal_path = dir.path().join("split_brain.wal");
+
+        let normal_key = b"normal-integrity-key-32-bytes---";
+        let legacy_key = legacy_integrity_key();
+
+        // 1. Entry 1: created with normal key, prev_hmac = [0u8; 32]
+        let op1 = WalOp::Put {
+            tx_id: TxId::new(1),
+            key: b"k1".to_vec(),
+            value: b"v1".to_vec(),
+        };
+        let e1 = WalEntry::try_new(op1, 1, normal_key, [0u8; 32]).unwrap();
+
+        // 2. Entry 2: created with normal key, prev_hmac = e1.checksum
+        let op2 = WalOp::Put {
+            tx_id: TxId::new(2),
+            key: b"k2".to_vec(),
+            value: b"v2".to_vec(),
+        };
+        let e2 = WalEntry::try_new(op2, 2, normal_key, e1.checksum).unwrap();
+
+        // 3. Entry 3 (attacker/legacy entry):
+        // prev_hmac = [0u8; 32] (trying to pretend it's the start of chain), but signed with legacy_key.
+        let op3 = WalOp::Put {
+            tx_id: TxId::new(3),
+            key: b"k3".to_vec(),
+            value: b"v3".to_vec(),
+        };
+        let e3_forged = WalEntry::try_new(op3, 3, &legacy_key, [0u8; 32]).unwrap();
+
+        let mut file_bytes = Vec::new();
+        file_bytes.extend_from_slice(&WAL_V3_HEADER);
+        file_bytes.extend_from_slice(&e1.to_bytes().unwrap());
+        file_bytes.extend_from_slice(&e2.to_bytes().unwrap());
+        file_bytes.extend_from_slice(&e3_forged.to_bytes().unwrap());
+
+        tokio::fs::write(&wal_path, &file_bytes).await.unwrap();
+
+        // Pre-create integrity key file with normal_key
+        let key_file_path = dir.path().join(".wal_integrity_key");
+        tokio::fs::write(&key_file_path, normal_key).await.unwrap();
+
+        // Opening / replaying with legacy fallback enabled MUST fail during replay/open due to HMAC mismatch
+        let open_res = Wal::open_with_config(
+            &wal_path,
+            WalConfig {
+                allow_legacy_integrity_key_fallback: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let replay_err = match open_res {
+            Ok(wal) => wal.replay().await.unwrap_err(),
+            Err(e) => e,
+        };
+
+        assert!(
+            matches!(replay_err, MemFuseError::WalCorruption { .. }),
+            "Forged entry 3 with prev_hmac=[0;32] must be rejected during fallback because chain state was non-zero! Got: {:?}",
+            replay_err
         );
     }
 }

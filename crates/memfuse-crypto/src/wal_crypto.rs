@@ -200,6 +200,21 @@ impl IntegrityVerifier {
         }
     }
 
+    /// Übernimmt einen bereits bekannten `last_hmac`-Kettenzustand, z. B. beim
+    /// Wechsel von einem Normal- auf einen Legacy-Key-Verifier MITTEN in einem
+    /// Batch, damit die HMAC-Chain-Kontinuität über den Verifier-Wechsel hinweg
+    /// gewahrt bleibt (verhindert einen Split-Brain-Zustand, bei dem ein frisch
+    /// initialisierter Verifier fälschlich `prev_hmac == [0u8;32]` als gültigen
+    /// Kettenanfang akzeptiert, obwohl bereits vorherige Einträge verifiziert wurden).
+    pub fn set_last_hmac(&mut self, hmac: [u8; 32]) {
+        self.last_hmac = hmac;
+    }
+
+    /// Gibt den aktuellen `last_hmac`-Kettenzustand zurück (für Verifier-Handoff).
+    pub fn last_hmac_snapshot(&self) -> [u8; 32] {
+        self.last_hmac
+    }
+
     /// Verifies a V3 entry (with tx_id and length prefixes) and updates the chain state.
     pub fn verify_and_update_v3(&mut self, entry: &WalEntrySnapshot, offset: u64) -> Result<()> {
         let mut mac = WalHmac::new(&self.integrity_key)?;
