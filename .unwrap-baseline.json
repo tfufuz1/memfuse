@@ -1765,11 +1765,11 @@
   },
   {
     "file": "crates/memfuse-checkpoint/tests/guard_proptest.rs",
-    "hash": "a6172ca52154f9d2"
+    "hash": "89c60fba2024b7de"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/guard_proptest.rs",
-    "hash": "cdf932a6fbcedfb4"
+    "hash": "c51fa6177f37d864"
   },
   {
     "file": "crates/memfuse-checkpoint/tests/guard_proptest.rs",
@@ -2933,10 +2933,6 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
-    "hash": "213db80fd94bf59c"
-  },
-  {
-    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "29178fc55b4398e7"
   },
   {
@@ -3014,10 +3010,6 @@
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "acbd07ca64dfb707"
-  },
-  {
-    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
-    "hash": "c3e4de5969fe8fa2"
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
@@ -13533,6 +13525,10 @@
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "01d65104206653d6"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "02108d3c2625314a"
   },
   {
@@ -14269,6 +14265,10 @@
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "99b5bc0b3e52cc5e"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "9bc22b8b2ebdee46"
   },
   {
@@ -14314,6 +14314,10 @@
   {
     "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "a283092e62990dd0"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "a37e1ffd563c644c"
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
@@ -14417,6 +14421,10 @@
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "b3ef5b3018bccbb5"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "b596d7859e19367d"
   },
   {
@@ -14490,6 +14498,10 @@
   {
     "file": "crates/memfuse-store/src/lsm.rs",
     "hash": "c0cbb3b981072f95"
+  },
+  {
+    "file": "crates/memfuse-store/src/lsm.rs",
+    "hash": "c0d695c3312bc737"
   },
   {
     "file": "crates/memfuse-store/src/lsm.rs",
@@ -16574,6 +16586,86 @@
   {
     "file": "crates/memfuse-store/tests/executor_starvation_test.rs",
     "hash": "905461e6ca764c92"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "126309aa679c6d48"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "27c3d21c3b1f2c43"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "352582227f06739e"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "43a579dabecd6544"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "4d4cb66444518bba"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "59d95d3759f62a8d"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "6689cce8423d846c"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "750bbf749d9b4e03"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "75188bc1600dc9f1"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "8bca48cfbdfed7d1"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "8c85ea23073f64a4"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "963a88db6fad5604"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "9cc3c2868b596b08"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "a27f59ebdf8825d7"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "aae0f2bc75ead2e1"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "b9ec23fa17084b56"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "c5ae8427bc5fd4d4"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "f35ddca8d1b13d82"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "f5d1635f06a0c8a4"
+  },
+  {
+    "file": "crates/memfuse-store/tests/fault_injection_recovery.rs",
+    "hash": "f991f9123a821995"
   },
   {
     "file": "crates/memfuse-store/tests/flush_crash_simulation.rs",

@@ -1369,9 +1369,11 @@ impl StorageEngine for LsmStorage {
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
             let cur_bytes = cursor.map(Bytes::copy_from_slice);
+            let range_bound: std::ops::Bound<&Bytes> = cur_bytes
+                .as_ref()
+                .map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
             const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
             let max_entries = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
-            let safety_limit = max_entries;
 
             let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
@@ -1380,20 +1382,6 @@ impl StorageEngine for LsmStorage {
             let sstables = self.sstables.read().await;
 
             let mut processed_count = 0usize;
-            let mut has_more_beyond_limit = false;
-
-            let get_k_max = |m: &std::collections::BTreeMap<Bytes, (Bytes, u64)>| -> Option<Bytes> {
-                let mut count = 0usize;
-                for (k, (_, seq)) in m.iter() {
-                    if (seq & TOMBSTONE_BIT) == 0 {
-                        count += 1;
-                        if count == limit {
-                            return Some(k.clone());
-                        }
-                    }
-                }
-                None
-            };
 
             // Collect from SSTables
             for sst in sstables.iter() {
@@ -1415,7 +1403,6 @@ impl StorageEngine for LsmStorage {
                 }
 
                 let entries = sst.scan_prefix(prefix).await?;
-                let mut found_count = 0usize;
                 for (k, v, seq, tx) in entries {
                     if let Some(cb) = cursor {
                         if k.as_ref() <= cb {
@@ -1447,7 +1434,6 @@ impl StorageEngine for LsmStorage {
 
             // Collect bounded candidates from immutable memtables
             for mt in &state.immutable_memtables {
-                let mut found_count = 0usize;
                 for (k, v, seq, tx) in mt.iter() {
                     if let Some(cb) = cursor {
                         if k.as_ref() <= cb {
@@ -1478,7 +1464,6 @@ impl StorageEngine for LsmStorage {
             }
 
             // Collect bounded candidates from active memtable
-            let mut found_count = 0usize;
             for (k, v, seq, tx) in state.memtable.iter() {
                 if let Some(cb) = cursor {
                     if k.as_ref() <= cb {
@@ -1516,7 +1501,7 @@ impl StorageEngine for LsmStorage {
             }
 
             let mut results = Vec::new();
-            let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
+            let mut iter = map.range::<Bytes, _>((range_bound, std::ops::Bound::Unbounded));
 
             for (k, (v, seq)) in iter.by_ref() {
                 if (seq & TOMBSTONE_BIT) == 0 {
@@ -1649,6 +1634,7 @@ impl StorageEngine for LsmStorage {
                 None => start,
             };
 
+            let mut processed_count = 0usize;
             let safety_limit = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
             let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
@@ -2999,7 +2985,7 @@ mod tests {
 
         use std::ops::Bound;
         let full_scan = storage
-            .scan(Bound::Unbounded, Bound::Unbounded)
+            .scan(Bound::Unbounded, Bound::Unbounded, None)
             .await
             .unwrap();
 
