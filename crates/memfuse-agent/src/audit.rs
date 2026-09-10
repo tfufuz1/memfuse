@@ -601,6 +601,10 @@ impl StorageEngine for InMemoryStorageEngine {
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
+        // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8)
+        // BEFUND: Parameter `limit` is unreferenced in test helper `InMemoryStorageEngine::scan`.
+        // RISIKO: Triggers unused_variables compiler warning when building tests.
+        // EMPFEHLUNG: Prefix with underscore `_limit` or apply limit slicing in test mock.
         limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
@@ -626,6 +630,9 @@ impl StorageEngine for InMemoryStorageEngine {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
+            if let Some(lim) = limit {
+                entries.truncate(lim);
+            }
             Ok(entries)
         })
     }

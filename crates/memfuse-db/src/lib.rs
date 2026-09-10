@@ -1328,8 +1328,8 @@ impl SandboxBridge for MemFuse {
             }
 
             let results: Vec<SearchResult> = self.search(&vector, k).await?;
-            Ok(serde_json::to_vec(&results)
-                .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))?)
+            serde_json::to_vec(&results)
+                .map_err(|e| memfuse_core::MemFuseError::Internal(e.to_string()))
         })
     }
 
