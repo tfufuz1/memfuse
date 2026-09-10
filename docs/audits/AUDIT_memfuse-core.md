@@ -197,3 +197,14 @@ cargo check --workspace --exclude memfuse-tauri
 - **Quality Gate Stack & Tests:** 156 unit + 2 integration + 5 robustness tests (163 total) passing 100% green. Gate stack and preflight checks passed.
 
 ## 14. [Konsolidiert in §11 — keine neue Prüftiefe gegenüber Session 96e5c38b / Task JULES-20260909-DEEP identifiziert, siehe Anmerkung TS: 2026-09-09]
+
+## 15. Crate Audit & Edge Case Test Verification (2026-09-10 — SESSION 030e89e7 / Task JULES-20260910-TEST)
+
+### Inventar-Realitätsabgleich (Stand 2026-09-10)
+- **Bekanntes Prompter-Inventar (Stand 2026-09-10):** 17 Dateien in `crates/memfuse-core/src/` (`error.rs`, `error_dto.rs`, `ipc/jsonrpc.rs`, `ipc/memfuse_generated.rs`, `ipc/mod.rs`, `lib.rs`, `seq_log.rs`, `snapshot.rs`, `traits/embedding.rs`, `traits/mod.rs`, `tx_buffer.rs`, `types.rs`, `types/budget.rs`, `types/domain.rs`, `types/filter.rs`, `types/importance.rs`, `types/saos.rs`).
+- **Tatsächlicher Dateibestand in `crates/memfuse-core/src`:** 17 Dateien (exakte Übereinstimmung, keine Abweichung). Inventarabgleich: Stand 2026-09-10 bestätigt.
+
+### Audit Findings & Verification
+- **Layer 0 Invarianten & DAG Isolation:** `memfuse-core` verifiziert mit 0 Workspace-Abhängigkeiten und 0 Aufwärts-Importen. `#![deny(unsafe_code)]` am Crate-Root unberührt.
+- **Edge Case Test Expansion:** `test_tenant_id_try_from_boundary_and_display` in `crates/memfuse-core/src/types/domain.rs` hinzugefügt, testet `TenantId::try_from(u64::MAX)`, primitive Konvertierungen und `Display`-Formatierung.
+- **Quality Gate Stack & Full Suite:** 157 Unit-Tests, 2 Integrationstests, 5 Robustheitstests (164 gesamt) 100% grün. `cargo check`, `cargo clippy -p memfuse-core -- -D warnings` und `cargo fmt --check -p memfuse-core` ohne Warnungen/Befunde.
