@@ -1,94 +1,12 @@
 {
   "claims": [
     {
-      "krate": "docs",
-      "issue": "GESAMTSPEZ-V10",
-      "timestamp": "2026-09-08T21:50:44.781466215+00:00",
-      "session_id": "6558016856048513528",
-      "active": false,
-      "expires_at": "2026-09-09T01:50:44Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-tauri",
-      "issue": "ADR077-DEPRECATION-MARKER",
-      "timestamp": "2026-09-08T23:16:34.515682512+00:00",
-      "session_id": "8107571721804661471",
-      "active": false,
-      "expires_at": "2026-09-09T03:16:34Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-graph",
-      "issue": "DAG-SAFETY-01",
-      "timestamp": "2026-09-09T12:11:05.729331433+00:00",
-      "session_id": "3482155607226682189",
-      "active": false,
-      "expires_at": "2026-09-09T16:11:05Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-embed",
-      "issue": "JULES-20260909-DEEP",
-      "timestamp": "2026-09-09T12:41:59.893591146+00:00",
-      "session_id": "3967351318889068769",
-      "active": false,
-      "expires_at": "2026-09-09T16:41:59Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-mcp",
-      "issue": "JULES-20260909-TEST",
-      "timestamp": "2026-09-09T14:50:26.226204210+00:00",
-      "session_id": "17893647405335683469",
-      "active": false,
-      "expires_at": "2026-09-09T18:50:26Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-crypto",
-      "issue": "JULES-20260909-IMPL",
-      "timestamp": "2026-09-09T15:42:26.576534363+00:00",
-      "session_id": "14951270737769827256",
-      "active": false,
-      "expires_at": "2026-09-09T19:42:26Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-router",
-      "issue": "JULES-20260909-DEEP",
-      "timestamp": "2026-09-09T19:18:31.235131386+00:00",
-      "session_id": "16226146975018763893",
-      "active": false,
-      "expires_at": "2026-09-09T23:18:31Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-db",
-      "issue": "JULES-20260909-FIX",
-      "timestamp": "2026-09-09T20:31:21.235131386+00:00",
-      "session_id": "2567090070726996880",
-      "active": false,
-      "expires_at": "2026-09-10T00:31:21Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
-      "krate": "memfuse-calibration",
-      "issue": "M-3",
-      "timestamp": "2026-09-10T06:07:01.402660401+00:00",
-      "session_id": "4363741388824461552",
-      "active": false,
-      "expires_at": "2026-09-10T10:07:01Z",
-      "released_at": "2026-09-10T00:00:00Z"
-    },
-    {
       "krate": "memfuse-core",
       "issue": "JULES-20260910-TEST",
-      "timestamp": "2026-09-10T19:22:52.141207247+00:00",
+      "timestamp": "2026-09-10T19:39:12.341942514+00:00",
       "session_id": "2902225699968435816",
-      "active": false,
-      "expires_at": "2026-09-10T23:22:52.141184085+00:00",
-      "released_at": "2026-09-10T19:30:49.455164857+00:00"
+      "active": true,
+      "expires_at": "2026-09-10T23:39:12.341930326+00:00"
     }
   ]
 }

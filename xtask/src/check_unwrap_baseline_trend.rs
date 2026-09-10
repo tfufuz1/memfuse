@@ -98,7 +98,11 @@ pub fn parse_baseline_entries(json_str: &str) -> Result<Vec<UnwrapBaselineEntry>
 pub fn compute_baseline_diff(
     base_entries: &[UnwrapBaselineEntry],
     current_entries: &[UnwrapBaselineEntry],
-) -> (Vec<UnwrapBaselineEntry>, Vec<UnwrapBaselineEntry>, Vec<CrateDiff>) {
+) -> (
+    Vec<UnwrapBaselineEntry>,
+    Vec<UnwrapBaselineEntry>,
+    Vec<CrateDiff>,
+) {
     let base_set: HashSet<(&str, &str)> = base_entries
         .iter()
         .map(|e| (e.file.as_str(), e.hash.as_str()))
@@ -179,7 +183,10 @@ pub fn append_history_entry(
     let history_file = docs_dir.join("unwrap_baseline_history.jsonl");
 
     let today = Utc::now().format("%Y-%m-%d").to_string();
-    let commit_sha = match Command::new("git").args(["rev-parse", "--short", "HEAD"]).output() {
+    let commit_sha = match Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+    {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
         _ => "unknown".to_string(),
     };
@@ -210,10 +217,14 @@ pub fn append_history_entry(
         .create(true)
         .append(true)
         .open(&history_file)
-        .map_err(|e| format!("Failed to open history file {}: {e}", history_file.display()))?;
+        .map_err(|e| {
+            format!(
+                "Failed to open history file {}: {e}",
+                history_file.display()
+            )
+        })?;
 
-    writeln!(file, "{}", json_line)
-        .map_err(|e| format!("Failed to write to history file: {e}"))?;
+    writeln!(file, "{}", json_line).map_err(|e| format!("Failed to write to history file: {e}"))?;
 
     println!("📜 Historie fortgeschrieben in {}", history_file.display());
     Ok(())
@@ -250,25 +261,37 @@ pub fn run_check_unwrap_baseline_trend(root: &Path) -> bool {
         .unwrap_or_else(|| "origin/main".to_string());
 
     let (base_entries, base_available) = match fetch_base_baseline_content(&base_ref) {
-        Ok(content) => match parse_baseline_entries(&content) {
-            Ok(entries) => (entries, true),
-            Err(e) => {
-                println!("⚠️ Base branch baseline parsing failed ({}), assuming empty base baseline.", e);
-                (Vec::new(), false)
+        Ok(content) => {
+            match parse_baseline_entries(&content) {
+                Ok(entries) => (entries, true),
+                Err(e) => {
+                    println!("⚠️ Base branch baseline parsing failed ({}), assuming empty base baseline.", e);
+                    (Vec::new(), false)
+                }
             }
-        },
+        }
         Err(e) => {
-            println!("ℹ️ Base branch baseline unreadable via git ({}), skipping base comparison.", e);
+            println!(
+                "ℹ️ Base branch baseline unreadable via git ({}), skipping base comparison.",
+                e
+            );
             (Vec::new(), false)
         }
     };
 
     let tier1_crates = load_tier1_crates(root);
 
-    println!("Total .unwrap()/.expect() baseline entries on current branch: {}", current_entries.len());
+    println!(
+        "Total .unwrap()/.expect() baseline entries on current branch: {}",
+        current_entries.len()
+    );
 
     if base_available {
-        println!("Base branch ref: {} (total entries: {})", base_ref, base_entries.len());
+        println!(
+            "Base branch ref: {} (total entries: {})",
+            base_ref,
+            base_entries.len()
+        );
         let (_added, _removed, diffs) = compute_baseline_diff(&base_entries, &current_entries);
 
         println!("\n--- Crate Trend Summary vs. {} ---", base_ref);
@@ -296,14 +319,28 @@ pub fn run_check_unwrap_baseline_trend(root: &Path) -> bool {
         }
 
         let tier1_net = tier1_added as i64 - tier1_removed as i64;
-        println!("\nTier-1 Crates Net Growth: +{} / -{} (Net: {}{})", tier1_added, tier1_removed, if tier1_net > 0 { "+" } else { "" }, tier1_net);
+        println!(
+            "\nTier-1 Crates Net Growth: +{} / -{} (Net: {}{})",
+            tier1_added,
+            tier1_removed,
+            if tier1_net > 0 { "+" } else { "" },
+            tier1_net
+        );
 
         if tier1_net > 0 {
-            println!("\n⚠️  WARNSTUFE: Nettowachstum an .unwrap()/.expect() in Tier-1-Crates ({:?})!", tier1_crates);
-            println!("    Nettowachstum: +{} Einträge seit Base-Branch {}.", tier1_net, base_ref);
+            println!(
+                "\n⚠️  WARNSTUFE: Nettowachstum an .unwrap()/.expect() in Tier-1-Crates ({:?})!",
+                tier1_crates
+            );
+            println!(
+                "    Nettowachstum: +{} Einträge seit Base-Branch {}.",
+                tier1_net, base_ref
+            );
             println!("    Unwraps in Tier-1-Crates bergen hohes Risiko für Lock-Poisoning-Kaskaden und FFI-Panic-Instabilitäten.");
             println!("    Hinweis: Dieses Gate schlägt bewusst NICHT hart fehl, um bestehende Workflows nicht abrupt zu blockieren,");
-            println!("    aber bitte plane den Abbau im Sinne von docs/UNWRAP_REDUCTION_PLAN.md ein.");
+            println!(
+                "    aber bitte plane den Abbau im Sinne von docs/UNWRAP_REDUCTION_PLAN.md ein."
+            );
         }
     } else {
         println!("ℹ️ Base branch baseline non-comparable. Reporting current branch counts only.");
@@ -324,10 +361,19 @@ mod tests {
 
     #[test]
     fn test_extract_crate_name() {
-        assert_eq!(extract_crate_name("crates/memfuse-core/src/lib.rs"), "memfuse-core");
-        assert_eq!(extract_crate_name("crates/memfuse-crypto/src/anti_tamper.rs"), "memfuse-crypto");
+        assert_eq!(
+            extract_crate_name("crates/memfuse-core/src/lib.rs"),
+            "memfuse-core"
+        );
+        assert_eq!(
+            extract_crate_name("crates/memfuse-crypto/src/anti_tamper.rs"),
+            "memfuse-crypto"
+        );
         assert_eq!(extract_crate_name("xtask/src/main.rs"), "xtask");
-        assert_eq!(extract_crate_name("benchmarks/memfuse-bench/src/lib.rs"), "memfuse-bench");
+        assert_eq!(
+            extract_crate_name("benchmarks/memfuse-bench/src/lib.rs"),
+            "memfuse-bench"
+        );
         assert_eq!(extract_crate_name("docs/README.md"), "docs");
     }
 
@@ -365,12 +411,18 @@ mod tests {
 
         assert_eq!(diffs.len(), 2);
 
-        let core_diff = diffs.iter().find(|d| d.crate_name == "memfuse-core").unwrap();
+        let core_diff = diffs
+            .iter()
+            .find(|d| d.crate_name == "memfuse-core")
+            .unwrap();
         assert_eq!(core_diff.added, 1);
         assert_eq!(core_diff.removed, 0);
         assert_eq!(core_diff.net, 1);
 
-        let crypto_diff = diffs.iter().find(|d| d.crate_name == "memfuse-crypto").unwrap();
+        let crypto_diff = diffs
+            .iter()
+            .find(|d| d.crate_name == "memfuse-crypto")
+            .unwrap();
         assert_eq!(crypto_diff.added, 0);
         assert_eq!(crypto_diff.removed, 1);
         assert_eq!(crypto_diff.net, -1);
@@ -392,7 +444,12 @@ mod tests {
             },
         ];
 
-        let tier1 = vec!["memfuse-core".to_string(), "memfuse-crypto".to_string(), "memfuse-store".to_string(), "memfuse-index".to_string()];
+        let tier1 = vec![
+            "memfuse-core".to_string(),
+            "memfuse-crypto".to_string(),
+            "memfuse-store".to_string(),
+            "memfuse-index".to_string(),
+        ];
 
         assert!(append_history_entry(root, &entries, &tier1).is_ok());
 
