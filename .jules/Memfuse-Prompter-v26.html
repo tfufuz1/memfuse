@@ -1761,26 +1761,34 @@ niemals aus Erinnerung oder Vorlage formulieren. Bei Unsicherheit: rohen Output 
 
 ### Schritt 6-C: Gate-Stack (nach Rebase, gegen den rebbasten Stand)
 \`\`\`bash
-cargo fmt --all
-cargo check  ${PKG(crate)} --all-features
-cargo clippy ${PKG(crate)} -- -D warnings
-command -v cargo-nextest &>/devnull && \
-  cargo nextest run ${PKG(crate)} --all-features || \
-  cargo test       ${PKG(crate)} --all-features -- --nocapture 2>&1 | tail -20
-cargo check --workspace --exclude memfuse-tauri
-just sync-docs
-just sync-docs-check   # MUSS grün sein
-\`\`\`
+# 1. Rebase-vor-Submit gegen aktuellen main-Stand (blockierend)
+git fetch origin main
+if ! git merge-base --is-ancestor origin/main HEAD; then
+  echo "⚠️ main hat sich seit Sessionstart weiterentwickelt — REBASE + RE-TEST erforderlich"
+  git rebase origin/main
+  cargo check ${PKG(crate)} --all-features 2>&1 | tee /tmp/postrebase_check_crate.log
+  grep -q "^error" /tmp/postrebase_check_crate.log && { echo "❌ STOP: Rebase hat Compile-Fehler in Crate freigelegt — NICHT submitten"; exit 1; }
+  cargo check --workspace --exclude memfuse-tauri 2>&1 | tee /tmp/postrebase_check.log
+  grep -q "^error" /tmp/postrebase_check.log && { echo "❌ STOP: Rebase hat Compile-Fehler im Workspace freigelegt — NICHT submitten"; exit 1; }
+fi
 
-### Schritt 6-D: Claim-Freigabe (Pflicht — auch bei BLOCKED/abgebrochenem Task)
-\`\`\`bash
-# \$TASK_ID wurde beim Claim-Erwerb in Phase 0 gesetzt und exportiert.
-# NICHT neu generieren — muss identisch mit dem Erwerbs-ID sein.
-echo "Freigabe Claim: Crate=${crate}, TaskID=\$TASK_ID"
+# 2. Phantom-Verifikation — jede im Diff behauptete Datei muss physikalisch existieren
+for f in \$(git diff --name-only origin/main...HEAD | grep -E '\\.rs\$'); do
+  [ -f "\$f" ] || { echo "❌ Behauptete/geänderte Datei \$f existiert nicht im Diff"; exit 1; }
+done
+
+# 3. Bestehender Gate-Stack
+cargo fmt --all
+just sync-docs            # generiert WORKING_STATE.md, docs/CHANGELOG.md, docs/ARCHITECTURE.md, docs/SOURCE_OF_TRUTH.md
+just sync-docs-check      # MUSS grün sein — sonst ist der Commit nicht vollständig
+
+# 4. Claim-Freigabe
 cargo xtask claim --release --crate ${crate} --issue "\$TASK_ID" 2>&1 | tail -5
 \`\`\`
-Ein nie freigegebener Claim blockiert die nächste Session und veraltet die Claim-DB strukturell.
-Ein als BLOCKED abgebrochener Task gibt seinen Claim trotzdem frei — kein Unterschied.
+
+Ein am Sessionanfang gesetzter Claim ohne passende Freigabe am Sessionende ist selbst ein Befund. Auch ein abgebrochener/als BLOCKED markierter Task gibt seinen Claim frei.
+
+Falls diese Sitzung eine reine Review-Sitzung war (kein eigener Code-Beitrag, nur Prüfung fremder Arbeit): hinterlasse mindestens einen \`REVIEW-PASS\`-Eintrag mit \`PRÜFER-KONTEXT: FRESH\`, bevor \`just sync-docs\` läuft.
 
 Falls diese Sitzung eine reine Review-Sitzung war: mindestens einen \`REVIEW-PASS\`-Eintrag
 mit \`PRÜFER-KONTEXT: FRESH\` hinterlassen, dann die vier Schritte oben ausführen.
@@ -3694,12 +3702,10 @@ function selTask(id) {
 function buildMandatoryBootstrap(claimCrate, taskId) {
   return `---MANDATORY BOOTSTRAP (nicht überspringen, nicht kürzen)---
 [SCHRITT 0 — Inventar-Realitätsabgleich, IMMER ZUERST]
-1. export TASK_ID='${taskId}'   # Diese ID wird bei Claim-Freigabe in Phase 6-D exakt wiederverwendet
-                              # NICHT neu generieren — sonst läuft --release gegen die falsche ID
-2. read_file("AGENTS.md") — vollständig lesen
-3. read_file(".jules/SESSION_BOOTSTRAP.md") — vollständig lesen
-4. run_in_bash_session("head -80 WORKING_STATE.md") — Crate-Stand prüfen
-5. run_in_bash_session("cargo xtask claim --crate ${claimCrate} --issue \"\$TASK_ID\"")
+1. read_file("AGENTS.md") — vollständig lesen
+2. read_file(".jules/SESSION_BOOTSTRAP.md") — vollständig lesen
+3. run_in_bash_session("head -80 WORKING_STATE.md") — Crate-Stand prüfen
+4. run_in_bash_session("export TASK_ID='${taskId}' && cargo xtask claim --crate ${claimCrate} --issue \"$TASK_ID\"")
    — CLAIM_CRATE und TASK_ID aus dem Task-Kontext unten bestimmen
    — Bei Claim-Konflikt: STOP. Nicht fortfahren. Meldung ausgeben.
 6. run_in_bash_session("cargo run -p xtask -- jules-preflight --fast")
