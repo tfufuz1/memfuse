@@ -656,13 +656,12 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                     let _ = tokio::fs::remove_file(&bak_path).await;
                 }
             }
-            if let Ok(f) = tokio::fs::OpenOptions::new()
+            let f = tokio::fs::OpenOptions::new()
                 .write(true)
                 .open(wal_path)
                 .await
-            {
-                let _ = f.sync_all().await;
-            }
+                .map_err(|e| MemFuseError::Storage(format!("Failed to open recovered WAL for sync: {e}")))?;
+            f.sync_all().await.map_err(|e| MemFuseError::Storage(format!("Failed to sync recovered WAL: {e}")))?;
             return Ok(true);
         }
     }
