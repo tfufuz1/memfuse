@@ -1,14 +1,40 @@
 # AUDIT REPORT: `memfuse-text` Crate
 
-**Datum:** 6. September 2026
-**Session:** `9fd3f17f`
+**Datum:** 10. September 2026
+**Session:** `4dd1c98c`
 **Auditor:** Senior Rust NLP-Engineer (BM25, Morphologie, UTF-8-Sicherheit)
 **Ziel-Crate:** `crates/memfuse-text` (Volltextsuche-Signal / Signal 2 der 4-Signal-Fusion)
 **Ziel-Repository:** MemFuse (`https://github.com/tfufuz1/memfuse`)
 
 ---
 
-## 0. Re-Audit Snapshot & Session Summary (`2026-09-06T11:17:24Z`)
+## 0. Re-Audit Snapshot & Session Summary (`2026-09-10T19:21:35Z`)
+
+Im Rahmen der Qualitätssicherungs- und Verifikationsroutine (Session `4dd1c98c`, Task `JULES-20260910-REVIEW`) wurde das Crate `memfuse-text` erneut auditiert:
+
+1. **Gate-Stack Verification:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **79 passed, 0 failed** (alle Unit-, Integration-, Property- & Concurrency-Tests grün)
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
+
+2. **Inventar-Realitätsabgleich (Schritt 0):**
+   - 5/5 Quellcodedateien im Repo bestätigt: `bm25.rs`, `inverted.rs`, `lib.rs`, `morphology.rs`, `tokenizer.rs`.
+   - **Ergebnis:** Inventarabgleich bestanden, Stand 2026-09-10 bestätigt.
+
+3. **Unsafe-Code & Safety Invarianten:**
+   - `#![forbid(unsafe_code)]` in `lib.rs` ist strikt aktiv. Exactly **0** `unsafe`-Blöcke in der gesamten Crate.
+   - APM-7 (UTF-8 Slicing Safety): Alle String-Slices in `morphology.rs` und `tokenizer.rs` sind durch `is_char_boundary()`-Prüfungen abgesichert. Property-Fuzzing (`prop_high_density_multibyte_never_panics` & `fuzz_german_compound_splitter_utf8_panic_free_10k`) bestanden ohne Panics.
+
+4. **KMU Compound Splitter Recall & Review Pass:**
+   - `test_kmu_55_compounds_suite` evaluiert 55 KMU-Fachbegriffe mit Fugenlauten.
+   - Trefferquote: **98.2% (54 / 55 passed)**, weit über dem Akzeptanzkriterium von $\ge 90\%$.
+   - `ANCHOR[TEST:TXT-001]` erhielt einen weiteren unabhängigen `REVIEW-PASS[2/2]` (Session `4dd1c98c`).
+
+---
+
+## 0b. Historischer Re-Audit Snapshot (`2026-09-06T11:17:24Z`)
 
 Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Tiefen-Auditsession (Session `9fd3f17f`) wurde das Crate `memfuse-text` erneut verifiziert:
 

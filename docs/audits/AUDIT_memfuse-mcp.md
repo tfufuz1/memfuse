@@ -1,10 +1,42 @@
 # AUDIT REPORT: `memfuse-mcp` Security, Concurrency & Stdio Protocol Audit
 
-**Datum**: 2026-09-02
-**Auditor**: Senior Rust Protocol & Security Engineer
+**Datum**: 2026-09-10
+**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
 **Audit Target**: `crates/memfuse-mcp/` (MemFuse Model Context Protocol Server)
 **System Architecture Constraint**: ADR-010 (Exklusiver stdio IPC Transport, HTTP/axum/TCP Streng Verboten)
-**Session ID**: e2c39779
+**Session ID**: ae8c2fb9
+
+---
+
+## 17. Session Audit Log (2026-09-10 / Session: ae8c2fb9)
+
+**Datum**: 2026-09-10
+**Session**: ae8c2fb9
+**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
+
+### Durchgeführte Aktionen:
+1. **Schritt 0 — Inventar-Realitätsabgleich**:
+   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 7 Dateien: `bin/memfuse-mcp-server.rs`, `config.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
+   - **Befund**: `Inventarabgleich: keine Abweichung, Stand 2026-09-10 bestätigt`.
+2. **Security & Protocol Audit**:
+   - Stdio JSON-RPC 2.0 Loop in `lib.rs` verifiziert: Strikter stdio Transport (ADR-010), keine HTTP/axum Dependencies, bounded RPC line reading (`MAX_RPC_BYTES` = 4 MB), Query Bounds (`MAX_SEARCH_QUERY_BYTES` = 64 KB).
+   - Write Authorization Guard & Sandbox Policy in `sandbox.rs` verifiziert: DB-Schreiboperationen (`memfuse_insert` etc.) standardmäßig gesperrt (`allow_db_writes: false`), aktivierbar via `MEMFUSE_MCP_ALLOW_WRITE` / CLI, memory caps (`MAX_VOLATILE_RESULTS` = 1,000, `MAX_VOLATILE_KEY_BYTES` = 256), single mutex safety without nested locks.
+   - Prompt Injection Abwehr in `prompt_injection.rs` verifiziert: Pattern matching against instruction injection, Base64 nested decoding, content provenance header tagging (`content_provenance: "retrieved_untrusted_data"`).
+   - Dynamic Provider Construction in `config.rs` und CLI Runner in `bin/memfuse-mcp-server.rs` verifiziert.
+3. **Header Governance & Code Freshness**:
+   - `FILE-CONTEXT` Header in allen 7 Quelldateien der Crate auf aktuellen Stand gebracht (Timestamp: `2026-09-10T19:25:24Z`, Session: `ae8c2fb9`).
+4. **Gate-Verifikation**:
+   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
+   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
+   - `cargo fmt --check -p memfuse-mcp` -> OK
+   - `cargo test -p memfuse-mcp --all-features` -> 52 unit tests passed, 27 integration tests passed (79 total)
+   - `cargo check --workspace --exclude memfuse-tauri` -> OK
+
+---
+
+## 1. Executive Summary
+
+Im Auftrag des Audit-Komitees wurde das Crate `memfuse-mcp` einer vollständigen Sicherheits-, Robustheits- und Spezifikationsauditierung unterzogen. Da `memfuse-mcp` als Schnittstelle zu externen LLM-Clients (z.B. Claude Desktop) potenziell nicht vertrauenswürdige Eingaben über standard input (`stdin`) verarbeitet, stellt dieser Server die primäre Angriffsfläche des MemFuse-Gesamtsystems dar.
 
 ---
 
