@@ -15,34 +15,56 @@
 
 Stand letzter Prüfung: 2026-09-10
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **1 offene Tags**
+Ergebnis: **23 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-agent/src/audit.rs` | 604 | `AGT-AGENT-bf5c7019` | `SMELL` | `MINOR` | `2026-09-10T19:16:32Z` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
+| `crates/memfuse-calibration/src/isotonic.rs` | 201 | `AGT-CALIBRATION-b4b9ce8f` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-3): Cache fitted PAVA step function and rebuild PAVA model only when new observations are recorded (dirty flag). (ID: AGT-CALIBRATION-b4b9ce8f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-crypto/src/deletion_proof.rs` | 166 | `AGT-CRYPTO-9f17569e` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. (ID: AGT-CRYPTO-9f17569e) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-db/src/collection/search.rs` | 291 | `AGT-DB-6d724b1a` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (ID: AGT-DB-6d724b1a) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-db/src/collection/search.rs` | 292 | `AGT-DB-6484e6e5` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (ID: AGT-DB-6484e6e5) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-db/src/fusion.rs` | 43 | `AGT-DB-3f010ab1` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-6): Validate candidate scores with score.is_finite() before multiplying resonance bonus to prevent NaN score propagation. (ID: AGT-DB-3f010ab1) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-db/src/fusion.rs` | 318 | `AGT-DB-9cb315d8` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-1): Preserve scalar field types when metadata values are identical across sources instead of unconditionally converting scalars to JSON arrays. (ID: AGT-DB-9cb315d8) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-db/src/fusion.rs` | 381 | `AGT-DB-5ba3ca84` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-4): Filter out non-positive weight or invalid signals before calculating total_signal_count in RRF rank mass normalization. (ID: AGT-DB-5ba3ca84) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-router/src/lyapunov.rs` | 151 | `AGT-ROUTER-00808347` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] Increase Laplace smoothing epsilon or add bounds clipping to prevent numerical instability during KL divergence calculations. (ID: AGT-ROUTER-00808347) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/compaction.rs` | 103 | `AGT-STORE-41af03c0` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics. (ID: AGT-STORE-41af03c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/compaction.rs` | 218 | `AGT-STORE-68f8ae64` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-4): Ensure associated .uuid sidecar files are deleted alongside parent .sst SSTable files during compaction cleanup. (ID: AGT-STORE-68f8ae64) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 276 | `AGT-STORE-5a195b0b` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-5): Enforce strict monotonic sequence IDs in WAL file naming instead of relying solely on sub-second timestamps to prevent wal.log vs wal-0.log collisions. (ID: AGT-STORE-5a195b0b) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 426 | `AGT-STORE-bae66245` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-C-1): Force a startup flush of replayed MemTable entries before deleting old WAL files, or delay deleting old WAL files until after the subsequent flush + fsync_parent_dir. (ID: AGT-STORE-bae66245) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 567 | `AGT-STORE-1f3c3709` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-4): Avoid creating a new SSTable when rolling back single-entry or small uncommitted transactions. (ID: AGT-STORE-1f3c3709) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 581 | `AGT-STORE-27a11909` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 928 | `AGT-STORE-3261a338` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-9): Inspect uncommitted transaction buffers in put_if_absent to avoid race conditions with uncommitted concurrent writes. (ID: AGT-STORE-3261a338) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 1061 | `AGT-STORE-6fb33368` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-6): Periodically recalculate memtable byte size during flushes to prevent monotonic memory budget drift accumulation. (ID: AGT-STORE-6fb33368) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 1436 | `AGT-STORE-b57a097f` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-1/M-5): Ensure range_bound is correctly declared in scope and found_count is incremented during prefix bounded scanning. (ID: AGT-STORE-b57a097f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/lsm.rs` | 1576 | `AGT-STORE-a75b9fdc` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-7): Acquire snapshot read lock before capturing last_tx to eliminate split-brain read race with concurrent commits. (ID: AGT-STORE-a75b9fdc) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/wal.rs` | 390 | `AGT-STORE-1d1e4d1f` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-8): Reject unencrypted V1 plaintext entries during replay when KeyManager is present and active. (ID: AGT-STORE-1d1e4d1f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/wal.rs` | 1048 | `AGT-STORE-d73203c0` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-C-3): Atomically check file header/size under file lock before writing header in append_batch to prevent double WAL headers. (ID: AGT-STORE-d73203c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/wal.rs` | 1603 | `AGT-STORE-8fa82a7f` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-6): Implement post-crash recovery to restore .v1.bak / .v2.bak backup files if primary WAL is corrupted or truncated during rewrite. (ID: AGT-STORE-8fa82a7f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/wal.rs` | 1690 | `AGT-STORE-59284713` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-C-2): Call file.sync_all() immediately after file.set_len() to ensure length truncation is crash-persisted. (ID: AGT-STORE-59284713) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-store/src/wal.rs` | 1739 | `AGT-STORE-7fb85765` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning. (ID: AGT-STORE-7fb85765) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
 
 
 ## Crate-Inventar & Status
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 9973 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-core` | 0 | 9985 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 1 | 1853 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5477 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 1 | 10334 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 1 | 4832 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-text` | 1 | 5343 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-graph` | 1 | 10593 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-security` | 1 | 4909 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-text` | 1 | 5412 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
-| `memfuse-index` | 2 | 15540 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 2 | 15595 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3985 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 17367 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 2 | 17543 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 28172 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 4 | 28187 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 4975 | 🟢 Clean |  |
+| `memfuse-router` | 5 | 5141 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
-| `memfuse-agent` | 6 | 5794 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 7 | 4390 | 🟢 Clean |  |
+| `memfuse-agent` | 6 | 5798 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-mcp` | 7 | 4397 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
