@@ -27,6 +27,14 @@ jobs:
           MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: cargo run -p xtask -- check-duplicate-intent
 
+      - name: "Gate 12b: Phantom-File-Verification"
+        env:
+          MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: |
+          cargo run -p xtask -- check-phantom-files
+          echo "✅ Gate 12b: Keine Phantom-Dateien in Commit-Messages/PR-Body"
+
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
         run: |
           COUNT=$(grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ \
