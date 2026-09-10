@@ -148,7 +148,7 @@ impl LyapunovDriftWatcher {
         }
 
         // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Laplace-1-Smoothing (Additive Smoothing)
-        // TODO(audit-H-5): Increase Laplace smoothing epsilon (e.g. from 1e-12 to 1e-5) or add bounds clipping to prevent numerical instability during KL divergence calculations.
+// AI-TAG[TODO][MINOR] // AI-TAG[TODO] TODO(audit-H-5): Increase Laplace smoothing epsilon (e.g. from 1e-12 to 1e-5) or add bounds clipping to prevent numerical instability during KL divergence calculations. (ID: AGT-CORE-f850070a) (TS: 2026-09-10T19:30:00Z) (SESSION: b434cc40)
         let alpha = 1.0f32;
         let k = NUM_BINS as f32;
         let n_curr = current_scores.len() as f32;

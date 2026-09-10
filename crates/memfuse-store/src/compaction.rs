@@ -100,7 +100,7 @@ impl CompactionEngine {
     ///
     /// Takes a write-lock on the SSTable list to atomically swap old SSTables
     /// for the compacted result.
-    // TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics.
+// AI-TAG[TODO][MINOR] // AI-TAG[TODO] TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics. (ID: AGT-CORE-8a5560c3) (TS: 2026-09-10T19:30:00Z) (SESSION: b434cc40)
     pub async fn maybe_compact(
         &self,
         sstables: &RwLock<Vec<Arc<SstableReader>>>,
@@ -215,7 +215,7 @@ impl CompactionEngine {
         };
 
         // 6. Delete old SSTable files (best-effort, outside lock)
-        // TODO(audit-NC-4): Ensure associated .uuid sidecar files are deleted alongside parent .sst SSTable files during compaction cleanup.
+// AI-TAG[TODO][MINOR] // AI-TAG[TODO] TODO(audit-NC-4): Ensure associated .uuid sidecar files are deleted alongside parent .sst SSTable files during compaction cleanup. (ID: AGT-CORE-10db5711) (TS: 2026-09-10T19:30:00Z) (SESSION: b434cc40)
         for path in &old_paths {
             if let Err(e) = tokio::fs::remove_file(path).await {
                 tracing::warn!("Failed to delete compacted SSTable {:?}: {}", path, e);
