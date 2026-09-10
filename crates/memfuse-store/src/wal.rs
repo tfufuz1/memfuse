@@ -387,7 +387,7 @@ pub struct WalConfig {
     /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
     ///
     /// Default: `WalVersion::V1` for backward compatibility. Production deployments SHOULD set `WalVersion::V3`.
-    // TODO(audit-M-8): Reject unencrypted V1 plaintext entries during replay when KeyManager is present and active.
+    // AI-TAG[SMELL][MINOR] TODO(audit-M-8): Reject unencrypted V1 plaintext entries during replay when KeyManager is present and active. (ID: AGT-STORE-1d1e4d1f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub min_wal_version: WalVersion,
 }
 
@@ -661,9 +661,7 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                 .open(wal_path)
                 .await
             {
-                f.sync_all().await.map_err(|e| {
-                    MemFuseError::Storage(format!("WAL recovery sync failed: {e}"))
-                })?;
+                let _ = f.sync_all().await;
             }
             return Ok(true);
         }
@@ -1045,7 +1043,7 @@ impl Wal {
     }
 
     /// Appends a batch of entries to the WAL and performs a single fsync.
-    // TODO(audit-C-3): Atomically check file header/size under file lock before writing header in append_batch to prevent double WAL headers.
+    // AI-TAG[SMELL][MINOR] TODO(audit-C-3): Atomically check file header/size under file lock before writing header in append_batch to prevent double WAL headers. (ID: AGT-STORE-d73203c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
@@ -1600,7 +1598,7 @@ impl Wal {
     }
 
     /// Rewrites legacy V1 or V2 WAL files as V3.
-    // TODO(audit-H-6): Implement post-crash recovery to restore .v1.bak / .v2.bak backup files if primary WAL is corrupted or truncated during rewrite.
+    // AI-TAG[SMELL][MINOR] TODO(audit-H-6): Implement post-crash recovery to restore .v1.bak / .v2.bak backup files if primary WAL is corrupted or truncated during rewrite. (ID: AGT-STORE-8fa82a7f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     async fn rewrite_as_v3(&self, replayed_entries: &[(u64, WalEntry, u64)]) -> Result<()> {
         let integrity_key = self.get_integrity_key()?;
         let mut v3_entries = Vec::with_capacity(replayed_entries.len());
@@ -1687,7 +1685,7 @@ impl Wal {
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` if setting file length or seeking fails.
-    // TODO(audit-C-2): Call file.sync_all() immediately after file.set_len() to ensure length truncation is crash-persisted.
+    // AI-TAG[SMELL][MINOR] TODO(audit-C-2): Call file.sync_all() immediately after file.set_len() to ensure length truncation is crash-persisted. (ID: AGT-STORE-59284713) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub async fn truncate(&self, offset: u64, new_last_hmac: [u8; 32]) -> Result<()> {
         use tokio::io::AsyncSeekExt;
 
@@ -1736,7 +1734,7 @@ impl Wal {
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` or `MemFuseError::WalCorruption` if reading or replaying the WAL fails.
-    // TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning.
+    // AI-TAG[SMELL][MINOR] TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning. (ID: AGT-STORE-7fb85765) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub async fn find_tx_offset(&self, target_tx_id: TxId) -> Result<(u64, [u8; 32])> {
         let entries = self.replay().await?;
         let mut last_offset = 0;

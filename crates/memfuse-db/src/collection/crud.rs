@@ -1193,7 +1193,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SCAN_LIMIT, MAX_SCAN_RESULTS};
+    use super::MAX_SCAN_RESULTS;
     use std::ops::Bound;
     use std::sync::Arc;
     use tokio::task::JoinSet;
