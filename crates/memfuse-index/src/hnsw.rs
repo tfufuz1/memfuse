@@ -434,6 +434,30 @@ impl HnswIndex {
             )));
         }
 
+        // S-1 FIX: Defense-in-Depth validation for all entry points delegating here.
+        // search() already validates, but search_filtered() and search_at() bypass it.
+        // Centralizing here ensures ALL callers — including future public API additions — are guarded.
+        if k == 0 {
+            return Ok(Vec::new());
+        }
+        if k > memfuse_core::MAX_SEARCH_K {
+            return Err(MemFuseError::invalid_input(format!(
+                "Requested k ({k}) exceeds maximum allowed search limit ({}). \
+                 Use Collection::query() with appropriate k bounds.",
+                memfuse_core::MAX_SEARCH_K
+            )));
+        }
+        // Guard before Vec::with_capacity(k) and ef_search arithmetic (prevents OOM + overflow)
+        for (i, &val) in query.iter().enumerate() {
+            if !val.is_finite() {
+                return Err(MemFuseError::invalid_input(format!(
+                    "Query vector element at index {i} is not finite (value: {val}). \
+                     NaN/Inf values corrupt HNSW distance computation and heap ordering. \
+                     Validate embedding outputs before search."
+                )));
+            }
+        }
+
         let query_quantized = if self.inner.config.quantize {
             self.inner
                 .quantizer
@@ -3489,6 +3513,38 @@ mod tests {
                 Ok(())
             }).unwrap(); // unwrap
         });
+    }
+
+    #[tokio::test]
+    async fn test_search_filtered_internal_rejects_nan_vector() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let query = vec![1.0, f32::NAN, 0.0, 0.0];
+        let res = index.search_filtered(&query, 5, None).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("is not finite"));
+    }
+
+    #[tokio::test]
+    async fn test_search_filtered_internal_rejects_oversized_k() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let res = index
+            .search_filtered(&query, memfuse_core::MAX_SEARCH_K + 1, None)
+            .await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("exceeds maximum allowed search limit"));
+    }
+
+    #[tokio::test]
+    async fn test_search_at_rejects_inf_vector() {
+        let index = HnswIndex::try_new(test_config(4)).unwrap();
+        let query = vec![1.0, f32::INFINITY, 0.0, 0.0];
+        let res = index.search_at(&query, 5, 1).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("is not finite"));
     }
 
     #[tokio::test]

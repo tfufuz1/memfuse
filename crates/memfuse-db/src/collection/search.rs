@@ -726,6 +726,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let text = query.text_query.as_deref().unwrap_or("");
         let vector = query.vector_query.as_deref().unwrap_or(&[]);
 
+        // S-1 FIX: Fail-fast is_finite() check at the API boundary (Fail-Fast before HNSW).
+        // Even though search_filtered_internal() now also validates, checking here provides:
+        // (a) earlier, more informative error attribution (caller context still on stack)
+        // (b) prevents redundant HNSW dispatch overhead for malformed inputs
+        if !vector.is_empty() {
+            for (i, &val) in vector.iter().enumerate() {
+                if !val.is_finite() {
+                    return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                        "hybrid_search: query vector element at index {i} is not finite (value: {val}). \
+                         Check embedding model output for NaN/Inf before querying."
+                    )));
+                }
+            }
+        }
+
         let seq = self.snapshot_seq().await?;
         let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
         let is_text_empty = text.trim().is_empty();
