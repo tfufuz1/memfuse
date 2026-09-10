@@ -1369,11 +1369,15 @@ impl StorageEngine for LsmStorage {
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
             let cur_bytes = cursor.map(Bytes::copy_from_slice);
+            let _range_bound: std::ops::Bound<&Bytes> = cur_bytes
+                .as_ref()
+                .map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
+
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
                 std::collections::BTreeMap::new();
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
-            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
             // Collect from SSTables
             for sst in sstables.iter() {
@@ -1412,12 +1416,6 @@ impl StorageEngine for LsmStorage {
                                 context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
                             });
                         }
-                    }
-                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
-                        return Err(MemFuseError::LimitExceeded {
-                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
-                            context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
-                        });
                     }
                 }
             }

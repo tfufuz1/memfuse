@@ -27,6 +27,14 @@ jobs:
           MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: cargo run -p xtask -- check-duplicate-intent
 
+      - name: "Gate 12b: Phantom-File-Verification"
+        env:
+          MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: |
+          cargo run -p xtask -- check-phantom-files
+          echo "✅ Gate 12b: Keine Phantom-Dateien in Commit-Messages/PR-Body"
+
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
         run: |
           COUNT=$(grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ \
@@ -135,10 +143,20 @@ jobs:
       - name: "Gate 15: Validierung von Dateipfad-Referenzen in Dokumenten"
         run: cargo run -p xtask -- check-doc-references
 
-      - name: "Gate 14: Jules Preflight Aggregator"
+      - name: "Gate 14: Jules Preflight Aggregator + Claim-Check"
         env:
           MEMFUSE_CI: "true"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Claim-Crate aus PR-Body extrahieren (Pflichtfeld)
+          PR_BODY="${{ github.event.pull_request.body || '' }}"
+          CLAIM_CRATE=$(echo "$PR_BODY" | grep -oP '(?<=Claim-Crate: )\S+' || true)
+          if [ -n "$CLAIM_CRATE" ] && [ "$CLAIM_CRATE" != "<!--" ]; then
+            export MEMFUSE_CLAIM_CRATE="$CLAIM_CRATE"
+            echo "ℹ️ Claim-Crate aus PR-Body: $CLAIM_CRATE"
+          else
+            echo "⚠️ Kein Claim-Crate in PR-Body gefunden — Claim-Check wird übersprungen"
+          fi
           cargo run -p xtask -- jules-preflight --fast
           echo "✅ Jules Preflight: alle Checks bestanden"
 

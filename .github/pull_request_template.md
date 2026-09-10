@@ -35,6 +35,10 @@
 
 ## Beschreibung der Änderung
 
+### Claim-Deklaration (Pflicht für alle Code-PRs)
+Claim-Crate: <!-- Pflicht: Crate-Name, den dieser PR primär ändert, z.B. memfuse-router -->
+Claim-Issue: <!-- Aufgaben-ID oder ADR-Nummer, z.B. P8/ADR-063 -->
+
 ### Was wurde geändert?
 
 
