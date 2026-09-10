@@ -144,15 +144,16 @@ impl LyapunovDriftWatcher {
             baseline_counts[bin] += 1;
         }
 
-        // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Laplace/Epsilon Smoothing
-        let eps = 1e-10f32;
+        // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Standard-Laplace-1-Smoothing
+        let alpha = 1.0f32;
+        let k = 10.0f32;
         let n_curr = current_scores.len() as f32;
         let n_base = self.baseline_distribution.len() as f32;
 
         let mut d_t = 0.0f32;
         for i in 0..10 {
-            let p_i = (current_counts[i] as f32 + eps) / (n_curr + 10.0 * eps);
-            let q_i = (baseline_counts[i] as f32 + eps) / (n_base + 10.0 * eps);
+            let p_i = (current_counts[i] as f32 + alpha) / (n_curr + k * alpha);
+            let q_i = (baseline_counts[i] as f32 + alpha) / (n_base + k * alpha);
             d_t += p_i * (p_i / q_i).ln();
         }
         let d_t = d_t.max(0.0);
@@ -293,5 +294,47 @@ mod tests {
         // Update mit identischen Scores -> Darf nicht panicken oder NaN erzeugen
         let res = watcher.update(&baseline);
         assert!(matches!(res, LyapunovResult::Stable { .. }));
+    }
+
+    #[test]
+    fn test_laplace_smoothing_plausible_divergence() {
+        let mut watcher = LyapunovDriftWatcher::new(20);
+        // n_base = 100: Bin 0 (Scores in [0.0, 0.1)) ist leer (0-Count), Bins 1..9 teilen sich 100 Scores.
+        let baseline: Vec<f32> = (0..100)
+            .map(|i| 0.1 + (i as f32 / 100.0) * 0.89)
+            .collect();
+        watcher.set_baseline(&baseline);
+
+        // n_curr = 100: 10 Scores in Bin 0 [0.0, 0.1), 10 in jedem anderen Bin.
+        let current: Vec<f32> = (0..100)
+            .map(|i| (i as f32 / 100.0) * 0.99)
+            .collect();
+
+        watcher.update(&current);
+        let d_t = *watcher.divergence_history.back().unwrap();
+
+        // Mit Laplace-1-Smoothing muss d_t plausibel klein (< 1.0) sein und nicht astronomisch (> 2.0).
+        assert!(
+            d_t < 1.0,
+            "KL divergence d_t = {d_t} should be < 1.0 with Laplace-1 smoothing"
+        );
+    }
+
+    #[test]
+    fn test_identical_distributions_divergence_near_zero() {
+        let mut watcher = LyapunovDriftWatcher::new(20);
+        let baseline: Vec<f32> = (0..100)
+            .map(|i| (i as f32 / 100.0) * 0.99)
+            .collect();
+        watcher.set_baseline(&baseline);
+
+        watcher.update(&baseline);
+        let d_t = *watcher.divergence_history.back().unwrap();
+
+        // Identische Verteilungen müssen eine KL-Divergenz nahe 0.0 ergeben.
+        assert!(
+            d_t < 0.01,
+            "KL divergence d_t = {d_t} should be < 0.01 for identical distributions"
+        );
     }
 }
