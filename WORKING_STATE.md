@@ -15,12 +15,11 @@
 
 Stand letzter Prüfung: 2026-09-10
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **2 offene Tags**
+Ergebnis: **1 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-crypto/src/crypto.rs` | 140 | `-` | `SMELL` | `MINOR` | `2026-09-10T20:03:54Z` | // AI-TAG[SMELL][MINOR] AI-TAG[SMELL][MINOR] TODO(audit-5.2): (TS:2026-09-10T20:03:54Z) (SESSION:345864c8) Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions. |
-| `crates/memfuse-crypto/src/deletion_proof.rs` | 166 | `-` | `SMELL` | `MINOR` | `2026-09-10T20:03:54Z` | // AI-TAG[SMELL][MINOR] AI-TAG[SMELL][MINOR] TODO(audit-R3-1): (TS:2026-09-10T20:03:54Z) (SESSION:345864c8) Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. |
+| `crates/memfuse-agent/src/audit.rs` | 604 | `AGT-AGENT-bf5c7019` | `SMELL` | `MINOR` | `2026-09-10T19:16:32Z` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
 
 
 ## Crate-Inventar & Status
