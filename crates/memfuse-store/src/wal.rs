@@ -573,7 +573,11 @@ impl Wal {
                 let copy_res = tokio::fs::copy(&wal.path, &bak_path).await;
                 if copy_res.is_ok() {
                     // Backup-Datei fsyncen: Recovery-Sicherheit VOR der Truncation der Original-WAL.
-                    match tokio::fs::OpenOptions::new().write(true).open(&bak_path).await {
+                    match tokio::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&bak_path)
+                        .await
+                    {
                         Ok(bak_file) => {
                             if let Err(e) = bak_file.sync_all().await {
                                 tracing::warn!("WAL backup fsync failed before rewrite: {e}");
@@ -630,7 +634,10 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
         if !tokio::fs::try_exists(&bak_path).await.unwrap_or(false) {
             continue;
         }
-        let wal_len = tokio::fs::metadata(wal_path).await.map(|m| m.len()).unwrap_or(0);
+        let wal_len = tokio::fs::metadata(wal_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
         let bak_len = match tokio::fs::metadata(&bak_path).await {
             Ok(m) => m.len(),
             Err(_) => continue,
@@ -644,15 +651,19 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                 Err(_) => {
                     // Cross-Device-Fallback: copy + remove statt rename.
                     tokio::fs::copy(&bak_path, wal_path).await.map_err(|e| {
-                        MemFuseError::Storage(format!(
-                            "WAL backup recovery copy failed: {e}"
-                        ))
+                        MemFuseError::Storage(format!("WAL backup recovery copy failed: {e}"))
                     })?;
                     let _ = tokio::fs::remove_file(&bak_path).await;
                 }
             }
-            if let Ok(f) = tokio::fs::OpenOptions::new().write(true).open(wal_path).await {
-                let _ = f.sync_all().await;
+            if let Ok(f) = tokio::fs::OpenOptions::new()
+                .write(true)
+                .open(wal_path)
+                .await
+            {
+                f.sync_all().await.map_err(|e| {
+                    MemFuseError::Storage(format!("WAL sync_all failed after recovery: {e}"))
+                })?;
             }
             return Ok(true);
         }
@@ -3355,22 +3366,33 @@ mod tests {
 
         // Case (a): no backup present -> Ok(false), file untouched
         tokio::fs::write(&wal_path, b"some content").await.unwrap();
-        let res = recover_from_bak_if_present(&wal_path).await.expect("recover");
+        let res = recover_from_bak_if_present(&wal_path)
+            .await
+            .expect("recover");
         assert!(!res);
         assert_eq!(tokio::fs::read(&wal_path).await.unwrap(), b"some content");
 
         // Case (c): backup present, regular file non-empty -> Ok(false), no override
-        tokio::fs::write(&bak_path, b"backup content").await.unwrap();
-        let res = recover_from_bak_if_present(&wal_path).await.expect("recover");
+        tokio::fs::write(&bak_path, b"backup content")
+            .await
+            .unwrap();
+        let res = recover_from_bak_if_present(&wal_path)
+            .await
+            .expect("recover");
         assert!(!res);
         assert_eq!(tokio::fs::read(&wal_path).await.unwrap(), b"some content");
 
         // Case (b): backup present, regular file empty (0 bytes) -> Ok(true), backup restored
         tokio::fs::write(&wal_path, b"").await.unwrap();
-        let res = recover_from_bak_if_present(&wal_path).await.expect("recover");
+        let res = recover_from_bak_if_present(&wal_path)
+            .await
+            .expect("recover");
         assert!(res);
         assert_eq!(tokio::fs::read(&wal_path).await.unwrap(), b"backup content");
-        assert!(!bak_path.exists(), "Backup file should be renamed/removed after recovery");
+        assert!(
+            !bak_path.exists(),
+            "Backup file should be renamed/removed after recovery"
+        );
     }
 
     #[tokio::test]
@@ -3386,17 +3408,29 @@ mod tests {
         };
         let entry = WalEntry::try_new(op, 1, &legacy_integrity_key(), [0u8; 32]).expect("v1 entry");
         let v1_bytes = entry.to_bytes().expect("to_bytes");
-        tokio::fs::write(&wal_path, &v1_bytes).await.expect("write v1 wal");
+        tokio::fs::write(&wal_path, &v1_bytes)
+            .await
+            .expect("write v1 wal");
 
         // 2. Simulate backup creation and fsync
         let bak_path = dir.path().join("rewrite_crash.wal.v1.bak");
-        tokio::fs::copy(&wal_path, &bak_path).await.expect("copy backup");
-        let bak_file = tokio::fs::OpenOptions::new().write(true).open(&bak_path).await.expect("open bak");
+        tokio::fs::copy(&wal_path, &bak_path)
+            .await
+            .expect("copy backup");
+        let bak_file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&bak_path)
+            .await
+            .expect("open bak");
         bak_file.sync_all().await.expect("fsync bak");
         drop(bak_file);
 
         // 3. Simulate crash after truncating original WAL to 0 bytes before V3 rewrite finishes
-        let file = tokio::fs::OpenOptions::new().write(true).open(&wal_path).await.expect("open wal");
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&wal_path)
+            .await
+            .expect("open wal");
         file.set_len(0).await.expect("truncate wal to 0");
         file.sync_all().await.expect("fsync truncated wal");
         drop(file);
@@ -3443,7 +3477,9 @@ mod tests {
         let entry_bytes = entry.to_bytes().expect("to_bytes");
 
         // Write directly to file (bypassing Wal API)
-        tokio::fs::write(&wal_path, &entry_bytes).await.expect("write plaintext entry");
+        tokio::fs::write(&wal_path, &entry_bytes)
+            .await
+            .expect("write plaintext entry");
 
         // 2. Opening/replaying with active KeyManager MUST reject the V1 plaintext entry
         let open_res = Wal::open_with_key_manager(&wal_path, Some(km.clone())).await;
@@ -3480,7 +3516,10 @@ mod tests {
         .await
         .expect("open without key manager should succeed");
 
-        let replayed = wal_no_km.replay().await.expect("replay without key manager");
+        let replayed = wal_no_km
+            .replay()
+            .await
+            .expect("replay without key manager");
         assert_eq!(replayed.len(), 1);
         if let WalOp::Put { key, value, .. } = &replayed[0].1.op {
             assert_eq!(key, b"unencrypted_key");
