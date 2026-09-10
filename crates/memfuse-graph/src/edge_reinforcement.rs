@@ -96,6 +96,45 @@ mod tests {
         assert!((edge.traversal_weight - 0.95).abs() < 1e-5);
         assert!(edge.traversal_weight >= 0.0);
     }
+
+    #[test]
+    fn test_compute_edge_weight_extreme_alpha() {
+        assert_eq!(compute_edge_weight(0.8, 0.2, 1.0), 0.8);
+        assert_eq!(compute_edge_weight(0.8, 0.2, 0.0), 0.2);
+    }
+
+    #[test]
+    fn test_apply_weight_normalization_zero_and_below_max() {
+        let mut edges = vec![
+            Edge::new(EntityId::new(1), 1.0),
+            Edge::new(EntityId::new(2), 1.0),
+        ];
+        edges[0].cooccurrence_weight = 2.0;
+        edges[1].cooccurrence_weight = 3.0;
+
+        // sum_w = 5.0 <= w_max (10.0), so weights remain unchanged
+        apply_weight_normalization(&mut edges, 10.0);
+        assert_eq!(edges[0].cooccurrence_weight, 2.0);
+        assert_eq!(edges[1].cooccurrence_weight, 3.0);
+
+        let mut empty_edges: Vec<Edge> = vec![];
+        apply_weight_normalization(&mut empty_edges, 10.0); // should not panic
+    }
+
+    #[test]
+    fn test_cooccurrence_reinforcement_triggers_normalization() {
+        let mut edge = Edge::new(EntityId::new(1), 1.0);
+        edge.cooccurrence_weight = 9.9;
+        let config = EdgeReinforcementConfig {
+            eta: 1.0,
+            w_max: 10.0,
+            ..Default::default()
+        };
+
+        // co_activation = 1.0 -> delta = 1.0 - 0.001*9.9 = 0.9901 -> new weight = 10.8901 > w_max (10.0)
+        let needs_norm = apply_cooccurrence_reinforcement(&mut edge, 1.0, &config);
+        assert!(needs_norm);
+    }
 }
 
 /// Berechnet das Gesamt-Kantengewicht für eine Kante.
