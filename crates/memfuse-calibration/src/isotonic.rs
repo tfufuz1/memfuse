@@ -480,8 +480,7 @@ mod tests {
             cal.record_outcome(i as f32 / 10.0, false);
         }
         // Initial rebuild happens on first calibrated_probability()
-        let initial_prob = cal.calibrated_probability(0.5).unwrap();
-        assert_eq!(initial_prob, 0.0);
+        assert_eq!(cal.calibrated_probability(0.5), Some(0.0));
 
         // Record 9 (< REBUILD_THRESHOLD_NEW_OBS = 10) new observations that are all true
         for _ in 0..9 {
@@ -489,9 +488,9 @@ mod tests {
         }
 
         // Must return cached prediction (0.0) without rebuilding
-        let prob_before_threshold = cal.calibrated_probability(0.5).unwrap();
         assert_eq!(
-            prob_before_threshold, 0.0,
+            cal.calibrated_probability(0.5),
+            Some(0.0),
             "Should return cached model prior to reaching rebuild threshold"
         );
 
@@ -499,11 +498,14 @@ mod tests {
         cal.record_outcome(0.5, true);
 
         // Next calibrated_probability call rebuilds model and incorporates new observations
-        let prob_after_threshold = cal.calibrated_probability(0.5).unwrap();
-        assert!(
-            prob_after_threshold > 0.0,
-            "Expected rebuilt model to incorporate new observations, got {prob_after_threshold}"
-        );
+        if let Some(prob_after_threshold) = cal.calibrated_probability(0.5) {
+            assert!(
+                prob_after_threshold > 0.0,
+                "Expected rebuilt model to incorporate new observations, got {prob_after_threshold}"
+            );
+        } else {
+            panic!("Expected calibrated_probability to return Some");
+        }
     }
 
     #[test]
@@ -512,23 +514,25 @@ mod tests {
         for i in 1..=10 {
             cal.record_outcome(i as f32 / 10.0, false);
         }
-        let initial_prob = cal.calibrated_probability(0.5).unwrap();
-        assert_eq!(initial_prob, 0.0);
+        assert_eq!(cal.calibrated_probability(0.5), Some(0.0));
 
         // Record only 1 new observation (< threshold)
         cal.record_outcome(0.5, true);
 
         // Without force_rebuild, calibrated_probability returns cached result 0.0
-        assert_eq!(cal.calibrated_probability(0.5).unwrap(), 0.0);
+        assert_eq!(cal.calibrated_probability(0.5), Some(0.0));
 
         // Force rebuild immediately
         cal.force_rebuild();
 
         // calibrated_probability now reflects the newly rebuilt model
-        let prob_forced = cal.calibrated_probability(0.5).unwrap();
-        assert!(
-            prob_forced > 0.0,
-            "Expected force_rebuild to immediately rebuild model, got {prob_forced}"
-        );
+        if let Some(prob_forced) = cal.calibrated_probability(0.5) {
+            assert!(
+                prob_forced > 0.0,
+                "Expected force_rebuild to immediately rebuild model, got {prob_forced}"
+            );
+        } else {
+            panic!("Expected calibrated_probability to return Some");
+        }
     }
 }
