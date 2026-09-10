@@ -4,7 +4,6 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
-| `TS:2026-09-10T19:38:43Z (SESSION: efffaee3)` | `crates/memfuse-crypto/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse cryptographic kernel - Layer 1 crate for AEAD block encryption, HKDF key derivation, and WAL integrity. |
 | `TS:2026-09-09T16:15:00Z (SESSION: dafac391)` | `crates/memfuse-crypto/tests/kv_segment_concurrency.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Concurrency Stress Test für TenantIsolatedKvStore und EvictionWorker unter hoher Parallellast. |
 | `TS:2026-09-09T16:10:00Z (SESSION: dafac391)` | `crates/memfuse-crypto/src/kv_segment/eviction_worker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Eviction-Worker (nicht-blockierender Hot-Path LRU) und emergency_wipe (synchroner Notfall). |
 | `TS:2026-09-09T15:52:00Z (SESSION: 8fae2834)` | `crates/memfuse-index/src/partial_rebuild.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Lokaler Partial-Rebuild-Trigger für HNSW-Hot-Path-Regionen (F-02). |
@@ -34,6 +33,7 @@
 | `TS:2026-08-31T22:30:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/fault_injection_2pc.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Prüft atomare 2PC-Transaktions-Kompensation und Crash-Recovery (repair_on_open) über alle 4 Sub-Engines. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/src/anti_tamper.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cold-boot protection and explicit Zeroize discipline for volatile encryption keys. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/src/crypto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Key Management and AES-256-GCM-SIV authenticated encryption for MemFuse data structures. |
+| `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse cryptographic kernel - Layer 1 crate for AEAD block encryption, HKDF key derivation, and WAL integrity. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/src/wal_crypto.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Transparent encrypted WAL chunk provider and constant-time HMAC-SHA256 integrity verifier. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/key_separation_and_edge_cases.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Key separation and cryptographic edge cases test suite for memfuse-crypto. |
 | `TS:2026-08-31T21:13:05Z (SESSION: 8427f167)` | `crates/memfuse-crypto/tests/namespace_isolation.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Namespace isolation test suite for memfuse-crypto (SD-09-CRYPTO-002). |
@@ -76,6 +76,8 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-09-10T20:03:54Z` | `crates/memfuse-crypto/src/crypto.rs` | `AI-TAG` | `-` | `345864c8` | `OPEN` | `-` | // AI-TAG[SMELL][MINOR] AI-TAG[SMELL][MINOR] TODO(audit-5.2): (TS:2026-09-10T20:03:54Z) (SESSION:345864c8) Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions. |
+| `2026-09-10T20:03:54Z` | `crates/memfuse-crypto/src/deletion_proof.rs` | `AI-TAG` | `-` | `345864c8` | `OPEN` | `-` | // AI-TAG[SMELL][MINOR] AI-TAG[SMELL][MINOR] TODO(audit-R3-1): (TS:2026-09-10T20:03:54Z) (SESSION:345864c8) Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. |
 | `2026-09-10T10:00:00Z` | `crates/memfuse-crypto/src/kv_segment/store.rs` | `AI-TAG` | `AGT-CRYPTO-c1a93b22` | `-` | `RESOLVED` | `0` | // AI-TAG[SECURITY][MAJOR][RESOLVED] Add tenant-fair LRU eviction to prevent cross-tenant starvation (ID: AGT-CRYPTO-c1a93b22) (TS: 2026-09-10T10:00:00Z) |
 | `2026-09-10T00:00:00Z (SESSION: 61b93a6f)` | `crates/memfuse-graph/src/provenance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Herkunftsnachweis für Graph-Kanten (DocEdgeIndex & EdgeProvenance) |
 | `2026-09-10T00:00:00Z` | `crates/memfuse-py/src/lib.rs` | `AI-TAG` | `AGT-PY-d5d2be30` | `55a96348` | `RESOLVED` | `0` | // AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348) |
