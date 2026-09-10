@@ -42,7 +42,7 @@ Das Crate deklariert `#![deny(unsafe_code)]` in `src/lib.rs`.
 |---|---|---|---|
 | Sequenzielles Append + Sauberer Neustart | PASSED | Nein | 100% Wiederherstellung aller Transaktionen |
 | Hard Exit (`exit(137)` mid-write) | PASSED | Nein | Kindprozess schreibt 50 Commits + 1 uncommitteten Puffer, wird terminiert. Parent liest exakt 50 committete Keys. |
-| Hard Exit während `force_flush()` | PASSED | Nein | Kindprozess flusht 100 Keys und wird mit Signal 9 getötet. Parent verifiziert Konsistenz aller 100 Keys. |
+| Hard Exit während `force_flush()` | PASSED | Nein | Kindprozess flusht 100 Keys und wird mit Signal 9 getötet. Parent verifiziert Konsistency aller 100 Keys. |
 | Trunkiertes WAL-Ende (Partial Header) | PASSED | Nein | WAL-Datei mit abgeschnittenem 2-Byte-Präfix schlägt beim Replay mit sauberem Fehler/Truncate fehl ohne Panic. |
 | Korrupte Checksumme am WAL-Ende | PASSED | Nein | Letzter Eintrag wird wegen CRC/HMAC-Fehler abgelehnt; vorherige gültige Blöcke werden gerettet. |
 | Korrupte Checksumme in WAL-Mitte | PASSED | Nein | Replay bricht am korrupten Mitteneintrag mit Fehler ab, verfälscht keine Folgedaten. |
@@ -437,7 +437,6 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 
 ### Gate-Stack Execution Results
 - `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
-- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
 - `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
 - `cargo test -p memfuse-store --all-features`: **PASSED** (127 unit/integration tests + amplification_benchmark passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
@@ -509,3 +508,41 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
 - `cargo test -p memfuse-store --all-features`: **PASSED** (139 unit tests + 25 integration test suites passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+
+---
+
+## 24. Tier 1 Chaos Engineering Audit & Concurrency Verification (TS: 2026-09-10T23:30:00Z / SESSION: 526c5d6a)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Task ID**: `JULES-20260910-CHAOS`
+- **Audit Timestamp**: `2026-09-10T23:30:00Z`
+- **Session Hash**: `526c5d6a`
+
+### Inventory Realitätsabgleich (Step 0)
+- **Inventory Check**: Verified all 10 source files (`checkpoint.rs`, `compaction.rs`, `lib.rs`, `lsm.rs`, `memtable.rs`, `mmap.rs`, `sstable.rs`, `tenant_codec.rs`, `util.rs`, `wal.rs`).
+- **Drift Check**: Confirmed 0 drift against prompter inventory (Stand 2026-09-10 confirmed).
+
+### Chaos-Engineering & Recovery Matrix
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write / SIGKILL | OK | `chaos_power_cut`: WAL replay recovers committed transaction states upon reopening, rejecting incomplete records safely. | — |
+| Bitflip Fault Injection | OK | `chaos_bitflip_sstable`: Bitflips in Bloom filter, SSTable index, and data blocks are safely detected and rejected without panic. | — |
+| Dropped Write / I/O Error | OK | `chaos_dropped_write`: I/O errors during write/flush/commit are cleanly propagated as `MemFuseError::Storage(...)` without panic or corrupt state. | — |
+| Memory Pressure / OOM | OK | `chaos_memory_pressure`: MemTable memory capacity controls and bounded flushing hold under sequential and concurrent memory pressure. | — |
+| Task Massacre / Async Cancellation | OK | `chaos_task_massacre`: Abrupt cancellation of async flush/commit tasks preserves state consistency on database reopening. | — |
+| Flush Crash Simulation | OK | `flush_crash_simulation`: Durability across multiple flush cycles verified; WAL is deleted cleanly after SSTable persist. | — |
+
+### Tier 1 Rauchtest & Concurrency Verification
+- **Concurrency Rauchtest**: 3 consecutive runs of unit tests (`cargo test -p memfuse-store --lib --all-features -- --test-threads=8`) — 141/141 tests passed cleanly each run (0 panics, 0 deadlocks).
+- **Role Lock Discipline**: Maintained Auditor role — zero functional code changes in `src/`.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --all-features`: **PASSED** (141 unit tests + chaos test suite passed cleanly)
+- `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
+- `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (All gates passed)
