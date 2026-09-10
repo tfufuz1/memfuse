@@ -42,10 +42,10 @@ impl Default for ResonanceConfig {
 #[cfg(feature = "coherence-bonus-fusion")]
 pub fn apply_resonance_bonus(
     results: Vec<SearchResult>,
-    total_signal_count: usize,
+    valid_signal_count: usize,
     config: &ResonanceConfig,
 ) -> Vec<SearchResult> {
-    if total_signal_count == 0 {
+    if valid_signal_count == 0 {
         return results;
     }
     let beta = config.beta.clamp(0.1, 2.0);
@@ -61,7 +61,7 @@ pub fn apply_resonance_bonus(
                 );
             }
             let signal_count = r.matched_signals.len();
-            let coherence = (signal_count as f32 / total_signal_count as f32).powf(beta);
+            let coherence = (signal_count as f32 / valid_signal_count as f32).powf(beta);
             let bonus = gamma * coherence;
             r.score *= 1.0 + bonus;
             if let Some(ref mut prov) = r.provenance {
@@ -72,6 +72,14 @@ pub fn apply_resonance_bonus(
         .collect();
 
     results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
+    // NC-6: NaN/Inf-Scores ans Ende (stable partition erhält Reihenfolge unter ihnen)
+    results.sort_by(|a, b| {
+        match (a.score.is_finite(), b.score.is_finite()) {
+            (true, false) => std::cmp::Ordering::Less,    // finite vor non-finite
+            (false, true) => std::cmp::Ordering::Greater, // non-finite nach finite
+            _             => b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)),
+        }
+    });
 
     results
 }
@@ -292,12 +300,15 @@ pub fn reciprocal_rank_fusion(
     weighted_reciprocal_rank_fusion(weighted_sets, max_results)
 }
 
-/// Helper function to perform shallow merge of JSON metadata objects.
+/// Merge-Semantik:
+/// - JSON-Objects: rekursives Merging, First-Wins bei echter Kollision.
+/// - Scalare Kollisionen (target ≠ source, beide nicht-Object): BEWUSSTE Array-Konvertierung
+///   `[target_value, source_value]`. Kein First-Wins — verhindert stillen Informationsverlust
+///   wenn mehrere Fusion-Signale denselben Key mit verschiedenen Werten liefern.
 ///
-/// Erstes-Signal-gewinnt-Merge: Für jeden Metadata-Key wird der Wert des zuerst verarbeiteten
-/// Signal-Sets übernommen; nachfolgende Signal-Sets überschreiben existierende Keys NICHT.
-/// Da `result_sets` in der Reihenfolge (vector, text, graph) iteriert wird, hat Vektor-Metadata
-/// faktisch Vorrang vor Text- und Graph-Metadata bei Key-Kollisionen.
+/// ⚠️ KONTRAKT FÜR CONSUMER: Code der `metadata[key].as_f64()` (o.ä.) für Felder
+/// aus mehreren Fusion-Signalen aufruft MUSS damit rechnen, dass der Wert ein
+/// `serde_json::Value::Array` statt eines Scalars ist.
 fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_json::Value>) {
     match (target, source) {
         (Some(t_val), Some(s_val)) => {
@@ -308,13 +319,7 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                     }
                 }
             } else {
-                // If target is not an object, we overwrite it with source (First-Wins doesn't strictly apply to non-objects as we can't merge them)
-                // or we could just leave it. But leaving it might drop source. Actually, if target is e.g. a string, we probably want to keep it.
-                // Wait, if we want to avoid silent drop, maybe we convert to array?
-                // Let's just overwrite it if target is not an object, to ensure we don't silently lose complex metadata.
-                // No, if target was first, First-Wins says we keep target. So doing nothing IS First-Wins for the entire value.
-                // But the audit report says "verwischen ... anstatt sie anderweitig zu mergen".
-                // We'll wrap them in an array if they differ.
+                // Scalar-Kollision: Array-Konvertierung ist bewusste Entscheidung — siehe Doc-Kommentar.
                 if t_val != &s_val {
                     let arr = vec![t_val.clone(), s_val.clone()];
                     *t_val = serde_json::Value::Array(arr);
@@ -369,8 +374,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         return Vec::new();
     }
 
-    let total_signal_count = result_sets.len();
-    let _ = total_signal_count;
+    let mut valid_signal_count = 0usize;
     let _ = &resonance_config;
 
     // Sort result sets according to configured metadata merge priority.
@@ -402,6 +406,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             );
             continue;
         }
+        valid_signal_count += 1;
         let signal_kind = SignalKind::from_name(&signal_name);
         for (rank, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {
@@ -559,13 +564,18 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                     .values()
                     .map(|c| c.rrf_contribution)
                     .sum();
+                debug_assert!(
+                    (sum_contrib - score).abs() < 1e-6,
+                    "INV-PROV-1: sum_contrib={sum_contrib} ≠ score={score} for doc_id={id} — \
+                     provenance data inconsistent"
+                );
                 if !(sum_contrib - score).abs().lt(&1e-6) {
                     tracing::error!(
                         doc_id = %id,
                         sum_contrib,
                         score,
-                        "INV-PROV-1 violation in weighted_reciprocal_rank_fusion: sum of signal \
-                         contributions does not match entry score — provenance may be inconsistent"
+                        provenance_consistent = false,
+                        "INV-PROV-1 violation: sum of signal contributions does not match entry score"
                     );
                 }
             }
@@ -603,10 +613,13 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
 
     #[cfg(feature = "coherence-bonus-fusion")]
     let results = if let Some(cfg) = resonance_config {
-        apply_resonance_bonus(results, total_signal_count, cfg)
+        apply_resonance_bonus(results, valid_signal_count, cfg)
     } else {
         results
     };
+
+    #[cfg(not(feature = "coherence-bonus-fusion"))]
+    let _ = valid_signal_count;
 
     results
 }
@@ -894,6 +907,18 @@ mod tests {
 
         // Verify matched signals tracking
         assert_eq!(doc.matched_signals, vec!["vector", "graph"]);
+    }
+
+    #[test]
+    fn test_merge_metadata_scalar_collision_produces_array() {
+        use serde_json::json;
+
+        let mut scalar_target = Some(json!(0.9));
+        let scalar_source = Some(json!(0.7));
+        merge_metadata(&mut scalar_target, scalar_source);
+
+        // INTENTIONAL: Scalar-Kollision -> Array (nicht First-Wins). Verifiziert bewusste Designentscheidung.
+        assert_eq!(scalar_target, Some(json!([0.9, 0.7])));
     }
 
     #[test]
@@ -1338,6 +1363,49 @@ mod tests {
 
     #[test]
     #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_resonance_bonus_invalid_signals_excluded_from_coherence() {
+        let doc = SearchResult {
+            id: "doc1".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+
+        let set_v = ("vector".to_string(), vec![doc.clone()], 1.0);
+        let set_t = ("text".to_string(), vec![doc.clone()], 1.0);
+        let set_g = ("graph".to_string(), vec![doc.clone()], 1.0);
+        let set_invalid = ("invalid".to_string(), vec![doc.clone()], f32::NAN);
+
+        let cfg = ResonanceConfig {
+            beta: 0.5,
+            gamma: 0.3,
+        };
+
+        // 4 signals input, 1 invalid -> valid_signal_count = 3.
+        // doc1 is in all 3 valid signals -> coherence = (3/3)^0.5 = 1.0 -> coherence_bonus = 0.3 * 1.0 = 0.3
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![set_v, set_t, set_g, set_invalid],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            Some(&cfg),
+        );
+
+        assert_eq!(fused.len(), 1);
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
+        assert!(
+            (prov.coherence_bonus - 0.3).abs() < 1e-6,
+            "coherence_bonus should be 0.3 for full coherence over valid signals, got {}",
+            prov.coherence_bonus
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
     fn test_resonance_bonus_single_signal_no_boost() {
         let set1 = (
             "vector".to_string(),
@@ -1415,12 +1483,13 @@ mod tests {
             }
         }
 
-        // Verify total_cmp consistently sorts results without panic and yields exact deterministic order
+        // NC-6: NaN-Score muss am ENDE der sortierten Liste landen (nicht vorne)
         assert_eq!(first_run.len(), 3);
-        assert_eq!(first_run[0].id, "doc_nan");
-        assert!(first_run[0].score.is_nan());
-        assert_eq!(first_run[1].id, "doc_top");
-        assert_eq!(first_run[2].id, "doc_mid");
+        assert_ne!(first_run[0].id, "doc_nan", "NaN-Score darf nicht an Listenspitze stehen");
+        assert_eq!(first_run[0].id, "doc_top");
+        assert_eq!(first_run[1].id, "doc_mid");
+        assert_eq!(first_run.last().map(|r| r.id.as_str()), Some("doc_nan"));
+        assert!(first_run.last().map_or(false, |r| r.score.is_nan()));
     }
 
     #[test]
