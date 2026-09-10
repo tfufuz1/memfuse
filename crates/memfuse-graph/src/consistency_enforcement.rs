@@ -383,4 +383,70 @@ mod tests {
 
         assert!(enforcer.detect_contradiction(&detector, &a, &b));
     }
+
+    #[test]
+    fn test_conflict_pattern_and_edge_assertion_serde_roundtrip() {
+        let cp = ConflictPattern {
+            pattern_hash: [42u8; 32],
+            contradiction_count: 5,
+            first_detected_tx: TxId::new(10),
+            last_detected_tx: TxId::new(20),
+            suppressed: true,
+        };
+
+        let json_cp = serde_json::to_string(&cp).expect("Serialization of ConflictPattern failed");
+        let deserialized_cp: ConflictPattern =
+            serde_json::from_str(&json_cp).expect("Deserialization of ConflictPattern failed");
+        assert_eq!(cp, deserialized_cp);
+
+        let assertion = EdgeAssertion {
+            subject: 101,
+            predicate_hash: [77u8; 32],
+            object_repr: b"test_payload".to_vec(),
+        };
+
+        let json_assertion =
+            serde_json::to_string(&assertion).expect("Serialization of EdgeAssertion failed");
+        let deserialized_assertion: EdgeAssertion =
+            serde_json::from_str(&json_assertion).expect("Deserialization of EdgeAssertion failed");
+        assert_eq!(assertion, deserialized_assertion);
+    }
+
+    #[test]
+    fn test_edge_assertion_empty_object_repr() {
+        let assertion_empty = EdgeAssertion {
+            subject: 0,
+            predicate_hash: [0u8; 32],
+            object_repr: vec![],
+        };
+
+        let hash1 = assertion_empty.pattern_hash();
+
+        let assertion_nonempty = EdgeAssertion {
+            subject: 0,
+            predicate_hash: [0u8; 32],
+            object_repr: vec![1],
+        };
+
+        let hash2 = assertion_nonempty.pattern_hash();
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_consistency_enforcer_bincode_serde_roundtrip() {
+        let mut enforcer = ConsistencyEnforcer::new(2);
+        let hash = [9u8; 32];
+        enforcer.record_contradiction(hash, TxId::new(1));
+
+        let bytes = bincode::serialize(&enforcer)
+            .expect("Bincode serialization of ConsistencyEnforcer failed");
+        let deserialized: ConsistencyEnforcer = bincode::deserialize(&bytes)
+            .expect("Bincode deserialization of ConsistencyEnforcer failed");
+
+        assert_eq!(
+            deserialized.suppression_threshold(),
+            enforcer.suppression_threshold()
+        );
+        assert_eq!(deserialized.get_pattern(&hash), enforcer.get_pattern(&hash));
+    }
 }

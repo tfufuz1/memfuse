@@ -215,4 +215,93 @@ mod tests {
         let paths_after = engine.find_all_paths(node1);
         assert!(paths_after.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_cascade_invalidation_nonexistent_doc_returns_zero_count() {
+        let graph = std::sync::Arc::new(CsrGraph::new());
+        let doc_unknown = DocId::from_key("doc-unknown").unwrap();
+
+        let report = cascade_invalidate_edges_for_superseded_doc(&graph, doc_unknown, 10)
+            .await
+            .unwrap();
+
+        assert_eq!(report.tombstoned_edge_count, 0);
+        assert!(report.affected_node_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cascade_invalidation_max_wal_seq() {
+        let graph = std::sync::Arc::new(CsrGraph::new());
+        let tx1 = TxId::new(1);
+        let doc_a = DocId::from_key("doc-max-seq").unwrap();
+
+        let node1 = EntityId::new(1001);
+        let node2 = EntityId::new(1002);
+
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node1, "n1", "Node"),
+        )
+        .await
+        .unwrap();
+        GraphIndex::add_entity(
+            graph.as_ref(),
+            tx1,
+            memfuse_core::Entity::new(node2, "n2", "Node"),
+        )
+        .await
+        .unwrap();
+
+        let edge = Edge::new(node1, node2, "rel").with_source_doc_id(doc_a);
+        GraphIndex::add_edge(graph.as_ref(), tx1, edge)
+            .await
+            .unwrap();
+        GraphIndex::commit(graph.as_ref(), tx1).await.unwrap();
+
+        let report = cascade_invalidate_edges_for_superseded_doc(&graph, doc_a, u64::MAX)
+            .await
+            .unwrap();
+
+        assert_eq!(report.tombstoned_edge_count, 1);
+        assert_eq!(report.affected_node_ids.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cascade_invalidation_multiple_edges_same_doc() {
+        let graph = std::sync::Arc::new(CsrGraph::new());
+        let tx1 = TxId::new(1);
+        let doc_multi = DocId::from_key("doc-multi").unwrap();
+
+        let n1 = EntityId::new(10);
+        let n2 = EntityId::new(20);
+        let n3 = EntityId::new(30);
+
+        for n in [n1, n2, n3] {
+            GraphIndex::add_entity(
+                graph.as_ref(),
+                tx1,
+                memfuse_core::Entity::new(n, format!("n{}", n.inner()), "Node"),
+            )
+            .await
+            .unwrap();
+        }
+
+        let e1 = Edge::new(n1, n2, "rel1").with_source_doc_id(doc_multi);
+        let e2 = Edge::new(n2, n3, "rel2").with_source_doc_id(doc_multi);
+
+        GraphIndex::add_edge(graph.as_ref(), tx1, e1).await.unwrap();
+        GraphIndex::add_edge(graph.as_ref(), tx1, e2).await.unwrap();
+        GraphIndex::commit(graph.as_ref(), tx1).await.unwrap();
+
+        let report = cascade_invalidate_edges_for_superseded_doc(&graph, doc_multi, 42)
+            .await
+            .unwrap();
+
+        assert_eq!(report.tombstoned_edge_count, 2);
+        assert_eq!(report.affected_node_ids.len(), 3);
+        assert!(report.affected_node_ids.contains(&n1));
+        assert!(report.affected_node_ids.contains(&n2));
+        assert!(report.affected_node_ids.contains(&n3));
+    }
 }

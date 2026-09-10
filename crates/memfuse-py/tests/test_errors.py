@@ -160,3 +160,10 @@ def test_long_collection_name_validation(db):
     with pytest.raises(memfuse.MemFuseValueError) as excinfo:
         db.collection(long_name)
     assert "exceeds maximum length of 64 bytes" in str(excinfo.value)
+
+def test_long_query_text_validation(db):
+    v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+    long_query = "q" * 1025
+    with pytest.raises(memfuse.MemFuseValueError) as excinfo:
+        db.hybrid_search(long_query, v, k=1)
+    assert "exceeds maximum length of 1024 bytes" in str(excinfo.value)

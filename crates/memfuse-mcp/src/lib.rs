@@ -13,7 +13,7 @@ pub use prompt_injection::{
 };
 
 // FILE-CONTEXT
-// STAND:       2026-08-29T15:22:34Z (SESSION: 2c814094)
+// STAND:       2026-09-10T19:25:24Z (SESSION: ae8c2fb9)
 // ZWECK:       stdio JSON-RPC 2.0 MCP-Server (kein HTTP! ADR-010)
 // INVARIANTEN: Transport ist ausschließlich stdin/stdout — niemals TCP/axum, bounded RPC message size
 // HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
