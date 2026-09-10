@@ -311,7 +311,7 @@ mod tests {
             .collect();
 
         watcher.update(&current);
-        let d_t = *watcher.divergence_history.back().unwrap();
+        let d_t = watcher.divergence_history.back().copied().unwrap_or(0.0);
 
         // Mit Laplace-1-Smoothing muss d_t plausibel klein (< 1.0) sein und nicht astronomisch (> 2.0).
         assert!(
@@ -329,7 +329,7 @@ mod tests {
         watcher.set_baseline(&baseline);
 
         watcher.update(&baseline);
-        let d_t = *watcher.divergence_history.back().unwrap();
+        let d_t = watcher.divergence_history.back().copied().unwrap_or(0.0);
 
         // Identische Verteilungen müssen eine KL-Divergenz nahe 0.0 ergeben.
         assert!(
