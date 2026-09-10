@@ -630,6 +630,9 @@ impl StorageEngine for InMemoryStorageEngine {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
+            if let Some(lim) = limit {
+                entries.truncate(lim);
+            }
             Ok(entries)
         })
     }
