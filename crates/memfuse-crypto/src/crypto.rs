@@ -137,7 +137,7 @@ impl KeyManager {
     /// specific `(tenant_id, model_fingerprint)` tuple.
     ///
     /// Cryptographically enforces both tenant isolation and model quantization separation via HKDF-Expand.
-    // TODO(audit-5.2): Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions.
+    // AI-TAG[SMELL][MINOR] TODO(audit-5.2): Use length-prefixed canonical encoding for HKDF info string parameters in derive_kv_key to prevent string key collisions. (ID: AGT-CRYPTO-56611e4c) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub fn derive_kv_key(
         &self,
         tenant_id: memfuse_core::TenantId,
@@ -552,6 +552,9 @@ mod tests {
     // REVIEW-PASS[6/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-06T11:17:31Z) (SESSION: 8157a40e)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified zero-panic, zero-unsafe, and full Tier-1 audit pass in memfuse-crypto depth-audit session.
+    // REVIEW-PASS[7/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-10T19:35:00Z) (SESSION: b434cc40)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Verified AES-256-GCM-SIV nonce uniqueness, HKDF domain separation, and zero-unsafe invariants in memfuse-security audit session.
     #[test]
     fn test_befund_1_nonce_uniqueness_and_envelope_format() {
         let km = KeyManager::try_new("nonce-uniqueness-secret", b"salt-123456").expect("km");

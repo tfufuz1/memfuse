@@ -15,8 +15,11 @@
 
 Stand letzter Prüfung: 2026-09-10
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-agent/src/audit.rs` | 604 | `AGT-AGENT-bf5c7019` | `SMELL` | `MINOR` | `2026-09-10T19:16:32Z` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
 
 
 ## Crate-Inventar & Status
@@ -26,7 +29,7 @@ Ergebnis: **0 offene Tags**
 | `memfuse-core` | 0 | 9973 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 1 | 1853 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5477 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 1 | 10337 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 10334 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-security` | 1 | 4832 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
 | `memfuse-text` | 1 | 5343 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |

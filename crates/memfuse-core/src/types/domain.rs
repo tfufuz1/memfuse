@@ -1914,4 +1914,16 @@ mod tests {
         assert!(TenantId::try_new(0).is_err());
         assert_eq!(TenantId::SYSTEM.inner(), 0);
     }
+
+    #[test]
+    fn test_tenant_id_try_from_boundary_and_display() {
+        assert!(TenantId::try_from(0u64).is_err());
+        let t = match TenantId::try_from(u64::MAX) {
+            Ok(val) => val,
+            Err(e) => panic!("u64::MAX is valid tenant id: {e:?}"),
+        };
+        assert_eq!(t.inner(), u64::MAX);
+        assert_eq!(t.as_u64(), u64::MAX);
+        assert_eq!(format!("{t}"), format!("TenantId({})", u64::MAX));
+    }
 }

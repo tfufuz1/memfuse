@@ -79,7 +79,7 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-core` | 0 | 9973 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 1 | 1853 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 1 | 5477 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 1 | 10337 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 1 | 10334 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-security` | 1 | 4832 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
 | `memfuse-text` | 1 | 5343 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
