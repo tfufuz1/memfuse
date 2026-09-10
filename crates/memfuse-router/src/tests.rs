@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
+// STAND: 2026-09-10T19:16:25Z (SESSION: 3f3e4637)
 // ZWECK: Unit- und Integrationstest-Suite für memfuse-router.
 // INVARIANTEN: Determinismus, NaN-Safety, Hot-Reload Concurrent Safety.
 // SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
@@ -2926,6 +2926,168 @@ mod tests {
         assert_eq!(fallback_p.name, "p2");
         assert_eq!(fallback_idx, 1);
         assert!(!metrics.calibrated);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_additional_error_and_format_paths() {
+        use crate::dispatch_to_slm;
+        use memfuse_core::{ContextWindow, TokenBudget};
+
+        let profile_exit = SlmProfile::new(
+            "test-exit",
+            "true", // exits immediately without writing
+            vec![],
+            TokenBudget::default(),
+            0.5,
+        );
+        let decision_exit = RoutingDecision {
+            profile: profile_exit,
+            context: ContextWindow {
+                chunks: vec![],
+                total_tokens: 0,
+                truncated: false,
+            },
+            confidence: None,
+            decision_id: crate::DecisionId::new(),
+            drift_status: None,
+        };
+
+        let res_exit = dispatch_to_slm(&decision_exit).await;
+        assert!(res_exit.is_err());
+        let err_msg = res_exit.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Fehler bei MCP-Dispatch") || err_msg.contains("Process closed stdout"),
+            "Unexpected error message: {err_msg}"
+        );
+
+        // Test response returning result object without "answer" key
+        let profile_json_obj = SlmProfile::new(
+            "test-json-obj",
+            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"custom_key\":\"val\"}}'",
+            vec![],
+            TokenBudget::default(),
+            0.5,
+        );
+        let decision_json_obj = RoutingDecision {
+            profile: profile_json_obj,
+            context: ContextWindow {
+                chunks: vec![],
+                total_tokens: 0,
+                truncated: false,
+            },
+            confidence: None,
+            decision_id: crate::DecisionId::new(),
+            drift_status: None,
+        };
+
+        let res_obj = dispatch_to_slm(&decision_json_obj).await;
+        assert!(res_obj.is_ok());
+        assert!(res_obj.unwrap_or_default().contains("custom_key"));
+    }
+
+    #[test]
+    fn test_lyapunov_uncovered_branch_paths() {
+        use crate::lyapunov::{LyapunovDriftWatcher, LyapunovResult};
+
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        // 1. update with empty baseline and empty current_scores -> InsufficientData
+        let res = watcher.update(&[]);
+        assert_eq!(res, LyapunovResult::InsufficientData);
+
+        // 2. update with empty baseline and small current_scores (< 30) -> InsufficientData
+        let res = watcher.update(&[0.1, 0.2]);
+        assert_eq!(res, LyapunovResult::InsufficientData);
+
+        // 3. update with baseline populated, but current_scores empty -> returns latest_result or InsufficientData
+        watcher.set_baseline(&(0..35).map(|i| i as f32 / 35.0).collect::<Vec<_>>());
+        let res = watcher.update(&[]);
+        assert_eq!(res, LyapunovResult::InsufficientData);
+    }
+
+    #[tokio::test]
+    async fn test_router_engine_additional_coverage_paths() -> memfuse_core::Result<()> {
+        use memfuse_core::{ContextChunk, DocId, TokenBudget};
+
+        let dir = tempfile::tempdir()?;
+        let config = memfuse_db::MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = memfuse_db::MemFuse::open_with_config(dir.path(), config).await?;
+        let collection = db.collection("default").await?;
+
+        // 1. Corrupt calibration_store_path
+        let corrupt_file = dir.path().join("corrupt_calibration.json");
+        std::fs::write(&corrupt_file, b"invalid json content")?;
+        let profile = SlmProfile::new(
+            "p1",
+            "http://localhost:1111",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.5,
+        );
+
+        let router = RouterEngine::new(
+            collection.clone(),
+            vec![profile.clone()],
+            Some(corrupt_file),
+        );
+        assert_eq!(router.profiles().len(), 1);
+
+        // 2. Evict stale decisions map capacity overflow test
+        for _ in 0..(crate::router::MAX_PENDING_DECISIONS + 10) {
+            let id = crate::DecisionId::new();
+            router.pending_decisions.write().insert(
+                id,
+                (
+                    "p1".to_string(),
+                    std::time::Instant::now() - std::time::Duration::from_secs(600),
+                ),
+            );
+        }
+        assert!(router.pending_decision_count() > crate::router::MAX_PENDING_DECISIONS);
+        // Call route with invalid embedding to trigger evict_stale_decisions
+        let _ = router.route(&[f32::NAN], "query").await;
+        assert!(router.pending_decision_count() <= crate::router::MAX_PENDING_DECISIONS);
+
+        // 3. record_outcome without active fingerprint (or unknown profile fingerprint)
+        let dec_id = crate::DecisionId::new();
+        router
+            .pending_decisions
+            .write()
+            .insert(dec_id, ("p1".to_string(), std::time::Instant::now()));
+        assert!(router.record_outcome(dec_id, crate::RoutingOutcome::Success));
+
+        // 4. Cascade selection margin with 0 quantile_threshold
+        let mut cal_map = std::collections::HashMap::new();
+        let mut p_zero = SlmProfile::new(
+            "p_zero",
+            "http://localhost:0000",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.0,
+        );
+        p_zero.min_relevance_score = 0.0;
+        let mut state = crate::profile::ProfileCalibrationState::new(0.0);
+        state.conformal.quantile_threshold = 0.0;
+        cal_map.insert("p_zero".to_string(), state);
+
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "zero thresh".to_string(),
+            relevance: 0.1,
+            token_count: 2,
+            metadata: None,
+            contextual_prefix: None,
+            links: vec![],
+        };
+        let (idx, prof, metrics) =
+            router.select_profile_cascade(&[(chunk, Some(1))], &[p_zero], &mut cal_map)?;
+        assert_eq!(idx, 0);
+        assert_eq!(prof.name, "p_zero");
+        assert_eq!(metrics.selection_margin, 1.0);
 
         Ok(())
     }
