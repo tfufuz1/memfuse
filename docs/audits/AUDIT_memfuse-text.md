@@ -1,14 +1,36 @@
 # AUDIT REPORT: `memfuse-text` Crate
 
-**Datum:** 6. September 2026
-**Session:** `9fd3f17f`
+**Datum:** 10. September 2026
+**Session:** `c844907e`
 **Auditor:** Senior Rust NLP-Engineer (BM25, Morphologie, UTF-8-Sicherheit)
 **Ziel-Crate:** `crates/memfuse-text` (Volltextsuche-Signal / Signal 2 der 4-Signal-Fusion)
 **Ziel-Repository:** MemFuse (`https://github.com/tfufuz1/memfuse`)
 
 ---
 
-## 0. Re-Audit Snapshot & Session Summary (`2026-09-06T11:17:24Z`)
+## 0. Re-Audit Snapshot & Session Summary (`2026-09-10T19:25:46Z`)
+
+Im Rahmen der Qualitätssicherungs- und Testausbausession (Session `c844907e`) wurde das Crate `memfuse-text` vollständig überprüft und erweitert:
+
+1. **Gate-Stack Verification:**
+   - `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+   - `cargo clippy -p memfuse-text -- -D warnings` $\rightarrow$ **0 Findings**
+   - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
+   - `cargo test -p memfuse-text --all-features` $\rightarrow$ **82 passed, 0 failed** (alle Unit- & Integrationstests grün)
+   - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Workspace-Kompilierung sauber**
+
+2. **Inventar-Realitätsabgleich (Schritt 0):**
+   - 5/5 Quellcodedateien im Repo bestätigt: `bm25.rs`, `inverted.rs`, `lib.rs`, `morphology.rs`, `tokenizer.rs`.
+   - **Ergebnis:** Inventarabgleich bestanden (Stand 2026-09-10 bestätigt).
+
+3. **Test-Ausbau & Anti-Pattern / Boundary Absicherung:**
+   - Hinzugefügte Unit-Tests: `test_load_stats_persistence` (Prüfung der Stats-Wiederherstellung aus der StorageEngine) und `test_inverted_index_clone_sharing` (Verifikation atomarer Stats- und Mutex-Sharing-Eigenschaften) in `inverted.rs`.
+   - Hinzugefügter Boundary-Test: `test_tokenizer_multibyte_slicing_boundaries` in `tokenizer.rs` für UTF-8-Multibyte-Slicing an URL/E-Mail-Schutzgrenzen.
+   - `#![forbid(unsafe_code)]` weiterhin strikt durchgesetzt (0 `unsafe`-Blöcke).
+
+---
+
+## 0b. Historischer Re-Audit Snapshot (`2026-09-06T11:17:24Z`)
 
 Im Rahmen der Qualitätssicherungs-, Tier-2-Stichproben- und Tiefen-Auditsession (Session `9fd3f17f`) wurde das Crate `memfuse-text` erneut verifiziert:
 
