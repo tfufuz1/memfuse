@@ -1,9 +1,10 @@
-// FILE-CONTEXT:
+// FILE-CONTEXT
+// STAND: 2026-09-10T19:22:55Z (SESSION: 0b2ff57d)
 // ZWECK: PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python.
 // INVARIANTEN: Zero Rust panics cross FFI boundary; GIL released during block_on async calls; Tokio Runtime bound per interpreter module state.
 // NICHT-OFFENSICHTLICH: Per-interpreter Tokio runtime instance attached to Python module state (`PyRuntimeState`) to enforce sub-interpreter isolation (PEP 684).
 // HOTSPOTS: [160-205] memfuse_err mapping, [270-650] CRUD & search methods FFI boundary validation.
-// STAND: TS:2026-09-03T10:00:00Z (SESSION: 14a123bc)
+// SIEHE AUCH: crates/memfuse-db/AGENTS.md
 
 //! # MemFuse Python Bindings
 //!
@@ -19,12 +20,6 @@
 
 #![forbid(unsafe_code)]
 
-// FILE-CONTEXT
-// STAND:       2026-09-03T10:00:00Z (SESSION: 14a123bc)
-// ZWECK:       PyO3 FFI-Grenzschicht — Rust-Fehler müssen in Python-Exceptions konvertiert werden
-// INVARIANTEN: Alle MemFuseError -> PyErr Konvertierung vollständig; kein Panic darf FFI-Grenze überschreiten
-// HOTSPOTS:    PyMemFuse, PyCollection methods, error conversion
-// SIEHE AUCH:  crates/memfuse-db/AGENTS.md
 
 use memfuse_db::{Collection as MemFuseCollection, MemFuse, MemFuseConfig};
 use numpy::PyReadonlyArray1;
