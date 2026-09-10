@@ -480,3 +480,30 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 - `cargo test -p memfuse-store --lib --all-features`: **PASSED** (129 tests passed cleanly)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
 - `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (All gates passed)
+
+---
+
+## 23. Storage Engine WAL Backup Recovery Error Handling & Gate 3 Hardening (TS: 2026-09-10T19:27:54Z / SESSION: 8567a934)
+
+### Executive Verification Summary
+- **Target Crate**: `memfuse-store` (Layer 1 Storage Engine)
+- **Verdict**: **GO (VERIFIED & CLEAN)**
+- **Task ID**: `JULES-20260910-TEST`
+- **Audit Timestamp**: `2026-09-10T19:27:54Z`
+- **Session Hash**: `8567a934`
+
+### Inventory Realitätsabgleich (Step 0)
+- **Inventory Check**: Verified all 10 source files (`checkpoint.rs`, `compaction.rs`, `lib.rs`, `lsm.rs`, `memtable.rs`, `mmap.rs`, `sstable.rs`, `tenant_codec.rs`, `util.rs`, `wal.rs`). Confirmed 0 drift against prompter inventory.
+
+### Hardening & Fixed Findings
+1. **WAL Backup Recovery Open & FSync Error Propagation (Gate 3)**:
+   - **Befund**: In `crates/memfuse-store/src/wal.rs` (`recover_from_bak_if_present`), `let _ = f.sync_all().await;` inside an `if let Ok(f)` block ignored file open and fsync errors during WAL crash recovery from `.bak` backup files.
+   - **Fix**: Replaced silent error ignoring with explicit error propagation (`map_err(...)` returning `MemFuseError::Storage`). File open failures and fsync failures are now safely returned to callers.
+   - **Verification**: `cargo test -p memfuse-store --lib --all-features` passed cleanly (139/139 unit tests green). `cargo run -p xtask -- jules-preflight --fast` confirmed Gate 3 (Silent IO) passes.
+
+### Gate-Stack Execution Results
+- `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
+- `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
+- `cargo fmt --check -p memfuse-store`: **PASSED** (0 diffs)
+- `cargo test -p memfuse-store --lib --all-features`: **PASSED** (139 unit tests passed cleanly)
+- `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (Gate 3 and fast preflight checks green)
