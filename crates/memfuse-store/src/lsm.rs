@@ -270,6 +270,7 @@ impl LsmStorage {
             .map(|p| KeyManager::try_new(p, &salt).map(Arc::new))
             .transpose()?;
 
+        // TODO(audit-NC-5): Enforce strict monotonic sequence IDs in WAL file naming instead of relying solely on sub-second timestamps to prevent wal.log vs wal-0.log collisions.
         // Discover and sort all WAL files for replay
         let mut max_wal_id: Option<u64> = None;
         let mut wal_files = Vec::new();
@@ -413,6 +414,7 @@ impl LsmStorage {
         // COMP-001 — Implementiere CompactionEngine::run_loop.
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
+        // TODO(audit-C-1): Force a startup flush of replayed MemTable entries before deleting old WAL files, or delay deleting old WAL files until after the subsequent flush + fsync_parent_dir.
         // Cleanup old replayed WAL files except the active WAL
         if wal_files.len() > 1 {
             let active_wal_path = wal.path();
@@ -526,6 +528,7 @@ impl LsmStorage {
 
     /// Rolls back the entire storage state to a specific transaction ID.
     /// This is a destructive operation that removes all data after the target TX.
+    // TODO(audit-M-4): Avoid creating a new SSTable when rolling back single-entry or small uncommitted transactions.
     pub async fn rollback_to_tx(&self, target_tx: TxId) -> Result<()> {
         let _commit_lock = self.commit_mutex.lock().await;
         let commit_guard = CommitGuard {
@@ -539,6 +542,7 @@ impl LsmStorage {
     /// # Safety / Concurrency Invariant
     /// **MUST ONLY** be called while holding `commit_mutex`. Calling this function without
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
+    // TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation.
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
         let mut state = self.state.write().await;
 
@@ -850,6 +854,7 @@ impl StorageEngine for LsmStorage {
         })
     }
 
+    // TODO(audit-M-9): Inspect uncommitted transaction buffers in put_if_absent to avoid race conditions with uncommitted concurrent writes.
     fn put_if_absent<'a>(
         &'a self,
         tx_id: TxId,
@@ -982,6 +987,7 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
+    // TODO(audit-M-6): Periodically recalculate memtable byte size during flushes to prevent monotonic memory budget drift accumulation.
     fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             self.apply_backpressure().await;
@@ -1183,6 +1189,7 @@ impl StorageEngine for LsmStorage {
             } // read lock freigegeben
 
             // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
+            // TODO(audit-H-2): Check memtable.is_empty() before incrementing flush_counter to prevent counter drift and orphan WAL filenames on empty flushes.
             let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
             let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
             // WAL wird HIER erstellt — kein Lock gehalten
@@ -1361,6 +1368,7 @@ impl StorageEngine for LsmStorage {
     /// The candidates across sources are then merged in a `BTreeMap`.
     /// - Memory Complexity: O(N * limit) where N is the number of storage sources (SSTables + MemTables).
     /// - Time Complexity: O(N * limit * log(limit)) instead of O(M^2) across paginated calls over M entries.
+    // TODO(audit-NC-1/M-5): Ensure range_bound is correctly declared in scope and found_count is incremented during prefix bounded scanning.
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -1503,6 +1511,7 @@ impl StorageEngine for LsmStorage {
         })
     }
 
+    // TODO(audit-H-7): Acquire snapshot read lock before capturing last_tx to eliminate split-brain read race with concurrent commits.
     fn scan_prefix_at<'a>(
         &'a self,
         prefix: &'a [u8],

@@ -100,6 +100,7 @@ impl CompactionEngine {
     ///
     /// Takes a write-lock on the SSTable list to atomically swap old SSTables
     /// for the compacted result.
+    // TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics.
     pub async fn maybe_compact(
         &self,
         sstables: &RwLock<Vec<Arc<SstableReader>>>,
@@ -214,6 +215,7 @@ impl CompactionEngine {
         };
 
         // 6. Delete old SSTable files (best-effort, outside lock)
+        // TODO(audit-NC-4): Ensure associated .uuid sidecar files are deleted alongside parent .sst SSTable files during compaction cleanup.
         for path in &old_paths {
             if let Err(e) = tokio::fs::remove_file(path).await {
                 tracing::warn!("Failed to delete compacted SSTable {:?}: {}", path, e);

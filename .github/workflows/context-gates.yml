@@ -143,6 +143,7 @@ jobs:
       - name: "Gate 15: Validierung von Dateipfad-Referenzen in Dokumenten"
         run: cargo run -p xtask -- check-doc-references
 
+      # TODO(opt-RC-1/A-2): Enforce MEMFUSE_CLAIM_CRATE extraction from PR body across all PR gates and verify required check status on main.
       - name: "Gate 14: Jules Preflight Aggregator + Claim-Check"
         env:
           MEMFUSE_CI: "true"

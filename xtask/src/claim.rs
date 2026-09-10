@@ -4,6 +4,8 @@
 // zu verhindern.
 // Schema:
 //   cargo xtask claim --crate <CRATE> --issue <TASK_ID> [--dry-run]
+//
+// TODO(opt-RC-1/A-2): Implement --release/unclaim flag (`cargo xtask claim --release --crate <CRATE>`) and automated TTL expiry (4h default) check in claim database.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};

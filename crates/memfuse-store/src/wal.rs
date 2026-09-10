@@ -371,6 +371,7 @@ pub struct WalConfig {
     /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
     ///
     /// Default: `WalVersion::V1` for backward compatibility. Production deployments SHOULD set `WalVersion::V3`.
+    // TODO(audit-M-8): Reject unencrypted V1 plaintext entries during replay when KeyManager is present and active.
     pub min_wal_version: WalVersion,
 }
 
@@ -958,6 +959,7 @@ impl Wal {
     }
 
     /// Appends a batch of entries to the WAL and performs a single fsync.
+    // TODO(audit-C-3): Atomically check file header/size under file lock before writing header in append_batch to prevent double WAL headers.
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
@@ -1504,6 +1506,7 @@ impl Wal {
     }
 
     /// Rewrites legacy V1 or V2 WAL files as V3.
+    // TODO(audit-H-6): Implement post-crash recovery to restore .v1.bak / .v2.bak backup files if primary WAL is corrupted or truncated during rewrite.
     async fn rewrite_as_v3(&self, replayed_entries: &[(u64, WalEntry, u64)]) -> Result<()> {
         let integrity_key = self.get_integrity_key()?;
         let mut v3_entries = Vec::with_capacity(replayed_entries.len());
@@ -1590,6 +1593,7 @@ impl Wal {
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` if setting file length or seeking fails.
+    // TODO(audit-C-2): Call file.sync_all() immediately after file.set_len() to ensure length truncation is crash-persisted.
     pub async fn truncate(&self, offset: u64, new_last_hmac: [u8; 32]) -> Result<()> {
         use tokio::io::AsyncSeekExt;
 
@@ -1632,6 +1636,7 @@ impl Wal {
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` or `MemFuseError::WalCorruption` if reading or replaying the WAL fails.
+    // TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning.
     pub async fn find_tx_offset(&self, target_tx_id: TxId) -> Result<(u64, [u8; 32])> {
         let entries = self.replay().await?;
         let mut last_offset = 0;

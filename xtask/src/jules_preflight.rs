@@ -16,6 +16,7 @@ pub enum CheckResult {
     Skip(String),
 }
 
+// TODO(opt-RC-1/A-2): Strictly enforce active claim validation when MEMFUSE_CLAIM_CRATE is set or derived from PR metadata to stop multi-session collisions.
 pub fn check_no_active_claim_conflict(root: &Path, target_crate: Option<&str>) -> CheckResult {
     let krate = match target_crate {
         Some(c) if !c.trim().is_empty() => c.to_string(),
@@ -511,6 +512,8 @@ mod tests {
             timestamp: "2026-09-08T20:00:00Z".to_string(),
             session_id: "s123".to_string(),
             active: true,
+            expires_at: None,
+            released_at: None,
         });
         db.save(&claims_path).unwrap();
 
