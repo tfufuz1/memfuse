@@ -323,12 +323,31 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                         t_obj.insert(k.clone(), v.clone());
                     }
                 }
-            } else {
-                // Scalar-Kollision: bewusste Array-Konvertierung, siehe Doc-Kommentar oben.
-                if t_val != &s_val {
-                    let arr = vec![t_val.clone(), s_val.clone()];
-                    *t_val = serde_json::Value::Array(arr);
+            } else if let Some(t_arr) = t_val.as_array_mut() {
+                // Scalar-Kollision bei flachem Ziel-Array: Anhängen ohne verschachtelte Array-Duplikation.
+                if let Some(s_arr) = s_val.as_array() {
+                    for item in s_arr {
+                        if !t_arr.contains(item) {
+                            t_arr.push(item.clone());
+                        }
+                    }
+                } else if !t_arr.contains(&s_val) {
+                    t_arr.push(s_val);
                 }
+            } else if t_val != &s_val {
+                // Scalar-Kollision: bewusste Array-Konvertierung (flach gehalten), siehe Doc-Kommentar oben.
+                let arr = if let Some(s_arr) = s_val.as_array() {
+                    let mut a = vec![t_val.clone()];
+                    for item in s_arr {
+                        if !a.contains(item) {
+                            a.push(item.clone());
+                        }
+                    }
+                    a
+                } else {
+                    vec![t_val.clone(), s_val]
+                };
+                *t_val = serde_json::Value::Array(arr);
             }
         }
         (t @ None, Some(s_val)) => {
