@@ -144,3 +144,28 @@ All 84 unit tests, proptest suites, and benchmark integration tests pass cleanly
   - `AGT-GRAPH-001` (TxId Origin Invariant): Confirmed `debug_assert!(tx.is_valid_origin())` and runtime warning logs in `add_entity`, `add_edge`, `commit`, and `remove_edge` in `csr.rs`.
   - `FILE-CONTEXT` Headers: Verified presence in primary files (`csr.rs`, `ppr.rs`, `community.rs`, `session_dag.rs`, `cascade.rs`, `provenance.rs`).
 - **Quality Gates & Testing:** Executed full test suite (`cargo test -p memfuse-graph --all-features`), passing 133 unit tests, proptest suites, benchmark tests, integration tests, and doc tests with zero failures. Confirmed zero warnings/errors on `cargo check`, `cargo clippy -p memfuse-graph -- -D warnings`, and `cargo fmt --check -p memfuse-graph`.
+
+---
+
+## 11. Tier 2 Deep Audit & Chaos Verification (2026-09-10T23:38:02Z)
+
+**Date:** 2026-09-10T23:38:02Z
+**Session:** dbef3401
+**Auditor:** Senior Rust Graph-Algorithmen-Ingenieur (Jules)
+**Task ID:** JULES-20260910-CHAOS
+**Verdict:** GO (Pass)
+
+### Chaos-Engineering-Audit Summary
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | OK | Transactional staging in `CsrGraph` buffers uncommitted mutations; `StorageEngine` (`LsmStorage`) ensures crash recovery and consistent reload via `load_from_storage()` / `SessionBranchTree::load()` | — |
+| Disk-Full ENOSPC | OK | Disk I/O errors during KV persistence propagate as `MemFuseError::Storage(...)` via `?` operator without panics or corrupting in-memory graph state | — |
+| OOM / Backpressure | OK | BFS traversal capped by `MAX_VISITED_NODES` (10,000), PPR power iterations capped at 1000 with per-iteration mass conservation, DAG string length capped at 10 MB (`MAX_DAG_STRING_BYTES`) | — |
+| SIGBUS mmap-truncate | N/A | `memfuse-graph` strictly enforces `#![forbid(unsafe_code)]` and uses no `mmap` | — |
+| SIGKILL recovery | OK | Uncommitted staged operations are discarded safely; committed nodes/edges are restored deterministically from underlying storage upon restart | — |
+
+### Verification & Testing Summary
+- **Step 0 Inventory Reality Check:** Executed `find crates/memfuse-graph/src -name "*.rs"`. Matched exact 12 file inventory (`cascade.rs`, `community.rs`, `consistency_enforcement.rs`, `csr.rs`, `edge_reinforcement.rs`, `edge_reinforcement_buffer.rs`, `lib.rs`, `path_rag.rs`, `percolation.rs`, `ppr.rs`, `provenance.rs`, `session_dag.rs`). Zero inventory drift.
+- **Unsafe & Panic Policy:** Confirmed `#![forbid(unsafe_code)]` in `lib.rs` and zero non-test `.unwrap()` / `.expect()` calls across `src/`.
+- **Quality Gates & Testing:** Executed `cargo check -p memfuse-graph --all-features`, `cargo clippy -p memfuse-graph -- -D warnings`, `cargo fmt --check -p memfuse-graph`, `cargo test -p memfuse-graph --all-features` (146 passed green), and `cargo check --workspace --exclude memfuse-tauri` with zero errors or warnings.
