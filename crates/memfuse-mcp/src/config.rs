@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND:       2026-09-09T12:35:54Z (SESSION: 5665b844)
+// STAND:       2026-09-10T19:25:24Z (SESSION: ae8c2fb9)
 // ZWECK:       Dynamic Provider Construction for Embedding & LLM backends (Ollama, ONNX, Candle, Mock)
 // INVARIANTEN: Direct provider instantiation without leaking implementation details; fallback capability checking
 // HOTSPOTS:    create_embedding_provider(), create_llm_text_generator()
