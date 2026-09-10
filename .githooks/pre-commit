@@ -1,8 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "→ cargo fmt --all (auto-fix vor Commit)"
+
+# ── STUFE 1: Formatierung (auto-fix) ──────────────────────────────────────────
+echo "→ [1/3] cargo fmt --all"
 cargo fmt --all
 if ! git diff --quiet; then
-    echo "  ℹ️  rustfmt hat Dateien verändert — automatisch zum Commit hinzugefügt."
+    echo "  ℹ️  rustfmt hat Dateien reformatiert — werden zum Commit hinzugefügt."
     git add -u
 fi
+
+# ── STUFE 2: Compile-Gate (blockierend) ───────────────────────────────────────
+echo "→ [2/3] cargo check --workspace --exclude memfuse-tauri"
+if ! cargo check --workspace --exclude memfuse-tauri --quiet 2>/tmp/precommit_check_err.log; then
+    echo ""
+    echo "❌ COMMIT ABGEBROCHEN — Compile-Fehler:"
+    cat /tmp/precommit_check_err.log
+    echo ""
+    echo "Beheben mit: cargo check --workspace --exclude memfuse-tauri"
+    exit 1
+fi
+echo "  ✅ Workspace kompiliert."
+
+# ── STUFE 3: Schneller Governance-Check ───────────────────────────────────────
+echo "→ [3/3] Kritische AI-TAGs prüfen"
+CRITICAL_COUNT=$(grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ \
+    --include="*.rs" 2>/dev/null | grep -vc "RESOLVED" || true)
+if [ "$CRITICAL_COUNT" -gt 0 ]; then
+    echo "⚠️  $CRITICAL_COUNT ungelöste CRITICAL/BLOCKER-Tags gefunden."
+    echo "   Weiterarbeiten erlaubt, aber vor PR-Erstellung beheben."
+fi
+
+echo "✅ Pre-Commit-Gate bestanden."

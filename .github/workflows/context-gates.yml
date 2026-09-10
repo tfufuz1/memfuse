@@ -143,10 +143,20 @@ jobs:
       - name: "Gate 15: Validierung von Dateipfad-Referenzen in Dokumenten"
         run: cargo run -p xtask -- check-doc-references
 
-      - name: "Gate 14: Jules Preflight Aggregator"
+      - name: "Gate 14: Jules Preflight Aggregator + Claim-Check"
         env:
           MEMFUSE_CI: "true"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Claim-Crate aus PR-Body extrahieren (Pflichtfeld)
+          PR_BODY="${{ github.event.pull_request.body || '' }}"
+          CLAIM_CRATE=$(echo "$PR_BODY" | grep -oP '(?<=Claim-Crate: )\S+' || true)
+          if [ -n "$CLAIM_CRATE" ] && [ "$CLAIM_CRATE" != "<!--" ]; then
+            export MEMFUSE_CLAIM_CRATE="$CLAIM_CRATE"
+            echo "ℹ️ Claim-Crate aus PR-Body: $CLAIM_CRATE"
+          else
+            echo "⚠️ Kein Claim-Crate in PR-Body gefunden — Claim-Check wird übersprungen"
+          fi
           cargo run -p xtask -- jules-preflight --fast
           echo "✅ Jules Preflight: alle Checks bestanden"
 

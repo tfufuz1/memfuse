@@ -323,12 +323,20 @@ fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_j
                         t_obj.insert(k.clone(), v.clone());
                     }
                 }
-            } else {
-                // Scalar-Kollision: Array-Konvertierung ist bewusste Entscheidung — siehe Doc-Kommentar.
-                if t_val != &s_val {
-                    let arr = vec![t_val.clone(), s_val.clone()];
-                    *t_val = serde_json::Value::Array(arr);
-                }
+            } else if t_val != &s_val {
+                // Scalar-Kollision: bewusste Array-Konvertierung (flach gehalten), siehe Doc-Kommentar oben.
+                let arr = if let Some(s_arr) = s_val.as_array() {
+                    let mut a = vec![t_val.clone()];
+                    for item in s_arr {
+                        if !a.contains(item) {
+                            a.push(item.clone());
+                        }
+                    }
+                    a
+                } else {
+                    vec![t_val.clone(), s_val]
+                };
+                *t_val = serde_json::Value::Array(arr);
             }
         }
         (t @ None, Some(s_val)) => {
@@ -379,7 +387,6 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         return Vec::new();
     }
 
-    let mut valid_signal_count = 0usize;
     let _ = &resonance_config;
 
     // Sort result sets according to configured metadata merge priority.
