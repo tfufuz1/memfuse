@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
+// STAND: 2026-09-10T19:16:25Z (SESSION: 3f3e4637)
 // ZWECK: Outcome-Typen und DecisionId-Identifier für konformale Router-Kalibrierung.
 // INVARIANTEN: DecisionId-Monotonie via AtomicU64; Non-Conformity-Scores in [0.0, 1.0].
 // SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md

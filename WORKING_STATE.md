@@ -15,8 +15,11 @@
 
 Stand letzter Prüfung: 2026-09-10
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **0 offene Tags**
+Ergebnis: **1 offene Tags**
 
+| Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
+|---|---|---|---|---|---|---|
+| `crates/memfuse-agent/src/audit.rs` | 604 | `AGT-AGENT-bf5c7019` | `SMELL` | `MINOR` | `2026-09-10T19:16:32Z` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
 
 
 ## Crate-Inventar & Status
@@ -30,11 +33,11 @@ Ergebnis: **0 offene Tags**
 | `memfuse-security` | 1 | 4832 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
 | `memfuse-text` | 1 | 5343 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
-| `memfuse-index` | 2 | 15539 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 2 | 15540 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3985 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 17330 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 2 | 17367 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 28148 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 4 | 28172 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 5 | 4975 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
