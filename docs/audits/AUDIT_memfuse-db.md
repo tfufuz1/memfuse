@@ -428,3 +428,24 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 - `cargo fmt --check -p memfuse-db` → 0 Diffs
 - `cargo test -p memfuse-db --all-features` → 100% grün
 - `cargo run -p xtask -- jules-preflight --fast` → ALLE GATES BESTANDEN
+
+---
+
+## 16. Maintenance & Lint Cleanup (2026-09-10)
+
+**Datum:** 10. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt
+**Crate:** `memfuse-db` · Layer 2 Orchestrator & 4-Signal-Fusion
+
+### Durchführung & Verifikation:
+1. **Clippy-Fix in `crates/memfuse-db/src/lib.rs`:**
+   - Aufhebung von unbefriedigendem `clippy::needless_question_mark` im `MemFuse` Search-Brückenblock.
+2. **Import-Bereinigung in `crates/memfuse-db/src/collection/crud.rs`:**
+   - Entfernen ungenutzten `DEFAULT_SCAN_LIMIT` Test-Imports in `crud.rs` zur Vermeidung von Unused-Import-Warnungen.
+3. **Formatierung & Code-Cleanliness:**
+   - Ausführen von `cargo fmt -p memfuse-db` zur Beseitigung aller Ausrichtungs-Diffs in `fusion.rs`.
+4. **Verifikations-Ergebnis:**
+   - `cargo check -p memfuse-db --all-features` → 0 Fehler
+   - `cargo clippy -p memfuse-db --no-deps --all-features -- -D warnings` → 0 Warnings
+   - `cargo fmt --check -p memfuse-db` → 0 Diffs
+   - `cargo test -p memfuse-db --all-features` → 100% grün
