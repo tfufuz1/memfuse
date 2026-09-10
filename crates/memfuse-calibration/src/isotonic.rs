@@ -77,6 +77,7 @@ impl IsotonicCalibrator {
 
     /// Kalibrierte Wahrscheinlichkeit.
     /// INVARIANTE INV-CAL-1: None wenn Warmup nicht erreicht. Kein 0.5-Fallback.
+    /// Debounced Rebuild: Rebuild erfolgt erst nach `REBUILD_THRESHOLD_NEW_OBS` neuen Beobachtungen.
     pub fn calibrated_probability(&mut self, raw_score: f32) -> Option<f32> {
         if !self.is_calibrated() {
             return None;
@@ -90,8 +91,7 @@ impl IsotonicCalibrator {
         Some(self.lookup_isotonic(raw_score))
     }
 
-    /// Erzwingt sofortiges PAVA-Rebuild, unabhängig vom Threshold.
-    /// Nützlich vor einer Shutdown-Sequenz oder wenn aktuelle Accuracy kritisch ist.
+    /// Erzwingt ein sofortiges Rebuild des PAVA-Modells, unabhängig vom Threshold für neue Beobachtungen.
     pub fn force_rebuild(&mut self) {
         if self.model_dirty {
             self.rebuild_model();
@@ -473,66 +473,68 @@ mod tests {
     }
 
     #[test]
-    fn test_debounced_rebuild_threshold() {
-        let mut cal = IsotonicCalibrator::new(10, 100);
-        // Initial warmup with 10 observations (all false at 0.1..1.0)
-        for i in 1..=10 {
-            cal.record_outcome(i as f32 / 10.0, false);
+    fn test_debounced_rebuild_below_threshold_returns_old_model() {
+        let mut cal = IsotonicCalibrator::new(10, 2000);
+        // Record 10 initial observations and compute initial model.
+        for i in 0..10 {
+            cal.record_outcome(i as f32 / 10.0, i >= 5);
         }
-        // Initial rebuild happens on first calibrated_probability()
-        assert_eq!(cal.calibrated_probability(0.5), Some(0.0));
+        let initial_prob = cal.calibrated_probability(0.5).unwrap();
 
-        // Record 9 (< REBUILD_THRESHOLD_NEW_OBS = 10) new observations that are all true
-        for _ in 0..9 {
-            cal.record_outcome(0.5, true);
+        // Add 5 (< 10) new observations that strongly shift raw score 0.5 towards false (0.0).
+        for _ in 0..5 {
+            cal.record_outcome(0.5, false);
         }
 
-        // Must return cached prediction (0.0) without rebuilding
+        // Before threshold is reached, calibrated_probability should use the cached old model.
+        let prob_below_threshold = cal.calibrated_probability(0.5).unwrap();
         assert_eq!(
-            cal.calibrated_probability(0.5),
-            Some(0.0),
-            "Should return cached model prior to reaching rebuild threshold"
+            prob_below_threshold, initial_prob,
+            "Probability should remain old model result when below rebuild threshold"
         );
-
-        // Record 10th new observation (reaching REBUILD_THRESHOLD_NEW_OBS = 10)
-        cal.record_outcome(0.5, true);
-
-        // Next calibrated_probability call rebuilds model and incorporates new observations
-        if let Some(prob_after_threshold) = cal.calibrated_probability(0.5) {
-            assert!(
-                prob_after_threshold > 0.0,
-                "Expected rebuilt model to incorporate new observations, got {prob_after_threshold}"
-            );
-        } else {
-            panic!("Expected calibrated_probability to return Some");
-        }
     }
 
     #[test]
-    fn test_force_rebuild_bypasses_threshold() {
-        let mut cal = IsotonicCalibrator::new(10, 100);
-        for i in 1..=10 {
-            cal.record_outcome(i as f32 / 10.0, false);
+    fn test_debounced_rebuild_at_threshold_triggers_automatic_rebuild() {
+        let mut cal = IsotonicCalibrator::new(10, 2000);
+        for i in 0..10 {
+            cal.record_outcome(i as f32 / 10.0, i >= 5);
         }
-        assert_eq!(cal.calibrated_probability(0.5), Some(0.0));
+        let initial_prob = cal.calibrated_probability(0.5).unwrap();
 
-        // Record only 1 new observation (< threshold)
-        cal.record_outcome(0.5, true);
+        // Add exactly 10 new observations (reaching REBUILD_THRESHOLD_NEW_OBS) with false outcomes.
+        for _ in 0..10 {
+            cal.record_outcome(0.5, false);
+        }
 
-        // Without force_rebuild, calibrated_probability returns cached result 0.0
-        assert_eq!(cal.calibrated_probability(0.5), Some(0.0));
+        // Now calibrated_probability must trigger an automatic rebuild and yield updated score.
+        let prob_at_threshold = cal.calibrated_probability(0.5).unwrap();
+        assert_ne!(
+            prob_at_threshold, initial_prob,
+            "Model should automatically rebuild when reaching rebuild threshold"
+        );
+    }
 
-        // Force rebuild immediately
+    #[test]
+    fn test_force_rebuild_overrides_threshold() {
+        let mut cal = IsotonicCalibrator::new(10, 2000);
+        for i in 0..10 {
+            cal.record_outcome(i as f32 / 10.0, i >= 5);
+        }
+        let initial_prob = cal.calibrated_probability(0.5).unwrap();
+
+        // Add 3 (< 10) new observations.
+        for _ in 0..3 {
+            cal.record_outcome(0.5, false);
+        }
+
+        // Explicit force_rebuild() forces rebuild immediately.
         cal.force_rebuild();
 
-        // calibrated_probability now reflects the newly rebuilt model
-        if let Some(prob_forced) = cal.calibrated_probability(0.5) {
-            assert!(
-                prob_forced > 0.0,
-                "Expected force_rebuild to immediately rebuild model, got {prob_forced}"
-            );
-        } else {
-            panic!("Expected calibrated_probability to return Some");
-        }
+        let prob_after_forced = cal.calibrated_probability(0.5).unwrap();
+        assert_ne!(
+            prob_after_forced, initial_prob,
+            "force_rebuild() should rebuild model immediately regardless of threshold counter"
+        );
     }
 }
