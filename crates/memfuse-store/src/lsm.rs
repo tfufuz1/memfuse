@@ -75,8 +75,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
-/// Maximum key size allowed for LSM operations (1MB).
-pub const MAX_KEY_SIZE: usize = 1_048_576;
+/// Maximum key size allowed for LSM operations (65,535 bytes).
+pub const MAX_KEY_SIZE: usize = 65_535;
 
 /// Maximum value size allowed for LSM operations (128MB).
 pub const MAX_VALUE_SIZE: usize = 134_217_728;
@@ -1379,8 +1379,7 @@ impl StorageEngine for LsmStorage {
                 std::collections::BTreeMap::new();
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
-
-            let mut processed_count = 0usize;
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
             // Collect from SSTables
             for sst in sstables.iter() {
@@ -1450,14 +1449,6 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
-                    processed_count += 1;
-                    if processed_count.is_multiple_of(500) && map.len() > max_entries {
-                        return Err(MemFuseError::invalid_input(format!(
-                            "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
-                            map.len(),
-                            max_entries
-                        )));
-                    }
                 }
             }
 
@@ -1480,26 +1471,16 @@ impl StorageEngine for LsmStorage {
                         });
                     }
                 }
-                processed_count += 1;
-                if processed_count.is_multiple_of(500) && map.len() > max_entries {
-                    return Err(MemFuseError::invalid_input(format!(
-                        "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
-                        map.len(),
-                        max_entries
-                    )));
-                }
             }
 
-            if map.len() > max_entries {
-                return Err(MemFuseError::invalid_input(format!(
-                    "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
-                    map.len(),
-                    max_entries
-                )));
-            }
+            // Cursor-Bound ableiten für den Paginierungs-Iterator
+            let range_bound = match &cur_bytes {
+                Some(cb) => std::ops::Bound::Excluded(cb.clone()),
+                None => std::ops::Bound::Unbounded,
+            };
 
             let mut results = Vec::new();
-            let mut iter = map.range::<Bytes, _>((range_bound, std::ops::Bound::Unbounded));
+            let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
 
             for (k, (v, seq)) in iter.by_ref() {
                 if (seq & TOMBSTONE_BIT) == 0 {
@@ -1632,12 +1613,10 @@ impl StorageEngine for LsmStorage {
                 None => start,
             };
 
-            let mut processed_count = 0usize;
-            let safety_limit = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
-            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
@@ -1657,21 +1636,6 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
-                    processed_count += 1;
-                    if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
-                        return Err(MemFuseError::invalid_input(format!(
-                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
-                            map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
-                        )));
-                    }
-                }
-                if map.len() > safety_limit {
-                    return Err(MemFuseError::invalid_input(format!(
-                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                         narrow the range or use a smaller limit",
-                        map.len(),
-                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
-                    )));
                 }
             }
 
@@ -1702,21 +1666,6 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
-                    processed_count += 1;
-                    if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
-                        return Err(MemFuseError::invalid_input(format!(
-                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
-                            map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
-                        )));
-                    }
-                }
-                if map.len() > safety_limit {
-                    return Err(MemFuseError::invalid_input(format!(
-                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                         narrow the range or use a smaller limit",
-                        map.len(),
-                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
-                    )));
                 }
             }
 
@@ -1746,22 +1695,6 @@ impl StorageEngine for LsmStorage {
                         });
                     }
                 }
-                processed_count += 1;
-                if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
-                    return Err(MemFuseError::invalid_input(format!(
-                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
-                         narrow the range or use a smaller limit",
-                        map.len(),
-                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
-                    )));
-                }
-            }
-
-            if map.len() > safety_limit {
-                return Err(MemFuseError::invalid_input(format!(
-                    "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
-                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
-                )));
             }
 
             // 4. Apply limit (cursor is already handled via effective_start)

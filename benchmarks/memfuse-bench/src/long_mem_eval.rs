@@ -999,8 +999,17 @@ impl RegressionSuite {
         for scenario in &self.scenarios {
             for session in &scenario.sessions {
                 for turn in &session.turns {
+                    let truncated_text = if turn.text.len() > 30000 {
+                        let mut end = 30000;
+                        while end > 0 && !turn.text.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        &turn.text[..end]
+                    } else {
+                        &turn.text[..]
+                    };
                     let metadata = serde_json::json!({
-                        "text": turn.text,
+                        "text": truncated_text,
                         "speaker": turn.speaker,
                         "session_id": session.session_id,
                         "timestamp_ms": session.timestamp_ms,

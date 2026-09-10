@@ -263,7 +263,7 @@ impl BlockBuilder {
         self.data.put_slice(key);
         self.data.put_u64_le(seq_no);
         self.data.put_u64_le(tx_id);
-        self.data.put_u16_le(value.len() as u16);
+        self.data.put_u32_le(value.len() as u32);
         self.data.put_slice(value);
         true
     }
@@ -376,9 +376,9 @@ impl SstableBuilder {
                 "SSTable key cannot be empty".to_string(),
             ));
         }
-        if key.len() > 65535 || value.len() > 65535 {
+        if key.len() > 65535 || value.len() > crate::lsm::MAX_VALUE_SIZE {
             return Err(MemFuseError::InvalidInput(format!(
-                "Key ({} bytes) or value ({} bytes) exceeds 65535 bytes limit",
+                "Key ({} bytes) exceeds 65535 limit or value ({} bytes) exceeds MAX_VALUE_SIZE limit",
                 key.len(),
                 value.len()
             )));
@@ -1152,14 +1152,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
-                let v_len = u16::from_le_bytes(
+                let v_len = u32::from_le_bytes(
                     block_data
-                        .get(ep..ep + 2)
+                        .get(ep..ep + 4)
                         .ok_or_else(|| MemFuseError::Storage("malformed block: v_len".into()))?
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
-                ep += 2;
+                ep += 4;
                 if ep + v_len > block_data.len() {
                     return Err(MemFuseError::Storage(
                         "malformed block: value length out of bounds".into(),
@@ -1394,14 +1394,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
-                let v_len = u16::from_le_bytes(
+                let v_len = u32::from_le_bytes(
                     block_data
-                        .get(ep..ep + 2)
+                        .get(ep..ep + 4)
                         .ok_or_else(|| MemFuseError::Storage("malformed block: v_len".into()))?
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
-                ep += 2;
+                ep += 4;
                 if ep + v_len > block_data.len() {
                     return Err(MemFuseError::Storage(
                         "malformed block: value length out of bounds".into(),
@@ -1516,14 +1516,14 @@ impl SstableStream {
                     );
                     ep += 8;
 
-                    let v_len = u16::from_le_bytes(
+                    let v_len = u32::from_le_bytes(
                         block_data
-                            .get(ep..ep + 2)
+                            .get(ep..ep + 4)
                             .ok_or_else(|| MemFuseError::Storage("missing v_len".into()))?
                             .try_into()
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     ) as usize;
-                    ep += 2;
+                    ep += 4;
                     let entry_val = block_data.slice(ep..ep + v_len);
                     self.entry_idx += 1;
                     return Ok(Some((
@@ -1647,14 +1647,14 @@ impl SstableReader {
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     );
                     ep += 8;
-                    let v_len = u16::from_le_bytes(
+                    let v_len = u32::from_le_bytes(
                         block_data
-                            .get(ep..ep + 2)
+                            .get(ep..ep + 4)
                             .ok_or_else(|| MemFuseError::Storage("malformed block: v_len".into()))?
                             .try_into()
                             .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                     ) as usize;
-                    ep += 2;
+                    ep += 4;
                     if ep + v_len > block_data.len() {
                         return Err(MemFuseError::Storage(
                             "malformed block: value length out of bounds".into(),
@@ -1786,14 +1786,14 @@ impl SstableReader {
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 );
                 ep += 8;
-                let v_len = u16::from_le_bytes(
+                let v_len = u32::from_le_bytes(
                     block_data
-                        .get(ep..ep + 2)
+                        .get(ep..ep + 4)
                         .ok_or_else(|| MemFuseError::Storage("malformed block: v_len".into()))?
                         .try_into()
                         .map_err(|_| MemFuseError::Storage("invalid slice".into()))?,
                 ) as usize;
-                ep += 2;
+                ep += 4;
                 if ep + v_len > block_data.len() {
                     return Err(MemFuseError::Storage(
                         "malformed block: value length out of bounds".into(),
@@ -2415,8 +2415,8 @@ mod tests {
         let err_key = builder.add(&oversized_key, b"val", 1, 1).await;
         assert!(matches!(err_key, Err(MemFuseError::InvalidInput(_))));
 
-        // 3. Oversized value (>65535) reject
-        let oversized_val = vec![0xBB; 65536];
+        // 3. Oversized value (>MAX_VALUE_SIZE) reject
+        let oversized_val = vec![0xBB; crate::lsm::MAX_VALUE_SIZE + 1];
         let err_val = builder.add(b"valid_key", &oversized_val, 1, 1).await;
         assert!(matches!(err_val, Err(MemFuseError::InvalidInput(_))));
     }
