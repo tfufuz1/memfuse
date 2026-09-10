@@ -140,9 +140,7 @@ impl ReplicatorState {
             let n = self.weights.len();
             if n > 0 {
                 let uniform = 1.0 / n as f32;
-                for w in &mut self.weights {
-                    *w = uniform;
-                }
+                self.weights.fill(uniform);
             }
             self.fingerprint = Some(new_fp);
         }
