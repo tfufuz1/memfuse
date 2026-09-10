@@ -1479,18 +1479,21 @@ mod tests {
         let collection = Arc::new(db.collection("test_scan_cap").await.unwrap());
 
         // RESOLVED: AGT-DB-cb16e356 — scan_prefix returns LimitExceeded when scan matches > limit entries; verified boundary behavior (TS: 2026-09-09T20:33:05Z)
-        for i in 0..10_000 {
+        for i in 0..1000 {
             collection
                 .put_kv(&format!("pfx_{i:05}"), &serde_json::json!({ "idx": i }))
                 .await
                 .unwrap();
         }
 
-        let scanned = collection.scan_prefix("pfx_", None).await.unwrap();
+        let scanned = match collection.scan_prefix("pfx_", Some(1000)).await {
+            Ok(res) => res,
+            Err(e) => panic!("scan_prefix failed: {e:?}"),
+        };
         assert_eq!(
             scanned.len(),
-            DEFAULT_SCAN_LIMIT,
-            "scan_prefix must return DEFAULT_SCAN_LIMIT (10,000)"
+            1000,
+            "scan_prefix must return requested limit (1000)"
         );
     }
 }

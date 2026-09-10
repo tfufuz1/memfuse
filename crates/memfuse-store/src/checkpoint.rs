@@ -1,8 +1,8 @@
 // FILE-CONTEXT
-// STAND: 2026-08-30T21:49:55Z (SESSION: 283abf0f)
+// STAND: 2026-09-09T00:00:00Z
 // ZWECK: Crate-internes MVCC Snapshot-Pinning und TxId-skopierte Rollbacks.
 // INVARIANTEN: Crate-intern (pub(crate)) — öffentliche Checkpoints nur via memfuse-checkpoint (ADR-011).
-// HOTSPOTS: Checkpointer::rollback_to
+// HOTSPOTS: Checkpointer::create_checkpoint
 // SIEHE AUCH: DECISIONS.md ADR-011, ADR-015
 
 //! Native State Checkpointing (Crate-internal MVCC Snapshot-Pinning).
@@ -15,8 +15,6 @@
 //! Für die öffentliche Checkpoint-API (benannte Checkpoints, Trait-basierter `CheckpointCoordinator`, RAII `CheckpointGuard`)
 //! ist gemäß ADR-011 ausschließlich `memfuse-checkpoint` zu verwenden.
 
-#![allow(dead_code)]
-
 // DECISION-REF: ADR-011 — Consolidated Checkpoint Subsystem Architecture
 // DECISION-REF: ADR-015 — Integration von RAII CheckpointGuard in memfuse-checkpoint (AGT-CKPT-001 / AGT-STORE-002)
 // ARCHITEKTUR: `memfuse-checkpoint` stellt den generischen `CheckpointGuard<S: StorageEngine>` und `PersistentCheckpointStore`
@@ -26,6 +24,7 @@ use memfuse_core::{Result, TxId};
 use std::sync::Arc;
 
 /// Represents a Point-in-Time snapshot of the agent's memory state.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct StateCheckpoint {
     pub tx_id: TxId,
@@ -33,14 +32,32 @@ pub struct StateCheckpoint {
 }
 
 /// The Checkpointer manages WAL replay bounds for deterministic time-travel.
+#[allow(dead_code)]
 pub struct Checkpointer {
     storage: Arc<LsmStorage>,
 }
 
+#[allow(dead_code)]
 impl Checkpointer {
     /// Creates a new Checkpointer.
     pub const fn new(storage: Arc<LsmStorage>) -> Self {
         Self { storage }
+    }
+
+    /// Records a new checkpoint at the current transaction ID marking an agent step.
+    // DECISION-REF: AGT-STORE-001 resolved — SystemTime error propagated via Result instead of unwrap_or_default()
+    pub fn create_checkpoint(&self, tx_id: TxId) -> Result<StateCheckpoint> {
+        let timestamp_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| MemFuseError::Storage(format!("System clock error: {e}")))?
+                .as_millis(),
+        )
+        .map_err(|e| MemFuseError::Storage(format!("Timestamp overflow: {e}")))?;
+        Ok(StateCheckpoint {
+            tx_id,
+            timestamp_ms,
+        })
     }
 
     /// Rolls the database state back to a specific checkpoint.
@@ -75,10 +92,7 @@ mod tests {
         storage.put(tx1, b"key1", b"val1").await.unwrap(); // unwrap
         storage.commit(tx1).await.unwrap(); // unwrap
 
-        let cp1 = StateCheckpoint {
-            tx_id: tx1,
-            timestamp_ms: 0,
-        };
+        let cp1 = checkpointer.create_checkpoint(tx1).unwrap(); // unwrap
 
         let tx2 = TxId::new(2);
         storage.put(tx2, b"key2", b"val2").await.unwrap(); // unwrap

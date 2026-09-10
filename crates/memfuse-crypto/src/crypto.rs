@@ -196,13 +196,15 @@ impl KeyManager {
         // als bei AES-GCM das bei Nonce-Reuse den Auth-Key leakt.
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
-        // SAFETY: Fresh 8-byte random suffix generated per call via OsRng avoids atomic counter
-        // persistence requirements.
-        // Birthday Bound (8-Byte = 64-Bit Zufallsraum): Eine Kollisionswahrscheinlichkeit
-        // von P ≈ 2^-32 wird erst ab ca. 2^16,5 Nachrichten (≈ 95.000) relevant — NICHT bei
-        // 2^32 (das ist die 50%-Grenze). In der Praxis kein Risiko: AES-256-GCM-SIV ist
-        // explizit nonce-misuse-resistant (RFC 8452) — eine Nonce-Kollision leakt keinen
-        // Auth-Key, sondern erzeugt nur Wiederholungs-Metadaten (Repeat-Detection).
+        // SAFETY: Fresh 8-byte random suffix generated per call via OsRng avoids atomic counter persistence requirements.
+        // Nonce-Kollisionswahrscheinlichkeit (Birthday Bound):
+        // Bei 8 zufälligen Suffix-Bytes (64 Bit Zufallsraum) liegt die Anzahl an
+        // Nachrichten, ab der die Kollisionswahrscheinlichkeit relevant wird
+        // (P ≈ 2^-32), bei ungefähr 2^16,5 Nachrichten — NICHT bei 2^32, wie zuvor
+        // fälschlich hier dokumentiert. Praktisch stellt dies dennoch KEIN
+        // Sicherheitsrisiko dar, da AES-256-GCM-SIV explizit nonce-misuse-resistant
+        // konstruiert ist: eine Nonce-Kollision leakt hierbei keinen Authentifizierungs-
+        // schlüssel, sondern lediglich Wiederholungs-Metadaten (Repeat-Detection).
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes[4..12]);
 
         let cipher = Aes256GcmSiv::new_from_slice(self.key.as_bytes())
