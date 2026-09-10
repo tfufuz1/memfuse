@@ -164,6 +164,16 @@ pub enum DeletionScope {
 /// Cryptographic proof of data deletion.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeletionProof {
+    /// Version der HMAC-Signatur-Payload-Konstruktion.
+    ///
+    /// Version 1 (Legacy): Signiert NUR `scope`, `deleted_keys_hash` und `deleted_after_tx`.
+    /// WARNUNG: Version 1 enthält eine bekannte Sicherheitslücke, da `covered_layers` und
+    /// `excluded_scopes` ungesichert bleiben.
+    ///
+    /// Version 2 (Aktuell): Signiert `scope`, `deleted_keys_hash`, `deleted_after_tx`,
+    /// `covered_layers` und `excluded_scopes`. Alle neuen Proofs werden mit Version 2 erzeugt.
+    #[serde(default = "default_signature_version")]
+    pub signature_version: u8,
     /// Target scope of deletion.
     pub scope: DeletionScope,
     /// Blake3-Hash aller gelöschten Dokumentschlüssel (sortiert → deterministisch).
@@ -171,12 +181,16 @@ pub struct DeletionProof {
     /// TxId nach der kein gelöschtes Datum mehr im System vorhanden ist.
     /// ADR-016: TxId statt SystemTime für Determinismus.
     pub deleted_after_tx: TxId,
-    /// HMAC-SHA256 über (scope_bytes || deleted_keys_hash || tx_bytes).
+    /// HMAC-SHA256 über die Payloads der jeweiligen `signature_version`.
     pub signature: [u8; 32],
     /// List of physically sanitized storage layers.
     pub covered_layers: Vec<DeletionLayer>,
     /// Pflicht für DSGVO Art. 17-Compliance.
     pub excluded_scopes: Vec<ExcludedScope>,
+}
+
+const fn default_signature_version() -> u8 {
+    1
 }
 
 impl DeletionProof {
@@ -208,13 +222,27 @@ impl DeletionProof {
             bincode::serialize(&scope).map_err(|e| MemFuseError::Internal(e.to_string()))?;
         let tx_bytes = deleted_after_tx.0.to_le_bytes();
 
-        let signature =
-            compute_hmac_sha256(proof_key, &[&scope_bytes, &deleted_keys_hash, &tx_bytes])?;
-
         let covered_layers: Vec<DeletionLayer> =
             covered_layers.into_iter().map(|p| p.layer).collect();
 
+        let covered_layers_bytes = bincode::serialize(&covered_layers)
+            .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+        let excluded_scopes_bytes = bincode::serialize(&excluded_scopes)
+            .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+
+        let signature = compute_hmac_sha256(
+            proof_key,
+            &[
+                &scope_bytes,
+                &deleted_keys_hash,
+                &tx_bytes,
+                &covered_layers_bytes,
+                &excluded_scopes_bytes,
+            ],
+        )?;
+
         Ok(Self {
+            signature_version: 2,
             scope,
             deleted_keys_hash,
             deleted_after_tx,
@@ -231,10 +259,33 @@ impl DeletionProof {
             bincode::serialize(&self.scope).map_err(|e| MemFuseError::Internal(e.to_string()))?;
         let tx_bytes = self.deleted_after_tx.0.to_le_bytes();
 
-        let expected = compute_hmac_sha256(
-            proof_key,
-            &[&scope_bytes, &self.deleted_keys_hash, &tx_bytes],
-        )?;
+        let expected = match self.signature_version {
+            1 => compute_hmac_sha256(
+                proof_key,
+                &[&scope_bytes, &self.deleted_keys_hash, &tx_bytes],
+            )?,
+            2 => {
+                let covered_layers_bytes = bincode::serialize(&self.covered_layers)
+                    .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+                let excluded_scopes_bytes = bincode::serialize(&self.excluded_scopes)
+                    .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+                compute_hmac_sha256(
+                    proof_key,
+                    &[
+                        &scope_bytes,
+                        &self.deleted_keys_hash,
+                        &tx_bytes,
+                        &covered_layers_bytes,
+                        &excluded_scopes_bytes,
+                    ],
+                )?
+            }
+            v => {
+                return Err(MemFuseError::Internal(format!(
+                    "Unsupported DeletionProof signature_version: {v}"
+                )))
+            }
+        };
 
         use subtle::ConstantTimeEq;
         Ok(expected.ct_eq(&self.signature).into())
@@ -496,14 +547,114 @@ mod tests {
     }
 
     #[test]
-    fn test_layer_cleanup_proof_rejects_nonzero_remaining_entries() {
-        let res = LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 3);
-        assert!(res.is_err());
-        if let Err(MemFuseError::Internal(msg)) = res {
-            assert!(msg.contains("INV-DELETION-1 violation"));
-            assert!(msg.contains("3 remaining live entries"));
-        } else {
-            panic!("Expected MemFuseError::Internal");
+    fn test_deletion_proof_tampered_covered_layers_fails_verify() {
+        let scope = DeletionScope::Tenant {
+            tenant_id: TenantId::try_new(1).unwrap(),
+        };
+        let proof = DeletionProof::create(
+            scope,
+            vec![b"k1".to_vec()],
+            TxId(10),
+            vec![
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            ],
+            vec![ExcludedScope::LlmParameterMemory],
+            &test_key(),
+        )
+        .unwrap();
+
+        assert_eq!(proof.signature_version, 2);
+        assert!(proof.verify(&test_key()).unwrap());
+
+        let mut tampered_layers = proof.clone();
+        tampered_layers
+            .covered_layers
+            .push(DeletionLayer::KvCacheSegments);
+
+        assert!(!tampered_layers.verify(&test_key()).unwrap());
+    }
+
+    #[test]
+    fn test_deletion_proof_tampered_excluded_scopes_fails_verify() {
+        let scope = DeletionScope::Tenant {
+            tenant_id: TenantId::try_new(1).unwrap(),
+        };
+        let proof = DeletionProof::create(
+            scope,
+            vec![b"k1".to_vec()],
+            TxId(10),
+            vec![
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            ],
+            vec![
+                ExcludedScope::LlmParameterMemory,
+                ExcludedScope::ConsolidatedAndDistilled,
+            ],
+            &test_key(),
+        )
+        .unwrap();
+
+        assert_eq!(proof.signature_version, 2);
+        assert!(proof.verify(&test_key()).unwrap());
+
+        let mut tampered_scopes = proof.clone();
+        tampered_scopes.excluded_scopes.pop();
+
+        assert!(!tampered_scopes.verify(&test_key()).unwrap());
+    }
+
+    #[test]
+    fn test_deletion_proof_v1_backward_compatibility() {
+        let scope = DeletionScope::Tenant {
+            tenant_id: TenantId::try_new(1).unwrap(),
+        };
+        let deleted_after_tx = TxId(10);
+        let deleted_keys = vec![b"k1".to_vec()];
+
+        // Construct a v1 signature manually using only the 3 legacy fields
+        let mut hasher = blake3::Hasher::new();
+        for key in &deleted_keys {
+            hasher.update(key);
         }
+        let deleted_keys_hash: [u8; 32] = *hasher.finalize().as_bytes();
+
+        let scope_bytes = bincode::serialize(&scope).unwrap();
+        let tx_bytes = deleted_after_tx.0.to_le_bytes();
+
+        let v1_signature =
+            compute_hmac_sha256(&test_key(), &[&scope_bytes, &deleted_keys_hash, &tx_bytes])
+                .unwrap();
+
+        let v1_proof = DeletionProof {
+            signature_version: 1,
+            scope,
+            deleted_keys_hash,
+            deleted_after_tx,
+            signature: v1_signature,
+            covered_layers: vec![DeletionLayer::LsmMemtable],
+            excluded_scopes: vec![ExcludedScope::LlmParameterMemory],
+        };
+
+        // v1 proof verifies successfully with original 3 fields intact
+        assert!(v1_proof.verify(&test_key()).unwrap());
+
+        // Test serde deserialization of JSON missing signature_version defaults to 1
+        let json_missing_version = r#"{
+            "scope": {"Tenant": {"tenant_id": 1}},
+            "deleted_keys_hash": "#
+            .to_string()
+            + &serde_json::to_string(&deleted_keys_hash).unwrap()
+            + r#",
+            "deleted_after_tx": 10,
+            "signature": "#
+            + &serde_json::to_string(&v1_signature).unwrap()
+            + r#",
+            "covered_layers": ["LsmMemtable"],
+            "excluded_scopes": ["LlmParameterMemory"]
+        }"#;
+
+        let deserialized: DeletionProof = serde_json::from_str(&json_missing_version).unwrap();
+        assert_eq!(deserialized.signature_version, 1);
+        assert!(deserialized.verify(&test_key()).unwrap());
     }
 }

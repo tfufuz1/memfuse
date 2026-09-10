@@ -55,6 +55,13 @@
       "timestamp": "2026-09-09T20:31:21.235131386+00:00",
       "session_id": "2567090070726996880",
       "active": true
+    },
+    {
+      "krate": "memfuse-security",
+      "issue": "R3-1",
+      "timestamp": "2026-09-10T06:08:45.418754183+00:00",
+      "session_id": "2320791955981619448",
+      "active": true
     }
   ]
 }
