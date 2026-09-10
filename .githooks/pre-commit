@@ -10,6 +10,7 @@ if ! git diff --quiet; then
 fi
 
 # ── STUFE 2: Compile-Gate (blockierend) ───────────────────────────────────────
+# TODO(opt-RC-2/A-4): Maintain local pre-commit compile gate to prevent uncompilable code commits.
 echo "→ [2/3] cargo check --workspace --exclude memfuse-tauri"
 if ! cargo check --workspace --exclude memfuse-tauri --quiet 2>/tmp/precommit_check_err.log; then
     echo ""

@@ -2,6 +2,8 @@
 > Maschinenausführbare Checkliste. Jede Session MUSS mit dieser
 > Sequenz beginnen, bevor Code geschrieben oder Dateien geändert werden.
 
+<!-- TODO(opt-B-1/B-2/B-3): Enforce Phase 6 Pre-Submit Gate (git fetch/rebase main check, compile verification, claimed test file check, status verification, and claim release). -->
+
 - **VETOES.md** (Root): Permanent abgelehnte oder eingeschränkt akzeptierte Features.
   Vor jeder neuen Feature-Implementierung mit "F-NN"-Bezeichnung prüfen ob ein
   Eintrag existiert. `just check-vetoes` läuft automatisch, ist aber kein Ersatz
