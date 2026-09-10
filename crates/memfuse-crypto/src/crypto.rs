@@ -552,6 +552,9 @@ mod tests {
     // REVIEW-PASS[6/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-06T11:17:31Z) (SESSION: 8157a40e)
     // PRÜFER-KONTEXT: FRESH
     // BEFUND: Re-verified zero-panic, zero-unsafe, and full Tier-1 audit pass in memfuse-crypto depth-audit session.
+    // REVIEW-PASS[7/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-10T19:35:00Z) (SESSION: b434cc40)
+    // PRÜFER-KONTEXT: FRESH
+    // BEFUND: Verified AES-256-GCM-SIV nonce uniqueness, HKDF domain separation, and zero-unsafe invariants in memfuse-security audit session.
     #[test]
     fn test_befund_1_nonce_uniqueness_and_envelope_format() {
         let km = KeyManager::try_new("nonce-uniqueness-secret", b"salt-123456").expect("km");
