@@ -5,6 +5,7 @@ on:
     # Läuft jeden Tag um 02:00 Uhr nachts UTC
     - cron: '0 2 * * *'
   workflow_dispatch: # Ermöglicht den manuellen Start über das GitHub-Webinterface
+  pull_request:
 
 permissions:
   contents: write
@@ -12,6 +13,7 @@ permissions:
 jobs:
   prune:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,3 +26,16 @@ jobs:
           bash scripts/prune_remote_branches.sh --apply
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  overlap-report:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check branch file overlap
+        run: |
+          git fetch origin --prune
+          bash scripts/check_branch_overlap.sh "${{ github.head_ref }}"
+        continue-on-error: true  # Advisory only, kein Merge-Block
