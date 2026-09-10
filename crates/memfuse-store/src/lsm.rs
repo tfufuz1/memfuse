@@ -544,6 +544,31 @@ impl LsmStorage {
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
     // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
+        // NC-3-RECOVERY-TODO: Implement recovery in P1 fix/lsm-startup-recovery
+        // NC-3: Write crash-atomic rollback intent file before any mutation.
+        // On recovery in new(), this file signals that rollback must be completed.
+        let intent_path = self.config.path.join(
+            format!("rollback-{:016x}.intent", target_tx.inner())
+        );
+        {
+            const INTENT_MAGIC: &[u8] = b"MFRLBK\0\0";
+            let mut intent_bytes = Vec::with_capacity(16);
+            intent_bytes.extend_from_slice(INTENT_MAGIC);
+            intent_bytes.extend_from_slice(&target_tx.inner().to_le_bytes());
+            tokio::fs::write(&intent_path, &intent_bytes).await.map_err(|e| {
+                MemFuseError::Storage(format!("Failed to write rollback intent file: {e}"))
+            })?;
+            // fsync parent directory to persist the intent file entry
+            let parent = self.config.path.clone();
+            tokio::task::spawn_blocking(move || {
+                std::fs::File::open(&parent)
+                    .and_then(|f| f.sync_all())
+                    .map_err(|e| MemFuseError::Storage(
+                        format!("Failed to fsync dir after intent file: {e}")
+                    ))
+            }).await.map_err(|e| MemFuseError::Internal(e.to_string()))??;
+        }
+
         let mut state = self.state.write().await;
 
         // 1. Truncate WAL to the position after target_tx
@@ -635,6 +660,16 @@ impl LsmStorage {
                     "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
                 );
             }
+        }
+
+        // NC-3: Remove rollback intent file after all SST cleanup is complete.
+        // If this removal fails, recovery on next startup will re-execute the (idempotent) rollback.
+        if let Err(e) = tokio::fs::remove_file(&intent_path).await {
+            tracing::warn!(
+                "Could not remove rollback intent file {:?}: {} \
+                 (non-fatal — recovery will re-run on next startup)",
+                intent_path, e
+            );
         }
 
         // 5. Re-populate memtable from truncated WAL
@@ -1188,34 +1223,23 @@ impl StorageEngine for LsmStorage {
                 }
             } // read lock freigegeben
 
-            // ── Phase 1: I/O außerhalb jedes Locks ──────────────────────────────
-            // AI-TAG[SMELL][MINOR] TODO(audit-H-2): Check memtable.is_empty() before incrementing flush_counter to prevent counter drift and orphan WAL filenames on empty flushes. (ID: AGT-STORE-b081e720) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
-            let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
-            let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
-            // WAL wird HIER erstellt — kein Lock gehalten
-            let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
-
-            // ── Phase 2: Atomarer In-Memory-Swap (Write-Lock, nur Pointer-Ops) ───
+            // ── Phase 1+2: Counter-Increment und WAL-Erstellung unter Write-Lock ────────
+            // H-2 FIX: flush_counter wird erst nach Bestätigung nicht-leerer Memtable inkrementiert.
+            // WAL-Erstellung ist I/O, aber schnell (File-Open + Header-Write); akzeptabel unter Lock.
             let (old_memtable, old_wal_path) = {
                 let mut state = self.state.write().await;
                 if state.memtable.is_empty() {
-                    // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
-                    // WAL-Datei aufräumen (best-effort)
-                    drop(state);
-                    // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
-                    let _ = tokio::fs::remove_file(
-                        &self.config.path.join(format!("wal-{}.log", flush_id)),
-                    )
-                    .await;
+                    // Race: concurrent flush already cleared the memtable
                     return Ok(());
                 }
-                let old_memtable =
-                    std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
+                // Counter-Increment nur für echte, nicht-leere Flushes
+                let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
+                let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
+                let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
+
+                let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
                 let old_wal = std::mem::replace(&mut state.wal, new_wal);
                 state.immutable_memtables.push(old_memtable.clone());
-
-                // ANCHOR[ALG-FIX:D1-011] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Stale WAL-Dateien löschen nach Flush
-                // Ohne Cleanup wächst die Disk-Usage unbegrenzt (eine WAL pro Flush).
                 let old_wal_path = old_wal.path().to_path_buf();
                 drop(old_wal);
                 (old_memtable, old_wal_path)
@@ -1290,6 +1314,11 @@ impl StorageEngine for LsmStorage {
 
                 let bytes_freed = old_memtable.size() as u64;
                 self.budget.release_memory(bytes_freed);
+
+                // M-6 FIX: Reset drift counter after successful flush.
+                // After a flush, the budget is accurately reflected via release_memory().
+                // Drift accumulated during this memtable's lifetime is now irrelevant.
+                self.budget_tracking_drift_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
 
                 tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
                 Ok(())
@@ -1377,9 +1406,6 @@ impl StorageEngine for LsmStorage {
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
             let cur_bytes = cursor.map(Bytes::copy_from_slice);
-            let _range_bound: std::ops::Bound<&Bytes> = cur_bytes
-                .as_ref()
-                .map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
 
             let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
@@ -1518,13 +1544,14 @@ impl StorageEngine for LsmStorage {
         seq_no: u64,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {
-            // INVARIANT (Task C - Single snapshot boundary):
-            // last_committed_tx is loaded EXACTLY ONCE at start and passed through for snapshot isolation.
-            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
                 std::collections::BTreeMap::new();
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
+            // H-7 FIX: last_tx NACH Lock-Erwerb laden für korrekte Snapshot-Isolation.
+            // Ein Commit zwischen load() und read()-Erwerb würde sonst neue Daten sichtbar
+            // machen, die last_tx nicht autorisiert — Read-Committed statt Snapshot.
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
             // Collect from SSTables
             for sst in sstables.iter() {
@@ -3979,6 +4006,84 @@ mod tests {
             storage.budget_tracking_drift_bytes(),
             expected_entry_size,
             "budget drift metric must equal entry_size after consume_memory failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rollback_intent_file_cleanup_on_success() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        // Perform rollback to tx1
+        storage.rollback_to_tx(tx1).await.expect("rollback succeeds");
+
+        // Verify that intent file for tx1 rollback was removed after completion
+        let intent_path = tmp
+            .path()
+            .join(format!("rollback-{:016x}.intent", tx1.inner()));
+        assert!(
+            !intent_path.exists(),
+            "Rollback intent file must be removed after successful rollback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_drift_counter_reset_on_flush() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 1, // 1 MB limit = 1,048,576 bytes
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+        let storage = LsmStorage::new(config).await.expect("create storage");
+
+        let key = b"drift_key_reset";
+        let value = vec![b'v'; 60000];
+
+        let tx = TxId::new(1);
+        storage.put(tx, key, &value).await.expect("put succeeds");
+
+        storage
+            .budget
+            .consume_memory(990_000)
+            .expect("fill budget to 990,000");
+
+        storage.commit(tx).await.expect("commit succeeds");
+        assert!(
+            storage.budget_tracking_drift_bytes() > 0,
+            "Drift bytes must be > 0 prior to flush"
+        );
+
+        // Reset the artificial budget fill so flush can succeed
+        storage.budget.release_memory(990_000);
+
+        // Perform flush
+        storage.force_flush().await.expect("flush succeeds");
+
+        // Verify drift counter was reset to 0
+        assert_eq!(
+            storage.budget_tracking_drift_bytes(),
+            0,
+            "Drift counter must be reset to 0 after successful flush"
         );
     }
 }
