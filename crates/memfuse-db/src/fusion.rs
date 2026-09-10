@@ -40,7 +40,7 @@ impl Default for ResonanceConfig {
 ///
 /// Feature-Flag: Nur aufrufen wenn `coherence-bonus-fusion` aktiv.
 #[cfg(feature = "coherence-bonus-fusion")]
-// AI-TAG[TODO][MINOR] // AI-TAG[TODO] TODO(audit-NC-6): Validate candidate scores with score.is_finite() before multiplying resonance bonus to prevent NaN score propagation. (ID: AGT-CORE-a491b156) (TS: 2026-09-10T19:30:00Z) (SESSION: b434cc40)
+// AI-TAG[SMELL][MINOR] TODO(audit-NC-6): Validate candidate scores with score.is_finite() before multiplying resonance bonus to prevent NaN score propagation. (ID: AGT-DB-3f010ab1) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
 pub fn apply_resonance_bonus(
     results: Vec<SearchResult>,
     valid_signal_count: usize,
@@ -76,9 +76,9 @@ pub fn apply_resonance_bonus(
     // NC-6: NaN/Inf-Scores ans Ende (stable partition erhält Reihenfolge unter ihnen)
     results.sort_by(|a, b| {
         match (a.score.is_finite(), b.score.is_finite()) {
-            (true, false) => std::cmp::Ordering::Less,    // finite vor non-finite
+            (true, false) => std::cmp::Ordering::Less, // finite vor non-finite
             (false, true) => std::cmp::Ordering::Greater, // non-finite nach finite
-            _             => b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)),
+            _ => b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)),
         }
     });
 
@@ -315,7 +315,7 @@ pub fn reciprocal_rank_fusion(
 /// ⚠️ KONTRAKT FÜR CONSUMER: Code der `metadata[key].as_f64()` (o.ä.) für Felder
 /// aus mehreren Fusion-Signalen aufruft MUSS damit rechnen, dass der Wert ein
 /// `serde_json::Value::Array` statt eines Scalars ist.
-// AI-TAG[TODO][MINOR] // AI-TAG[TODO] TODO(audit-M-1): Preserve scalar field types when metadata values are identical across sources instead of unconditionally converting scalars to JSON arrays. (ID: AGT-CORE-44f9d5a6) (TS: 2026-09-10T19:30:00Z) (SESSION: b434cc40)
+// AI-TAG[SMELL][MINOR] TODO(audit-M-1): Preserve scalar field types when metadata values are identical across sources instead of unconditionally converting scalars to JSON arrays. (ID: AGT-DB-9cb315d8) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
 fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_json::Value>) {
     match (target, source) {
         (Some(t_val), Some(s_val)) => {
@@ -378,7 +378,7 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
 }
 
 /// Weighted Reciprocal Rank Fusion with explicit metadata merge priority and provenance toggle.
-// AI-TAG[TODO][MINOR] // AI-TAG[TODO] TODO(audit-H-4): Filter out non-positive weight or invalid signals before calculating total_signal_count in RRF rank mass normalization. (ID: AGT-CORE-d56cb167) (TS: 2026-09-10T19:30:00Z) (SESSION: b434cc40)
+// AI-TAG[SMELL][MINOR] TODO(audit-H-4): Filter out non-positive weight or invalid signals before calculating total_signal_count in RRF rank mass normalization. (ID: AGT-DB-5ba3ca84) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
 pub fn weighted_reciprocal_rank_fusion_with_options(
     mut result_sets: Vec<(String, Vec<SearchResult>, f32)>,
     max_results: usize,
@@ -1502,7 +1502,10 @@ mod tests {
 
         // NC-6: NaN-Score muss am ENDE der sortierten Liste landen (nicht vorne)
         assert_eq!(first_run.len(), 3);
-        assert_ne!(first_run[0].id, "doc_nan", "NaN-Score darf nicht an Listenspitze stehen");
+        assert_ne!(
+            first_run[0].id, "doc_nan",
+            "NaN-Score darf nicht an Listenspitze stehen"
+        );
         assert_eq!(first_run[0].id, "doc_top");
         assert_eq!(first_run[1].id, "doc_mid");
         assert_eq!(first_run.last().map(|r| r.id.as_str()), Some("doc_nan"));
@@ -1702,7 +1705,9 @@ mod tests {
         );
 
         assert!(
-            result_with_invalid_weights.iter().all(|r| r.score.is_finite()),
+            result_with_invalid_weights
+                .iter()
+                .all(|r| r.score.is_finite()),
             "No score in fusion results should be NaN or non-finite"
         );
         assert_eq!(result_with_invalid_weights.len(), 2);
@@ -1719,12 +1724,31 @@ mod tests {
             provenance: None,
         };
 
-        let s1 = ("sig1".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
-        let s2 = ("sig2".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
-        let s3 = ("sig3".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], 1.0);
-        let s4_invalid = ("sig4".to_string(), vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])], f32::NAN);
+        let s1 = (
+            "sig1".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            1.0,
+        );
+        let s2 = (
+            "sig2".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            1.0,
+        );
+        let s3 = (
+            "sig3".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            1.0,
+        );
+        let s4_invalid = (
+            "sig4".to_string(),
+            vec![make_doc("doc1", vec!["sig1", "sig2", "sig3"])],
+            f32::NAN,
+        );
 
-        let cfg = ResonanceConfig { beta: 0.5, gamma: 0.3 };
+        let cfg = ResonanceConfig {
+            beta: 0.5,
+            gamma: 0.3,
+        };
         let fused = weighted_reciprocal_rank_fusion_with_options(
             vec![s1, s2, s3, s4_invalid],
             10,
