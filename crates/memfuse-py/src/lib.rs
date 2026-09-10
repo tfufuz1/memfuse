@@ -1441,6 +1441,34 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_db_path_query_text_and_batch_size() {
+        pyo3::prepare_freethreaded_python();
+
+        // validate_db_path
+        assert!(validate_db_path("").is_err());
+        assert!(validate_db_path("   ").is_err());
+        assert!(validate_db_path("path\0null").is_err());
+        assert!(validate_db_path("/tmp/memfuse_db").is_ok());
+
+        // validate_query_text
+        assert!(validate_query_text("").is_err());
+        assert!(validate_query_text("   ").is_err());
+        assert!(validate_query_text("query\0null").is_err());
+        assert!(validate_query_text("valid query text").is_ok());
+
+        let long_query = "q".repeat(MAX_ID_LENGTH + 1);
+        assert!(validate_query_text(&long_query).is_err());
+        let max_query = "q".repeat(MAX_ID_LENGTH);
+        assert!(validate_query_text(&max_query).is_ok());
+
+        // validate_batch_size
+        assert!(validate_batch_size(0).is_err());
+        assert!(validate_batch_size(100).is_ok());
+        assert!(validate_batch_size(MAX_BATCH_SIZE).is_ok());
+        assert!(validate_batch_size(MAX_BATCH_SIZE + 1).is_err());
+    }
+
+    #[test]
     fn test_py_err_io_and_index_mappings() {
         pyo3::prepare_freethreaded_python();
         let io_err = MemFuseError::Io(std::io::Error::other("disk error"));
