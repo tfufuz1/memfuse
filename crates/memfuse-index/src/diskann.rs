@@ -3,7 +3,7 @@
 // INVARIANTEN: Lock-Hierarchie: header -> mmap -> cache / quantizer / doc_ids; atomic rename + parent dir sync bei file persistence.
 // NICHT-OFFENSICHTLICH: Mmap für Vektor- & Graphlesezugriffe, unsafe Block benötigt 4-Punkt SAFETY-Kommentar.
 // HOTSPOTS: diskann.rs (DiskAnnIndex::search_internal, write_to_file, load_node)
-// STAND: TS:2026-08-30T18:53:53Z (SESSION: 37b1d991)
+// STAND: TS:2026-09-10T19:30:00Z (SESSION: a9d67eae)
 
 //! DiskANN Out-of-Core Vector Search (WP-4.3).
 
@@ -696,10 +696,9 @@ impl DiskAnnIndex {
 
             if computed_hmac.ct_eq(&buf_hmac).into() {
                 let mut vec = Vec::with_capacity(dim);
-                for chunk in vec_bytes.chunks_exact(4) {
-                    if let Ok(b) = chunk.try_into() {
-                        vec.push(f32::from_le_bytes(b));
-                    }
+                let (chunks, _) = vec_bytes.as_chunks::<4>();
+                for &b in chunks {
+                    vec.push(f32::from_le_bytes(b));
                 }
                 recovered.push((doc_id, vec));
             } else {
