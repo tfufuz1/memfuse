@@ -214,3 +214,26 @@ test result: ok. 54 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fin
 ### 3. Test-Suitergebnisse
 - 75 Unit- & Integrationstests in `memfuse-ollama` erfolgreich bestanden (0 FAILED).
 - Workspace-Kompilierbarkeit und DAG-Integrität bestätigt.
+
+---
+
+## 16. Audit-Update: 2026-09-10
+
+**Session:** `fd692639` | **Timestamp:** `2026-09-10T19:14:47Z`
+
+### 1. Inventar-Realitätsabgleich & Safety Baseline
+- Quellcode-Inventar (6 Dateien): `client.rs`, `context_prefixer.rs`, `embedding.rs`, `importance.rs`, `lib.rs`, `model_info.rs`.
+- Inventarabgleich mit Prompter-Momentaufnahme (Stand 2026-09-10) ergab **keine Abweichungen**.
+- `#![forbid(unsafe_code)]` compliance verified across `crates/memfuse-ollama` (0 unsafe blocks).
+- `FILE-CONTEXT` headers present and valid across all source files > 50 LOC.
+
+### 2. HTTP Robustness & Security Verification
+- **Prompt Injection & XML-Escaping (`xml_escape`):** Verified escaping of XML special characters (`<`, `>`, `&`, `"`, `'`) in `build_rag_prompt()` structural blocks (`<system>`, `<instructions>`, `<context>`, `<user_query>`).
+- **HTTP Client Retry Policy:** Verified exponential backoff and jitter timing for transient network errors and server 5xx codes (`MAX_RETRIES = 3`), confirming 4xx client errors (e.g. 400 Bad Request) bypass retry loops immediately.
+- **Context Prefix Unicode Safety:** Confirmed character truncation counts Unicode scalar values rather than bytes (`truncate_chars`), protecting German umlauts and multi-byte UTF-8 boundaries.
+- **Importance Score Calibration & Provenance:** Confirmed score parsing regex handles float scores (`0.0`–`1.0`) with `IsotonicCalibrator` warmup integration and model provenance tracking (`model_id`).
+
+### 3. Test Suite Execution
+- 80 unit, integration, property-based (proptest), and doc tests executed (79 passed, 0 failed, 1 ignored requiring live Ollama instance).
+- Static analysis via `cargo clippy --all-features` passed with zero warnings.
+- Workspace compatibility and Layer 2 DAG topology compliance confirmed.

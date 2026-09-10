@@ -1,10 +1,10 @@
 {
   "claims": [
     {
-      "krate": "docs",
-      "issue": "GESAMTSPEZ-V10",
-      "timestamp": "2026-09-08T21:50:44.781466215+00:00",
-      "session_id": "6558016856048513528",
+      "krate": "memfuse-core",
+      "issue": "JULES-20260910-TEST",
+      "timestamp": "2026-09-10T19:39:12.341942514+00:00",
+      "session_id": "2902225699968435816",
       "active": false,
       "expires_at": "2026-09-09T01:50:44Z",
       "released_at": "2026-09-10T00:00:00Z"
@@ -82,13 +82,29 @@
       "released_at": "2026-09-10T00:00:00Z"
     },
     {
-      "krate": "memfuse-checkpoint",
+      "krate": "memfuse-calibration",
       "issue": "JULES-20260910-REVIEW",
-      "timestamp": "2026-09-10T19:11:00.888182655+00:00",
-      "session_id": "8966625242391323423",
+      "timestamp": "2026-09-10T19:10:20.130719692+00:00",
+      "session_id": "3924964487935478810",
       "active": false,
-      "expires_at": "2026-09-10T23:11:00.888169271+00:00",
-      "released_at": "2026-09-10T19:25:10.863990071+00:00"
+      "expires_at": "2026-09-10T23:10:20.130699356+00:00",
+      "released_at": "2026-09-10T19:16:39.281527504+00:00"
+    },
+    {
+      "krate": "memfuse-calibration",
+      "issue": "JULES-20260910-REVIEW",
+      "timestamp": "2026-09-10T19:16:52.591104830+00:00",
+      "session_id": "3924964487935478810",
+      "active": false,
+      "expires_at": "2026-09-10T23:16:52.591092025+00:00",
+      "released_at": "2026-09-10T19:16:55.196512806+00:00"
+      "krate": "memfuse-bench",
+      "issue": "JULES-20260910-REVIEW",
+      "timestamp": "2026-09-10T19:15:15.906205989+00:00",
+      "session_id": "12918474732904603030",
+      "active": false,
+      "expires_at": "2026-09-10T23:15:15.906188708+00:00",
+      "released_at": "2026-09-10T19:23:02.611166855+00:00"
     }
   ]
 }
