@@ -918,7 +918,7 @@ mod tests {
         merge_metadata(&mut scalar_target, scalar_source);
 
         // INTENTIONAL: Scalar-Kollision -> Array (nicht First-Wins). Verifiziert bewusste Designentscheidung.
-        assert_eq!(scalar_target.unwrap(), json!([0.9, 0.7]));
+        assert_eq!(scalar_target, Some(json!([0.9, 0.7])));
     }
 
     #[test]
@@ -1393,7 +1393,10 @@ mod tests {
         );
 
         assert_eq!(fused.len(), 1);
-        let prov = fused[0].provenance.as_ref().expect("provenance present");
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
         assert!(
             (prov.coherence_bonus - 0.3).abs() < 1e-6,
             "coherence_bonus should be 0.3 for full coherence over valid signals, got {}",
@@ -1485,8 +1488,8 @@ mod tests {
         assert_ne!(first_run[0].id, "doc_nan", "NaN-Score darf nicht an Listenspitze stehen");
         assert_eq!(first_run[0].id, "doc_top");
         assert_eq!(first_run[1].id, "doc_mid");
-        assert_eq!(first_run.last().unwrap().id, "doc_nan");
-        assert!(first_run.last().unwrap().score.is_nan());
+        assert_eq!(first_run.last().map(|r| r.id.as_str()), Some("doc_nan"));
+        assert!(first_run.last().map_or(false, |r| r.score.is_nan()));
     }
 
     #[test]

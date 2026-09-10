@@ -4709,23 +4709,7 @@
   },
   {
     "file": "crates/memfuse-db/src/fusion.rs",
-    "hash": "49d7de5af7f77e03"
-  },
-  {
-    "file": "crates/memfuse-db/src/fusion.rs",
-    "hash": "aea3112dda77a98b"
-  },
-  {
-    "file": "crates/memfuse-db/src/fusion.rs",
-    "hash": "c50f88e4f6d7d94f"
-  },
-  {
-    "file": "crates/memfuse-db/src/fusion.rs",
     "hash": "e55e9465cc700901"
-  },
-  {
-    "file": "crates/memfuse-db/src/fusion.rs",
-    "hash": "f36afbf3bf0a706f"
   },
   {
     "file": "crates/memfuse-db/src/lib.rs",
