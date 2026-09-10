@@ -2929,11 +2929,23 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "074d39822194e6fc"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "0ccafd59b8546c17"
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "28d3051716cec2a0"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "29178fc55b4398e7"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "3b79563b1752f7c1"
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
@@ -2989,6 +3001,10 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "8313dd25b37d0b37"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "87cae6336849335f"
   },
   {
@@ -3013,6 +3029,18 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "ad8f5fe3adf8270a"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "ad9d9c1853c39f57"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "b92b225376027edc"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "c41b67b131218923"
   },
   {
@@ -3025,6 +3053,10 @@
   },
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "dce974ba352ac39b"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "eca0a23ab2dd5ce4"
   },
   {
@@ -3034,6 +3066,14 @@
   {
     "file": "crates/memfuse-crypto/src/deletion_proof.rs",
     "hash": "f68f61eab5a1e369"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "fcef40d72563e3b3"
+  },
+  {
+    "file": "crates/memfuse-crypto/src/deletion_proof.rs",
+    "hash": "fe7dcff55b8eaaee"
   },
   {
     "file": "crates/memfuse-crypto/src/kv_cipher.rs",
