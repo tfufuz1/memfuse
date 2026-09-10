@@ -101,3 +101,15 @@
 - **`external_benchmarks_test.rs`**: Ergänzung von `test_pathrag_sweep_long_mem_eval_execution` und `test_pathrag_sweep_locomo_execution` zum Testen von `run_pathrag_sweep_long_mem_eval` und `run_pathrag_sweep_locomo` mit realistischen Thresholds (`&[0.1, 0.5]`), leeren Thresholds (`&[]`), Fixture-Evaluierung sowie Fehlerfortpflanzung bei nicht existierenden Datensatzpfaden.
 - **Coverage-Ergebnis**: Zeilen-Abdeckung in `path_rag_sweep.rs` stieg von **7.38%** auf **92.21%** (Region-Coverage von **9.27%** auf **88.05%**). Gesamte Crate-Zeilenabdeckung stieg auf **76.84%**.
 - **Verifikation**: `cargo test -p memfuse-bench --all-features` (26/26 Tests grün), `cargo check --workspace --exclude memfuse-tauri` clean.
+
+---
+
+## Session-Update (Benchmark Harness Re-Audit & Compliance Verification)
+**Stand / Zeitstempel**: `2026-09-10T19:15:57Z` (SESSION: efefe35a)
+**Scope**: Re-audit of `benchmarks/memfuse-bench`, Zero-Unwrap Invariant Verification, Inventory Sync, and Pre-submit Gate Alignment.
+
+### Audit & Compliance Results
+- **Inventory Reality Check**: Confirmed 8 source files in `benchmarks/memfuse-bench/src/`. Verified `Inventar-Drift: Datei benchmarks/memfuse-bench/src/regression_gate.rs im Prompter-Inventar vom 2026-09-10 nicht erfasst`.
+- **Production Code Safety**: Confirmed 0 `unwrap()`/`expect()` in production code paths (all 18 occurrences are isolated within `#[cfg(test)]` blocks). Confirmed 0 `unsafe` blocks across `memfuse-bench`.
+- **Test Suite Verification**: Executed `cargo test -p memfuse-bench --all-features` (26/26 tests passed).
+- **Workspace Compilation**: `cargo check --workspace --exclude memfuse-tauri` clean.
