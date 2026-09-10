@@ -176,7 +176,16 @@ pub fn check_duplicate_intent() -> Result<(), String> {
     let new_commits = get_new_commits()?;
 
     let pr_body = env::var("MEMFUSE_PR_BODY").unwrap_or_default();
-    let override_hash = parse_override_exception(&pr_body);
+    let mut override_hash = parse_override_exception(&pr_body);
+
+    if override_hash.is_none() {
+        for new_c in &new_commits {
+            if let Some(h) = parse_override_exception(&new_c.raw_message) {
+                override_hash = Some(h);
+                break;
+            }
+        }
+    }
 
     let mut hits = Vec::new();
 
