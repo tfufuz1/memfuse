@@ -1,6 +1,6 @@
 //! Write-Ahead Log (WAL) for durability and crash recovery with HMAC chaining.
 // FILE-CONTEXT
-// STAND: 2026-08-30T21:49:55Z (SESSION: 283abf0f)
+// STAND: 2026-09-10T19:27:54Z (SESSION: 8567a934)
 // ZWECK: Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen
 // INVARIANTEN: fsync NACH jedem Schreibvorgang (ADR-002); WAL VOR MemTable schreiben
 // NICHT-OFFENSICHTLICH: sync_all() auf dem Verzeichnis-FD nötig, nicht nur auf der Datei

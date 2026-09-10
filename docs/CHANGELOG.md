@@ -158,7 +158,6 @@
 | `2026-08-30T21:51:46Z (SESSION: a43b7682)` | `crates/memfuse-core/src/traits/mod.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kern-Trait-Hierarchien (StorageEngine, VectorIndex, TextIndex, GraphIndex) für Layer 0. |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | STCS-Compaction-Engine (Size-Tiered Compaction Strategy) |
 | `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/lsm.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | LSM-Tree-Implementierung (MemTable + SSTable + Compaction) |
-| `2026-08-30T21:49:55Z (SESSION: 283abf0f)` | `crates/memfuse-store/src/wal.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Write-Ahead-Log mit HMAC-Chaining für crash-sichere WAL-Operationen |
 | `2026-08-30T19:05:00Z` | `crates/memfuse-core/src/lib.rs` | `REVIEW-PASS` | `AGT-CORE-a3f29c1d` | `c9f5e2b3` | `PASS` | `3` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-CORE-a3f29c1d) (TS: 2026-08-30T19:05:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-30T19:05:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `c9f5e2b3` | `PASS` | `6` | // REVIEW-PASS[2/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-08-30T19:05:00Z) (SESSION: c9f5e2b3) |
 | `2026-08-30T19:05:00Z` | `crates/memfuse-ollama/src/client.rs` | `REVIEW-PASS` | `TEST:OLL-001` | `c9f5e2b3` | `PASS` | `1` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:OLL-001) (TS: 2026-08-30T19:05:00Z) (SESSION: c9f5e2b3) |
