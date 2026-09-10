@@ -1680,7 +1680,10 @@ mod tests {
         );
 
         assert_eq!(fused.len(), 1);
-        let prov = fused[0].provenance.as_ref().expect("provenance present");
+        let prov = match fused[0].provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
         // doc1 appears in all 3 valid signals out of 3 valid total signal count => coherence = (3/3)^0.5 = 1.0
         // bonus = gamma * 1.0 = 0.3
         assert!((prov.coherence_bonus - 0.3).abs() < 1e-6);
