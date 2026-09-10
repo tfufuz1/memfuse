@@ -12740,10 +12740,6 @@
     "hash": "fd89337cc8cc4792"
   },
   {
-    "file": "crates/memfuse-router/src/lyapunov.rs",
-    "hash": "42bb83ec1ca300a6"
-  },
-  {
     "file": "crates/memfuse-router/src/tests.rs",
     "hash": "013d45f179f5b9b1"
   },

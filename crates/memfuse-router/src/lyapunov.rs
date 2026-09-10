@@ -320,11 +320,10 @@ mod tests {
         }
 
         watcher.update(&current);
-        let latest_kl = watcher
-            .divergence_history
-            .back()
-            .copied()
-            .expect("KL divergence should be present in history");
+        let latest_kl = match watcher.divergence_history.back().copied() {
+            Some(kl) => kl,
+            None => panic!("KL divergence should be present in history"),
+        };
 
         // Mit Laplace-1-Smoothing sollte die KL-Divergenz selbst bei leeren Baseline-Bins moderat bleiben (< 0.5),
         // im Gegensatz zu > 2.0 (oder astronimisch großen Werten) beim alten eps = 1e-10 Schema.
@@ -341,11 +340,10 @@ mod tests {
         watcher.set_baseline(&baseline);
 
         watcher.update(&baseline);
-        let latest_kl = watcher
-            .divergence_history
-            .back()
-            .copied()
-            .expect("KL divergence should be present in history");
+        let latest_kl = match watcher.divergence_history.back().copied() {
+            Some(kl) => kl,
+            None => panic!("KL divergence should be present in history"),
+        };
 
         // Bei identischer Verteilung muss d_t nahezu 0.0 sein (z.B. < 1e-5)
         assert!(
