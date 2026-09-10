@@ -652,7 +652,9 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                 }
             }
             if let Ok(f) = tokio::fs::OpenOptions::new().write(true).open(wal_path).await {
-                let _ = f.sync_all().await;
+                f.sync_all().await.map_err(|e| {
+                    MemFuseError::Storage(format!("WAL recovery sync_all failed: {e}"))
+                })?;
             }
             return Ok(true);
         }
