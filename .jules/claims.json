@@ -55,6 +55,13 @@
       "timestamp": "2026-09-09T20:31:21.235131386+00:00",
       "session_id": "2567090070726996880",
       "active": true
+    },
+    {
+      "krate": "memfuse-calibration",
+      "issue": "M-3",
+      "timestamp": "2026-09-10T06:07:01.402660401+00:00",
+      "session_id": "4363741388824461552",
+      "active": true
     }
   ]
 }
