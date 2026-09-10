@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND:       2026-09-10T19:25:24Z (SESSION: ae8c2fb9)
+// ZWECK:       Binary Entry Point for MemFuse MCP Stdio JSON-RPC Server
+// INVARIANTEN: Logs exclusively to stderr; stdout strictly reserved for JSON-RPC transport
+// HOTSPOTS:    main()
+// SIEHE AUCH:  ADR-010, crates/memfuse-mcp/src/lib.rs
+
 use memfuse_db::MemFuse;
 use memfuse_mcp::{EmbeddingConfig, McpServer};
 use std::sync::Arc;

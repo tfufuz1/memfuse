@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND:       2026-08-29T18:00:00Z
+// STAND:       2026-09-10T19:25:24Z (SESSION: ae8c2fb9)
 // ZWECK:       Prompt-Injection-Erkennung & Quarantäne-System für MCP-Server
 // INVARIANTEN: Standardmäßig werden verdächtige Texte redigiert (strict); Audit-Logs in escalate-Mode sind isoliert vom Vektor-Index.
 
