@@ -1747,7 +1747,10 @@ mod tests {
         let res = &fused[0];
         assert_eq!(res.matched_signals.len(), 3);
 
-        let prov = res.provenance.as_ref().expect("provenance present");
+        let prov = match res.provenance.as_ref() {
+            Some(p) => p,
+            None => panic!("provenance present"),
+        };
         // coherence = (3 / 3)^1.0 = 1.0; coherence_bonus = 0.3 * 1.0 = 0.3
         // If total_signal_count = 4 was incorrectly used, coherence would be (3/4)^1.0 = 0.75, bonus = 0.225
         assert!(
