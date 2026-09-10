@@ -661,7 +661,9 @@ pub(crate) async fn recover_from_bak_if_present(wal_path: &std::path::Path) -> R
                 .open(wal_path)
                 .await
             {
-                let _ = f.sync_all().await;
+                f.sync_all().await.map_err(|e| {
+                    MemFuseError::Storage(format!("WAL recovery sync failed: {e}"))
+                })?;
             }
             return Ok(true);
         }
