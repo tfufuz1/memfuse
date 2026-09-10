@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>MEMFUSE.BAUKASTEN — v26 · 17 CRATES · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
+<title>MEMFUSE.BAUKASTEN — v27 · 17 CRATES · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
 <style>
 :root{
   --bg:#050508;--s1:#08080e;--s2:#0d0d17;--s3:#121220;
@@ -211,7 +211,7 @@ kbd{font-family:monospace;font-size:8px}
 
 <header class="hdr">
   <div class="hdr-in">
-    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v26</span></span>
+    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v27</span></span>
     <span class="hdot"></span>
     <span class="hsub">17 Crates · Tier+Domain-Profile · 42 APMs · 14 Task-Typen · ROLE-LOCK (Audit≠Fix) · PLAN→ACT→VERIFY→REFLECT</span>
     <div class="hright">
@@ -378,6 +378,18 @@ kbd{font-family:monospace;font-size:8px}
             <div class="th-name">Tiefen-Audit</div>
             <div class="th-desc">Fault-Injection · Concurrency-Stress · Property-Tests · Coverage-Analyse</div>
             <span class="th-phase ph-audit">DEEP</span>
+          </div>
+          <div class="thero" id="tt-wal_audit" onclick="selTask('wal_audit')">
+            <div class="th-ico">📜</div>
+            <div class="th-name">WAL-Sub-Audit</div>
+            <div class="th-desc">wal.rs (XL) · TOCTOU · sync_all · atomic loads · HMAC replay · backup restore</div>
+            <span class="th-phase ph-audit">WAL</span>
+          </div>
+          <div class="thero" id="tt-lsm_audit" onclick="selTask('lsm_audit')">
+            <div class="th-ico">🗂️</div>
+            <div class="th-name">LSM-Sub-Audit</div>
+            <div class="th-desc">lsm.rs (XL) · startup flush · tombstone limit · flush_counter · visibility</div>
+            <span class="th-phase ph-audit">LSM</span>
           </div>
         </div>
         <div class="sl"><span class="sl-dot"></span>Implementierungs-Aufgaben (parallel-sicher, 1 Datei/Scope)</div>
@@ -578,7 +590,7 @@ let _rawPrompt = '';
 // memfuse_prompter_review.md Abschnitt 1). Dieses Datum manuell aktualisieren,
 // sobald das Inventar unten per Hand neu gegen das Repo abgeglichen wurde.
 // ═══════════════════════════════════════════════════════════════════
-let INVENTORY_DATE = '2026-09-10';
+let INVENTORY_DATE = '2026-03-02';
 let INVENTORY_SOURCE = 'bundled'; // 'bundled' | 'imported'
 let INVENTORY_FILENAME = null;
 const APM_ON = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16',
@@ -689,7 +701,7 @@ const DEFAULT_COMPONENTS = {
   'memfuse-agent': [
     { file:'audit.rs', size:'L', risk:'Integrität', desc:'Append-only Audit-Log', focus:'Es darf KEINE öffentliche API zum nachträglichen Ändern oder Löschen von Einträgen geben — jede solche Erweiterung ist ein Integritätsverstoß. [KORR v22: Datei hieß zuvor audit_log.rs — tatsächlicher Dateiname ist audit.rs.]' },
     { file:'context.rs', size:'M', risk:'Performance', desc:'AgentContext — events-Verwaltung', focus:'events als Vec mit remove(0) ist O(N) bei häufigem Front-Dequeue — bei Performance-Änderungen VecDeque erwägen. Identifier-Ambiguität beachten: Knotenname "1" darf nicht als Schrittnummer fehlinterpretiert werden.' },
-    { file:'dlq.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'dlq.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'engine.rs', size:'L', risk:'APM-4', desc:'State-Machine — checkpoint → execute → commit → audit', focus:'Budget-Check MUSS VOR tool.execute() erfolgen (APM-4 kritisch) — niemals execute() → consume() → check(), da das Tool dann bereits Seiteneffekte ausgeführt hat, bevor der Budget-Fehler erkannt wird. Exactly-Once: Crash zwischen execute und commit darf nach Recovery weder Doppel- noch Nichtausführung erzeugen.' },
     { file:'event_source.rs', size:'M', risk:'—', desc:'Bisher NICHT im Inventar erfasste Dateien: Event-Quelle der State-Machine, Workflow-Graph-Struktur, Step-Definitionen', focus:'Neu ergänzt in v22 — noch keine vertiefte Fokus-Analyse hinterlegt; bei erster Bearbeitung dieser Dateien vollständige Lektüre vor Änderung durchführen und Fokus-Notiz hier nachtragen.' },
     { file:'graph.rs', size:'M', risk:'—', desc:'Bisher NICHT im Inventar erfasste Dateien: Event-Quelle der State-Machine, Workflow-Graph-Struktur, Step-Definitionen', focus:'Neu ergänzt in v22 — noch keine vertiefte Fokus-Analyse hinterlegt; bei erster Bearbeitung dieser Dateien vollständige Lektüre vor Änderung durchführen und Fokus-Notiz hier nachtragen.' },
@@ -706,19 +718,19 @@ const DEFAULT_COMPONENTS = {
     { file:'path_rag_sweep.rs', size:'M', risk:'—', desc:'PathRAG-Parameter-Sweep für Retrieval-Tuning.', focus:'' },
   ],
   'memfuse-calibration': [
-    { file:'isotonic.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'isotonic.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Einstiegspunkt und Exports der Score-Kalibrierung', focus:'Prüfe API auf saubere Fehlerpropagation.' },
-    { file:'pid.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'platt.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'replicator.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'pid.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'platt.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'replicator.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
   ],
   'memfuse-candle': [
-    { file:'embedding.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'gasp.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'gguf_loader.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'inference.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'embedding.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'gasp.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'gguf_loader.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'inference.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Candle Inferenz Engine Einstiegspunkt', focus:'Prüfe, dass keine C++-Abhängigkeiten lecken.' },
-    { file:'model_registry.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'model_registry.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
   ],
   'memfuse-checkpoint': [
     { file:'lib.rs', size:'XL', risk:'RAII/Time-Travel', desc:'GESAMTER Crate in einer Datei: CheckpointGuard (RAII, non-Clone, pin-before-save, Drop-Handling), CheckpointRegistry-Trait, PersistentCheckpointStore, Time-Travel-Rollback', focus:'APM-8 kritisch: niemals tokio::spawn() im Drop-Handler — das bricht die RAII-Garantie (Task kann vor Completion gecancelled werden). Pin-before-Save-Reihenfolge (ADR-011) ist bindend: Snapshot muss gepinnt sein, BEVOR der Checkpoint gespeichert wird. Rollback zu Checkpoint X muss bytegenau den State nach X wiederherstellen — verifiziere dies mit einem Byte-Vergleich, nicht nur mit einem Existenz-Check. [KORR v22: Es gibt keine separate registry.rs — der komplette Crate (inkl. Registry/Time-Travel) ist eine einzige Datei; Größenklasse deshalb XL statt L, höchste Sorgfaltspflicht bei jeder Änderung.]' },
@@ -726,77 +738,77 @@ const DEFAULT_COMPONENTS = {
   'memfuse-core': [
     { file:'error.rs', size:'L', risk:'FFI', desc:'MemFuseError-Enum + serialisierbares FFI-DTO-Mapping', focus:'JEDE MemFuseError-Variante muss eine korrespondierende MemFuseErrorDto-Variante besitzen — fehlende Zuordnung bricht memfuse-py und memfuse-mcp stillschweigend an der FFI-Grenze.' },
     { file:'error_dto.rs', size:'M', risk:'FFI', desc:'MemFuseError-Enum + serialisierbares FFI-DTO-Mapping', focus:'JEDE MemFuseError-Variante muss eine korrespondierende MemFuseErrorDto-Variante besitzen — fehlende Zuordnung bricht memfuse-py und memfuse-mcp stillschweigend an der FFI-Grenze.' },
-    { file:'ipc/jsonrpc.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'ipc/memfuse_generated.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'ipc/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'ipc/jsonrpc.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'ipc/memfuse_generated.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Generierter FlatBuffers-Code für IPC-Typen. Nicht manuell editieren — Schemänderungen in fbs-Dateien ausführen und neu generieren.' },
+    { file:'ipc/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'IPC-Transportpuffer und Schema-Serialisierung. Zero-Copy-Invariante bei Slice-Deserialisierung strikt einhalten.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Modulstruktur, pub-Exports, Re-Exports der Kern-Traits', focus:'Prüfe bei jeder Änderung, ob neue pub-Exports das DAG-Prinzip verletzen (memfuse-core darf keine memfuse-*-Abhängigkeit referenzieren).' },
-    { file:'seq_log.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'seq_log.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'snapshot.rs', size:'M', risk:'Concurrency', desc:'SnapshotRegistry + SnapshotGuard — Pin/Unpin-Verwaltung, Schutz gepinnter Snapshots vor GC', focus:'Das Pin-vs-GC-Race ist der bekannt sensibelste Pfad dieser Datei: jede Änderung an pin_snapshot()/unpin() erfordert einen begleitenden Concurrency-Test mit mind. 8 parallelen Threads. [KORR v22: Datei hieß zuvor snapshot_registry.rs — tatsächlicher Dateiname ist snapshot.rs.]' },
-    { file:'traits/embedding.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'traits/mod.rs', size:'XL', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'traits/embedding.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'traits/mod.rs', size:'XL', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Kern-Traits der Speichersubsysteme. Interface-Änderungen erfordern synchrone Updates in allen Crate-Implementierungen.' },
     { file:'tx_buffer.rs', size:'L', risk:'Concurrency', desc:'TxBuffer-Sharding, Lock-Granularität, Kapazitätsgrenze', focus:'Prüfe Lock-Granularität pro Shard — ein zu grobes Locking erzeugt Starvation unter hoher TX-Last, ein zu feines gefährdet Konsistenz zwischen Shards.' },
-    { file:'types.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'types.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'types/budget.rs', size:'M', risk:'Budget', desc:'TokenBudget, consume()/available() — bewusst non-atomare Read-Modify-Write-Semantik', focus:'consume() ist heute durch &mut self (Borrow-Checker) vor Nebenläufigkeit geschützt — dokumentiere explizit jede Änderung, die diese Annahme berührt (z.B. Arc<Mutex<>>-Kapselung).' },
     { file:'types/domain.rs', size:'XL', risk:'TxId', desc:'Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, Edge, Entity) — TxId::MAX_COLLECTION_SEQUENCE/INTERNAL_BASE-Trennung (ADR-028)', focus:'Niemals SystemTime für TxId verwenden. Die Grenze zwischen Collection- und System-TxId-Bereich (INTERNAL_BASE = u64::MAX - 1_000_000) ist eine architektonische Invariante — jede Änderung hier erfordert einen ADR. [KORR v22: Datei hieß im Prompter zuvor fälschlich types/tx.rs — TxId liegt tatsächlich in types/domain.rs, es gibt keine eigene tx.rs.]' },
-    { file:'types/filter.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'types/importance.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'types/saos.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'types/filter.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'types/importance.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Metriken zur Priorisierung und Zerfallsberechnung von Speicher-Chunks. Monotonie bei Halbwertszeit-Updates wahren.' },
+    { file:'types/saos.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Typdefinitionen für Sparse Atomic Objects. Byteweise Alignment-Invariante und Serde-Stabilität sicherstellen.' },
   ],
   'memfuse-security': [
     { file:'kv_segment/store.rs', size:'M', risk:'Concurrency', desc:'TenantIsolatedKvStore — LRU-Eviction & Mandantenisolation', focus:'evict_lru_fair() stellt Fairness sicher.' },
     { file:'anti_tamper.rs', size:'S', risk:'Zeroize', desc:'IntegrityVerifier, VolatileEncryptionKey (#[zeroize(drop)]) & Zeroize-Drop-Semantik-Verifikation', focus:'Test-only unsafe hier ist explizit erlaubt (AGENTS.md-Ausnahme) — ausschließlich zur Verifikation der Zeroize-Drop-Semantik via Raw-Pointer-Inspektion, niemals für Produktionslogik. JEDES neue Struct mit Schlüsselmaterial MUSS ZeroizeOnDrop implementieren — lückenlos, keine Ausnahme. [KORR v22: Es gibt keine eigene zeroize_types.rs — VolatileEncryptionKey lebt bereits hier in anti_tamper.rs.]' },
     { file:'crypto.rs', size:'L', risk:'RFC 8452/5869/4231', desc:'KeyManager — AES-256-GCM-SIV encrypt/decrypt + Nonce-Konstruktion, HKDF Key Derivation, HMAC-SHA256 (alle drei Primitiven in EINER Datei, Größenklasse L)', focus:'Nonce = 4B Instanz-Präfix (OsRng) + 8B per-Call OsRng-Suffix — jede Änderung an der Nonce-Konstruktion erfordert eine erneute Kollisionswahrscheinlichkeits-Betrachtung (Referenz p≈2.71e-8 bei 10⁶ Nonces). Jeder neue abgeleitete Schlüsseltyp braucht einen eigenen, disjunkten HKDF-Domain-Separator-String. Jeder Tag-/MAC-Vergleich MUSS über subtle::ConstantTimeEq laufen. [KORR v22: Es gibt KEINE separaten Dateien aes_gcm_siv.rs/hkdf.rs/hmac.rs — alle drei Primitiven sind im KeyManager in crypto.rs konsolidiert.]' },
-    { file:'deletion_proof.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'error.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'kv_cipher.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'deletion_proof.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'error.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Krypto-Fehlertypen und KeyManager-Befehlsauswertung. Keine vertraulichen Schlüsseldaten in Error-Strings leaken.' },
+    { file:'kv_cipher.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'AES-256-GCM-SIV Cipher-Streams. Nonce-Eindeutigkeit bei jedem Verschlüsselungsvorgang zwingend gewährleisten.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports der Krypto-Primitiven', focus:'Stelle sicher, dass ausschließlich geprüfte Primitiven exportiert werden — kein Ad-hoc-Crypto-Code außerhalb dieses Crates darf entstehen (Krypto-Isolation).' },
     { file:'wal_crypto.rs', size:'L', risk:'HMAC-Chain', desc:'WAL-HMAC-Chaining v3 — kryptographische Integritätskette über das gesamte WAL', focus:'Byte-Reihenfolge ist bindend: domain-separator → prev_hmac → seq_no → tx_id → op_type+kv. Jede Abweichung bricht die Chain rückwirkend. Änderungen hier erfordern Regressionstests gegen die bestehende v3-Testvektor-Suite UND explizite Versionierung (nie v3 stillschweigend überschreiben).' },
   ],
   'memfuse-db': [
-    { file:'chunker.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'collection/crud.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'collection/kv_lock.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'collection/maintenance.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'chunker.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Text-Chunking und Sliding-Window-Splitting. Puffergrenzen und UTF-8-Zeichengrenzen bei Multi-Byte-Schnitten einhalten.' },
+    { file:'collection/crud.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Collection CRUD-Operationen und Vektorinjektion. Max Scan-Limit MAX_SCAN_RESULTS zur OOM-Vermeidung strikt durchsetzen.' },
+    { file:'collection/kv_lock.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Feingranulare Collection- und Key-Locks. Lock-Reihenfolge zur Vermeidung von Deadlocks strikt einhalten.' },
+    { file:'collection/maintenance.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Hintergrund-Cleanup und Waisen-Purging. Gelöschte Dokument-IDs atomar aus allen Sekundärindizes entfernen.' },
     { file:'collection/mod.rs', size:'M', risk:'Locking', desc:'Collection-API, Lock-Hierarchie', focus:'Lock-Reihenfolge ist bindend: collections → embedder → insert_lock — IMMER in dieser Reihenfolge, jede Abweichung ist ein Deadlock-Risiko.' },
-    { file:'collection/query_builder.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'collection/query_builder.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'collection/relate.rs', size:'S', risk:'Zyklen', desc:'Zettelkasten-Traversierung über ContextChunk.links', focus:'Relation A→B→A erfordert Visited-Set UND Timeout/Tiefenlimit — ohne beides Endlosschleifen-Risiko bei zyklischen Link-Strukturen.' },
     { file:'collection/search.rs', size:'L', risk:'Snapshot', desc:'hybrid_search() — Orchestrierung aller 4 Signale', focus:'LSM/BM25/Metadaten binden an seq_no, HNSW und CSR-Graph lesen unpinnten Live-State — verlasse dich in neuem Code NIE auf implizite Snapshot-Konsistenz von HNSW/Graph; nachgelagerte Filterung muss veraltete/gelöschte Treffer aktiv verwerfen.' },
-    { file:'collection/tests.rs', size:'XL', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'collection/tx.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'consolidation_executor.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'context.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'collection/tests.rs', size:'XL', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'collection/tx.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Transaktionsgrenzen auf Collection-Ebene. Isolation-Guard und Rollback-Sicherheit bei Abbrüchen garantieren.' },
+    { file:'consolidation_executor.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Asynchroner Executor für Speicher-Konsolidierung. Ratenbegrenzung für LLM-Synthese-Aufrufe einhalten.' },
+    { file:'context.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Kontext-Fenster-Verwaltung und Token-Packing. Bounding-Limits gegen Kontextüberlauf strikt prüfen.' },
     { file:'context_compaction.rs', size:'L', risk:'—', desc:'ContextCompactor + ConsolidationSession — StatusToken-Ersetzung veralteter Tool-Outputs', focus:'Prüfe, dass komprimierte Historie für nachgelagerte Agent-Schritte semantisch äquivalent bleibt (kein Informationsverlust an kritischen Entscheidungspunkten). [KORR v22: Datei hieß zuvor compactor.rs — tatsächlicher Dateiname ist context_compaction.rs; Größenklasse auf L korrigiert (ursprünglich fälschlich als M eingeschätzt).]' },
-    { file:'decay_controller.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'filter.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'decay_controller.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'filter.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Metadaten-Filterauswertung über Collections. Short-Circuit-Evaluierung und Typ-Casting sicherstellen.' },
     { file:'fusion.rs', size:'L', risk:'APM-5', desc:'reciprocal_rank_fusion() / weighted_reciprocal_rank_fusion() — Kern der 4-Signal-Fusion', focus:'RRF nutzt AUSSCHLIESSLICH die Rang-Position, nicht den Score-Wert — jede score *= boost-Modifikation VOR der Fusion hat NULLEFFEKT (APM-5). Boosts müssen POST-RRF angewendet werden. Beachte zusätzlich: weighted_reciprocal_rank_fusion() materialisiert und sortiert VOLLSTÄNDIG (O(U log U)) — jede neue Aufruferstelle muss MAX_SEARCH_K respektieren.' },
-    { file:'homeostat.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'homeostat.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'XL', risk:'—', desc:'MemFuse-Orchestrator-Einstiegspunkt', focus:'Prüfe die öffentliche API auf Konsistenz mit README.md-Beispielen.' },
-    { file:'maintenance_config.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'maintenance_scheduler.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'memory_consolidation.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'maintenance_config.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'maintenance_scheduler.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Periodischer Maintenance-Scheduler. Task-Cancellations sauber abfangen und Waisen-Threads vermeiden.' },
+    { file:'memory_consolidation.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Synthese stabiler Graph-Communitys (REM-Phase). Consecutive Stability-Cycle-Anforderungen einhalten.' },
     { file:'multistep.rs', size:'M', risk:'—', desc:'MultiStepEngine — iteratives Query-Rewriting (bis 3 Runden)', focus:'Prüfe die Abbruchbedingung bei Konvergenz vs. hartem Runden-Limit — beide müssen greifen können.' },
-    { file:'reaper.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'synthesis_phase.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'temporal_filter.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'reaper.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'synthesis_phase.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'REM Consolidation Phase MetaChunk-Synthese. Synthetisierte Chunks mit [SYNTHESIZED FROM n SOURCES] kennzeichnen.' },
+    { file:'temporal_filter.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Bitemporaler Zeitfilter. Intervall-Überschneidungen auf Valid-Time und Transaction-Time strikt auswerten.' },
     { file:'transaction.rs', size:'L', risk:'2PC', desc:'2PC-Koordination über alle 4 Sub-Engines, repair_on_open()', focus:'Bei Fehler nach Commit von Signal N müssen die Signale N..4 vollständig zurückgerollt werden. repair_on_open() muss CommitIntent::Pending nach Crash forward-committen, nicht verwerfen.' },
-    { file:'volatile_vault.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'volatile_vault.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
   ],
   'memfuse-embed': [
     { file:'lib.rs', size:'M', risk:'Feature-Gate', desc:'Feature-Gate-Wurzel (default=[])', focus:'cargo check --no-default-features MUSS 0 Fehler ergeben — dies ist die zentrale Hermetizitäts-Garantie des optionalen Crates.' },
     { file:'reranker.rs', size:'L', risk:'Blocking/Sichtbarkeit', desc:'CrossEncoderReranker UND OnnxSessionPool (bewusst pub(crate), nicht exportiert) — beides in derselben Datei', focus:'ONNX-Inferenz blockiert den Thread — spawn_blocking ist Pflicht, sonst Stall des Tokio-Executors. Score-Ties müssen stabil sortiert werden, Richtung höher=besser verifizieren. Für Modul-externe Nutzung des SessionPool einen eigenen Pool halten statt Sichtbarkeit zu erweitern (Planungsdokument-Blueprint-Korrektur #1). [KORR v22: Es gibt keine eigene session_pool.rs — der Crate besteht nur aus lib.rs + reranker.rs, OnnxSessionPool ist Teil von reranker.rs.]' },
   ],
   'memfuse-graph': [
-    { file:'cascade.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'cascade.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'community.rs', size:'M', risk:'Determinismus', desc:'Label-Propagation Community-Detection', focus:'Muss deterministisch sein (ADR-027) — identischer Input-Graph erzeugt identische Community-Zuordnung über mehrere Läufe.' },
-    { file:'consistency_enforcement.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'consistency_enforcement.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'csr.rs', size:'XL', risk:'Invariante/DoS', desc:'CSR-Graph-Kern — offsets/reverse_map, compact(), rollback(), traverse()/traverse_at() Multi-Hop-BFS mit Hub-Node-Branching-Limit', focus:'offsets.len() == reverse_map.len() + 1 MUSS immer gelten, auch bei entity-only-Commits ohne Kanten — compact() darf das offsets-Padding in diesem Fall nicht überspringen. rollback() MUSS id_map UND reverse_map bereinigen, nicht nur staged_edges. Ein Knoten mit sehr vielen Kanten (Hub) darf die Traversal-Queue nicht explodieren lassen — MAX_VISITED_NODES-Limit muss PER LEVEL greifen, nicht nur als globales Ergebnis-Limit. [KORR v22: Es gibt keine eigene bfs.rs — die komplette Traversal-Logik (traverse/traverse_at/traverse_at_bitemporal) lebt bereits in dieser Datei.]' },
-    { file:'edge_reinforcement.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'edge_reinforcement_buffer.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'edge_reinforcement.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'edge_reinforcement_buffer.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports des CSR-Graphen', focus:'Prüfe, dass keine petgraph-Abhängigkeit eingeführt wurde (ADR-004, Pure-Rust-Policy).' },
-    { file:'path_rag.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'percolation.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'path_rag.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'percolation.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'ppr.rs', size:'L', risk:'Numerik', desc:'Personalized PageRank — Power-Iteration, Dangling-Node-Handling', focus:'Summe aller PPR-Scores muss exakt 1.0 sein (Mass-Conservation) — auch bei Dangling Nodes, deren Teleportation-Mass korrekt redistributiert werden muss.' },
-    { file:'provenance.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'provenance.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'session_dag.rs', size:'L', risk:'Concurrency', desc:'SessionBranchTree — Konversationsverzweigung als persistierter DAG', focus:'Kein Lock darf über einen .await-Punkt gehalten werden — Lock-Scopes methodenlokal und minimal halten.' },
   ],
   'memfuse-index': [
@@ -804,18 +816,18 @@ const DEFAULT_COMPONENTS = {
     { file:'distance.rs', size:'XL', risk:'SIMD/unsafe', desc:'SIMD-Distanzfunktionen (AVX2/NEON), einziger regulär erlaubter unsafe-Ort neben diskann.rs/persistence.rs', focus:'JEDER unsafe-Block muss direkt von is_x86_feature_detected!("avx2") (bzw. äquivalent für NEON) umschlossen sein. SIMD-Pfad und Scalar-Fallback müssen identische Semantik haben (beide sqrt oder beide squared) — sonst schleichende Ranking-Divergenz.' },
     { file:'hnsw.rs', size:'XL', risk:'APM-2/3', desc:'HNSW-Graph-Kern — Suche, Insert, Tombstone-Handling, SQ8-Bound-Expansion', focus:'search_filtered(): Tombstone-Prüfung MUSS unconditional VOR jedem Custom-Filter erfolgen (zwei separate if-Blöcke, kein if/else-if — APM-2). SQ8-Bound-Expansion in do_insert() MUSS über write() laufen, nicht try_write() (APM-3) — sonst lastabhängige, stille Präzisionsverluste.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports des HNSW-Index', focus:'Prüfe Feature-Gate-Konsistenz für experimental-diskann.' },
-    { file:'nucleation.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'nucleation.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'persistence.rs', size:'L', risk:'unsafe/TOCTOU', desc:'Mmap-basierte Persistenz des Index', focus:'TOCTOU-Risiko: Datei kann zwischen Öffnen und aktivem Mmap verkürzt/gelöscht werden → SIGBUS. Prüfe Dateigrößen-Validierung vor jedem Mmap-Zugriff.' },
     { file:'quantize.rs', size:'L', risk:'Precision', desc:'ScalarQuantizer (SQ8) — per-Dimension Min/Max-Skalierung von Vektoren', focus:'Prüfe Rundungsverhalten an den Quantisierungsgrenzen — Bound-Expansion in hnsw.rs hängt direkt von der hier definierten Skalierung ab. [KORR v22: Datei hieß zuvor quantization.rs — tatsächlicher Dateiname ist quantize.rs.]' },
   ],
   'memfuse-mcp': [
     { file:'bin/memfuse-mcp-server.rs', size:'S', risk:'—', desc:'Binary-Einstiegspunkt — startet McpServer::run_stdio(), Logs ausschließlich nach stderr', focus:'Neu ergänzt in v22. stdout ist für JSON-RPC reserviert — JEDE println!/log-Ausgabe hierhin bricht das Protokoll; nur eprintln!/tracing-nach-stderr ist zulässig.' },
-    { file:'config.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'config.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'L', risk:'Protokoll/DoS/Injection', desc:'McpServer — stdio JSON-RPC 2.0 Server-Loop UND memfuse_search/insert/get/collections-Tool-Dispatch in EINER Datei (größte Datei des Crates)', focus:'ADR-010: AUSSCHLIESSLICH stdio — kein axum/TcpListener/HTTP, jeder Rest davon ist ein kritischer Architektur-Befund. Grenzwerte MAX_RPC_BYTES=16MB / MAX_SEARCH_QUERY=64KB an n-1/n/n+1 Bytes testen. Prüfe Inaktivitäts-Timeout (Slowloris-Schutz) für sehr langsame Clients. Prüfe zusätzlich, dass interne Pfade/Stacktraces niemals in Fehlermeldungen an den Client durchsickern (Informations-Leck-Risiko). [KORR v22: Es gibt keine separaten server.rs/tools.rs — Server-Loop UND Tool-Dispatch liegen beide in lib.rs; Größenklasse deshalb XL statt S/L.]' },
     { file:'prompt_injection.rs', size:'L', risk:'Injection', desc:'Prompt-Injection-Erkennung/-Abwehr für Tool-Outputs', focus:'Neu ergänzt in v22 — diese Datei fehlte bisher VOLLSTÄNDIG im Komponenten-Inventar, obwohl sie mit direktem Injection-Bezug zu den sicherheitskritischsten Dateien des gesamten Crates zählt. Bei jeder Änderung: keine Denylist-basierte Erkennung als alleinige Verteidigungslinie akzeptieren (gleiche Grundregel wie bei memfuse-ollama::client.rs).' },
     { file:'protocol.rs', size:'S', risk:'—', desc:'JsonRpcResponse-Hilfsfunktionen (response_from_error etc.)', focus:'Reine Serialisierungs-Helfer — Fehler-Codes müssen exakt der JSON-RPC-2.0-Spec entsprechen (kein Custom-Errorcode-Schema).' },
     { file:'sandbox.rs', size:'M', risk:'Krypto', desc:'McpSandbox — Tool-Output-Isolation', focus:'Tool-Outputs müssen AES-256-GCM-SIV-verschlüsselt und bei Verwerfen ge-zeroized werden (Anthropic-Containment-Pattern) — prüfe SandboxPolicy-Defaults (DB-Reads erlaubt, DB-Writes/Code-Execution opt-in).' },
-    { file:'tests.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'tests.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
   ],
   'memfuse-ollama': [
     { file:'client.rs', size:'XL', risk:'Injection', desc:'OllamaClient — HTTP-Requests, xml_escape(), build_rag_prompt(), Timeout', focus:'xml_escape() muss alle 5 XML-Sonderzeichen abdecken (< > & " \\\'), ohne Doppel-Escaping (&amp; → &amp;amp; ist ein Befund). build_rag_prompt() muss Nutzerinhalt strukturell (XML-Tags: <system>/<context>/<user_query>) vom Prompt-Gerüst trennen — verlasse dich NIE auf Denylisting gegen Prompt-Injection.' },
@@ -826,14 +838,14 @@ const DEFAULT_COMPONENTS = {
     { file:'model_info.rs', size:'S', risk:'—', desc:'Bisher NICHT im Inventar erfasste Dateien: Importance-Scoring bzw. Ollama-Modell-Metadaten', focus:'Neu ergänzt in v22 — noch keine vertiefte Fokus-Analyse hinterlegt; bei erster Bearbeitung dieser Dateien vollständige Lektüre vor Änderung durchführen und Fokus-Notiz hier nachtragen.' },
   ],
   'memfuse-router': [
-    { file:'dispatch.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'dispatch.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports der Routing-Engine', focus:'Prüfe, dass memfuse-mcp (Layer 4) hier nicht importiert wird (DAG-Verletzung, ADR-045-Kontext).' },
-    { file:'lyapunov.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'outcome.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'lyapunov.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'outcome.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'profile.rs', size:'M', risk:'NaN', desc:'SlmProfile::new() / try_new()', focus:'SlmProfile::new() akzeptiert derzeit NaN, wodurch score >= NaN immer false ist und kein Routing mehr stattfindet — try_new() mit is_finite() && >= 0.0-Check ist der korrekte Pfad für neue Nutzung.' },
     { file:'router.rs', size:'L', risk:'NaN', desc:'SLM-Routing-Logik', focus:'f32::max(0.0, NaN) = NaN → Routing wird nicht-deterministisch. Bei dieser Dateigröße ist 100%-Branch-Coverage (cargo llvm-cov --branch) das realistische und verbindliche Ziel — jede neue Branch braucht einen dedizierten Test.' },
-    { file:'serde_helpers.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'tests.rs', size:'XL', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'serde_helpers.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'tests.rs', size:'XL', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
   ],
   'memfuse-store': [
     { file:'checkpoint.rs', size:'M', risk:'DAG', desc:'pub(crate)-Checkpoint-Interna der Storage-Engine', focus:'Diese Datei ist bewusst pub(crate) — memfuse-checkpoint (eigenes Crate, Layer 1) darf sie NICHT importieren. Jede Sichtbarkeitsänderung hier ist ein Architektur-Vorfall.' },
@@ -841,29 +853,29 @@ const DEFAULT_COMPONENTS = {
     { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports, Storage-Engine-Einstiegspunkt', focus:'Prüfe öffentliche API-Oberfläche auf versehentliche Lecks interner LSM-Implementierungsdetails.' },
     { file:'lsm.rs', size:'XL', risk:'Locking', desc:'LsmStorage — StorageEngine-Trait-Implementierung, commit_mutex-Verwaltung, rollback_to_tx (größte Einzeldatei des Crates — Größenklasse XL)', focus:'rollback_to_tx darf niemals innerhalb eines bereits gehaltenen commit_mutex erneut aufgerufen werden (Deadlock-Risiko, APM-3-Kontext). [KORR v22: Es gibt keine commit.rs — diese Logik liegt in lsm.rs, das zuvor komplett im Komponenten-Inventar fehlte, obwohl es als architektonisch zentralste Datei des Crates gilt. Höchste Sorgfaltspflicht gilt hier uneingeschränkt.]' },
     { file:'memtable.rs', size:'M', risk:'—', desc:'In-Memory-Puffer vor Flush auf SSTable', focus:'Prüfe Flush-Trigger-Schwellwerte und das Race-Window zwischen Flush-Start und neuen konkurrierenden Writes (ADR-043-Kontext).' },
-    { file:'mmap.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'mmap.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'sstable.rs', size:'XL', risk:'Atomarität', desc:'SSTable-Format, atomare Datei-Erstellung', focus:'APM-1 gilt hier absolut: tmp-Datei → sync_all → rename → fsync_parent_dir. Kein direktes tokio::fs::write ohne dieses Muster.' },
-    { file:'tenant_codec.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'util.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'tenant_codec.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'util.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Niedriggewichtige Datei- und Puffer-Hilfsfunktionen. Atomares tmp-file -> fsync -> rename Muster bei allen Dateioperationen.' },
     { file:'wal.rs', size:'XL', risk:'Crash-Safety', desc:'Write-Ahead-Log — fsync-Disziplin, HMAC-Bindung, höchstes Crash-Safety-Risiko im gesamten Workspace', focus:'sync_all() MUSS vor jeder Ok-Rückgabe aus append() erfolgen. Sequenznummer UND Datei-ID müssen in die HMAC-Berechnung eingebunden sein (nicht nur Payload). Jede Änderung braucht einen begleitenden Crash-Mid-Write-Fault-Injection-Test.' },
   ],
   'memfuse-tauri': [
-    { file:'commands/chat.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'commands/collections.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'commands/ingest.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'commands/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'commands/search.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'commands/session_dag.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'commands/transform.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'commands/chat.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'commands/collections.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'commands/ingest.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'commands/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'commands/search.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'commands/session_dag.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'commands/transform.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'ingestion/docx.rs', size:'M', risk:'Sicherheit/Parser', desc:'DOCX-Parser für externe Nutzerdateien', focus:'Gleiche Robustheitsanforderungen wie pdf.rs: leere/trunkierte Datei → Err, kein Panic. Geparste Inhalte landen später im RAG-Kontext — Prompt-Injection-Bewusstsein wie bei memfuse-ollama.' },
     { file:'ingestion/email.rs', size:'M', risk:'Sicherheit/Parser', desc:'E-Mail-Parser für externe Nutzerdateien', focus:'Gleiche Robustheitsanforderungen wie pdf.rs/docx.rs. Zusätzlich: Header-Injection und verschachtelte MIME-Strukturen als Fuzzing-Ziel betrachten.' },
-    { file:'ingestion/entities.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'ingestion/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'ingestion/entities.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'ingestion/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'ingestion/pdf.rs', size:'S', risk:'Sicherheit/Parser', desc:'PDF-Parser für externe, nicht-vertrauenswürdige Nutzerdateien', focus:'Eingebettetes PDF-JavaScript MUSS ignoriert, niemals ausgeführt werden. Leere/trunkierte/falsch benannte Dateien → kontrollierter Err, kein Panic. Fehlendes Größenlimit ist ein DoS-Risiko (RAM-Erschöpfung).' },
-    { file:'ingestion/pipeline.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
-    { file:'ingestion/progress.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'ingestion/pipeline.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'ingestion/progress.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'lib.rs', size:'S', risk:'—', desc:'Tauri-App-Einstiegspunkt', focus:'Prüfe IPC-Command-Registrierung auf vollständige Fehlerbehandlung.' },
-    { file:'main.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ NEU (Stand 2026-09-08) — Datei nicht im kuratierten Fokus-Bestand erfasst. Vor Erstbearbeitung: vollständige Lektüre + Fokus-Notiz hier nachtragen (Konvention analog KORR v22).' },
+    { file:'main.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
     { file:'ollama.rs', size:'S', risk:'Duplikation', desc:'OllamaBridge — Desktop-App-seitige Ollama-Anbindung', focus:'Prüfe auf Logik-Duplikation gegenüber memfuse-ollama::client.rs — jede Abweichung im Verhalten zwischen Bridge und Client ist ein Wartungsrisiko und potenzielle Inkonsistenzquelle. [KORR v22: Datei hieß zuvor ollama_bridge.rs — tatsächlicher Dateiname ist ollama.rs.]' },
     { file:'state.rs', size:'S', risk:'Concurrency', desc:'AppState — geteilter Zustand über Tauri-Commands', focus:'Tauri-Commands laufen parallel — jeder Zugriff auf AppState braucht korrekte Synchronisation (RwLock/Arc/Mutex); prüfe explizit auf Data-Races bei gleichzeitigen Commands.' },
   ],
@@ -1556,11 +1568,11 @@ MemFuse ist ein Pure-Rust Cognitive Operating System für lokale, air-gapped KI-
 
 ## Status der Härtungs-Fix-Prompts (HEAD ff9ffecd)
 Folgende Systemhärtungen sind auf main bereits gemergt und müssen NICHT erneut implementiert werden:
-- **N1–N5 (✅ Gemergt):** RRF NaN/Inf-Guard (`fusion.rs`), WAL TOCTOU-Truncation (`wal.rs`), LSM-Budget-Drift, WAL HMAC-Rollback Concurrency, commit_mutex-Erzwingung.
-- **B & F (✅ Gemergt):** Max Scan-Limit `MAX_SCAN_RESULTS` (`crud.rs`) und speicherbeschränkter Range-Scan `scan_bounded` (`traits/mod.rs`, `lsm.rs`, `crud.rs`).
-- **D1 (✅ Gemergt):** Typsystemische Vorbedingungs-Erzwingung für `DeletionProof` via `LayerCleanupProof` (`deletion_proof.rs`).
-- **H (✅ Gemergt):** Robuste `f32::total_cmp`-Sortierung für `HeapEntry` (`fusion.rs`).
-- **Weitere Härtungen (✅ Gemergt):** WAL Header State Atomicity (`wal.rs`), DiskANN HMAC-Schutz (`diskann.rs`).
+- **N1–N5 (✅ Gemergt):** RRF NaN/Inf-Guard (\`fusion.rs\`), WAL TOCTOU-Truncation (\`wal.rs\`), LSM-Budget-Drift, WAL HMAC-Rollback Concurrency, commit_mutex-Erzwingung.
+- **B & F (✅ Gemergt):** Max Scan-Limit \`MAX_SCAN_RESULTS\` (\`crud.rs\`) und speicherbeschränkter Range-Scan \`scan_bounded\` (\`traits/mod.rs\`, \`lsm.rs\`, \`crud.rs\`).
+- **D1 (✅ Gemergt):** Typsystemische Vorbedingungs-Erzwingung für \`DeletionProof\` via \`LayerCleanupProof\` (\`deletion_proof.rs\`).
+- **H (✅ Gemergt):** Robuste \`f32::total_cmp\`-Sortierung für \`HeapEntry\` (\`fusion.rs\`).
+- **Weitere Härtungen (✅ Gemergt):** WAL Header State Atomicity (\`wal.rs\`), DiskANN HMAC-Schutz (\`diskann.rs\`).
 Offene/ausstehende Härtungen (E1/E2, D2, G): KV-Segment LRU Fair Eviction & Lock-Granularität (E1/E2), DiskANN Robust Pruning & Query Vector Validierung (D2/G).
 `;
 }
@@ -1694,8 +1706,60 @@ grep -c "AI-TAG" crates/${crate}/src/**/*.rs 2>/dev/null | awk -F: '{sum+=$2} EN
 function SESSIONEND_BLOCK(crate) {
   return `---
 
-## Session-Ende — verpflichtend VOR dem letzten Commit (AGENTS.md §6)
+## Phase 6 — Pre-Submit Gate (BLOCKIEREND — kein Submit ohne grünes Ergebnis)
 
+Diese Phase ist kein Stilhinweis. Der Mensch merged blind. Beweislast liegt vollständig hier.
+Alle vier Schritte müssen grün sein — in dieser Reihenfolge, ohne Ausnahme.
+
+### Schritt 6-A: Rebase-Retest — gegen den AKTUELLEN main, nicht gegen den Stand von Sessionbeginn
+\`\`\`bash
+git fetch origin main
+if ! git merge-base --is-ancestor origin/main HEAD; then
+  echo "⚠️  main hat sich seit Sessionstart weiterentwickelt — Rebase erforderlich"
+  git rebase origin/main
+  # Nach Rebase: Gesamter Workspace gegen den neuen Stand prüfen
+  cargo check --workspace --exclude memfuse-tauri 2>&1 | tee /tmp/postrebase_check.log
+  grep -q "^error" /tmp/postrebase_check.log && {
+    echo "❌ STOP: Rebase hat Compile-Fehler freigelegt — NICHT submitten, erst beheben"
+    cat /tmp/postrebase_check.log | grep "^error" | head -20
+    exit 1
+  }
+  echo "✅ Workspace nach Rebase fehlerfrei"
+else
+  echo "✅ Branch ist aktuell gegenüber origin/main — kein Rebase nötig"
+  # Trotzdem: Workspace-weiter Check zum Nachweis der Workspace-Kompatibilität
+  cargo check --workspace --exclude memfuse-tauri 2>&1 | grep "^error" | head -5 && exit 1 || true
+fi
+# Zusätzlich: crate-spezifischer Check mit allen Features
+cargo check ${PKG(crate)} --all-features
+\`\`\`
+Ein grüner Testlauf gegen einen veralteten main-Stand ist KEINE gültige Verifikation.
+Nur der Stand unmittelbar vor Submit zählt.
+
+### Schritt 6-B: Phantom-Verifikation — Diff-Realität vs. Commit-Text-Behauptung
+\`\`\`bash
+echo "=== Dateien im tatsächlichen Diff ==="
+git diff --name-only origin/main...HEAD
+
+echo "=== Prüfe: Jede im Diff genannte .rs-Datei existiert tatsächlich ==="
+for f in \$(git diff --name-only origin/main...HEAD | grep -E '\\.rs\$'); do
+  if [ ! -f "\$f" ]; then
+    echo "❌ Behauptete Datei '\$f' existiert nicht im Working Tree"
+    exit 1
+  fi
+done
+echo "✅ Alle diff-genannten Dateien verifiziert"
+
+echo "=== ANTI-PATTERN-PRÜFUNG: Keine Shell-Commit-Nachrichten ==="
+git log origin/main...HEAD --format="%s" | grep -i "^shell-commit\$" && {
+  echo "❌ Shell-Commit-Nachricht gefunden — umbenennen vor Submit"
+  exit 1
+} || echo "✅ Keine Shell-Commits"
+\`\`\`
+Test-Ergebnisse im PR/Session-Report NUR aus echtem Kommando-Output kopieren,
+niemals aus Erinnerung oder Vorlage formulieren. Bei Unsicherheit: rohen Output anhängen.
+
+### Schritt 6-C: Gate-Stack (nach Rebase, gegen den rebbasten Stand)
 \`\`\`bash
 # 1. Rebase-vor-Submit gegen aktuellen main-Stand (blockierend)
 git fetch origin main
@@ -1726,7 +1790,9 @@ Ein am Sessionanfang gesetzter Claim ohne passende Freigabe am Sessionende ist s
 
 Falls diese Sitzung eine reine Review-Sitzung war (kein eigener Code-Beitrag, nur Prüfung fremder Arbeit): hinterlasse mindestens einen \`REVIEW-PASS\`-Eintrag mit \`PRÜFER-KONTEXT: FRESH\`, bevor \`just sync-docs\` läuft.
 
-\`WORKING_STATE.md\` niemals manuell editieren — bei Merge-Konflikten stets neu durch \`just sync-docs\` generieren, nie manuell auflösen.
+Falls diese Sitzung eine reine Review-Sitzung war: mindestens einen \`REVIEW-PASS\`-Eintrag
+mit \`PRÜFER-KONTEXT: FRESH\` hinterlassen, dann die vier Schritte oben ausführen.
+\`WORKING_STATE.md\` niemals manuell editieren — bei Merge-Konflikten stets \`just sync-docs\`.
 `;
 }
 
@@ -3380,6 +3446,156 @@ REPLAY_EOF
 ${DOD(crate)}`;
 },
 
+wal_audit: (crate, p, showPar) => {
+  if (crate !== 'memfuse-store') {
+    return `⚠️ Dieser Sub-Task ist ausschließlich für memfuse-store (wal.rs) vorgesehen.\nGewähltes Crate: ${crate} — bitte Crate wechseln.`;
+  }
+  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
+${ROLE_LOCK_BLOCK('auditor', crate)}
+
+## WAL-Tiefen-Audit — wal.rs AUSSCHLIESSLICH (XL-Datei, höchstes Crash-Safety-Risiko)
+
+Dieser Sub-Task prüft AUSSCHLIESSLICH \`crates/memfuse-store/src/wal.rs\`.
+Keine anderen Dateien des Crates in dieser Sitzung — kein Scope-Creep.
+
+### Phase W-1: Struktur erfassen (nie aus Erinnerung — immer lesen)
+\`\`\`bash
+wc -l crates/memfuse-store/src/wal.rs
+# XL-Dateien in Abschnitten lesen:
+sed -n '1,200p'    crates/memfuse-store/src/wal.rs
+sed -n '200,500p'  crates/memfuse-store/src/wal.rs
+sed -n '500,800p'  crates/memfuse-store/src/wal.rs
+# ... fortsetzen bis Dateiende
+grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn" crates/memfuse-store/src/wal.rs
+\`\`\`
+
+### Phase W-2: WAL-spezifische Invarianten (aus MEMFUSE_AUDIT_FINAL — verifiziert)
+
+\`\`\`bash
+# C-2: sync_all() nach set_len() in truncate()
+grep -n "set_len\\|sync_all\\|truncate" crates/memfuse-store/src/wal.rs
+# Erwartung: JEDES set_len() muss ein sync_all() UNMITTELBAR danach haben
+
+# C-3: Nicht-atomare Doppelprüfung in append_batch()
+grep -n "header_written.load\\|size.load" crates/memfuse-store/src/wal.rs
+# Erwartung: Beide Loads müssen atomar oder unter Lock erfolgen
+
+# APM-1: Atomare Datei-Erstellung
+grep -n "File::create\\|tokio::fs::write\\|OpenOptions" crates/memfuse-store/src/wal.rs
+# Jeder direkte write ohne tmp→fsync→rename ist ein Befund
+
+# APM-38: Sequenz-/TxId-Bindung (Replay-Schutz)
+grep -n "seq_no\\|hmac\\|compute_checksum\\|verify_and_update" crates/memfuse-store/src/wal.rs
+# seq_no UND tx_id müssen kryptographisch in den HMAC eingebunden sein
+
+# Backup-Restore-Pfad (H-6)
+grep -n "v1.bak\\|rewrite_as_v3\\|restore\\|recover" crates/memfuse-store/src/wal.rs
+# Bei Crash während rewrite_as_v3: .v1.bak muss wiederhergestellt werden
+
+# V3-HMAC-Byte-Reihenfolge (wal_crypto.rs cross-reference)
+grep -n "compute_checksum_v3\\|verify_and_update_v3\\|domain_separator" \
+  crates/memfuse-store/src/wal.rs crates/memfuse-security/src/wal_crypto.rs
+\`\`\`
+
+### Phase W-3: Crash-Recovery-Simulation
+\`\`\`bash
+cargo test -p memfuse-store -- wal --nocapture 2>&1 | grep -E "ok|FAILED|panicked"
+# Falls vorhanden:
+command -v just &>/devnull && just chaos-test 2>&1 | tail -30
+\`\`\`
+
+### Phase W-4: Audit-Report (APPEND-ONLY)
+\`\`\`bash
+cat >> docs/audits/AUDIT_memfuse-store.md << 'WAL_EOF'
+
+---
+## WAL-Sub-Audit \$(date -u +%Y-%m-%dT%H:%M:%SZ)
+### Phase W-2 Scan-Ergebnisse
+- C-2 sync_all nach set_len: [OK / BEFUND: ...]
+- C-3 Atomare Doppelprüfung: [OK / BEFUND: ...]
+- APM-1 Atomare Datei-Erstellung: [OK / BEFUND: ...]
+- APM-38 TxId-Replay-Schutz: [OK / BEFUND: ...]
+- H-6 Backup-Restore-Pfad: [OK / BEFUND: ...]
+WAL_EOF
+\`\`\`
+
+${DOD(crate)}`;
+},
+
+lsm_audit: (crate, p, showPar) => {
+  if (crate !== 'memfuse-store') {
+    return `⚠️ Dieser Sub-Task ist ausschließlich für memfuse-store (lsm.rs) vorgesehen.\nGewähltes Crate: ${crate} — bitte Crate wechseln.`;
+  }
+  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
+${ROLE_LOCK_BLOCK('auditor', crate)}
+
+## LSM-Tiefen-Audit — lsm.rs AUSSCHLIESSLICH (XL-Datei, Durability-kritisch)
+
+Dieser Sub-Task prüft AUSSCHLIESSLICH \`crates/memfuse-store/src/lsm.rs\`.
+Keine anderen Dateien, kein Scope-Creep.
+
+### Phase L-1: Struktur erfassen
+\`\`\`bash
+wc -l crates/memfuse-store/src/lsm.rs
+grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn" crates/memfuse-store/src/lsm.rs
+# XL-Datei in 200-Zeilen-Blöcken lesen — nie überfliegen
+\`\`\`
+
+### Phase L-2: LSM-spezifische Invarianten
+\`\`\`bash
+# C-1: Startup-Flush VOR WAL-Löschung (kritischster Durability-Bug im Audit)
+grep -n "remove_file\\|wal_files\\|flush\\|replayed" crates/memfuse-store/src/lsm.rs | head -30
+# Erwartung: wal_files löschen darf NUR nach gesichertem Startup-Flush erfolgen
+
+# H-2: flush_counter inkrementiert VOR leerem Memtable-Check?
+grep -n "flush_counter\\|memtable.*is_empty\\|is_empty.*memtable" crates/memfuse-store/src/lsm.rs
+
+# H-1: Per-Source-Limit statt globalem Limit in scan()
+grep -n "fn scan\\|limit\\|take(" crates/memfuse-store/src/lsm.rs | head -20
+# Erwartung: Limit NACH Tombstone-Filter angewendet (APM-2)
+
+# H-3: Compaction erzeugt neue Engine mit frischem Counter?
+grep -n "maybe_compact\\|Compaction\\|flush_counter" crates/memfuse-store/src/lsm.rs
+
+# M-6: Budget-Drift monoton akkumulierend?
+grep -n "budget\\|drift\\|deduct\\|consume" crates/memfuse-store/src/lsm.rs | head -15
+
+# H-7: Nicht-atomares Lesen in scan_prefix_at() (Split-Brain-Fenster)
+grep -n "scan_prefix_at\\|atomic\\|last_committed" crates/memfuse-store/src/lsm.rs
+
+# M-9: put_if_absent sieht uncommittete Werte anderer Transaktionen?
+grep -n "put_if_absent\\|visibility\\|uncommit" crates/memfuse-store/src/lsm.rs
+
+# APM-39: Amplification-Budget
+grep -n "amplif\\|write_amp\\|read_amp\\|compaction" crates/memfuse-store/src/lsm.rs -i | head -10
+\`\`\`
+
+### Phase L-3: Compaction-Korrektheit unter Snapshot-Pins
+\`\`\`bash
+cargo test -p memfuse-store -- lsm --nocapture 2>&1 | grep -E "ok|FAILED"
+# Snapshot-Pin während Compaction:
+cargo test -p memfuse-store -- snapshot_pin --nocapture 2>&1 | grep -E "ok|FAILED"
+\`\`\`
+
+### Phase L-4: Audit-Report (APPEND-ONLY)
+\`\`\`bash
+cat >> docs/audits/AUDIT_memfuse-store.md << 'LSM_EOF'
+
+---
+## LSM-Sub-Audit \$(date -u +%Y-%m-%dT%H:%M:%SZ)
+- C-1 Startup-Flush vor WAL-Löschung: [OK / BEFUND: ...]
+- H-1 Globales Limit nach Filter: [OK / BEFUND: ...]
+- H-2 flush_counter Reihenfolge: [OK / BEFUND: ...]
+- H-3 Compaction frischer Counter: [OK / BEFUND: ...]
+- H-7 scan_prefix_at Atomarität: [OK / BEFUND: ...]
+- M-6 Budget-Drift: [OK / BEFUND: ...]
+- M-9 put_if_absent Visibility: [OK / BEFUND: ...]
+LSM_EOF
+\`\`\`
+
+${DOD(crate)}`;
+},
+
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3476,8 +3692,8 @@ function updateCompLabel() {
 function selTask(id) {
   SS.task = id;
   document.querySelectorAll('.thero').forEach(t => t.classList.remove('on'));
-  document.getElementById('tt-'+id).classList.add('on');
-  const names = {audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation'};
+  if (document.getElementById('tt-'+id)) document.getElementById('tt-'+id).classList.add('on');
+  const names = {audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation',wal_audit:'WAL-Sub-Audit',lsm_audit:'LSM-Sub-Audit'};
   document.getElementById('cv-task').textContent = names[id] || id;
   document.getElementById('s-task').textContent = names[id] || id;
   generate();
@@ -3492,7 +3708,7 @@ function buildMandatoryBootstrap(claimCrate, taskId) {
 4. run_in_bash_session("export TASK_ID='${taskId}' && cargo xtask claim --crate ${claimCrate} --issue \"$TASK_ID\"")
    — CLAIM_CRATE und TASK_ID aus dem Task-Kontext unten bestimmen
    — Bei Claim-Konflikt: STOP. Nicht fortfahren. Meldung ausgeben.
-5. run_in_bash_session("cargo run -p xtask -- jules-preflight --fast")
+6. run_in_bash_session("cargo run -p xtask -- jules-preflight --fast")
    — Bei Failure: Befund lesen, beheben, dann fortfahren
 ---END MANDATORY BOOTSTRAP---
 
@@ -3992,7 +4208,7 @@ function resetProjectData() {
   COMPONENTS = Object.fromEntries(Object.entries(DEFAULT_COMPONENTS).map(([k, v]) => [k, v.map(c => ({ ...c }))]));
   INVENTORY_SOURCE = 'bundled';
   INVENTORY_FILENAME = null;
-  INVENTORY_DATE = '2026-09-08';
+  INVENTORY_DATE = '2026-03-02';
   const fileInput = document.getElementById('data-file-input');
   if (fileInput) fileInput.value = '';
   const resultEl = document.getElementById('data-result');
