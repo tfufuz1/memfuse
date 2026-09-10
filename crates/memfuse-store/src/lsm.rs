@@ -1372,8 +1372,7 @@ impl StorageEngine for LsmStorage {
             let range_bound: std::ops::Bound<&Bytes> = cur_bytes
                 .as_ref()
                 .map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
-            const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
-            let max_entries = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
+            let max_entries = memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR;
 
             let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
@@ -1422,12 +1421,11 @@ impl StorageEngine for LsmStorage {
                         }
                     }
                     processed_count += 1;
-                    if processed_count.is_multiple_of(500) && map.len() > max_entries {
-                        return Err(MemFuseError::invalid_input(format!(
-                            "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
-                            map.len(),
-                            max_entries
-                        )));
+                    if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_prefix_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        });
                     }
                 }
             }
