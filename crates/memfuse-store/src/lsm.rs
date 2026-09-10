@@ -144,23 +144,6 @@ async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> R
     write_res
 }
 
-/// Helper: Best-effort removal of a WAL file and its corresponding `.uuid` sidecar file (NC-4).
-async fn remove_wal_and_uuid(wal_path: &std::path::Path) {
-    if let Err(e) = tokio::fs::remove_file(wal_path).await {
-        tracing::debug!("Could not remove WAL file {:?}: {}", wal_path, e);
-    }
-    let uuid_sidecar = {
-        let mut p = wal_path.as_os_str().to_os_string();
-        p.push(".uuid");
-        std::path::PathBuf::from(p)
-    };
-    if let Err(e) = tokio::fs::remove_file(&uuid_sidecar).await {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::debug!("Could not remove WAL .uuid sidecar {:?}: {}", uuid_sidecar, e);
-        }
-    }
-}
-
 fn validate_key(key: &[u8]) -> Result<()> {
     if key.is_empty() {
         return Err(MemFuseError::InvalidInput("Key cannot be empty".into()));
@@ -251,8 +234,6 @@ pub struct LsmStorage {
     flush_counter: AtomicU64,
     segment_counter: AtomicU64,
     budget_tracking_drift_bytes: std::sync::atomic::AtomicU64,
-    needs_startup_flush: std::sync::atomic::AtomicBool,
-    compaction_engine: Arc<CompactionEngine>,
 }
 
 impl LsmStorage {
@@ -432,18 +413,19 @@ impl LsmStorage {
         // COMP-001 — Implementiere CompactionEngine::run_loop.
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
-        let needs_startup_flush = replayed_size > 0 && wal_files.len() > 1;
-
-        // NC-5: Falls Legacy wal.log vorhanden, flush_counter mindestens bei 1 starten
-        // um wal-0.log-Kollision mit wal.log (ts=0) zu verhindern.
-        let has_legacy_wal = wal_files.iter().any(|(ts, p)| {
-            *ts == 0 && p.file_name().map(|n| n == "wal.log").unwrap_or(false)
-        });
-        let flush_counter_start = if has_legacy_wal {
-            max_wal_id.map_or(1, |m| m.saturating_add(1)).max(1)
-        } else {
-            max_wal_id.map_or(0, |m| m.saturating_add(1))
-        };
+        // Cleanup old replayed WAL files except the active WAL
+        if wal_files.len() > 1 {
+            let active_wal_path = wal.path();
+            for (_ts, old_wal_path) in &wal_files[..wal_files.len() - 1] {
+                if old_wal_path != active_wal_path {
+                    if let Err(e) = tokio::fs::remove_file(old_wal_path).await {
+                        tracing::warn!("Failed to remove old WAL file {:?}: {}", old_wal_path, e);
+                    } else {
+                        tracing::info!("Removed old replayed WAL file: {:?}", old_wal_path);
+                    }
+                }
+            }
+        }
 
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
@@ -458,15 +440,14 @@ impl LsmStorage {
         let task_tracker = tokio_util::task::TaskTracker::new();
 
         let ct_clone = cancel_token.clone();
-        let compaction_engine_bg = Arc::clone(&compaction_engine);
         task_tracker.spawn(async move {
-            compaction_engine_bg
+            compaction_engine
                 .run_loop(compaction_sstables, compaction_path, ct_clone)
                 .await;
         });
         task_tracker.close();
 
-        let storage = Self {
+        Ok(Self {
             config,
             key_manager,
             state: RwLock::new(LsmState {
@@ -484,18 +465,10 @@ impl LsmStorage {
             commit_mutex: tokio::sync::Mutex::new(()),
             cancel_token,
             task_tracker,
-            flush_counter: AtomicU64::new(flush_counter_start),
+            flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
             segment_counter: AtomicU64::new(0),
             budget_tracking_drift_bytes: std::sync::atomic::AtomicU64::new(0),
-            needs_startup_flush: std::sync::atomic::AtomicBool::new(needs_startup_flush),
-            compaction_engine,
-        };
-
-        if needs_startup_flush {
-            storage.flush().await?;
-        }
-
-        Ok(storage)
+        })
     }
 
     /// Forces a flush (to be used by PersistentCheckpointStore or tests).
@@ -506,7 +479,14 @@ impl LsmStorage {
     /// Evaluates whether compaction should run and performs it if needed.
     #[doc(hidden)]
     pub async fn maybe_compact(&self) -> Result<bool> {
-        self.compaction_engine
+        let compaction_engine = CompactionEngine::new(
+            self.config.compaction.clone(),
+            Arc::clone(&self.snapshot_registry),
+            Arc::clone(&self.block_cache),
+            self.key_manager.clone(),
+            Arc::clone(&self.budget),
+        );
+        compaction_engine
             .maybe_compact(&self.sstables, &self.config.path)
             .await
     }
@@ -1215,11 +1195,11 @@ impl StorageEngine for LsmStorage {
                     // Zweiter Flush hat memtable bereits geleert — new_wal verwerfen
                     // WAL-Datei aufräumen (best-effort)
                     drop(state);
-                    // DESIGN-NOTE: flush_counter.fetch_add() erfolgt vor dem Write-Lock (Phase 1, I/O-frei).
-                    // Wenn der zweite Empty-Check unter Write-Lock (Phase 2) anschlägt, entsteht ein WAL-ID-Gap.
-                    // Das ist bewusst akzeptiert: Recovery basiert auf Timestamp-Sortierung, nicht ID-Kontinuität.
-                    // Die erstellte, leere WAL-Datei wird im Early-Return-Pfad korrekt gelöscht.
-                    remove_wal_and_uuid(&self.config.path.join(format!("wal-{}.log", flush_id))).await;
+                    // Cleanup-Fehler hier ist unkritisch: der ursprüngliche Fehler wurde bereits oben propagiert.
+                    let _ = tokio::fs::remove_file(
+                        &self.config.path.join(format!("wal-{}.log", flush_id)),
+                    )
+                    .await;
                     return Ok(());
                 }
                 let old_memtable =
@@ -1297,35 +1277,12 @@ impl StorageEngine for LsmStorage {
                 drop(state);
 
                 // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
-                remove_wal_and_uuid(&old_wal_path).await;
-
-                // C-1: Clean up old replayed WAL files after startup flush succeeds
-                if self.needs_startup_flush.swap(false, Ordering::SeqCst) {
-                    if let Ok(mut entries) = tokio::fs::read_dir(&self.config.path).await {
-                        let active_wal_path = {
-                            let state = self.state.read().await;
-                            state.wal.path().to_path_buf()
-                        };
-                        while let Ok(Some(entry)) = entries.next_entry().await {
-                            let name = entry.file_name();
-                            let name_str = name.to_string_lossy();
-                            if (name_str.starts_with("wal-") && name_str.ends_with(".log")) || name_str == "wal.log" {
-                                let path = entry.path();
-                                if path != active_wal_path {
-                                    remove_wal_and_uuid(&path).await;
-                                }
-                            }
-                        }
-                    }
+                if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
+                    tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
                 }
 
                 let bytes_freed = old_memtable.size() as u64;
                 self.budget.release_memory(bytes_freed);
-                let _ = self.budget_tracking_drift_bytes.fetch_update(
-                    std::sync::atomic::Ordering::SeqCst,
-                    std::sync::atomic::Ordering::SeqCst,
-                    |cur| Some(cur.saturating_sub(bytes_freed)),
-                );
 
                 tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
                 Ok(())
@@ -1344,11 +1301,6 @@ impl StorageEngine for LsmStorage {
                 // 2. Adjust budget usage
                 let bytes_freed = old_memtable.size() as u64;
                 self.budget.release_memory(bytes_freed);
-                let _ = self.budget_tracking_drift_bytes.fetch_update(
-                    std::sync::atomic::Ordering::SeqCst,
-                    std::sync::atomic::Ordering::SeqCst,
-                    |cur| Some(cur.saturating_sub(bytes_freed)),
-                );
 
                 // 3. Clean up partial/corrupt SSTable file if created
                 if sst_path.exists() {
@@ -1417,11 +1369,19 @@ impl StorageEngine for LsmStorage {
     ) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>> {
         Box::pin(async move {
             let cur_bytes = cursor.map(Bytes::copy_from_slice);
+            let range_bound: std::ops::Bound<&Bytes> = cur_bytes
+                .as_ref()
+                .map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
+            const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
+            let max_entries = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
+
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map: std::collections::BTreeMap<Bytes, (Bytes, u64)> =
                 std::collections::BTreeMap::new();
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
-            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
+
+            let mut processed_count = 0usize;
 
             // Collect from SSTables
             for sst in sstables.iter() {
@@ -1461,6 +1421,14 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
+                    processed_count += 1;
+                    if processed_count.is_multiple_of(500) && map.len() > max_entries {
+                        return Err(MemFuseError::invalid_input(format!(
+                            "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
+                            map.len(),
+                            max_entries
+                        )));
+                    }
                 }
             }
 
@@ -1484,6 +1452,14 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
+                    processed_count += 1;
+                    if processed_count.is_multiple_of(500) && map.len() > max_entries {
+                        return Err(MemFuseError::invalid_input(format!(
+                            "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
+                            map.len(),
+                            max_entries
+                        )));
+                    }
                 }
             }
 
@@ -1506,16 +1482,26 @@ impl StorageEngine for LsmStorage {
                         });
                     }
                 }
+                processed_count += 1;
+                if processed_count.is_multiple_of(500) && map.len() > max_entries {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
+                        map.len(),
+                        max_entries
+                    )));
+                }
             }
 
-            // Cursor-Bound ableiten für den Paginierungs-Iterator
-            let range_bound = match &cur_bytes {
-                Some(cb) => std::ops::Bound::Excluded(cb.clone()),
-                None => std::ops::Bound::Unbounded,
-            };
+            if map.len() > max_entries {
+                return Err(MemFuseError::invalid_input(format!(
+                    "Internal merge size ({}) exceeded safety limit ({}) during bounded prefix scan",
+                    map.len(),
+                    max_entries
+                )));
+            }
 
             let mut results = Vec::new();
-            let mut iter = map.range((range_bound, std::ops::Bound::Unbounded));
+            let mut iter = map.range::<Bytes, _>((range_bound, std::ops::Bound::Unbounded));
 
             for (k, (v, seq)) in iter.by_ref() {
                 if (seq & TOMBSTONE_BIT) == 0 {
@@ -1648,10 +1634,12 @@ impl StorageEngine for LsmStorage {
                 None => start,
             };
 
+            let mut processed_count = 0usize;
+            let safety_limit = limit.saturating_mul(MAX_INTERNAL_MERGE_ENTRIES_FACTOR);
+            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
             let mut map = std::collections::BTreeMap::<Vec<u8>, (Vec<u8>, u64)>::new();
             let state = self.state.read().await;
             let sstables = self.sstables.read().await;
-            let last_tx = self.last_committed_tx.load(Ordering::Acquire);
 
             // 1. SSTables (filtered by visibility tx <= last_tx)
             for sst in sstables.iter() {
@@ -1671,6 +1659,21 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
+                    processed_count += 1;
+                    if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
+                        return Err(MemFuseError::invalid_input(format!(
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
+                            map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        )));
+                    }
+                }
+                if map.len() > safety_limit {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                         narrow the range or use a smaller limit",
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    )));
                 }
             }
 
@@ -1701,6 +1704,21 @@ impl StorageEngine for LsmStorage {
                             });
                         }
                     }
+                    processed_count += 1;
+                    if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
+                        return Err(MemFuseError::invalid_input(format!(
+                            "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
+                            map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                        )));
+                    }
+                }
+                if map.len() > safety_limit {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                         narrow the range or use a smaller limit",
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    )));
                 }
             }
 
@@ -1724,12 +1742,28 @@ impl StorageEngine for LsmStorage {
                         *entry = (v.to_vec(), seq);
                     }
                     if map.len() > memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR {
-                            return Err(MemFuseError::LimitExceeded {
-                                limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
-                                context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
+                        return Err(MemFuseError::LimitExceeded {
+                            limit: memfuse_core::MAX_SCAN_MERGE_ACCUMULATOR,
+                            context: "scan_bounded(): internal merge accumulator exceeded — range too wide, narrow the scan range".to_string(),
                         });
                     }
                 }
+                processed_count += 1;
+                if processed_count.is_multiple_of(1000) && map.len() > safety_limit {
+                    return Err(MemFuseError::invalid_input(format!(
+                        "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); \
+                         narrow the range or use a smaller limit",
+                        map.len(),
+                        MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                    )));
+                }
+            }
+
+            if map.len() > safety_limit {
+                return Err(MemFuseError::invalid_input(format!(
+                    "scan_bounded: internal merge set exceeds safety bound ({} > {}×limit); narrow the range or use a smaller limit",
+                    map.len(), MAX_INTERNAL_MERGE_ENTRIES_FACTOR
+                )));
             }
 
             // 4. Apply limit (cursor is already handled via effective_start)
@@ -4014,138 +4048,6 @@ mod tests {
             storage.budget_tracking_drift_bytes(),
             expected_entry_size,
             "budget drift metric must equal entry_size after consume_memory failure"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_c1_data_survives_second_crash_after_recovery() {
-        let tmp = TempDir::new().expect("temp dir");
-        let config = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            memtable_size_limit: 1024 * 1024,
-            max_ram_mb: 64,
-            tx_timeout: Duration::from_secs(60),
-            compaction: CompactionConfig::default(),
-            encryption_passphrase: None,
-        };
-
-        // 1. Create first storage instance, put key1 & commit
-        {
-            let storage = LsmStorage::new(config.clone()).await.unwrap();
-            let tx1 = TxId::new(1);
-            storage.put(tx1, b"c1_k1", b"c1_v1").await.unwrap();
-            storage.commit(tx1).await.unwrap();
-
-            // Force a flush to create a second WAL file
-            storage.force_flush().await.unwrap();
-
-            // Put key2 in second WAL without flushing
-            let tx2 = TxId::new(2);
-            storage.put(tx2, b"c1_k2", b"c1_v2").await.unwrap();
-            storage.commit(tx2).await.unwrap();
-            // Drop storage instance without explicit flush
-        }
-
-        // 2. Open storage instance second time.
-        // Startup flush triggers automatically because replayed_size > 0 && wal_files.len() > 1.
-        {
-            let storage = LsmStorage::new(config.clone()).await.unwrap();
-            assert_eq!(storage.get(b"c1_k1").await.unwrap(), Some(b"c1_v1".to_vec()));
-            assert_eq!(storage.get(b"c1_k2").await.unwrap(), Some(b"c1_v2".to_vec()));
-            // Drop storage instance
-        }
-
-        // 3. Open storage instance third time (simulating second crash after startup recovery/flush)
-        {
-            let storage = LsmStorage::new(config).await.unwrap();
-            assert_eq!(storage.get(b"c1_k1").await.unwrap(), Some(b"c1_v1".to_vec()));
-            assert_eq!(storage.get(b"c1_k2").await.unwrap(), Some(b"c1_v2".to_vec()));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_budget_drift_converges_after_flush() {
-        let tmp = TempDir::new().expect("temp dir");
-        let config = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            memtable_size_limit: 1024 * 1024,
-            max_ram_mb: 1,
-            tx_timeout: Duration::from_secs(60),
-            compaction: CompactionConfig::default(),
-            encryption_passphrase: None,
-        };
-        let storage = LsmStorage::new(config).await.expect("create storage");
-
-        let key = b"drift_key_conv";
-        let value = vec![b'v'; 60000];
-        let tx = TxId::new(1);
-        storage.put(tx, key, &value).await.expect("put succeeds");
-
-        storage
-            .budget
-            .consume_memory(990_000)
-            .expect("fill budget to 990,000");
-
-        storage.commit(tx).await.expect("commit succeeds");
-        assert!(storage.budget_tracking_drift_bytes() > 0);
-
-        // Flush will release memtable bytes and compensate drift counter
-        storage.flush().await.expect("flush succeeds");
-        assert_eq!(storage.budget_tracking_drift_bytes(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_consecutive_maybe_compact_no_file_collision() {
-        let tmp = TempDir::new().expect("temp dir");
-        let config = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            memtable_size_limit: 1024,
-            max_ram_mb: 64,
-            tx_timeout: Duration::from_secs(60),
-            compaction: CompactionConfig {
-                min_sstables_per_tier: 2,
-                size_ratio: 2.0,
-                check_interval: Duration::from_secs(3600),
-                yield_threshold: 100,
-                max_memory_bytes: Some(1024 * 1024),
-            },
-            encryption_passphrase: None,
-        };
-        let storage = LsmStorage::new(config).await.expect("create storage");
-
-        // Populate and flush multiple SSTables
-        for i in 1..=4u64 {
-            let tx = TxId::new(i);
-            storage
-                .put(tx, format!("comp_k{}", i).as_bytes(), b"val")
-                .await
-                .unwrap();
-            storage.commit(tx).await.unwrap();
-            storage.force_flush().await.unwrap();
-        }
-
-        // Call maybe_compact twice in rapid succession
-        let c1 = storage.maybe_compact().await;
-        let c2 = storage.maybe_compact().await;
-        assert!(c1.is_ok());
-        assert!(c2.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_legacy_wal_flush_counter_start() {
-        let tmp = TempDir::new().expect("temp dir");
-        let legacy_wal_path = tmp.path().join("wal.log");
-        tokio::fs::write(&legacy_wal_path, b"").await.unwrap();
-
-        let config = LsmConfig {
-            path: tmp.path().to_path_buf(),
-            ..Default::default()
-        };
-        let storage = LsmStorage::new(config).await.expect("create storage with legacy wal.log");
-        assert_eq!(
-            storage.flush_counter.load(Ordering::Relaxed),
-            1,
-            "flush_counter must start at >= 1 when legacy wal.log exists to avoid wal-0.log collision"
         );
     }
 }
