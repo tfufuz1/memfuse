@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T20:20:00Z (SESSION: 80a3120b)
+// STAND: 2026-09-10T19:29:31Z (SESSION: c9240483)
 // ZWECK: Replicator dynamics for online adaptive RRF signal weight allocation (F-07).
 // INVARIANTEN: Sum of weights always equals 1.0 (normalized), weights strictly positive (> 0.0).
 // NICHT-OFFENSICHTLICH: Uses Multiplicative Weights Update Method (Arora et al., 2012) with regret O(sqrt(T log N)).

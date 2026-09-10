@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T14:46:37Z (SESSION: 74eb6216)
+// STAND: 2026-09-10T19:29:31Z (SESSION: c9240483)
 // ZWECK: Non-parametric probability calibration via PAVA (Pool-Adjacent Violators Algorithm).
 // INVARIANTEN: INV-CAL-1 (returns None before warmup), INV-CAL-2 (resets observations on fingerprint change).
 // NICHT-OFFENSICHTLICH: Pre-aggregates observations with identical raw scores prior to PAVA block merging.
