@@ -21,6 +21,12 @@ pub struct ClaimEntry {
     pub session_id: String,
     #[serde(default = "default_active")]
     pub active: bool,
+    /// ISO-8601 Ablaufzeitpunkt (Standard: timestamp + 4h). Fehlend = kein Expiry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    /// ISO-8601 Zeitpunkt der expliziten Freigabe.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub released_at: Option<String>,
 }
 
 fn default_active() -> bool {
@@ -62,11 +68,67 @@ impl ClaimsDatabase {
     }
 
     pub fn find_active_claim(&self, krate: &str) -> Option<&ClaimEntry> {
-        self.claims.iter().find(|c| c.krate == krate && c.active)
+        let now = Utc::now();
+        self.claims.iter().find(|c| {
+            if c.krate != krate || !c.active {
+                return false;
+            }
+            // TTL-Check: abgelaufene Claims werden als inaktiv behandelt
+            if let Some(exp) = &c.expires_at {
+                if let Ok(exp_dt) = exp.parse::<chrono::DateTime<Utc>>() {
+                    if now > exp_dt {
+                        return false; // TTL abgelaufen — kein Conflict
+                    }
+                }
+            }
+            true
+        })
     }
 }
 
+/// Gibt einen aktiven Claim frei: setzt active=false und released_at.
+pub fn run_release_local(args: &[String]) -> bool {
+    let mut krate = String::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--crate" && i + 1 < args.len() {
+            krate = args[i + 1].clone();
+            i += 1;
+        }
+        i += 1;
+    }
+    if krate.is_empty() {
+        eprintln!("❌ Parameter --crate <CRATE> für --release erforderlich.");
+        return false;
+    }
+    let root = find_root_dir();
+    let claims_path = root.join(".jules/claims.json");
+    let mut db = ClaimsDatabase::load(&claims_path);
+    let now_str = Utc::now().to_rfc3339();
+    let mut found = false;
+    for entry in db.claims.iter_mut() {
+        if entry.krate == krate && entry.active {
+            entry.active = false;
+            entry.released_at = Some(now_str.clone());
+            found = true;
+        }
+    }
+    if !found {
+        println!("ℹ️ Kein aktiver Claim für Crate '{}' gefunden.", krate);
+        return true;
+    }
+    if let Err(e) = db.save(&claims_path) {
+        eprintln!("❌ Fehler beim Speichern: {}", e);
+        return false;
+    }
+    println!("✅ Claim für '{}' freigegeben.", krate);
+    true
+}
+
 pub fn run_claim(args: &[String]) -> bool {
+    if args.contains(&"--release".to_string()) {
+        return run_release_local(args);
+    }
     if std::env::var("GITHUB_TOKEN")
         .map(|t| !t.trim().is_empty())
         .unwrap_or(false)
@@ -137,12 +199,15 @@ fn run_claim_local(args: &[String]) -> bool {
         }
     }
 
+    let expires_at = (Utc::now() + chrono::Duration::hours(4)).to_rfc3339();
     let entry = ClaimEntry {
         krate: krate.clone(),
         issue: issue.clone(),
         timestamp: Utc::now().to_rfc3339(),
         session_id: std::env::var("JULES_SESSION_ID").unwrap_or_else(|_| "local".to_string()),
         active: true,
+        expires_at: Some(expires_at),
+        released_at: None,
     };
 
     if dry_run {
@@ -350,6 +415,8 @@ mod tests {
             timestamp: "2026-09-08T18:00:00Z".to_string(),
             session_id: "s1".to_string(),
             active: true,
+            expires_at: None,
+            released_at: None,
         });
 
         db.save(&path).unwrap();
@@ -361,6 +428,73 @@ mod tests {
             "ADR-063"
         );
         assert!(loaded.find_active_claim("memfuse-core").is_none());
+    }
+
+    #[test]
+    fn test_find_active_claim_ttl_expiry() {
+        let mut db = ClaimsDatabase::default();
+        let past_exp = (Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        db.claims.push(ClaimEntry {
+            krate: "memfuse-store".to_string(),
+            issue: "EXP-1".to_string(),
+            timestamp: "2026-09-08T18:00:00Z".to_string(),
+            session_id: "s1".to_string(),
+            active: true,
+            expires_at: Some(past_exp),
+            released_at: None,
+        });
+
+        assert!(db.find_active_claim("memfuse-store").is_none());
+
+        let future_exp = (Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+        db.claims.push(ClaimEntry {
+            krate: "memfuse-embed".to_string(),
+            issue: "EXP-2".to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+            session_id: "s2".to_string(),
+            active: true,
+            expires_at: Some(future_exp),
+            released_at: None,
+        });
+
+        assert_eq!(
+            db.find_active_claim("memfuse-embed").unwrap().issue,
+            "EXP-2"
+        );
+    }
+
+    #[test]
+    fn test_release_local() {
+        let dir = tempdir().unwrap();
+        let claims_path = dir.path().join(".jules/claims.json");
+        let mut db = ClaimsDatabase::default();
+        db.claims.push(ClaimEntry {
+            krate: "memfuse-test-release".to_string(),
+            issue: "REL-1".to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+            session_id: "s1".to_string(),
+            active: true,
+            expires_at: Some((Utc::now() + chrono::Duration::hours(4)).to_rfc3339()),
+            released_at: None,
+        });
+        db.save(&claims_path).unwrap();
+
+        // Check active claim initially
+        assert!(db.find_active_claim("memfuse-test-release").is_some());
+
+        // Run release logic directly on the db
+        for entry in db.claims.iter_mut() {
+            if entry.krate == "memfuse-test-release" && entry.active {
+                entry.active = false;
+                entry.released_at = Some(Utc::now().to_rfc3339());
+            }
+        }
+        db.save(&claims_path).unwrap();
+
+        let loaded = ClaimsDatabase::load(&claims_path);
+        assert!(loaded.find_active_claim("memfuse-test-release").is_none());
+        assert!(!loaded.claims[0].active);
+        assert!(loaded.claims[0].released_at.is_some());
     }
 
     #[test]
