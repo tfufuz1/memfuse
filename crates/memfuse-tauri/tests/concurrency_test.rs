@@ -3,8 +3,8 @@ use memfuse_tauri_lib::commands::{
     create_collection, list_collections, run_bulk_regex_transform, validate_regex_pattern,
 };
 use std::sync::Arc;
-use tempfile::TempDir;
 use tauri::Manager;
+use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_app_state_concurrent_operations() {

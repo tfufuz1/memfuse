@@ -162,14 +162,18 @@ pub struct BertEmbedModel {
 impl BertEmbedModel {
     /// Loads BERT model weights from a `.safetensors` file and configuration from `config.json`.
     pub fn load(weights_path: &Path, _config_path: &Path, device: &Device) -> Result<Self> {
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[weights_path], DTYPE, device).map_err(|e| {
-                MemFuseError::Internal(format!(
-                    "Failed to load BERT safetensors weights from {}: {e}",
-                    weights_path.display()
-                ))
-            })?
-        };
+        let data = std::fs::read(weights_path).map_err(|e| {
+            MemFuseError::Internal(format!(
+                "Failed to read BERT safetensors file {}: {e}",
+                weights_path.display()
+            ))
+        })?;
+        let vb = VarBuilder::from_buffered_safetensors(data, DTYPE, device).map_err(|e| {
+            MemFuseError::Internal(format!(
+                "Failed to load BERT safetensors weights from {}: {e}",
+                weights_path.display()
+            ))
+        })?;
 
         let config = Config::default();
 
