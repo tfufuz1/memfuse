@@ -30,6 +30,36 @@ jobs:
       - name: Run rustfmt check
         run: cargo fmt --all -- --check || (echo "❌ Format Check fehlgeschlagen! Lokal beheben mit: cargo fmt --all && git commit --amend --no-edit" && exit 1)
 
+  supply-chain:
+    name: Dependency Security & License Audit
+    runs-on: ubuntu-latest
+    needs: [compile-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  coverage:
+    name: Line Coverage Gate (>= 50%)
+    runs-on: ubuntu-latest
+    needs: [compile-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage & enforce threshold
+        run: cargo llvm-cov --workspace --locked --exclude memfuse-tauri --fail-under-lines 50
+      - name: Upload coverage report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/llvm-cov/html
+
   clippy:
     name: Clippy (-D warnings)
     runs-on: ubuntu-latest
@@ -85,7 +115,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - name: Run Tests with Nextest Retries
-        run: cargo nextest run --locked --workspace --exclude memfuse-tauri --retries 2
+        run: cargo nextest run --locked --workspace --exclude memfuse-tauri --retries 2 --no-fail-fast
+      - name: Report flaky tests (tests that needed a retry)
+        if: always()
+        run: |
+          if [ -f target/nextest/default/*.xml ]; then
+            RETRY_COUNT=$(grep -o 'flaky="true"' target/nextest/default/*.xml 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$RETRY_COUNT" -gt 0 ]; then
+              echo "::warning::${RETRY_COUNT} flaky Test(s) erkannt — moegliche Race Conditions, siehe TESTING.md Abschnitt 2.6 (Concurrency)"
+            fi
+          fi
       - name: Run Doc Tests
         run: cargo test --doc --locked --workspace --exclude memfuse-tauri
 
