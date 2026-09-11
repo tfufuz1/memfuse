@@ -2104,6 +2104,12 @@ fn main() {
                 process::exit(1);
             }
         }
+        "check-adr-deadlines" => {
+            if let Err(e) = check_adr_deadlines::check_adr_deadlines() {
+                eprintln!("❌ check-adr-deadlines failed: {}", e);
+                process::exit(1);
+            }
+        }
         "check-phantom-files" => {
             if !check_phantom_files::run_check_phantom_files() {
                 process::exit(1);
