@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-11T10:21:34Z (SESSION: 31ada253)
+// ZWECK: Size-Tiered Compaction Strategy (STCS) für SSTables
+// INVARIANTEN: Compaction löscht nur Tombstones, die von keinem gepinnten Snapshot mehr benötigt werden
+// NICHT-OFFENSICHTLICH: Multi-Version-Merging behält die höchste Sequence Number
+// SIEHE AUCH: lsm.rs, sstable.rs, DECISIONS.md
+
 //! Background compaction engine for the LSM-Tree.
 //!
 //! Implements a Size-Tiered Compaction Strategy (STCS):
