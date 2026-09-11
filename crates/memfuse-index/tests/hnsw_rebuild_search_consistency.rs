@@ -5,7 +5,6 @@ use memfuse_index::{HnswConfig, HnswIndex};
 use std::sync::Arc;
 
 #[tokio::test]
-#[ignore = "HNSW physical rebuild purges soft-deleted nodes, violating historical search_at snapshot isolation for pre-rebuild sequence numbers"]
 async fn test_hnsw_rebuild_snapshot_consistency_during_concurrent_search() {
     // 1. Initialize HNSW index with rebuild_threshold = 0.50 (rebuild required when active ratio < 50%)
     let config = HnswConfig {
@@ -13,6 +12,7 @@ async fn test_hnsw_rebuild_snapshot_consistency_during_concurrent_search() {
         m: 16,
         ef_construction: 64,
         rebuild_threshold: 0.50,
+        distance_metric: memfuse_core::DistanceMetric::Euclidean,
         ..Default::default()
     };
 
@@ -31,6 +31,7 @@ async fn test_hnsw_rebuild_snapshot_consistency_during_concurrent_search() {
     index.commit(tx1).await.expect("commit tx1");
 
     // 3. Obtain reference search results at pinned snapshot seq=1 BEFORE any deletes or rebuilds
+    index.pin_snapshot(1);
     let query = [10.0, 1.0, 0.0, 0.0];
     let reference_results = index
         .search_at(&query, 10, 1)
