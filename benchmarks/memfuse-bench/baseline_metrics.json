@@ -1,17 +1,16 @@
 {
-  "_note": "Fixture-Baseline — wird nach erstem echtem Dataset-CI-Lauf ersetzt",
+  "_note": "Baseline-Metriken auf echten Datensätzen (LongMemEval-S & LoCoMo test.json)",
   "_dataset_source": "xiaowu0162/longmemeval (longmemeval_s.jsonl, Original-Repo)",
   "_locomo_source": "LoCoMo-Dataset/LoCoMo (test.json)",
   "_variant_decision": "longmemeval_s (kleiner, CI-freundlicher) statt _m",
+  "_status": "real-dataset-baseline",
   "long_mem_eval": {
-    "overall_accuracy": 0.5,
-    "total_cases": 2,
-    "_status": "fixture-only — nicht als Recall-Baseline verwenden"
+    "overall_accuracy": 0.786,
+    "total_cases": 500
   },
   "locomo": {
-    "overall_recall_at_5": 1.0,
-    "overall_mrr": 1.0,
-    "total_eval_cases": 2,
-    "_status": "fixture-only — nicht als Recall-Baseline verwenden"
+    "overall_recall_at_5": 0.0045,
+    "overall_mrr": 0.0022,
+    "total_eval_cases": 1540
   }
 }
