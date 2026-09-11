@@ -24,7 +24,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "onnx")]
-#[cfg(feature = "onnx")]
 use memfuse_core::{BoxFuture, EmbeddingError, EmbeddingProvider, MemFuseError, Result};
 #[cfg(feature = "onnx")]
 use ort::value::Value;
