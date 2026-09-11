@@ -588,7 +588,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
             }
 
             for (doc_id, tf) in valid_postings {
-
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
                     len
