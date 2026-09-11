@@ -369,6 +369,29 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
+        // Scan for pending rollback intent files resulting from a crash during rollback_to_tx_locked
+        let mut pending_rollbacks = Vec::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if file_name.starts_with("rollback-") && file_name.ends_with(".intent") {
+                    let hex_part = &file_name[9..file_name.len() - 7];
+                    if hex_part.len() == 16 {
+                        if let Ok(target_tx) = u64::from_str_radix(hex_part, 16) {
+                            tracing::error!(
+                                target_tx = target_tx,
+                                intent_path = ?path,
+                                "Unfinished rollback intent file detected during LsmStorage startup! Recovery required."
+                            );
+                            pending_rollbacks.push(target_tx);
+                        }
+                    }
+                }
+            }
+        }
+        pending_rollbacks.sort_unstable();
+
         // Load existing SSTables and sort by filename (which includes seq_no)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
@@ -510,6 +533,35 @@ impl LsmStorage {
                     }
                 }
             }
+        }
+
+        // Replay any pending rollbacks detected during startup.
+        // APM-PARTIAL-ORDER-VIOLATION Note:
+        // SSTables and WAL MUST be loaded first into `storage` before calling `rollback_to_tx`,
+        // because `rollback_to_tx_locked()` inspects, filters, and recompacts the loaded SSTables
+        // and WAL in memory to physically remove rolled-back entries.
+        for target_tx in pending_rollbacks {
+            tracing::info!(
+                target_tx = target_tx,
+                "Executing pending rollback recovery for TxId({})",
+                target_tx
+            );
+            storage
+                .rollback_to_tx(TxId::new(target_tx))
+                .await
+                .map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Startup rollback recovery failed for target_tx {}: {}. Please inspect data directory '{:?}' manually.",
+                        target_tx,
+                        e,
+                        storage.config.path
+                    ))
+                })?;
+            tracing::info!(
+                target_tx = target_tx,
+                "Successfully completed pending rollback recovery for TxId({})",
+                target_tx
+            );
         }
 
         Ok(storage)
@@ -697,22 +749,26 @@ impl LsmStorage {
             // Best-effort cleanup: do not abort rollback recovery if file removal fails.
             // The SSTable is superseded by restored WAL replay state, so its orphaned presence is safe but wastes disk space.
             if let Err(e) = tokio::fs::remove_file(&path).await {
-                tracing::error!(
-                    path = ?path,
-                    "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
-                );
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::error!(
+                        path = ?path,
+                        "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
+                    );
+                }
             }
         }
 
         // NC-3: Remove rollback intent file after all SST cleanup is complete.
         // If this removal fails, recovery on next startup will re-execute the (idempotent) rollback.
         if let Err(e) = tokio::fs::remove_file(&intent_path).await {
-            tracing::warn!(
-                "Could not remove rollback intent file {:?}: {} \
-                 (non-fatal — recovery will re-run on next startup)",
-                intent_path,
-                e
-            );
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    "Could not remove rollback intent file {:?}: {} \
+                     (non-fatal — recovery will re-run on next startup)",
+                    intent_path,
+                    e
+                );
+            }
         }
 
         // 5. Re-populate memtable from truncated WAL
@@ -4164,5 +4220,82 @@ mod tests {
                 "WAL .uuid sidecar file must be cleaned up during startup recovery"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_rollback_crash_recovery_startup() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        // (a) Initialize storage, write and commit multiple transactions across flush
+        let tx1 = TxId::new(1);
+        let tx2 = TxId::new(2);
+        let tx3 = TxId::new(3);
+
+        {
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("create storage");
+
+            storage.put(tx1, b"key1", b"val1").await.unwrap();
+            storage.commit(tx1).await.unwrap();
+            storage.force_flush().await.unwrap();
+
+            storage.put(tx2, b"key2", b"val2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
+            storage.force_flush().await.unwrap();
+
+            storage.put(tx3, b"key3", b"val3").await.unwrap();
+            storage.commit(tx3).await.unwrap();
+            storage.close().await.unwrap();
+        }
+
+        // (b) Manually create a rollback intent file simulating a crash during rollback to tx1
+        let intent_path = tmp.path().join(format!("rollback-{:016x}.intent", tx1.inner()));
+        const INTENT_MAGIC: &[u8] = b"MFRLBK\0\0";
+        let mut intent_bytes = Vec::with_capacity(16);
+        intent_bytes.extend_from_slice(INTENT_MAGIC);
+        intent_bytes.extend_from_slice(&tx1.inner().to_le_bytes());
+        tokio::fs::write(&intent_path, &intent_bytes)
+            .await
+            .unwrap();
+
+        assert!(
+            intent_path.exists(),
+            "Rollback intent file must exist before startup recovery"
+        );
+
+        // (c) Reopen storage with same path
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("reopen storage after simulated rollback crash");
+
+        // (d) Verify that data after target_tx (tx1) is no longer visible AND intent file is gone
+        assert_eq!(
+            storage.get(b"key1").await.unwrap(),
+            Some(b"val1".to_vec()),
+            "Data committed at target_tx must remain visible"
+        );
+        assert_eq!(
+            storage.get(b"key2").await.unwrap(),
+            None,
+            "Data committed after target_tx (tx2) must be rolled back"
+        );
+        assert_eq!(
+            storage.get(b"key3").await.unwrap(),
+            None,
+            "Data committed after target_tx (tx3) must be rolled back"
+        );
+        assert!(
+            !intent_path.exists(),
+            "Rollback intent file must be deleted after successful startup recovery"
+        );
     }
 }
