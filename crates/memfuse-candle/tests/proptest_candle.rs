@@ -58,7 +58,7 @@ proptest! {
         } else {
             let res = validator.compute_raw_grounding_score(&response, &[chunk]);
             if let Ok(score) = res {
-                prop_assert!(score >= 0.0 && score <= 1.0, "Score {} must be in [0.0, 1.0]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "Score {} must be in [0.0, 1.0]", score);
             }
         }
     }
