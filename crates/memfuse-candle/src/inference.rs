@@ -84,7 +84,8 @@ impl CandleLlmClient {
                 &new_fingerprint.quantization,
                 "gasp-attribution",
                 0.0,
-            );
+            )
+            .with_threshold(new_config.threshold);
             val.refresh_config(new_config);
         }
 
@@ -448,7 +449,7 @@ mod tests {
         };
         let mut validator = GaspValidator::with_config(initial_gasp_cfg);
 
-        // Record a grounding observation on the validator
+        // Record a grounding observation on the validator via record_external_feedback (INV-CAL-3)
         let chunk = ContextChunk {
             doc_id: DocId::new(1),
             content: "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.".to_string(),
@@ -462,6 +463,7 @@ mod tests {
             .validate_grounding("Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.", &[chunk])
             .await;
         assert!(res.is_ok());
+        validator.record_external_feedback(res.unwrap().score, true);
         assert_eq!(validator.observation_count(), 1);
 
         // Perform runtime model hot swap on CandleLlmClient with new ModelFingerprint

@@ -50,7 +50,8 @@ impl Default for GaspConfig {
                 "Q4_K_M",
                 "gasp-attribution",
                 0.0,
-            ),
+            )
+            .with_threshold(DEFAULT_GROUNDING_THRESHOLD),
         }
     }
 }
@@ -111,9 +112,22 @@ impl GaspValidator {
         }
     }
 
-    /// Setzt den Schwellenwert für Abstention.
+    /// Setzt den Schwellenwert für Abstention und aktualisiert den Fingerabdruck (INV-CAL-2).
     pub fn set_threshold(&mut self, threshold: f32) {
-        self.config.threshold = threshold;
+        let mut new_config = self.config.clone();
+        new_config.threshold = threshold;
+        new_config.fingerprint = new_config.fingerprint.with_threshold(threshold);
+        self.refresh_config(new_config);
+    }
+
+    /// Zeichnet ein externes Ground-Truth-Signal (z. B. aus Nutzer-Feedback oder
+    /// manueller Überprüfung) zur Kalibrierung des GaspValidators auf.
+    ///
+    /// INV-CAL-3: Dies ist der einzige zulässige Schreibpfad für Kalibrierungsbeobachtungen.
+    pub fn record_external_feedback(&self, raw_score: f32, ground_truth_grounded: bool) {
+        if let Ok(mut cal) = self.calibrator.lock() {
+            cal.record_outcome(raw_score, ground_truth_grounded);
+        }
     }
 
     /// Gibt den aktuellen Schwellenwert zurück.
@@ -254,10 +268,8 @@ impl GroundingValidator for GaspValidator {
     ) -> BoxFuture<'a, Result<GroundingAssessment>> {
         Box::pin(async move {
             let raw_score = self.compute_raw_grounding_score(response, context_chunks)?;
-            let is_grounded = raw_score >= self.config.threshold;
 
             let final_score = if let Ok(mut cal) = self.calibrator.lock() {
-                cal.record_outcome(raw_score, is_grounded);
                 cal.calibrated_probability(raw_score).unwrap_or(raw_score)
             } else {
                 raw_score
@@ -470,6 +482,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_validate_grounding_does_not_increment_observation_count() {
+        let validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
+        let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
+
+        // Repeated validate_grounding calls must NOT increment observation_count (INV-CAL-3)
+        for _ in 0..5 {
+            let res = validator.validate_grounding(response, &chunks).await;
+            assert!(res.is_ok());
+        }
+        assert_eq!(
+            validator.observation_count(),
+            0,
+            "validate_grounding alone must leave observation_count at 0"
+        );
+
+        // Recording external feedback explicit call MUST increment observation_count
+        validator.record_external_feedback(0.95, true);
+        assert_eq!(
+            validator.observation_count(),
+            1,
+            "record_external_feedback must increment observation_count"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_threshold_updates_fingerprint_and_invalidates_calibration() {
+        let mut validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
+        let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
+
+        let res = validator.validate_grounding(response, &chunks).await;
+        assert!(res.is_ok());
+        let score = res.unwrap().score;
+
+        // Record external feedback to populate calibrator
+        validator.record_external_feedback(score, true);
+        assert_eq!(validator.observation_count(), 1);
+
+        let initial_fp = validator.config().fingerprint.clone();
+
+        // Change threshold via set_threshold
+        validator.set_threshold(0.85);
+
+        let new_fp = validator.config().fingerprint.clone();
+        assert_ne!(
+            initial_fp, new_fp,
+            "ConfigFingerprint must change when threshold is updated"
+        );
+        assert_eq!(new_fp.threshold(), 0.85);
+
+        // Calibration history MUST be reset after threshold change (INV-CAL-2)
+        assert_eq!(
+            validator.observation_count(),
+            0,
+            "observation_count must be reset to 0 after set_threshold"
+        );
+    }
+
+    #[tokio::test]
     async fn test_refresh_config_invalidates_calibration_on_fingerprint_change() {
         let fp1 = ConfigFingerprint::new("candle-gasp-v1", "Q4_K_M", "gasp-model-a", 0.0);
         let config1 = GaspConfig {
@@ -481,9 +553,11 @@ mod tests {
         let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
         let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
 
-        // Execute grounding validation to record calibration observation
+        // Record external feedback to populate calibration observation history (INV-CAL-3)
         let res = validator.validate_grounding(response, &chunks).await;
         assert!(res.is_ok());
+        let score = res.unwrap().score;
+        validator.record_external_feedback(score, true);
         assert_eq!(validator.observation_count(), 1);
 
         // 1. Hot swap config with a new fingerprint fp2
@@ -504,6 +578,8 @@ mod tests {
         // Record a new observation under config2
         let res2 = validator.validate_grounding(response, &chunks).await;
         assert!(res2.is_ok());
+        let score2 = res2.unwrap().score;
+        validator.record_external_feedback(score2, true);
         assert_eq!(validator.observation_count(), 1);
 
         // 2. Refresh config with the SAME fingerprint fp2
