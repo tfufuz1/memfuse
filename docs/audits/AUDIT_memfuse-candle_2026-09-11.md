@@ -83,3 +83,18 @@
 - **Modul-Inventar:** `embedding.rs`, `embedding_provider.rs`, `gasp.rs`, `gguf_loader.rs`, `inference.rs`, `lib.rs`, `model_registry.rs`.
 - **Inventar-Status:** 7/7 Dateien in `src/` verifiziert. `embedding_provider.rs` als Inventar-Drift erfasst.
 - **Verdict:** 🟢 **GO** — `memfuse-candle` ist stabil, typ- und async-sicher sowie vollständig im Audit erfasst.
+
+---
+
+## 6. Implementation & Refactoring Audit (2026-09-11)
+
+**Datum:** 2026-09-11
+**Session:** `ec63623e`
+**Task-ID:** `JULES-20260911-IMPL`
+**Status:** 🟢 Clean / Implemented & Verified
+
+### Refactoring Details
+- **Unsafe Code Elimination:** Refactored `BertEmbedModel::load` in `crates/memfuse-candle/src/embedding.rs` to replace `unsafe { VarBuilder::from_mmaped_safetensors(...) }` with safe `VarBuilder::from_buffered_safetensors(weights_bytes, ...)` using safe `std::fs::read`. Production build is now 100% unsafe-free.
+- **Header Synchronization:** Updated `FILE-CONTEXT` header in `embedding.rs` with `STAND: 2026-09-11T14:38:03Z (SESSION: ec63623e)` and explicit unsafe-free invariant annotation.
+- **Inventory Reality Check:** Confirmed 7/7 source files in `crates/memfuse-candle/src/` (`embedding.rs`, `embedding_provider.rs`, `gasp.rs`, `gguf_loader.rs`, `inference.rs`, `lib.rs`, `model_registry.rs`) are fully accounted for. Documented `embedding_provider.rs` inventory drift relative to legacy snapshot.
+- **Verification Results:** 29/29 tests passed cleanly across unit, integration, and proptest suites. Zero clippy warnings with `-D warnings` and zero format diffs.

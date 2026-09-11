@@ -14,11 +14,18 @@ async fn test_group_commit_fault_injection_all_participants_fail() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config.clone()).await.expect("create storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config.clone())
+            .await
+            .expect("create storage"),
+    );
 
     // First commit tx 1 successfully so there is baseline state
     let tx1 = TxId::new(1);
-    storage.put(tx1, b"base_k", b"base_v").await.expect("put base");
+    storage
+        .put(tx1, b"base_k", b"base_v")
+        .await
+        .expect("put base");
     storage.commit(tx1).await.expect("commit base");
 
     // Replace WAL file handle with read-only handle to force append_batch failure
@@ -65,21 +72,35 @@ async fn test_group_commit_fault_injection_all_participants_fail() {
     storage.restore_wal_file_handle_for_test().await;
 
     // Baseline key must still exist
-    let base_val = storage.get(b"base_k").await.expect("get base").expect("value exists");
+    let base_val = storage
+        .get(b"base_k")
+        .await
+        .expect("get base")
+        .expect("value exists");
     assert_eq!(&base_val, b"base_v");
 
     // Failed batch keys must NOT exist in storage
     for i in 2..=num_tasks + 1 {
         let key = format!("fail_key_{:04}", i).into_bytes();
         let val = storage.get(&key).await.expect("get fail key");
-        assert_eq!(val, None, "Failed batch entry must not be present in storage");
+        assert_eq!(
+            val, None,
+            "Failed batch entry must not be present in storage"
+        );
     }
 
     // Verify subsequent commit works cleanly after restoring WAL handle
     let tx_new = TxId::new(100);
-    storage.put(tx_new, b"new_k", b"new_v").await.expect("put new");
+    storage
+        .put(tx_new, b"new_k", b"new_v")
+        .await
+        .expect("put new");
     storage.commit(tx_new).await.expect("commit new");
 
-    let new_val = storage.get(b"new_k").await.expect("get new").expect("new value exists");
+    let new_val = storage
+        .get(b"new_k")
+        .await
+        .expect("get new")
+        .expect("new value exists");
     assert_eq!(&new_val, b"new_v");
 }

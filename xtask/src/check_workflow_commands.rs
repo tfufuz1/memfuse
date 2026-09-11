@@ -37,8 +37,9 @@ pub fn parse_workflow_invocations(
     content: &str,
 ) -> Vec<WorkflowCommandInvocation> {
     let mut invocations = Vec::new();
-    let cmd_regex = Regex::new(r"(?:cargo\s+run\s+-p\s+xtask\s+--\s+|cargo\s+xtask\s+)([a-z0-9_-]+)")
-        .expect("Valid regex");
+    let cmd_regex =
+        Regex::new(r"(?:cargo\s+run\s+-p\s+xtask\s+--\s+|cargo\s+xtask\s+)([a-z0-9_-]+)")
+            .expect("Valid regex");
 
     for (idx, line) in content.lines().enumerate() {
         for captures in cmd_regex.captures_iter(line) {

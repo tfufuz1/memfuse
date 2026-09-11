@@ -237,3 +237,24 @@ test result: ok. 54 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fin
 - 80 unit, integration, property-based (proptest), and doc tests executed (79 passed, 0 failed, 1 ignored requiring live Ollama instance).
 - Static analysis via `cargo clippy --all-features` passed with zero warnings.
 - Workspace compatibility and Layer 2 DAG topology compliance confirmed.
+
+---
+
+## 17. Audit-Update: 2026-09-11
+
+**Session:** `089dd3c0` | **Timestamp:** `2026-09-11T14:45:00Z`
+
+### 1. Inventar-Realitätsabgleich & Scope
+- Quellcode-Inventar (6 Dateien): `client.rs`, `context_prefixer.rs`, `embedding.rs`, `importance.rs`, `lib.rs`, `model_info.rs`.
+- Inventarabgleich mit Prompter-Momentaufnahme (Stand 2026-09-10) ergab **keine Abweichungen**.
+- `#![forbid(unsafe_code)]` Konformität in allen 6 Dateien verifiziert (0 unsafe Blöcke).
+
+### 2. Prompt Injection & HTTP Resilienz Verifikation
+- **Prompt-Injection-Schutz (`xml_escape`, `build_rag_prompt`):** Vollständiges Escaping aller 5 XML-Sonderzeichen (`<`, `>`, `&`, `"`, `'`) sowie strukturelle Kapselung (`<system>`, `<instructions>`, `<context>`, `<user_query>`) geprüft.
+- **HTTP Client Retry & Failure Isolation:** Exizit konfigurierte Timeouts (`request_timeout`, `connect_timeout`) und Retry-Backoff für netzwerkbasierte Fehler und HTTP 5xx Statuscodes bestätigt; 4xx Clientfehler werden ohne Retry-Schleife sofort zurückgegeben.
+- **Unicode & Multibyte Truncation:** `truncate_chars` zählt Unicode Scalar Values statt roher Bytes, wodurch Multibyte UTF-8 Zeichen (z.B. deutsche Umlaute) an sicheren Zeichengrenzen gekürzt werden.
+
+### 3. Test Suite Execution & Quality Gates
+- 80 Tests ausgeführt (79 passed, 0 failed, 1 ignored requiring live Ollama instance).
+- `REVIEW-PASS[1/2]` in `crates/memfuse-ollama/src/lib.rs` gesetzt.
+- Static Analysis (`cargo check`, `cargo clippy -- -D warnings`, `cargo fmt --check`) ohne Findings oder Diffs bestanden.

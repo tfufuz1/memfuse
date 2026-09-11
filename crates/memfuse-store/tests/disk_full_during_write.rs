@@ -58,10 +58,7 @@ async fn test_disk_full_during_embedding_write_leaves_no_phantom_state() {
     );
 
     // (b) Verify MemTable / Storage contains NO phantom entry for the failed transaction
-    let val_failed = storage
-        .get(b"key_failed_tx")
-        .await
-        .expect("get failed key");
+    let val_failed = storage.get(b"key_failed_tx").await.expect("get failed key");
     assert_eq!(
         val_failed, None,
         "MemTable must NOT contain phantom state for failed transaction tx2"

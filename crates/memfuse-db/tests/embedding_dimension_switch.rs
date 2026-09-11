@@ -20,10 +20,7 @@ async fn test_embedding_model_switch_rejects_dimension_mismatch_cleanly() {
         .expect("MemFuse initialization failed");
 
     // Get collection reference
-    let collection = db
-        .collection("test_coll")
-        .await
-        .expect("collection failed");
+    let collection = db.collection("test_coll").await.expect("collection failed");
 
     // 2. Perform an initial valid insertion with dimension 1536
     let valid_vec1536_1 = vec![0.1f32; 1536];
@@ -42,7 +39,11 @@ async fn test_embedding_model_switch_rejects_dimension_mismatch_cleanly() {
     // 3. Attempt insertion with mismatched dimension (768) - simulating model switch
     let mismatched_vec768 = vec![0.2f32; 768];
     let insert_mismatched_res = collection
-        .insert("doc2_mismatched", &mismatched_vec768, Some(json!({"title": "Doc 2 Mismatched"})))
+        .insert(
+            "doc2_mismatched",
+            &mismatched_vec768,
+            Some(json!({"title": "Doc 2 Mismatched"})),
+        )
         .await;
 
     // (a) Verify InvalidInput error is returned (validating JULES-10)
@@ -78,7 +79,11 @@ async fn test_embedding_model_switch_rejects_dimension_mismatch_cleanly() {
     // (d) Verify subsequent correctly-dimensioned (1536) insert functions normally
     let valid_vec1536_2 = vec![0.3f32; 1536];
     collection
-        .insert("doc3_valid", &valid_vec1536_2, Some(json!({"title": "Doc 3 Valid"})))
+        .insert(
+            "doc3_valid",
+            &valid_vec1536_2,
+            Some(json!({"title": "Doc 3 Valid"})),
+        )
         .await
         .expect("insert valid_vec1536_2 failed");
 
@@ -89,9 +94,6 @@ async fn test_embedding_model_switch_rejects_dimension_mismatch_cleanly() {
         "Collection must contain 2 documents after subsequent valid insert"
     );
 
-    let doc3 = collection
-        .get("doc3_valid")
-        .await
-        .expect("get doc3 failed");
+    let doc3 = collection.get("doc3_valid").await.expect("get doc3 failed");
     assert!(doc3.is_some(), "doc3_valid must be readable");
 }
