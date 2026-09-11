@@ -41,6 +41,22 @@ The current audit verified:
 
 ---
 
+## Audit Verification & Test Delta (Session `c0f02350`, TS: 2026-09-11T10:39:13Z)
+
+- **Inventory Reality Check**: Confirmed `crates/memfuse-py/src/lib.rs` (1639 lines) matches actual repo inventory with 0 drift.
+- **Rust Quality & Compilation**: `cargo check --manifest-path crates/memfuse-py/Cargo.toml --all-features` (0 errors, 0 warnings).
+- **Clippy Analysis**: `cargo clippy --manifest-path crates/memfuse-py/Cargo.toml -- -D warnings` (0 findings).
+- **Formatting**: `cargo fmt --check --manifest-path crates/memfuse-py/Cargo.toml` (0 diffs).
+- **Python Integration Suite**: Built release extension wheel via `maturin develop --release` in virtualenv and executed full `pytest` suite across 3 consecutive passes (52 test cases x 3 = 156 executions, 100% pass rate).
+- **Tier 1 Depth & Fault-Injection Verification**:
+  - **Zero-Panic Boundary**: Confirmed `run_blocking_ffi` panic containment via `std::panic::catch_unwind` and `AssertUnwindSafe`.
+  - **GIL Concurrency Release**: Confirmed `py.allow_threads()` releases the GIL during async Tokio `block_on` execution.
+  - **CPython Sub-Interpreter Isolation**: Verified PEP 684 sub-interpreter rejection returning clean `PyImportError` on non-zero interpreter ID.
+  - **Error Mapping & Attributes**: Verified structured `memfuse_err` exception mapping with attached `kind`, `message`, and `details` fields.
+- **Preflight Gate**: `cargo run -p xtask -- jules-preflight --fast` (100% PASSED).
+
+---
+
 ## Audit Verification & Test Delta (Session `870cf830`, TS: 2026-09-10T19:27:45Z)
 
 - **Inventory Reality Check**: Confirmed `crates/memfuse-py/src/lib.rs` matches actual repo inventory with 0 drift.
