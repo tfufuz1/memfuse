@@ -640,7 +640,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
             // 3. Graph Signal
             // LIMITATION: graph_search() unterstützt aktuell keinen expliziten Snapshot-Parameter —
-            // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe TODO(audit-ARCH-1-partial).
+            // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe AI-TAG[SMELL][MINOR] TODO(audit-ARCH-1-partial): graph_search does not support explicit snapshot parameter. (ID: AGT-DB-6d724b1a) (TS: 2026-09-11T14:38:03Z) (SESSION: ec63623e).
             let implicit_anchors: Vec<memfuse_core::EntityId>;
             let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities
             {
@@ -1029,7 +1029,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
         // 3. Graph Signal
         // LIMITATION: graph_search() unterstützt aktuell keinen expliziten Snapshot-Parameter —
-        // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe TODO(audit-ARCH-1-partial).
+        // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe AI-TAG[SMELL][MINOR] TODO(audit-ARCH-1-partial): graph_search does not support explicit snapshot parameter. (ID: AGT-DB-6d724b1a) (TS: 2026-09-11T14:38:03Z) (SESSION: ec63623e).
         let graph_results = if let Some(anchors) = anchors_ref {
             let tuples = match &query.graph_strategy {
                 memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {

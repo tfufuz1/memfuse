@@ -358,9 +358,7 @@ mod tests {
             "Der Umsatz stieg im Jahr 2025 signifikant an.",
         )];
         // Claim contains "5", context has "2025" -> should NOT match "5"
-        let score = validator
-            .compute_raw_grounding_score("5", &chunks)
-            .unwrap();
+        let score = validator.compute_raw_grounding_score("5", &chunks).unwrap();
         assert_eq!(
             score, 0.0,
             "Number '5' should not match substring inside '2025'"
@@ -395,30 +393,19 @@ mod tests {
             "We have 5 items in total in the warehouse.",
         )];
         // Context contains "5 items", claim contains "5" -> MUST match "5"
-        let score = validator
-            .compute_raw_grounding_score("5", &chunks)
-            .unwrap();
-        assert_eq!(
-            score, 1.0,
-            "Exact number '5' at word boundary must match"
-        );
+        let score = validator.compute_raw_grounding_score("5", &chunks).unwrap();
+        assert_eq!(score, 1.0, "Exact number '5' at word boundary must match");
     }
 
     #[tokio::test]
     async fn test_exact_word_match() {
         let validator = GaspValidator::new();
-        let chunks = vec![sample_chunk(
-            1,
-            "The rate limit was reached yesterday.",
-        )];
+        let chunks = vec![sample_chunk(1, "The rate limit was reached yesterday.")];
         // Context contains "rate limit was reached", claim contains "rate limit" -> MUST match
         let score = validator
             .compute_raw_grounding_score("rate limit", &chunks)
             .unwrap();
-        assert_eq!(
-            score, 1.0,
-            "Exact word 'rate' at word boundary must match"
-        );
+        assert_eq!(score, 1.0, "Exact word 'rate' at word boundary must match");
     }
 
     #[test]
