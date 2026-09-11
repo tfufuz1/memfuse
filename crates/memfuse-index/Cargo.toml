@@ -1,3 +1,6 @@
+[lints.rust]
+unsafe_code = "deny"
+
 [package]
 name = "memfuse-index"
 version.workspace = true

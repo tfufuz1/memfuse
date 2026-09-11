@@ -101,6 +101,9 @@ memfuse-candle = { path = "crates/memfuse-candle" }
 # Network
 # reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
