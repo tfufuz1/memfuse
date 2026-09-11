@@ -335,8 +335,13 @@ mod tests {
     async fn test_create_and_list_branches_success() -> Result<(), Box<dyn std::error::Error>> {
         let app = setup_app();
 
-        let session =
-            get_or_create_session(app.state::<AppState>().inner(), "sess1", "Root Prompt", "Root Answer").await?;
+        let session = get_or_create_session(
+            app.state::<AppState>().inner(),
+            "sess1",
+            "Root Prompt",
+            "Root Answer",
+        )
+        .await?;
         assert_eq!(session.node_count(), 1);
 
         let branches = list_branches(app.state::<AppState>(), "sess1".to_string()).await?;
@@ -379,7 +384,9 @@ mod tests {
     async fn test_switch_branch_and_history() -> Result<(), Box<dyn std::error::Error>> {
         let app = setup_app();
 
-        let tree = get_or_create_session(app.state::<AppState>().inner(), "sess2", "Root Q", "Root A").await?;
+        let tree =
+            get_or_create_session(app.state::<AppState>().inner(), "sess2", "Root Q", "Root A")
+                .await?;
         let step1 = tree.append_step(
             "Step 1 Q".to_string(),
             "Step 1 A".to_string(),
@@ -406,17 +413,30 @@ mod tests {
         .await?;
         assert_eq!(branch.branch_id, "3");
 
-        let history_branch3 =
-            get_branch_history(app.state::<AppState>(), "sess2".to_string(), "3".to_string()).await?;
+        let history_branch3 = get_branch_history(
+            app.state::<AppState>(),
+            "sess2".to_string(),
+            "3".to_string(),
+        )
+        .await?;
         assert_eq!(history_branch3.len(), 3);
         assert_eq!(history_branch3[0].step_id, "0");
         assert_eq!(history_branch3[1].step_id, "1");
         assert_eq!(history_branch3[2].step_id, "3");
 
-        switch_branch(app.state::<AppState>(), "sess2".to_string(), "2".to_string()).await?;
+        switch_branch(
+            app.state::<AppState>(),
+            "sess2".to_string(),
+            "2".to_string(),
+        )
+        .await?;
 
-        let history_branch2 =
-            get_branch_history(app.state::<AppState>(), "sess2".to_string(), "2".to_string()).await?;
+        let history_branch2 = get_branch_history(
+            app.state::<AppState>(),
+            "sess2".to_string(),
+            "2".to_string(),
+        )
+        .await?;
         assert_eq!(history_branch2.len(), 3);
         assert_eq!(history_branch2[0].step_id, "0");
         assert_eq!(history_branch2[1].step_id, "1");
@@ -430,7 +450,8 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let app = setup_app();
 
-        let _ = get_or_create_session(app.state::<AppState>().inner(), "sess3", "Root", "Ans").await?;
+        let _ =
+            get_or_create_session(app.state::<AppState>().inner(), "sess3", "Root", "Ans").await?;
 
         let err1 = create_branch(
             app.state::<AppState>(),
@@ -443,22 +464,34 @@ mod tests {
         .ok_or("Expected error")?;
         assert_eq!(err1.kind, "InvalidInput");
 
-        let err2 = switch_branch(app.state::<AppState>(), "sess3".to_string(), "not_a_number".to_string())
-            .await
-            .err()
-            .ok_or("Expected error")?;
+        let err2 = switch_branch(
+            app.state::<AppState>(),
+            "sess3".to_string(),
+            "not_a_number".to_string(),
+        )
+        .await
+        .err()
+        .ok_or("Expected error")?;
         assert_eq!(err2.kind, "InvalidInput");
 
-        let err3 = switch_branch(app.state::<AppState>(), "sess3".to_string(), "999".to_string())
-            .await
-            .err()
-            .ok_or("Expected error")?;
+        let err3 = switch_branch(
+            app.state::<AppState>(),
+            "sess3".to_string(),
+            "999".to_string(),
+        )
+        .await
+        .err()
+        .ok_or("Expected error")?;
         assert_eq!(err3.kind, "InvalidInput");
 
-        let err4 = get_branch_history(app.state::<AppState>(), "sess3".to_string(), "999".to_string())
-            .await
-            .err()
-            .ok_or("Expected error")?;
+        let err4 = get_branch_history(
+            app.state::<AppState>(),
+            "sess3".to_string(),
+            "999".to_string(),
+        )
+        .await
+        .err()
+        .ok_or("Expected error")?;
         assert_eq!(err4.kind, "NotFound");
 
         Ok(())
@@ -512,7 +545,8 @@ mod tests {
         let new_state = new_app.state::<AppState>();
         *new_state.db.write() = Some(Arc::new(db2));
 
-        let branches = list_branches(new_app.state::<AppState>(), "persisted_sess".to_string()).await?;
+        let branches =
+            list_branches(new_app.state::<AppState>(), "persisted_sess".to_string()).await?;
         assert_eq!(branches.len(), 2);
 
         let history = get_branch_history(

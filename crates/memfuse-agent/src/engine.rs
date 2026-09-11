@@ -81,9 +81,7 @@ impl OrchestratorEngine {
     /// Recovers all registered/persisted orphaned sequence pins and checkpoints.
     pub async fn recover_orphans(&self) -> Result<()> {
         self.checkpoint_store.recover_orphaned_pins().await?;
-        self.checkpoint_store
-            .recover_orphaned_checkpoints()
-            .await?;
+        self.checkpoint_store.recover_orphaned_checkpoints().await?;
         Ok(())
     }
 

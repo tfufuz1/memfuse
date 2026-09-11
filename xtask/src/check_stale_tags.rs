@@ -191,7 +191,11 @@ pub fn check_stale_tags_impl(
         );
         Ok(candidates)
     } else {
-        let warn_or_err = if strict { "❌ Error" } else { "⚠️ Warning" };
+        let warn_or_err = if strict {
+            "❌ Error"
+        } else {
+            "⚠️ Warning"
+        };
         println!(
             "{} check-stale-tags: Found {} stale audit tag candidate(s) older than {} days without line modification!",
             warn_or_err,
