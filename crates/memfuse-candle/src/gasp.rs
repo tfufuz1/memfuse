@@ -55,10 +55,43 @@ impl Default for GaspConfig {
     }
 }
 
+/// Prüft, ob `text` den Substring `target` an echten Wortgrenzen enthält.
+/// Eine Wortgrenze ist erfüllt, wenn das angrenzende Zeichen am Anfang/Ende des
+/// Strings liegt oder kein alphanumerisches Zeichen ist (z. B. Whitespace, Satzzeichen).
+fn contains_at_word_boundary(text: &str, target: &str) -> bool {
+    if target.is_empty() {
+        return false;
+    }
+    let target_len = target.len();
+    for (idx, _) in text.match_indices(target) {
+        let left_ok = if idx == 0 {
+            true
+        } else {
+            text[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric())
+        };
+
+        let right_ok = if idx + target_len == text.len() {
+            true
+        } else {
+            text[idx + target_len..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric())
+        };
+
+        if left_ok && right_ok {
+            return true;
+        }
+    }
+    false
+}
+
 /// Post-Hoc-Halluzinations-Validator (GASP / TPA-Pattern).
 pub struct GaspValidator {
     config: GaspConfig,
-    llm_client: Option<crate::CandleLlmClient>,
     calibrator: Mutex<IsotonicCalibrator>,
 }
 
@@ -74,21 +107,8 @@ impl GaspValidator {
         cal.invalidate_on_config_change(config.fingerprint.clone());
         Self {
             config,
-            llm_client: None,
             calibrator: Mutex::new(cal),
         }
-    }
-
-    /// Verknüpft einen `CandleLlmClient` für optionale Modell-Inferenz.
-    pub fn with_llm_client(mut self, client: crate::CandleLlmClient) -> Self {
-        let fp = client.fingerprint();
-        self.config.fingerprint =
-            ConfigFingerprint::new(&fp.model_id, &fp.quantization, "gasp-attribution", 0.0);
-        if let Ok(mut cal) = self.calibrator.lock() {
-            cal.invalidate_on_config_change(self.config.fingerprint.clone());
-        }
-        self.llm_client = Some(client);
-        self
     }
 
     /// Setzt den Schwellenwert für Abstention.
@@ -99,11 +119,6 @@ impl GaspValidator {
     /// Gibt den aktuellen Schwellenwert zurück.
     pub fn threshold(&self) -> f32 {
         self.config.threshold
-    }
-
-    /// Gibt eine Referenz auf den verknüpften CandleLlmClient zurück (falls vorhanden).
-    pub fn llm_client(&self) -> Option<&crate::CandleLlmClient> {
-        self.llm_client.as_ref()
     }
 
     /// Führt die tatsächliche Attributions- und Grounding-Analyse durch.
@@ -151,7 +166,7 @@ impl GaspValidator {
                 continue;
             }
             total_numbers += 1;
-            if context_lower.contains(num) {
+            if contains_at_word_boundary(&context_lower, num) {
                 supported_numbers += 1;
             }
         }
@@ -174,7 +189,7 @@ impl GaspValidator {
 
         for word in &resp_words {
             let w_lower = word.to_lowercase();
-            if context_lower.contains(&w_lower) {
+            if contains_at_word_boundary(&context_lower, &w_lower) {
                 matched_words += 1;
             }
         }
@@ -244,7 +259,6 @@ impl GroundingValidator for GaspValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use candle_core::Device;
     use memfuse_core::DocId;
 
     fn sample_chunk(id: u64, content: &str) -> ContextChunk {
@@ -337,40 +351,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_gasp_validator_with_candle_llm_client() {
-        use crate::inference::DefaultCandleLlmModel;
-        use crate::ModelFingerprint;
-
-        let mock_model = Box::new(DefaultCandleLlmModel);
-        let fp = ModelFingerprint {
-            hash: [7u8; 32],
-            model_id: "test-model.gguf".to_string(),
-            quantization: "Q4_K_M".to_string(),
-        };
-        let tokenizer_bytes = r#"{
-            "version": "1.0",
-            "truncation": null,
-            "padding": null,
-            "added_tokens": [],
-            "normalizer": null,
-            "pre_tokenizer": null,
-            "post_processor": null,
-            "decoder": null,
-            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
-        }"#;
-        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
-        let client = crate::CandleLlmClient::new(Device::Cpu, mock_model, fp, tokenizer);
-
-        let validator = GaspValidator::new().with_llm_client(client);
-        assert!(validator.llm_client().is_some());
-
-        let chunks = vec![sample_chunk(1, "Alpha Beta Gamma Delta.")];
-        let response = "Alpha Beta Gamma.";
-        let assessment = validator
-            .validate_grounding(response, &chunks)
-            .await
+    async fn test_number_boundary_no_false_positive() {
+        let validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(
+            1,
+            "Der Umsatz stieg im Jahr 2025 signifikant an.",
+        )];
+        // Claim contains "5", context has "2025" -> should NOT match "5"
+        let score = validator
+            .compute_raw_grounding_score("5", &chunks)
             .unwrap();
-        assert!(assessment.is_grounded);
+        assert_eq!(
+            score, 0.0,
+            "Number '5' should not match substring inside '2025'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_word_boundary_no_false_positive() {
+        let validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(
+            1,
+            "We plan to accelerate the system performance drastically.",
+        )];
+        // Context contains "accelerate", claim contains "rate" -> should NOT match "rate".
+        // With 0 numbers, base_score is 0.6 * 1.0 + 0.4 * word_score.
+        // If "rate" matched, word_score = 1.0 => raw_score = 1.0.
+        // Since "rate" does NOT match "accelerate", word_score = 0.0 => raw_score = 0.6.
+        let score = validator
+            .compute_raw_grounding_score("rate", &chunks)
+            .unwrap();
+        assert_eq!(
+            score, 0.6,
+            "Word 'rate' should not match substring inside 'accelerate'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exact_number_match() {
+        let validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(
+            1,
+            "We have 5 items in total in the warehouse.",
+        )];
+        // Context contains "5 items", claim contains "5" -> MUST match "5"
+        let score = validator
+            .compute_raw_grounding_score("5", &chunks)
+            .unwrap();
+        assert_eq!(
+            score, 1.0,
+            "Exact number '5' at word boundary must match"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exact_word_match() {
+        let validator = GaspValidator::new();
+        let chunks = vec![sample_chunk(
+            1,
+            "The rate limit was reached yesterday.",
+        )];
+        // Context contains "rate limit was reached", claim contains "rate limit" -> MUST match
+        let score = validator
+            .compute_raw_grounding_score("rate limit", &chunks)
+            .unwrap();
+        assert_eq!(
+            score, 1.0,
+            "Exact word 'rate' at word boundary must match"
+        );
     }
 
     #[test]
