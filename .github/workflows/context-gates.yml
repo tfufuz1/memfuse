@@ -91,6 +91,14 @@ jobs:
           fi
           echo "✅ memfuse-core/src ist zero-allow(unsafe_code)"
 
+      - name: "Gate 4c: Kein allow(unsafe_code) in memfuse-mcp"
+        run: |
+          if grep -rn "allow(unsafe_code)" crates/memfuse-mcp/src 2>/dev/null; then
+            echo "❌ allow(unsafe_code) in memfuse-mcp/src gefunden"
+            exit 1
+          fi
+          echo "✅ memfuse-mcp/src ist zero-allow(unsafe_code)"
+
       - name: "Gate 6: Keine TODOs ohne AI-TAG Grammatik"
         run: |
           TODO_WITHOUT_TAG=$(grep -rn "TODO" crates/ --include="*.rs" | grep -v "AI-TAG" || true)

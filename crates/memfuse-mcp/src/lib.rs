@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+//! Layer-7-Rand-Crate ohne jegliche unsafe-Toleranz — verarbeitet direkt untrusted stdio-Input, siehe ADR-010.
+
 pub mod config;
 pub mod prompt_injection;
 pub mod protocol;
