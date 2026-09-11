@@ -222,6 +222,20 @@ impl Default for LsmConfig {
     }
 }
 
+/// A prepared transaction commit waiting in the group-commit batch.
+struct PreparedCommit {
+    tx_id: TxId,
+    wal_ops: Vec<(WalOp, u64)>,
+    mem_updates: Vec<(Vec<u8>, Vec<u8>, u64)>,
+    notifier: tokio::sync::oneshot::Sender<Result<()>>,
+}
+
+/// A batch of commits collected during the group-commit window.
+struct GroupCommitBatch {
+    commits: tokio::sync::Mutex<Vec<PreparedCommit>>,
+    notify: tokio::sync::Notify,
+}
+
 /// Proof that `commit_mutex` is currently held by the calling task.
 /// Can only be constructed while holding the mutex guard.
 struct CommitGuard<'a> {
@@ -253,6 +267,7 @@ pub struct LsmStorage {
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
+    pending_batch: tokio::sync::Mutex<Option<Arc<GroupCommitBatch>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
     flush_counter: AtomicU64,
@@ -540,6 +555,7 @@ impl LsmStorage {
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
+            pending_batch: tokio::sync::Mutex::new(None),
             cancel_token,
             task_tracker,
             flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
@@ -659,6 +675,36 @@ impl LsmStorage {
         F: std::future::Future<Output = ()> + Send + 'static,
     {
         self.task_tracker.spawn(future);
+    }
+
+    #[doc(hidden)]
+    pub async fn simulate_wal_append_failure_for_test(&self) {
+        let state = self.state.read().await;
+        let wal_path = state.wal.path().to_path_buf();
+        if let Ok(ro_file) = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .open(&wal_path)
+            .await
+        {
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = ro_file;
+        }
+    }
+
+    #[doc(hidden)]
+    pub async fn restore_wal_file_handle_for_test(&self) {
+        let state = self.state.read().await;
+        let wal_path = state.wal.path().to_path_buf();
+        if let Ok(rw_file) = tokio::fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(&wal_path)
+            .await
+        {
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = rw_file;
+        }
     }
 
     /// Returns the accumulated total memory budget tracking drift in bytes caused by
@@ -1240,49 +1286,52 @@ impl StorageEngine for LsmStorage {
             // FIX: Commit-Mutex serialisiert fetch_add + wal.prepare_batch.
             let _commit_lock = self.commit_mutex.lock().await;
 
-            let ops = self.tx_buffer.drain(tx_id);
-            if ops.is_empty() {
-                return Ok(());
-            }
-            let state = self.state.read().await;
+                let ops = self.tx_buffer.drain(tx_id);
+                if ops.is_empty() {
+                    return Ok(());
+                }
 
-            let mut wal_ops = Vec::with_capacity(ops.len());
-            let mut mem_updates = Vec::with_capacity(ops.len());
+                let mut wal_ops = Vec::with_capacity(ops.len());
+                let mut mem_updates = Vec::with_capacity(ops.len());
 
-            for op in &ops {
-                let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
-                match op {
-                    IndexOp::Insert { doc_id: _, data } => {
-                        let (key, value) = data;
-                        wal_ops.push((
-                            WalOp::Put {
-                                tx_id,
-                                key: key.clone(),
-                                value: value.clone(),
-                            },
-                            seq_no,
-                        ));
-                        mem_updates.push((key.clone(), value.clone(), seq_no));
-                    }
-                    IndexOp::Delete { doc_id: _, data } => {
-                        if let Some((key, _)) = data {
+                for op in &ops {
+                    let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
+                    match op {
+                        IndexOp::Insert { doc_id: _, data } => {
+                            let (key, value) = data;
                             wal_ops.push((
-                                WalOp::Delete {
+                                WalOp::Put {
                                     tx_id,
                                     key: key.clone(),
+                                    value: value.clone(),
                                 },
                                 seq_no,
                             ));
-                            mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
+                            mem_updates.push((key.clone(), value.clone(), seq_no));
+                        }
+                        IndexOp::Delete { doc_id: _, data } => {
+                            if let Some((key, _)) = data {
+                                wal_ops.push((
+                                    WalOp::Delete {
+                                        tx_id,
+                                        key: key.clone(),
+                                    },
+                                    seq_no,
+                                ));
+                                mem_updates.push((
+                                    key.clone(),
+                                    Vec::new(),
+                                    seq_no | TOMBSTONE_BIT,
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(MemFuseError::InvalidInput(
+                                "Unsupported operation type staged in LSM commit".to_string(),
+                            ));
                         }
                     }
-                    _ => {
-                        return Err(MemFuseError::InvalidInput(
-                            "Unsupported operation type staged in LSM commit".to_string(),
-                        ));
-                    }
                 }
-            }
 
             // --- PHASE 2: Prepare WAL entries under commit_mutex ---
             let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
