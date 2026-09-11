@@ -535,31 +535,34 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
-            if df == 0 {
-                continue;
-            }
-
+            // Filter entries to only include exact term matches with valid doc_id suffix
+            let mut valid_postings: Vec<(DocId, u32)> = Vec::with_capacity(entries.len());
             for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
                 if key.len() < prefix.len() {
                     continue;
                 }
                 let suffix = &key[prefix.len()..];
-                let doc_id_str = match std::str::from_utf8(suffix) {
-                    Ok(s) => s,
-                    Err(_) => continue,
+                let Ok(doc_id_str) = std::str::from_utf8(suffix) else {
+                    continue;
                 };
-                let doc_id_raw = match doc_id_str.parse::<u64>() {
-                    Ok(id) => id,
-                    Err(_) => continue, // Skip keys for longer terms sharing the same prefix
+                let Ok(doc_id_raw) = doc_id_str.parse::<u64>() else {
+                    continue; // Skip keys for longer terms sharing the same prefix
                 };
-                let doc_id = DocId::new(doc_id_raw);
+                let Ok(tf_bytes) = val_bytes.as_slice().try_into() else {
+                    continue;
+                };
 
-                let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid tf length in posting list".into())
-                })?);
+                let doc_id = DocId::new(doc_id_raw);
+                let tf = u32::from_le_bytes(tf_bytes);
+                valid_postings.push((doc_id, tf));
+            }
+
+            let df = valid_postings.len() as u32;
+            if df == 0 {
+                continue;
+            }
+
+            for (doc_id, tf) in valid_postings {
 
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
