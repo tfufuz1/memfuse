@@ -2118,8 +2118,7 @@ fn main() {
         }
         "check-unwrap-baseline-trend" => {
             let root = find_root_dir();
-            let success = check_unwrap_baseline_trend::run_check_unwrap_baseline_trend(&root);
-            if !success {
+            if !check_unwrap_baseline_trend::run_check_unwrap_baseline_trend(&root) {
                 process::exit(1);
             }
         }
