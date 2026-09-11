@@ -328,19 +328,18 @@ pub fn run_check_unwrap_baseline_trend(root: &Path) -> bool {
         );
 
         if tier1_net > 0 {
-            println!(
-                "\n⚠️  WARNSTUFE: Nettowachstum an .unwrap()/.expect() in Tier-1-Crates ({:?})!",
+            eprintln!(
+                "\n❌ [GATE-2b]: Nettowachstum an .unwrap()/.expect() in Tier-1-Crates ({:?})!",
                 tier1_crates
             );
-            println!(
+            eprintln!(
                 "    Nettowachstum: +{} Einträge seit Base-Branch {}.",
                 tier1_net, base_ref
             );
-            println!("    Unwraps in Tier-1-Crates bergen hohes Risiko für Lock-Poisoning-Kaskaden und FFI-Panic-Instabilitäten.");
-            println!("    Hinweis: Dieses Gate schlägt bewusst NICHT hart fehl, um bestehende Workflows nicht abrupt zu blockieren,");
-            println!(
-                "    aber bitte plane den Abbau im Sinne von docs/UNWRAP_REDUCTION_PLAN.md ein."
-            );
+            eprintln!("    Unwraps in Tier-1-Crates bergen hohes Risiko für Lock-Poisoning-Kaskaden und FFI-Panic-Instabilitäten.");
+            eprintln!("    Baue bestehende Unwraps in diesem PR ab, statt neue in Tier-1-Crates hinzuzufügen.");
+            eprintln!("    Siehe docs/UNWRAP_REDUCTION_PLAN.md für den Abbauplan.");
+            return false;
         }
     } else {
         println!("ℹ️ Base branch baseline non-comparable. Reporting current branch counts only.");
@@ -465,5 +464,90 @@ mod tests {
         assert_eq!(*parsed.by_tier1_crate.get("memfuse-core").unwrap(), 1);
         assert_eq!(*parsed.by_tier1_crate.get("memfuse-crypto").unwrap(), 0);
         assert_eq!(*parsed.by_tier1_crate.get("memfuse-store").unwrap(), 1);
+    }
+
+    #[test]
+    fn test_run_check_unwrap_baseline_trend_returns_false_on_tier1_growth() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // Initialize git repo in tempdir
+        Command::new("git")
+            .args(["init"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        let base_entries = vec![UnwrapBaselineEntry {
+            file: "crates/memfuse-core/src/lib.rs".to_string(),
+            hash: "111".to_string(),
+        }];
+
+        fs::write(
+            root.join(".unwrap-baseline.json"),
+            serde_json::to_string(&base_entries).unwrap(),
+        )
+        .unwrap();
+
+        Command::new("git")
+            .args(["add", ".unwrap-baseline.json"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "base commit"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+
+        // Branch out or tag base commit
+        let head_sha = String::from_utf8(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(root)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let head_sha = head_sha.trim();
+
+        // Add extra unwrap entry to tier1 crate memfuse-core
+        let mut current_entries = base_entries;
+        current_entries.push(UnwrapBaselineEntry {
+            file: "crates/memfuse-core/src/extra.rs".to_string(),
+            hash: "222".to_string(),
+        });
+
+        fs::write(
+            root.join(".unwrap-baseline.json"),
+            serde_json::to_string(&current_entries).unwrap(),
+        )
+        .unwrap();
+
+        // Set MEMFUSE_CI_BASE_REF to base commit SHA
+        env::set_var("MEMFUSE_CI_BASE_REF", head_sha);
+
+        // Change current directory to root during test or run command inside repo
+        let orig_dir = env::current_dir().unwrap();
+        env::set_current_dir(root).unwrap();
+
+        let result = run_check_unwrap_baseline_trend(root);
+
+        // Restore dir and env
+        env::set_current_dir(orig_dir).unwrap();
+        env::remove_var("MEMFUSE_CI_BASE_REF");
+
+        assert_eq!(result, false, "Gate 2b must return false when tier1_net > 0");
     }
 }
