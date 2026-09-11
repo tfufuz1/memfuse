@@ -11,6 +11,10 @@ on:
     paths:
       - 'crates/memfuse-checkpoint/**'
       - 'crates/memfuse-crypto/**'
+      - 'crates/memfuse-store/**'
+      - 'crates/memfuse-candle/**'
+      - 'crates/memfuse-db/**'
+      - 'crates/memfuse-index/**'
 
 env:
   CARGO_TERM_COLOR: always
@@ -48,17 +52,49 @@ jobs:
             if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^crates/memfuse-crypto/'; then
               CRATES="$CRATES memfuse-crypto"
             fi
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^crates/memfuse-store/'; then
+              CRATES="$CRATES memfuse-store"
+            fi
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^crates/memfuse-candle/'; then
+              CRATES="$CRATES memfuse-candle"
+            fi
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^crates/memfuse-db/'; then
+              CRATES="$CRATES memfuse-db"
+            fi
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^crates/memfuse-index/'; then
+              CRATES="$CRATES memfuse-index"
+            fi
             if [ -z "$CRATES" ]; then
               CRATES="memfuse-crypto"
             fi
             echo "crates=$CRATES" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run Mutation Tests
+      - name: Run Mutation Tests & Record Scores
         run: |
           for crate in ${{ steps.target.outputs.crates }}; do
             echo "Running cargo mutants for crate: $crate"
-            cargo mutants -p "$crate" --timeout 120 --minimum-test-timeout 30 --in-place
+            OUTPUT=$(cargo mutants -p "$crate" --timeout 120 --minimum-test-timeout 30 --in-place 2>&1 | tee /dev/stderr)
+
+            SUMMARY_LINE=$(echo "$OUTPUT" | grep -E "^[0-9]+ mutants? tested" | tail -n 1)
+            if [ -z "$SUMMARY_LINE" ]; then
+              echo "::error::Could not parse summary line from cargo mutants output for $crate"
+              exit 1
+            fi
+
+            TOTAL=$(echo "$SUMMARY_LINE" | sed -nE "s/^([0-9]+) mutants? tested.*/\1/p")
+            CAUGHT=$(echo "$SUMMARY_LINE" | sed -nE "s/.*: ([0-9]+) caught.*/\1/p")
+            if [ -z "$CAUGHT" ]; then
+              CAUGHT=0
+            fi
+
+            if [ -z "$TOTAL" ]; then
+              echo "::error::Failed to parse mutant count numbers from summary line: \"$SUMMARY_LINE\""
+              exit 1
+            fi
+
+            echo "Recording mutation score for $crate: total=$TOTAL, caught=$CAUGHT"
+            cargo run -p xtask -- mutation-score-record --crate "$crate" --total "$TOTAL" --caught "$CAUGHT"
           done
 
       - name: Report Failure
