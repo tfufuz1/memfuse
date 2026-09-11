@@ -701,6 +701,31 @@ pub trait GraphIndex: Send + Sync + 'static {
         })
     }
 
+    /// Traverses the entity graph starting from multiple anchor entities up to max_hops at a specific sequence number.
+    /// Aggregates decay weights (keeping max score per entity) across anchors.
+    fn multi_traverse_at<'a>(
+        &'a self,
+        start_nodes: &'a [crate::types::EntityId],
+        max_hops: usize,
+        seq_no: u64,
+    ) -> BoxFuture<'a, crate::Result<Vec<(crate::types::EntityId, f32)>>> {
+        Box::pin(async move {
+            let mut combined: AHashMap<crate::types::EntityId, f32> = AHashMap::default();
+            for &start in start_nodes {
+                let results = self.traverse_at(start, max_hops, seq_no).await?;
+                for (entity_id, score) in results {
+                    combined
+                        .entry(entity_id)
+                        .and_modify(|s| *s = s.max(score))
+                        .or_insert(score);
+                }
+            }
+            let mut results: Vec<(crate::types::EntityId, f32)> = combined.into_iter().collect();
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            Ok(results)
+        })
+    }
+
     /// Traverses the entity graph using BFS up to a maximum number of hops at a specific sequence number.
     ///
     /// # Errors
