@@ -163,7 +163,7 @@ pub enum DeletionScope {
 
 /// Cryptographic proof of data deletion.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-// AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. (ID: AGT-CRYPTO-9f17569e) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+// AI-TAG[SMELL][RESOLVED] audit-R3-1: DeletionProof signature_version 2 erweitert Signatur-Payload um covered_layers & excluded_scopes zur Vermeidung von Cross-Context-Fälschungen.
 pub struct DeletionProof {
     /// Version der HMAC-Signatur-Payload-Konstruktion.
     ///
