@@ -311,3 +311,18 @@ $ cargo clippy -p memfuse-embed --no-deps --no-default-features -- -D warnings
   - `cargo fmt --check -p memfuse-embed` -> Clean (0 diffs)
   - `cargo test -p memfuse-embed --all-features` -> 33/33 tests passed (27 unit + 4 integration + 2 adversarial)
   - `cargo check --workspace --exclude memfuse-tauri` -> Clean (0 errors)
+
+## 18. Re-Verifikation & Deep Audit (2026-09-10) (SESSION: 6bb96488)
+
+### 18.1 Step 0 Inventory Reality Check
+- Verified file inventory for `crates/memfuse-embed/src`: `lib.rs`, `reranker.rs`. Confirmed 0 inventory drift relative to snapshot 2026-09-10.
+
+### 18.2 Code Quality, Headers & Gate Verification
+- **Header Alignment:** Updated `FILE-CONTEXT` headers in `src/lib.rs` and `src/reranker.rs` to timestamp `2026-09-10T23:29:29Z` and session `6bb96488`.
+- **Review Pass Integrity:** Added fresh `REVIEW-PASS` tags with `PRÜFER-KONTEXT: FRESH`.
+- **Verification Suite:**
+  - `cargo check -p memfuse-embed --all-features` -> Clean (0 errors, 0 warnings)
+  - `cargo clippy -p memfuse-embed --all-features -- -D warnings` -> Clean (0 findings)
+  - `cargo fmt --check -p memfuse-embed` -> Clean (0 diffs)
+  - `cargo test -p memfuse-embed --all-features` -> 33/33 tests passed (27 unit + 4 integration + 2 adversarial)
+  - `cargo check --workspace --exclude memfuse-tauri` -> Clean (0 errors)
