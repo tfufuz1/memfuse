@@ -178,72 +178,104 @@ impl TenantIsolatedKvStore {
     /// Tenants inaktive Tenants vollständig verdrängen (Prevent Cross-Tenant Starvation).
     // AI-TAG[SECURITY][MAJOR][RESOLVED] Add tenant-fair LRU eviction to prevent cross-tenant starvation (ID: AGT-CRYPTO-c1a93b22) (TS: 2026-09-10T10:00:00Z)
     pub fn evict_lru_fair(&self, target_free_bytes: usize) -> usize {
+        #[cfg(test)]
+        {
+            self.evict_lru_fair_internal(target_free_bytes, None)
+        }
+        #[cfg(not(test))]
+        {
+            self.evict_lru_fair_internal(target_free_bytes)
+        }
+    }
+
+    #[cfg(test)]
+    pub fn evict_lru_fair_with_hook<F>(&self, target_free_bytes: usize, mut hook: F) -> usize
+    where
+        F: FnMut(),
+    {
+        self.evict_lru_fair_internal(target_free_bytes, Some(&mut hook))
+    }
+
+    fn evict_lru_fair_internal(
+        &self,
+        target_free_bytes: usize,
+        #[cfg(test)] mut batch_released_hook: Option<&mut dyn FnMut()>,
+    ) -> usize {
         let mut freed = 0;
 
         'outer: while freed < target_free_bytes {
-            let mut map = self.segments.write();
-            if map.is_empty() {
-                break;
-            }
-
-            for _round in 0..Self::MAX_ROUNDS_PER_LOCK_ACQUISITION {
-                if freed >= target_free_bytes {
-                    break 'outer;
+            {
+                let mut map = self.segments.write();
+                if map.is_empty() {
+                    break;
                 }
 
-                let mut tenants: Vec<TenantId> = map.keys().copied().collect();
-                tenants.sort();
-
-                // Apply rotation offset to avoid systematic low-ID tenant eviction bias
-                if !tenants.is_empty() {
-                    let offset =
-                        self.eviction_round_offset.fetch_add(1, Ordering::Relaxed) % tenants.len();
-                    tenants.rotate_left(offset);
-                }
-
-                let mut evicted_in_round = false;
-
-                for tenant in tenants {
+                for _round in 0..Self::MAX_ROUNDS_PER_LOCK_ACQUISITION {
                     if freed >= target_free_bytes {
-                        break;
+                        break 'outer;
                     }
 
-                    if let Some(segs) = map.get_mut(&tenant) {
-                        if segs.is_empty() {
-                            map.remove(&tenant);
-                            continue;
+                    let mut tenants: Vec<TenantId> = map.keys().copied().collect();
+                    tenants.sort();
+
+                    // Apply rotation offset to avoid systematic low-ID tenant eviction bias
+                    if !tenants.is_empty() {
+                        let offset = self.eviction_round_offset.fetch_add(1, Ordering::Relaxed)
+                            % tenants.len();
+                        tenants.rotate_left(offset);
+                    }
+
+                    let mut evicted_in_round = false;
+
+                    for tenant in tenants {
+                        if freed >= target_free_bytes {
+                            break;
                         }
 
-                        let mut lru_idx = 0;
-                        let mut oldest_time = None;
+                        if let Some(segs) = map.get_mut(&tenant) {
+                            if segs.is_empty() {
+                                map.remove(&tenant);
+                                continue;
+                            }
 
-                        for (idx, seg) in segs.iter().enumerate() {
-                            let acc = seg.last_accessed();
-                            if oldest_time.is_none_or(|t| acc < t) {
-                                lru_idx = idx;
-                                oldest_time = Some(acc);
+                            let mut lru_idx = 0;
+                            let mut oldest_time = None;
+
+                            for (idx, seg) in segs.iter().enumerate() {
+                                let acc = seg.last_accessed();
+                                if oldest_time.is_none_or(|t| acc < t) {
+                                    lru_idx = idx;
+                                    oldest_time = Some(acc);
+                                }
+                            }
+
+                            let evicted = segs.remove(lru_idx);
+                            freed += evicted.len();
+                            evicted_in_round = true;
+
+                            tracing::debug!(
+                                tenant_id = tenant.inner(),
+                                segment_id = evicted.segment_id,
+                                freed_bytes = evicted.len(),
+                                "KV eviction worker: evicted segment"
+                            );
+
+                            if segs.is_empty() {
+                                map.remove(&tenant);
                             }
                         }
+                    }
 
-                        let evicted = segs.remove(lru_idx);
-                        freed += evicted.len();
-                        evicted_in_round = true;
-
-                        tracing::debug!(
-                            tenant_id = tenant.inner(),
-                            segment_id = evicted.segment_id,
-                            freed_bytes = evicted.len(),
-                            "KV eviction worker: evicted segment"
-                        );
-
-                        if segs.is_empty() {
-                            map.remove(&tenant);
-                        }
+                    if !evicted_in_round {
+                        break 'outer;
                     }
                 }
+            }
 
-                if !evicted_in_round {
-                    break 'outer;
+            #[cfg(test)]
+            if freed < target_free_bytes {
+                if let Some(ref mut hook) = batch_released_hook {
+                    hook();
                 }
             }
         }
@@ -267,10 +299,9 @@ impl Default for TenantIsolatedKvStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::thread;
-    use std::time::Duration;
 
     #[test]
     fn test_tenant_isolation_no_cross_read() {
@@ -395,41 +426,55 @@ mod tests {
             store.insert_segment(tenant_c, KvSegment::new(tenant_c, i + 200, vec![0x33; 256]));
         }
 
-        let is_evicting = Arc::new(AtomicBool::new(false));
-        let eviction_done = Arc::new(AtomicBool::new(false));
+        let notify_batch_released = Arc::new(tokio::sync::Notify::new());
+        let notify_read_complete = Arc::new(tokio::sync::Notify::new());
         let reads_during_eviction = Arc::new(AtomicUsize::new(0));
 
         let store_clone = Arc::clone(&store);
-        let is_evicting_clone = Arc::clone(&is_evicting);
-        let eviction_done_clone = Arc::clone(&eviction_done);
+        let notify_batch_released_clone = Arc::clone(&notify_batch_released);
+        let notify_read_complete_clone = Arc::clone(&notify_read_complete);
         let reads_during_eviction_clone = Arc::clone(&reads_during_eviction);
 
-        // Spawn reader thread continuously attempting to read for Tenant C and unaffected tenant.
+        // Spawn reader thread synchronized via Notify checkpoints instead of timing/sleep loops.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+
         let reader_handle = thread::spawn(move || {
-            while !eviction_done_clone.load(Ordering::SeqCst) {
-                let len = store_clone.get_tenant_segment_len(tenant_c);
-                assert!(
-                    len >= 38,
-                    "Tenant C should have at least 38 segments remaining (got {len})"
-                );
-                let segs = store_clone.get_segments(tenant_unaffected);
-                assert!(segs.is_empty(), "Unaffected tenant 99 must have 0 segments");
-                if is_evicting_clone.load(Ordering::SeqCst) {
+            rt.block_on(async {
+                loop {
+                    notify_batch_released_clone.notified().await;
+                    let len = store_clone.get_tenant_segment_len(tenant_c);
+                    let segs = store_clone.get_segments(tenant_unaffected);
+                    assert!(segs.is_empty(), "Unaffected tenant 99 must have 0 segments");
                     reads_during_eviction_clone.fetch_add(1, Ordering::SeqCst);
+                    notify_read_complete_clone.notify_one();
+                    if len <= 38 {
+                        // All eviction batches completed and verified.
+                        break;
+                    }
                 }
-                thread::yield_now();
-            }
+            });
         });
 
-        // Give reader thread time to start running
-        thread::sleep(Duration::from_millis(10));
-
         // Start eviction requiring 9,216 bytes (36 segments across tenants)
-        is_evicting.store(true, Ordering::SeqCst);
-        let freed = store.evict_lru_fair(9_216);
-        is_evicting.store(false, Ordering::SeqCst);
-        eviction_done.store(true, Ordering::SeqCst);
+        let notify_batch_released_evict = Arc::clone(&notify_batch_released);
+        let notify_read_complete_evict = Arc::clone(&notify_read_complete);
 
+        let freed = store.evict_lru_fair_with_hook(9_216, || {
+            // Handshake: Notify reader that write lock was released between batches,
+            // then wait for reader to perform concurrent read before resuming next batch.
+            notify_batch_released_evict.notify_one();
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    notify_read_complete_evict.notified().await;
+                });
+        });
+
+        // Notify reader thread one final time so it can clean up and exit.
+        notify_batch_released.notify_one();
         reader_handle.join().expect("reader thread panicked");
 
         assert!(freed >= 9_216, "must free at least 9,216 bytes");
