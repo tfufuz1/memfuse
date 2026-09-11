@@ -72,9 +72,22 @@
 
 ---
 
-## 4. Test- & Gate-Verifikation
+## 4. Nachtrag: RRF Rank Fusion & Numerik-Härtung (`c284a8b3` / `JULES-20260911-EIGENB`)
+
+1. **RRF k=0 Randwertbedingungs-Härtung (`fusion.rs`)**:
+   - `debug_assert!(rrf_k > 0.0)` wurde in `build_provenance` und `weighted_reciprocal_rank_fusion_with_options` auf `debug_assert!(rrf_k >= 0.0)` angepasst, sodass $k = 0.0$ als mathematische Randwertbedingung (mit 1-basierten Rängen $r \ge 1$) ohne Panic verarbeitet wird.
+   - Marker `// DONE(memfuse-impl): Allow rrf_k >= 0.0 boundary in RRF calculation [ref:eigenbau-rrf-fusion]` gesetzt.
+   - Unit-Tests `test_rrf_k_zero_boundary_condition` und `test_rrf_nan_and_tie_cases_hardening` hinzugefügt.
+
+2. **Numerik- & Tie-Break-Verifikation (`fusion.rs`)**:
+   - `f32::NAN` Scores werden deterministisch ans Ende der Ergebnisse sortiert via `HeapEntry` mit `total_cmp`.
+   - Bei echten Score-Gleichständen greift das deterministische Tie-Breaking nach Dokument-ID (`id.cmp`).
+
+---
+
+## 5. Test- & Gate-Verifikation
 
 - `cargo check -p memfuse-db --all-features`: 0 Fehler.
-- `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
+- `cargo test -p memfuse-db --all-features`: Alle Unit- und Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.

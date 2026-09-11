@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T22:56:28Z (SESSION: c284a8b3)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -212,8 +212,9 @@ pub fn build_provenance(
     index_type: Option<String>,
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
+    // DONE(memfuse-impl): Allow rrf_k >= 0.0 boundary in RRF calculation [ref:eigenbau-rrf-fusion]
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative; division by zero risk");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -452,7 +453,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         let signal_kind = SignalKind::from_name(&signal_name);
         // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
         let rrf_k = k as f32;
-        debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+        debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative; division by zero risk");
 
         for (rank_idx, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {
@@ -2098,6 +2099,97 @@ mod tests {
                 res.score
             );
         }
+    }
+
+    #[test]
+    fn test_rrf_k_zero_boundary_condition() {
+        let set1 = vec![
+            SearchResult {
+                id: "doc_rank1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_rank2".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let prov = build_provenance(
+            Some(0.9),
+            Some(1),
+            Some(1.0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            Some("col".to_string()),
+            Some("hnsw".to_string()),
+            Some(1.0),
+        );
+
+        let contrib = prov.signal_contributions.get("vector").unwrap();
+        assert_eq!(contrib.rrf_contribution, 1.0);
+
+        let result = weighted_reciprocal_rank_fusion_with_options(
+            vec![("vector".to_string(), set1, 1.0)],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert_eq!(result.len(), 2);
+        assert!(result[0].score.is_finite());
+    }
+
+    #[test]
+    fn test_rrf_nan_and_tie_cases_hardening() {
+        let set1 = vec![
+            SearchResult {
+                id: "doc_b_score_tie".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_a_score_tie".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let fused = weighted_reciprocal_rank_fusion(
+            vec![("signal".to_string(), set1, 1.0)],
+            10,
+        );
+
+        assert_eq!(fused.len(), 3);
+        assert_eq!(fused[0].id, "doc_b_score_tie");
+        assert_eq!(fused[1].id, "doc_a_score_tie");
+        assert_eq!(fused[2].id, "doc_nan");
+        assert!(fused[0].score.is_finite());
+        assert!(fused[1].score.is_finite());
+        assert!(fused[2].score.is_finite());
     }
 
     #[cfg(test)]
