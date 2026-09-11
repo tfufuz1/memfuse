@@ -460,7 +460,7 @@ impl LsmStorage {
             budget: resource_tracker,
             block_cache,
             snapshot_registry,
-            compaction_engine,        // H-3: persistent field
+            compaction_engine, // H-3: persistent field
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
@@ -497,13 +497,13 @@ impl LsmStorage {
                     } else {
                         tracing::info!("Removed old replayed WAL file: {:?}", old_wal_path);
                         // NC-4: Remove .uuid sidecar file alongside WAL
-                        let uuid_sidecar = PathBuf::from(
-                            format!("{}.uuid", old_wal_path.display())
-                        );
+                        let uuid_sidecar =
+                            PathBuf::from(format!("{}.uuid", old_wal_path.display()));
                         if let Err(e) = tokio::fs::remove_file(&uuid_sidecar).await {
                             tracing::debug!(
                                 "Could not remove WAL UUID sidecar {:?}: {} (non-critical)",
-                                uuid_sidecar, e
+                                uuid_sidecar,
+                                e
                             );
                         }
                     }
@@ -580,29 +580,34 @@ impl LsmStorage {
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
     // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
-        // NC-3-RECOVERY: Implement recovery in P1 fix/lsm-startup-recovery
+        // NC-3-RECOVERY-NOTE: Implement recovery in P1 fix/lsm-startup-recovery
         // NC-3: Write crash-atomic rollback intent file before any mutation.
         // On recovery in new(), this file signals that rollback must be completed.
-        let intent_path = self.config.path.join(
-            format!("rollback-{:016x}.intent", target_tx.inner())
-        );
+        let intent_path = self
+            .config
+            .path
+            .join(format!("rollback-{:016x}.intent", target_tx.inner()));
         {
             const INTENT_MAGIC: &[u8] = b"MFRLBK\0\0";
             let mut intent_bytes = Vec::with_capacity(16);
             intent_bytes.extend_from_slice(INTENT_MAGIC);
             intent_bytes.extend_from_slice(&target_tx.inner().to_le_bytes());
-            tokio::fs::write(&intent_path, &intent_bytes).await.map_err(|e| {
-                MemFuseError::Storage(format!("Failed to write rollback intent file: {e}"))
-            })?;
+            tokio::fs::write(&intent_path, &intent_bytes)
+                .await
+                .map_err(|e| {
+                    MemFuseError::Storage(format!("Failed to write rollback intent file: {e}"))
+                })?;
             // fsync parent directory to persist the intent file entry
             let parent = self.config.path.clone();
             tokio::task::spawn_blocking(move || {
                 std::fs::File::open(&parent)
                     .and_then(|f| f.sync_all())
-                    .map_err(|e| MemFuseError::Storage(
-                        format!("Failed to fsync dir after intent file: {e}")
-                    ))
-            }).await.map_err(|e| MemFuseError::Internal(e.to_string()))??;
+                    .map_err(|e| {
+                        MemFuseError::Storage(format!("Failed to fsync dir after intent file: {e}"))
+                    })
+            })
+            .await
+            .map_err(|e| MemFuseError::Internal(e.to_string()))??;
         }
 
         let mut state = self.state.write().await;
@@ -704,7 +709,8 @@ impl LsmStorage {
             tracing::warn!(
                 "Could not remove rollback intent file {:?}: {} \
                  (non-fatal — recovery will re-run on next startup)",
-                intent_path, e
+                intent_path,
+                e
             );
         }
 
@@ -1271,9 +1277,11 @@ impl StorageEngine for LsmStorage {
                 // Counter-Increment nur für echte, nicht-leere Flushes
                 let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
                 let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
-                let new_wal = Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
+                let new_wal =
+                    Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
 
-                let old_memtable = std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
+                let old_memtable =
+                    std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
                 let old_wal = std::mem::replace(&mut state.wal, new_wal);
                 state.immutable_memtables.push(old_memtable.clone());
                 let old_wal_path = old_wal.path().to_path_buf();
@@ -1354,7 +1362,8 @@ impl StorageEngine for LsmStorage {
                 // M-6 FIX: Reset drift counter after successful flush.
                 // After a flush, the budget is accurately reflected via release_memory().
                 // Drift accumulated during this memtable's lifetime is now irrelevant.
-                self.budget_tracking_drift_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
+                self.budget_tracking_drift_bytes
+                    .store(0, std::sync::atomic::Ordering::Relaxed);
 
                 tracing::info!("Flushed memtable to SSTable: {} bytes", bytes_freed);
                 Ok(())
@@ -4137,17 +4146,16 @@ mod tests {
             .await
             .unwrap();
         let wal1_path = tmp.path().join("wal-1.log");
-        tokio::fs::write(&wal1_path, b"")
-            .await
-            .unwrap();
-        assert!(uuid_path.exists(), "Dummy .uuid file must exist before startup cleanup");
+        tokio::fs::write(&wal1_path, b"").await.unwrap();
+        assert!(
+            uuid_path.exists(),
+            "Dummy .uuid file must exist before startup cleanup"
+        );
 
         // 2. Second run: startup sees wal-0.log (old) and wal-1.log (active).
         // Startup should clean up old WAL (wal-0.log) AND its .uuid sidecar.
         {
-            let _storage = LsmStorage::new(config)
-                .await
-                .expect("reopen storage");
+            let _storage = LsmStorage::new(config).await.expect("reopen storage");
 
             assert!(
                 !uuid_path.exists(),
