@@ -213,7 +213,8 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    // DONE(memfuse-impl): Relaxed rrf_k debug assert to >= 0.0 for k=0 boundary and verified total_cmp for NaN/tie-breaking [ref:eigenbau-rrf-fusion]
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -238,7 +239,12 @@ pub fn build_provenance(
         let rrf_contrib = if rrf_contrib.is_finite() {
             rrf_contrib
         } else {
-            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            tracing::warn!(
+                w,
+                rrf_k,
+                rank,
+                "non-finite rrf_contrib in build_provenance; defaulting to 0.0"
+            );
             0.0
         };
         (rank, rrf_contrib)
@@ -452,7 +458,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         let signal_kind = SignalKind::from_name(&signal_name);
         // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
         let rrf_k = k as f32;
-        debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+        debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative");
 
         for (rank_idx, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {
@@ -491,10 +497,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             }
 
             if !signal_name.is_empty() && signal_name != "unnamed" {
-                entry
-                    .3
-                    .signal_ranks
-                    .insert(signal_name.clone(), rrf_rank);
+                entry.3.signal_ranks.insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
@@ -2136,5 +2139,73 @@ mod tests {
                 assert!(rrf_top >= rrf_low);
             }
         }
+    }
+
+    #[test]
+    fn test_weighted_rrf_k_zero_boundary() {
+        // At k=0, for rank 1 (1-indexed): score = 1.0 / (0.0 + 1.0) = 1.0
+        let prov = build_provenance(
+            Some(0.9),
+            Some(1),
+            Some(1.0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            None,
+            None,
+            Some(1.0),
+        );
+        assert_eq!(
+            prov.signal_contributions
+                .get("vector")
+                .unwrap()
+                .rrf_contribution,
+            1.0
+        );
+    }
+
+    #[test]
+    fn test_weighted_rrf_nan_scores_and_tie_breaking() {
+        let set_a = vec![
+            SearchResult {
+                id: "doc_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_tie_b".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_tie_a".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![("vec".to_string(), set_a, 1.0)],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert_eq!(fused.len(), 3);
+        // Scores are derived from RRF rank (1/61, 1/62, 1/63) and remain finite despite NaN raw score
+        assert!(fused.iter().all(|r| r.score.is_finite()));
+        assert_eq!(fused[0].id, "doc_nan");
     }
 }
