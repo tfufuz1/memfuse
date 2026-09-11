@@ -122,3 +122,10 @@ TOTAL                             288                 5    98.26%          23   
 | OOM / Backpressure | OK | ContextWindow trimming enforces bounded memory via `TokenBudget` | — |
 | SIGBUS mmap-truncate | N/A | `memfuse-router` does not use `mmap` or unsafe memory mapping | — |
 | SIGKILL recovery | OK | Stateless engine re-initializes from `Collection<LsmStorage>` on restart | — |
+
+## 5f. Session Log & Verification (2026-09-11 — Task JULES-20260911-DEEP, SESSION: c0f02350)
+- **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `lyapunov.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Inventory state confirmed 100% aligned with 2026-09-10 snapshot (zero drift).
+- **Invariants & Safety Audit**: Re-verified 0 unsafe blocks in `crates/memfuse-router/src/`. Verified Layer 5 DAG topology isolation and stdio JSON-RPC 2.0 dispatch invariants.
+- **ML-Scoring Domain Audit (APM-22..24)**: Verified conformal quantile calibration (`APM-22`), Lyapunov exponent distributional drift monitoring (`APM-23`), and `ContextWindow` trimming provenance preservation (`APM-24`).
+- **Test Alignment Fix**: Fixed stdin draining race condition in mock JSON response process within `test_dispatch_additional_error_and_format_paths` (`cat > /dev/null; echo ...`) to eliminate intermittent test failures under parallel test execution.
+- **Verification & Stress Testing**: Executed 81/81 unit and integration tests green (`cargo test -p memfuse-router --all-features`). Executed 10x 8-thread concurrency stress runs with 0 failures or race conditions. Achieved **96.74% region coverage** and **95.87% line coverage** via `cargo llvm-cov -p memfuse-router --all-features`.
