@@ -20,6 +20,9 @@ Das Crate `memfuse-checkpoint` wurde einer vollständigen Tiefenauditierung und 
    - Session Beta bleibt unberührt (0 Cross-Session State Pollution in 100 Stress-Test Iterationen).
 5. **Zero Unsafe & Strict Safety Doctrine:** `#![forbid(unsafe_code)]` ist im gesamten Crate aktiviert (0 unsafe Blocks). `cargo audit` ist frei von Sicherheitslücken.
 
+### Dokumentations-Prozessregel:
+Bei jeder Architekturentscheidung, die eine bereits in §1–§4 dokumentierte Aussage verändert, MUSS diese Aussage in-place korrigiert werden. Ausschließliches Anhängen neuer Session-Logs am Dokumentende reicht nicht aus, da §1–§4 der Teil ist, den ein Prüfer beim schnellen Scannen zuerst liest und zitiert.
+
 ---
 
 ## 2. ADR-011 / ADR-015-Konformitäts-Checkliste
@@ -30,7 +33,7 @@ Das Crate `memfuse-checkpoint` wurde einer vollständigen Tiefenauditierung und 
 | **ADR-011 §2** | `memfuse-store::checkpoint` ist strikt `pub(crate)` und bietet nur LSM-interne TxId-Rollbacks | `crates/memfuse-store/src/checkpoint.rs:17` | **JA** |
 | **ADR-015 §1** | Generischer RAII-Guard `CheckpointGuard<S: StorageEngine>` kapselt transactional auto-rollback | `crates/memfuse-checkpoint/src/lib.rs:184` | **JA** |
 | **ADR-015 §2** | `PersistentCheckpointStore` stellt `create_guard(tx_id)` zur Erzeugung von RAII-Guards bereit | `crates/memfuse-checkpoint/src/lib.rs:350` | **JA** |
-| **ADR-015 §3** | Auto-Rollback im `Drop`-Handler führt `storage.rollback_to_tx` aus, sofern nicht `.commit()` aufgerufen wurde | `crates/memfuse-checkpoint/src/lib.rs:271` | **JA** |
+| **ADR-015 §3** | Instance-scoped Orphan-Registry-Registrierung (ADR-053): `Drop::drop()` mutiert synchron den In-Memory-Zustand und persistiert ihn sofort über `register_checkpoint_sync()` → `persist_sync()`; eine Wiederherstellung erfolgt beim nächsten kontrollierten Zyklus, NICHT über einen gespawnten Tokio-Task. (⚠ SUPERSEDED by ADR-053, siehe Session-Log §11 (2026-09-06)) | `crates/memfuse-checkpoint/src/lib.rs:770-783` | **JA** |
 | **ADR-015 §4** | `pin_checkpoint` erfolgt zwingend VOR dem Storage-Write; bei Fehler erfolgt `unpin_checkpoint` | `crates/memfuse-checkpoint/src/lib.rs:388` | **JA** |
 | **ADR-004** | Striktes `#![forbid(unsafe_code)]` im gesamten Crate | `crates/memfuse-checkpoint/src/lib.rs:17` | **JA** |
 
@@ -43,8 +46,8 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
 | Szenario | Beschreibung | Erwartetes Verhalten | Testergebnis |
 | :--- | :--- | :--- | :---: |
 | **Szenario A** | Normaler Drop nach `.commit()` | Guard konsumiert; kein Storage-Rollback ausgelöst; State bleibt erhalten. | **PASS** |
-| **Szenario B** | Drop OHNE explicit commit (z.B. Scope-Ende) | Auto-Rollback im `Drop`-Handler führt `storage.rollback_to_tx(tx_id)` via Tokio-Task aus. | **PASS** |
-| **Szenario C** | Drop während Panic-Unwind (`catch_unwind`) | Unwinding ruft `Drop::drop` auf; background task führt `rollback_to_tx` zuverlässig aus. | **PASS** |
+| **Szenario B** | Drop OHNE explicit commit (z.B. Scope-Ende) | Instance-scoped Orphan-Registry-Registrierung (ADR-053): `Drop::drop()` mutiert synchron den In-Memory-Zustand und persistiert ihn sofort über `register_checkpoint_sync()` → `persist_sync()`; eine Wiederherstellung erfolgt beim nächsten kontrollierten Zyklus, NICHT über einen gespawnten Tokio-Task. (⚠ SUPERSEDED by ADR-053, siehe Session-Log §11 (2026-09-06)) | **PASS** |
+| **Szenario C** | Drop während Panic-Unwind (`catch_unwind`) | Unwinding ruft `Drop::drop` auf; registriert Checkpoint synchron in Instance-Orphan-Registry (`register_checkpoint_sync()`) für kontrollierte Recovery im nächsten Zyklus. (⚠ SUPERSEDED by ADR-053, siehe Session-Log §11 (2026-09-06)) | **PASS** |
 | **Szenario D** | Explicit `.rollback().await` gefolgt von Drop | Guard wird konsumiert; Storage-Rollback erfolgt sofort; nachfolgender Drop ist idempotent. | **PASS** |
 | **Szenario E** | Verschachtelte Guards (Inner inside Outer) | LIFO-Auflösung (Inner Guard rollt zuerst zurück, Outer Guard danach). | **PASS** |
 | **Szenario F** | `rollback_blocking` in sync vs. async Context | In sync Thread: führt Rollback via dedizierter Runtime aus; in async Tokio-Context: gibt `MemFuseError::Internal` zurück zur Deadlock-Vermeidung. | **PASS** |
@@ -58,7 +61,7 @@ Alle Exit-Pfade von `CheckpointGuard<S>` wurden in `tests/guard_exit_paths.rs` u
 | :--- | :--- | :--- | :--- |
 | **Checkpoint Historie & Katalog** | **JA (Vollständig)** | Namespace-Key-Prefixing (`{namespace}:checkpoint:{name}`) & Session-lokaler `RwLock` Cache | `lib.rs` L.360, L.456, L.514 |
 | **User State Time-Travel Recovery** | **JA (Byte-exact)** | Pre-Prefixing in `StorageEngine` & `rollback_to_tx(target_tx)` Kausalitätsgrenze | `time_travel_correctness.rs` L.344 |
-| **RAII CheckpointGuard Auto-Rollback** | **JA (Asynchron)** | Tokio Runtime Task-Spawning im `Drop`-Trait mit zielspezifischer `TxId` | `lib.rs` L.271-295, `time_travel_correctness.rs` L.566 |
+| **RAII CheckpointGuard Auto-Rollback** | **JA (Synchron, ADR-053)** | Instance-scoped Orphan-Registry-Registrierung (ADR-053): `Drop::drop()` mutiert synchron den In-Memory-Zustand und persistiert ihn sofort über `register_checkpoint_sync()` → `persist_sync()`; eine Wiederherstellung erfolgt beim nächsten kontrollierten Zyklus, NICHT über einen gespawnten Tokio-Task. (⚠ SUPERSEDED by ADR-053, siehe Session-Log §11 (2026-09-06)) | `lib.rs` L.770-783, `time_travel_correctness.rs` L.566 |
 | **Sequence Pinning & GC Exclusion** | **JA (Akkumulativ)** | Atomare Registrierung in `SnapshotRegistry` per `seq_no` ohne Cross-Session Unpinning | `lib.rs` L.388-420, `tests/cache_concurrency_pinning.rs` L.170 |
 | **100-Iterationen Concurrency Stress Test** | **JA (0 Split-Brain Reads)** | Simultaneous writes, checkpointing & rollbacks across 100 parallel tasks | `time_travel_correctness.rs` L.450 |
 
