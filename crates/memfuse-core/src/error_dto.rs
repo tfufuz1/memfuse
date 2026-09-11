@@ -276,6 +276,22 @@ impl From<&MemFuseError> for MemFuseErrorDto {
                     "context": context,
                 })),
             },
+            MemFuseError::ModelLoad { path, reason } => Self {
+                kind: "ModelLoad".to_string(),
+                message: err.to_string(),
+                details: Some(serde_json::json!({
+                    "path": path,
+                    "reason": reason,
+                })),
+            },
+            MemFuseError::OrphanedVectorReference { doc_id, index_id } => Self {
+                kind: "OrphanedVectorReference".to_string(),
+                message: err.to_string(),
+                details: Some(serde_json::json!({
+                    "doc_id": doc_id,
+                    "index_id": index_id,
+                })),
+            },
         }
     }
 }
@@ -386,6 +402,20 @@ mod tests {
                 "CapabilityUnsupported",
             ),
             (MemFuseError::StaleRead("test".into()), "StaleRead"),
+            (
+                MemFuseError::ModelLoad {
+                    path: "path.gguf".into(),
+                    reason: "corrupt".into(),
+                },
+                "ModelLoad",
+            ),
+            (
+                MemFuseError::OrphanedVectorReference {
+                    doc_id: "doc1".into(),
+                    index_id: "idx1".into(),
+                },
+                "OrphanedVectorReference",
+            ),
         ];
 
         for (err, expected_kind) in variants {
