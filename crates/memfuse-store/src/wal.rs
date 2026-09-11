@@ -387,7 +387,7 @@ pub struct WalConfig {
     /// this minimum will be automatically migrated to V3 and backed up (`.v1.bak`).
     ///
     /// Default: `WalVersion::V1` for backward compatibility. Production deployments SHOULD set `WalVersion::V3`.
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-8): Reject unencrypted V1 plaintext entries during replay when KeyManager is present and active. (ID: AGT-STORE-1d1e4d1f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-M-8: Wal::replay weist unverschlüsselte V1-Einträge bei aktivem KeyManager mit MemFuseError::Encryption ab (~Zeile 1500).
     pub min_wal_version: WalVersion,
 }
 
@@ -1045,7 +1045,7 @@ impl Wal {
     }
 
     /// Appends a batch of entries to the WAL and performs a single fsync.
-    // AI-TAG[SMELL][MINOR] TODO(audit-C-3): Atomically check file header/size under file lock before writing header in append_batch to prevent double WAL headers. (ID: AGT-STORE-d73203c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][ANALYZED-SAFE] audit-C-3: Exklusiver Mutex-Lock self.file.lock() in append_batch serialisiert Header-Check (write_header) und Dateischreibzugriffe vollständig.
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());
@@ -1600,7 +1600,7 @@ impl Wal {
     }
 
     /// Rewrites legacy V1 or V2 WAL files as V3.
-    // AI-TAG[SMELL][MINOR] TODO(audit-H-6): Implement post-crash recovery to restore .v1.bak / .v2.bak backup files if primary WAL is corrupted or truncated during rewrite. (ID: AGT-STORE-8fa82a7f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-H-6: Post-Crash-Recovery via recover_from_bak_if_present in Wal::open_with_config stellt .v1.bak / .v2.bak bei korrupter/abgebrochener Migration wieder her.
     async fn rewrite_as_v3(&self, replayed_entries: &[(u64, WalEntry, u64)]) -> Result<()> {
         let integrity_key = self.get_integrity_key()?;
         let mut v3_entries = Vec::with_capacity(replayed_entries.len());
@@ -1687,7 +1687,7 @@ impl Wal {
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` if setting file length or seeking fails.
-    // AI-TAG[SMELL][MINOR] TODO(audit-C-2): Call file.sync_all() immediately after file.set_len() to ensure length truncation is crash-persisted. (ID: AGT-STORE-59284713) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-C-2: Wal::truncate ruft file.sync_all() direkt nach file.set_len() auf (~Zeile 1700).
     pub async fn truncate(&self, offset: u64, new_last_hmac: [u8; 32]) -> Result<()> {
         use tokio::io::AsyncSeekExt;
 

@@ -15,16 +15,16 @@
 
 Stand letzter Prüfung: 2026-09-11
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **27 offene Tags**
+Ergebnis: **28 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
 | `crates/memfuse-agent/src/audit.rs` | 604 | `AGT-AGENT-bf5c7019` | `SMELL` | `MINOR` | `2026-09-10T19:16:32Z` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
+| `crates/memfuse-agent/src/dlq.rs` | 92 | `AGT-AGENT-49bfd02e` | `SMELL` | `MINOR` | `2026-09-11T12:00:00Z` | // AI-TAG[SMELL][MINOR] Fallback transaction ID allocation via last_tx_id + 1 is non-atomic under concurrent writers. (ID: AGT-AGENT-49bfd02e) (TS: 2026-09-11T12:00:00Z) (SESSION: 81ef2364) |
 | `crates/memfuse-calibration/src/replicator.rs` | 143 | `AGT-CALIBRATION-84b140c7` | `SMELL` | `MAJOR` | `2026-09-10T23:35:15Z` | // AI-TAG[SMELL][MAJOR] Manual slice fill loop should be replaced with `self.weights.fill(uniform)` (ID: AGT-CALIBRATION-84b140c7) (TS: 2026-09-10T23:35:15Z) (SESSION: c0f02350) |
 | `crates/memfuse-crypto/src/deletion_proof.rs` | 166 | `AGT-CRYPTO-9f17569e` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. (ID: AGT-CRYPTO-9f17569e) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
 | `crates/memfuse-crypto/src/kv_segment/store.rs` | 373 | `AGT-SECURITY-3edfea62` | `TEST` | `MAJOR` | `2026-09-10T23:43:03Z` | // AI-TAG[TEST][MAJOR] Lock release test timing dependency under high contention (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-10T23:43:03Z) (SESSION: 504d02fc) |
-| `crates/memfuse-db/src/collection/search.rs` | 291 | `AGT-DB-6d724b1a` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (ID: AGT-DB-6d724b1a) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
-| `crates/memfuse-db/src/collection/search.rs` | 292 | `AGT-DB-6484e6e5` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (ID: AGT-DB-6484e6e5) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
+| `crates/memfuse-db/src/collection/search.rs` | 334 | `AGT-DB-6d724b1a` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (ID: AGT-DB-6d724b1a) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
 | `crates/memfuse-db/src/fusion.rs` | 43 | `AGT-DB-3f010ab1` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-6): Validate candidate scores with score.is_finite() before multiplying resonance bonus to prevent NaN score propagation. (ID: AGT-DB-3f010ab1) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
 | `crates/memfuse-db/src/fusion.rs` | 318 | `AGT-DB-9cb315d8` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-1): Preserve scalar field types when metadata values are identical across sources instead of unconditionally converting scalars to JSON arrays. (ID: AGT-DB-9cb315d8) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
 | `crates/memfuse-db/src/fusion.rs` | 381 | `AGT-DB-5ba3ca84` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-H-4): Filter out non-positive weight or invalid signals before calculating total_signal_count in RRF rank mass normalization. (ID: AGT-DB-5ba3ca84) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
@@ -57,15 +57,15 @@ Ergebnis: **27 offene Tags**
 | `memfuse-checkpoint` | 1 | 5477 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-graph` | 1 | 10593 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-security` | 1 | 4916 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-text` | 1 | 5436 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-text` | 1 | 5433 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 2 | 15595 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3985 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 17574 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 28187 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 4 | 28373 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 5141 | 🟢 Clean |  |
+| `memfuse-router` | 5 | 5244 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5805 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-mcp` | 7 | 4397 | 🟢 Clean |  |

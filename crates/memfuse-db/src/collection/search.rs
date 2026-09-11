@@ -19,6 +19,49 @@ use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
 
+/// RAII Guard for pinning snapshot checkpoints during search/scan operations.
+///
+/// # Note on async Drop
+/// Rust does not support native `async Drop`. Therefore, callers MUST explicitly call
+/// [`release`](Self::release) to unpin the checkpoint. The `Drop` implementation serves as a
+/// fallback safety net: if `release` was not invoked before dropping (e.g. due to early `?`
+/// return or panic), `Drop` emits an `error!` log warning that a checkpoint pin may have leaked.
+pub(super) struct CheckpointPinGuard<'a, S: StorageEngine + ?Sized> {
+    storage: &'a S,
+    seq: u64,
+    unpinned: bool,
+}
+
+impl<'a, S: StorageEngine + ?Sized> CheckpointPinGuard<'a, S> {
+    /// Creates a new guard and pins the checkpoint at sequence `seq`.
+    pub async fn new(storage: &'a S, seq: u64) -> Result<Self> {
+        storage.pin_checkpoint(seq).await?;
+        Ok(Self {
+            storage,
+            seq,
+            unpinned: false,
+        })
+    }
+
+    /// Explicitly unpins the checkpoint and consumes the guard, preventing the fallback `Drop` warning.
+    pub async fn release(mut self) -> Result<()> {
+        self.unpinned = true;
+        self.storage.unpin_checkpoint(self.seq).await
+    }
+}
+
+impl<'a, S: StorageEngine + ?Sized> Drop for CheckpointPinGuard<'a, S> {
+    fn drop(&mut self) {
+        if !self.unpinned {
+            tracing::error!(
+                seq_no = self.seq,
+                "CheckpointPinGuard dropped without explicit release! Checkpoint pin seq={} may have leaked.",
+                self.seq
+            );
+        }
+    }
+}
+
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Performs semantic k-NN search over stored embeddings.
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
@@ -82,7 +125,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
         // um Konsistenz zwischen Vektor-Index, Metadaten-Filter und Re-Hydrierung zu garantieren.
         let seq = self.snapshot_seq().await?;
-        self.storage.pin_checkpoint(seq).await?;
+        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
 
         let res = async {
             let filter = match filter {
@@ -103,7 +146,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
         .await;
 
-        if let Err(e) = self.storage.unpin_checkpoint(seq).await {
+        if let Err(e) = pin_guard.release().await {
             tracing::error!(
                 seq_no = seq,
                 "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert. Manuelles Eingreifen eventuell nötig."
@@ -288,7 +331,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs filtered semantic vector search in the collection.
-    // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (ID: AGT-DB-6d724b1a) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-5.1: Vector-Suche clampt k stets auf k.min(memfuse_core::MAX_SEARCH_K) über alle Einstiegspunkte hinweg.
     // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (ID: AGT-DB-6484e6e5) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]

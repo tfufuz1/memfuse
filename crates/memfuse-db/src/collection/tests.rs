@@ -2452,6 +2452,149 @@ async fn test_run_percolation_check_rebonding() -> memfuse_core::Result<()> {
 }
 
 #[tokio::test]
+async fn test_checkpoint_unpin_on_search_error_path() {
+    use memfuse_core::{BoxFuture, FilterExpr, Result, StorageEngine, StorageStats, TxId};
+    use memfuse_graph::csr::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    struct PinTrackingFailingStorage {
+        active_pins: AtomicI64,
+        total_pins: AtomicU64,
+        total_unpins: AtomicU64,
+    }
+
+    impl StorageEngine for PinTrackingFailingStorage {
+        fn get<'a>(&'a self, _: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { Ok(None) })
+        }
+        fn get_at_seq<'a>(&'a self, _: &'a [u8], _: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>> {
+            Box::pin(async move { Ok(None) })
+        }
+        fn put<'a>(&'a self, _: TxId, _: &'a [u8], _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn delete<'a>(&'a self, _: TxId, _: &'a [u8]) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn commit<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn rollback<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn rollback_to_tx<'a>(&'a self, _: TxId) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move { Ok(()) })
+        }
+        fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>> {
+            Box::pin(async move {
+                Ok(StorageStats {
+                    num_segments: 0,
+                    total_size_bytes: 0,
+                    memtable_size_bytes: 0,
+                })
+            })
+        }
+        fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>> {
+            Box::pin(async move { Ok(10) })
+        }
+        fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>> {
+            Box::pin(async move { Ok(TxId::new(1)) })
+        }
+        fn pin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.active_pins.fetch_add(1, Ordering::SeqCst);
+                self.total_pins.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+        fn unpin_checkpoint<'a>(&'a self, _: u64) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.active_pins.fetch_sub(1, Ordering::SeqCst);
+                self.total_unpins.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+        fn scan_prefix<'a>(
+            &'a self,
+            _: &'a [u8],
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { Ok(vec![]) })
+        }
+        fn scan_prefix_at<'a>(
+            &'a self,
+            _: &'a [u8],
+            _: u64,
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move {
+                Err(memfuse_core::MemFuseError::Storage(
+                    "Simulated storage failure during scan_prefix_at".into(),
+                ))
+            })
+        }
+        fn scan<'a>(
+            &'a self,
+            _: std::ops::Bound<&'a [u8]>,
+            _: std::ops::Bound<&'a [u8]>,
+            _: Option<usize>,
+        ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+            Box::pin(async move { Ok(vec![]) })
+        }
+    }
+
+    let storage = Arc::new(PinTrackingFailingStorage {
+        active_pins: AtomicI64::new(0),
+        total_pins: AtomicU64::new(0),
+        total_unpins: AtomicU64::new(0),
+    });
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage.clone(),
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let filter_expr = FilterExpr::Eq {
+        field: "category".to_string(),
+        value: serde_json::json!("books"),
+    };
+    let res = col
+        .search_with_filter_expr(&[1.0, 0.0, 0.0, 0.0], 5, Some(filter_expr))
+        .await;
+
+    assert!(res.is_err(), "Search must return error when scan fails");
+    assert_eq!(
+        storage.total_pins.load(Ordering::SeqCst),
+        1,
+        "pin_checkpoint should have been called once"
+    );
+    assert_eq!(
+        storage.total_unpins.load(Ordering::SeqCst),
+        1,
+        "unpin_checkpoint must be called despite inner search error"
+    );
+    assert_eq!(
+        storage.active_pins.load(Ordering::SeqCst),
+        0,
+        "Active pins must return to 0 after search error"
+    );
+}
+
+#[tokio::test]
 async fn test_search_k_zero_returns_canonical_error_message(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     use memfuse_graph::CsrGraph;

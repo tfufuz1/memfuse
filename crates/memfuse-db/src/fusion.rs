@@ -40,7 +40,7 @@ impl Default for ResonanceConfig {
 ///
 /// Feature-Flag: Nur aufrufen wenn `coherence-bonus-fusion` aktiv.
 #[cfg(feature = "coherence-bonus-fusion")]
-// AI-TAG[SMELL][MINOR] TODO(audit-NC-6): Validate candidate scores with score.is_finite() before multiplying resonance bonus to prevent NaN score propagation. (ID: AGT-DB-3f010ab1) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+// AI-TAG[SMELL][RESOLVED] audit-NC-6: apply_resonance_bonus validiert Scores mit r.score.is_finite() bevor der Bonus berechnet wird.
 pub fn apply_resonance_bonus(
     results: Vec<SearchResult>,
     valid_signal_count: usize,
@@ -378,7 +378,7 @@ pub fn weighted_reciprocal_rank_fusion_with_priority(
 }
 
 /// Weighted Reciprocal Rank Fusion with explicit metadata merge priority and provenance toggle.
-// AI-TAG[SMELL][MINOR] TODO(audit-H-4): Filter out non-positive weight or invalid signals before calculating total_signal_count in RRF rank mass normalization. (ID: AGT-DB-5ba3ca84) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+// AI-TAG[SMELL][RESOLVED] audit-H-4: weighted_reciprocal_rank_fusion_with_options filtert nicht-finite oder <=0.0 Gewichte heraus und zählt nur valid_signal_count hoch.
 pub fn weighted_reciprocal_rank_fusion_with_options(
     mut result_sets: Vec<(String, Vec<SearchResult>, f32)>,
     max_results: usize,

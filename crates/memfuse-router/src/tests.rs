@@ -3092,4 +3092,74 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_router_uses_cheapest_profile_during_warmup() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = MemFuseConfig {
+            dimension: 4,
+            ..Default::default()
+        };
+        let db = MemFuse::open_with_config(dir.path(), config).await.unwrap();
+        let collection = db.collection("default").await.unwrap();
+
+        let vec_data = vec![1.0, 0.0, 0.0, 0.0];
+        collection
+            .insert(
+                "doc_warmup",
+                &vec_data,
+                Some(json!({"text": "warmup fallback content"})),
+            )
+            .await
+            .unwrap();
+
+        // Create 3 profiles in arbitrary configuration order (expensive first)
+        let expensive_profile = SlmProfile::new(
+            "expensive-slm",
+            "http://localhost:8001/mcp",
+            vec![],
+            TokenBudget::new(200_000, 100),
+            0.8,
+        )
+        .with_resource_cost_estimate(100.0);
+
+        let mid_profile = SlmProfile::new(
+            "mid-slm",
+            "http://localhost:8002/mcp",
+            vec![],
+            TokenBudget::new(32_768, 100),
+            0.5,
+        )
+        .with_resource_cost_estimate(50.0);
+
+        let cheapest_profile = SlmProfile::new(
+            "cheapest-slm",
+            "http://localhost:8003/mcp",
+            vec![],
+            TokenBudget::new(8_192, 100),
+            0.2,
+        )
+        .with_resource_cost_estimate(10.0);
+
+        // Input configuration order: expensive, cheapest, mid
+        let profiles = vec![
+            expensive_profile,
+            cheapest_profile,
+            mid_profile,
+        ];
+
+        let router = RouterEngine::new(collection, profiles, None);
+
+        // Before reaching CALIBRATION_WARMUP_WINDOW samples (calibrated == false)
+        let decision = router
+            .route(&vec_data, "warmup fallback content")
+            .await
+            .expect("routing during warmup succeeds");
+
+        assert_eq!(
+            decision.profile.name, "cheapest-slm",
+            "During warmup (calibrated == false), router must deterministically select the profile with lowest cost"
+        );
+        assert!(!decision.confidence.as_ref().unwrap().calibrated);
+    }
 }

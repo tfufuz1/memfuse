@@ -144,6 +144,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         metadata: Option<serde_json::Value>,
         ttl_committed_ops: u64,
     ) -> Result<()> {
+        if embedding.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                embedding.len()
+            )));
+        }
         let current_seq = self.snapshot_seq().await?;
         let expiry_seq = current_seq.saturating_add(ttl_committed_ops);
 
@@ -174,6 +181,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         memory_type: memfuse_core::MemoryType,
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        if embedding.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                embedding.len()
+            )));
+        }
         let mut meta = metadata.unwrap_or_else(|| serde_json::json!({}));
         if let Some(obj) = meta.as_object_mut() {
             obj.insert(
@@ -205,6 +219,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         embedding: &[f32],
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
+        if embedding.len() != self.dimension {
+            return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                "Dimension mismatch: expected {}, got {}",
+                self.dimension,
+                embedding.len()
+            )));
+        }
         let _guard = self.insert_lock.lock().await;
         self.insert_inner_unlocked(id, embedding, metadata).await
     }
@@ -429,6 +450,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             )));
         }
 
+        for (_id, embedding, _) in docs {
+            if embedding.len() != self.dimension {
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "Dimension mismatch: expected {}, got {}",
+                    self.dimension,
+                    embedding.len()
+                )));
+            }
+        }
+
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
 
@@ -536,6 +567,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 docs.len()
             )));
         }
+
+        for (_id, embedding, _) in docs {
+            if embedding.len() != self.dimension {
+                return Err(memfuse_core::MemFuseError::invalid_input(format!(
+                    "Dimension mismatch: expected {}, got {}",
+                    self.dimension,
+                    embedding.len()
+                )));
+            }
+        }
+
         let _guard = self.insert_lock.lock().await;
         let db_tx = self.begin_transaction()?;
         for (id, embedding, metadata) in docs {
@@ -1494,6 +1536,42 @@ mod tests {
             scanned.len(),
             1000,
             "scan_prefix must return requested limit (1000)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_insert_rejects_dimension_mismatch_before_lock_acquisition() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::MemFuse::open_with_config(
+            dir.path(),
+            crate::MemFuseConfig {
+                dimension: 1536,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let col = db.collection("dim_test").await.unwrap();
+
+        // Lock insert_lock manually in the test thread to prove col.insert does not block or acquire insert_lock
+        let _guard = col.insert_lock.lock().await;
+
+        // Perform insert with mismatched vector (768 dims instead of 1536)
+        let invalid_vector = vec![0.1f32; 768];
+        let res = col.insert("doc-1", &invalid_vector, None).await;
+
+        // Must fail immediately without waiting for/acquiring insert_lock
+        assert!(res.is_err());
+        let err_msg = match res {
+            Err(memfuse_core::MemFuseError::InvalidInput(msg)) => msg,
+            Err(other) => panic!("Expected InvalidInput error, got: {:?}", other),
+            Ok(_) => panic!("Expected insert to fail due to dimension mismatch"),
+        };
+
+        assert!(
+            err_msg.contains("1536") && err_msg.contains("768"),
+            "Error message must mention both expected (1536) and actual (768) dimensions, got: {}",
+            err_msg
         );
     }
 }

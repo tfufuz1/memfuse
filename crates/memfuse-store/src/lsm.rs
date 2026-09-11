@@ -369,6 +369,29 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
+        // Scan for pending rollback intent files resulting from a crash during rollback_to_tx_locked
+        let mut pending_rollbacks = Vec::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if file_name.starts_with("rollback-") && file_name.ends_with(".intent") {
+                    let hex_part = &file_name[9..file_name.len() - 7];
+                    if hex_part.len() == 16 {
+                        if let Ok(target_tx) = u64::from_str_radix(hex_part, 16) {
+                            tracing::error!(
+                                target_tx = target_tx,
+                                intent_path = ?path,
+                                "Unfinished rollback intent file detected during LsmStorage startup! Recovery required."
+                            );
+                            pending_rollbacks.push(target_tx);
+                        }
+                    }
+                }
+            }
+        }
+        pending_rollbacks.sort_unstable();
+
         // Load existing SSTables and sort by filename (which includes seq_no)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
@@ -424,7 +447,7 @@ impl LsmStorage {
         // COMP-001 — Implementiere CompactionEngine::run_loop.
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
-        // AI-TAG[SMELL][MINOR] TODO(audit-C-1): Force a startup flush of replayed MemTable entries before deleting old WAL files, or delay deleting old WAL files until after the subsequent flush + fsync_parent_dir. (ID: AGT-STORE-bae66245) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+        // AI-TAG[SMELL][RESOLVED] audit-C-1: Startup-Flush erzwungen vor Löschung alter WAL-Dateien in LsmStorage::new (Zeilen ~480-490).
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
@@ -510,6 +533,35 @@ impl LsmStorage {
                     }
                 }
             }
+        }
+
+        // Replay any pending rollbacks detected during startup.
+        // APM-PARTIAL-ORDER-VIOLATION Note:
+        // SSTables and WAL MUST be loaded first into `storage` before calling `rollback_to_tx`,
+        // because `rollback_to_tx_locked()` inspects, filters, and recompacts the loaded SSTables
+        // and WAL in memory to physically remove rolled-back entries.
+        for target_tx in pending_rollbacks {
+            tracing::info!(
+                target_tx = target_tx,
+                "Executing pending rollback recovery for TxId({})",
+                target_tx
+            );
+            storage
+                .rollback_to_tx(TxId::new(target_tx))
+                .await
+                .map_err(|e| {
+                    MemFuseError::Storage(format!(
+                        "Startup rollback recovery failed for target_tx {}: {}. Please inspect data directory '{:?}' manually.",
+                        target_tx,
+                        e,
+                        storage.config.path
+                    ))
+                })?;
+            tracing::info!(
+                target_tx = target_tx,
+                "Successfully completed pending rollback recovery for TxId({})",
+                target_tx
+            );
         }
 
         Ok(storage)
@@ -697,22 +749,26 @@ impl LsmStorage {
             // Best-effort cleanup: do not abort rollback recovery if file removal fails.
             // The SSTable is superseded by restored WAL replay state, so its orphaned presence is safe but wastes disk space.
             if let Err(e) = tokio::fs::remove_file(&path).await {
-                tracing::error!(
-                    path = ?path,
-                    "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
-                );
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::error!(
+                        path = ?path,
+                        "Orphaned SSTable konnte nicht entfernt werden: {e}. Manuelles Cleanup nötig."
+                    );
+                }
             }
         }
 
         // NC-3: Remove rollback intent file after all SST cleanup is complete.
         // If this removal fails, recovery on next startup will re-execute the (idempotent) rollback.
         if let Err(e) = tokio::fs::remove_file(&intent_path).await {
-            tracing::warn!(
-                "Could not remove rollback intent file {:?}: {} \
-                 (non-fatal — recovery will re-run on next startup)",
-                intent_path,
-                e
-            );
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    "Could not remove rollback intent file {:?}: {} \
+                     (non-fatal — recovery will re-run on next startup)",
+                    intent_path,
+                    e
+                );
+            }
         }
 
         // 5. Re-populate memtable from truncated WAL
@@ -932,7 +988,6 @@ impl StorageEngine for LsmStorage {
         })
     }
 
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-9): Inspect uncommitted transaction buffers in put_if_absent to avoid race conditions with uncommitted concurrent writes. (ID: AGT-STORE-3261a338) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     fn put_if_absent<'a>(
         &'a self,
         tx_id: TxId,
@@ -948,6 +1003,10 @@ impl StorageEngine for LsmStorage {
             }
 
             let _commit_lock = self.commit_mutex.lock().await;
+
+            if self.tx_buffer.is_key_staged_globally(key) {
+                return Ok(false);
+            }
 
             if let Some(is_insert) = self.tx_buffer.staged_status(key) {
                 if is_insert {
@@ -1065,7 +1124,7 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-6): Periodically recalculate memtable byte size during flushes to prevent monotonic memory budget drift accumulation. (ID: AGT-STORE-6fb33368) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-M-6: Drift-Counter budget_tracking_drift_bytes wird in LsmStorage::flush nach erfolgreichem Flush auf 0 zurückgesetzt.
     fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             self.apply_backpressure().await;
@@ -1443,7 +1502,7 @@ impl StorageEngine for LsmStorage {
     /// The candidates across sources are then merged in a `BTreeMap`.
     /// - Memory Complexity: O(N * limit) where N is the number of storage sources (SSTables + MemTables).
     /// - Time Complexity: O(N * limit * log(limit)) instead of O(M^2) across paginated calls over M entries.
-    // AI-TAG[SMELL][MINOR] TODO(audit-NC-1/M-5): Ensure range_bound is correctly declared in scope and found_count is incremented during prefix bounded scanning. (ID: AGT-STORE-b57a097f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-NC-1/M-5: range_bound ist in scan_prefix_bounded korrekt im Scope deklariert und steuert die Paginierung.
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -1583,7 +1642,7 @@ impl StorageEngine for LsmStorage {
         })
     }
 
-    // AI-TAG[SMELL][MINOR] TODO(audit-H-7): Acquire snapshot read lock before capturing last_tx to eliminate split-brain read race with concurrent commits. (ID: AGT-STORE-a75b9fdc) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-H-7: last_tx wird in scan_prefix_at nach dem Erwerb von self.state.read() geladen.
     fn scan_prefix_at<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -3819,6 +3878,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_put_if_absent_sees_uncommitted_concurrent_stage() {
+        let (storage, _tmp) = test_storage().await;
+
+        let key = b"uncommitted_key";
+        let tx_a = TxId::new(10);
+        let tx_b = TxId::new(20);
+
+        // (a) Transaction A stages an insert via put_if_absent (returns true) but does NOT commit
+        let res_a = storage.put_if_absent(tx_a, key, b"value_a").await.unwrap();
+        assert!(res_a, "Transaction A must successfully stage the insert");
+
+        // (b) Transaction B attempts put_if_absent for the same key while A is uncommitted/unrolled
+        let res_b = storage.put_if_absent(tx_b, key, b"value_b").await.unwrap();
+        assert!(!res_b, "Transaction B must see uncommitted staged insert from Transaction A and return false");
+    }
+
+    #[tokio::test]
     async fn test_lsm_put_if_absent_stress_200_tasks() {
         let (storage, _tmp) = test_storage().await;
         let storage = Arc::new(storage);
@@ -4164,5 +4240,82 @@ mod tests {
                 "WAL .uuid sidecar file must be cleaned up during startup recovery"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_rollback_crash_recovery_startup() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        // (a) Initialize storage, write and commit multiple transactions across flush
+        let tx1 = TxId::new(1);
+        let tx2 = TxId::new(2);
+        let tx3 = TxId::new(3);
+
+        {
+            let storage = LsmStorage::new(config.clone())
+                .await
+                .expect("create storage");
+
+            storage.put(tx1, b"key1", b"val1").await.unwrap();
+            storage.commit(tx1).await.unwrap();
+            storage.force_flush().await.unwrap();
+
+            storage.put(tx2, b"key2", b"val2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
+            storage.force_flush().await.unwrap();
+
+            storage.put(tx3, b"key3", b"val3").await.unwrap();
+            storage.commit(tx3).await.unwrap();
+            storage.close().await.unwrap();
+        }
+
+        // (b) Manually create a rollback intent file simulating a crash during rollback to tx1
+        let intent_path = tmp.path().join(format!("rollback-{:016x}.intent", tx1.inner()));
+        const INTENT_MAGIC: &[u8] = b"MFRLBK\0\0";
+        let mut intent_bytes = Vec::with_capacity(16);
+        intent_bytes.extend_from_slice(INTENT_MAGIC);
+        intent_bytes.extend_from_slice(&tx1.inner().to_le_bytes());
+        tokio::fs::write(&intent_path, &intent_bytes)
+            .await
+            .unwrap();
+
+        assert!(
+            intent_path.exists(),
+            "Rollback intent file must exist before startup recovery"
+        );
+
+        // (c) Reopen storage with same path
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("reopen storage after simulated rollback crash");
+
+        // (d) Verify that data after target_tx (tx1) is no longer visible AND intent file is gone
+        assert_eq!(
+            storage.get(b"key1").await.unwrap(),
+            Some(b"val1".to_vec()),
+            "Data committed at target_tx must remain visible"
+        );
+        assert_eq!(
+            storage.get(b"key2").await.unwrap(),
+            None,
+            "Data committed after target_tx (tx2) must be rolled back"
+        );
+        assert_eq!(
+            storage.get(b"key3").await.unwrap(),
+            None,
+            "Data committed after target_tx (tx3) must be rolled back"
+        );
+        assert!(
+            !intent_path.exists(),
+            "Rollback intent file must be deleted after successful startup recovery"
+        );
     }
 }
