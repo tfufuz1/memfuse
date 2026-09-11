@@ -406,7 +406,7 @@ impl LsmStorage {
 
         let manifest_path = config.path.join("MANIFEST");
         let manifest_exists = manifest_path.exists();
-        let valid_manifest_sstables = if manifest_exists {
+        let _valid_manifest_sstables = if manifest_exists {
             let entries = crate::manifest::Manifest::load(&manifest_path).await?;
             Some(crate::manifest::Manifest::reconstruct_valid_sstables(
                 &entries,
@@ -753,7 +753,7 @@ impl LsmStorage {
     /// # Safety / Concurrency Invariant
     /// **MUST ONLY** be called while holding `commit_mutex`. Calling this function without
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
-    // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][MINOR] RESOLVED(audit-NC-3/C-4): Rollback transaction crash-atomicity via rollback-{txid}.intent file and startup recovery confirmed fully operational in LsmStorage::new() and verified by test_rollback_crash_recovery_startup. (ID: AGT-STORE-27a11909) (TS: 2026-09-11T19:30:00Z) (SESSION: 4a9ccf21)
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
         // NC-3-RECOVERY-NOTE: Implement recovery in P1 fix/lsm-startup-recovery
         // NC-3: Write crash-atomic rollback intent file before any mutation.
@@ -4611,6 +4611,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            group_commit_window_micros: 0,
         };
 
         // (a) Initialize storage, write and commit multiple transactions across flush

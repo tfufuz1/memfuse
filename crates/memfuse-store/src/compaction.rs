@@ -1124,6 +1124,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let sstables = Arc::new(RwLock::new(Vec::new()));

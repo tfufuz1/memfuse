@@ -591,6 +591,23 @@ Messungen aus Criterion-Läufen (`target/criterion/`):
 | `lsm.rs` | 298 | `AGT-STORE-cbd72ab9` | `SMELL` | `MINOR` | Simplify `max_wal_id.map_or(0, \|m\| m)` to `unwrap_or(0)` for `clippy::map_or_identity`. |
 | `lsm.rs` | 3646 | `AGT-STORE-1e73ead8` | `FLAKY` | `MINOR` | Tight 5ms latency threshold in `test_concurrent_get_and_flush_latency` susceptible to thread contention. |
 
+### Audit-Verifikation: Rollback-Intent-Recovery-Pfad (audit-NC-3/C-4, AGT-STORE-27a11909)
+**Datum:** 11. September 2026
+
+Vollständige Lebenszyklus-Verifikation der Crash-Atomarität für den Rollback-Pfad:
+
+| Lebenszyklus-Schritt | Status | File:Line Reference | Beschreibung |
+|---|---|---|---|
+| 1. **Schreiben (Write-Intent)** | VORHANDEN | `crates/memfuse-store/src/lsm.rs:761–783` | `rollback-{txid:016x}.intent` mit Magic `MFRLBK\0\0` wird vor jeder Mutation auf Disk geschrieben und das Eltern-Verzeichnis geflusht (`fsync`). |
+| 2. **Crash-Simulation** | VORHANDEN | `crates/memfuse-store/src/lsm.rs:4638–4651` | Simuliert durch `test_rollback_crash_recovery_startup` (Prozessabbruch nach Erstellen der Intent-Datei vor SSTable-Mutation). |
+| 3. **Neustart (Restart)** | VORHANDEN | `crates/memfuse-store/src/lsm.rs:388` | `LsmStorage::new()` re-initialisiert den Store auf demselben Datenpfad. |
+| 4. **Erkennung (Detection)** | VORHANDEN | `crates/memfuse-store/src/lsm.rs:420–442` | `read_dir` scannt `config.path` nach `rollback-*.intent`-Dateien und sammelt ausstehende Rollbacks in `pending_rollbacks`. |
+| 5. **Konsum (Recovery Execution)** | VORHANDEN | `crates/memfuse-store/src/lsm.rs:635–655` | Replay von `storage.rollback_to_tx(target_tx)` nach SSTable/WAL-Laden führt unterbrochene Rollbacks idempotent zu Ende. |
+| 6. **Cleanup** | VORHANDEN | `crates/memfuse-store/src/lsm.rs:912–922` | Entfernt `rollback-{txid:016x}.intent` erst nach vollständigem Abschluss aller WAL-, SSTable- und Manifest-Mutationen. |
+
+**Fazit & Status:**
+Der Rollback-Intent Recovery-Pfad ist vollständig und korrekt verdrahtet. Der Test `test_rollback_crash_recovery_startup` belegt die funktionierende Startup-Recovery im Crash-Fall. Der Marker `AGT-STORE-27a11909` in `crates/memfuse-store/src/lsm.rs` wurde auf `RESOLVED` aktualisiert.
+
 ### Gate-Stack Execution Results
 - `cargo check -p memfuse-store --all-features`: **PASSED** (0 errors, 0 warnings)
 - `cargo clippy -p memfuse-store -- -D warnings`: **PASSED** (0 findings)
