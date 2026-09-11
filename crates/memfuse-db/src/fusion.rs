@@ -96,16 +96,28 @@ impl PartialEq for HeapEntry {
 
 impl Eq for HeapEntry {}
 
+// DONE(memfuse-impl): Robust NaN and tie-breaking handling in HeapEntry for RRF fusion [ref:eigenbau-rrf-fusion]
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
         // so that peek() returns the candidate with the lowest score (or highest ID on tie).
-        // Therefore, lower score => Greater priority in max-heap.
-        other
-            .result
-            .score
-            .total_cmp(&self.result.score)
-            .then_with(|| self.result.id.cmp(&other.result.id))
+        // Therefore:
+        // 1. Finite scores are strictly preferred over non-finite (NaN / Infinity) scores.
+        // 2. Among finite scores, lower score => Greater priority in max-heap (so it gets evicted first).
+        // 3. Ties in score are broken deterministically by ID (larger ID => Greater priority in max-heap).
+        match (
+            self.result.score.is_finite(),
+            other.result.score.is_finite(),
+        ) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (false, false) => self.result.id.cmp(&other.result.id),
+            (true, true) => other
+                .result
+                .score
+                .total_cmp(&self.result.score)
+                .then_with(|| self.result.id.cmp(&other.result.id)),
+        }
     }
 }
 
@@ -213,7 +225,7 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -238,7 +250,12 @@ pub fn build_provenance(
         let rrf_contrib = if rrf_contrib.is_finite() {
             rrf_contrib
         } else {
-            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            tracing::warn!(
+                w,
+                rrf_k,
+                rank,
+                "non-finite rrf_contrib in build_provenance; defaulting to 0.0"
+            );
             0.0
         };
         (rank, rrf_contrib)
@@ -491,10 +508,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             }
 
             if !signal_name.is_empty() && signal_name != "unnamed" {
-                entry
-                    .3
-                    .signal_ranks
-                    .insert(signal_name.clone(), rrf_rank);
+                entry.3.signal_ranks.insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
@@ -1263,17 +1277,59 @@ mod tests {
             },
         });
 
-        // Extract all entries and verify NaN entry is last (worst)
-        let mut extracted = vec![];
-        while let Some(entry) = heap.pop() {
-            extracted.push(entry.result.id.clone());
-        }
+        // into_sorted_vec returns elements in descending order (highest priority first).
+        // Since HeapEntry max-heap puts worst entries at top (pop() returns worst entry first),
+        // into_sorted_vec() produces finite scores in descending order followed by non-finite entries.
+        let sorted: Vec<_> = heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|e| e.result.id)
+            .collect();
 
         assert_eq!(
-            extracted.last().map(|s| s.as_str()),
+            sorted.last().map(|s| s.as_str()),
             Some("doc_nan"),
-            "NaN score entry must be at the end (worst position) after total_cmp\nExtracted order: {:?}",
-            extracted
+            "NaN score entry must be at the end (worst position)\nSorted order: {:?}",
+            sorted
+        );
+        assert_eq!(sorted[0], "doc1");
+        assert_eq!(sorted[1], "doc2");
+    }
+
+    #[test]
+    fn test_heap_entry_tie_breaking_deterministic() {
+        use std::collections::BinaryHeap;
+
+        let mut heap = BinaryHeap::new();
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc_B".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc_A".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+
+        let sorted: Vec<_> = heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|e| e.result.id)
+            .collect();
+
+        assert_eq!(
+            sorted,
+            vec!["doc_A", "doc_B"],
+            "Identical scores must break ties lexicographically by ID (A before B)"
         );
     }
 
