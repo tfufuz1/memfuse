@@ -339,6 +339,29 @@ impl<T: Clone> TxBuffer<T> {
 }
 
 impl TxBuffer<(Vec<u8>, Vec<u8>)> {
+    /// Checks if a key is staged for insertion in ANY active (uncommitted) transaction in the buffer.
+    ///
+    /// # Locking Strategy
+    /// Iterates through all shards sequentially, acquiring a read lock (`shard_lock.read()`) on each
+    /// shard individually and dropping it before moving to the next shard. Because only a single shard lock
+    /// is ever held at a time, this method never holds nested shard locks, avoiding lock inversion
+    /// and deadlocks with concurrent single-shard operations like `stage()` or `drain()`.
+    pub fn is_key_staged_globally(&self, key: &[u8]) -> bool {
+        for shard_lock in &self.shards {
+            let shard = shard_lock.read();
+            for (_tx_id, (ops, _instant)) in &shard.ops {
+                for op in ops {
+                    if let IndexOp::Insert { data, .. } = op {
+                        if data.0 == key {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Checks if a key is currently staged in any active transaction in the buffer.
     /// Returns `Some(true)` if staged for insertion, `Some(false)` if staged for deletion,
     /// or `None` if not staged in any transaction.

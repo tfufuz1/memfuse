@@ -163,7 +163,16 @@ impl LyapunovDriftWatcher {
             let q_i = (baseline_counts[i] as f32 + alpha) / (n_base + k * alpha);
             d_t += p_i * (p_i / q_i).ln();
         }
-        let d_t = d_t.max(0.0);
+        let d_t = if d_t.is_finite() {
+            // Hard-Clip bei 100.0: Für ein 10-Bin-Histogramm ist selbst bei stärkster
+            // Degeneration (ein Bin dominiert vollständig) die theoretisch sinnvolle KL-Divergenz
+            // im niedrigen zweistelligen Bereich. Werte > 100 sind ein Symptom für einen
+            // numerischen Randfall (z.B. extrem kleine Sample-Größen), nicht für echten Verteilungs-Drift,
+            // und würden den Lyapunov-Exponenten via log|D_t/D_{t-1}| künstlich verzerren.
+            d_t.max(0.0).min(100.0)
+        } else {
+            100.0
+        };
 
         self.divergence_history.push_back(d_t);
 
@@ -353,6 +362,33 @@ mod tests {
         assert!(
             latest_kl < 1e-5,
             "KL divergence for identical distributions should be ~0.0, got {latest_kl}"
+        );
+    }
+
+    #[test]
+    fn test_kl_divergence_clipped_on_extreme_histogram_degeneration() {
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        // Uniforme Baseline über alle 10 Bins [0.0, 1.0)
+        let baseline: Vec<f32> = (0..1000).map(|i| (i as f32) / 1000.0).collect();
+        watcher.set_baseline(&baseline);
+
+        // Extrem fallende Degeneration: Alle 1000 Samples konzentriert in Bin 0 [0.0, 0.1)
+        let current: Vec<f32> = vec![0.05; 1000];
+
+        watcher.update(&current);
+        let latest_kl = watcher
+            .divergence_history
+            .back()
+            .copied()
+            .expect("KL divergence should be recorded");
+
+        assert!(
+            latest_kl.is_finite(),
+            "KL divergence must be finite, got {latest_kl}"
+        );
+        assert!(
+            latest_kl >= 0.0 && latest_kl <= 100.0,
+            "KL divergence must be bounded between 0.0 and 100.0, got {latest_kl}"
         );
     }
 }
