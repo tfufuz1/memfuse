@@ -1045,7 +1045,7 @@ impl Wal {
     }
 
     /// Appends a batch of entries to the WAL and performs a single fsync.
-    // AI-TAG[SMELL][ANALYZED-SAFE] audit-C-3: Exklusiver Mutex-Lock self.file.lock() in append_batch serialisiert Header-Check (write_header) und Dateischreibzugriffe vollständig.
+    // AI-TAG[SMELL][ANALYZED-SAFE] audit-C-3: Exklusiver Mutex-Lock self.file.lock() in append_batch serialisiert Header-Check (write_header) und Dateischreibzugriffe vollständig. (ID: AGT-STORE-d73203c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     pub async fn append_batch(&self, entries: &[WalEntry]) -> Result<()> {
         if entries.is_empty() {
             return Ok(());

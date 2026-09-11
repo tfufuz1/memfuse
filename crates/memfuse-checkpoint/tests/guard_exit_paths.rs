@@ -414,7 +414,9 @@ async fn test_drop_no_syscall_on_worker() {
     let temp_dir = tempfile::tempdir().unwrap();
     let orphan_file = temp_dir.path().join("no_syscall_orphans.json");
 
-    let registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(&orphan_file));
+    let registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(
+        &orphan_file,
+    ));
     let storage = Arc::new(TrackingMockStorage::new());
 
     // 1. Drop PinGuard
@@ -439,7 +441,8 @@ async fn test_drop_no_syscall_on_worker() {
             timestamp_ms: 1000,
             namespace: Some("no_syscall".to_string()),
         };
-        let guard = CheckpointGuard::with_registry(cp, storage.clone(), "no_syscall", registry.clone());
+        let guard =
+            CheckpointGuard::with_registry(cp, storage.clone(), "no_syscall", registry.clone());
         drop(guard);
     }
 

@@ -99,21 +99,22 @@ impl ManifestEntry {
                 if remaining.len() < 12 {
                     return Err(MemFuseError::Serialization("Add payload too short".into()));
                 }
-                let max_tx = u64::from_le_bytes(
-                    remaining[0..8]
-                        .try_into()
-                        .map_err(|_| MemFuseError::Serialization("Invalid max_tx format".into()))?,
-                );
-                let path_len = u32::from_le_bytes(
-                    remaining[8..12]
-                        .try_into()
-                        .map_err(|_| MemFuseError::Serialization("Invalid path_len format".into()))?,
-                ) as usize;
+                let max_tx =
+                    u64::from_le_bytes(remaining[0..8].try_into().map_err(|_| {
+                        MemFuseError::Serialization("Invalid max_tx format".into())
+                    })?);
+                let path_len =
+                    u32::from_le_bytes(remaining[8..12].try_into().map_err(|_| {
+                        MemFuseError::Serialization("Invalid path_len format".into())
+                    })?) as usize;
                 if remaining.len() < 12 + path_len {
-                    return Err(MemFuseError::Serialization("Add path data truncated".into()));
+                    return Err(MemFuseError::Serialization(
+                        "Add path data truncated".into(),
+                    ));
                 }
-                let path_str = std::str::from_utf8(&remaining[12..12 + path_len])
-                    .map_err(|e| MemFuseError::Serialization(format!("Invalid path UTF-8: {}", e)))?;
+                let path_str = std::str::from_utf8(&remaining[12..12 + path_len]).map_err(|e| {
+                    MemFuseError::Serialization(format!("Invalid path UTF-8: {}", e))
+                })?;
                 Ok(ManifestEntry::Add {
                     path: PathBuf::from(path_str),
                     max_tx,
@@ -122,18 +123,22 @@ impl ManifestEntry {
             1 => {
                 // Remove
                 if remaining.len() < 4 {
-                    return Err(MemFuseError::Serialization("Remove payload too short".into()));
+                    return Err(MemFuseError::Serialization(
+                        "Remove payload too short".into(),
+                    ));
                 }
-                let path_len = u32::from_le_bytes(
-                    remaining[0..4]
-                        .try_into()
-                        .map_err(|_| MemFuseError::Serialization("Invalid path_len format".into()))?,
-                ) as usize;
+                let path_len =
+                    u32::from_le_bytes(remaining[0..4].try_into().map_err(|_| {
+                        MemFuseError::Serialization("Invalid path_len format".into())
+                    })?) as usize;
                 if remaining.len() < 4 + path_len {
-                    return Err(MemFuseError::Serialization("Remove path data truncated".into()));
+                    return Err(MemFuseError::Serialization(
+                        "Remove path data truncated".into(),
+                    ));
                 }
-                let path_str = std::str::from_utf8(&remaining[4..4 + path_len])
-                    .map_err(|e| MemFuseError::Serialization(format!("Invalid path UTF-8: {}", e)))?;
+                let path_str = std::str::from_utf8(&remaining[4..4 + path_len]).map_err(|e| {
+                    MemFuseError::Serialization(format!("Invalid path UTF-8: {}", e))
+                })?;
                 Ok(ManifestEntry::Remove {
                     path: PathBuf::from(path_str),
                 })
@@ -145,11 +150,10 @@ impl ManifestEntry {
                         "RollbackComplete payload too short".into(),
                     ));
                 }
-                let target_tx = u64::from_le_bytes(
-                    remaining[0..8]
-                        .try_into()
-                        .map_err(|_| MemFuseError::Serialization("Invalid target_tx format".into()))?,
-                );
+                let target_tx =
+                    u64::from_le_bytes(remaining[0..8].try_into().map_err(|_| {
+                        MemFuseError::Serialization("Invalid target_tx format".into())
+                    })?);
                 Ok(ManifestEntry::RollbackComplete { target_tx })
             }
             _ => Err(MemFuseError::Serialization(format!(
@@ -193,7 +197,9 @@ impl Manifest {
                     .read(true)
                     .open(&path)
                     .await
-                    .map_err(|e| MemFuseError::Storage(format!("Failed to open MANIFEST: {}", e)))?;
+                    .map_err(|e| {
+                        MemFuseError::Storage(format!("Failed to open MANIFEST: {}", e))
+                    })?;
                 (file, false)
             }
             Err(e) => {
@@ -339,11 +345,17 @@ impl Manifest {
         for entry in entries {
             match entry {
                 ManifestEntry::Add { path, .. } => {
-                    let key = path.file_name().map(PathBuf::from).unwrap_or_else(|| path.clone());
+                    let key = path
+                        .file_name()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| path.clone());
                     valid.insert(key);
                 }
                 ManifestEntry::Remove { path } => {
-                    let key = path.file_name().map(PathBuf::from).unwrap_or_else(|| path.clone());
+                    let key = path
+                        .file_name()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| path.clone());
                     valid.remove(&key);
                 }
                 ManifestEntry::RollbackComplete { .. } => {}
@@ -413,7 +425,11 @@ mod tests {
             .expect("write corrupted file");
 
         let loaded = Manifest::load(&manifest_path).await.expect("load manifest");
-        assert_eq!(loaded.len(), 1, "Should recover entry 1 and stop before corrupted entry 2");
+        assert_eq!(
+            loaded.len(),
+            1,
+            "Should recover entry 1 and stop before corrupted entry 2"
+        );
         assert_eq!(loaded[0], entry1);
     }
 
@@ -445,7 +461,11 @@ mod tests {
             .expect("write truncated file");
 
         let loaded = Manifest::load(&manifest_path).await.expect("load manifest");
-        assert_eq!(loaded.len(), 1, "Truncated tail entry should be safely ignored");
+        assert_eq!(
+            loaded.len(),
+            1,
+            "Truncated tail entry should be safely ignored"
+        );
         assert_eq!(loaded[0], entry1);
     }
 

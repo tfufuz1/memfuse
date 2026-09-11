@@ -241,12 +241,13 @@ impl CompactionEngine {
             // === SSTABLE MANIFEST INTEGRATION START ===
             if let Some(ref manifest) = self.manifest {
                 if let Err(e) = manifest
-                    .append(&crate::manifest::ManifestEntry::Remove {
-                        path: path.clone(),
-                    })
+                    .append(&crate::manifest::ManifestEntry::Remove { path: path.clone() })
                     .await
                 {
-                    tracing::warn!("Failed to write Manifest Remove entry during compaction: {}", e);
+                    tracing::warn!(
+                        "Failed to write Manifest Remove entry during compaction: {}",
+                        e
+                    );
                 }
             }
             // === SSTABLE MANIFEST INTEGRATION END ===
@@ -1151,7 +1152,11 @@ mod tests {
         }
 
         for path in &old_sst_paths {
-            assert!(path.exists(), "SSTable file {:?} must exist before compaction", path);
+            assert!(
+                path.exists(),
+                "SSTable file {:?} must exist before compaction",
+                path
+            );
         }
         for uuid_path in &uuid_paths {
             assert!(

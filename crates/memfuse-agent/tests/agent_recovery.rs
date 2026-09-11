@@ -380,7 +380,9 @@ async fn test_agent_engine_recovers_orphaned_checkpoint_on_restart() {
     registry_a.register_checkpoint_sync(orphan_cp);
     let initial_orphans = registry_a.get_orphaned_checkpoints();
     assert!(
-        initial_orphans.iter().any(|cp| cp.tx_id == memfuse_core::TxId::new(505)),
+        initial_orphans
+            .iter()
+            .any(|cp| cp.tx_id == memfuse_core::TxId::new(505)),
         "Orphaned checkpoint 505 must be registered in engine_a"
     );
 

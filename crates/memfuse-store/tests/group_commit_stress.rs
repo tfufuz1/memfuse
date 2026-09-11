@@ -15,7 +15,11 @@ async fn test_group_commit_concurrency_stress_200_tasks() {
         ..Default::default()
     };
 
-    let storage = Arc::new(LsmStorage::new(config.clone()).await.expect("create storage"));
+    let storage = Arc::new(
+        LsmStorage::new(config.clone())
+            .await
+            .expect("create storage"),
+    );
     let num_tasks = 200u64;
 
     let start_time = Instant::now();
@@ -40,10 +44,7 @@ async fn test_group_commit_concurrency_stress_200_tasks() {
     }
 
     let elapsed = start_time.elapsed();
-    println!(
-        "Group-Commit Stress: 200 commits finished in {:?}",
-        elapsed
-    );
+    println!("Group-Commit Stress: 200 commits finished in {:?}", elapsed);
 
     assert_eq!(written.len(), 200);
 

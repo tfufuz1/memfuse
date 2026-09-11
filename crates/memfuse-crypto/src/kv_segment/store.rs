@@ -588,4 +588,30 @@ mod tests {
         assert_eq!(store.get_tenant_segment_len(tenant), 1);
         assert_eq!(store.get_segment_bytes(tenant, 1), Some(vec![4, 5, 6, 7]));
     }
+
+    #[test]
+    fn test_store_clear_all_and_global_lru() {
+        let store = TenantIsolatedKvStore::new();
+        let tenant_a = TenantId::try_new(1).unwrap();
+        let tenant_b = TenantId::try_new(2).unwrap();
+
+        store.insert_segment(tenant_a, KvSegment::new(tenant_a, 1, vec![10; 256]));
+        store.insert_segment(tenant_b, KvSegment::new(tenant_b, 2, vec![20; 256]));
+
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 1);
+        assert_eq!(store.get_tenant_segment_len(tenant_b), 1);
+
+        // Test pub(crate) evict_lru_global
+        let freed = store.evict_lru_global(200);
+        assert!(freed >= 200);
+        assert_eq!(
+            store.get_tenant_segment_len(tenant_a) + store.get_tenant_segment_len(tenant_b),
+            1
+        );
+
+        // Test clear_all emergency wipe
+        store.clear_all();
+        assert_eq!(store.get_tenant_segment_len(tenant_a), 0);
+        assert_eq!(store.get_tenant_segment_len(tenant_b), 0);
+    }
 }
