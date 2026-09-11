@@ -15,7 +15,7 @@
 
 Stand letzter Prüfung: 2026-09-11
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **27 offene Tags**
+Ergebnis: **28 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
@@ -65,7 +65,7 @@ Ergebnis: **27 offene Tags**
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
 | `memfuse-db` | 4 | 28373 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 5141 | 🟢 Clean |  |
+| `memfuse-router` | 5 | 5244 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5805 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-mcp` | 7 | 4397 | 🟢 Clean |  |

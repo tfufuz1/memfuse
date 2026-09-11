@@ -89,7 +89,7 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |
 | `memfuse-db` | 4 | 28373 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 5141 | 🟢 Clean |  |
+| `memfuse-router` | 5 | 5244 | 🟢 Clean |  |
 | `memfuse-tauri` | 5 | 6179 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
 | `memfuse-agent` | 6 | 5805 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-mcp` | 7 | 4397 | 🟢 Clean |  |
