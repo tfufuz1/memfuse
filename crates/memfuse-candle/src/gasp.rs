@@ -121,6 +121,29 @@ impl GaspValidator {
         self.config.threshold
     }
 
+    /// Gibt eine Referenz auf die aktuelle `GaspConfig` zurück.
+    pub fn config(&self) -> &GaspConfig {
+        &self.config
+    }
+
+    /// Aktualisiert die Konfiguration des `GaspValidator` und invalidiert
+    /// die Kalibrierung, falls sich der `ConfigFingerprint` geändert hat (INV-CAL-2).
+    pub fn refresh_config(&mut self, config: GaspConfig) {
+        if let Ok(mut cal) = self.calibrator.lock() {
+            cal.invalidate_on_config_change(config.fingerprint.clone());
+        }
+        self.config = config;
+    }
+
+    /// Gibt die Anzahl der aktuell gesammelten Kalibrierungsbeobachtungen zurück.
+    pub fn observation_count(&self) -> usize {
+        if let Ok(cal) = self.calibrator.lock() {
+            cal.observation_count()
+        } else {
+            0
+        }
+    }
+
     /// Führt die tatsächliche Attributions- und Grounding-Analyse durch.
     ///
     /// Extrahierte Fakten / Zahlen / Entitäten in `response` werden mit den bereitgestellten
@@ -444,5 +467,53 @@ mod tests {
 
         validator.set_threshold(0.85);
         assert_eq!(validator.threshold(), 0.85);
+    }
+
+    #[tokio::test]
+    async fn test_refresh_config_invalidates_calibration_on_fingerprint_change() {
+        let fp1 = ConfigFingerprint::new("candle-gasp-v1", "Q4_K_M", "gasp-model-a", 0.0);
+        let config1 = GaspConfig {
+            fingerprint: fp1.clone(),
+            ..GaspConfig::default()
+        };
+        let mut validator = GaspValidator::with_config(config1);
+
+        let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
+        let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
+
+        // Execute grounding validation to record calibration observation
+        let res = validator.validate_grounding(response, &chunks).await;
+        assert!(res.is_ok());
+        assert_eq!(validator.observation_count(), 1);
+
+        // 1. Hot swap config with a new fingerprint fp2
+        let fp2 = ConfigFingerprint::new("candle-gasp-v2", "Q8_0", "gasp-model-b", 0.0);
+        let config2 = GaspConfig {
+            fingerprint: fp2.clone(),
+            ..GaspConfig::default()
+        };
+        validator.refresh_config(config2.clone());
+
+        // Observation count must be reset to 0 (INV-CAL-2)
+        assert_eq!(
+            validator.observation_count(),
+            0,
+            "observation_count must be reset to 0 after fingerprint change"
+        );
+
+        // Record a new observation under config2
+        let res2 = validator.validate_grounding(response, &chunks).await;
+        assert!(res2.is_ok());
+        assert_eq!(validator.observation_count(), 1);
+
+        // 2. Refresh config with the SAME fingerprint fp2
+        validator.refresh_config(config2);
+
+        // Observation count must be retained when fingerprint is unchanged
+        assert_eq!(
+            validator.observation_count(),
+            1,
+            "observation_count must be preserved when fingerprint is unchanged"
+        );
     }
 }
