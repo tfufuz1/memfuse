@@ -3,7 +3,7 @@
 // INVARIANTEN: Keyed `audit:{task_id}:step:{n}`; zero deletion/update paths by design.
 // NICHT-OFFENSICHTLICH: replay_task scans prefix and sorts by step_count for deterministic replay.
 // HOTSPOTS: append (ll. 35-50), replay_task (ll. 52-70).
-// STAND: TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)
+// STAND: TS:2026-09-11T14:41:11Z (SESSION: b979ee5a)
 
 //! Immutable audit trail for agent workflow executions.
 //!
@@ -601,10 +601,7 @@ impl StorageEngine for InMemoryStorageEngine {
         &'a self,
         start: std::ops::Bound<&'a [u8]>,
         end: std::ops::Bound<&'a [u8]>,
-        // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8)
-        // BEFUND: Parameter `limit` is unreferenced in test helper `InMemoryStorageEngine::scan`.
-        // RISIKO: Triggers unused_variables compiler warning when building tests.
-        // EMPFEHLUNG: Prefix with underscore `_limit` or apply limit slicing in test mock.
+        // RESOLVED: AGT-AGENT-bf5c7019 — Limit parameter is actively used in entries.truncate(lim) in InMemoryStorageEngine::scan. (TS: 2026-09-11T14:41:11Z)
         limit: Option<usize>,
     ) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>> {
         Box::pin(async move {

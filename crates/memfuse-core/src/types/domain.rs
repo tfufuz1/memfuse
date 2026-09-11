@@ -972,6 +972,10 @@ pub struct ConfigFingerprint {
     /// Temperatur als Bits für bit-exakten Vergleich (kein float-Gleichheitstest).
     /// `temperature_bits = temperature.to_bits()`
     pub temperature_bits: u32,
+    /// Schwellenwert/Threshold als Bits für bit-exakten Vergleich.
+    /// `threshold_bits = threshold.to_bits()`
+    #[serde(default)]
+    pub threshold_bits: u32,
 }
 
 impl ConfigFingerprint {
@@ -992,7 +996,20 @@ impl ConfigFingerprint {
             quantization: quantization.into(),
             prompt_template_hash: hash,
             temperature_bits: temperature.to_bits(),
+            threshold_bits: 0,
         }
+    }
+
+    /// Setzt die Schwellenwert-Komponente (Threshold) für diesen Fingerabdruck (Builder Pattern).
+    pub fn with_threshold(mut self, threshold: f32) -> Self {
+        self.threshold_bits = threshold.to_bits();
+        self
+    }
+
+    /// Extrahiert Schwellenwert/Threshold als f32 (verlustfrei da via to_bits gespeichert).
+    #[inline]
+    pub fn threshold(&self) -> f32 {
+        f32::from_bits(self.threshold_bits)
     }
 
     /// Extrahiert Temperatur als f32 (verlustfrei da via to_bits gespeichert).

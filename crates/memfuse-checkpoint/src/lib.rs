@@ -273,6 +273,13 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
             lock.push(orphan);
+            drop(lock);
+            if let Err(err) = self.persist_sync() {
+                tracing::error!(
+                    ?err,
+                    "Failed to persist orphan registry after registering orphan pin"
+                );
+            }
         }
     }
 
@@ -280,6 +287,13 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
             lock.push(cp);
+            drop(lock);
+            if let Err(err) = self.persist_sync() {
+                tracing::error!(
+                    ?err,
+                    "Failed to persist orphan registry after registering orphaned checkpoint"
+                );
+            }
         }
     }
 

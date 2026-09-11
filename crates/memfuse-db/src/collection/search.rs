@@ -639,8 +639,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
 
             // 3. Graph Signal
-            // LIMITATION: graph_search() unterstützt aktuell keinen expliziten Snapshot-Parameter —
-            // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe AI-TAG[SMELL][MINOR] TODO(audit-ARCH-1-partial): graph_search does not support explicit snapshot parameter. (ID: AGT-DB-6d724b1a) (TS: 2026-09-11T14:38:03Z) (SESSION: ec63623e).
+            // AI-TAG[RESOLVED][MINOR] graph_search snapshot isolation via multi_traverse_at for Hops; PARTIAL with warning for PPR/PathRag. (ID: AGT-DB-6d724b1a)
             let implicit_anchors: Vec<memfuse_core::EntityId>;
             let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities
             {
@@ -663,9 +662,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             let graph_results = if let Some(anchors) = anchors_ref {
                 let tuples = match graph_strat {
                     memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
-                        self.graph_index.multi_traverse(anchors, *max_hops).await?
+                        self.graph_index
+                            .multi_traverse_at(anchors, *max_hops, seq)
+                            .await?
                     }
                     memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                        tracing::warn!(
+                            hybrid_search_graph_snapshot_skew = true,
+                            seq = seq,
+                            strategy = "PersonalizedPageRank",
+                            "PPR strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
+                        );
                         self.graph_index
                             .personalized_page_rank(anchors, ppr_config)
                             .await?
@@ -674,6 +681,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         max_hops,
                         sufficiency_threshold,
                     } => {
+                        tracing::warn!(
+                            hybrid_search_graph_snapshot_skew = true,
+                            seq = seq,
+                            strategy = "PathRag",
+                            "PathRag strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
+                        );
                         use memfuse_graph::path_rag::PathRAGEngine;
                         let engine = PathRAGEngine::new(
                             self.graph_index.as_ref(),
@@ -1028,14 +1041,21 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             };
 
         // 3. Graph Signal
-        // LIMITATION: graph_search() unterstützt aktuell keinen expliziten Snapshot-Parameter —
-        // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe AI-TAG[SMELL][MINOR] TODO(audit-ARCH-1-partial): graph_search does not support explicit snapshot parameter. (ID: AGT-DB-6d724b1a) (TS: 2026-09-11T14:38:03Z) (SESSION: ec63623e).
+        // AI-TAG[RESOLVED][MINOR] graph_search snapshot isolation via multi_traverse_at for Hops; PARTIAL with warning for PPR/PathRag. (ID: AGT-DB-6d724b1a)
         let graph_results = if let Some(anchors) = anchors_ref {
             let tuples = match &query.graph_strategy {
                 memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
-                    self.graph_index.multi_traverse(anchors, *max_hops).await?
+                    self.graph_index
+                        .multi_traverse_at(anchors, *max_hops, seq)
+                        .await?
                 }
                 memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                    tracing::warn!(
+                        hybrid_search_graph_snapshot_skew = true,
+                        seq = seq,
+                        strategy = "PersonalizedPageRank",
+                        "PPR strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
+                    );
                     self.graph_index
                         .personalized_page_rank(anchors, ppr_config)
                         .await?
@@ -1044,6 +1064,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     max_hops,
                     sufficiency_threshold,
                 } => {
+                    tracing::warn!(
+                        hybrid_search_graph_snapshot_skew = true,
+                        seq = seq,
+                        strategy = "PathRag",
+                        "PathRag strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
+                    );
                     use memfuse_graph::path_rag::PathRAGEngine;
                     let engine = PathRAGEngine::new(
                         self.graph_index.as_ref(),

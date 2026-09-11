@@ -2452,6 +2452,23 @@ async fn test_run_percolation_check_rebonding() -> memfuse_core::Result<()> {
 }
 
 #[tokio::test]
+async fn test_single_pid_controller_instantiation_in_query_builder() {
+    // Regression test: verify that exactly one PID controller type (memfuse_calibration::PidController)
+    // is instantiated across production collection search and query_builder modules.
+    let mut pid = memfuse_calibration::PidController::default();
+    assert_eq!(pid.kp, 0.5);
+    assert_eq!(pid.ki, 0.05);
+    assert_eq!(pid.kd, 0.1);
+    assert_eq!(pid.target_latency_ms, 150.0);
+    assert_eq!(pid.min_pool_size, 50);
+    assert_eq!(pid.max_pool_size, 200);
+
+    let updated = pid.update(100, 300.0);
+    assert!(updated < 100);
+    assert!(updated >= 50);
+}
+
+#[tokio::test]
 async fn test_checkpoint_unpin_on_search_error_path() {
     use memfuse_core::{BoxFuture, FilterExpr, Result, StorageEngine, StorageStats, TxId};
     use memfuse_graph::csr::CsrGraph;

@@ -19,7 +19,6 @@ Ergebnis: **13 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-agent/src/audit.rs` | 604 | `AGT-AGENT-bf5c7019` | `SMELL` | `MINOR` | `2026-09-10T19:16:32Z` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
 | `crates/memfuse-agent/src/dlq.rs` | 92 | `AGT-AGENT-49bfd02e` | `SMELL` | `MINOR` | `2026-09-11T12:00:00Z` | // AI-TAG[SMELL][MINOR] Fallback transaction ID allocation via last_tx_id + 1 is non-atomic under concurrent writers. (ID: AGT-AGENT-49bfd02e) (TS: 2026-09-11T12:00:00Z) (SESSION: 81ef2364) |
 | `crates/memfuse-crypto/src/kv_segment/store.rs` | 404 | `AGT-SECURITY-3edfea62` | `TEST` | `MAJOR` | `2026-09-10T23:43:03Z` | // AI-TAG[TEST][MAJOR] Lock release test timing dependency under high contention (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-10T23:43:03Z) (SESSION: 504d02fc) |
 | `crates/memfuse-db/src/collection/search.rs` | 643 | `AGT-DB-6d724b1a` | `SMELL` | `MINOR` | `2026-09-11T14:38:03Z` | // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe AI-TAG[SMELL][MINOR] TODO(audit-ARCH-1-partial): graph_search does not support explicit snapshot parameter. (ID: AGT-DB-6d724b1a) (TS: 2026-09-11T14:38:03Z) (SESSION: ec63623e). |
