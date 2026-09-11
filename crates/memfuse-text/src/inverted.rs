@@ -535,51 +535,19 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let raw_entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let mut entries = Vec::with_capacity(raw_entries.len());
+            let mut valid_postings = Vec::with_capacity(raw_entries.len());
             for (key, val_bytes) in raw_entries {
                 let suffix_bytes = &key[prefix.len()..];
-                if let Ok(suffix) = std::str::from_utf8(suffix_bytes) {
-                    if let Ok(doc_id_raw) = suffix.parse::<u64>() {
-                        entries.push((DocId::new(doc_id_raw), val_bytes));
+                if let Ok(suffix_str) = std::str::from_utf8(suffix_bytes) {
+                    if let Ok(doc_id_raw) = suffix_str.parse::<u64>() {
+                        if val_bytes.len() == 4 {
+                            if let Ok(tf_bytes) = val_bytes.as_slice().try_into() {
+                                let tf = u32::from_le_bytes(tf_bytes);
+                                valid_postings.push((DocId::new(doc_id_raw), tf));
+                            }
+                        }
                     }
                 }
-            }
-
-            // Filter entries to exact matches for {namespace}:pl:{term}:{doc_id}
-            // Ignore subterm keys (e.g. {namespace}:pl:{term}:{subterm}:{doc_id}) that match the prefix scan
-            let valid_entries: Vec<(DocId, u32)> = entries
-                .into_iter()
-                .filter_map(|(key, val_bytes)| {
-                    if key.len() <= prefix.len() {
-                        return None;
-                    }
-                    let suffix = &key[prefix.len()..];
-                    let suffix_str = std::str::from_utf8(suffix).ok()?;
-                    let doc_id_raw = suffix_str.parse::<u64>().ok()?;
-                    let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().ok()?);
-                    Some((DocId::new(doc_id_raw), tf))
-                })
-                .collect();
-
-            let df = valid_entries.len() as u32;
-            if df == 0 {
-                continue;
-            }
-
-            for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}. Skip entries for longer terms sharing the prefix (e.g. term:subterm)
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = match std::str::from_utf8(suffix)
-                    .ok()
-                    .and_then(|s| s.parse::<u64>().ok())
-                {
-                    Some(id) => id,
-                    None => continue,
-                };
-                let doc_id = DocId::new(doc_id_raw);
-                let tf = u32::from_le_bytes(tf_bytes);
-                valid_postings.push((doc_id, tf));
             }
 
             let df = valid_postings.len() as u32;
@@ -588,7 +556,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
             }
 
             for (doc_id, tf) in valid_postings {
-
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
                     len
