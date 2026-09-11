@@ -932,7 +932,6 @@ impl StorageEngine for LsmStorage {
         })
     }
 
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-9): Inspect uncommitted transaction buffers in put_if_absent to avoid race conditions with uncommitted concurrent writes. (ID: AGT-STORE-3261a338) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     fn put_if_absent<'a>(
         &'a self,
         tx_id: TxId,
@@ -948,6 +947,10 @@ impl StorageEngine for LsmStorage {
             }
 
             let _commit_lock = self.commit_mutex.lock().await;
+
+            if self.tx_buffer.is_key_staged_globally(key) {
+                return Ok(false);
+            }
 
             if let Some(is_insert) = self.tx_buffer.staged_status(key) {
                 if is_insert {
@@ -3816,6 +3819,23 @@ mod tests {
         } else {
             assert_eq!(stored_val, b"val2");
         }
+    }
+
+    #[tokio::test]
+    async fn test_put_if_absent_sees_uncommitted_concurrent_stage() {
+        let (storage, _tmp) = test_storage().await;
+
+        let key = b"uncommitted_key";
+        let tx_a = TxId::new(10);
+        let tx_b = TxId::new(20);
+
+        // (a) Transaction A stages an insert via put_if_absent (returns true) but does NOT commit
+        let res_a = storage.put_if_absent(tx_a, key, b"value_a").await.unwrap();
+        assert!(res_a, "Transaction A must successfully stage the insert");
+
+        // (b) Transaction B attempts put_if_absent for the same key while A is uncommitted/unrolled
+        let res_b = storage.put_if_absent(tx_b, key, b"value_b").await.unwrap();
+        assert!(!res_b, "Transaction B must see uncommitted staged insert from Transaction A and return false");
     }
 
     #[tokio::test]
