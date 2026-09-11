@@ -163,7 +163,7 @@ pub enum DeletionScope {
 
 /// Cryptographic proof of data deletion.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-// AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery. (ID: AGT-CRYPTO-9f17569e) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+// RESOLVED: AGT-CRYPTO-9f17569e — DeletionProof v2 signature payload covers scope, deleted_after_tx (TxId per ADR-016), deleted_keys_hash, covered_layers, and excluded_scopes under HMAC-SHA256 proof_key. Adding unauthenticated timestamp/caller_identity would violate ADR-016 determinism. (TS: 2026-09-11T00:00:00Z) (SESSION: 50d6cd5e)
 pub struct DeletionProof {
     /// Version der HMAC-Signatur-Payload-Konstruktion.
     ///

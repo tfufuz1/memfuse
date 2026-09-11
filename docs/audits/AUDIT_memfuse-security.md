@@ -462,3 +462,34 @@ Erneute Verifikation aller kryptographischen Subsysteme in `memfuse-crypto` (`me
   - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
 - **Workspace-Integrität:**
   - `cargo check --workspace --exclude memfuse-tauri` -> 0 Fehler, 0 Warnungen.
+
+---
+
+## 24. Re-Audit & Finding Verification (2026-09-11)
+
+**Datum:** 2026-09-11T00:00:00Z (SESSION: 50d6cd5e)
+**Status:** **ALL CHECKS GREEN (VERIFIED — 0 OPEN FINDINGS)**
+
+Verifikation des inline AI-TAG Befunds in `crates/memfuse-crypto/src/deletion_proof.rs` (ID: `AGT-CRYPTO-9f17569e`):
+- **Finding-Analyse & Intake-Protocol (`.jules/AUDIT_INTAKE_PROTOCOL.md`):**
+  - Befund: `// AI-TAG[SMELL][MINOR] TODO(audit-R3-1): Ensure DeletionProof signature payload includes entity_id, timestamp, scope, and caller_identity to prevent cross-context forgery.`
+  - **Status:** **`[ENTKRÄFTET]`**.
+  - **Begründung:** `DeletionProof` repräsentiert einen kryptographischen Löschnachweis auf Speicher-/Layer-Ebene für DSGVO Art. 17. In `DeletionProof` v2 ist `scope` (`DeletionScope` für `Document` mit `doc_id` + `tenant_id`, `Collection` mit `collection_id` + `tenant_id`, oder `Tenant` mit `tenant_id`) sowie `deleted_after_tx` (`TxId`, deterministischer logischer Transaktions-Zeitstempel gemäß ADR-016), `deleted_keys_hash` (Blake3 über alle sortierten gelöschten Schlüssel), `covered_layers` und `excluded_scopes` bereits vollständig durch HMAC-SHA256 über einen isolierten, mandanten-/organisations-spezifischen `proof_key` abgesichert. Das Hinzufügen von flüchtigen/nicht-deterministischen Feldern wie Echtzeit-`timestamp` oder `caller_identity` würde ADR-016 (Determinismus via TxId) verletzen.
+  - Der Inline-Tag wurde nach Verifikation entfernt und als RESOLVED markiert.
+
+- **Inventarabgleich & Drift (Schritt 0):**
+  - Tatsächlicher Repo-Zustand: 11 `.rs`-Dateien unter `crates/memfuse-crypto/src/` (`anti_tamper.rs`, `crypto.rs`, `deletion_proof.rs`, `error.rs`, `kv_cipher.rs`, `kv_segment/mod.rs`, `kv_segment/segment.rs`, `kv_segment/store.rs`, `kv_segment/eviction_worker.rs`, `lib.rs`, `wal_crypto.rs`).
+  - `Inventar-Drift: Datei crates/memfuse-crypto/src/kv_segment/ (mod.rs, segment.rs, store.rs, eviction_worker.rs) im Prompter-Inventar vom 2026-09-10 nicht erfasst`.
+
+- **Kompilierung & Statische Analyse:**
+  - `cargo check -p memfuse-security --all-features` -> 0 Fehler, 0 Warnungen
+  - `cargo clippy -p memfuse-security -- -D warnings` -> 0 Findings
+  - `cargo fmt --check -p memfuse-security` -> 0 Formatting Diffs
+
+- **Test-Abdeckung & Safety:**
+  - `cargo test -p memfuse-security --all-features` -> 87 Unit/Integration/Proptest/RFC-Tests erfolgreich ausgeführt.
+  - Zero `unsafe` Blöcke im Produktionscode unter `crates/memfuse-crypto/src/` (`#![forbid(unsafe_code)]` aktiv).
+  - Zero unhandhabte `.unwrap()` / `.expect()` im Produktionscode außerhalb von `#[cfg(test)]`.
+
+- **Workspace-Integrität:**
+  - `cargo check --workspace --exclude memfuse-tauri` -> 0 Fehler, 0 Warnungen.
