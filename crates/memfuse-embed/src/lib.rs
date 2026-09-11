@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-10T19:24:15Z (SESSION: 3a20f416)
+// STAND: 2026-09-11T10:21:21Z (SESSION: fe92d654)
 // ZWECK: In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG).
 // INVARIANTEN: Default-Build ohne ONNX hat leere Feature-Flags (ADR-005, Pure-Rust-USP).
 // NICHT-OFFENSICHTLICH: Threading via tokio::task::spawn_blocking zur Vermeidung von Executor-Starvation.
