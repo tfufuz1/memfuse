@@ -1,7 +1,7 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
+// STAND: 2026-09-11T14:38:03Z (SESSION: ec63623e)
 // ZWECK: Native Candle ML vector embedding client implementation.
-// INVARIANTEN: Thread safety via Arc<tokio::sync::Mutex<Box<dyn CandleEmbedInner>>>; vector dimension matches model.dim.
+// INVARIANTEN: Thread safety via Arc<tokio::sync::Mutex<Box<dyn CandleEmbedInner>>>; vector dimension matches model.dim. Zero unsafe code in production via VarBuilder::from_buffered_safetensors.
 // NICHT-OFFENSICHTLICH: CandleEmbedInner trait enables mock-based unit testing without binary weights in CI.
 
 use crate::model_registry::ModelFingerprint;
@@ -162,18 +162,22 @@ pub struct BertEmbedModel {
 impl BertEmbedModel {
     /// Loads BERT model weights from a `.safetensors` file and configuration from `config.json`.
     pub fn load(weights_path: &Path, _config_path: &Path, device: &Device) -> Result<Self> {
-        let data = std::fs::read(weights_path).map_err(|e| {
-            MemFuseError::Internal(format!(
-                "Failed to read BERT safetensors file {}: {e}",
-                weights_path.display()
+        let weights_bytes = std::fs::read(weights_path).map_err(|e| {
+            MemFuseError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to read BERT safetensors weights file {}: {e}",
+                    weights_path.display()
+                ),
             ))
         })?;
-        let vb = VarBuilder::from_buffered_safetensors(data, DTYPE, device).map_err(|e| {
-            MemFuseError::Internal(format!(
-                "Failed to load BERT safetensors weights from {}: {e}",
-                weights_path.display()
-            ))
-        })?;
+        let vb =
+            VarBuilder::from_buffered_safetensors(weights_bytes, DTYPE, device).map_err(|e| {
+                MemFuseError::Internal(format!(
+                    "Failed to load BERT safetensors weights from {}: {e}",
+                    weights_path.display()
+                ))
+            })?;
 
         let config = Config::default();
 

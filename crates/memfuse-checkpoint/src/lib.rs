@@ -17,7 +17,7 @@
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-09-11T10:13:56Z (SESSION: 34d35282)
+// STAND:       2026-09-11T14:30:00Z (SESSION: 7c5b91a2)
 // ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
 // INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
@@ -310,7 +310,7 @@ impl InstanceOrphanRegistry {
         if tokio::runtime::Handle::try_current().is_ok() {
             tokio::task::spawn_blocking(move || state.persist_sync())
                 .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+                .map_err(|e| std::io::Error::other(e.to_string()))?
         } else {
             state.persist_sync()
         }

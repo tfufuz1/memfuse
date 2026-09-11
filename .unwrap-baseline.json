@@ -1121,15 +1121,19 @@
   },
   {
     "file": "crates/memfuse-candle/src/gasp.rs",
-    "hash": "19f223c2cc13c6a7"
-  },
-  {
-    "file": "crates/memfuse-candle/src/gasp.rs",
-    "hash": "2f7d988ff458b837"
-  },
-  {
-    "file": "crates/memfuse-candle/src/gasp.rs",
     "hash": "3cb0ca038b1023d8"
+  },
+  {
+    "file": "crates/memfuse-candle/src/gasp.rs",
+    "hash": "9298589b995277b8"
+  },
+  {
+    "file": "crates/memfuse-candle/src/gasp.rs",
+    "hash": "a8fed291c553d6e9"
+  },
+  {
+    "file": "crates/memfuse-candle/src/gasp.rs",
+    "hash": "d262c36a8b7dfe2e"
   },
   {
     "file": "crates/memfuse-candle/src/gasp.rs",
