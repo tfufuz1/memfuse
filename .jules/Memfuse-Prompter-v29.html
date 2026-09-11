@@ -625,7 +625,7 @@ const APM_ON = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13',
 // bleibt davon unberührt und ist projektunabhängig.
 let TARGET_ARCH = {
   "memfuse-core": "memfuse-foundation",
-  "memfuse-security": "memfuse-security",
+  "memfuse-crypto": "memfuse-crypto",
   "memfuse-store": "memfuse-persistence",
   "memfuse-checkpoint": "memfuse-persistence",
   "memfuse-index": "memfuse-retrieval",
@@ -647,7 +647,7 @@ const DEFAULT_CRATES = [
   { id:'memfuse-core', layer:0, order:1, desc:'Typen · Traits · Fehler · SnapshotRegistry · TxBuffer', loc:'9615', tests:'163+', status:'✅', risk:'none', tier:'1' },
   { id:'memfuse-calibration', layer:1, order:2, desc:'Score-Kalibrierung · ECE-Metriken · Confidence-Fitting', loc:'1034', tests:'22+', status:'✅', risk:'calib', tier:'3' },
   { id:'memfuse-checkpoint', layer:1, order:3, desc:'RAII CheckpointGuard · Time-Travel · BLAKE3-Manifest', loc:'2619', tests:'77+', status:'✅', risk:'none', tier:'2' },
-  { id:'memfuse-security', layer:1, order:4, desc:'AES-256-GCM-SIV · HKDF · HMAC-SHA256 · Zeroize · KV-Segment-Sicherheit', loc:'4440', tests:'110+', status:'✅', risk:'sec', tier:'1' },
+  { id:'memfuse-crypto', layer:1, order:4, desc:'AES-256-GCM-SIV · HKDF · HMAC-SHA256 · Zeroize · KV-Segment-Sicherheit', loc:'4440', tests:'110+', status:'✅', risk:'sec', tier:'1' },
   { id:'memfuse-graph', layer:1, order:5, desc:'CSR-Graph · PPR · Community · Session-DAG · BFS (in csr.rs)', loc:'10328', tests:'132+', status:'✅', risk:'none', tier:'2' },
   { id:'memfuse-text', layer:1, order:6, desc:'BM25 · Invertierter Index (inverted.rs) · German Compound Splitter', loc:'5337', tests:'90+', status:'✅', risk:'utf8', tier:'2' },
   { id:'memfuse-candle', layer:2, order:7, desc:'Pure-Rust ML Inferenz-Backend · GGUF/Quantisierung', loc:'1573', tests:'13+', status:'🟡', risk:'candle', tier:'3' },
@@ -666,7 +666,7 @@ const DEFAULT_CRATES = [
 // Aktive, ggf. durch mergeProjectData() ersetzte/erweiterte Arbeitskopie.
 let CRATES = DEFAULT_CRATES.map(c => ({ ...c }));
 
-// Tier 1 wird nicht ausschließlich über LOC vergeben: memfuse-security, memfuse-py und memfuse-mcp
+// Tier 1 wird nicht ausschließlich über LOC vergeben: memfuse-crypto, memfuse-py und memfuse-mcp
 // sind LOC-klein, aber Sicherheits-/FFI-/Protokoll-Außengrenzen des Systems — ihr Fehlerbild
 // (Timing-Seitenkanal, Panic-über-FFI-Grenze, stdio-Protokollverletzung) ist so teuer wie das
 // eines großen Crates, deshalb erhalten sie dieselbe Pflichttiefe wie die LOC-Riesen.
@@ -796,7 +796,7 @@ const DEFAULT_COMPONENTS = {
     { file:'types/importance.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Metriken zur Priorisierung und Zerfallsberechnung von Speicher-Chunks. Monotonie bei Halbwertszeit-Updates wahren.' },
     { file:'types/saos.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'Typdefinitionen für Sparse Atomic Objects. Byteweise Alignment-Invariante und Serde-Stabilität sicherstellen.' },
   ],
-  'memfuse-security': [
+  'memfuse-crypto': [
     { file:'kv_segment/store.rs', size:'M', risk:'Concurrency', desc:'TenantIsolatedKvStore — LRU-Eviction & Mandantenisolation', focus:'evict_lru_fair() stellt Fairness sicher.' },
     { file:'anti_tamper.rs', size:'S', risk:'Zeroize', desc:'IntegrityVerifier, VolatileEncryptionKey (#[zeroize(drop)]) & Zeroize-Drop-Semantik-Verifikation', focus:'Test-only unsafe hier ist explizit erlaubt (AGENTS.md-Ausnahme) — ausschließlich zur Verifikation der Zeroize-Drop-Semantik via Raw-Pointer-Inspektion, niemals für Produktionslogik. JEDES neue Struct mit Schlüsselmaterial MUSS ZeroizeOnDrop implementieren — lückenlos, keine Ausnahme. [KORR v22: Es gibt keine eigene zeroize_types.rs — VolatileEncryptionKey lebt bereits hier in anti_tamper.rs.]' },
     { file:'crypto.rs', size:'L', risk:'RFC 8452/5869/4231', desc:'KeyManager — AES-256-GCM-SIV encrypt/decrypt + Nonce-Konstruktion, HKDF Key Derivation, HMAC-SHA256 (alle drei Primitiven in EINER Datei, Größenklasse L)', focus:'Nonce = 4B Instanz-Präfix (OsRng) + 8B per-Call OsRng-Suffix — jede Änderung an der Nonce-Konstruktion erfordert eine erneute Kollisionswahrscheinlichkeits-Betrachtung (Referenz p≈2.71e-8 bei 10⁶ Nonces). Jeder neue abgeleitete Schlüsseltyp braucht einen eigenen, disjunkten HKDF-Domain-Separator-String. Jeder Tag-/MAC-Vergleich MUSS über subtle::ConstantTimeEq laufen. [KORR v22: Es gibt KEINE separaten Dateien aes_gcm_siv.rs/hkdf.rs/hmac.rs — alle drei Primitiven sind im KeyManager in crypto.rs konsolidiert.]' },
@@ -1099,7 +1099,7 @@ for i in $(seq 1 10); do
 done
 \`\`\``
   },
-  'memfuse-security': {
+  'memfuse-crypto': {
     title:'Senior Rust Applied-Cryptography-Ingenieur — AES-256-GCM-SIV, HKDF, HMAC, Zeroize',
     layer:'Layer 1 — Encryption-at-Rest Fundament (einzige Crate mit Krypto-Primitiven)',
     focus:`KRIT. INVARIANTEN für memfuse-crypto:
@@ -2298,7 +2298,7 @@ const SUBSYSTEMS = [
     desc:'LsmStorage — StorageEngine-Trait-Implementierung, commit_mutex-Verwaltung, rollback_to_tx (größte Einzeldatei des Crates)' },
   { id:'mcp_sandbox', crate:'memfuse-mcp', file:'crates/memfuse-mcp/src/sandbox.rs',
     loc:'431', size:'M', icon:'🧪', name:'MCP-Sandbox',
-    desc:'McpSandbox — Zero-Trust Tool-Output-Isolation, Volatile-Result-Verschlüsselung (AES-256-GCM-SIV via memfuse-security)' },
+    desc:'McpSandbox — Zero-Trust Tool-Output-Isolation, Volatile-Result-Verschlüsselung (AES-256-GCM-SIV via memfuse-crypto)' },
 ];
 
 function SUBSYS_DOD(sub) {
@@ -3613,7 +3613,7 @@ grep -n "v1.bak\\|rewrite_as_v3\\|restore\\|recover" ${sub.file}
 
 # V3-HMAC-Byte-Reihenfolge (wal_crypto.rs cross-reference)
 grep -n "compute_checksum_v3\\|verify_and_update_v3\\|domain_separator" \\
-  ${sub.file} crates/memfuse-security/src/wal_crypto.rs
+  ${sub.file} crates/memfuse-crypto/src/wal_crypto.rs
 \`\`\`
 
 ### Phase W-3: Crash-Recovery-Simulation
@@ -3728,7 +3728,7 @@ Owner-Crate (Claim automatisch hierauf gesetzt): \`${crate}\`.
 McpSandbox ist die Isolationsschicht zwischen einem MCP-Tool-Call und der
 restlichen MemFuse-Engine: sie validiert, ob ein Tool-Call laut
 \`SandboxPolicy\` überhaupt erlaubt ist, kapselt volatile Tool-Outputs
-verschlüsselt (AES-256-GCM-SIV über memfuse-security) und garantiert deren
+verschlüsselt (AES-256-GCM-SIV über memfuse-crypto) und garantiert deren
 Zeroize bei Drop. Ein Fehler hier ist keine gewöhnliche Logik-Lücke, sondern
 ein potenzieller Sandbox-Escape (unautorisierter DB-Write/Code-Execution)
 oder ein Daten-Leck volatiler Tool-Ergebnisse über Session-Ende hinaus.
