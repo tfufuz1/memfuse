@@ -78,6 +78,15 @@ impl OrchestratorEngine {
         Ok(())
     }
 
+    /// Recovers all registered/persisted orphaned sequence pins and checkpoints.
+    pub async fn recover_orphans(&self) -> Result<()> {
+        self.checkpoint_store.recover_orphaned_pins().await?;
+        self.checkpoint_store
+            .recover_orphaned_checkpoints()
+            .await?;
+        Ok(())
+    }
+
     pub async fn run(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
         ctx.status = crate::context::AgentStatus::Running;
         let res = self.run_internal(ctx, graph).await;
@@ -88,6 +97,9 @@ impl OrchestratorEngine {
     }
 
     async fn run_internal(&self, ctx: &mut AgentContext, graph: &StateGraph) -> Result<()> {
+        // Startup orphan recovery MUST execute before first agent step (Befund A.3)
+        self.recover_orphans().await?;
+
         loop {
             tokio::task::yield_now().await;
             let node = graph.get_node(&ctx.current_node).ok_or_else(|| {
@@ -106,8 +118,16 @@ impl OrchestratorEngine {
                 NodeType::Start | NodeType::Task => {
                     // 1. Checkpoint BEFORE execution (AC-1) with RAII CheckpointGuard
                     let tx_id = ctx.db.inner_storage().last_tx_id().await?;
-                    let guard =
-                        CheckpointGuard::for_agent_step(ctx.db.inner_storage(), tx_id).await?;
+                    let guard = if let Some(orphan_reg) = self.checkpoint_store.orphan_registry() {
+                        CheckpointGuard::for_agent_step_with_registry(
+                            ctx.db.inner_storage(),
+                            tx_id,
+                            orphan_reg.clone(),
+                        )
+                        .await?
+                    } else {
+                        CheckpointGuard::for_agent_step(ctx.db.inner_storage(), tx_id).await?
+                    };
                     self.checkpoint(ctx).await?;
 
                     // Prepare step input
