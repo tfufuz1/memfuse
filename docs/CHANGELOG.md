@@ -75,6 +75,7 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-09-11T00:06:00Z` | `crates/memfuse-store/src/lsm.rs` | `AI-TAG` | `AGT-STORE-nc3rec01` | `95dfad20` | `OPEN` | `0` | // AI-TAG[RECOVERY][MINOR] Implement crash recovery in P1 fix/lsm-startup-recovery. (ID: AGT-STORE-nc3rec01) (TS: 2026-09-11T00:06:00Z) (SESSION: 95dfad20) |
 | `2026-09-10T19:35:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `b434cc40` | `PASS` | `6` | // REVIEW-PASS[7/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-10T19:35:00Z) (SESSION: b434cc40) |
 | `2026-09-10T19:29:31Z (SESSION: c9240483)` | `crates/memfuse-calibration/src/isotonic.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Non-parametric probability calibration via PAVA (Pool-Adjacent Violators Algorithm). |
 | `2026-09-10T19:29:31Z (SESSION: c9240483)` | `crates/memfuse-calibration/src/pid.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Adaptive Reranking candidate pool-size regulation via PID latency control. |
