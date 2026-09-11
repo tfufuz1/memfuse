@@ -207,8 +207,8 @@ jobs:
           import shutil, os, sys
           try:
               path = hf_hub_download(
-                  repo_id='LoCoMo-Dataset/LoCoMo',
-                  filename='test.json',
+                  repo_id='KimmoZZZ/locomo',
+                  filename='locomo10.json',
                   repo_type='dataset',
                   token=os.environ.get('HF_TOKEN') or None
               )

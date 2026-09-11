@@ -449,3 +449,30 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
    - `cargo clippy -p memfuse-db --no-deps --all-features -- -D warnings` → 0 Warnings
    - `cargo fmt --check -p memfuse-db` → 0 Diffs
    - `cargo test -p memfuse-db --all-features` → 100% grün
+
+---
+
+## 17. Chaos-Engineering & Tier-1 Fault-Injection Audit (2026-09-10)
+
+**Datum:** 10. September 2026
+**Auditor:** Senior Rust Datenbank-Architekt (Jules Session: bdab97be)
+**Crate:** `memfuse-db` · Layer 2 Orchestrator & 4-Signal-Fusion
+
+### Inventar-Realitätsabgleich:
+- **Ergebnis:** 27 Quellcode-Dateien in `crates/memfuse-db/src/` per `find` verifiziert.
+- **Inventar-Drift Note:** `reaper.rs` (im veralteten Prompter-Inventar gelistet) existiert nicht mehr; Funktionalität wurde vollständig in `background_workers.rs` (start_expiry_reaper, start_orphan_reaper, start_thermostat_reaper, start_consolidation_reaper) konsolidiert.
+
+### Chaos-Engineering-Audit
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | OK | Staged 2PC rollback bei Staging-Fehler / `repair_on_open` stellt Pending Intents beim Open her | — |
+| Disk-Full ENOSPC | OK | `Err(MemFuseError::Storage(...))` propagiert sauber ohne Panics | — |
+| OOM / Backpressure | OK | Bounds via `BATCH_SIZE` (1000), `HARD_SCAN_CEILING` (100.000) & `MAX_ORPHANS_PER_TICK` erzwungen | — |
+| SIGBUS mmap-truncate | N/A | `memfuse-db` nutzt LSM/Store Fassaden; Mmap-Handling ist in Layer 2 `memfuse-index` gekapselt | — |
+| SIGKILL recovery | OK | WAL & LSM 2PC intent recovery in `repair_on_open()` synchronisiert Indizes idempotent | — |
+
+### Concurrency Smoke & Fault-Injection Tests:
+- `fault_injection_2pc` (11 Szenarien): All-or-Nothing Transaktionssicherheit unter künstlichen HNSW/LSM Injektionsfehlern verifiziert.
+- `cross_signal_isolation_test`: 100 Iterationen ohne Split-Brain-Reads oder MVCC Isolation-Anomalien bestanden.
+- Thread concurrency smoke tests: `cargo test -p memfuse-db --lib -- --test-threads=8` (213 Tests passed).
