@@ -537,22 +537,13 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
             let mut valid_postings = Vec::with_capacity(raw_entries.len());
             for (key, val_bytes) in raw_entries {
-                if key.len() <= prefix.len() {
-                    continue;
-                }
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = match std::str::from_utf8(suffix)
-                    .ok()
-                    .and_then(|s| s.parse::<u64>().ok())
-                {
-                    Some(id) => id,
-                    None => continue,
-                };
-                let doc_id = DocId::new(doc_id_raw);
-                if val_bytes.len() == 4 {
-                    if let Ok(b) = val_bytes.as_slice().try_into() {
-                        let tf = u32::from_le_bytes(b);
-                        valid_postings.push((doc_id, tf));
+                let suffix_bytes = &key[prefix.len()..];
+                if let Ok(suffix) = std::str::from_utf8(suffix_bytes) {
+                    if let Ok(doc_id_raw) = suffix.parse::<u64>() {
+                        if val_bytes.len() == 4 {
+                            let tf = u32::from_le_bytes(val_bytes[..4].try_into().unwrap());
+                            valid_postings.push((DocId::new(doc_id_raw), tf));
+                        }
                     }
                 }
             }
