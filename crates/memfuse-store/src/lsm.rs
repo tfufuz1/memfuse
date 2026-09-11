@@ -4144,9 +4144,11 @@ mod tests {
         let uuid_path = tmp.path().join("wal-0.log.uuid");
         tokio::fs::write(&uuid_path, b"test-uuid-content")
             .await
-            .unwrap();
+            .expect("// expect #[cfg(test)]");
         let wal1_path = tmp.path().join("wal-1.log");
-        tokio::fs::write(&wal1_path, b"").await.unwrap();
+        tokio::fs::write(&wal1_path, b"")
+            .await
+            .expect("// expect #[cfg(test)]");
         assert!(
             uuid_path.exists(),
             "Dummy .uuid file must exist before startup cleanup"
