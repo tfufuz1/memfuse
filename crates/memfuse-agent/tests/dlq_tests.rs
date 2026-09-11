@@ -92,6 +92,44 @@ async fn test_tool_timeout_creates_dead_letter() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_concurrent_allocate_tx_uniqueness() -> Result<()> {
+    use memfuse_agent::DeadLetterQueue;
+    use std::collections::HashSet;
+
+    let temp_dir = tempfile::TempDir::new()?;
+    let config = memfuse_db::MemFuseConfig::default();
+    let db = Arc::new(memfuse_db::MemFuse::open_with_config(temp_dir.path(), config).await?);
+    let lsm_storage = db.inner_storage();
+
+    let dlq = Arc::new(DeadLetterQueue::new(lsm_storage));
+
+    let mut handles = Vec::new();
+    for _ in 0..50 {
+        let dlq_clone = dlq.clone();
+        handles.push(tokio::spawn(async move {
+            dlq_clone.allocate_tx().await
+        }));
+    }
+
+    let mut tx_ids = Vec::new();
+    for handle in handles {
+        let tx_id = handle.await.map_err(|e| MemFuseError::Internal(e.to_string()))??;
+        tx_ids.push(tx_id);
+    }
+
+    assert_eq!(tx_ids.len(), 50);
+
+    let unique_tx_ids: HashSet<_> = tx_ids.iter().cloned().collect();
+    assert_eq!(
+        unique_tx_ids.len(),
+        50,
+        "All 50 allocated TxIds under concurrent calls must be distinct"
+    );
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_tool_retry_succeeds_on_second_attempt() -> Result<()> {
     struct FlakeyTool {
