@@ -1,6 +1,6 @@
 //! Score and probability calibration module for MemFuse (Isotonic + Platt Scaling + Adaptive PID Pool-Size Control).
 
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod isotonic;
