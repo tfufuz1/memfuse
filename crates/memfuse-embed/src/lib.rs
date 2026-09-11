@@ -12,6 +12,9 @@
 //! and `tokenizers` for text preprocessing.
 //!
 //! All ONNX-related functionality is gated behind the `onnx` feature flag.
+//!
+//! Backpressure contract: `max_concurrent_embeddings` limits `spawn_blocking` calls.
+//! Callers will experience back-pressure (await on permit acquire) rather than Tokio thread pool exhaustion.
 
 // `deny(unsafe_code)` is consciously chosen over `forbid(unsafe_code)` to allow
 // low-level C-FFI / ONNX Runtime interactions when `onnx` feature is enabled.
@@ -61,8 +64,12 @@ pub const MAX_EMBED_BATCH_SIZE: usize = 512;
 pub struct TextEmbedderConfig {
     /// Maximum number of tokens per text sequence (default: 512).
     pub max_sequence_length: usize,
-    /// Maximum parallel ONNX inference threads (default: 2).
+    /// Maximum parallel ONNX inference threads (default: 1).
+    /// Values > 1 are not supported — ONNX session is not thread-safe under concurrent access without external serialization. Default is 1.
     pub pool_size: usize,
+    /// Maximum concurrent embedding calls. Prevents spawn_blocking thread pool exhaustion.
+    /// Should be <= (tokio blocking thread pool size / 2) to leave headroom for other blocking operations. Default: 8.
+    pub max_concurrent_embeddings: usize,
     /// Expected output embedding dimension (optional).
     pub expected_dim: Option<usize>,
     /// Maximum batch size for embed_batch(). Default: MAX_EMBED_BATCH_SIZE (512).
@@ -74,10 +81,31 @@ impl Default for TextEmbedderConfig {
     fn default() -> Self {
         Self {
             max_sequence_length: 512,
-            pool_size: 2,
+            pool_size: 1,
+            max_concurrent_embeddings: 8,
             expected_dim: None,
             max_batch_size: MAX_EMBED_BATCH_SIZE,
         }
+    }
+}
+
+#[cfg(feature = "onnx")]
+impl TextEmbedderConfig {
+    /// Validates configuration parameters.
+    pub fn validate(&self) -> Result<()> {
+        if self.pool_size != 1 {
+            return Err(MemFuseError::InvalidInput(format!(
+                "TextEmbedder: pool_size > 1 ({}) not supported — ONNX session is not thread-safe \
+                 under concurrent access without external serialization. Use pool_size = 1.",
+                self.pool_size
+            )));
+        }
+        if self.max_concurrent_embeddings == 0 {
+            return Err(MemFuseError::InvalidInput(
+                "TextEmbedder: max_concurrent_embeddings must be > 0".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -233,6 +261,8 @@ impl TextEmbedder {
         model_dir: impl AsRef<Path>,
         config: TextEmbedderConfig,
     ) -> Result<Self> {
+        config.validate()?;
+
         let path = model_dir.as_ref();
         if !path.join("tokenizer.json").exists() {
             return Err(MemFuseError::InvalidInput(
@@ -263,12 +293,12 @@ impl TextEmbedder {
 
         SESSION_LOAD_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        let pool_size = config.pool_size;
         let expected_dim = config.expected_dim;
+        let max_concurrent = config.max_concurrent_embeddings;
         Ok(Self {
             session: Arc::new(parking_lot::Mutex::new(session)),
             tokenizer: Arc::new(tokenizer),
-            semaphore: Arc::new(tokio::sync::Semaphore::new(pool_size)),
+            semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent)),
             config,
             expected_dim,
         })
@@ -285,6 +315,10 @@ impl TextEmbedder {
     /// Acquires a semaphore permit to limit concurrent inference operations,
     /// then offloads the blocking ONNX computation to Tokio's blocking thread pool.
     pub async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
+        if self.semaphore.available_permits() == 0 {
+            warn!("Embedding backpressure active: max_concurrent_embeddings reached");
+        }
+
         let _permit = self
             .semaphore
             .acquire()
@@ -476,8 +510,26 @@ mod tests {
     fn test_text_embedder_config_default() {
         let cfg = TextEmbedderConfig::default();
         assert_eq!(cfg.max_sequence_length, 512);
-        assert_eq!(cfg.pool_size, 2);
+        assert_eq!(cfg.pool_size, 1);
+        assert_eq!(cfg.max_concurrent_embeddings, 8);
         assert_eq!(cfg.max_batch_size, MAX_EMBED_BATCH_SIZE);
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn test_text_embedder_config_validation() {
+        let mut cfg = TextEmbedderConfig::default();
+        cfg.pool_size = 2;
+        let res = cfg.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("pool_size > 1"));
+
+        let mut cfg = TextEmbedderConfig::default();
+        cfg.max_concurrent_embeddings = 0;
+        let res = cfg.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("max_concurrent_embeddings must be > 0"));
     }
 
     #[cfg(feature = "onnx")]
