@@ -89,28 +89,6 @@ impl SlmProfile {
         }
     }
 
-    /// P8-Pflicht: Setzt Kalibrierungszustand zurück wenn Fingerprint sich ändert.
-    /// Gibt true zurück wenn eine Invalidierung stattgefunden hat.
-    pub fn invalidate_on_config_change(&mut self, new_fp: ConfigFingerprint) -> bool {
-        match &self.fingerprint {
-            Some(existing) if existing == &new_fp => false,
-            _ => {
-                tracing::warn!(
-                    "SlmProfile: ConfigFingerprint changed — invalidating calibration (P8)"
-                );
-                self.fingerprint = Some(new_fp);
-                // Kalibrierungsstatistiken zurücksetzen
-                self.reset_calibration_state();
-                true
-            }
-        }
-    }
-
-    fn reset_calibration_state(&mut self) {
-        // P8-Reset: Baseline configuration defaults reset where applicable
-        // Note: Dynamic runtime calibration statistics (ConformalCalibrator, times_selected, calibrated_min_score)
-        // are maintained in ProfileCalibrationState within RouterEngine.
-    }
 
     /// Validates `SlmProfile` parameters.
     pub fn validate(&self) -> Result<()> {
@@ -382,22 +360,6 @@ mod serde_sorted_u64_set {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_slm_profile_fingerprint_change_triggers_invalidation() {
-        let mut profile = SlmProfile::new(
-            "test-slm",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::default(),
-            0.5,
-        );
-        let fp1 = ConfigFingerprint::new("m", "Q4_K_M", "t", 0.7);
-        let fp2 = ConfigFingerprint::new("m", "Q8_0", "t", 0.7); // andere Quantisierung
-
-        assert!(profile.invalidate_on_config_change(fp1.clone()));
-        assert!(!profile.invalidate_on_config_change(fp1.clone())); // gleicher FP → kein Reset
-        assert!(profile.invalidate_on_config_change(fp2)); // geändert → Reset
-    }
 
     #[test]
     fn test_conformal_calibrator_invariants() {

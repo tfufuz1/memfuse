@@ -9,7 +9,6 @@ description = "HNSW vector index with SIMD distance computation for MemFuse"
 [dependencies]
 memfuse-core = { workspace = true }
 memfuse-security = { workspace = true }
-memfuse-graph = { path = "../memfuse-graph", optional = true }
 subtle = "2.6"
 ahash = { workspace = true }
 parking_lot = { workspace = true }
@@ -22,7 +21,6 @@ serde = { workspace = true, features = ["derive"] }
 
 [features]
 default = []
-graph = ["dep:memfuse-graph"]
 experimental-diskann = []
 # ACHTUNG: partial-index-rebuild aktiviert F-02 (Partial HNSW Rebuild), das gegen ein
 # dokumentiertes Architektur-Veto verstößt (siehe VETOES.md, falls vorhanden, sonst
