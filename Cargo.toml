@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/memfuse-core-ipc-gen",
     "crates/memfuse-core",
     "crates/memfuse-store",
     "crates/memfuse-index",
@@ -65,6 +66,7 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Internal crates (Sovereign Core — 7 Crates)
+memfuse-core-ipc-gen = { path = "crates/memfuse-core-ipc-gen" }
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }
 memfuse-index = { path = "crates/memfuse-index" }

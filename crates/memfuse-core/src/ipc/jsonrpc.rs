@@ -10,7 +10,9 @@ pub struct JsonRpcRequest {
     pub jsonrpc: String,
     /// `None` bei Notifications (keine Antwort erwartet).
     pub id: Option<Value>,
+    /// Name der aufzurufenden RPC-Methode.
     pub method: String,
+    /// Parameter-Payload (Array oder Objekt).
     #[serde(default)]
     pub params: Value,
 }
@@ -22,8 +24,10 @@ pub struct JsonRpcResponse {
     pub jsonrpc: String,
     /// Request ID (`None` bei Parse/Batch Errors).
     pub id: Option<Value>,
+    /// Erfolgs-Ergebnis der RPC-Methode (falls vorhanden).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
+    /// Fehler-Objekt bei Fehlschlag der RPC-Methode (falls vorhanden).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
 }
