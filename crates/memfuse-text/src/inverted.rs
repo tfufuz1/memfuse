@@ -535,25 +535,30 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
+            // Filter entries to exact matches for `term`.
+            // scan_prefix_at returns all keys starting with {namespace}:pl:{term}:.
+            // Keys belonging to longer terms starting with `term` (e.g. "card" when term is "car")
+            // will also be returned. Their suffix will be "d:{doc_id}" instead of "{doc_id}".
+            let matching_entries: Vec<(DocId, u32)> = entries
+                .into_iter()
+                .filter_map(|(key, val_bytes)| {
+                    if key.len() <= prefix.len() {
+                        return None;
+                    }
+                    let suffix = &key[prefix.len()..];
+                    let s_str = std::str::from_utf8(suffix).ok()?;
+                    let doc_id_raw = s_str.parse::<u64>().ok()?;
+                    let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().ok()?);
+                    Some((DocId::new(doc_id_raw), tf))
+                })
+                .collect();
+
+            let df = matching_entries.len() as u32;
             if df == 0 {
                 continue;
             }
 
-            for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
-                let doc_id = DocId::new(doc_id_raw);
-
-                let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid tf length in posting list".into())
-                })?);
-
+            for (doc_id, tf) in matching_entries {
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
                     len
@@ -1824,6 +1829,28 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_overlapping_term_prefix_filtering() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "overlapping");
+
+        let tx1 = TxId::new(1);
+        index.upsert_document(tx1, DocId::new(1), "fast red car").await?;
+        index.upsert_document(tx1, DocId::new(2), "credit card payment").await?;
+        index.commit(tx1).await?;
+
+        // Searching for "car" must not crash or match "card"
+        let results = index.search("car", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, DocId::new(1));
+
+        let results_card = index.search("card", 10).await?;
+        assert_eq!(results_card.len(), 1);
+        assert_eq!(results_card[0].doc_id, DocId::new(2));
 
         Ok(())
     }
