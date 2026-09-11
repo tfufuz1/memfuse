@@ -85,7 +85,7 @@ jobs:
           import shutil, os
           path = hf_hub_download(
               repo_id='xiaowu0162/longmemeval',
-              filename='longmemeval_s',
+              filename='longmemeval_s.jsonl',
               repo_type='dataset'
           )
           shutil.copy(path, 'benchmarks/memfuse-bench/tests/data/longmemeval_s.jsonl')
