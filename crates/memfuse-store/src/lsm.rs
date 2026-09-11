@@ -408,7 +408,9 @@ impl LsmStorage {
         let manifest_exists = manifest_path.exists();
         let valid_manifest_sstables = if manifest_exists {
             let entries = crate::manifest::Manifest::load(&manifest_path).await?;
-            Some(crate::manifest::Manifest::reconstruct_valid_sstables(&entries))
+            Some(crate::manifest::Manifest::reconstruct_valid_sstables(
+                &entries,
+            ))
         } else {
             None
         };
@@ -869,7 +871,10 @@ impl LsmStorage {
                 .append(&crate::manifest::ManifestEntry::Remove { path: path.clone() })
                 .await
             {
-                tracing::warn!("Failed to write Manifest Remove entry during rollback: {}", e);
+                tracing::warn!(
+                    "Failed to write Manifest Remove entry during rollback: {}",
+                    e
+                );
             }
             // === SSTABLE MANIFEST INTEGRATION END ===
             // Best-effort cleanup: do not abort rollback recovery if file removal fails.
@@ -1295,52 +1300,48 @@ impl StorageEngine for LsmStorage {
             // FIX: Commit-Mutex serialisiert fetch_add + wal.prepare_batch.
             let _commit_lock = self.commit_mutex.lock().await;
 
-                let ops = self.tx_buffer.drain(tx_id);
-                if ops.is_empty() {
-                    return Ok(());
-                }
+            let ops = self.tx_buffer.drain(tx_id);
+            if ops.is_empty() {
+                return Ok(());
+            }
 
-                let mut wal_ops = Vec::with_capacity(ops.len());
-                let mut mem_updates = Vec::with_capacity(ops.len());
+            let mut wal_ops = Vec::with_capacity(ops.len());
+            let mut mem_updates = Vec::with_capacity(ops.len());
 
-                for op in &ops {
-                    let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
-                    match op {
-                        IndexOp::Insert { doc_id: _, data } => {
-                            let (key, value) = data;
+            for op in &ops {
+                let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
+                match op {
+                    IndexOp::Insert { doc_id: _, data } => {
+                        let (key, value) = data;
+                        wal_ops.push((
+                            WalOp::Put {
+                                tx_id,
+                                key: key.clone(),
+                                value: value.clone(),
+                            },
+                            seq_no,
+                        ));
+                        mem_updates.push((key.clone(), value.clone(), seq_no));
+                    }
+                    IndexOp::Delete { doc_id: _, data } => {
+                        if let Some((key, _)) = data {
                             wal_ops.push((
-                                WalOp::Put {
+                                WalOp::Delete {
                                     tx_id,
                                     key: key.clone(),
-                                    value: value.clone(),
                                 },
                                 seq_no,
                             ));
-                            mem_updates.push((key.clone(), value.clone(), seq_no));
-                        }
-                        IndexOp::Delete { doc_id: _, data } => {
-                            if let Some((key, _)) = data {
-                                wal_ops.push((
-                                    WalOp::Delete {
-                                        tx_id,
-                                        key: key.clone(),
-                                    },
-                                    seq_no,
-                                ));
-                                mem_updates.push((
-                                    key.clone(),
-                                    Vec::new(),
-                                    seq_no | TOMBSTONE_BIT,
-                                ));
-                            }
-                        }
-                        _ => {
-                            return Err(MemFuseError::InvalidInput(
-                                "Unsupported operation type staged in LSM commit".to_string(),
-                            ));
+                            mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
                         }
                     }
+                    _ => {
+                        return Err(MemFuseError::InvalidInput(
+                            "Unsupported operation type staged in LSM commit".to_string(),
+                        ));
+                    }
                 }
+            }
 
             // --- PHASE 2: Prepare WAL entries under commit_mutex ---
             let state = self.state.write().await;
@@ -1511,9 +1512,9 @@ impl StorageEngine for LsmStorage {
                         let _ = r.sender.send(Err(MemFuseError::Storage(err_msg.clone())));
                     }
 
-                    return rx.await.unwrap_or_else(|_| {
-                        Err(MemFuseError::Storage(err_msg))
-                    });
+                    return rx
+                        .await
+                        .unwrap_or_else(|_| Err(MemFuseError::Storage(err_msg)));
                 }
 
                 // Group append succeeded: update last_committed_tx and memtable for ALL batch requests
@@ -4626,14 +4627,14 @@ mod tests {
         }
 
         // (b) Manually create a rollback intent file simulating a crash during rollback to tx1
-        let intent_path = tmp.path().join(format!("rollback-{:016x}.intent", tx1.inner()));
+        let intent_path = tmp
+            .path()
+            .join(format!("rollback-{:016x}.intent", tx1.inner()));
         const INTENT_MAGIC: &[u8] = b"MFRLBK\0\0";
         let mut intent_bytes = Vec::with_capacity(16);
         intent_bytes.extend_from_slice(INTENT_MAGIC);
         intent_bytes.extend_from_slice(&tx1.inner().to_le_bytes());
-        tokio::fs::write(&intent_path, &intent_bytes)
-            .await
-            .unwrap();
+        tokio::fs::write(&intent_path, &intent_bytes).await.unwrap();
 
         assert!(
             intent_path.exists(),

@@ -89,7 +89,6 @@ impl SlmProfile {
         }
     }
 
-
     /// Validates `SlmProfile` parameters.
     pub fn validate(&self) -> Result<()> {
         if self.name.trim().is_empty() {
@@ -359,7 +358,6 @@ mod serde_sorted_u64_set {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn test_conformal_calibrator_invariants() {
