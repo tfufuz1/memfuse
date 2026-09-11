@@ -542,12 +542,15 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
             for (key, val_bytes) in entries {
                 // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
+                // Suffix is just {doc_id}. Skip entries for longer terms sharing the prefix (e.g. term:subterm)
                 let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
+                let doc_id_raw = match std::str::from_utf8(suffix)
+                    .ok()
+                    .and_then(|s| s.parse::<u64>().ok())
+                {
+                    Some(id) => id,
+                    None => continue,
+                };
                 let doc_id = DocId::new(doc_id_raw);
 
                 let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
@@ -1824,6 +1827,25 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_bm25_prefix_overlapping_colon_terms() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "colon_prefix");
+
+        let tx = TxId::new(1);
+        // Insert doc 1 with term "user" and doc 2 with term "user:id"
+        index.upsert_document(tx, DocId::new(1), "user").await?;
+        index.upsert_document(tx, DocId::new(2), "user:id").await?;
+        index.commit(tx).await?;
+
+        // Search for "user" must not crash on key for "user:id"
+        let results = index.search("user", 10).await?;
+        assert!(!results.is_empty());
+        assert_eq!(results[0].doc_id, DocId::new(1));
 
         Ok(())
     }
