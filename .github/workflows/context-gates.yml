@@ -13,6 +13,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: "Gate 0: Workspace Compile Check"
+        run: cargo run -p xtask -- check-compile
+
       - name: "Check for duplicate symbols (fast pre-build gate)"
         run: cargo run -p xtask -- check-duplicate-symbols
 

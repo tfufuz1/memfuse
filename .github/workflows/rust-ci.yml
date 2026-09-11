@@ -9,6 +9,16 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  compile-check:
+    name: Compile Check (cargo check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Workspace Compile Gate
+        run: cargo run -p xtask -- check-compile
+
   fmt:
     name: Format Check
     runs-on: ubuntu-latest
@@ -23,6 +33,7 @@ jobs:
   clippy:
     name: Clippy (-D warnings)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -36,6 +47,7 @@ jobs:
   feature-matrix:
     name: Feature Matrix Checks
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -50,6 +62,7 @@ jobs:
   maturin-dry-run:
     name: PyPI Wheel Build Check (Maturin Dry-Run)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -65,6 +78,7 @@ jobs:
   test:
     name: Test Suite (cargo-nextest with retries)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -78,6 +92,7 @@ jobs:
   clippy-py:
     name: Clippy (memfuse-py)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -89,6 +104,7 @@ jobs:
   test-py:
     name: Test Suite (memfuse-py)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -98,6 +114,7 @@ jobs:
   clippy-tauri-lib:
     name: Clippy (memfuse-tauri --lib)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -113,6 +130,7 @@ jobs:
   test-tauri:
     name: Test Suite (memfuse-tauri --lib)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -130,6 +148,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
