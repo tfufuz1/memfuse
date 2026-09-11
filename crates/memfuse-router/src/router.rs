@@ -520,7 +520,7 @@ impl RouterEngine {
 
         // 1. Sort eligible profile indices descending by min_relevance_score (most precise first).
         // Tie-breaking: when min_relevance_scores are equal, candidate score descending, then lower original index.
-        let mut sorted_profiles = eligible_profiles;
+        let mut sorted_profiles = eligible_profiles.clone();
         sorted_profiles.sort_by(|(idx_a, a), (idx_b, b)| {
             b.min_relevance_score
                 .total_cmp(&a.min_relevance_score)
@@ -580,15 +580,23 @@ impl RouterEngine {
             }
         }
 
-        // 3. Fallback: Take the eligible profile with lowest min_relevance_score (last in cascade)
-        let &(fallback_idx, fallback_profile) = match sorted_profiles.last() {
-            Some(p) => p,
-            None => {
-                return Err(MemFuseError::NotFound(
-                    "Keine SLM-Profile konfiguriert".to_string(),
-                ));
-            }
-        };
+        // Während der Warmup-Periode (calibrated == false) wird bewusst konservativ geroutet:
+        // das ressourcenschonendste Profil wird gewählt, um Kostenrisiken bei fehlender
+        // statistischer Absicherung zu minimieren.
+        let &(fallback_idx, fallback_profile) =
+            match eligible_profiles.iter().min_by(|(idx_a, a), (idx_b, b)| {
+                a.estimated_cost()
+                    .total_cmp(&b.estimated_cost())
+                    .then_with(|| a.min_relevance_score.total_cmp(&b.min_relevance_score))
+                    .then_with(|| idx_a.cmp(idx_b))
+            }) {
+                Some(p) => p,
+                None => {
+                    return Err(MemFuseError::NotFound(
+                        "Keine SLM-Profile konfiguriert".to_string(),
+                    ));
+                }
+            };
         let fallback_score = compute_profile_score(fallback_profile, chunks);
         let state = calibration.get(&fallback_profile.name);
         let (q_threshold, alpha, is_calibrated) = match state {

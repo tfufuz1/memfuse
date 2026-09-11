@@ -9,6 +9,16 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  compile-check:
+    name: Compile Check (cargo check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Workspace Compile Gate
+        run: cargo run -p xtask -- check-compile
+
   fmt:
     name: Format Check
     runs-on: ubuntu-latest
@@ -20,9 +30,40 @@ jobs:
       - name: Run rustfmt check
         run: cargo fmt --all -- --check || (echo "❌ Format Check fehlgeschlagen! Lokal beheben mit: cargo fmt --all && git commit --amend --no-edit" && exit 1)
 
+  supply-chain:
+    name: Dependency Security & License Audit
+    runs-on: ubuntu-latest
+    needs: [compile-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  coverage:
+    name: Line Coverage Gate (>= 50%)
+    runs-on: ubuntu-latest
+    needs: [compile-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage & enforce threshold
+        run: cargo llvm-cov --workspace --locked --exclude memfuse-tauri --fail-under-lines 50
+      - name: Upload coverage report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/llvm-cov/html
+
   clippy:
     name: Clippy (-D warnings)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -36,6 +77,7 @@ jobs:
   feature-matrix:
     name: Feature Matrix Checks
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -50,6 +92,7 @@ jobs:
   maturin-dry-run:
     name: PyPI Wheel Build Check (Maturin Dry-Run)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -65,19 +108,30 @@ jobs:
   test:
     name: Test Suite (cargo-nextest with retries)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - name: Run Tests with Nextest Retries
-        run: cargo nextest run --locked --workspace --exclude memfuse-tauri --retries 2
+        run: cargo nextest run --locked --workspace --exclude memfuse-tauri --retries 2 --no-fail-fast
+      - name: Report flaky tests (tests that needed a retry)
+        if: always()
+        run: |
+          if [ -f target/nextest/default/*.xml ]; then
+            RETRY_COUNT=$(grep -o 'flaky="true"' target/nextest/default/*.xml 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$RETRY_COUNT" -gt 0 ]; then
+              echo "::warning::${RETRY_COUNT} flaky Test(s) erkannt — moegliche Race Conditions, siehe TESTING.md Abschnitt 2.6 (Concurrency)"
+            fi
+          fi
       - name: Run Doc Tests
         run: cargo test --doc --locked --workspace --exclude memfuse-tauri
 
   clippy-py:
     name: Clippy (memfuse-py)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -89,6 +143,7 @@ jobs:
   test-py:
     name: Test Suite (memfuse-py)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -98,6 +153,7 @@ jobs:
   clippy-tauri-lib:
     name: Clippy (memfuse-tauri --lib)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -113,6 +169,7 @@ jobs:
   test-tauri:
     name: Test Suite (memfuse-tauri --lib)
     runs-on: ubuntu-latest
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -130,6 +187,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    needs: [compile-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

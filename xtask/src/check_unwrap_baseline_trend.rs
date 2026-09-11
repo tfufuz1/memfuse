@@ -51,9 +51,7 @@ pub fn extract_crate_name(file_path: &str) -> String {
         .map(|c| c.as_os_str().to_str().unwrap_or(""))
         .collect();
 
-    if components.len() >= 2 && components[0] == "crates" {
-        components[1].to_string()
-    } else if components.len() >= 2 && components[0] == "benchmarks" {
+    if components.len() >= 2 && (components[0] == "crates" || components[0] == "benchmarks") {
         components[1].to_string()
     } else if !components.is_empty() {
         components[0].to_string()
@@ -310,11 +308,19 @@ pub fn run_check_unwrap_baseline_trend(root: &Path) -> bool {
         let tier1_set: BTreeSet<&str> = tier1_crates.iter().map(|s| s.as_str()).collect();
         let mut tier1_added = 0usize;
         let mut tier1_removed = 0usize;
+        let mut has_tier1_blocking_growth = false;
 
         for diff in &diffs {
             if tier1_set.contains(diff.crate_name.as_str()) {
                 tier1_added += diff.added;
                 tier1_removed += diff.removed;
+                if diff.net > 0 {
+                    eprintln!(
+                        "BLOCKING: Tier-1 crate {} gained {} unwrap(s)",
+                        diff.crate_name, diff.net
+                    );
+                    has_tier1_blocking_growth = true;
+                }
             }
         }
 
@@ -327,20 +333,17 @@ pub fn run_check_unwrap_baseline_trend(root: &Path) -> bool {
             tier1_net
         );
 
-        if tier1_net > 0 {
-            println!(
-                "\n⚠️  WARNSTUFE: Nettowachstum an .unwrap()/.expect() in Tier-1-Crates ({:?})!",
+        if has_tier1_blocking_growth {
+            eprintln!(
+                "\n❌ BLOCKING: Nettowachstum an .unwrap()/.expect() in Tier-1-Crates ({:?})!",
                 tier1_crates
             );
-            println!(
+            eprintln!(
                 "    Nettowachstum: +{} Einträge seit Base-Branch {}.",
                 tier1_net, base_ref
             );
-            println!("    Unwraps in Tier-1-Crates bergen hohes Risiko für Lock-Poisoning-Kaskaden und FFI-Panic-Instabilitäten.");
-            println!("    Hinweis: Dieses Gate schlägt bewusst NICHT hart fehl, um bestehende Workflows nicht abrupt zu blockieren,");
-            println!(
-                "    aber bitte plane den Abbau im Sinne von docs/UNWRAP_REDUCTION_PLAN.md ein."
-            );
+            eprintln!("    Unwraps in Tier-1-Crates bergen hohes Risiko für Lock-Poisoning-Kaskaden und FFI-Panic-Instabilitäten.");
+            eprintln!("    Bitte behebe die neuen .unwrap()/.expect()-Aufrufe in Tier-1-Crates im Sinne von docs/UNWRAP_REDUCTION_PLAN.md.");
         }
     } else {
         println!("ℹ️ Base branch baseline non-comparable. Reporting current branch counts only.");
@@ -348,6 +351,17 @@ pub fn run_check_unwrap_baseline_trend(root: &Path) -> bool {
 
     if let Err(e) = append_history_entry(root, &current_entries, &tier1_crates) {
         eprintln!("⚠️ Failed to record history entry: {}", e);
+    }
+
+    if base_available {
+        let (_added, _removed, diffs) = compute_baseline_diff(&base_entries, &current_entries);
+        let tier1_set: BTreeSet<&str> = tier1_crates.iter().map(|s| s.as_str()).collect();
+        for diff in &diffs {
+            if tier1_set.contains(diff.crate_name.as_str()) && diff.net > 0 {
+                eprintln!("\n❌ Trend analysis failed due to Tier-1 unwrap baseline growth.");
+                return false;
+            }
+        }
     }
 
     println!("\n✅ Trend analysis completed successfully.");
@@ -465,5 +479,38 @@ mod tests {
         assert_eq!(*parsed.by_tier1_crate.get("memfuse-core").unwrap(), 1);
         assert_eq!(*parsed.by_tier1_crate.get("memfuse-crypto").unwrap(), 0);
         assert_eq!(*parsed.by_tier1_crate.get("memfuse-store").unwrap(), 1);
+    }
+
+    #[test]
+    fn test_tier1_blocking_detection() {
+        let base = vec![UnwrapBaselineEntry {
+            file: "crates/memfuse-core/src/lib.rs".to_string(),
+            hash: "111".to_string(),
+        }];
+        let current = vec![
+            UnwrapBaselineEntry {
+                file: "crates/memfuse-core/src/lib.rs".to_string(),
+                hash: "111".to_string(),
+            },
+            UnwrapBaselineEntry {
+                file: "crates/memfuse-core/src/new.rs".to_string(),
+                hash: "222".to_string(),
+            },
+        ];
+
+        let (_added, _removed, diffs) = compute_baseline_diff(&base, &current);
+        let tier1_crates = vec!["memfuse-core".to_string()];
+        let tier1_set: BTreeSet<&str> = tier1_crates.iter().map(|s| s.as_str()).collect();
+
+        let mut has_tier1_blocking = false;
+        for diff in &diffs {
+            if tier1_set.contains(diff.crate_name.as_str()) && diff.net > 0 {
+                has_tier1_blocking = true;
+            }
+        }
+        assert!(
+            has_tier1_blocking,
+            "Expected Tier-1 growth to be detected as blocking"
+        );
     }
 }

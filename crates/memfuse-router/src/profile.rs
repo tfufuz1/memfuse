@@ -36,6 +36,10 @@ pub struct SlmProfile {
     pub token_budget: TokenBudget,
     /// Minimum relevance threshold score required for routing candidates.
     pub min_relevance_score: f32,
+    /// Estimated resource/execution cost of selecting this profile.
+    /// 0.0 indicates default/unspecified, in which case `token_budget.limit` is used.
+    #[serde(default)]
+    pub resource_cost_estimate: f32,
     /// P8-Pflicht: Fingerprint der LLM-Konfiguration bei der Kalibrierung.
     /// None = noch nicht kalibriert / Fingerprint noch nicht gesetzt.
     /// INVARIANTE INV-P8-1: Bei Fingerprint-Wechsel MUSS invalidate() aufgerufen werden.
@@ -58,6 +62,7 @@ impl SlmProfile {
             domain_communities: domain_communities.into_iter().collect(),
             token_budget,
             min_relevance_score,
+            resource_cost_estimate: 0.0,
             fingerprint: None,
         }
     }
@@ -68,28 +73,22 @@ impl SlmProfile {
         self
     }
 
-    /// P8-Pflicht: Setzt Kalibrierungszustand zurück wenn Fingerprint sich ändert.
-    /// Gibt true zurück wenn eine Invalidierung stattgefunden hat.
-    pub fn invalidate_on_config_change(&mut self, new_fp: ConfigFingerprint) -> bool {
-        match &self.fingerprint {
-            Some(existing) if existing == &new_fp => false,
-            _ => {
-                tracing::warn!(
-                    "SlmProfile: ConfigFingerprint changed — invalidating calibration (P8)"
-                );
-                self.fingerprint = Some(new_fp);
-                // Kalibrierungsstatistiken zurücksetzen
-                self.reset_calibration_state();
-                true
-            }
+    /// Builder method to attach an explicit resource cost estimate to this profile.
+    pub fn with_resource_cost_estimate(mut self, resource_cost_estimate: f32) -> Self {
+        self.resource_cost_estimate = resource_cost_estimate;
+        self
+    }
+
+    /// Returns the effective estimated cost for resource-aware fallback routing.
+    /// If `resource_cost_estimate` is > 0.0, returns it; otherwise falls back to `token_budget.limit as f32`.
+    pub fn estimated_cost(&self) -> f32 {
+        if self.resource_cost_estimate > 0.0 {
+            self.resource_cost_estimate
+        } else {
+            self.token_budget.limit as f32
         }
     }
 
-    fn reset_calibration_state(&mut self) {
-        // P8-Reset: Baseline configuration defaults reset where applicable
-        // Note: Dynamic runtime calibration statistics (ConformalCalibrator, times_selected, calibrated_min_score)
-        // are maintained in ProfileCalibrationState within RouterEngine.
-    }
 
     /// Validates `SlmProfile` parameters.
     pub fn validate(&self) -> Result<()> {
@@ -106,6 +105,11 @@ impl SlmProfile {
         if !self.min_relevance_score.is_finite() || self.min_relevance_score < 0.0 {
             return Err(MemFuseError::InvalidInput(
                 "min_relevance_score must be finite and non-negative".to_string(),
+            ));
+        }
+        if !self.resource_cost_estimate.is_finite() || self.resource_cost_estimate < 0.0 {
+            return Err(MemFuseError::InvalidInput(
+                "resource_cost_estimate must be finite and non-negative".to_string(),
             ));
         }
         Ok(())
@@ -356,22 +360,6 @@ mod serde_sorted_u64_set {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_slm_profile_fingerprint_change_triggers_invalidation() {
-        let mut profile = SlmProfile::new(
-            "test-slm",
-            "http://localhost:8000/mcp",
-            vec![1],
-            TokenBudget::default(),
-            0.5,
-        );
-        let fp1 = ConfigFingerprint::new("m", "Q4_K_M", "t", 0.7);
-        let fp2 = ConfigFingerprint::new("m", "Q8_0", "t", 0.7); // andere Quantisierung
-
-        assert!(profile.invalidate_on_config_change(fp1.clone()));
-        assert!(!profile.invalidate_on_config_change(fp1.clone())); // gleicher FP → kein Reset
-        assert!(profile.invalidate_on_config_change(fp2)); // geändert → Reset
-    }
 
     #[test]
     fn test_conformal_calibrator_invariants() {

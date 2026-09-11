@@ -19,6 +19,49 @@ use memfuse_core::{
     DocId, EntityId, FilterExpr, GraphIndex, Result, StorageEngine, TextIndex, TxId, VectorIndex,
 };
 
+/// RAII Guard for pinning snapshot checkpoints during search/scan operations.
+///
+/// # Note on async Drop
+/// Rust does not support native `async Drop`. Therefore, callers MUST explicitly call
+/// [`release`](Self::release) to unpin the checkpoint. The `Drop` implementation serves as a
+/// fallback safety net: if `release` was not invoked before dropping (e.g. due to early `?`
+/// return or panic), `Drop` emits an `error!` log warning that a checkpoint pin may have leaked.
+pub(super) struct CheckpointPinGuard<'a, S: StorageEngine + ?Sized> {
+    storage: &'a S,
+    seq: u64,
+    unpinned: bool,
+}
+
+impl<'a, S: StorageEngine + ?Sized> CheckpointPinGuard<'a, S> {
+    /// Creates a new guard and pins the checkpoint at sequence `seq`.
+    pub async fn new(storage: &'a S, seq: u64) -> Result<Self> {
+        storage.pin_checkpoint(seq).await?;
+        Ok(Self {
+            storage,
+            seq,
+            unpinned: false,
+        })
+    }
+
+    /// Explicitly unpins the checkpoint and consumes the guard, preventing the fallback `Drop` warning.
+    pub async fn release(mut self) -> Result<()> {
+        self.unpinned = true;
+        self.storage.unpin_checkpoint(self.seq).await
+    }
+}
+
+impl<'a, S: StorageEngine + ?Sized> Drop for CheckpointPinGuard<'a, S> {
+    fn drop(&mut self) {
+        if !self.unpinned {
+            tracing::error!(
+                seq_no = self.seq,
+                "CheckpointPinGuard dropped without explicit release! Checkpoint pin seq={} may have leaked.",
+                self.seq
+            );
+        }
+    }
+}
+
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     /// Performs semantic k-NN search over stored embeddings.
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
@@ -82,7 +125,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
         // um Konsistenz zwischen Vektor-Index, Metadaten-Filter und Re-Hydrierung zu garantieren.
         let seq = self.snapshot_seq().await?;
-        self.storage.pin_checkpoint(seq).await?;
+        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
 
         let res = async {
             let filter = match filter {
@@ -103,7 +146,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
         .await;
 
-        if let Err(e) = self.storage.unpin_checkpoint(seq).await {
+        if let Err(e) = pin_guard.release().await {
             tracing::error!(
                 seq_no = seq,
                 "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert. Manuelles Eingreifen eventuell nötig."
@@ -288,7 +331,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     }
 
     /// Performs filtered semantic vector search in the collection.
-    // AI-TAG[SMELL][MINOR] TODO(audit-5.1): Validate query vector elements for is_finite() and check k > 0 && k <= MAX_SEARCH_K at entry points to prevent HNSW traversal panics. (ID: AGT-DB-6d724b1a) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-5.1: Vector-Suche clampt k stets auf k.min(memfuse_core::MAX_SEARCH_K) über alle Einstiegspunkte hinweg.
     // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (ID: AGT-DB-6484e6e5) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
@@ -564,147 +607,162 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         let k = k.min(memfuse_core::MAX_SEARCH_K);
 
         let seq = self.snapshot_seq().await?;
-        let is_vector_zero = vector.iter().all(|&v| v == 0.0);
-        let is_text_empty = text.trim().is_empty();
+        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
 
-        let default_strategy = memfuse_core::GraphTraversalStrategy::default();
-        let graph_strat = strategy.unwrap_or(&default_strategy);
+        let res = async {
+            let is_vector_zero = vector.iter().all(|&v| v == 0.0);
+            let is_text_empty = text.trim().is_empty();
 
-        // 1. Vector Signal
-        let vector_results = if is_vector_zero {
-            Vec::new()
-        } else {
-            self.search_filtered_at(vector, k, None, seq).await?
-        };
+            let default_strategy = memfuse_core::GraphTraversalStrategy::default();
+            let graph_strat = strategy.unwrap_or(&default_strategy);
 
-        // 2. Text Signal
-        let text_results = if is_text_empty {
-            Vec::new()
-        } else {
-            let bm25_results = self.text_index.search_at(text, k, seq).await?;
-            self.hydrate_from_tuples_at(
-                bm25_results
-                    .into_iter()
-                    .map(|sd| (sd.doc_id, sd.score))
-                    .collect(),
-                seq,
-            )
-            .await?
-        };
-
-        // 3. Graph Signal
-        let implicit_anchors: Vec<memfuse_core::EntityId>;
-        let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities
-        {
-            if anchors.is_empty() {
-                None
+            // 1. Vector Signal
+            let vector_results = if is_vector_zero {
+                Vec::new()
             } else {
-                Some(anchors)
-            }
-        } else if !text_results.is_empty() {
-            // Graph-Knoten MÜSSEN mit demselben String-Schlüssel wie das korrespondierende Textdokument erstellt werden (via `EntityId::from_key`), sonst wird das Graph-Signal für Multi-Step-Query-Expansion und Zettelkasten-Displacement unbemerkt leer.
-            implicit_anchors = text_results
-                .iter()
-                .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
-                .collect::<Result<Vec<_>>>()?;
-            Some(&implicit_anchors)
-        } else {
-            None
-        };
+                self.search_filtered_at(vector, k, None, seq).await?
+            };
 
-        let graph_results = if let Some(anchors) = anchors_ref {
-            let tuples = match graph_strat {
-                memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
-                    self.graph_index.multi_traverse(anchors, *max_hops).await?
+            // 2. Text Signal
+            let text_results = if is_text_empty {
+                Vec::new()
+            } else {
+                let bm25_results = self.text_index.search_at(text, k, seq).await?;
+                self.hydrate_from_tuples_at(
+                    bm25_results
+                        .into_iter()
+                        .map(|sd| (sd.doc_id, sd.score))
+                        .collect(),
+                    seq,
+                )
+                .await?
+            };
+
+            // 3. Graph Signal
+            // LIMITATION: graph_search() unterstützt aktuell keinen expliziten Snapshot-Parameter —
+            // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe TODO(audit-ARCH-1-partial).
+            let implicit_anchors: Vec<memfuse_core::EntityId>;
+            let anchors_ref: Option<&[memfuse_core::EntityId]> = if let Some(anchors) = anchor_entities
+            {
+                if anchors.is_empty() {
+                    None
+                } else {
+                    Some(anchors)
                 }
-                memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
-                    self.graph_index
-                        .personalized_page_rank(anchors, ppr_config)
-                        .await?
-                }
-                memfuse_core::GraphTraversalStrategy::PathRag {
-                    max_hops,
-                    sufficiency_threshold,
-                } => {
-                    use memfuse_graph::path_rag::PathRAGEngine;
-                    let engine = PathRAGEngine::new(
-                        self.graph_index.as_ref(),
-                        *max_hops,
-                        *sufficiency_threshold,
-                    );
-                    let mut all_results: std::collections::HashMap<EntityId, f32> =
-                        std::collections::HashMap::new();
-                    for anchor in anchors.iter() {
-                        let paths = engine.find_all_paths(*anchor);
-                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
-                            let eid = EntityId::new(doc_id.0);
-                            let entry = all_results.entry(eid).or_insert(0.0);
-                            if score > *entry {
-                                *entry = score;
+            } else if !text_results.is_empty() {
+                // Graph-Knoten MÜSSEN mit demselben String-Schlüssel wie das korrespondierende Textdokument erstellt werden (via `EntityId::from_key`), sonst wird das Graph-Signal für Multi-Step-Query-Expansion und Zettelkasten-Displacement unbemerkt leer.
+                implicit_anchors = text_results
+                    .iter()
+                    .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
+                    .collect::<Result<Vec<_>>>()?;
+                Some(&implicit_anchors)
+            } else {
+                None
+            };
+
+            let graph_results = if let Some(anchors) = anchors_ref {
+                let tuples = match graph_strat {
+                    memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
+                        self.graph_index.multi_traverse(anchors, *max_hops).await?
+                    }
+                    memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                        self.graph_index
+                            .personalized_page_rank(anchors, ppr_config)
+                            .await?
+                    }
+                    memfuse_core::GraphTraversalStrategy::PathRag {
+                        max_hops,
+                        sufficiency_threshold,
+                    } => {
+                        use memfuse_graph::path_rag::PathRAGEngine;
+                        let engine = PathRAGEngine::new(
+                            self.graph_index.as_ref(),
+                            *max_hops,
+                            *sufficiency_threshold,
+                        );
+                        let mut all_results: std::collections::HashMap<EntityId, f32> =
+                            std::collections::HashMap::new();
+                        for anchor in anchors.iter() {
+                            let paths = engine.find_all_paths(*anchor);
+                            for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                                let eid = EntityId::new(doc_id.0);
+                                let entry = all_results.entry(eid).or_insert(0.0);
+                                if score > *entry {
+                                    *entry = score;
+                                }
                             }
                         }
+                        let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                        res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                        res
                     }
-                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
-                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
-                    res
-                }
+                };
+                let doc_tuples = tuples
+                    .into_iter()
+                    .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
+                    .collect();
+                self.hydrate_from_tuples_at(doc_tuples, seq).await?
+            } else {
+                Vec::new()
             };
-            let doc_tuples = tuples
-                .into_iter()
-                .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
-                .collect();
-            self.hydrate_from_tuples_at(doc_tuples, seq).await?
-        } else {
-            Vec::new()
-        };
 
-        if !text_results.is_empty() && graph_results.is_empty() && anchor_entities.is_none() {
-            tracing::warn!(
-                text_count = text_results.len(),
-                "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
+            if !text_results.is_empty() && graph_results.is_empty() && anchor_entities.is_none() {
+                tracing::warn!(
+                    text_count = text_results.len(),
+                    "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
+                );
+            }
+
+            if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
+
+            let target_community_id: Option<u64> = if let Some(same_comm_entity) = same_community_as {
+                self.get_community(same_comm_entity).await.ok().flatten()
+            } else {
+                None
+            };
+
+            let mut signal_sets = Vec::new();
+            if !vector_results.is_empty() {
+                signal_sets.push(("vector".to_string(), vector_results, vw));
+            }
+            if !text_results.is_empty() {
+                signal_sets.push(("text".to_string(), text_results, tw));
+            }
+            if !graph_results.is_empty() {
+                signal_sets.push(("graph".to_string(), graph_results, gw));
+            }
+
+            let fused = crate::fusion::weighted_reciprocal_rank_fusion_with_options(
+                signal_sets,
+                usize::MAX,
+                crate::fusion::MetadataMergePriority::default(),
+                true,
+                None,
+            );
+
+            let mut boosted = self
+                .apply_community_boost_post_rrf(
+                    fused,
+                    target_community_id,
+                    Self::DEFAULT_COMMUNITY_BOOST,
+                )
+                .await?;
+            boosted.truncate(k);
+            Ok(boosted)
+        }
+        .await;
+
+        if let Err(e) = pin_guard.release().await {
+            tracing::error!(
+                seq_no = seq,
+                "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert."
             );
         }
-
-        if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(weights);
-
-        let target_community_id: Option<u64> = if let Some(same_comm_entity) = same_community_as {
-            self.get_community(same_comm_entity).await.ok().flatten()
-        } else {
-            None
-        };
-
-        let mut signal_sets = Vec::new();
-        if !vector_results.is_empty() {
-            signal_sets.push(("vector".to_string(), vector_results, vw));
-        }
-        if !text_results.is_empty() {
-            signal_sets.push(("text".to_string(), text_results, tw));
-        }
-        if !graph_results.is_empty() {
-            signal_sets.push(("graph".to_string(), graph_results, gw));
-        }
-
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion_with_options(
-            signal_sets,
-            usize::MAX,
-            crate::fusion::MetadataMergePriority::default(),
-            true,
-            None,
-        );
-
-        let mut boosted = self
-            .apply_community_boost_post_rrf(
-                fused,
-                target_community_id,
-                Self::DEFAULT_COMMUNITY_BOOST,
-            )
-            .await?;
-        boosted.truncate(k);
-        Ok(boosted)
+        res
     }
 
     /// Performs hybrid search combining BM25, vector, and graph signals configured via `HybridQuery`.
@@ -717,6 +775,16 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     pub async fn hybrid_search_with_query(
         &self,
         query: &memfuse_core::HybridQuery,
+    ) -> Result<Vec<crate::SearchResult>> {
+        let seq = self.snapshot_seq().await?;
+        self.hybrid_search_with_query_at(query, seq).await
+    }
+
+    /// Performs hybrid search combining BM25, vector, and graph signals configured via `HybridQuery` at a specific snapshot sequence.
+    pub async fn hybrid_search_with_query_at(
+        &self,
+        query: &memfuse_core::HybridQuery,
+        seq: u64,
     ) -> Result<Vec<crate::SearchResult>> {
         if query.k == 0 {
             return Ok(Vec::new());
@@ -740,24 +808,25 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 }
             }
         }
+        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
 
-        let seq = self.snapshot_seq().await?;
-        let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
-        let is_text_empty = text.trim().is_empty();
+        let res = async {
+            let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
+            let is_text_empty = text.trim().is_empty();
 
-        // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
-        let (mult, max_pool) = if query.has_reranker {
-            (
-                query
-                    .rerank_pool_multiplier
-                    .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER),
-                query
-                    .rerank_pool_max
-                    .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX),
-            )
-        } else {
-            (1, k)
-        };
+            // Candidate pool calculation considering pre-reranking multiplier/max bounds and supersedes displacement requirements
+            let (mult, max_pool) = if query.has_reranker {
+                (
+                    query
+                        .rerank_pool_multiplier
+                        .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MULTIPLIER),
+                    query
+                        .rerank_pool_max
+                        .unwrap_or(crate::collection::query_builder::DEFAULT_RERANK_POOL_MAX),
+                )
+            } else {
+                (1, k)
+            };
 
         let mut candidate_k = k;
         if !query.include_superseded {
@@ -958,6 +1027,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 None
             };
 
+        // 3. Graph Signal
+        // LIMITATION: graph_search() unterstützt aktuell keinen expliziten Snapshot-Parameter —
+        // nutzt implizit den aktuellsten Stand zum Ausführungszeitpunkt. Siehe TODO(audit-ARCH-1-partial).
         let graph_results = if let Some(anchors) = anchors_ref {
             let tuples = match &query.graph_strategy {
                 memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
@@ -1109,7 +1181,17 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             });
         }
 
-        Ok(fused_results)
+            Ok(fused_results)
+        }
+        .await;
+
+        if let Err(e) = pin_guard.release().await {
+            tracing::error!(
+                seq_no = seq,
+                "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert."
+            );
+        }
+        res
     }
 
     /// Standard community boost factor applied to RRF scores for matching community members.

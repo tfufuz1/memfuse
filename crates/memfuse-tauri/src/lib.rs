@@ -8,6 +8,7 @@
 //!   Schnittstelle für eingebettete Gedächtnisarchitekturen.
 //! - **Migration:** Bitte migriere auf `memfuse-py` bzw. `memfuse-core`/`memfuse-db`.
 
+#![forbid(unsafe_code)]
 #![allow(deprecated)]
 
 pub mod commands;

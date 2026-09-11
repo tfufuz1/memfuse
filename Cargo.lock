@@ -3393,7 +3393,6 @@ dependencies = [
  "bincode",
  "criterion",
  "memfuse-core",
- "memfuse-graph",
  "memfuse-security",
  "memmap2",
  "parking_lot",

@@ -307,12 +307,21 @@ pub async fn get_branch_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::{mock_builder, MockRuntime};
+    use tauri::{App, Manager};
+
+    fn setup_app() -> App<MockRuntime> {
+        mock_builder()
+            .manage(AppState::new())
+            .build(tauri::generate_context!())
+            .expect("failed to build mock app")
+    }
 
     #[tokio::test]
     async fn test_list_branches_non_existent_session_fails(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let state = AppState::new();
-        let state_ref: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
+        let app = setup_app();
+        let state_ref = app.state::<AppState>();
 
         let res = list_branches(state_ref, "non_existent_sess".to_string()).await;
         assert!(res.is_err());
@@ -324,13 +333,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_and_list_branches_success() -> Result<(), Box<dyn std::error::Error>> {
-        let state = AppState::new();
+        let app = setup_app();
 
-        let session = get_or_create_session(&state, "sess1", "Root Prompt", "Root Answer").await?;
+        let session =
+            get_or_create_session(app.state::<AppState>().inner(), "sess1", "Root Prompt", "Root Answer").await?;
         assert_eq!(session.node_count(), 1);
 
-        let state_ref1: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
-        let branches = list_branches(state_ref1, "sess1".to_string()).await?;
+        let branches = list_branches(app.state::<AppState>(), "sess1".to_string()).await?;
         assert_eq!(branches.len(), 1);
         assert_eq!(branches[0].branch_id, "0");
         assert_eq!(branches[0].head_node_id, "0");
@@ -338,9 +347,8 @@ mod tests {
         assert_eq!(branches[0].label, "main");
         assert!(branches[0].is_active);
 
-        let state_ref2: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let new_branch1 = create_branch(
-            state_ref2,
+            app.state::<AppState>(),
             "sess1".to_string(),
             "0".to_string(),
             Some("explore_side_topic_1".to_string()),
@@ -353,17 +361,15 @@ mod tests {
         assert_eq!(new_branch1.label, "explore_side_topic_1");
         assert!(new_branch1.is_active);
 
-        let state_ref3: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let _new_branch2 = create_branch(
-            state_ref3,
+            app.state::<AppState>(),
             "sess1".to_string(),
             "0".to_string(),
             Some("explore_side_topic_2".to_string()),
         )
         .await?;
 
-        let state_ref4: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
-        let branches_after = list_branches(state_ref4, "sess1".to_string()).await?;
+        let branches_after = list_branches(app.state::<AppState>(), "sess1".to_string()).await?;
         assert_eq!(branches_after.len(), 2);
 
         Ok(())
@@ -371,9 +377,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_switch_branch_and_history() -> Result<(), Box<dyn std::error::Error>> {
-        let state = AppState::new();
+        let app = setup_app();
 
-        let tree = get_or_create_session(&state, "sess2", "Root Q", "Root A").await?;
+        let tree = get_or_create_session(app.state::<AppState>().inner(), "sess2", "Root Q", "Root A").await?;
         let step1 = tree.append_step(
             "Step 1 Q".to_string(),
             "Step 1 A".to_string(),
@@ -391,9 +397,8 @@ mod tests {
         assert_eq!(step1, 1);
         assert_eq!(step2, 2);
 
-        let state_ref1: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let branch = create_branch(
-            state_ref1,
+            app.state::<AppState>(),
             "sess2".to_string(),
             "1".to_string(),
             Some("alt_branch".to_string()),
@@ -401,20 +406,17 @@ mod tests {
         .await?;
         assert_eq!(branch.branch_id, "3");
 
-        let state_ref2: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let history_branch3 =
-            get_branch_history(state_ref2, "sess2".to_string(), "3".to_string()).await?;
+            get_branch_history(app.state::<AppState>(), "sess2".to_string(), "3".to_string()).await?;
         assert_eq!(history_branch3.len(), 3);
         assert_eq!(history_branch3[0].step_id, "0");
         assert_eq!(history_branch3[1].step_id, "1");
         assert_eq!(history_branch3[2].step_id, "3");
 
-        let state_ref3: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
-        switch_branch(state_ref3, "sess2".to_string(), "2".to_string()).await?;
+        switch_branch(app.state::<AppState>(), "sess2".to_string(), "2".to_string()).await?;
 
-        let state_ref4: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let history_branch2 =
-            get_branch_history(state_ref4, "sess2".to_string(), "2".to_string()).await?;
+            get_branch_history(app.state::<AppState>(), "sess2".to_string(), "2".to_string()).await?;
         assert_eq!(history_branch2.len(), 3);
         assert_eq!(history_branch2[0].step_id, "0");
         assert_eq!(history_branch2[1].step_id, "1");
@@ -426,13 +428,12 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_node_id_or_branch_id_error_handling(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let state = AppState::new();
+        let app = setup_app();
 
-        let _ = get_or_create_session(&state, "sess3", "Root", "Ans").await?;
+        let _ = get_or_create_session(app.state::<AppState>().inner(), "sess3", "Root", "Ans").await?;
 
-        let state_ref1: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let err1 = create_branch(
-            state_ref1,
+            app.state::<AppState>(),
             "sess3".to_string(),
             "invalid_node".to_string(),
             None,
@@ -442,22 +443,19 @@ mod tests {
         .ok_or("Expected error")?;
         assert_eq!(err1.kind, "InvalidInput");
 
-        let state_ref2: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
-        let err2 = switch_branch(state_ref2, "sess3".to_string(), "not_a_number".to_string())
+        let err2 = switch_branch(app.state::<AppState>(), "sess3".to_string(), "not_a_number".to_string())
             .await
             .err()
             .ok_or("Expected error")?;
         assert_eq!(err2.kind, "InvalidInput");
 
-        let state_ref3: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
-        let err3 = switch_branch(state_ref3, "sess3".to_string(), "999".to_string())
+        let err3 = switch_branch(app.state::<AppState>(), "sess3".to_string(), "999".to_string())
             .await
             .err()
             .ok_or("Expected error")?;
         assert_eq!(err3.kind, "InvalidInput");
 
-        let state_ref4: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
-        let err4 = get_branch_history(state_ref4, "sess3".to_string(), "999".to_string())
+        let err4 = get_branch_history(app.state::<AppState>(), "sess3".to_string(), "999".to_string())
             .await
             .err()
             .ok_or("Expected error")?;
@@ -480,21 +478,20 @@ mod tests {
         )
         .await?;
 
-        let state = AppState::new();
+        let app = setup_app();
+        let state = app.state::<AppState>();
         *state.db.write() = Some(Arc::new(db));
 
-        let _ = get_or_create_session(&state, "persisted_sess", "Root Q", "Root A").await?;
-        let state_ref1: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
+        let _ = get_or_create_session(state.inner(), "persisted_sess", "Root Q", "Root A").await?;
         let _ = create_branch(
-            state_ref1,
+            app.state::<AppState>(),
             "persisted_sess".to_string(),
             "0".to_string(),
             Some("b1".to_string()),
         )
         .await?;
-        let state_ref2: State<'_, AppState> = unsafe { std::mem::transmute(&state) };
         let _ = create_branch(
-            state_ref2,
+            app.state::<AppState>(),
             "persisted_sess".to_string(),
             "0".to_string(),
             Some("b2".to_string()),
@@ -511,16 +508,15 @@ mod tests {
         )
         .await?;
 
-        let new_state = AppState::new();
+        let new_app = setup_app();
+        let new_state = new_app.state::<AppState>();
         *new_state.db.write() = Some(Arc::new(db2));
-        let new_state_ref1: State<'_, AppState> = unsafe { std::mem::transmute(&new_state) };
 
-        let branches = list_branches(new_state_ref1, "persisted_sess".to_string()).await?;
+        let branches = list_branches(new_app.state::<AppState>(), "persisted_sess".to_string()).await?;
         assert_eq!(branches.len(), 2);
 
-        let new_state_ref2: State<'_, AppState> = unsafe { std::mem::transmute(&new_state) };
         let history = get_branch_history(
-            new_state_ref2,
+            new_app.state::<AppState>(),
             "persisted_sess".to_string(),
             "1".to_string(),
         )

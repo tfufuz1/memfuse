@@ -81,6 +81,7 @@ pub struct CompactionEngine {
     block_cache: Arc<BlockCache>,
     key_manager: Option<Arc<KeyManager>>,
     budget: Arc<memfuse_core::ResourceTracker>,
+    manifest: Option<Arc<crate::manifest::Manifest>>,
     compaction_counter: AtomicU64,
 }
 
@@ -92,6 +93,7 @@ impl CompactionEngine {
         block_cache: Arc<BlockCache>,
         key_manager: Option<Arc<KeyManager>>,
         budget: Arc<memfuse_core::ResourceTracker>,
+        manifest: Option<Arc<crate::manifest::Manifest>>,
     ) -> Self {
         Self {
             config,
@@ -99,6 +101,7 @@ impl CompactionEngine {
             block_cache,
             key_manager,
             budget,
+            manifest,
             compaction_counter: AtomicU64::new(0),
         }
     }
@@ -107,7 +110,7 @@ impl CompactionEngine {
     ///
     /// Takes a write-lock on the SSTable list to atomically swap old SSTables
     /// for the compacted result.
-    // AI-TAG[SMELL][MINOR] TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics. (ID: AGT-STORE-41af03c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-H-3: LsmStorage hält eine persistente CompactionEngine-Instanz (LsmStorage.compaction_engine), wodurch Compaction-State & Zähler erhalten bleiben.
     pub async fn maybe_compact(
         &self,
         sstables: &RwLock<Vec<Arc<SstableReader>>>,
@@ -164,6 +167,17 @@ impl CompactionEngine {
             )
             .await?,
         );
+
+        // === SSTABLE MANIFEST INTEGRATION START ===
+        if let Some(ref manifest) = self.manifest {
+            manifest
+                .append(&crate::manifest::ManifestEntry::Add {
+                    path: output_path.clone(),
+                    max_tx: new_reader.metadata().max_tx_id,
+                })
+                .await?;
+        }
+        // === SSTABLE MANIFEST INTEGRATION END ===
 
         // 5. Atomic swap under write-lock — identity-based (Arc::ptr_eq), not index-based.
         // DECISION-REF: Replaces stale-index swap that was documented as
@@ -222,10 +236,32 @@ impl CompactionEngine {
         };
 
         // 6. Delete old SSTable files (best-effort, outside lock)
-        // AI-TAG[SMELL][MINOR] TODO(audit-NC-4): Ensure associated .uuid sidecar files are deleted alongside parent .sst SSTable files during compaction cleanup. (ID: AGT-STORE-68f8ae64) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+        // RESOLVED: .uuid-Sidecar wird jetzt analog zum WAL-Cleanup-Pfad (lsm.rs) mitgelöscht.
         for path in &old_paths {
+            // === SSTABLE MANIFEST INTEGRATION START ===
+            if let Some(ref manifest) = self.manifest {
+                if let Err(e) = manifest
+                    .append(&crate::manifest::ManifestEntry::Remove {
+                        path: path.clone(),
+                    })
+                    .await
+                {
+                    tracing::warn!("Failed to write Manifest Remove entry during compaction: {}", e);
+                }
+            }
+            // === SSTABLE MANIFEST INTEGRATION END ===
             if let Err(e) = tokio::fs::remove_file(path).await {
                 tracing::warn!("Failed to delete compacted SSTable {:?}: {}", path, e);
+            }
+            let uuid_sidecar = PathBuf::from(format!("{}.uuid", path.display()));
+            if matches!(tokio::fs::try_exists(&uuid_sidecar).await, Ok(true)) {
+                if let Err(e) = tokio::fs::remove_file(&uuid_sidecar).await {
+                    tracing::debug!(
+                        "Could not remove SSTable UUID sidecar {:?}: {} (non-critical)",
+                        uuid_sidecar,
+                        e
+                    );
+                }
             }
         }
 
@@ -547,6 +583,7 @@ mod tests {
                             memory_limit: 1024 * 1024,
                         },
                     )),
+                    None,
                 );
 
                 let mut input_ssts = Vec::new();
@@ -639,6 +676,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Create older SSTable with many entries (large file size) but small max_seq (seq=10)
@@ -717,6 +755,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Two SSTables with overlapping keys
@@ -769,6 +808,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -828,6 +868,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -871,6 +912,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -917,6 +959,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Create 3 small SSTables of similar size
@@ -985,6 +1028,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -1027,6 +1071,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -1059,6 +1104,85 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_compaction_removes_uuid_sidecar_files() {
+        let tmp = TempDir::new().expect("temp dir");
+        let registry = Arc::new(SnapshotRegistry::new());
+        let bc = create_block_cache(1);
+        let config = CompactionConfig {
+            min_sstables_per_tier: 2,
+            ..Default::default()
+        };
+        let engine = CompactionEngine::new(
+            config,
+            registry,
+            Arc::clone(&bc),
+            None,
+            Arc::new(memfuse_core::ResourceTracker::new(
+                memfuse_core::ResourceBudget {
+                    memory_limit: 1024 * 1024,
+                },
+            )),
+        );
+
+        let sstables = Arc::new(RwLock::new(Vec::new()));
+        let mut old_sst_paths = Vec::new();
+        let mut uuid_paths = Vec::new();
+
+        for i in 0..2u8 {
+            let name = format!("sst-{}.sst", i);
+            let sst = create_test_sstable(
+                tmp.path(),
+                &name,
+                &[(format!("key-{}", i).as_bytes(), b"val", i as u64 + 1)],
+                Arc::clone(&bc),
+            )
+            .await;
+            let sst_path = sst.file_path().to_path_buf();
+            old_sst_paths.push(sst_path.clone());
+
+            let uuid_path = PathBuf::from(format!("{}.uuid", sst_path.display()));
+            tokio::fs::write(&uuid_path, b"dummy-uuid-bytes")
+                .await
+                .expect("write dummy uuid file");
+            uuid_paths.push(uuid_path);
+
+            sstables.write().await.push(sst);
+        }
+
+        for path in &old_sst_paths {
+            assert!(path.exists(), "SSTable file {:?} must exist before compaction", path);
+        }
+        for uuid_path in &uuid_paths {
+            assert!(
+                uuid_path.exists(),
+                "UUID sidecar file {:?} must exist before compaction",
+                uuid_path
+            );
+        }
+
+        let compacted = engine
+            .maybe_compact(&sstables, tmp.path())
+            .await
+            .expect("maybe_compact should succeed");
+        assert!(compacted, "Compaction should have occurred");
+
+        for path in &old_sst_paths {
+            assert!(
+                !path.exists(),
+                "Old SSTable file {:?} should be deleted after compaction",
+                path
+            );
+        }
+        for uuid_path in &uuid_paths {
+            assert!(
+                !uuid_path.exists(),
+                "UUID sidecar file {:?} should be deleted after compaction",
+                uuid_path
+            );
+        }
+    }
+
     #[test]
     fn test_generate_sst_path_uniqueness() {
         let tmp = TempDir::new().expect("temp dir"); // expect
@@ -1072,6 +1196,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
         let path1 = engine.generate_sst_path(tmp.path()).expect("path 1"); // expect
         let path2 = engine.generate_sst_path(tmp.path()).expect("path 2"); // expect
@@ -1232,6 +1357,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Scenario:
@@ -1349,6 +1475,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         ));
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let tmp = tempfile::TempDir::new().unwrap(); // unwrap
@@ -1398,7 +1525,7 @@ mod tests {
                     max_memory_bytes: Some(1024 * 1024),
                 },
                 encryption_passphrase: None,
-            ..Default::default()
+                ..Default::default()
             };
 
             let storage = Arc::new(LsmStorage::new(config).await.expect("create storage")); // expect

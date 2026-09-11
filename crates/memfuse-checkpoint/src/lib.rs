@@ -272,33 +272,33 @@ impl InstanceOrphanRegistry {
     pub fn register_orphan_sync(&self, orphan: PinnedSeqNoOrphan) {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
-            let seq_no = orphan.seq_no;
             lock.push(orphan);
-            drop(lock);
-            if let Err(e) = self.persist_sync() {
-                tracing::error!(
-                    ?e,
-                    seq_no = seq_no,
-                    "InstanceOrphanRegistry persist_sync failed for pinned seq_no (ADR-058)"
-                );
-            }
         }
     }
 
     pub fn register_checkpoint_sync(&self, cp: StateCheckpoint) {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
-            let tx_id = cp.tx_id;
             lock.push(cp);
-            drop(lock);
-            if let Err(e) = self.persist_sync() {
-                tracing::error!(
-                    ?e,
-                    tx_id = ?tx_id,
-                    "CheckpointGuard orphan persist_sync failed — \
-                     checkpoint registered in-memory but not durable on disk (ADR-058)"
-                );
-            }
+        }
+    }
+
+    /// Asynchronously flushes the in-memory orphan registry to disk.
+    pub async fn flush_orphan_registry(&self) -> std::io::Result<()> {
+        if self.persist_path.as_os_str().is_empty() {
+            return Ok(());
+        }
+        let state = OrphanState {
+            checkpoints: self.checkpoints.lock().clone(),
+            pinned_seq_nos: self.pins.lock().clone(),
+            persist_path: self.persist_path.clone(),
+        };
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::spawn_blocking(move || state.persist_sync())
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+        } else {
+            state.persist_sync()
         }
     }
 
@@ -773,6 +773,22 @@ pub trait CheckpointRegistry: memfuse_core::traits::Checkpoint + Send + Sync {
     fn save_checkpoint<'a>(&'a self, meta: CheckpointMeta) -> BoxFuture<'a, Result<()>>;
     fn load_checkpoint<'a>(&'a self, seq_no: u64) -> BoxFuture<'a, Result<Option<CheckpointMeta>>>;
     fn list_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<CheckpointMeta>>>;
+
+    fn orphan_registry(&self) -> Option<&Arc<InstanceOrphanRegistry>> {
+        None
+    }
+
+    fn recover_orphaned_pins<'a>(&'a self) -> BoxFuture<'a, Result<Vec<PinId>>> {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+
+    fn recover_orphaned_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<TxId>>> {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+
+    fn flush_orphan_registry<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { Ok(()) })
+    }
 }
 
 /// Counter metadata persisted to guarantee TxId monotonicity across restarts.
@@ -1334,6 +1350,13 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
         &self.orphan_registry
     }
 
+    pub async fn flush_orphan_registry(&self) -> Result<()> {
+        self.orphan_registry
+            .flush_orphan_registry()
+            .await
+            .map_err(|e| MemFuseError::Internal(format!("Failed to flush orphan registry: {e}")))
+    }
+
     pub fn register_pinned_seq_no_orphan(&self, orphan: PinnedSeqNoOrphan) {
         self.orphan_registry.register_orphan_sync(orphan);
     }
@@ -1421,6 +1444,22 @@ impl<S: memfuse_core::StorageEngine> CheckpointRegistry for PersistentCheckpoint
 
     fn list_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<CheckpointMeta>>> {
         Box::pin(async move { self.list_checkpoints().await })
+    }
+
+    fn orphan_registry(&self) -> Option<&Arc<InstanceOrphanRegistry>> {
+        Some(&self.orphan_registry)
+    }
+
+    fn recover_orphaned_pins<'a>(&'a self) -> BoxFuture<'a, Result<Vec<PinId>>> {
+        Box::pin(async move { self.recover_orphaned_pins().await })
+    }
+
+    fn recover_orphaned_checkpoints<'a>(&'a self) -> BoxFuture<'a, Result<Vec<TxId>>> {
+        Box::pin(async move { self.recover_orphaned_checkpoints().await })
+    }
+
+    fn flush_orphan_registry<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { self.flush_orphan_registry().await })
     }
 }
 
