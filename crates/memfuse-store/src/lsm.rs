@@ -228,6 +228,7 @@ pub struct LsmStorage {
     /// Persistent CompactionEngine instance — retains counter across maybe_compact() calls.
     /// Prevents SSTable name collisions from fresh-counter ad-hoc instantiation (audit H-3).
     compaction_engine: Arc<CompactionEngine>,
+    manifest: Arc<crate::manifest::Manifest>,
     next_seq_no: AtomicU64,
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
@@ -369,6 +370,16 @@ impl LsmStorage {
 
         let tx_buffer = TxBuffer::new_with_config(16, config.tx_timeout);
 
+        // === SSTABLE MANIFEST INTEGRATION START ===
+        let manifest_path = config.path.join("MANIFEST");
+        let manifest_exists = tokio::fs::try_exists(&manifest_path).await.unwrap_or(false);
+        let valid_manifest_sstables = if manifest_exists {
+            let entries = crate::manifest::Manifest::load(&manifest_path).await?;
+            Some(crate::manifest::Manifest::reconstruct_valid_sstables(&entries))
+        } else {
+            None
+        };
+
         // Load existing SSTables and sort by filename (which includes seq_no)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
@@ -384,7 +395,19 @@ impl LsmStorage {
                         tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
                     }
                 } else if path.extension().is_some_and(|ext| ext == "sst") {
-                    sst_files.push(path);
+                    if let Some(ref valid_set) = valid_manifest_sstables {
+                        let path_key = std::path::Path::new(file_name);
+                        if valid_set.contains(path_key) {
+                            sst_files.push(path);
+                        } else {
+                            tracing::warn!(
+                                "Unmanifested or orphaned SSTable file found in data directory (skipping): {:?}",
+                                path
+                            );
+                        }
+                    } else {
+                        sst_files.push(path);
+                    }
                 }
             }
         }
@@ -418,6 +441,22 @@ impl LsmStorage {
         // Explicitly sort SSTables by metadata().max_seq for guaranteed read-path ordering
         sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
         let sstables = Arc::new(RwLock::new(sstables));
+
+        // Open or migrate manifest
+        let manifest = Arc::new(crate::manifest::Manifest::open(&manifest_path).await?);
+        if !manifest_exists {
+            let ssts_read = sstables.read().await;
+            for sst in ssts_read.iter() {
+                manifest
+                    .append(&crate::manifest::ManifestEntry::Add {
+                        path: sst.file_path().to_path_buf(),
+                        max_tx: sst.metadata().max_tx_id,
+                    })
+                    .await?;
+            }
+        }
+        // === SSTABLE MANIFEST INTEGRATION END ===
+
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
         // Spawn background compaction task
@@ -431,6 +470,7 @@ impl LsmStorage {
             Arc::clone(&block_cache),
             key_manager.clone(),
             Arc::clone(&resource_tracker),
+            Some(Arc::clone(&manifest)),
         ));
         // Clone für den Hintergrund-Task, original bleibt als Struct-Feld
         let compaction_engine_for_loop = Arc::clone(&compaction_engine);
@@ -462,6 +502,7 @@ impl LsmStorage {
             block_cache,
             snapshot_registry,
             compaction_engine, // H-3: persistent field
+            manifest,
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
@@ -675,6 +716,15 @@ impl LsmStorage {
                 )
                 .await?;
 
+                // === SSTABLE MANIFEST INTEGRATION START ===
+                self.manifest
+                    .append(&crate::manifest::ManifestEntry::Add {
+                        path: new_sst_path.clone(),
+                        max_tx: new_reader.metadata().max_tx_id,
+                    })
+                    .await?;
+                // === SSTABLE MANIFEST INTEGRATION END ===
+
                 sstables_lock.push(Arc::new(new_reader));
             }
 
@@ -694,6 +744,15 @@ impl LsmStorage {
 
         for path in sst_to_remove {
             tracing::info!("Removing SSTable during rollback: {:?}", path);
+            // === SSTABLE MANIFEST INTEGRATION START ===
+            if let Err(e) = self
+                .manifest
+                .append(&crate::manifest::ManifestEntry::Remove { path: path.clone() })
+                .await
+            {
+                tracing::warn!("Failed to write Manifest Remove entry during rollback: {}", e);
+            }
+            // === SSTABLE MANIFEST INTEGRATION END ===
             // Best-effort cleanup: do not abort rollback recovery if file removal fails.
             // The SSTable is superseded by restored WAL replay state, so its orphaned presence is safe but wastes disk space.
             if let Err(e) = tokio::fs::remove_file(&path).await {
@@ -703,6 +762,14 @@ impl LsmStorage {
                 );
             }
         }
+
+        // === SSTABLE MANIFEST INTEGRATION START ===
+        self.manifest
+            .append(&crate::manifest::ManifestEntry::RollbackComplete {
+                target_tx: target_tx.inner(),
+            })
+            .await?;
+        // === SSTABLE MANIFEST INTEGRATION END ===
 
         // NC-3: Remove rollback intent file after all SST cleanup is complete.
         // If this removal fails, recovery on next startup will re-execute the (idempotent) rollback.
@@ -1320,6 +1387,15 @@ impl StorageEngine for LsmStorage {
                 .map_err(|e| {
                     MemFuseError::Storage(format!("SSTable open after flush failed: {}", e))
                 })?;
+
+                // === SSTABLE MANIFEST INTEGRATION START ===
+                self.manifest
+                    .append(&crate::manifest::ManifestEntry::Add {
+                        path: sst_path.clone(),
+                        max_tx: reader.metadata().max_tx_id,
+                    })
+                    .await?;
+                // === SSTABLE MANIFEST INTEGRATION END ===
 
                 // Atomic transition: remove from immutable memtables and add to SSTables
                 let mut state = self.state.write().await;
@@ -2549,6 +2625,7 @@ mod tests {
             storage.block_cache.clone(),
             storage.key_manager.clone(),
             Arc::clone(&storage.budget),
+            Some(Arc::clone(&storage.manifest)),
         );
 
         engine
@@ -4164,5 +4241,100 @@ mod tests {
                 "WAL .uuid sidecar file must be cleaned up during startup recovery"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_manifest_orphan_sstable_not_loaded_on_restart() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        // 1. Initial run: write data, flush to valid SSTable
+        {
+            let storage = LsmStorage::new(config.clone()).await.expect("create storage");
+            let tx1 = TxId::new(1);
+            storage.put(tx1, b"valid_key", b"valid_val").await.unwrap();
+            storage.commit(tx1).await.unwrap();
+            storage.force_flush().await.unwrap();
+        }
+
+        // 2. Create an orphaned / rogue SSTable file in data dir WITHOUT adding it to MANIFEST
+        let orphan_sst_path = tmp.path().join("sst-99999999999990000000-000000.sst");
+        {
+            let mut builder = SstableBuilder::create(&orphan_sst_path).await.unwrap();
+            builder.add(b"rogue_key", b"rogue_val", 999, 999).await.unwrap();
+            builder.finish().await.unwrap();
+        }
+        assert!(orphan_sst_path.exists());
+
+        // 3. Reopen storage: Manifest exists, so orphan_sst_path should be ignored
+        {
+            let storage = LsmStorage::new(config).await.expect("reopen storage");
+            assert_eq!(
+                storage.get(b"valid_key").await.unwrap(),
+                Some(b"valid_val".to_vec()),
+                "Valid manifested key should be readable"
+            );
+            assert_eq!(
+                storage.get(b"rogue_key").await.unwrap(),
+                None,
+                "Orphan unmanifested SSTable must NOT be loaded on restart"
+            );
+            // Verify SSTables list only contains 1 segment (valid_key), not the orphan
+            let stats = storage.stats().await.unwrap();
+            assert_eq!(stats.num_segments, 1, "Only 1 valid SSTable should be loaded");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_manifest_migration_from_legacy_directory_without_manifest() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+        };
+
+        // 1. Manually build legacy environment: 2 SSTables, NO MANIFEST file
+        let sst1_path = tmp.path().join("sst-00000000000000000001-000001.sst");
+        let sst2_path = tmp.path().join("sst-00000000000000000002-000002.sst");
+        {
+            let mut b1 = SstableBuilder::create(&sst1_path).await.unwrap();
+            b1.add(b"legacy_1", b"val_1", 1, 1).await.unwrap();
+            b1.finish().await.unwrap();
+
+            let mut b2 = SstableBuilder::create(&sst2_path).await.unwrap();
+            b2.add(b"legacy_2", b"val_2", 2, 2).await.unwrap();
+            b2.finish().await.unwrap();
+        }
+
+        let manifest_path = tmp.path().join("MANIFEST");
+        assert!(!manifest_path.exists(), "MANIFEST should not exist prior to migration");
+
+        // 2. Open LsmStorage on legacy directory
+        let storage = LsmStorage::new(config.clone()).await.expect("migrate legacy directory");
+
+        // 3. Verify all legacy SSTable data is loaded
+        assert_eq!(storage.get(b"legacy_1").await.unwrap(), Some(b"val_1".to_vec()));
+        assert_eq!(storage.get(b"legacy_2").await.unwrap(), Some(b"val_2".to_vec()));
+
+        // 4. Verify MANIFEST file was retroactively created
+        assert!(manifest_path.exists(), "MANIFEST file must be created during migration");
+
+        // 5. Load MANIFEST and verify entries
+        let entries = crate::manifest::Manifest::load(&manifest_path).await.unwrap();
+        let valid_set = crate::manifest::Manifest::reconstruct_valid_sstables(&entries);
+        assert_eq!(valid_set.len(), 2, "MANIFEST should contain Add entries for both legacy SSTables");
+        assert!(valid_set.contains(std::path::Path::new("sst-00000000000000000001-000001.sst")));
+        assert!(valid_set.contains(std::path::Path::new("sst-00000000000000000002-000002.sst")));
     }
 }
