@@ -533,23 +533,24 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
         for term in &tokens {
             let prefix = self.key_term_prefix(term);
-            let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
+            let raw_entries = self.storage.scan_prefix_at(&prefix, seq).await?;
+
+            let mut entries = Vec::with_capacity(raw_entries.len());
+            for (key, val_bytes) in raw_entries {
+                let suffix_bytes = &key[prefix.len()..];
+                if let Ok(suffix) = std::str::from_utf8(suffix_bytes) {
+                    if let Ok(doc_id_raw) = suffix.parse::<u64>() {
+                        entries.push((DocId::new(doc_id_raw), val_bytes));
+                    }
+                }
+            }
 
             let df = entries.len() as u32;
             if df == 0 {
                 continue;
             }
 
-            for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
-                let doc_id = DocId::new(doc_id_raw);
-
+            for (doc_id, val_bytes) in entries {
                 let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
                     MemFuseError::Storage("Invalid tf length in posting list".into())
                 })?);
@@ -1824,6 +1825,33 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bm25_prefix_collision_handling() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "prefix_col");
+
+        let tx = TxId::new(1);
+        // Index documents containing non-stopword terms where one is a prefix of another ('micro' vs 'microsoft')
+        index
+            .upsert_document(tx, DocId::new(1), "micro service architecture")
+            .await?;
+        index
+            .upsert_document(tx, DocId::new(2), "microsoft windows operating system")
+            .await?;
+        index.commit(tx).await?;
+
+        // Searching for 'micro' should not fail with doc_id parse error when scan_prefix returns 'microsoft'
+        let results = index.search("micro", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, DocId::new(1));
+
+        let results_microsoft = index.search("microsoft", 10).await?;
+        assert_eq!(results_microsoft.len(), 1);
+        assert_eq!(results_microsoft[0].doc_id, DocId::new(2));
 
         Ok(())
     }
