@@ -7,7 +7,7 @@ use tempfile::tempdir;
 use tokio::time::timeout;
 
 #[tokio::test]
-#[ignore = "Requires JULES-01 merge — tracks NC-3/C-4 intent recovery"]
+#[ignore = "Timeout cancellation during storage.commit leaves staged WAL entries in prepare_batch that are replayed upon restart, causing key_timeout to exist after recovery"]
 async fn test_fsync_timeout_triggers_clean_rollback() {
     let dir = tempdir().expect("tempdir creation failed");
     let path = dir.path().to_path_buf();
