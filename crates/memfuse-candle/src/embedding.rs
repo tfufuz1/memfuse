@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-11T14:38:03Z (SESSION: ec63623e)
+// STAND: 2026-09-11T22:50:32Z (SESSION: db850a8a)
 // ZWECK: Native Candle ML vector embedding client implementation.
 // INVARIANTEN: Thread safety via Arc<tokio::sync::Mutex<Box<dyn CandleEmbedInner>>>; vector dimension matches model.dim. Zero unsafe code in production via VarBuilder::from_buffered_safetensors.
 // NICHT-OFFENSICHTLICH: CandleEmbedInner trait enables mock-based unit testing without binary weights in CI.
@@ -385,5 +385,33 @@ mod tests {
             crate::model_registry::CandleQuantization::Q4KM,
         );
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_non_constant_output_proof_embed() {
+        let mut model = DefaultCandleEmbedModel { dim: 64 };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+        let device = Device::Cpu;
+
+        let vec1 = model
+            .embed("alpha text query", &tokenizer, &device)
+            .unwrap();
+        let vec2 = model.embed("beta text query", &tokenizer, &device).unwrap();
+
+        assert_ne!(
+            vec1, vec2,
+            "Embedding outputs MUST not be constant across different inputs"
+        );
     }
 }

@@ -99,3 +99,17 @@
 - **Header Synchronization:** Updated `FILE-CONTEXT` header in `embedding.rs` with `STAND: 2026-09-11T14:38:03Z (SESSION: ec63623e)` and explicit unsafe-free invariant annotation.
 - **Inventory Reality Check:** Confirmed 7/7 source files in `crates/memfuse-candle/src/` (`embedding.rs`, `embedding_provider.rs`, `gasp.rs`, `gguf_loader.rs`, `inference.rs`, `lib.rs`, `model_registry.rs`) are fully accounted for. Documented `embedding_provider.rs` inventory drift relative to legacy snapshot.
 - **Verification Results:** 29/29 tests passed cleanly across unit, integration, and proptest suites. Zero clippy warnings with `-D warnings` and zero format diffs.
+
+---
+
+## 7. Non-Constant Output Proof & Audit Re-Verification (2026-09-11)
+
+**Datum:** 2026-09-11
+**Session:** `db850a8a`
+**Task-ID:** `JULES-20260911-EIGENB`
+**Status:** 🟢 Clean / Implemented & Verified
+
+### Verification Details
+- **Non-Constant Output Proof:** Verified that both embedding and LLM inference implementations (`DefaultCandleEmbedModel` & `DefaultCandleLlmModel`) yield distinct, input-dependent outputs. Unit tests `test_non_constant_output_proof_embed` and `test_non_constant_output_proof_llm` added and passed.
+- **Header Identity Synchronization:** Updated `FILE-CONTEXT` headers across all source files in `crates/memfuse-candle/src/` with `SESSION: db850a8a` and current ISO-8601 UTC timestamp (`2026-09-11T22:50:32Z`).
+- **Quality & Preflight Gates:** Passed `cargo check -p memfuse-candle`, `cargo test -p memfuse-candle` (31 tests passed), `cargo clippy -p memfuse-candle -- -D warnings`, `cargo fmt --check -p memfuse-candle`, and `cargo check --workspace --exclude memfuse-tauri`.
