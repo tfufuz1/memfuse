@@ -27,11 +27,13 @@ pub mod lsm;
 pub mod manifest;
 pub mod memtable;
 pub mod sstable;
+pub mod system_pressure;
 pub mod tenant_codec;
 pub(crate) mod util;
 pub mod wal;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
+pub use system_pressure::{PressureLevel, SystemPressure, SystemPressureMonitor};
 pub use lsm::{LsmConfig, LsmStorage};
 pub use manifest::{Manifest, ManifestEntry};
 pub use tenant_codec::TenantKeyCodec;
