@@ -544,10 +544,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 // Key format: {namespace}:pl:{term}:{doc_id}
                 // Suffix is just {doc_id}
                 let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
+                let Ok(suffix_str) = std::str::from_utf8(suffix) else {
+                    continue;
+                };
+                let Ok(doc_id_raw) = suffix_str.parse::<u64>() else {
+                    continue;
+                };
                 let doc_id = DocId::new(doc_id_raw);
 
                 let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
