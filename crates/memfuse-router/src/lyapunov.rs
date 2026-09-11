@@ -27,6 +27,22 @@ use std::collections::VecDeque;
 /// Anzahl der Histogramm-Bins für die KL-Divergenzberechnung.
 const NUM_BINS: usize = 10;
 
+/// Maximale Obergrenze für den Beitrag eines einzelnen Bins zur KL-Divergenz-Summe (`C_i = p_i * ln(p_i / q_i)`).
+///
+/// MATHEMATISCHE HERLEITUNG & NORM-BEGRÜNDUNG:
+/// Bei Laplace-1-Glättung über K = 10 Bins gilt für einen einzelnen Bin i:
+///   `p_i = (n_curr_i + 1) / (n_curr + 10)`
+///   `q_i = (n_base_i + 1) / (n_base + 10)`
+/// Selbst bei extremer Verteilungsverschiebung (`n_curr_i = n_curr` -> `p_i -> 1.0`) und leerem Baseline-Bin
+/// (`n_base_i = 0` -> `q_i = 1 / (n_base + 10)`) wächst `C_i` logarithmisch mit der Baseline-Stichprobengröße `n_base`:
+///   `C_i ≈ ln(n_base + 10)`
+/// Für typische Kalibrierungsmengen (`n_base ≤ 20.000`) ist `C_i ≤ ln(20.010) ≈ 9.90`.
+/// Die Obergrenze `MAX_BIN_KL_CONTRIBUTION = 10.0` stellt sicher, dass ein einzelner extremer Bin die
+/// Gesamtsumme `d_t` nicht durch numerische Artefakte dominiert, während für alle realistischen
+/// Verteilungsverschiebungen (`p_i / q_i ≤ e^10 ≈ 22.026`) das Clipping inaktiv bleibt und den
+/// exakten mathematischen Wert bewahrt.
+const MAX_BIN_KL_CONTRIBUTION: f32 = 10.0;
+
 /// Grund für erkannte Verteilungsverschiebung (Distributional Drift).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DriftReason {
@@ -148,10 +164,7 @@ impl LyapunovDriftWatcher {
         }
 
         // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Laplace-1-Smoothing (Additive Smoothing)
-        // AI-TAG[SMELL][MINOR] Increase Laplace smoothing epsilon or add bounds clipping to prevent numerical instability during KL divergence calculations. (ID: AGT-ROUTER-00808347) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
-        // BEFUND: Laplace smoothing uses alpha=1.0f32, but edge cases in ratio log calculation require explicit bounds checking.
-        // RISIKO: Potential numerical edge cases if probabilities degenerate.
-        // EMPFEHLUNG: Consider bounds clipping or increasing epsilon in future iterations if instability is observed.
+        // AI-TAG[RESOLVED][MINOR] Added per-bin contribution clipping (`MAX_BIN_KL_CONTRIBUTION = 10.0`) to prevent numerical instability during KL divergence calculations under extreme distribution shift. (ID: AGT-ROUTER-00808347) (TS: 2026-09-11T12:00:00Z) (SESSION: 21a8d3e8)
         let alpha = 1.0f32;
         let k = NUM_BINS as f32;
         let n_curr = current_scores.len() as f32;
@@ -161,7 +174,8 @@ impl LyapunovDriftWatcher {
         for i in 0..NUM_BINS {
             let p_i = (current_counts[i] as f32 + alpha) / (n_curr + k * alpha);
             let q_i = (baseline_counts[i] as f32 + alpha) / (n_base + k * alpha);
-            d_t += p_i * (p_i / q_i).ln();
+            let bin_kl = p_i * (p_i / q_i).ln();
+            d_t += bin_kl.min(MAX_BIN_KL_CONTRIBUTION);
         }
         let d_t = if d_t.is_finite() {
             // Hard-Clip bei 100.0: Für ein 10-Bin-Histogramm ist selbst bei stärkster
@@ -389,6 +403,97 @@ mod tests {
         assert!(
             latest_kl >= 0.0 && latest_kl <= 100.0,
             "KL divergence must be bounded between 0.0 and 100.0, got {latest_kl}"
+        );
+    }
+
+    #[test]
+    fn test_extreme_distribution_shift_kl_contribution_clipped() {
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        // Baseline: 500,000 Samples komplett in Bin 9 [0.9, 1.0] (0 in Bin 0)
+        let baseline: Vec<f32> = vec![0.95; 500_000];
+        watcher.set_baseline(&baseline);
+
+        // Current: 500,000 Samples komplett in Bin 0 [0.0, 0.1)
+        let current: Vec<f32> = vec![0.05; 500_000];
+
+        // Ohne Bin-wise Clipping wäre für Bin 0:
+        // p_0 = (500000 + 1) / 500010 ≈ 1.0
+        // q_0 = (0 + 1) / 500010 = 1 / 500010
+        // p_0 * ln(p_0 / q_0) ≈ 1.0 * ln(500010) ≈ 13.12, was MAX_BIN_KL_CONTRIBUTION (10.0) übersteigt.
+        watcher.update(&current);
+        let latest_kl = watcher
+            .divergence_history
+            .back()
+            .copied()
+            .expect("KL divergence should be recorded");
+
+        // Bei Clipping auf MAX_BIN_KL_CONTRIBUTION (10.0) für Bin 0 plus den kleinen Beiträgen der anderen Bins
+        // muss der Wert strikt kleiner sein als der unclipped Wert (~13.12) und nahe 10.0 liegen.
+        assert!(
+            latest_kl <= MAX_BIN_KL_CONTRIBUTION + 0.1,
+            "Extreme shift KL divergence should be clipped near MAX_BIN_KL_CONTRIBUTION ({MAX_BIN_KL_CONTRIBUTION}), got {latest_kl}"
+        );
+        assert!(
+            latest_kl >= 9.9,
+            "Extreme shift KL divergence should be at least ~10.0 due to clipping, got {latest_kl}"
+        );
+    }
+
+    #[test]
+    fn test_moderate_distribution_shift_kl_unclipped() {
+        let mut watcher = LyapunovDriftWatcher::new(10);
+        // Uniforme Baseline über Bins 0..9 (1000 Samples)
+        let baseline: Vec<f32> = (0..1000).map(|i| (i as f32) / 1000.0).collect();
+        watcher.set_baseline(&baseline);
+
+        // Moderat verschobene Current-Verteilung (60% in Bins 5..9, 40% in Bins 0..4)
+        let mut current: Vec<f32> = Vec::with_capacity(1000);
+        for i in 0..400 {
+            current.push((i as f32 / 400.0) * 0.5); // Bins 0..4
+        }
+        for i in 0..600 {
+            current.push(0.5 + (i as f32 / 600.0) * 0.5); // Bins 5..9
+        }
+
+        // Exakte händische Berechnung ohne Clipping
+        let alpha = 1.0f32;
+        let k = 10.0f32;
+        let n_curr = 1000.0f32;
+        let n_base = 1000.0f32;
+
+        let mut expected_kl = 0.0f32;
+        let mut current_counts = [0usize; 10];
+        let mut baseline_counts = [0usize; 10];
+        for &s in &current {
+            let bin = ((s.clamp(0.0, 1.0) * 10.0) as usize).min(9);
+            current_counts[bin] += 1;
+        }
+        for &s in &baseline {
+            let bin = ((s.clamp(0.0, 1.0) * 10.0) as usize).min(9);
+            baseline_counts[bin] += 1;
+        }
+
+        for i in 0..10 {
+            let p_i = (current_counts[i] as f32 + alpha) / (n_curr + k * alpha);
+            let q_i = (baseline_counts[i] as f32 + alpha) / (n_base + k * alpha);
+            let bin_kl = p_i * (p_i / q_i).ln();
+            assert!(
+                bin_kl < MAX_BIN_KL_CONTRIBUTION,
+                "Bin {i} contribution {bin_kl} should be below threshold {MAX_BIN_KL_CONTRIBUTION}"
+            );
+            expected_kl += bin_kl;
+        }
+
+        watcher.update(&current);
+        let actual_kl = watcher
+            .divergence_history
+            .back()
+            .copied()
+            .expect("KL divergence should be recorded");
+
+        assert!(
+            (actual_kl - expected_kl).abs() < 1e-6,
+            "For moderate shifts, KL divergence must match unclipped exact sum. expected {expected_kl}, got {actual_kl}"
         );
     }
 }
