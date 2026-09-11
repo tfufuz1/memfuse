@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>MEMFUSE.BAUKASTEN — v27 · 17 CRATES · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
+<title>MEMFUSE.BAUKASTEN — v28 · 17 CRATES · 3 SUBSYSTEME (KEIN MISCHEN) · DATIERTE AUDIT-REPORTS · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
 <style>
 :root{
   --bg:#050508;--s1:#08080e;--s2:#0d0d17;--s3:#121220;
@@ -40,6 +40,15 @@ body{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;backgro
 
 /* CARDS */
 .card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;margin-bottom:10px;transition:border-color .2s}
+.card.locked{opacity:.35;pointer-events:none;position:relative}
+.card.locked .ch::after{content:"🔒 gesperrt — Subsystem-Modus aktiv";position:absolute;right:34px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--warn);font-family:monospace;letter-spacing:.02em}
+.subsys-card{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:10px;cursor:pointer;transition:.15s;text-align:left}
+.subsys-card:hover{border-color:#ff6b9d}
+.subsys-card.on{border-color:#ff6b9d;background:rgba(255,107,157,.08)}
+.subsys-card .sub-name{font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px}
+.subsys-card .sub-crate{font-family:monospace;font-size:9px;color:var(--td);margin-top:2px}
+.subsys-card .sub-desc{font-size:10px;color:var(--td);margin-top:4px;line-height:1.4}
+.subsys-task-grid{display:grid;grid-template-columns:1fr;gap:6px}
 .card:hover{border-color:var(--b2)}
 .ch{display:flex;align-items:center;padding:9px 12px;gap:8px;border-bottom:1px solid var(--b1);cursor:pointer;user-select:none;min-height:38px}
 .ch:hover{background:rgba(255,255,255,.012)}
@@ -211,11 +220,12 @@ kbd{font-family:monospace;font-size:8px}
 
 <header class="hdr">
   <div class="hdr-in">
-    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v27</span></span>
+    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v28</span></span>
     <span class="hdot"></span>
-    <span class="hsub">17 Crates · Tier+Domain-Profile · 42 APMs · 14 Task-Typen · ROLE-LOCK (Audit≠Fix) · PLAN→ACT→VERIFY→REFLECT</span>
+    <span class="hsub">17 Crates · 3 Subsysteme (kein Mischen) · Tier+Domain-Profile · 42 APMs · 14 Task-Typen · ROLE-LOCK (Audit≠Fix) · PLAN→ACT→VERIFY→REFLECT</span>
     <div class="hright">
       <span class="hbadge hb-a">17 CRATES · 8 LAYER (0–7)</span>
+      <span class="hbadge" style="background:rgba(255,107,157,.12);color:#ff6b9d;border:1px solid rgba(255,107,157,.3)">3 SUBSYSTEME (KEIN MISCHEN)</span>
       <span class="hbadge hb-b">14 TASK-TYPEN</span>
       <span class="hbadge hb-c">42 APM-PATTERN</span>
       <span class="hbadge hb-a">~157 KOMPONENTEN</span>
@@ -275,8 +285,8 @@ kbd{font-family:monospace;font-size:8px}
           <span id="last-merge-display" style="color:var(--ac2)">nicht verfügbar (cargo xtask gen-prompter-data ausführen)</span>
         </div>
         <details style="margin-top:8px">
-          <summary style="cursor:pointer;font-size:10px;color:var(--muted)">Erwartetes JSON-Schema / Beispiel-Export-Skript</summary>
-          <pre style="font-size:9px;overflow-x:auto;margin-top:6px;color:var(--muted)">{
+          <summary style="cursor:pointer;font-size:10px;color:var(--td)">Erwartetes JSON-Schema / Beispiel-Export-Skript</summary>
+          <pre style="font-size:9px;overflow-x:auto;margin-top:6px;color:var(--td)">{
   "generated_at": "2026-09-04T13:49:00Z",
   "head": "&lt;git-sha, optional&gt;",
   "crates": [
@@ -338,6 +348,23 @@ kbd{font-family:monospace;font-size:8px}
       </div>
     </div>
 
+    <!-- SUBSYSTEM (v28) — eigenständige Kategorie, DERSELBEN Ebene wie "Crate wählen",
+         NICHT darunter/als Task-Untertyp. Zweistufig, in sich geschlossen:
+         Subsystem → zugehörige spezialisierte Task(s) → eigener Prompt.
+         Strukturell kein Mischen mit Crate-Auswahl möglich (siehe selSubsystem()/selCrate()). -->
+    <div class="card" id="c-subsystem">
+      <div class="ch" onclick="toggle('c-subsystem')">
+        <div class="cico" style="background:rgba(255,107,157,.12);color:#ff6b9d">🧬</div>
+        <div class="clbl">Subsystem wählen<small>WAL · LSM-Tree · MCP-Sandbox — je fest an genau eine Crate gebunden · kein Mischen mit Crate-Auswahl</small></div>
+        <div class="cval" id="cv-subsystem" style="font-family:monospace;font-size:9px;color:#ff6b9d">— keins gewählt —</div>
+        <span class="carr">▼</span>
+      </div>
+      <div class="cb">
+        <div class="crate-grid" id="subsystem-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))"></div>
+        <div id="subsystem-task-grid" style="margin-top:10px"></div>
+      </div>
+    </div>
+
     <!-- COMPONENTS -->
     <div class="card" id="c-comp">
       <div class="ch" onclick="toggle('c-comp')">
@@ -378,18 +405,6 @@ kbd{font-family:monospace;font-size:8px}
             <div class="th-name">Tiefen-Audit</div>
             <div class="th-desc">Fault-Injection · Concurrency-Stress · Property-Tests · Coverage-Analyse</div>
             <span class="th-phase ph-audit">DEEP</span>
-          </div>
-          <div class="thero" id="tt-wal_audit" onclick="selTask('wal_audit')">
-            <div class="th-ico">📜</div>
-            <div class="th-name">WAL-Sub-Audit</div>
-            <div class="th-desc">wal.rs (XL) · TOCTOU · sync_all · atomic loads · HMAC replay · backup restore</div>
-            <span class="th-phase ph-audit">WAL</span>
-          </div>
-          <div class="thero" id="tt-lsm_audit" onclick="selTask('lsm_audit')">
-            <div class="th-ico">🗂️</div>
-            <div class="th-name">LSM-Sub-Audit</div>
-            <div class="th-desc">lsm.rs (XL) · startup flush · tombstone limit · flush_counter · visibility</div>
-            <span class="th-phase ph-audit">LSM</span>
           </div>
         </div>
         <div class="sl"><span class="sl-dot"></span>Implementierungs-Aufgaben (parallel-sicher, 1 Datei/Scope)</div>
@@ -548,7 +563,7 @@ kbd{font-family:monospace;font-size:8px}
         <span class="ochar" id="ochar2">Crate + Aufgabe wählen</span>
       </div>
       <div class="ob">
-        <div id="pt-empty">Wähle ein <strong>Crate</strong> und eine <strong>Aufgabe</strong><br>um den Jules-Prompt zu generieren.<br><br><span style="color:var(--td);font-size:9px">Prompts sind täglich einsetzbar · keine direkten Bug-Referenzen<br>APM-1..42 (13 Kategorien) · Domain-Risikoprofil-Pflicht-APMs immer aktiv · parallel-sicher<br>14 spezialisierte Task-Typen: audit · deep · impl · fix · test · sec · review · adr · deps · korrektur · calib · flaky · chaos · replay<br>Verifikations-Loop (Plan→Act→Verify→Reflect) + ROLE-LOCK (Audit≠Fix) + Branch-Disziplin automatisch<br>Komponenten-Scope: alle Dateien aktiv = kompakt, Teilauswahl = maximal präzise<br><br><span style="color:var(--warn)">v23-Änderungen:</span> Strukturelle Reaktion auf gefundenes Inventar-Drift-Problem (siehe Review) — exakte Datei-LOC-Zahlen aus allen generierten Prompt-Texten entfernt (Größenklassen S/M/L/XL sind drift-resistent, exakte LOC nicht) · verpflichtender Inventar-Realitätsabgleich (\`find\`+Diff gegen gelistete Dateien) jetzt fester Bestandteil JEDES generierten Prompts, nicht mehr nur bei Vollauswahl · sichtbares Inventar-Stand-Datum + Frische-Anzeige in der UI · manueller Offline-Abgleich-Assistent (Paste von \`find | xargs wc -l\`, rein clientseitig, kein Repo-/Build-Zugriff) im neuen Karten-Block „Inventar-Frische"</span></span></div>
+        <div id="pt-empty">Wähle entweder <strong>Crate + Aufgabe</strong> <em>oder</em> <strong>Subsystem + Task</strong><br>um den Jules-Prompt zu generieren. Beide Pfade schließen sich gegenseitig aus (kein Mischen).<br><br><span style="color:var(--td);font-size:9px">Prompts sind täglich einsetzbar · keine direkten Bug-Referenzen<br>APM-1..42 (13 Kategorien) · Domain-Risikoprofil-Pflicht-APMs immer aktiv · parallel-sicher<br>14 spezialisierte Task-Typen: audit · deep · impl · fix · test · sec · review · adr · deps · korrektur · calib · flaky · chaos · replay<br>Verifikations-Loop (Plan→Act→Verify→Reflect) + ROLE-LOCK (Audit≠Fix) + Branch-Disziplin automatisch<br>Komponenten-Scope: alle Dateien aktiv = kompakt, Teilauswahl = maximal präzise<br><br><span style="color:var(--warn)">v23-Änderungen:</span> Strukturelle Reaktion auf gefundenes Inventar-Drift-Problem (siehe Review) — exakte Datei-LOC-Zahlen aus allen generierten Prompt-Texten entfernt (Größenklassen S/M/L/XL sind drift-resistent, exakte LOC nicht) · verpflichtender Inventar-Realitätsabgleich (\`find\`+Diff gegen gelistete Dateien) jetzt fester Bestandteil JEDES generierten Prompts, nicht mehr nur bei Vollauswahl · sichtbares Inventar-Stand-Datum + Frische-Anzeige in der UI · manueller Offline-Abgleich-Assistent (Paste von \`find | xargs wc -l\`, rein clientseitig, kein Repo-/Build-Zugriff) im neuen Karten-Block „Inventar-Frische"</span><br><span style="color:#ff6b9d">v28-Änderungen:</span> Subsysteme (WAL · LSM-Tree · MCP-Sandbox) sind jetzt eine eigenständige Kategorie auf derselben Ebene wie „Crate wählen" — nicht mehr frei mit jeder Crate kombinierbar, strukturell gesperrt statt nur per Laufzeit-Warnung · Audit-Reports tragen jetzt das Datum im Dateinamen (\`AUDIT_&lt;crate&gt;_JJJJ-MM-TT.md\`), ältere Läufe werden nie überschrieben · jeder Subsystem-Audit schließt mit einem eigenen, expliziten „Audit≠Fix"-Hinweis</span></span></div>
         <pre id="pt-output"></pre>
       </div>
       <div class="obtn-row">
@@ -578,7 +593,7 @@ kbd{font-family:monospace;font-size:8px}
 // ═══════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════
-const SS = { crate: null, task: null, fmt: 'full', par: 'on', components: new Set(), loop: 'on', maxLoop: '5', github: 'on', ablation: 'off', delegation: 'high' };
+const SS = { crate: null, task: null, subsystem: null, subsystemTask: null, fmt: 'full', par: 'on', components: new Set(), loop: 'on', maxLoop: '5', github: 'on', ablation: 'off', delegation: 'high' };
 let QUEUE = [];
 let _rawPrompt = '';
 
@@ -675,6 +690,33 @@ function PKG(crateId) {
   return crateId === 'memfuse-py'
     ? '--manifest-path crates/memfuse-py/Cargo.toml'
     : `-p ${crateId}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AUDIT-REPORT-PFADE (v28) — EINZIGE Stelle, die Audit-Report-Pfade erzeugt.
+// Vorher (v27): EINE Datei/Crate (AUDIT_<crate>.md), per `cat >>` über Monate
+// fortgeschrieben — ein neuer Lauf konnte den Kontext eines älteren Laufs
+// faktisch überschreiben/relativieren, ohne als eigener, abgegrenzter
+// Prüfstand sichtbar zu bleiben.
+// Jetzt: AUDIT_PATH()/SUBSYS_AUDIT_PATH() sind das SCHREIBZIEL des heutigen
+// Laufs (mehrere Läufe am selben Tag hängen an dieselbe Datei an — aber KEIN
+// älteres Datums-File wird je verändert). AUDIT_GLOB()/SUBSYS_AUDIT_GLOB()
+// sind ausschließlich zum LESEN der gesamten Historie ("Vorwissen aus
+// früheren Sitzungen") gedacht — nie als Schreibziel verwenden.
+// Alle Prompt-Bausteine MÜSSEN ausschließlich diese vier Funktionen nutzen,
+// nie den Pfad-String von Hand zusammensetzen.
+// ═══════════════════════════════════════════════════════════════════
+function AUDIT_PATH(crate) {
+  return `docs/audits/AUDIT_${crate}_$(date -u +%Y-%m-%d).md`;
+}
+function AUDIT_GLOB(crate) {
+  return `docs/audits/AUDIT_${crate}_*.md`;
+}
+function SUBSYS_AUDIT_PATH(id) {
+  return `docs/audits/AUDIT_SUBSYSTEM_${id}_$(date -u +%Y-%m-%d).md`;
+}
+function SUBSYS_AUDIT_GLOB(id) {
+  return `docs/audits/AUDIT_SUBSYSTEM_${id}_*.md`;
 }
 
 const RISK_LABELS = {
@@ -1809,7 +1851,7 @@ Arbeite eigenständig und ohne Rückfragen durch alle Schritte. Lies jede releva
 2. Lies JEDE Zieldatei vollständig, einschließlich der Test-Sektion am Dateiende — kein Schreiben ohne vollständige Lektüre
 3. Lies alle Dateien, die die Zieldatei via \`use crate::\`/\`mod\` importieren oder von ihr importiert werden — Seiteneffekte über Modulgrenzen sind die häufigste Fehlerquelle
 4. Führe \`cargo check ${PKG(crate)}\` aus und dokumentiere den Ist-Zustand (Fehleranzahl, Warnungen)
-5. Lies \`docs/audits/AUDIT_${crate}.md\` vollständig — bekannte Befunde und Sackgassen nicht erneut betreten
+5. Lies alle \`${AUDIT_GLOB(crate)}\`-Dateien (gesamte Audit-Historie dieser Crate) vollständig — bekannte Befunde und Sackgassen nicht erneut betreten
 6. Falls vorhanden: lies alle Dateien in \`docs/audits/round2/\` mit \`${crate}\` im Dateinamen vollständig — dort stehen die tiefsten bereits gewonnenen Erkenntnisse zu diesem Crate
 
 **Geschwister-Konsistenz (APM-6):** Wenn du eine Funktion änderst oder prüfst, suche aktiv nach strukturell ähnlichen Funktionen im selben Modul (gleicher Name-Präfix, gleiche Signatur-Form, gleiches Implementierungsmuster). Jede Geschwister-Funktion muss explizit geprüft und bei Bedarf gleichzeitig korrigiert werden — ein Befund gilt erst als behoben, wenn alle strukturell analogen Stellen untersucht sind.
@@ -1925,7 +1967,7 @@ grep -rln "use ${crate.replace(/-/g,'_')}::" crates/ --include="*.rs" | grep -v 
 \`\`\`
 **Vorwissen aus früheren Sitzungen (Pflicht vor Neuanlage jeder Analyse):**
 \`\`\`bash
-cat docs/audits/AUDIT_${crate}.md | tail -120
+cat ${AUDIT_GLOB(crate)} 2>/dev/null | tail -120
 grep -rn "AGT-${crate.replace('memfuse-','').toUpperCase()}" crates/${crate}/src/ 2>/dev/null
 \`\`\`
 **Testauffindung (bevor neue Tests geschrieben werden — Duplikate vermeiden):**
@@ -1953,7 +1995,7 @@ git log --oneline --all --grep="${crate}" -i | head -20
 \`\`\`
 Prüfe insbesondere gegen aktuell bekannte offene Audit-Branches, die dieselbe Crate oder dieselbe Invariante betreffen könnten (z.B. \`mmap-toctou-round2\`, \`diskann-sector-size-check\`, \`diskann-corrupt-neighbor-count-bounds-check\`, \`ckpt-raii-manifest-atomicity\`, \`agt-ckpt-agt-store-tags-resolved\`, \`core-anchor-and-headers\`, \`sec-mmap-index-hardening\`) — falls einer davon denselben Befund bereits adressiert, rebase/cherry-pick darauf statt eine Parallel-Lösung zu erzeugen, oder dokumentiere den Bezug explizit im Commit.
 
-**Commit-Konvention:** \`<crate>: <präzise, imperativische Kurzbeschreibung>\` — z.B. \`${crate}: fix tombstone check order in search_filtered\`. Falls ein Issue referenziert wird: Commit-/PR-Body MUSS \`Fixes #<NR>\` bzw. \`Refs #<NR>\` enthalten und den betroffenen APM-Bezug sowie den aktualisierten Abschnitt in \`docs/audits/AUDIT_${crate}.md\` benennen. Kein Force-Push über bereits von einem Menschen kommentierte Commits ohne expliziten Hinweis.
+**Commit-Konvention:** \`<crate>: <präzise, imperativische Kurzbeschreibung>\` — z.B. \`${crate}: fix tombstone check order in search_filtered\`. Falls ein Issue referenziert wird: Commit-/PR-Body MUSS \`Fixes #<NR>\` bzw. \`Refs #<NR>\` enthalten und den betroffenen APM-Bezug sowie den aktualisierten Abschnitt in \`${AUDIT_PATH(crate)}\` benennen. Kein Force-Push über bereits von einem Menschen kommentierte Commits ohne expliziten Hinweis.
 `;
 }
 
@@ -2061,7 +2103,7 @@ Du bist in dieser Sitzung **kein Implementierer**. Diese Trennung ist keine Stil
 
 **Einzig zulässiges Kommunikationsmittel für JEDEN Befund — das Kommentarsystem (\`rules/tag_taxonomy.md\`), keine anderen Kanäle:**
 1. Inline \`AI-TAG[KATEGORIE][SEVERITY]\` mit BEFUND/RISIKO/EMPFEHLUNG direkt über der betroffenen Zeile
-2. Tabellenzeile im Audit-Report (\`docs/audits/AUDIT_${crate}.md\`)
+2. Tabellenzeile im Audit-Report (\`${AUDIT_PATH(crate)}\`)
 
 Ein Fix-Auftrag ist ein **eigener, separat beauftragter Folgeauftrag** (Task-Typ \`fix\`/\`korrektur\`/\`impl\`), der diese Tags konsumiert und mit eigenem Gate-Stack verifiziert — niemals derselbe Diff, niemals dieselbe Sitzung. ${scopeNote}`;
   }
@@ -2070,7 +2112,7 @@ Ein Fix-Auftrag ist ein **eigener, separat beauftragter Folgeauftrag** (Task-Typ
 
 ## Rollensperre: Diese Sitzung konsumiert AUSSCHLIESSLICH bereits offene Befunde
 
-Du implementierst in dieser Sitzung **nur Fixes für bereits vorhandene, offene \`AI-TAG\`-Befunde** (aus \`docs/audits/AUDIT_${crate}.md\` bzw. inline im Code) oder für den explizit in diesem Auftrag benannten Befund — nicht für neu selbst entdeckte, unabhängige Probleme.
+Du implementierst in dieser Sitzung **nur Fixes für bereits vorhandene, offene \`AI-TAG\`-Befunde** (aus \`${AUDIT_GLOB(crate)}\` bzw. inline im Code) oder für den explizit in diesem Auftrag benannten Befund — nicht für neu selbst entdeckte, unabhängige Probleme.
 
 **Verbindlicher Ablauf pro Befund:**
 1. Befund am AKTUELLEN Quellcode verifizieren (\`.jules/AUDIT_INTAKE_PROTOCOL.md\`) — nicht mehr zutreffend? → \`[ENTKRÄFTET]\` dokumentieren, NICHT implementieren.
@@ -2207,7 +2249,7 @@ function DOD(crate) {
 - [ ] 0 Test-Expected-Wert direkt aus Implementierungs-Formel abgeleitet (Anti-Mirroring)
 - [ ] Ausschließlich Dateien in \`crates/${crate}/\` berührt — keine anderen Crates modifiziert
 - [ ] Schritt 0 (Inventar-Realitätsabgleich) durchgeführt UND jeder gefundene Drift-Befund dokumentiert (keine unentdeckte Datei stillschweigend übergangen)
-- [ ] \`docs/audits/AUDIT_${crate}.md\` mit neuem Zeitstempel-Abschnitt aktualisiert
+- [ ] \`${AUDIT_PATH(crate)}\` mit neuem Zeitstempel-Abschnitt aktualisiert
 - [ ] Jeder neue \`AI-TAG\`/\`ANCHOR\`/\`REVIEW-PASS\` trägt \`TS:\` (sekundengenau, ISO-8601-UTC) UND \`SESSION:\` UND — bei \`AI-TAG\`/\`ANCHOR\` — eine hash-basierte \`AGT-${crate.replace('memfuse-','').toUpperCase()}-<8-hex>\`-ID
 - [ ] Jede in dieser Sitzung inhaltlich geänderte Datei > 50 Zeilen mit bekannten Fallstricken trägt einen aktuellen \`FILE-CONTEXT\`-Header (max. 8 Zeilen)
 - [ ] Kein \`ANCHOR\` eigenmächtig auf \`STATUS:DONE\` gesetzt ohne die erforderliche Anzahl unabhängiger \`REVIEW-PASS\`-Einträge (2 Standard, 3 bei security/unsafe — Gate 8 erzwingt dies technisch)
@@ -2220,6 +2262,61 @@ function DOD(crate) {
 ${SS.loop === 'on' ? `- [ ] Jeder Loop-Schritt wurde vor dem nächsten verifiziert (kein ungeprüfter Vorgriff) — offene Blocker sind als Tag dokumentiert, nicht stillschweigend übersprungen
 - [ ] Wiederverwendbare Erkenntnisse aus dem Verifikations-Loop in \`AGENTS.md\` §4 oder als \`AI-TAG\` festgehalten` : ''}
 ${SESSIONEND_BLOCK(crate)}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SUBSYSTEME (v28) — EIGENSTÄNDIGE Kategorie auf derselben Ebene wie
+// "Crate wählen", NICHT als Add-on/Untertyp der Task-Auswahl.
+//
+// v27-Fehler (behoben): WAL-Sub-Audit/LSM-Sub-Audit standen als normale
+// Kacheln im generischen Task-Grid — für JEDE Crate anklickbar, obwohl
+// WAL/LSM nur in memfuse-store existieren. Einziger Schutz war eine
+// Laufzeit-Warnung NACH dem Klick. Das ist strukturell falsch: ein
+// Subsystem ist an genau EINE Crate gebunden, nie frei kombinierbar.
+//
+// v28: Auswahl ist zweistufig und in sich geschlossen:
+//   Subsystem → zugehörige spezialisierte Task(s) → eigener Prompt.
+// Jedes Subsystem trägt seine Owner-Crate fest codiert (crate-Feld unten,
+// code-verifiziert gegen github.com/tfufuz1/memfuse) — der Claim
+// (cargo xtask claim --crate …) läuft bei einem Subsystem-Prompt IMMER
+// automatisch auf dieser Crate, nicht frei wählbar. Mischen mit der
+// normalen Crate-/Task-Auswahl ist strukturell ausgeschlossen, nicht nur
+// per Warnung verboten (siehe selSubsystem()/selCrate()/selTask()).
+//
+// Bewusst NICHT ergänzt (siehe CHANGELOG v28, Abschnitt "Nicht angefasst"):
+// HNSW/DiskANN (memfuse-index), CSR-Graph (memfuse-graph) — dafür wären
+// neue, gegen den Code verifizierte Tiefen-Audit-Inhalte nötig. Weitere
+// Subsysteme lassen sich als reine Datenerweiterung ergänzen (neuer
+// Eintrag hier + Eintrag in SUBSYSTEM_TASKS), ohne UI-Code anzufassen.
+// ═══════════════════════════════════════════════════════════════════
+const SUBSYSTEMS = [
+  { id:'wal', crate:'memfuse-store', file:'crates/memfuse-store/src/wal.rs',
+    loc:'3596', size:'XL', icon:'📜', name:'WAL',
+    desc:'Write-Ahead-Log — fsync-Disziplin, HMAC-Bindung, höchstes Crash-Safety-Risiko im gesamten Workspace' },
+  { id:'lsm', crate:'memfuse-store', file:'crates/memfuse-store/src/lsm.rs',
+    loc:'3984', size:'XL', icon:'🗂️', name:'LSM-Tree',
+    desc:'LsmStorage — StorageEngine-Trait-Implementierung, commit_mutex-Verwaltung, rollback_to_tx (größte Einzeldatei des Crates)' },
+  { id:'mcp_sandbox', crate:'memfuse-mcp', file:'crates/memfuse-mcp/src/sandbox.rs',
+    loc:'431', size:'M', icon:'🧪', name:'MCP-Sandbox',
+    desc:'McpSandbox — Zero-Trust Tool-Output-Isolation, Volatile-Result-Verschlüsselung (AES-256-GCM-SIV via memfuse-security)' },
+];
+
+function SUBSYS_DOD(sub) {
+  return `---
+
+## Definition of Done — Subsystem-Audit (${sub.name})
+
+> **Wichtig:** Scheitert ein Schritt, stoppe sofort und dokumentiere den Befund — führe die nächsten Punkte nicht aus, bevor der Fehler behoben oder explizit als bekannt markiert ist.
+
+- [ ] AUSSCHLIESSLICH \`${sub.file}\` gelesen/geprüft — keine andere Datei dieser oder einer anderen Crate berührt, kein Scope-Creep
+- [ ] \`${SUBSYS_AUDIT_PATH(sub.id)}\` mit neuem Zeitstempel-Abschnitt angelegt/erweitert (append-only, heutiges Datum — komplett getrennt vom Crate-Report \`${AUDIT_PATH(sub.crate)}\`)
+- [ ] Jeder Befund AUSSCHLIESSLICH als \`AI-TAG[KATEGORIE][SEVERITY]\` inline ODER als Tabellenzeile im Subsystem-Audit-Report dokumentiert — keine anderen Kanäle
+- [ ] **KEINE funktionale Code-Änderung in dieser Sitzung.** Diese Sitzung ist eine reine Auditor-Sitzung (siehe Rollensperre oben) — Befunde werden getaggt, nicht behoben.
+- [ ] Ein Fix für hier gefundene Befunde ist IMMER ein separat beauftragter Folgeauftrag (Task-Typ \`fix\`/\`korrektur\`) in einer eigenen Sitzung mit eigener \`TASK_ID\` und eigenem Claim — niemals derselbe Diff, niemals dieselbe Sitzung wie dieser Audit
+- [ ] \`cargo xtask claim --crate ${sub.crate}\` lief automatisch auf der Owner-Crate dieses Subsystems (nicht frei wählbar — jedes Subsystem ist fest an genau eine Crate gebunden)
+- [ ] Diese Sitzung blieb strukturell auf genau ein Subsystem gesperrt — keine Crate-Auswahl, keine anderweitige Task-Auswahl parallel aktiviert
+
+**Selbstbestätigungs-Risiko (der Grund für diese Sperre):** Eine Sitzung, die im selben Diff auditiert UND fixt, bestätigt sich selbst — das Ergebnis ist für niemanden mehr unabhängig nachprüfbar, weil Audit und Fix nicht mehr sauber getrennt werden können. Deshalb gilt hier bindend: **kein Mischen von Audit und Fix, in keiner Form, in keiner Sitzung.**`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2245,7 +2342,7 @@ ${p.focus || '— Lies crates/' + crate + '/src/ vollständig —'}
 
 ### Schritt 1: Baseline lesen
 \`\`\`bash
-cat docs/audits/AUDIT_${crate}.md | tail -80
+cat ${AUDIT_GLOB(crate)} 2>/dev/null | tail -80
 git log --oneline --since="7 days ago" -- crates/${crate}/
 \`\`\`
 
@@ -2398,7 +2495,7 @@ cargo test ${PKG(crate)} --all-features -- --nocapture 2>&1 | \\
 
 ### Schritt 6: Audit-Report aktualisieren (APPEND-ONLY)
 \`\`\`bash
-cat >> docs/audits/AUDIT_${crate}.md << 'AUDIT_EOF'
+cat >> ${AUDIT_PATH(crate)} << 'AUDIT_EOF'
 
 ---
 
@@ -2464,7 +2561,7 @@ ${showPar === 'on' ? `---
 
 ## Parallele Ausführung
 Dieser Prompt kann parallel zu allen anderen Crate-Audit-Prompts ausgeführt werden.
-Datei-Scope: \`crates/${crate}/\` und \`docs/audits/AUDIT_${crate}.md\` (append-only).
+Datei-Scope: \`crates/${crate}/\` und \`${AUDIT_PATH(crate)}\` (append-only, heutiges Datum — ältere \`${AUDIT_GLOB(crate)}\`-Dateien werden nie verändert).
 Konflikte mit anderen Crates: keine (dateidisjunkt).` : ''}
 
 ${DOD(crate)}`;
@@ -2532,8 +2629,8 @@ fi
 
 ### Audit-Report aktualisieren
 \`\`\`bash
-echo "## Tiefen-Audit $(date +%Y-%m-%d)" >> docs/audits/AUDIT_${crate}.md
-echo "### Coverage: \$(command -v cargo-llvm-cov &>/dev/null && cargo llvm-cov ${PKG(crate)} 2>&1 | grep TOTAL || echo 'cargo-llvm-cov nicht verfügbar — siehe Phase 4')" >> docs/audits/AUDIT_${crate}.md
+echo "## Tiefen-Audit $(date +%Y-%m-%d)" >> ${AUDIT_PATH(crate)}
+echo "### Coverage: \$(command -v cargo-llvm-cov &>/dev/null && cargo llvm-cov ${PKG(crate)} 2>&1 | grep TOTAL || echo 'cargo-llvm-cov nicht verfügbar — siehe Phase 4')" >> ${AUDIT_PATH(crate)}
 \`\`\`
 
 ${DOD(crate)}`;
@@ -2633,7 +2730,7 @@ ${ROLE_LOCK_BLOCK('fixer', crate)}
 # Reproduziere das Problem zuerst:
 cargo test ${PKG(crate)} --all-features -- --nocapture 2>&1 | grep FAILED
 # Lese den Audit-Report:
-cat docs/audits/AUDIT_${crate}.md | grep -A5 "OPEN\\|BEFUND"
+cat ${AUDIT_GLOB(crate)} 2>/dev/null | grep -A5 "OPEN\\|BEFUND"
 \`\`\`
 
 ### Schritt 2: Minimale Änderung festlegen (kein Scope-Creep)
@@ -2667,9 +2764,16 @@ cargo check --workspace --exclude memfuse-tauri
 
 ### Schritt 6: Audit-Report aktualisieren
 \`\`\`bash
-# Status des behobenen Befunds auf FIXED setzen:
-# sed -i 's/| BEFUND-ID | ... | OPEN |/| BEFUND-ID | ... | FIXED $(date +%Y-%m-%d) |/' \\
-#   docs/audits/AUDIT_${crate}.md
+# Ursprünglicher Befund steht in einer ÄLTEREN AUDIT_*-Datei — diese wird NIE editiert.
+# Stattdessen in der HEUTIGEN Datei einen neuen, verweisenden Eintrag anhängen:
+cat >> ${AUDIT_PATH(crate)} << 'FIX_EOF'
+
+---
+## Fix-Bestätigung $(date -u +%Y-%m-%dT%H:%M:%SZ)
+BEFUND-ID: <ID aus ursprünglichem AI-TAG/Audit-Report>
+Status: FIXED
+Ursprünglicher Fund in: <Pfad der AUDIT_*-Datei, die den Fund enthielt>
+FIX_EOF
 \`\`\`
 
 ${DOD(crate)}`;
@@ -2824,7 +2928,7 @@ grep -rn "REVIEW-PASS\\[" crates/${crate}/src/ --include="*.rs" | grep -B1 "ANCH
 ### Schritt 2: Frischer Kontext — Pflicht
 \`\`\`bash
 git log -p -5 -- crates/${crate}/  | head -200
-cat docs/audits/AUDIT_${crate}.md | tail -100
+cat ${AUDIT_GLOB(crate)} 2>/dev/null | tail -100
 \`\`\`
 \`PRÜFER-KONTEXT: FRESH\` bedeutet: keine Vorab-Kenntnis dieses konkreten Diffs aus einer früheren eigenen Sitzung. Falls du (dieselbe Agenten-Identität) den zu prüfenden Code selbst geschrieben hast, ist dieser Review ungültig — wähle einen anderen Kandidaten.
 
@@ -2913,7 +3017,7 @@ cargo tree ${PKG(crate)} -e normal --prefix none | sort -u
 # Bekannte RUSTSEC-Einträge laut JULES_CONTEXT.md: lopdf (memfuse-text), pyo3 (memfuse-py) — prüfen ob noch aktuell
 grep -rn "license" crates/${crate}/Cargo.toml
 \`\`\`
-Ergebnis in \`docs/audits/AUDIT_${crate}.md\` unter einem neuen Abschnitt "Dependency-Audit $(date +%Y-%m-%d)" dokumentieren. Kein Code-/Cargo.toml-Change in diesem Modus.
+Ergebnis in \`${AUDIT_PATH(crate)}\` unter einem neuen Abschnitt "Dependency-Audit $(date +%Y-%m-%d)" dokumentieren. Kein Code-/Cargo.toml-Change in diesem Modus.
 
 ### Modus B: Vorschlag einer NEUEN Dependency (Entwurf, nicht selbstständig mergen)
 \`\`\`bash
@@ -3159,7 +3263,7 @@ cargo test ${PKG(crate)} -- calibration_stability --nocapture 2>&1 | grep -E "ok
 
 ### Phase 6: Audit-Report (APPEND-ONLY)
 \`\`\`bash
-cat >> docs/audits/AUDIT_${crate}.md << 'CALIB_EOF'
+cat >> ${AUDIT_PATH(crate)} << 'CALIB_EOF'
 
 ## Kalibrierungs-Audit $(date +%Y-%m-%d)
 
@@ -3334,7 +3438,7 @@ fi
 
 ### Phase 6: Chaos-Befunde dokumentieren
 \`\`\`bash
-cat >> docs/audits/AUDIT_${crate}.md << 'CHAOS_EOF'
+cat >> ${AUDIT_PATH(crate)} << 'CHAOS_EOF'
 
 ## Chaos-Engineering-Audit $(date +%Y-%m-%d)
 
@@ -3427,7 +3531,7 @@ fi
 
 ### Phase 6: Replay-Befunde dokumentieren
 \`\`\`bash
-cat >> docs/audits/AUDIT_${crate}.md << 'REPLAY_EOF'
+cat >> ${AUDIT_PATH(crate)} << 'REPLAY_EOF'
 
 ## Replay-Verifikations-Audit $(date +%Y-%m-%d)
 
@@ -3447,70 +3551,84 @@ REPLAY_EOF
 ${DOD(crate)}`;
 },
 
-wal_audit: (crate, p, showPar) => {
-  if (crate !== 'memfuse-store') {
-    return `⚠️ Dieser Sub-Task ist ausschließlich für memfuse-store (wal.rs) vorgesehen.\nGewähltes Crate: ${crate} — bitte Crate wechseln.`;
-  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SUBSYSTEM TASK GENERATORS (v28)
+// Eigener Namensraum, eigene Signatur (sub) statt (crate, p, showPar) —
+// strukturell getrennt von TASKS, damit ein Subsystem-Prompt niemals über
+// eine normale Crate-Auswahl erreichbar ist. Jede Funktion hier erzwingt
+// ihre Owner-Crate über sub.crate (aus SUBSYSTEMS, s.o.) und schreibt
+// ausschließlich in SUBSYS_AUDIT_PATH(sub.id) — nie in den Crate-Report.
+// Alle drei sind reine Auditor-Sitzungen (ROLE_LOCK_BLOCK('auditor', …)) —
+// unverändert aus v27 für WAL/LSM übernommen, keine funktionale Änderung
+// der Scan-Logik, nur Struktur + Audit-Pfad + Claim-Bindung neu.
+// ═══════════════════════════════════════════════════════════════════
+const SUBSYSTEM_TASKS = {
+
+wal_audit: (sub) => {
+  const crate = sub.crate;
   return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
 ${ROLE_LOCK_BLOCK('auditor', crate)}
 
 ## WAL-Tiefen-Audit — wal.rs AUSSCHLIESSLICH (XL-Datei, höchstes Crash-Safety-Risiko)
 
-Dieser Sub-Task prüft AUSSCHLIESSLICH \`crates/memfuse-store/src/wal.rs\`.
+Dieser Subsystem-Audit prüft AUSSCHLIESSLICH \`${sub.file}\`.
 Keine anderen Dateien des Crates in dieser Sitzung — kein Scope-Creep.
+Owner-Crate (Claim automatisch hierauf gesetzt): \`${crate}\`.
 
 ### Phase W-1: Struktur erfassen (nie aus Erinnerung — immer lesen)
 \`\`\`bash
-wc -l crates/memfuse-store/src/wal.rs
+wc -l ${sub.file}
 # XL-Dateien in Abschnitten lesen:
-sed -n '1,200p'    crates/memfuse-store/src/wal.rs
-sed -n '200,500p'  crates/memfuse-store/src/wal.rs
-sed -n '500,800p'  crates/memfuse-store/src/wal.rs
+sed -n '1,200p'    ${sub.file}
+sed -n '200,500p'  ${sub.file}
+sed -n '500,800p'  ${sub.file}
 # ... fortsetzen bis Dateiende
-grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn" crates/memfuse-store/src/wal.rs
+grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn" ${sub.file}
 \`\`\`
 
 ### Phase W-2: WAL-spezifische Invarianten (aus MEMFUSE_AUDIT_FINAL — verifiziert)
 
 \`\`\`bash
 # C-2: sync_all() nach set_len() in truncate()
-grep -n "set_len\\|sync_all\\|truncate" crates/memfuse-store/src/wal.rs
+grep -n "set_len\\|sync_all\\|truncate" ${sub.file}
 # Erwartung: JEDES set_len() muss ein sync_all() UNMITTELBAR danach haben
 
 # C-3: Nicht-atomare Doppelprüfung in append_batch()
-grep -n "header_written.load\\|size.load" crates/memfuse-store/src/wal.rs
+grep -n "header_written.load\\|size.load" ${sub.file}
 # Erwartung: Beide Loads müssen atomar oder unter Lock erfolgen
 
 # APM-1: Atomare Datei-Erstellung
-grep -n "File::create\\|tokio::fs::write\\|OpenOptions" crates/memfuse-store/src/wal.rs
+grep -n "File::create\\|tokio::fs::write\\|OpenOptions" ${sub.file}
 # Jeder direkte write ohne tmp→fsync→rename ist ein Befund
 
 # APM-38: Sequenz-/TxId-Bindung (Replay-Schutz)
-grep -n "seq_no\\|hmac\\|compute_checksum\\|verify_and_update" crates/memfuse-store/src/wal.rs
+grep -n "seq_no\\|hmac\\|compute_checksum\\|verify_and_update" ${sub.file}
 # seq_no UND tx_id müssen kryptographisch in den HMAC eingebunden sein
 
 # Backup-Restore-Pfad (H-6)
-grep -n "v1.bak\\|rewrite_as_v3\\|restore\\|recover" crates/memfuse-store/src/wal.rs
+grep -n "v1.bak\\|rewrite_as_v3\\|restore\\|recover" ${sub.file}
 # Bei Crash während rewrite_as_v3: .v1.bak muss wiederhergestellt werden
 
 # V3-HMAC-Byte-Reihenfolge (wal_crypto.rs cross-reference)
-grep -n "compute_checksum_v3\\|verify_and_update_v3\\|domain_separator" \
-  crates/memfuse-store/src/wal.rs crates/memfuse-security/src/wal_crypto.rs
+grep -n "compute_checksum_v3\\|verify_and_update_v3\\|domain_separator" \\
+  ${sub.file} crates/memfuse-security/src/wal_crypto.rs
 \`\`\`
 
 ### Phase W-3: Crash-Recovery-Simulation
 \`\`\`bash
-cargo test -p memfuse-store -- wal --nocapture 2>&1 | grep -E "ok|FAILED|panicked"
+cargo test -p ${crate} -- wal --nocapture 2>&1 | grep -E "ok|FAILED|panicked"
 # Falls vorhanden:
 command -v just &>/devnull && just chaos-test 2>&1 | tail -30
 \`\`\`
 
-### Phase W-4: Audit-Report (APPEND-ONLY)
+### Phase W-4: Subsystem-Audit-Report (APPEND-ONLY, getrennt vom Crate-Report)
 \`\`\`bash
-cat >> docs/audits/AUDIT_memfuse-store.md << 'WAL_EOF'
+cat >> ${SUBSYS_AUDIT_PATH(sub.id)} << 'WAL_EOF'
 
 ---
-## WAL-Sub-Audit \$(date -u +%Y-%m-%dT%H:%M:%SZ)
+## WAL-Sub-Audit $(date -u +%Y-%m-%dT%H:%M:%SZ)
 ### Phase W-2 Scan-Ergebnisse
 - C-2 sync_all nach set_len: [OK / BEFUND: ...]
 - C-3 Atomare Doppelprüfung: [OK / BEFUND: ...]
@@ -3520,70 +3638,69 @@ cat >> docs/audits/AUDIT_memfuse-store.md << 'WAL_EOF'
 WAL_EOF
 \`\`\`
 
-${DOD(crate)}`;
+${SUBSYS_DOD(sub)}`;
 },
 
-lsm_audit: (crate, p, showPar) => {
-  if (crate !== 'memfuse-store') {
-    return `⚠️ Dieser Sub-Task ist ausschließlich für memfuse-store (lsm.rs) vorgesehen.\nGewähltes Crate: ${crate} — bitte Crate wechseln.`;
-  }
+lsm_audit: (sub) => {
+  const crate = sub.crate;
   return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
 ${ROLE_LOCK_BLOCK('auditor', crate)}
 
 ## LSM-Tiefen-Audit — lsm.rs AUSSCHLIESSLICH (XL-Datei, Durability-kritisch)
 
-Dieser Sub-Task prüft AUSSCHLIESSLICH \`crates/memfuse-store/src/lsm.rs\`.
+Dieser Subsystem-Audit prüft AUSSCHLIESSLICH \`${sub.file}\`.
 Keine anderen Dateien, kein Scope-Creep.
+Owner-Crate (Claim automatisch hierauf gesetzt): \`${crate}\`.
 
 ### Phase L-1: Struktur erfassen
 \`\`\`bash
-wc -l crates/memfuse-store/src/lsm.rs
-grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn" crates/memfuse-store/src/lsm.rs
+wc -l ${sub.file}
+grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn" ${sub.file}
 # XL-Datei in 200-Zeilen-Blöcken lesen — nie überfliegen
 \`\`\`
 
 ### Phase L-2: LSM-spezifische Invarianten
 \`\`\`bash
 # C-1: Startup-Flush VOR WAL-Löschung (kritischster Durability-Bug im Audit)
-grep -n "remove_file\\|wal_files\\|flush\\|replayed" crates/memfuse-store/src/lsm.rs | head -30
+grep -n "remove_file\\|wal_files\\|flush\\|replayed" ${sub.file} | head -30
 # Erwartung: wal_files löschen darf NUR nach gesichertem Startup-Flush erfolgen
 
 # H-2: flush_counter inkrementiert VOR leerem Memtable-Check?
-grep -n "flush_counter\\|memtable.*is_empty\\|is_empty.*memtable" crates/memfuse-store/src/lsm.rs
+grep -n "flush_counter\\|memtable.*is_empty\\|is_empty.*memtable" ${sub.file}
 
 # H-1: Per-Source-Limit statt globalem Limit in scan()
-grep -n "fn scan\\|limit\\|take(" crates/memfuse-store/src/lsm.rs | head -20
+grep -n "fn scan\\|limit\\|take(" ${sub.file} | head -20
 # Erwartung: Limit NACH Tombstone-Filter angewendet (APM-2)
 
 # H-3: Compaction erzeugt neue Engine mit frischem Counter?
-grep -n "maybe_compact\\|Compaction\\|flush_counter" crates/memfuse-store/src/lsm.rs
+grep -n "maybe_compact\\|Compaction\\|flush_counter" ${sub.file}
 
 # M-6: Budget-Drift monoton akkumulierend?
-grep -n "budget\\|drift\\|deduct\\|consume" crates/memfuse-store/src/lsm.rs | head -15
+grep -n "budget\\|drift\\|deduct\\|consume" ${sub.file} | head -15
 
 # H-7: Nicht-atomares Lesen in scan_prefix_at() (Split-Brain-Fenster)
-grep -n "scan_prefix_at\\|atomic\\|last_committed" crates/memfuse-store/src/lsm.rs
+grep -n "scan_prefix_at\\|atomic\\|last_committed" ${sub.file}
 
 # M-9: put_if_absent sieht uncommittete Werte anderer Transaktionen?
-grep -n "put_if_absent\\|visibility\\|uncommit" crates/memfuse-store/src/lsm.rs
+grep -n "put_if_absent\\|visibility\\|uncommit" ${sub.file}
 
 # APM-39: Amplification-Budget
-grep -n "amplif\\|write_amp\\|read_amp\\|compaction" crates/memfuse-store/src/lsm.rs -i | head -10
+grep -n "amplif\\|write_amp\\|read_amp\\|compaction" ${sub.file} -i | head -10
 \`\`\`
 
 ### Phase L-3: Compaction-Korrektheit unter Snapshot-Pins
 \`\`\`bash
-cargo test -p memfuse-store -- lsm --nocapture 2>&1 | grep -E "ok|FAILED"
+cargo test -p ${crate} -- lsm --nocapture 2>&1 | grep -E "ok|FAILED"
 # Snapshot-Pin während Compaction:
-cargo test -p memfuse-store -- snapshot_pin --nocapture 2>&1 | grep -E "ok|FAILED"
+cargo test -p ${crate} -- snapshot_pin --nocapture 2>&1 | grep -E "ok|FAILED"
 \`\`\`
 
-### Phase L-4: Audit-Report (APPEND-ONLY)
+### Phase L-4: Subsystem-Audit-Report (APPEND-ONLY, getrennt vom Crate-Report)
 \`\`\`bash
-cat >> docs/audits/AUDIT_memfuse-store.md << 'LSM_EOF'
+cat >> ${SUBSYS_AUDIT_PATH(sub.id)} << 'LSM_EOF'
 
 ---
-## LSM-Sub-Audit \$(date -u +%Y-%m-%dT%H:%M:%SZ)
+## LSM-Sub-Audit $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - C-1 Startup-Flush vor WAL-Löschung: [OK / BEFUND: ...]
 - H-1 Globales Limit nach Filter: [OK / BEFUND: ...]
 - H-2 flush_counter Reihenfolge: [OK / BEFUND: ...]
@@ -3594,7 +3711,98 @@ cat >> docs/audits/AUDIT_memfuse-store.md << 'LSM_EOF'
 LSM_EOF
 \`\`\`
 
-${DOD(crate)}`;
+${SUBSYS_DOD(sub)}`;
+},
+
+mcp_sandbox_audit: (sub) => {
+  const crate = sub.crate;
+  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
+${ROLE_LOCK_BLOCK('auditor', crate)}
+
+## MCP-Sandbox-Tiefen-Audit — sandbox.rs AUSSCHLIESSLICH (Zero-Trust Tool-Isolation)
+
+Dieser Subsystem-Audit prüft AUSSCHLIESSLICH \`${sub.file}\`.
+Keine anderen Dateien dieser Crate in dieser Sitzung — kein Scope-Creep.
+Owner-Crate (Claim automatisch hierauf gesetzt): \`${crate}\`.
+
+McpSandbox ist die Isolationsschicht zwischen einem MCP-Tool-Call und der
+restlichen MemFuse-Engine: sie validiert, ob ein Tool-Call laut
+\`SandboxPolicy\` überhaupt erlaubt ist, kapselt volatile Tool-Outputs
+verschlüsselt (AES-256-GCM-SIV über memfuse-security) und garantiert deren
+Zeroize bei Drop. Ein Fehler hier ist keine gewöhnliche Logik-Lücke, sondern
+ein potenzieller Sandbox-Escape (unautorisierter DB-Write/Code-Execution)
+oder ein Daten-Leck volatiler Tool-Ergebnisse über Session-Ende hinaus.
+
+### Phase M-1: Struktur erfassen (nie aus Erinnerung — immer lesen)
+\`\`\`bash
+wc -l ${sub.file}
+grep -n "^pub fn\\|^pub async fn\\|^fn\\|^async fn\\|^pub struct\\|^pub enum" ${sub.file}
+\`\`\`
+
+### Phase M-2: Sandbox-spezifische Invarianten (gegen den echten Quellcode verifiziert)
+
+\`\`\`bash
+# INV-1: SandboxPolicy::default() — Opt-In-Security als sicherer Default
+grep -n "impl Default for SandboxPolicy" -A 10 ${sub.file}
+# Erwartung: allow_db_writes=false UND allow_code_execution=false im Default —
+# beides MUSS explizit opt-in aktiviert werden, niemals stillschweigend true.
+
+# INV-2: Whitelist statt Denylist — validate_tool_call()/classify_method()
+grep -n "fn validate_tool_call\\|fn classify_method" -A 20 ${sub.file}
+# Erwartung: classify_method() matcht auf eine feste Liste bekannter
+# memfuse_*-Methodennamen; JEDER unbekannte Name MUSS auf ToolCategory::CodeExecution
+# fallen (fail-closed), nicht auf DatabaseRead/DatabaseWrite (fail-open wäre ein
+# kritischer Befund — ein neues, unklassifiziertes Tool dürfte sonst unbemerkt
+# lesend/schreibend auf die DB zugreifen).
+
+# INV-3: Volatile-Result-Grenzen — DoS-Schutz für die Sandbox-Session
+grep -n "MAX_VOLATILE_RESULTS\\|MAX_VOLATILE_KEY_BYTES\\|MAX_VOLATILE_OUTPUT_BYTES" ${sub.file}
+# Referenzwerte (Stand INVENTORY_DATE): MAX_VOLATILE_RESULTS=1_000,
+# MAX_VOLATILE_KEY_BYTES=256, MAX_VOLATILE_OUTPUT_BYTES=16MB. Jede Grenze MUSS
+# in store_volatile() VOR dem eigentlichen Insert geprüft werden — prüfe explizit
+# die Reihenfolge Key-Länge → Output-Größe → Kapazitätslimit.
+
+# INV-4: Single-Lock-Disziplin (ADR-010, rules/detect_nested_locks.yml)
+grep -n "parking_lot::Mutex\\|\\.lock()" ${sub.file}
+# Erwartung: GENAU EIN Mutex (volatile_results) — kein zweiter, geschachtelter
+# Lock-Erwerb innerhalb eines bereits gehaltenen Locks in dieser Datei.
+
+# INV-5: Zeroize-Garantie für volatile Tool-Outputs
+grep -n "Zeroizing\\|zeroize\\|impl Drop for McpSandbox" -A 8 ${sub.file}
+# Erwartung: VolatileToolResult hält den Klartext NIE unverschlüsselt über eine
+# Methodengrenze hinaus; Drop für McpSandbox muss den Session-Key wipen
+# (emergency_wipe() o.ä.) — kein stilles Verlassen auf impliziten Speicher-Reuse.
+
+# INV-6: Timeout-Erzwingung pro Tool-Call
+grep -n "fn execute_with_timeout\\|max_execution_ms" -A 10 ${sub.file}
+# Erwartung: JEDER Tool-Call läuft durch execute_with_timeout() — ein Aufrufpfad,
+# der die Sandbox umgeht und die Future direkt awaited, ist ein kritischer Befund
+# (Slowloris-artiges Risiko für die gesamte MCP-Session).
+\`\`\`
+
+### Phase M-3: Policy-Grenzfall-Tests laufen lassen
+\`\`\`bash
+cargo test -p ${crate} -- sandbox --nocapture 2>&1 | grep -E "ok|FAILED|panicked"
+# Gezielt die Boundary-Tests dieser Datei:
+cargo test -p ${crate} -- test_sandbox_default_policy test_sandbox_validate_tool_call_method_length_checks test_volatile_storage_boundary_guards test_volatile_storage_capacity_limit test_sandbox_execution_timeout --nocapture 2>&1 | grep -E "ok|FAILED"
+\`\`\`
+
+### Phase M-4: Subsystem-Audit-Report (APPEND-ONLY, getrennt vom Crate-Report)
+\`\`\`bash
+cat >> ${SUBSYS_AUDIT_PATH(sub.id)} << 'MCP_SANDBOX_EOF'
+
+---
+## MCP-Sandbox-Sub-Audit $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- INV-1 SandboxPolicy::default() fail-closed (writes/exec off): [OK / BEFUND: ...]
+- INV-2 classify_method() fail-closed auf unbekannte Methoden: [OK / BEFUND: ...]
+- INV-3 Volatile-Result-Grenzen vor Insert geprüft: [OK / BEFUND: ...]
+- INV-4 Single-Lock-Disziplin (kein geschachtelter Lock): [OK / BEFUND: ...]
+- INV-5 Zeroize-Garantie bei Drop/Fehlerpfad: [OK / BEFUND: ...]
+- INV-6 execute_with_timeout() lückenlos erzwungen: [OK / BEFUND: ...]
+MCP_SANDBOX_EOF
+\`\`\`
+
+${SUBSYS_DOD(sub)}`;
 },
 
 };
@@ -3617,6 +3825,17 @@ function filterCrates(val) {
 }
 
 function selCrate(id) {
+  // v28: Crate-Auswahl und Subsystem-Auswahl schließen sich strukturell aus,
+  // nicht nur per Warnung. Jede Crate-Wahl räumt eine evtl. aktive
+  // Subsystem-Auswahl vollständig ab und entsperrt Crate-/Task-/Komponenten-Karte.
+  SS.subsystem = null;
+  SS.subsystemTask = null;
+  unlockCrateTaskCards();
+  document.querySelectorAll('.subsys-card').forEach(c => c.classList.remove('on'));
+  document.getElementById('cv-subsystem').textContent = '— keins gewählt —';
+  const stg = document.getElementById('subsystem-task-grid');
+  if (stg) stg.innerHTML = '';
+
   SS.crate = id;
   document.querySelectorAll('.crate-card').forEach(c => c.classList.remove('on'));
   document.getElementById('cc-'+id).classList.add('on');
@@ -3628,6 +3847,22 @@ function selCrate(id) {
   const invResult = document.getElementById('inv-result');
   if (invResult) invResult.innerHTML = '';
   generate();
+}
+
+// v28: Karten sperren/entsperren je nach aktivem Modus (Crate vs. Subsystem).
+// Rein visuell/strukturell (pointer-events:none per CSS) — verhindert, dass ein
+// Subsystem-Prompt und eine Crate-/Task-Auswahl gleichzeitig aktiv sein können.
+function lockCrateTaskCards() {
+  ['c-crate','c-task','c-comp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('locked');
+  });
+}
+function unlockCrateTaskCards() {
+  ['c-crate','c-task','c-comp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('locked');
+  });
 }
 
 // COMPONENT SELECTION
@@ -3691,13 +3926,84 @@ function updateCompLabel() {
 }
 
 function selTask(id) {
+  // v28: umgekehrt wie selCrate() — eine Task-Wahl im generischen Grid setzt
+  // eine evtl. aktive Subsystem-Auswahl zurück (kann UI-seitig durch die
+  // 'locked'-Klasse ohnehin nicht parallel passieren, aber defensiv gesichert).
+  SS.subsystem = null;
+  SS.subsystemTask = null;
+  unlockCrateTaskCards();
+  document.querySelectorAll('.subsys-card').forEach(c => c.classList.remove('on'));
+  const cvs = document.getElementById('cv-subsystem');
+  if (cvs) cvs.textContent = '— keins gewählt —';
+  const stg = document.getElementById('subsystem-task-grid');
+  if (stg) stg.innerHTML = '';
+
   SS.task = id;
   document.querySelectorAll('.thero').forEach(t => t.classList.remove('on'));
   if (document.getElementById('tt-'+id)) document.getElementById('tt-'+id).classList.add('on');
-  const names = {audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation',wal_audit:'WAL-Sub-Audit',lsm_audit:'LSM-Sub-Audit'};
+  const names = {audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation'};
   document.getElementById('cv-task').textContent = names[id] || id;
   document.getElementById('s-task').textContent = names[id] || id;
   generate();
+}
+
+// v28: Subsystem-Auswahl — eigenständige, zweistufige Selektion
+// (Subsystem → zugehörige Task(s) → Prompt), strukturell getrennt von
+// selCrate()/selTask(). Räumt jede aktive Crate-/Task-/Komponenten-Auswahl
+// vollständig ab und sperrt die entsprechenden Karten visuell.
+function selSubsystem(id) {
+  SS.crate = null;
+  SS.task = null;
+  SS.components = new Set();
+  document.querySelectorAll('.crate-card').forEach(c => c.classList.remove('on'));
+  document.querySelectorAll('.thero').forEach(t => t.classList.remove('on'));
+  document.getElementById('cv-crate').textContent = '— keins gewählt —';
+  document.getElementById('cv-task').textContent = '— keine gewählt —';
+  document.getElementById('cv-comp').textContent = '— erst Crate wählen —';
+  lockCrateTaskCards();
+
+  SS.subsystem = id;
+  SS.subsystemTask = null;
+  const sub = SUBSYSTEMS.find(s => s.id === id);
+  document.querySelectorAll('.subsys-card').forEach(c => c.classList.toggle('on', c.dataset.id === id));
+  document.getElementById('cv-subsystem').textContent = `${sub.icon} ${sub.name} (${sub.crate})`;
+  renderSubsystemTaskGrid(sub);
+  generate();
+}
+
+function selSubsystemTask(taskId) {
+  SS.subsystemTask = taskId;
+  document.querySelectorAll('.subsys-task-item').forEach(t => t.classList.toggle('on', t.dataset.task === taskId));
+  generate();
+}
+
+function renderSubsystemTaskGrid(sub) {
+  const el = document.getElementById('subsystem-task-grid');
+  if (!el) return;
+  const TASK_LABELS = {
+    wal_audit: { label: 'WAL-Sub-Audit', sub: 'fsync-Disziplin · HMAC-Bindung · Crash-Recovery' },
+    lsm_audit: { label: 'LSM-Sub-Audit', sub: 'StorageEngine-Trait · commit_mutex · rollback_to_tx' },
+    mcp_sandbox_audit: { label: 'MCP-Sandbox-Sub-Audit', sub: 'SandboxPolicy · Volatile-Result-Grenzen · Zeroize' },
+  };
+  const taskIds = Object.keys(SUBSYSTEM_TASKS).filter(k => k === `${sub.id}_audit`);
+  el.innerHTML = `<div class="subsys-task-grid">` + taskIds.map(tid => {
+    const meta = TASK_LABELS[tid] || { label: tid, sub: '' };
+    return `<div class="subsys-card subsys-task-item" data-task="${tid}" onclick="selSubsystemTask('${tid}')">
+      <div class="sub-name">🔍 ${meta.label}</div>
+      <div class="sub-desc">${meta.sub}</div>
+    </div>`;
+  }).join('') + `</div>`;
+}
+
+function initSubsystems() {
+  const grid = document.getElementById('subsystem-grid');
+  if (!grid) return;
+  grid.innerHTML = SUBSYSTEMS.map(s => `
+    <div class="subsys-card" data-id="${s.id}" onclick="selSubsystem('${s.id}')">
+      <div class="sub-name">${s.icon} ${s.name}</div>
+      <div class="sub-crate">${s.file} · ${s.loc} LOC · Owner: ${s.crate}</div>
+      <div class="sub-desc">${s.desc}</div>
+    </div>`).join('');
 }
 
 function buildMandatoryBootstrap(claimCrate, taskId) {
@@ -3732,7 +4038,36 @@ function getSelectedCrate() {
   return SS.crate || '';
 }
 
+// v28: Subsystem-Prompts laufen über einen eigenen Erzeugungspfad — kein
+// "Kein Ziel-Crate"-Dialog (die Owner-Crate ist immer fest gesetzt), kein
+// Zugriff auf DOD(crate)/TASKS, sondern SUBSYS_DOD()/SUBSYSTEM_TASKS().
+function generateSubsystemPrompt() {
+  if (!SS.subsystemTask) return;
+  const sub = SUBSYSTEMS.find(s => s.id === SS.subsystem);
+  if (!sub) return;
+  const fn_ = SUBSYSTEM_TASKS[SS.subsystemTask];
+  if (!fn_) return;
+
+  const taskId = generateTaskId(SS.subsystemTask);
+  const mandatoryBootstrap = buildMandatoryBootstrap(sub.crate, taskId);
+  const promptBody = fn_(sub);
+
+  _rawPrompt = mandatoryBootstrap + promptBody;
+
+  document.getElementById('pt-empty').style.display = 'none';
+  document.getElementById('pt-output').style.display = 'block';
+  document.getElementById('pt-output').textContent = _rawPrompt;
+  const chars = _rawPrompt.length.toLocaleString('de');
+  document.getElementById('ochar').textContent = chars + ' Z.';
+  document.getElementById('ochar2').textContent = chars + ' Zeichen';
+  const sCrate = document.getElementById('s-crate');
+  const sTask = document.getElementById('s-task');
+  if (sCrate) sCrate.textContent = `🧬 ${sub.name} (${sub.crate})`;
+  if (sTask) sTask.textContent = 'Subsystem-Audit';
+}
+
 function generate() {
+  if (SS.subsystem) { generateSubsystemPrompt(); return; }
   if (!SS.task) return;
 
   const claimCrate = getSelectedCrate();
@@ -3791,6 +4126,17 @@ function copyPrompt() {
 }
 
 function addToQueue() {
+  // v28: Queue/Batch-Export funktioniert jetzt auch im Subsystem-Modus.
+  if (SS.subsystem) {
+    if (!SS.subsystemTask) { toast('Erst Subsystem + Task wählen'); return; }
+    const sub = SUBSYSTEMS.find(s => s.id === SS.subsystem);
+    const key = `subsystem:${SS.subsystem}:${SS.subsystemTask}`;
+    if (QUEUE.find(q => q.key === key)) { toast('Bereits in Queue'); return; }
+    QUEUE.push({ key, crate: sub.crate, task: SS.subsystemTask, prompt: _rawPrompt, subsystemLabel: `🧬 ${sub.name}` });
+    renderQueue();
+    toast('Zur Queue hinzugefügt');
+    return;
+  }
   if (!SS.crate || !SS.task) { toast('Erst Crate + Aufgabe wählen'); return; }
   const key = `${SS.crate}:${SS.task}`;
   if (QUEUE.find(q => q.key === key)) { toast('Bereits in Queue'); return; }
@@ -3812,7 +4158,7 @@ function renderQueue() {
   if (!QUEUE.length) { el.innerHTML = '<div class="q-empty">Queue ist leer</div>'; return; }
   el.innerHTML = QUEUE.map(q => `
     <div class="qitem">
-      <span class="qitem-name">${q.crate} · ${q.task}</span>
+      <span class="qitem-name">${q.subsystemLabel ? q.subsystemLabel : q.crate} · ${q.task}</span>
       <button class="qitem-del" onclick="removeFromQueue('${q.key}')">✕</button>
     </div>`).join('');
 }
@@ -3939,7 +4285,7 @@ document.addEventListener('keydown', e => {
   else if (key === 'F') { if (SS.crate) selTask('fix'); }
   else if (key === 'T') { if (SS.crate) selTask('test'); }
   else if (key === 'S') { if (SS.crate) selTask('sec'); }
-  else if (key === 'C' && SS.crate && SS.task) { copyPrompt(); }
+  else if (key === 'C' && ((SS.crate && SS.task) || (SS.subsystem && SS.subsystemTask))) { copyPrompt(); }
   else if (key === 'R') { if (SS.crate) selTask('review'); }
 });
 
@@ -4228,6 +4574,7 @@ function resetProjectData() {
 
 // INIT
 initCrates();
+initSubsystems();
 initAPM();
 renderComponents();
 renderInventoryBadge();
