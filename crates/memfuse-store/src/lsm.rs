@@ -228,6 +228,7 @@ pub struct LsmStorage {
     /// Persistent CompactionEngine instance — retains counter across maybe_compact() calls.
     /// Prevents SSTable name collisions from fresh-counter ad-hoc instantiation (audit H-3).
     compaction_engine: Arc<CompactionEngine>,
+    manifest: Arc<crate::manifest::Manifest>,
     next_seq_no: AtomicU64,
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
@@ -407,7 +408,19 @@ impl LsmStorage {
                         tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
                     }
                 } else if path.extension().is_some_and(|ext| ext == "sst") {
-                    sst_files.push(path);
+                    if let Some(ref valid_set) = valid_manifest_sstables {
+                        let path_key = std::path::Path::new(file_name);
+                        if valid_set.contains(path_key) {
+                            sst_files.push(path);
+                        } else {
+                            tracing::warn!(
+                                "Unmanifested or orphaned SSTable file found in data directory (skipping): {:?}",
+                                path
+                            );
+                        }
+                    } else {
+                        sst_files.push(path);
+                    }
                 }
             }
         }
@@ -441,6 +454,22 @@ impl LsmStorage {
         // Explicitly sort SSTables by metadata().max_seq for guaranteed read-path ordering
         sstables.sort_by_key(|sst| sst.metadata().max_seq & !TOMBSTONE_BIT);
         let sstables = Arc::new(RwLock::new(sstables));
+
+        // Open or migrate manifest
+        let manifest = Arc::new(crate::manifest::Manifest::open(&manifest_path).await?);
+        if !manifest_exists {
+            let ssts_read = sstables.read().await;
+            for sst in ssts_read.iter() {
+                manifest
+                    .append(&crate::manifest::ManifestEntry::Add {
+                        path: sst.file_path().to_path_buf(),
+                        max_tx: sst.metadata().max_tx_id,
+                    })
+                    .await?;
+            }
+        }
+        // === SSTABLE MANIFEST INTEGRATION END ===
+
         let snapshot_registry = Arc::new(SnapshotRegistry::new());
 
         // Spawn background compaction task
@@ -454,6 +483,7 @@ impl LsmStorage {
             Arc::clone(&block_cache),
             key_manager.clone(),
             Arc::clone(&resource_tracker),
+            Some(Arc::clone(&manifest)),
         ));
         // Clone für den Hintergrund-Task, original bleibt als Struct-Feld
         let compaction_engine_for_loop = Arc::clone(&compaction_engine);
@@ -485,6 +515,7 @@ impl LsmStorage {
             block_cache,
             snapshot_registry,
             compaction_engine, // H-3: persistent field
+            manifest,
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
@@ -727,6 +758,15 @@ impl LsmStorage {
                 )
                 .await?;
 
+                // === SSTABLE MANIFEST INTEGRATION START ===
+                self.manifest
+                    .append(&crate::manifest::ManifestEntry::Add {
+                        path: new_sst_path.clone(),
+                        max_tx: new_reader.metadata().max_tx_id,
+                    })
+                    .await?;
+                // === SSTABLE MANIFEST INTEGRATION END ===
+
                 sstables_lock.push(Arc::new(new_reader));
             }
 
@@ -746,6 +786,15 @@ impl LsmStorage {
 
         for path in sst_to_remove {
             tracing::info!("Removing SSTable during rollback: {:?}", path);
+            // === SSTABLE MANIFEST INTEGRATION START ===
+            if let Err(e) = self
+                .manifest
+                .append(&crate::manifest::ManifestEntry::Remove { path: path.clone() })
+                .await
+            {
+                tracing::warn!("Failed to write Manifest Remove entry during rollback: {}", e);
+            }
+            // === SSTABLE MANIFEST INTEGRATION END ===
             // Best-effort cleanup: do not abort rollback recovery if file removal fails.
             // The SSTable is superseded by restored WAL replay state, so its orphaned presence is safe but wastes disk space.
             if let Err(e) = tokio::fs::remove_file(&path).await {
@@ -757,6 +806,14 @@ impl LsmStorage {
                 }
             }
         }
+
+        // === SSTABLE MANIFEST INTEGRATION START ===
+        self.manifest
+            .append(&crate::manifest::ManifestEntry::RollbackComplete {
+                target_tx: target_tx.inner(),
+            })
+            .await?;
+        // === SSTABLE MANIFEST INTEGRATION END ===
 
         // NC-3: Remove rollback intent file after all SST cleanup is complete.
         // If this removal fails, recovery on next startup will re-execute the (idempotent) rollback.
@@ -1379,6 +1436,15 @@ impl StorageEngine for LsmStorage {
                 .map_err(|e| {
                     MemFuseError::Storage(format!("SSTable open after flush failed: {}", e))
                 })?;
+
+                // === SSTABLE MANIFEST INTEGRATION START ===
+                self.manifest
+                    .append(&crate::manifest::ManifestEntry::Add {
+                        path: sst_path.clone(),
+                        max_tx: reader.metadata().max_tx_id,
+                    })
+                    .await?;
+                // === SSTABLE MANIFEST INTEGRATION END ===
 
                 // Atomic transition: remove from immutable memtables and add to SSTables
                 let mut state = self.state.write().await;
@@ -2608,6 +2674,7 @@ mod tests {
             storage.block_cache.clone(),
             storage.key_manager.clone(),
             Arc::clone(&storage.budget),
+            Some(Arc::clone(&storage.manifest)),
         );
 
         engine

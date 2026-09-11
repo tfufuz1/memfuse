@@ -81,6 +81,7 @@ pub struct CompactionEngine {
     block_cache: Arc<BlockCache>,
     key_manager: Option<Arc<KeyManager>>,
     budget: Arc<memfuse_core::ResourceTracker>,
+    manifest: Option<Arc<crate::manifest::Manifest>>,
     compaction_counter: AtomicU64,
 }
 
@@ -92,6 +93,7 @@ impl CompactionEngine {
         block_cache: Arc<BlockCache>,
         key_manager: Option<Arc<KeyManager>>,
         budget: Arc<memfuse_core::ResourceTracker>,
+        manifest: Option<Arc<crate::manifest::Manifest>>,
     ) -> Self {
         Self {
             config,
@@ -99,6 +101,7 @@ impl CompactionEngine {
             block_cache,
             key_manager,
             budget,
+            manifest,
             compaction_counter: AtomicU64::new(0),
         }
     }
@@ -165,6 +168,17 @@ impl CompactionEngine {
             .await?,
         );
 
+        // === SSTABLE MANIFEST INTEGRATION START ===
+        if let Some(ref manifest) = self.manifest {
+            manifest
+                .append(&crate::manifest::ManifestEntry::Add {
+                    path: output_path.clone(),
+                    max_tx: new_reader.metadata().max_tx_id,
+                })
+                .await?;
+        }
+        // === SSTABLE MANIFEST INTEGRATION END ===
+
         // 5. Atomic swap under write-lock — identity-based (Arc::ptr_eq), not index-based.
         // DECISION-REF: Replaces stale-index swap that was documented as
         // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-STORE-002 — Indices computed before the lock was taken. (TS:2026-08-25T00:00:00Z)
@@ -224,6 +238,18 @@ impl CompactionEngine {
         // 6. Delete old SSTable files (best-effort, outside lock)
         // RESOLVED: .uuid-Sidecar wird jetzt analog zum WAL-Cleanup-Pfad (lsm.rs) mitgelöscht.
         for path in &old_paths {
+            // === SSTABLE MANIFEST INTEGRATION START ===
+            if let Some(ref manifest) = self.manifest {
+                if let Err(e) = manifest
+                    .append(&crate::manifest::ManifestEntry::Remove {
+                        path: path.clone(),
+                    })
+                    .await
+                {
+                    tracing::warn!("Failed to write Manifest Remove entry during compaction: {}", e);
+                }
+            }
+            // === SSTABLE MANIFEST INTEGRATION END ===
             if let Err(e) = tokio::fs::remove_file(path).await {
                 tracing::warn!("Failed to delete compacted SSTable {:?}: {}", path, e);
             }
@@ -557,6 +583,7 @@ mod tests {
                             memory_limit: 1024 * 1024,
                         },
                     )),
+                    None,
                 );
 
                 let mut input_ssts = Vec::new();
@@ -649,6 +676,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Create older SSTable with many entries (large file size) but small max_seq (seq=10)
@@ -727,6 +755,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Two SSTables with overlapping keys
@@ -779,6 +808,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -838,6 +868,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -881,6 +912,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let tombstone_seq = 5 | TOMBSTONE_BIT;
@@ -927,6 +959,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Create 3 small SSTables of similar size
@@ -995,6 +1028,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -1037,6 +1071,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         let sstables = Arc::new(RwLock::new(Vec::new()));
@@ -1161,6 +1196,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
         let path1 = engine.generate_sst_path(tmp.path()).expect("path 1"); // expect
         let path2 = engine.generate_sst_path(tmp.path()).expect("path 2"); // expect
@@ -1320,6 +1356,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         );
 
         // Scenario:
@@ -1437,6 +1474,7 @@ mod tests {
                     memory_limit: 1024 * 1024,
                 },
             )),
+            None,
         ));
         let sstables = Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let tmp = tempfile::TempDir::new().unwrap(); // unwrap
