@@ -53,6 +53,7 @@ mod check_compile;
 mod check_doc_references;
 mod check_duplicate_intent;
 mod check_duplicate_symbols;
+mod check_workflow_commands;
 mod check_jules_context_freshness;
 mod check_phantom_files;
 mod check_placeholder_refs;
@@ -2180,6 +2181,12 @@ fn main() {
                     eprintln!("❌ check-duplicate-symbols failed: {}", e);
                     process::exit(1);
                 }
+            }
+        }
+        "check-workflow-commands" => {
+            let root = find_root_dir();
+            if !check_workflow_commands::run_check_workflow_commands(&root) {
+                process::exit(1);
             }
         }
         "check-placeholder-refs" => {
