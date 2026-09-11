@@ -28,6 +28,7 @@ use memfuse_core::{
     TxId, VectorIndex,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 /// Status of a multi-index transaction during the 2-phase commit.
@@ -51,6 +52,10 @@ pub enum CommitIntent {
         target_id: DocId,
         base_tx: TxId,
     },
+    /// Transaction failed during forward recovery or commit.
+    Failed {
+        reason: String,
+    },
 }
 
 /// Staged key operation representing (key, optional_value).
@@ -69,6 +74,7 @@ pub struct DbTransaction<S: StorageEngine, V: VectorIndex = memfuse_index::HnswI
     staged_graph_edges: Mutex<Vec<Edge>>,
     staged_graph_entity_deletes: Mutex<Vec<EntityId>>,
     staged_graph_edge_deletes: Mutex<Vec<(EntityId, EntityId)>>,
+    committed: AtomicBool,
 }
 
 impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
@@ -85,6 +91,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
             staged_graph_edges: Mutex::new(Vec::with_capacity(16)),
             staged_graph_entity_deletes: Mutex::new(Vec::with_capacity(16)),
             staged_graph_edge_deletes: Mutex::new(Vec::with_capacity(16)),
+            committed: AtomicBool::new(false),
         }
     }
 
@@ -440,6 +447,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
             tracing::warn!("Failed to commit cleanup transaction: {}", e);
         }
 
+        self.committed.store(true, Ordering::Release);
         Ok(())
     }
 
@@ -628,6 +636,7 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
     /// Rolls back any uncommitted changes applied to all 4 sub-systems in reverse commit order.
     pub async fn rollback(self) -> Result<()> {
+        self.committed.store(true, Ordering::Release);
         let graph_res = self.collection.graph_index.rollback(self.tx_id).await;
         let text_res = self.collection.text_index.rollback(self.tx_id).await;
         let index_res = self.collection.index.rollback(self.tx_id).await;
@@ -668,6 +677,35 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
         }
 
         Ok(())
+    }
+}
+
+impl<S: StorageEngine, V: VectorIndex> Drop for DbTransaction<S, V> {
+    fn drop(&mut self) {
+        if !self.committed.load(Ordering::Acquire) {
+            tracing::warn!(
+                tx_id = ?self.tx_id,
+                "DbTransaction dropped without commit — rollback signal sent"
+            );
+            let collection = self.collection.clone();
+            let tx_id = self.tx_id;
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    if let Err(e) = collection.graph_index.rollback(tx_id).await {
+                        tracing::error!("[INV-DB-3] Drop cleanup: Graph index rollback failed: {}", e);
+                    }
+                    if let Err(e) = collection.text_index.rollback(tx_id).await {
+                        tracing::error!("[INV-DB-3] Drop cleanup: Text index rollback failed: {}", e);
+                    }
+                    if let Err(e) = collection.index.rollback(tx_id).await {
+                        tracing::error!("[INV-DB-3] Drop cleanup: Vector index rollback failed: {}", e);
+                    }
+                    if let Err(e) = collection.storage.rollback(tx_id).await {
+                        tracing::error!("[INV-DB-3] Drop cleanup: Storage rollback failed: {}", e);
+                    }
+                });
+            }
+        }
     }
 }
 
@@ -744,5 +782,24 @@ mod tests {
 
         let rollback_res = tx.rollback().await;
         assert!(rollback_res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_db_transaction_drop_triggers_cleanup() {
+        let col = create_test_collection().await;
+        let tx_id = col.allocate_tx().unwrap(); // unwrap
+
+        {
+            let tx = DbTransaction::new(col.clone(), tx_id);
+            let doc_id = DocId::new(300);
+            tx.stage_text_insert(doc_id, "uncommitted text".to_string());
+            // Drops `tx` here without calling `tx.commit().await`
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Text index should be clean / empty after drop cleanup
+        let results = col.text_index.search_bm25("uncommitted", 1, None).await;
+        assert!(results.is_ok());
+        assert!(results.unwrap().is_empty()); // unwrap
     }
 }
