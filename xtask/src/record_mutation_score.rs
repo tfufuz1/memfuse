@@ -99,8 +99,12 @@ pub fn run_record_mutation_score(args: &[String], root: &Path) -> Result<(), Str
     let mut updated = false;
 
     if history_file.exists() {
-        let file = fs::File::open(&history_file)
-            .map_err(|e| format!("Failed to open history file {}: {e}", history_file.display()))?;
+        let file = fs::File::open(&history_file).map_err(|e| {
+            format!(
+                "Failed to open history file {}: {e}",
+                history_file.display()
+            )
+        })?;
         let reader = BufReader::new(file);
 
         for (line_num, line_res) in reader.lines().enumerate() {
