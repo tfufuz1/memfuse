@@ -3,13 +3,14 @@
 // ZWECK: Candle LLM text generator client implementing LlmTextGenerator.
 // INVARIANTEN: Thread-safe model access via Mutex; spawn_blocking for CPU inference execution.
 
+use crate::gasp::GaspValidator;
 use crate::model_registry::ModelFingerprint;
 use candle_core::quantized::gguf_file;
 use candle_core::Device;
 use candle_transformers::generation::LogitsProcessor;
 use candle_transformers::models::quantized_llama::ModelWeights;
 use memfuse_core::traits::BoxFuture;
-use memfuse_core::{LlmTextGenerator, MemFuseError, Result};
+use memfuse_core::{ConfigFingerprint, LlmTextGenerator, MemFuseError, Result};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -59,6 +60,35 @@ impl CandleLlmClient {
     /// Returns a reference to the model's fingerprint.
     pub fn fingerprint(&self) -> &ModelFingerprint {
         &self.fingerprint
+    }
+
+    /// Tauscht das zugrundeliegende Modell und dessen Fingerprint zur Laufzeit aus.
+    /// Falls ein optionaler `GaspValidator` übergeben wird, wird dessen Kalibrierungsstatus
+    /// mit dem neuen Fingerprint invalidiert/aktualisiert (INV-CAL-2).
+    pub fn swap_model(
+        &mut self,
+        new_model: Box<dyn CandleModelInner + Send>,
+        new_fingerprint: ModelFingerprint,
+        validator: Option<&mut GaspValidator>,
+    ) {
+        if let Some(mutex) = Arc::get_mut(&mut self.model) {
+            *mutex.get_mut() = new_model;
+        } else {
+            self.model = Arc::new(tokio::sync::Mutex::new(new_model));
+        }
+
+        if let Some(val) = validator {
+            let mut new_config = val.config().clone();
+            new_config.fingerprint = ConfigFingerprint::new(
+                &new_fingerprint.model_id,
+                &new_fingerprint.quantization,
+                "gasp-attribution",
+                0.0,
+            );
+            val.refresh_config(new_config);
+        }
+
+        self.fingerprint = new_fingerprint;
     }
 
     /// Loads a `CandleLlmClient` from a model directory.
@@ -375,5 +405,83 @@ mod tests {
             crate::model_registry::CandleQuantization::Q4KM,
         );
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_candle_llm_client_swap_model_invalidates_validator_calibration() {
+        use crate::gasp::GaspConfig;
+        use memfuse_core::traits::GroundingValidator;
+        use memfuse_core::ContextChunk;
+        use memfuse_core::DocId;
+
+        let mock_model_1 = Box::new(MockCandleModel {
+            response: "Model 1 Completion".to_string(),
+        });
+        let fp1 = ModelFingerprint {
+            hash: [1u8; 32],
+            model_id: "llama-3.2-1b.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+
+        let mut client = CandleLlmClient::new(Device::Cpu, mock_model_1, fp1, tokenizer);
+
+        let initial_gasp_cfg = GaspConfig {
+            fingerprint: ConfigFingerprint::new(
+                &client.fingerprint().model_id,
+                &client.fingerprint().quantization,
+                "gasp-attribution",
+                0.0,
+            ),
+            ..GaspConfig::default()
+        };
+        let mut validator = GaspValidator::with_config(initial_gasp_cfg);
+
+        // Record a grounding observation on the validator
+        let chunk = ContextChunk {
+            doc_id: DocId::new(1),
+            content: "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.".to_string(),
+            relevance: 0.95,
+            token_count: 20,
+            metadata: None,
+            contextual_prefix: None,
+            links: Vec::new(),
+        };
+        let res = validator
+            .validate_grounding("Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.", &[chunk])
+            .await;
+        assert!(res.is_ok());
+        assert_eq!(validator.observation_count(), 1);
+
+        // Perform runtime model hot swap on CandleLlmClient with new ModelFingerprint
+        let mock_model_2 = Box::new(MockCandleModel {
+            response: "Model 2 Completion".to_string(),
+        });
+        let fp2 = ModelFingerprint {
+            hash: [2u8; 32],
+            model_id: "llama-3.2-3b.gguf".to_string(),
+            quantization: "Q8_0".to_string(),
+        };
+
+        client.swap_model(mock_model_2, fp2.clone(), Some(&mut validator));
+
+        assert_eq!(client.fingerprint(), &fp2);
+        // Calibrator observations MUST be reset to 0 via the runtime model hot-swap path (INV-CAL-2)
+        assert_eq!(
+            validator.observation_count(),
+            0,
+            "validator observation_count must be reset to 0 after client.swap_model"
+        );
     }
 }
