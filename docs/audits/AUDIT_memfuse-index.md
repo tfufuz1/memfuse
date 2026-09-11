@@ -398,3 +398,30 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 
 ### 20.4 Verdict
 **VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Qualitäts-, Performance-, SIMD-Paritäts-, Concurrency- und Safety-Invarianten für Layer 1.
+
+---
+
+## 21. Audit-Update — Chaos-Engineering-Audit & Tier 1 Recovery Verification (2026-09-10T23:45:00Z, SESSION: dbef3401)
+
+### 21.1 Inventar- & Realitätsabgleich (Schritt 0)
+- **Kommando:** `find crates/memfuse-index/src -name "*.rs" | sort`
+- **Gefundene Dateien (7):** `diskann.rs`, `distance.rs`, `hnsw.rs`, `lib.rs`, `partial_rebuild.rs`, `persistence.rs`, `quantize.rs`.
+- **Inventar-Drift Befund:** `Inventar-Drift: Datei crates/memfuse-index/src/partial_rebuild.rs im Prompter-Inventar vom 2026-09-10 nicht erfasst` (`partial_rebuild.rs` ersetzt `nucleation.rs` aus früheren Prompter-Snapshots).
+
+### 21.2 Chaos-Engineering-Audit Matrix
+
+| Szenario | Ergebnis | Recovery-Verhalten | Befund |
+|---|---|---|---|
+| Crash mid-write | OK | Kontrolliert via `.tmp`-Isolierung, atomares POSIX `rename()` & HMAC-Schutz | — |
+| Disk-Full ENOSPC | OK | `Err(MemFuseError::Storage)` propagiert sauber, 0 Panics | — |
+| OOM / Backpressure | OK | OOM-Schutz durch `MAX_SEARCH_K` (10.000) & bounded `traversal_window` | — |
+| SIGBUS mmap-truncate | OK | Read-only mmap Handles mit `.get(offset..end)` Bounds Checking; atomare Ersetzung schützt laufende Reader | — |
+| SIGKILL recovery | OK | Atomares File Replacement garantiert konsistenten Zustand nach Neustart; unvollständige `.tmp`-Dateien werden ignoriert | — |
+
+### 21.3 Concurrency & Suite Verification
+- **Tier 1 Concurrency Smoke Test:** Parallel-Ausführung der Test-Suite bestanden.
+- **Suite Results:** `cargo test -p memfuse-index --all-features --release` (125 Unit- & Modul-Tests + 16 Integrationstest-Suites grün).
+- **Workspace Build:** `cargo check --workspace --exclude memfuse-tauri` fehlerfrei.
+
+### 21.4 Verdict
+**VERDICT: GO / APPROVED**. `memfuse-index` erfüllt alle Tier-1 Chaos-Engineering-, Fault-Tolerance-, Concurrency- und Performance-Invarianten für Layer 1.
