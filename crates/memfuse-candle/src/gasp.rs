@@ -484,7 +484,10 @@ mod tests {
     #[tokio::test]
     async fn test_validate_grounding_does_not_increment_observation_count() {
         let validator = GaspValidator::new();
-        let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
+        let chunks = vec![sample_chunk(
+            1,
+            "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.",
+        )];
         let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
 
         // Repeated validate_grounding calls must NOT increment observation_count (INV-CAL-3)
@@ -510,7 +513,10 @@ mod tests {
     #[tokio::test]
     async fn test_set_threshold_updates_fingerprint_and_invalidates_calibration() {
         let mut validator = GaspValidator::new();
-        let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
+        let chunks = vec![sample_chunk(
+            1,
+            "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.",
+        )];
         let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
 
         let res = validator.validate_grounding(response, &chunks).await;
@@ -550,7 +556,10 @@ mod tests {
         };
         let mut validator = GaspValidator::with_config(config1);
 
-        let chunks = vec![sample_chunk(1, "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.")];
+        let chunks = vec![sample_chunk(
+            1,
+            "Der Umsatz betrug im Jahr 2025 genau 50 Millionen Euro.",
+        )];
         let response = "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.";
 
         // Record external feedback to populate calibration observation history (INV-CAL-3)

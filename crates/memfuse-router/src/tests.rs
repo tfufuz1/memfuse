@@ -3170,7 +3170,10 @@ mod tests {
             f32::NAN,
         );
         assert!(res_nan_score.is_err());
-        assert!(res_nan_score.unwrap_err().to_string().contains("min_relevance_score"));
+        assert!(res_nan_score
+            .unwrap_err()
+            .to_string()
+            .contains("min_relevance_score"));
 
         // min_relevance_score negative validation
         let res_neg_score = SlmProfile::try_new(
@@ -3181,7 +3184,10 @@ mod tests {
             -0.5,
         );
         assert!(res_neg_score.is_err());
-        assert!(res_neg_score.unwrap_err().to_string().contains("min_relevance_score"));
+        assert!(res_neg_score
+            .unwrap_err()
+            .to_string()
+            .contains("min_relevance_score"));
 
         // resource_cost_estimate NaN validation
         let profile_nan_cost = SlmProfile::new(
@@ -3190,7 +3196,8 @@ mod tests {
             vec![1],
             TokenBudget::new(1000, 100),
             0.5,
-        ).with_resource_cost_estimate(f32::NAN);
+        )
+        .with_resource_cost_estimate(f32::NAN);
         assert!(profile_nan_cost.validate().is_err());
 
         // resource_cost_estimate negative validation
@@ -3200,7 +3207,8 @@ mod tests {
             vec![1],
             TokenBudget::new(1000, 100),
             0.5,
-        ).with_resource_cost_estimate(-10.0);
+        )
+        .with_resource_cost_estimate(-10.0);
         assert!(profile_neg_cost.validate().is_err());
     }
 }

@@ -442,15 +442,20 @@ impl LsmStorage {
 
         let manifest_path = config.path.join("MANIFEST");
         let manifest_exists = manifest_path.exists();
-        let _valid_manifest_sstables: Option<std::collections::HashSet<std::path::PathBuf>> = if manifest_exists {
-            if let Ok(entries) = crate::manifest::Manifest::load(&manifest_path).await {
-                Some(crate::manifest::Manifest::reconstruct_valid_sstables(&entries).into_iter().collect())
+        let _valid_manifest_sstables: Option<std::collections::HashSet<std::path::PathBuf>> =
+            if manifest_exists {
+                if let Ok(entries) = crate::manifest::Manifest::load(&manifest_path).await {
+                    Some(
+                        crate::manifest::Manifest::reconstruct_valid_sstables(&entries)
+                            .into_iter()
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
         // Load existing SSTables and sort by filename (which includes seq_no)
         let mut sst_files = Vec::new();
@@ -1498,7 +1503,8 @@ impl StorageEngine for LsmStorage {
                 }
 
                 if let Err(e) = state.wal.append_batch(&all_wal_entries).await {
-                    let _ = state.wal
+                    let _ = state
+                        .wal
                         .restore_last_hmac(pending_queue.first_prev_hmac)
                         .await;
                     drop(state);
@@ -1725,7 +1731,8 @@ impl StorageEngine for LsmStorage {
                 let mut state = self.state.write().await;
                 let mut sstables = self.sstables.write().await;
 
-                state.immutable_memtables
+                state
+                    .immutable_memtables
                     .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
                 // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
@@ -1774,7 +1781,8 @@ impl StorageEngine for LsmStorage {
                 // Cleanup on Phase 3 failure:
                 // 1. Remove old_memtable from state.immutable_memtables
                 let mut state = self.state.write().await;
-                state.immutable_memtables
+                state
+                    .immutable_memtables
                     .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
                 drop(state);
 
