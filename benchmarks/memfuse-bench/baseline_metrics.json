@@ -3,6 +3,7 @@
   "_dataset_source": "xiaowu0162/longmemeval (longmemeval_s, Original-Repo)",
   "_locomo_source": "KimmoZZZ/locomo (locomo10.json)",
   "_variant_decision": "longmemeval_s (kleiner, CI-freundlicher) statt _m",
+  "_status": "real-dataset-baseline",
   "long_mem_eval": {
     "overall_accuracy": 0.786,
     "total_cases": 500

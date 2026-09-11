@@ -535,7 +535,23 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
+            // Filter entries to exact matches for {namespace}:pl:{term}:{doc_id}
+            // Ignore subterm keys (e.g. {namespace}:pl:{term}:{subterm}:{doc_id}) that match the prefix scan
+            let valid_entries: Vec<(DocId, u32)> = entries
+                .into_iter()
+                .filter_map(|(key, val_bytes)| {
+                    if key.len() <= prefix.len() {
+                        return None;
+                    }
+                    let suffix = &key[prefix.len()..];
+                    let suffix_str = std::str::from_utf8(suffix).ok()?;
+                    let doc_id_raw = suffix_str.parse::<u64>().ok()?;
+                    let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().ok()?);
+                    Some((DocId::new(doc_id_raw), tf))
+                })
+                .collect();
+
+            let df = valid_entries.len() as u32;
             if df == 0 {
                 continue;
             }
