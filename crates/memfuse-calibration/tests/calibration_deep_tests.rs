@@ -208,16 +208,16 @@ fn test_platt_scaler_invalidation() {
 fn test_pid_controller_basic_regulation() {
     let mut pid = PidController::default();
 
-    // At target latency (200ms) -> pool size unchanged
-    let pool1 = pid.update(100, 200.0);
+    // At target latency (150ms) -> pool size unchanged
+    let pool1 = pid.update(100, 150.0);
     assert_eq!(pool1, 100);
 
-    // Latency too high (300ms > 200ms) -> pool size decreases
+    // Latency too high (300ms > 150ms) -> pool size decreases
     let pool2 = pid.update(100, 300.0);
     assert!(pool2 < 100);
 
-    // Latency too low (100ms < 200ms) -> pool size increases
-    let pool3 = pid.update(100, 100.0);
+    // Latency too low (50ms < 150ms) -> pool size increases
+    let pool3 = pid.update(100, 50.0);
     assert!(pool3 > 100);
 }
 
@@ -235,28 +235,28 @@ fn test_pid_controller_anti_windup_and_reset() {
     assert_eq!(pid.current_pool_size, None);
 
     // After reset, at target latency pool size is unchanged
-    let pool_after_reset = pid.update(100, 200.0);
+    let pool_after_reset = pid.update(100, 150.0);
     assert_eq!(pool_after_reset, 100);
 }
 
 #[test]
 fn test_pid_controller_min_max_clamping() {
     let mut pid = PidController::default();
-    pid.min_pool_size = 10;
-    pid.max_pool_size = 50;
+    pid.min_pool_size = 50;
+    pid.max_pool_size = 150;
 
     let min_clamped = pid.update(5, 10000.0);
-    assert_eq!(min_clamped, 10);
+    assert_eq!(min_clamped, 50);
 
-    let max_clamped = pid.update(100, 0.0);
-    assert_eq!(max_clamped, 50);
+    let max_clamped = pid.update(200, 0.0);
+    assert_eq!(max_clamped, 150);
 }
 
 #[test]
 fn test_pid_controller_non_finite_latency_safety() {
     let mut pid = PidController::default();
     let initial_pool = 100;
-    let pool_before = pid.update(initial_pool, 200.0);
+    let pool_before = pid.update(initial_pool, 150.0);
 
     // Pass NaN latency
     let pool_nan = pid.update(pool_before, f32::NAN);
@@ -376,18 +376,18 @@ proptest! {
 
     #[test]
     fn prop_pid_output_within_bounds(
-        pool_size in 10usize..1000,
+        pool_size in 50usize..1000,
         measured_lat in 0.0f32..2000.0f32,
         steps in 1usize..20
     ) {
         let mut pid = PidController::default();
-        pid.min_pool_size = 20;
+        pid.min_pool_size = 50;
         pid.max_pool_size = 500;
 
         let mut current_pool = pool_size;
         for _ in 0..steps {
             current_pool = pid.update(current_pool, measured_lat);
-            prop_assert!(current_pool >= 20, "Pool size {} below min 20", current_pool);
+            prop_assert!(current_pool >= 50, "Pool size {} below min 50", current_pool);
             prop_assert!(current_pool <= 500, "Pool size {} above max 500", current_pool);
         }
     }
