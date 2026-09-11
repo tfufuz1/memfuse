@@ -553,9 +553,9 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 continue;
             }
 
-            for (key, val_bytes) in entries {
+            for (key, val_bytes) in valid_entries {
                 // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
+                // Suffix is guaranteed to parse as u64 due to filter above
                 let suffix = &key[prefix.len()..];
                 let Ok(suffix_str) = std::str::from_utf8(suffix) else {
                     continue;
