@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T22:58:30Z (SESSION: e6ab3646)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -10,6 +10,7 @@
 //   2. `weighted_reciprocal_rank_fusion()` — mit Name + Gewicht pro Signal
 //   NIEMALS eine dritte `execute_rrf()`-Funktion anlegen — sie würde diese duplizieren.
 // SIEHE AUCH: DECISIONS.md ADR-003, crates/memfuse-db/AGENTS.md §4-Signal Fusion
+// DONE(memfuse-impl): Verified RRF Rank Fusion & Numerik handling (NaN/Inf weights, tie-breaking, and resonance bonus) [ref:eigenbau-rrf-fusion]
 
 use crate::{ProvenanceRecord, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -238,7 +239,12 @@ pub fn build_provenance(
         let rrf_contrib = if rrf_contrib.is_finite() {
             rrf_contrib
         } else {
-            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            tracing::warn!(
+                w,
+                rrf_k,
+                rank,
+                "non-finite rrf_contrib in build_provenance; defaulting to 0.0"
+            );
             0.0
         };
         (rank, rrf_contrib)
@@ -491,10 +497,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             }
 
             if !signal_name.is_empty() && signal_name != "unnamed" {
-                entry
-                    .3
-                    .signal_ranks
-                    .insert(signal_name.clone(), rrf_rank);
+                entry.3.signal_ranks.insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
