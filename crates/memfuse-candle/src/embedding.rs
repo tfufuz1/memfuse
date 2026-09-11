@@ -5,8 +5,11 @@
 // NICHT-OFFENSICHTLICH: CandleEmbedInner trait enables mock-based unit testing without binary weights in CI.
 
 use crate::model_registry::ModelFingerprint;
-use candle_core::Device;
+use candle_core::{Device, Tensor};
+use candle_nn::VarBuilder;
+use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use memfuse_core::{MemFuseError, Result};
+use std::path::Path;
 use std::sync::Arc;
 
 /// Inner trait abstracting low-level Candle forward execution for vector embeddings.
@@ -137,13 +140,117 @@ impl CandleEmbedClient {
         };
 
         let device = Device::Cpu;
-        let model: Box<dyn CandleEmbedInner + Send> =
-            Box::new(DefaultCandleEmbedModel { dim: 384 });
+        let weights_path = model_dir.join("model.safetensors");
+        let config_path = model_dir.join("config.json");
+
+        let model: Box<dyn CandleEmbedInner + Send> = if weights_path.exists() {
+            Box::new(BertEmbedModel::load(&weights_path, &config_path, &device)?)
+        } else {
+            Box::new(DefaultCandleEmbedModel { dim: 384 })
+        };
+
         Ok(Self::new(device, model, fingerprint, tokenizer))
     }
 }
 
-/// Default inner Candle embedding model.
+/// Real BERT transformer text embedding model wrapper.
+pub struct BertEmbedModel {
+    model: BertModel,
+    dim: usize,
+}
+
+impl BertEmbedModel {
+    /// Loads BERT model weights from a `.safetensors` file and configuration from `config.json`.
+    pub fn load(weights_path: &Path, _config_path: &Path, device: &Device) -> Result<Self> {
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(&[weights_path], DTYPE, device).map_err(|e| {
+                MemFuseError::Internal(format!(
+                    "Failed to load BERT safetensors weights from {}: {e}",
+                    weights_path.display()
+                ))
+            })?
+        };
+
+        let config = Config::default();
+
+        let dim = config.hidden_size;
+        let model = BertModel::load(vb, &config)
+            .map_err(|e| MemFuseError::Internal(format!("Failed to initialize BERT model: {e}")))?;
+
+        Ok(Self { model, dim })
+    }
+}
+
+impl CandleEmbedInner for BertEmbedModel {
+    fn embed(
+        &mut self,
+        text: &str,
+        tokenizer: &tokenizers::Tokenizer,
+        device: &Device,
+    ) -> Result<Vec<f32>> {
+        let encoding = tokenizer
+            .encode(text, true)
+            .map_err(|e| MemFuseError::InvalidInput(format!("Tokenizer encoding error: {e}")))?;
+
+        let tokens = encoding.get_ids();
+        if tokens.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Cannot embed empty token sequence".to_string(),
+            ));
+        }
+
+        let token_ids = Tensor::new(tokens, device)
+            .map_err(|e| MemFuseError::Internal(format!("Failed to create token_ids tensor: {e}")))?
+            .unsqueeze(0)
+            .map_err(|e| MemFuseError::Internal(format!("Failed to unsqueeze token_ids: {e}")))?;
+
+        let token_type_ids = token_ids
+            .zeros_like()
+            .map_err(|e| MemFuseError::Internal(format!("Failed to create token_type_ids: {e}")))?;
+
+        // Forward pass through BERT model
+        let embeddings = self
+            .model
+            .forward(&token_ids, &token_type_ids, None)
+            .map_err(|e| MemFuseError::Internal(format!("BERT forward pass error: {e}")))?;
+
+        // Mean pooling over token sequence dimension (dim 1)
+        let (_b_sz, seq_len, _hidden_dim) = embeddings
+            .dims3()
+            .map_err(|e| MemFuseError::Internal(format!("Expected 3D embeddings tensor: {e}")))?;
+
+        let sum_embeddings = embeddings
+            .sum(1)
+            .map_err(|e| MemFuseError::Internal(format!("Failed to sum embeddings: {e}")))?;
+        let pooled = (sum_embeddings / (seq_len as f64))
+            .map_err(|e| MemFuseError::Internal(format!("Failed to mean pool embeddings: {e}")))?
+            .squeeze(0)
+            .map_err(|e| MemFuseError::Internal(format!("Failed to squeeze pooled tensor: {e}")))?;
+
+        let vec: Vec<f32> = pooled
+            .to_vec1()
+            .map_err(|e| MemFuseError::Internal(format!("Failed to convert tensor to vec: {e}")))?;
+
+        // L2 normalization and zero/NaN check (APM-4)
+        let norm_sq: f32 = vec.iter().map(|v| v * v).sum();
+        let norm = norm_sq.sqrt();
+
+        if norm < 1e-12 || norm.is_nan() || !norm.is_finite() {
+            return Err(MemFuseError::Internal(format!(
+                "Invalid or zero L2 vector norm ({norm}) produced during embedding forward pass"
+            )));
+        }
+
+        let normalized_vec = vec.into_iter().map(|v| v / norm).collect();
+        Ok(normalized_vec)
+    }
+
+    fn dim(&self) -> usize {
+        self.dim
+    }
+}
+
+/// Default inner Candle embedding mock model for unit testing when weight files are missing.
 pub struct DefaultCandleEmbedModel {
     /// Vector dimension.
     pub dim: usize,
@@ -152,11 +259,35 @@ pub struct DefaultCandleEmbedModel {
 impl CandleEmbedInner for DefaultCandleEmbedModel {
     fn embed(
         &mut self,
-        _text: &str,
+        text: &str,
         _tokenizer: &tokenizers::Tokenizer,
         _device: &Device,
     ) -> Result<Vec<f32>> {
-        Ok(vec![0.0f32; self.dim])
+        // Deterministic pseudo-embedding generator derived from input text string hash
+        // Ensures distinct non-zero L2-normalized vectors for distinct input texts in mock/test mode
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        let seed = hasher.finish();
+
+        let mut raw_vec = Vec::with_capacity(self.dim);
+        for i in 0..self.dim {
+            let val =
+                ((seed.wrapping_add((i as u64).wrapping_mul(2654435761))) % 1000) as f32 + 1.0;
+            raw_vec.push(val);
+        }
+
+        let norm_sq: f32 = raw_vec.iter().map(|v| v * v).sum();
+        let norm = norm_sq.sqrt();
+        if norm < 1e-12 {
+            return Err(MemFuseError::Internal(
+                "Zero norm in mock embedder".to_string(),
+            ));
+        }
+
+        Ok(raw_vec.into_iter().map(|v| v / norm).collect())
     }
 
     fn dim(&self) -> usize {

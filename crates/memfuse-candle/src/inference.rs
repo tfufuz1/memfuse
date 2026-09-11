@@ -4,9 +4,14 @@
 // INVARIANTEN: Thread-safe model access via Mutex; spawn_blocking for CPU inference execution.
 
 use crate::model_registry::ModelFingerprint;
+use candle_core::quantized::gguf_file;
 use candle_core::Device;
+use candle_transformers::generation::LogitsProcessor;
+use candle_transformers::models::quantized_llama::ModelWeights;
 use memfuse_core::traits::BoxFuture;
 use memfuse_core::{LlmTextGenerator, MemFuseError, Result};
+use std::fs::File;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Inner trait abstracting low-level Candle forward/text-generation execution.
@@ -130,13 +135,146 @@ impl CandleLlmClient {
             }
         };
 
+        let gguf_file_path = if gguf_path.exists() {
+            Some(gguf_path)
+        } else if let Ok(entries) = std::fs::read_dir(model_dir) {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .find(|p| p.extension().and_then(|s| s.to_str()) == Some("gguf"))
+        } else {
+            None
+        };
+
         let device = Device::Cpu;
-        let model: Box<dyn CandleModelInner + Send> = Box::new(DefaultCandleLlmModel);
+        let model: Box<dyn CandleModelInner + Send> = if let Some(path) = gguf_file_path {
+            Box::new(QuantizedLlamaModel::load(&path, &device)?)
+        } else {
+            // Fallback for empty/mock test directories or directories without GGUF weight binaries
+            Box::new(DefaultCandleLlmModel)
+        };
+
         Ok(Self::new(device, model, fingerprint, tokenizer))
     }
 }
 
-/// Default inner Candle LLM model.
+/// Real quantized Llama / GGUF model execution wrapper.
+pub struct QuantizedLlamaModel {
+    weights: ModelWeights,
+    sample_len: usize,
+}
+
+impl QuantizedLlamaModel {
+    /// Loads GGUF quantized model weights from the specified file path.
+    pub fn load(model_path: &Path, device: &Device) -> Result<Self> {
+        let mut file = File::open(model_path).map_err(|e| {
+            MemFuseError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to open GGUF weight file {}: {e}",
+                    model_path.display()
+                ),
+            ))
+        })?;
+
+        let content = gguf_file::Content::read(&mut file).map_err(|e| {
+            MemFuseError::Internal(format!(
+                "Failed to parse GGUF content header for {}: {e}",
+                model_path.display()
+            ))
+        })?;
+
+        let weights = ModelWeights::from_gguf(content, &mut file, device).map_err(|e| {
+            MemFuseError::Internal(format!(
+                "Failed to build quantized Llama model weights from GGUF {}: {e}",
+                model_path.display()
+            ))
+        })?;
+
+        Ok(Self {
+            weights,
+            sample_len: 256,
+        })
+    }
+}
+
+impl CandleModelInner for QuantizedLlamaModel {
+    fn generate(
+        &mut self,
+        prompt: &str,
+        tokenizer: &tokenizers::Tokenizer,
+        device: &Device,
+    ) -> Result<String> {
+        let tokens = tokenizer
+            .encode(prompt, true)
+            .map_err(|e| MemFuseError::InvalidInput(format!("Failed to tokenize prompt: {e}")))?;
+        let prompt_tokens = tokens.get_ids();
+        if prompt_tokens.is_empty() {
+            return Err(MemFuseError::InvalidInput(
+                "Encoded prompt tokens cannot be empty".to_string(),
+            ));
+        }
+
+        let mut logits_processor = LogitsProcessor::new(299792458, Some(0.7), Some(0.9));
+        let mut all_tokens = prompt_tokens.to_vec();
+        let mut generated_tokens = Vec::new();
+
+        let mut index_pos = 0;
+        for i in 0..self.sample_len {
+            let context_len = if i == 0 { all_tokens.len() } else { 1 };
+            let input_slice = if i == 0 {
+                all_tokens.clone()
+            } else {
+                vec![*all_tokens.last().unwrap()]
+            };
+
+            let input_tensor = candle_core::Tensor::new(&input_slice[..], device)
+                .map_err(|e| MemFuseError::Internal(format!("Failed to create input tensor: {e}")))?
+                .unsqueeze(0)
+                .map_err(|e| MemFuseError::Internal(format!("Failed to unsqueeze tensor: {e}")))?;
+
+            let logits = self
+                .weights
+                .forward(&input_tensor, index_pos)
+                .map_err(|e| {
+                    MemFuseError::Internal(format!("Quantized Llama forward error: {e}"))
+                })?;
+
+            let logits = logits
+                .squeeze(0)
+                .map_err(|e| MemFuseError::Internal(format!("Failed to squeeze logits: {e}")))?;
+            let logits = logits
+                .get(
+                    logits
+                        .dim(0)
+                        .map_err(|e| MemFuseError::Internal(e.to_string()))?
+                        - 1,
+                )
+                .map_err(|e| MemFuseError::Internal(format!("Failed to slice logits: {e}")))?;
+
+            let next_token = logits_processor
+                .sample(&logits)
+                .map_err(|e| MemFuseError::Internal(format!("Logits sampling failed: {e}")))?;
+
+            all_tokens.push(next_token);
+            generated_tokens.push(next_token);
+            index_pos += context_len;
+
+            // Check EOS / stop tokens (e.g. tokenizer eos token if known or common Llama eos token ID 2)
+            if next_token == 2 || next_token == 128001 || next_token == 128009 {
+                break;
+            }
+        }
+
+        let output_text = tokenizer.decode(&generated_tokens, true).map_err(|e| {
+            MemFuseError::Internal(format!("Failed to decode generated tokens: {e}"))
+        })?;
+
+        Ok(output_text)
+    }
+}
+
+/// Default inner Candle LLM mock model for unit tests when binary weights are absent.
 pub struct DefaultCandleLlmModel;
 
 impl CandleModelInner for DefaultCandleLlmModel {
@@ -146,7 +284,7 @@ impl CandleModelInner for DefaultCandleLlmModel {
         _tokenizer: &tokenizers::Tokenizer,
         _device: &Device,
     ) -> Result<String> {
-        Ok(format!("[Candle] Response for prompt: {prompt}"))
+        Ok(format!("[MockCandle] Response for prompt: {prompt}"))
     }
 }
 
