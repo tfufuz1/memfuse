@@ -535,21 +535,25 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
+            // Filter entries to those whose suffix is purely a valid u64 doc_id.
+            // Longer terms that start with `term:` (e.g. `https://example.com` vs `https`)
+            // will have extra term components in the suffix and must be skipped.
+            let mut valid_postings = Vec::with_capacity(entries.len());
+            for (key, val_bytes) in entries {
+                let suffix = &key[prefix.len()..];
+                if let Ok(suffix_str) = std::str::from_utf8(suffix) {
+                    if let Ok(doc_id_raw) = suffix_str.parse::<u64>() {
+                        valid_postings.push((DocId::new(doc_id_raw), val_bytes));
+                    }
+                }
+            }
+
+            let df = valid_postings.len() as u32;
             if df == 0 {
                 continue;
             }
 
-            for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
-                let doc_id = DocId::new(doc_id_raw);
-
+            for (doc_id, val_bytes) in valid_postings {
                 let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
                     MemFuseError::Storage("Invalid tf length in posting list".into())
                 })?);
@@ -1824,6 +1828,32 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_colon_containing_terms_do_not_cause_invalid_doc_id_error() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "colon_test");
+
+        let tx = TxId::new(1);
+        // Insert a document with a protected token containing colons (e.g. URL or timestamp)
+        index
+            .upsert_document(
+                tx,
+                DocId::new(1),
+                "visit https://example.com for more info about https",
+            )
+            .await?;
+        index.commit(tx).await?;
+
+        // Searching for "https" scan_prefix_at("colon_test:pl:https:") will match both
+        // "colon_test:pl:https:1" and "colon_test:pl:https://example.com:1".
+        // The search must succeed without throwing "Invalid doc_id format in key".
+        let results = index.search("https", 10).await?;
+        assert!(!results.is_empty());
+        assert_eq!(results[0].doc_id, DocId::new(1));
 
         Ok(())
     }
