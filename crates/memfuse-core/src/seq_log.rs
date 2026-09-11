@@ -63,6 +63,9 @@ impl SeqLogChange {
 #[derive(Debug, Default, Clone)]
 pub struct SequenceLog {
     entries: Vec<SeqLogEntry>,
+    pinned_snapshots: ahash::AHashMap<u64, usize>,
+    compacted_below: Option<u64>,
+    deletions: ahash::AHashMap<DocId, u64>,
 }
 
 impl SequenceLog {
@@ -70,13 +73,44 @@ impl SequenceLog {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            pinned_snapshots: ahash::AHashMap::default(),
+            compacted_below: None,
+            deletions: ahash::AHashMap::default(),
         }
+    }
+
+    /// Pins a historical sequence number to prevent rebuild from purging soft-deleted nodes active at this snapshot.
+    pub fn pin_snapshot(&mut self, seq_no: u64) {
+        *self.pinned_snapshots.entry(seq_no).or_insert(0) += 1;
+    }
+
+    /// Unpins a historical sequence number.
+    pub fn unpin_snapshot(&mut self, seq_no: u64) {
+        if let std::collections::hash_map::Entry::Occupied(mut entry) = self.pinned_snapshots.entry(seq_no) {
+            if *entry.get() <= 1 {
+                entry.remove();
+            } else {
+                *entry.get_mut() -= 1;
+            }
+        }
+    }
+
+    /// Calculates the minimum sequence number currently pinned for snapshot retention.
+    /// Returns `None` if no snapshot sequence numbers are pinned.
+    pub fn min_retention_seq(&self) -> Option<u64> {
+        self.pinned_snapshots.keys().copied().min()
+    }
+
+    /// Returns the deletion sequence number of the given document, if currently soft-deleted.
+    pub fn deletion_seq(&self, doc_id: DocId) -> Option<u64> {
+        self.deletions.get(&doc_id).copied()
     }
 
     /// Records an insert operation at the given sequence number `seq`.
     pub fn record_insert(&mut self, doc_id: DocId, seq: u64) {
         if let Some(entry) = self.entries.iter_mut().rfind(|e| e.doc_id == doc_id) {
             if entry.delete_seq.is_some() {
+                self.deletions.remove(&doc_id);
                 self.entries.push(SeqLogEntry {
                     doc_id,
                     insert_seq: seq,
@@ -100,6 +134,7 @@ impl SequenceLog {
             .rfind(|e| e.doc_id == doc_id && e.delete_seq.is_none())
         {
             entry.delete_seq = Some(seq);
+            self.deletions.insert(doc_id, seq);
         }
     }
 
@@ -122,6 +157,10 @@ impl SequenceLog {
 
     /// Compacts log entries where deletion sequence number is strictly less than `min_active_seqno`.
     pub fn compact(&mut self, min_active_seqno: u64) {
+        self.compacted_below = Some(
+            self.compacted_below
+                .map_or(min_active_seqno, |c| c.max(min_active_seqno)),
+        );
         self.entries.retain(|entry| {
             if let Some(del_seq) = entry.delete_seq {
                 del_seq >= min_active_seqno
@@ -129,6 +168,7 @@ impl SequenceLog {
                 true
             }
         });
+        self.deletions.retain(|_, &mut del_seq| del_seq >= min_active_seqno);
     }
 
     /// Returns the number of entries in the sequence log.
@@ -335,5 +375,33 @@ mod tests {
 
         let changes_50 = log.changes_since(50);
         assert!(changes_50.is_empty());
+    }
+
+    #[test]
+    fn test_sequence_log_pinning_and_retention() {
+        let mut log = SequenceLog::new();
+        let doc1 = DocId::from_key("doc1").expect("valid doc id");
+
+        log.record_insert(doc1, 10);
+        log.record_delete(doc1, 20);
+
+        assert_eq!(log.deletion_seq(doc1), Some(20));
+        assert_eq!(log.min_retention_seq(), None);
+
+        // Pin snapshot at seq 5 (older than insert_seq 10)
+        log.pin_snapshot(5);
+        assert_eq!(log.min_retention_seq(), Some(5));
+
+        // Pin another snapshot at seq 15
+        log.pin_snapshot(15);
+        assert_eq!(log.min_retention_seq(), Some(5));
+
+        // Unpin seq 5
+        log.unpin_snapshot(5);
+        assert_eq!(log.min_retention_seq(), Some(15));
+
+        // Unpin seq 15
+        log.unpin_snapshot(15);
+        assert_eq!(log.min_retention_seq(), None);
     }
 }

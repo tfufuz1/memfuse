@@ -61,6 +61,7 @@ mod check_stale_tags;
 mod check_type_registry;
 mod check_unwrap_baseline_trend;
 mod check_vetoes;
+mod check_workflow_commands;
 mod claim;
 mod gen_prompter_data;
 mod generate_adr;
@@ -2180,6 +2181,12 @@ fn main() {
                     eprintln!("❌ check-duplicate-symbols failed: {}", e);
                     process::exit(1);
                 }
+            }
+        }
+        "check-workflow-commands" => {
+            let root = find_root_dir();
+            if !check_workflow_commands::run_check_workflow_commands(&root) {
+                process::exit(1);
             }
         }
         "check-placeholder-refs" => {

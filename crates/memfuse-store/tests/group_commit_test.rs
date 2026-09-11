@@ -1,6 +1,6 @@
 //! Group-Commit-Batching verification and benchmark tests for LsmStorage.
 
-use memfuse_core::{MemFuseError, TxId, StorageEngine};
+use memfuse_core::{MemFuseError, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -92,10 +92,7 @@ async fn test_group_commit_mid_batch_fsync_failure_atomicity() {
         .put(tx_base, b"base_key", b"base_val")
         .await
         .expect("put base");
-    storage
-        .commit(tx_base)
-        .await
-        .expect("commit base");
+    storage.commit(tx_base).await.expect("commit base");
 
     // Configure fault injection to fail append_batch for tx 10
     FAIL_APPEND_FOR_TX.store(10, Ordering::SeqCst);
@@ -235,8 +232,14 @@ async fn test_group_commit_micro_benchmark_throughput_comparison() {
 
     println!("\n=== GROUP COMMIT THROUGHPUT MICRO-BENCHMARK ===");
     println!("Total Commits: {}", total_commits);
-    println!("No Batching (0µs):   {:?} ({:.2} commits/sec)", duration_no_batch, tps_no_batch);
-    println!("Group Commit (500µs): {:?} ({:.2} commits/sec)", duration_batch, tps_batch);
+    println!(
+        "No Batching (0µs):   {:?} ({:.2} commits/sec)",
+        duration_no_batch, tps_no_batch
+    );
+    println!(
+        "Group Commit (500µs): {:?} ({:.2} commits/sec)",
+        duration_batch, tps_batch
+    );
     println!("Speedup Factor: {:.2}x\n", tps_batch / tps_no_batch);
 
     // Integrity check

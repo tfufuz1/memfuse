@@ -321,6 +321,12 @@ impl McpServer {
         }
     }
 
+    // AI-TAG[SMELL][RESOLVED] audit-APM-38-mcp: Replay-Schutz für stdio-JSON-RPC
+    // explizit geprüft am 2026-09-11. Alle zustandsverändernden Handler (memfuse_insert)
+    // delegieren an memfuse-db (col.insert), die über deterministische DocId/Key-Ableitung
+    // zustandslos-idempotent ist und in memfuse-store (wal.rs) tx_id/seq_no-gebunden
+    // HMAC-verifiziert wird (siehe audit-APM-38). MCP selbst hält keinen Session- oder
+    // Verbindungszustand, der diese Bindung umgehen könnte.
     pub async fn handle(&self, req: JsonRpcRequest) -> JsonRpcResponse {
         let id = req.id.clone();
         if req.jsonrpc != "2.0" {

@@ -315,7 +315,7 @@ pub fn reciprocal_rank_fusion(
 /// ⚠️ KONTRAKT FÜR CONSUMER: Code der `metadata[key].as_f64()` (o.ä.) für Felder
 /// aus mehreren Fusion-Signalen aufruft MUSS damit rechnen, dass der Wert ein
 /// `serde_json::Value::Array` statt eines Scalars ist.
-// AI-TAG[SMELL][MINOR] TODO(audit-M-1): Preserve scalar field types when metadata values are identical across sources instead of unconditionally converting scalars to JSON arrays. (ID: AGT-DB-9cb315d8) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+// AI-TAG[SMELL][RESOLVED] audit-M-1: merge_metadata checks t_val != &s_val and preserves identical scalar field types across sources.
 fn merge_metadata(target: &mut Option<serde_json::Value>, source: Option<serde_json::Value>) {
     match (target, source) {
         (Some(t_val), Some(s_val)) => {

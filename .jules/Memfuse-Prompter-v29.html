@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>MEMFUSE.PROMPTER v29 — SDLC COCKPIT · 4 EBENEN (CRATE, SUBSYSTEM, EIGENBAU, PROZESS) · PLAN→IMPLEMENT→REVIEW TRIAS · ROLE-LOCK · CLAIM-KEYS</title>
+<title>MEMFUSE.BAUKASTEN — v28 · 17 CRATES · 3 SUBSYSTEME (KEIN MISCHEN) · DATIERTE AUDIT-REPORTS · INVENTAR-REALITÄTSABGLEICH PFLICHT · TIER+DOMAIN-GEWICHTUNG · 42 APM · 14 TASK-TYPEN · AUDIT≠FIX-SPERRE</title>
 <style>
 :root{
   --bg:#050508;--s1:#08080e;--s2:#0d0d17;--s3:#121220;
@@ -220,11 +220,11 @@ kbd{font-family:monospace;font-size:8px}
 
 <header class="hdr">
   <div class="hdr-in">
-    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v29</span></span>
+    <span class="logo"><em>MEMFUSE</em>.BAUKASTEN<span class="lver">v28</span></span>
     <span class="hdot"></span>
-    <span class="hsub">SDLC Cockpit v29 · 4 Ebenen (Crate, Subsystem, Eigenbau, Prozess) · PLAN→IMPLEMENT→REVIEW Trias · ROLE-LOCK · Claim-Keys</span>
+    <span class="hsub">17 Crates · 3 Subsysteme (kein Mischen) · Tier+Domain-Profile · 42 APMs · 14 Task-Typen · ROLE-LOCK (Audit≠Fix) · PLAN→ACT→VERIFY→REFLECT</span>
     <div class="hright">
-      <span class="hbadge hb-a">16 CRATES · 4 SUBSYSTEME · 4 EIGENBAU · GATES/DOCS/COMMITS</span>
+      <span class="hbadge hb-a">17 CRATES · 8 LAYER (0–7)</span>
       <span class="hbadge" style="background:rgba(255,107,157,.12);color:#ff6b9d;border:1px solid rgba(255,107,157,.3)">3 SUBSYSTEME (KEIN MISCHEN)</span>
       <span class="hbadge hb-b">14 TASK-TYPEN</span>
       <span class="hbadge hb-c">42 APM-PATTERN</span>
@@ -335,20 +335,7 @@ kbd{font-family:monospace;font-size:8px}
     </div>
 
     <!-- CRATE -->
-        <!-- SDLC COCKPIT v29: EBENE WÄHLEN TAB BAR -->
-    <div class="card" style="padding:10px;background:var(--s2);border-color:var(--b2);margin-bottom:12px;">
-      <div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:6px">
-        <span>⚙️ SDLC COCKPIT v29 — PROMPTER-EBENE WÄHLEN</span>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
-        <button id="tab-ebene-crate" class="chip on" style="justify-content:center;font-weight:700;padding:6px 2px" onclick="setEbene('crate')">1. Crate</button>
-        <button id="tab-ebene-subsystem" class="chip" style="justify-content:center;font-weight:700;padding:6px 2px" onclick="setEbene('subsystem')">2. Subsystem</button>
-        <button id="tab-ebene-eigenbau" class="chip" style="justify-content:center;font-weight:700;padding:6px 2px" onclick="setEbene('eigenbau')">3. Eigenbau</button>
-        <button id="tab-ebene-prozess" class="chip" style="justify-content:center;font-weight:700;padding:6px 2px" onclick="setEbene('prozess')">4. Prozess</button>
-      </div>
-    </div>
-
-<div class="card" id="c-crate">
+    <div class="card" id="c-crate">
       <div class="ch" onclick="toggle('c-crate')">
         <div class="cico" style="background:rgba(79,172,254,.12);color:var(--ac)">📦</div>
         <div class="clbl">Crate wählen<small>Layer 0→4 DAG · 15 Workspace-Crates</small></div>
@@ -376,36 +363,7 @@ kbd{font-family:monospace;font-size:8px}
         <div class="crate-grid" id="subsystem-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))"></div>
         <div id="subsystem-task-grid" style="margin-top:10px"></div>
       </div>
-
-
-    <!-- EBENE 3: EIGENBAU-KOMPONENTE -->
-    <div class="card" id="c-eigenbau">
-      <div class="ch" onclick="toggle('c-eigenbau'); setEbene('eigenbau');">
-        <div class="cico" style="background:rgba(192,132,252,.12);color:var(--purple)">⚡</div>
-        <div class="clbl">Eigenbau-Komponente wählen (Ebene 3)<small>Virtuelle Crates · Crate-übergreifend · LSM/WAL · Candle-Tensor · KV-Bridge · RRF-Fusion</small></div>
-        <div class="cval" id="cv-eigenbau" style="font-family:monospace;font-size:9px;color:var(--purple)">— keine gewählt —</div>
-        <span class="carr">▼</span>
-      </div>
-      <div class="cb">
-        <div class="crate-grid" id="eigenbau-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))"></div>
-        <div id="seq-warn-eigenbau" style="display:none;margin-top:10px;padding:8px 12px;background:rgba(251,191,36,.1);border:1px solid var(--warn);border-radius:6px;font-size:11px;color:var(--warn)"></div>
-        <div id="eigenbau-task-grid" style="margin-top:10px"></div>
-      </div>
     </div>
-
-    <!-- EBENE 4: PROZESS-OBJEKT (GATES, DOCS, COMMITS) -->
-    <div class="card" id="c-prozess">
-      <div class="ch" onclick="toggle('c-prozess'); setEbene('prozess');">
-        <div class="cico" style="background:rgba(255,204,2,.12);color:var(--gold)">🛡️</div>
-        <div class="clbl">Prozess-Objekt wählen (Ebene 4)<small>CI-Gates · Dokumentations-Sync · Commit-Historie & Claim-Audits</small></div>
-        <div class="cval" id="cv-prozess" style="font-family:monospace;font-size:9px;color:var(--gold)">— keins gewählt —</div>
-        <span class="carr">▼</span>
-      </div>
-      <div class="cb">
-        <div class="crate-grid" id="prozess-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))"></div>
-        <div id="prozess-task-grid" style="margin-top:10px"></div>
-      </div>
-    </div></div>
 
     <!-- COMPONENTS -->
     <div class="card" id="c-comp">
@@ -434,27 +392,6 @@ kbd{font-family:monospace;font-size:8px}
         <span class="carr">▼</span>
       </div>
       <div class="cb">
-        <div class="sl"><span class="sl-dot" style="background:var(--ac)"></span>SDLC Task Triad (v29 — PLAN → IMPLEMENT → REVIEW Cycle)</div>
-        <div class="task-grid">
-          <div class="thero" id="tt-plan" onclick="selTask('plan')">
-            <div class="th-ico">📐</div>
-            <div class="th-name">1. PLAN</div>
-            <div class="th-desc">Inline-TODO-Marker setzen + Plan-Text im PR-Body · Kein Fix-Code</div>
-            <span class="th-phase ph-gov">PLAN</span>
-          </div>
-          <div class="thero" id="tt-implement" onclick="selTask('implement')">
-            <div class="th-ico">⚡</div>
-            <div class="th-name">2. IMPLEMENT</div>
-            <div class="th-desc">Finde TODO(memfuse-plan) → Umsetzen → DONE/BLOCKED markieren</div>
-            <span class="th-phase ph-impl">IMPL</span>
-          </div>
-          <div class="thero" id="tt-review" onclick="selTask('review')">
-            <div class="th-ico">👁️</div>
-            <div class="th-name">3. REVIEW</div>
-            <div class="th-desc">Diff-only Review · Korrektheitsnachweis · Freigabe oder Ablehnung</div>
-            <span class="th-phase ph-review">REVIEW</span>
-          </div>
-        </div>
         <div class="sl"><span class="sl-dot"></span>Audit-Aufgaben (täglich, docs/audits/ wird aktualisiert)</div>
         <div class="task-grid">
           <div class="thero" id="tt-audit" onclick="selTask('audit')">
@@ -2149,67 +2086,45 @@ function ROLE_LOCK_BLOCK(mode, crate) {
   const selected = all.filter(c => SS.components.has(c.file));
   const partial = selected.length && selected.length < all.length;
   const scopeNote = partial
-    ? `Diese Sitzung ist zusätzlich auf ${selected.length === 1 ? `die Komponente \`${selected[0].file}\`` : `${selected.length} explizit gewählte Komponenten (${selected.map(c=>'`'+c.file+'`').join(', ')})`} eingegrenzt.`
+    ? `Diese Sitzung ist zusätzlich auf ${selected.length === 1 ? `die Komponente \`${selected[0].file}\`` : `${selected.length} explizit gewählte Komponenten (${selected.map(c=>'`'+c.file+'`').join(', ')})`} eingegrenzt — ein Befund in einer NICHT gewählten Datei derselben Crate wird trotzdem getaggt (nicht ignoriert), aber NICHT in dieser Sitzung untersucht oder behoben; er gehört in eine eigene, separat beauftragte Sitzung für exakt diese Komponente.`
     : '';
-
-  if (mode === 'planer') {
-    return `---
-
-## Rollensperre: PLANER (Phase 1 — Keine funktionalen Code-Änderungen)
-
-Du agierst in dieser Session als **Planer**.
-- **ERLAUBT:** Platziere Inline-Kommentare \`// TODO(memfuse-plan): ...\` an den Zielstellen und erstelle den Durchführungsplan im PR-Body.
-- **VERBOTEN:** Schreiben von funktionaler Logik, Refactorings oder Fixes. Der Diff dieser Session darf AUSSCHLIESSLICH Kommentare und unimplemented!() Stubs enthalten! ${scopeNote}`;
-  }
-
-  if (mode === 'implementer' || mode === 'fixer') {
-    return `---
-
-## Rollensperre: IMPLEMENTER (Phase 2 — Systematische Umsetzung von Planned TODOs)
-
-Du agierst in dieser Session als **Implementer**.
-- **Ablauf:** Finde alle \`// TODO(memfuse-plan)\` Marker im Scope.
-- **Abarbeitung:** Setze die Logik um und aktualisiere jeden Marker zu \`// DONE(memfuse-impl)\` oder \`// BLOCKED(memfuse-impl)\`.
-- **Verbot:** Niemals Marker stillschweigend löschen oder Dateien außerhalb des deklarierten Claims berühren! ${scopeNote}`;
-  }
-
-  if (mode === 'reviewer') {
-    return `---
-
-## Rollensperre: REVIEWER (Phase 3 — Unabhängiges Diff-Review & Korrektheitsnachweis)
-
-Du agierst in dieser Session als **Reviewer**.
-- **Ablauf:** Du bewertest den Diff der vorangegangenen IMPLEMENT-Session.
-- **ERLAUBT:** Ausführen von Tests, Bauen von künstlichen Regressionsnachweisen / Crashes, Schreiben eines REVIEW-PASS/FAIL Kommentars.
-- **VERBOTEN:** Eigenen produktiven Code schreiben oder den Diff der Implementierung direkt abändern! ${scopeNote}`;
-  }
-
-  if (mode === 'prozess_ingenieur') {
-    return `---
-
-## Rollensperre: PROZESS- / GATE-INGENIEUR
-
-Du agierst als **Prozess- / Gate-Ingenieur**.
-- **ERLAUBT:** Bearbeitung von CI-Gates, Workflow-Skripten, Dokumentation und Commit-Audits im expliziten Scope.
-- **VERBOTEN:** Änderungen an Produktionscode (\`crates/*/src/**/*.rs\`) außerhalb der expliziten Gate- / Doku-Pfade! ${scopeNote}`;
-  }
-
   if (mode === 'auditor') {
     return `---
 
 ## Rollensperre: AUSSCHLIESSLICH Auditor/Analyst in dieser Sitzung
 
-Du bist in dieser Sitzung **kein Implementierer**.
-- **Verboten:** Jede Änderung an funktionalem Code. Befunde werden getaggt (\`AI-TAG\`), nicht in dieser Session behoben. ${scopeNote}`;
-  }
+Du bist in dieser Sitzung **kein Implementierer**. Diese Trennung ist keine Stilkonvention, sondern verhindert das "Agent behebt während des Audits und verschleiert damit den Befund"-Problem — ein vermischter Audit+Fix-Diff kann von keinem nachfolgenden Reviewer mehr sauber getrennt geprüft werden.
 
+**Absolut verboten in dieser Sitzung, unabhängig von Trivialität oder Offensichtlichkeit des Fixes:**
+- Jede Änderung an funktionalem Code außerhalb von Kommentarzeilen (\`src/**/*.rs\`, ausgenommen \`// AI-TAG\`/\`// ANCHOR\`-Kommentarblöcke)
+- Neue Test-Dateien, die NICHT explizit Teil dieses Task-Typs sind (Ausnahme: \`deep\`/\`test\`/\`flaky\`/\`calib\`/\`replay\`-Aufgaben, die Testausbau explizit erlauben)
+- "Während ich schon dabei bin"-Korrekturen an benachbartem Code, selbst bei Ein-Zeilen-Fixes
+- Eigenmächtiges Setzen eines \`ANCHOR\` auf \`STATUS:DONE\` (diese Sitzung produziert höchstens \`STATUS:OPEN\`)
+
+**Einzig zulässiges Kommunikationsmittel für JEDEN Befund — das Kommentarsystem (\`rules/tag_taxonomy.md\`), keine anderen Kanäle:**
+1. Inline \`AI-TAG[KATEGORIE][SEVERITY]\` mit BEFUND/RISIKO/EMPFEHLUNG direkt über der betroffenen Zeile
+2. Tabellenzeile im Audit-Report (\`${AUDIT_PATH(crate)}\`)
+
+Ein Fix-Auftrag ist ein **eigener, separat beauftragter Folgeauftrag** (Task-Typ \`fix\`/\`korrektur\`/\`impl\`), der diese Tags konsumiert und mit eigenem Gate-Stack verifiziert — niemals derselbe Diff, niemals dieselbe Sitzung. ${scopeNote}`;
+  }
+  // mode === 'fixer'
   return `---
 
-## Rollensperre: STANDARD SDLC SESSION
+## Rollensperre: Diese Sitzung konsumiert AUSSCHLIESSLICH bereits offene Befunde
 
-Achte strikt auf den vereinbarten Scope und vermeide Scope-Creep. ${scopeNote}`;
+Du implementierst in dieser Sitzung **nur Fixes für bereits vorhandene, offene \`AI-TAG\`-Befunde** (aus \`${AUDIT_GLOB(crate)}\` bzw. inline im Code) oder für den explizit in diesem Auftrag benannten Befund — nicht für neu selbst entdeckte, unabhängige Probleme.
+
+**Verbindlicher Ablauf pro Befund:**
+1. Befund am AKTUELLEN Quellcode verifizieren (\`.jules/AUDIT_INTAKE_PROTOCOL.md\`) — nicht mehr zutreffend? → \`[ENTKRÄFTET]\` dokumentieren, NICHT implementieren.
+2. Fix implementieren, exakt für diesen einen Befund (kein Scope-Creep in andere Befunde derselben Sitzung).
+3. Konsumierten Tag mit \`// RESOLVED: AGT-${crate.replace('memfuse-','').toUpperCase()}-<hash> — <Fix-Beschreibung> (TS: <TS>)\` schließen.
+
+**Entdeckst du während der Fix-Arbeit ein NEUES, unabhängiges Problem außerhalb des aktuell bearbeiteten Befunds:** taggen (\`AI-TAG\`), NICHT mitfixen — Ausnahme: es handelt sich nachweislich um dieselbe strukturelle Ursache an einer Geschwisterstelle (APM-6, Geschwister-Konsistenz-Pflicht) im selben Modul; dieser Fall wird im selben Diff mitbehoben UND im PR-Kommentar explizit als "APM-6-Erweiterung des Befunds X" begründet, nicht stillschweigend. ${scopeNote}
+
+**Letzter Schritt vor Abschluss (Audit→Baukasten-Rückkopplung, Pflicht):** Beantworte explizit im PR-Kommentar/Session-Log — *"Wurde dieser Fix als neues oder präzisiertes APM-Muster erkennbar (d.h. ist die zugrunde liegende Fehlerklasse im APM-Set 1–41 bereits benannt, oder handelt es sich um ein bisher unbenanntes wiederkehrendes Muster)? Wenn letzteres: kurze Formulierung im Stil der bestehenden APM-Einträge vorschlagen."* Diese Frage unbeantwortet zu lassen gilt als unvollständige Sitzung.`;
 }
-  function TIER_BLOCK(crate) {
+
+function TIER_BLOCK(crate) {
   const c = CRATES.find(x => x.id === crate);
   const tier = c ? c.tier : '2';
   const info = TIER_INFO[tier];
@@ -2386,129 +2301,6 @@ const SUBSYSTEMS = [
     desc:'McpSandbox — Zero-Trust Tool-Output-Isolation, Volatile-Result-Verschlüsselung (AES-256-GCM-SIV via memfuse-crypto)' },
 ];
 
-const EIGENBAU_COMPONENTS = [
-  {
-    id: 'eigenbau-lsm-wal',
-    name: 'LSM/WAL Persistenz-Engine',
-    role: 'Persistenz-Physik-Spezialist',
-    icon: '⚡',
-    crate: 'memfuse-store',
-    spans: [
-      'crates/memfuse-store/src/wal.rs',
-      'crates/memfuse-store/src/lsm.rs',
-      'crates/memfuse-store/src/compaction.rs',
-      'crates/memfuse-store/src/tx_buffer.rs',
-      'crates/memfuse-checkpoint/src/lib.rs'
-    ],
-    depends_on: [],
-    review_focus: 'crash-simulation',
-    desc: 'Disk-Physik: fsync-Reihenfolge, Intent-Files, HMAC-Chains, rollback_to_tx, Crash-mitten-im-Rollback'
-  },
-  {
-    id: 'eigenbau-candle-tensor',
-    name: 'Candle ML-Inferenz-Pfad',
-    role: 'ML-Inferenz-Korrektheits-Spezialist',
-    icon: '🕯️',
-    crate: 'memfuse-candle',
-    spans: [
-      'crates/memfuse-candle/src/inference.rs',
-      'crates/memfuse-candle/src/embedding.rs',
-      'crates/memfuse-candle/src/gasp.rs',
-      'crates/memfuse-candle/src/gguf_loader.rs'
-    ],
-    depends_on: [],
-    review_focus: 'non-constant-output-proof',
-    desc: 'Reale GGUF Forward-Passes, Wortgrenzen-Analyse (GASP), Modell-Fingerprinting, Nicht-Konstanz-Beweis'
-  },
-  {
-    id: 'eigenbau-kv-bridge',
-    name: 'KV-Bridge (Index↔Store Sync)',
-    role: 'Cross-Engine-Konsistenz-Spezialist',
-    icon: '🌉',
-    crate: 'memfuse-db',
-    spans: [
-      'crates/memfuse-db/src/collection/search.rs',
-      'crates/memfuse-db/src/collection/crud.rs',
-      'crates/memfuse-index',
-      'crates/memfuse-store'
-    ],
-    depends_on: ['eigenbau-lsm-wal'],
-    review_focus: 'split-brain-simulation',
-    desc: 'Transaktionale Vektor-Index <-> LSM Sync, CheckpointPinGuard, Lösch-Split-Brain Schutz'
-  },
-  {
-    id: 'eigenbau-rrf-fusion',
-    name: 'RRF Rank Fusion & Numerik',
-    role: 'Rank-Fusion-/Numerik-Spezialist',
-    icon: '🔀',
-    crate: 'memfuse-db',
-    spans: [
-      'crates/memfuse-db/src/fusion.rs'
-    ],
-    depends_on: [],
-    review_focus: 'nan-and-tie-cases',
-    desc: 'Reciprocal Rank Fusion, IEEE-754 NaN-Scores, Total-Order Sortierung, Zettelkasten-Displacement'
-  }
-];
-
-const PROCESS_OBJECTS = [
-  {
-    id: 'gate-unwrap-trend',
-    name: 'Unwrap Baseline Trend Gate',
-    type: 'gate',
-    role: 'Gate-Ingenieur',
-    icon: '🛡️',
-    spans: ['xtask/src/check_unwrap_baseline_trend.rs', 'xtask/src/main.rs'],
-    desc: 'Prüft den Trend von unwrap/expect baselines und wandelt Warnungen in harte Blocker um'
-  },
-  {
-    id: 'gate-mutation-testing',
-    name: 'Mutation Testing Gate',
-    type: 'gate',
-    role: 'Gate-Ingenieur',
-    icon: '🧬',
-    spans: ['.github/workflows/mutation-testing.yml'],
-    desc: 'Automatisierte cargo-mutants Integration in CI'
-  },
-  {
-    id: 'gate-ci-bundle',
-    name: 'CI Workflow Bundle Gate',
-    type: 'gate',
-    role: 'Supply-Chain-/Coverage-Ingenieur',
-    icon: '📦',
-    spans: ['.github/workflows/rust-ci.yml', 'deny.toml'],
-    desc: 'Rust CI Workflow, cargo-deny, cargo-audit, Coverage-Gates'
-  },
-  {
-    id: 'gate-xtask-workflow-sync',
-    name: 'Xtask Workflow Sync Gate',
-    type: 'gate',
-    role: 'Gate-Ingenieur',
-    icon: '🔄',
-    spans: ['xtask/src/check_workflow_commands.rs', '.github/workflows/context-gates.yml'],
-    desc: 'Verhindert Diskrepanzen zwischen xtask-Befehlen und GitHub Workflows'
-  },
-  {
-    id: 'docs-sync',
-    name: 'Governance & Arch Doku Sync',
-    type: 'docs',
-    role: 'Doku-Synchronisierer',
-    icon: '📚',
-    spans: ['README.md', 'docs/ARCHITECTURE.md', 'DECISIONS.md', 'WORKING_STATE.md', 'docs/CHANGELOG.md'],
-    desc: 'Synchronisiert Architekturentscheidungen und Status nach Merges (kein Code-Edit)'
-  },
-  {
-    id: 'commit-review',
-    name: 'Commit History & Claim Auditor',
-    type: 'process',
-    role: 'Commit-Auditor',
-    icon: '🔎',
-    spans: ['git log'],
-    desc: 'Prüft git log und PR-Bodies auf Claim-Crate-Pflichtzeilen und Scope-Creep'
-  }
-];
-
-
 function SUBSYS_DOD(sub) {
   return `---
 
@@ -2531,113 +2323,6 @@ function SUBSYS_DOD(sub) {
 // TASK GENERATORS
 // ═══════════════════════════════════════════════════════════════════
 const TASKS = {
-
-plan: (crate, p, showPar) => {
-  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
-${ROLE_LOCK_BLOCK('planer', crate)}
-${TIER_BLOCK(crate)}
-${DOMAIN_BLOCK(crate)}
----
-
-## SDLC Phase 1: PLAN — Architektur- & Inline-TODO-Planung
-
-**Rolle:** Planer (KEINE funktionale Code-Änderung in dieser Session)
-**Ziel:** Analysiere die Aufgabe/Komponente und platziere präzise Inline-TODO-Marker im Quellcode + erstelle einen strukturierten Durchführungsplan.
-
-### Schritt 1: Scope & Kontext erfassen
-\`\`\`bash
-cat ${AUDIT_GLOB(crate)} 2>/dev/null | tail -80
-git log -p -5 -- crates/${crate}/
-cargo check -p ${PKG(crate)} --all-targets --locked
-\`\`\`
-
-### Schritt 2: Inline-TODO-Marker setzen
-Füge an den exakten Stellen im Code, die geändert werden müssen, Inline-Kommentare nach folgendem Format ein:
-\`\`\`rust
-// TODO(memfuse-plan): <Kurzbeschreibung der geplanten Änderung> [ref:AGT-${crate.replace('memfuse-','').toUpperCase()}-PLAN]
-\`\`\`
-*(Falls ein neues Interface oder Signaturen benötigt werden, verwende unimplemented!("TODO(memfuse-plan): ...") als Stub).*
-
-### Schritt 3: Plan-Erstellung (im PR-Body / Prompt-Antwort)
-Antworte mit einem strukturierten Plan, der folgende Punkte enthält:
-1. **Betroffene Dateien & Funktionen** (Liste aller gesetzten TODO-Marker)
-2. **Kritische Invarianten & Risiken** (fsync, SIMD, GIL, Lock-Hierarchie, etc.)
-3. **Erforderliche Testfälle** (Unit-, Integration- & Regressionstests)
-4. **Abhängigkeiten (depends_on)** zu anderen Komponenten oder PRs
-
-### Verbot:
-- **KEINE funktionalen Fixes oder Logik-Implementierungen schreiben.**
-- Der Diff dieser Session darf AUSSCHLIESSLICH Kommentare (\`// TODO(memfuse-plan)\`) oder unimplemented!() Stubs enthalten.
-
-${DOD(crate)}`;
-},
-
-implement: (crate, p, showPar) => {
-  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
-${ROLE_LOCK_BLOCK('implementer', crate)}
-${TIER_BLOCK(crate)}
-${DOMAIN_BLOCK(crate)}
----
-
-## SDLC Phase 2: IMPLEMENT — Systematische Umsetzung der TODO-Planung
-
-**Rolle:** Implementer
-**Ziel:** Finde alle \`// TODO(memfuse-plan)\` Marker im Scope und arbeite sie vollständig ab.
-
-### Schritt 1: Planned TODO-Marker suchen
-\`\`\`bash
-grep -rn "TODO(memfuse-plan)" crates/${crate}/src/
-\`\`\`
-
-### Schritt 2: Abarbeitung & Marker-Aktualisierung
-Arbeite jeden gefundenen TODO-Marker Schritt für Schritt ab:
-- Nach erfolgreicher Implementierung: Wandle den Kommentar um in:
-  \`// DONE(memfuse-impl): <Kurzbeschreibung der Lösung> [ref:AGT-${crate.replace('memfuse-','').toUpperCase()}-IMPL]\`
-- Falls ein TODO nicht umsetzbar ist (z. B. Planer-Annahme falsch): Wandle den Kommentar um in:
-  \`// BLOCKED(memfuse-impl): <Grund für Blockade> [ref:AGT-${crate.replace('memfuse-','').toUpperCase()}-IMPL]\`
-- **Niemals einen TODO-Marker stillschweigend löschen!**
-
-### Schritt 3: Testen & Verifizieren
-\`\`\`bash
-cargo check -p ${PKG(crate)} --all-targets --locked
-cargo clippy -p ${PKG(crate)} -- -D warnings
-cargo nextest run -p ${PKG(crate)} --no-fail-fast
-\`\`\`
-
-${APM_BLOCK(APM_ON)}
-${DOD(crate)}`;
-},
-
-review: (crate, p, showPar) => {
-  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
-${ROLE_LOCK_BLOCK('reviewer', crate)}
----
-
-## SDLC Phase 3: REVIEW — Unabhängiges Review & Korrektheitsnachweis
-
-**Rolle:** Reviewer (kein eigener Code-Beitrag)
-**Ziel:** Prüfe den Implementierungs-Diff der vorausgegangenen IMPLEMENT-Session auf Vollständigkeit, Korrektheit und Scope-Creep.
-
-### Schritt 1: Fresh-Context Check & Diff laden
-\`\`\`bash
-git log -p -1 -- crates/${crate}/
-grep -rn "DONE(memfuse-impl)\|BLOCKED(memfuse-impl)\|TODO(memfuse-plan)" crates/${crate}/src/
-\`\`\`
-
-### Schritt 2: Dreifach-Prüfung
-1. **Vollständigkeit:** Wurden alle \`// TODO(memfuse-plan)\` zu \`DONE\` umgewandelt oder sauber als \`BLOCKED\` begründet?
-2. **Komponenten-Korrektheitsnachweis:**
-   - Erstelle einen eigenen Gegenbeweis-Versuch / Testfall.
-   - Führe die typspezifischen Checks aus (\`cargo test\`, \`cargo clippy\`, Diagnostics).
-3. **Kein Scope-Creep:** Liegt der Diff exakt im deklarierten Crate/Span Scope?
-
-### Schritt 3: Review-Ergebnis
-- **STATUS: PASS** → Freigabe zur Merge-Empfehlung mit REVIEW-PASS Kommentar.
-- **STATUS: FAIL** → Ablehnung mit konkreten Gegenbefunden. Erzeugt automatisch einen neuen PLAN-Eintrag für die Nachbesserung.
-
-${DOD(crate)}`;
-},
-
 
 audit: (crate, p, showPar) => {
   const cmds = p.audit_cmds || '';
@@ -3236,7 +2921,7 @@ ${ROLE_LOCK_BLOCK('auditor', crate)}
 ### Schritt 1: Prüf-Kandidaten finden
 \`\`\`bash
 grep -rn "ANCHOR\\[.*\\] STATUS:IN-PROGRESS" crates/${crate}/src/ --include="*.rs"
-grep -rn "REVIEW-PASS\\[" crates/${crate}/src/ --include="*.rs" | grep -B1 "ANCHOR"
+grep -rn "REVIEW-PASS\\[" crates/${crate}/src/ --include="*.rs" | grep -B1 "ANCHOR" 
 # Zähle vorhandene REVIEW-PASS-Einträge pro ANCHOR-ID — wähle einen mit < 2 (bzw. < 3 bei security/unsafe) Pässen
 \`\`\`
 
@@ -4321,171 +4006,6 @@ function initSubsystems() {
     </div>`).join('');
 }
 
-function setEbene(mode) {
-  SS.mode = mode;
-  ['crate','subsystem','eigenbau','prozess'].forEach(m => {
-    const tab = document.getElementById('tab-ebene-' + m);
-    if (tab) tab.classList.toggle('on', m === mode);
-  });
-  if (mode === 'crate') {
-    unlockCrateTaskCards();
-    document.getElementById('c-subsystem')?.classList.add('locked');
-    document.getElementById('c-eigenbau')?.classList.add('locked');
-    document.getElementById('c-prozess')?.classList.add('locked');
-  } else if (mode === 'subsystem') {
-    lockCrateTaskCards();
-    document.getElementById('c-subsystem')?.classList.remove('locked');
-    document.getElementById('c-eigenbau')?.classList.add('locked');
-    document.getElementById('c-prozess')?.classList.add('locked');
-  } else if (mode === 'eigenbau') {
-    lockCrateTaskCards();
-    document.getElementById('c-subsystem')?.classList.add('locked');
-    document.getElementById('c-eigenbau')?.classList.remove('locked');
-    document.getElementById('c-prozess')?.classList.add('locked');
-  } else if (mode === 'prozess') {
-    lockCrateTaskCards();
-    document.getElementById('c-subsystem')?.classList.add('locked');
-    document.getElementById('c-eigenbau')?.classList.add('locked');
-    document.getElementById('c-prozess')?.classList.remove('locked');
-  }
-}
-
-function initEigenbau() {
-  const grid = document.getElementById('eigenbau-grid');
-  if (!grid) return;
-  grid.innerHTML = EIGENBAU_COMPONENTS.map(e => `
-    <div class="subsys-card eigenbau-card" data-id="${e.id}" onclick="selEigenbau('${e.id}')">
-      <div class="sub-name">${e.icon} ${e.name}</div>
-      <div class="sub-crate">Owner: ${e.crate} · Review: ${e.review_focus}</div>
-      <div class="sub-desc">${e.desc}</div>
-    </div>`).join('');
-}
-
-function initProcess() {
-  const grid = document.getElementById('prozess-grid');
-  if (!grid) return;
-  grid.innerHTML = PROCESS_OBJECTS.map(p => `
-    <div class="subsys-card prozess-card" data-id="${p.id}" onclick="selProcess('${p.id}')">
-      <div class="sub-name">${p.icon} ${p.name}</div>
-      <div class="sub-crate">Typ: ${p.type} · Rolle: ${p.role}</div>
-      <div class="sub-desc">${p.desc}</div>
-    </div>`).join('');
-}
-
-function selEigenbau(id) {
-  setEbene('eigenbau');
-  SS.crate = null;
-  SS.task = null;
-  SS.subsystem = null;
-  SS.subsystemTask = null;
-  SS.process = null;
-  SS.processTask = null;
-  SS.eigenbau = id;
-  SS.eigenbauTask = null;
-
-  const eb = EIGENBAU_COMPONENTS.find(x => x.id === id);
-  document.querySelectorAll('.eigenbau-card').forEach(c => c.classList.toggle('on', c.dataset.id === id));
-  document.getElementById('cv-eigenbau').textContent = `${eb.icon} ${eb.name} (${eb.crate})`;
-
-  const warnEl = document.getElementById('seq-warn-eigenbau');
-  if (warnEl) {
-    if (eb.depends_on && eb.depends_on.length > 0) {
-      const depNames = eb.depends_on.map(d => {
-        const item = EIGENBAU_COMPONENTS.find(x => x.id === d);
-        return item ? item.name : d;
-      }).join(', ');
-      warnEl.style.display = 'block';
-      warnEl.innerHTML = `⚠️ <strong>SEQUENZIERUNGSHINWEIS (depends_on):</strong><br>` +
-        `Diese Komponente hat eine gelistete Abhängigkeit zu: <strong>${depNames}</strong>.<br>` +
-        `Empfohlener SDLC-Ablauf: <code>PLAN(${eb.id})</code> → <code>IMPLEMENT</code> → <code>REVIEW (${eb.review_focus})</code> in exakter Reihenfolge!`;
-    } else {
-      warnEl.style.display = 'none';
-    }
-  }
-
-  renderEigenbauTaskGrid(eb);
-  generate();
-}
-
-function selEigenbauTask(taskId) {
-  SS.eigenbauTask = taskId;
-  document.querySelectorAll('.eigenbau-task-item').forEach(t => t.classList.toggle('on', t.dataset.task === taskId));
-  generate();
-}
-
-function renderEigenbauTaskGrid(eb) {
-  const el = document.getElementById('eigenbau-task-grid');
-  if (!el) return;
-  const tasks = [
-    { id: 'plan', label: '1. PLAN', sub: 'TODO-Marker setzen + Plan-Text (kein Fix-Code)' },
-    { id: 'implement', label: '2. IMPLEMENT', sub: 'TODO-Marker abarbeiten → DONE/BLOCKED' },
-    { id: 'review', label: '3. REVIEW', sub: `Diff-only Review + Korrektheitsnachweis (${eb.review_focus})` },
-    { id: 'audit', label: 'Component Audit', sub: `Scan across spans: ${eb.spans.join(', ')}` },
-    { id: 'fix', label: 'Component Fix', sub: 'Direkte Fehlerbehebung mit APM-Matrix' }
-  ];
-  el.innerHTML = `<div style="font-size:10px;font-weight:700;color:var(--purple);margin-bottom:6px;margin-top:8px">SDLC TASK TRIAS FÜR ${eb.name.toUpperCase()} WÄHLEN:</div>` +
-    `<div class="subsys-task-grid">` + tasks.map(t => `
-      <div class="subsys-card eigenbau-task-item" data-task="${t.id}" onclick="selEigenbauTask('${t.id}')">
-        <div class="sub-name">⚙️ ${t.label}</div>
-        <div class="sub-desc">${t.sub}</div>
-      </div>
-    `).join('') + `</div>`;
-}
-
-function selProcess(id) {
-  setEbene('prozess');
-  SS.crate = null;
-  SS.task = null;
-  SS.subsystem = null;
-  SS.subsystemTask = null;
-  SS.eigenbau = null;
-  SS.eigenbauTask = null;
-  SS.process = id;
-  SS.processTask = null;
-
-  const po = PROCESS_OBJECTS.find(x => x.id === id);
-  document.querySelectorAll('.prozess-card').forEach(c => c.classList.toggle('on', c.dataset.id === id));
-  document.getElementById('cv-prozess').textContent = `${po.icon} ${po.name}`;
-
-  renderProcessTaskGrid(po);
-  generate();
-}
-
-function selProcessTask(taskId) {
-  SS.processTask = taskId;
-  document.querySelectorAll('.prozess-task-item').forEach(t => t.classList.toggle('on', t.dataset.task === taskId));
-  generate();
-}
-
-function renderProcessTaskGrid(po) {
-  const el = document.getElementById('prozess-task-grid');
-  if (!el) return;
-  let tasks = [];
-  if (po.type === 'gate') {
-    tasks = [
-      { id: 'gate', label: 'Gate Hardening & Fix', sub: 'Ausschließlich Gate-Skripte / Workflows — Rot/Grün-Simulation Pflicht' },
-      { id: 'plan', label: 'Gate Plan', sub: 'Analyse & Inline TODO-Planung' },
-      { id: 'review', label: 'Gate Review', sub: 'Unabhängige Verifikation des Gate-Diffs' }
-    ];
-  } else if (po.type === 'docs') {
-    tasks = [
-      { id: 'docs_sync', label: 'Governance & Arch Doku Sync', sub: 'NUR Doku-Dateien (README, DECISIONS, WORKING_STATE, CHANGELOG) — kein Code-Edit' }
-    ];
-  } else if (po.type === 'process') {
-    tasks = [
-      { id: 'commit_review', label: 'Commit History & Claim Audit', sub: 'git log Audit — Abgleich mit Claim-Crate Pflichtzeilen und Scope-Creep Detection' }
-    ];
-  }
-  el.innerHTML = `<div style="font-size:10px;font-weight:700;color:var(--gold);margin-bottom:6px;margin-top:8px">PROZESS-TASK FÜR ${po.name.toUpperCase()} WÄHLEN:</div>` +
-    `<div class="subsys-task-grid">` + tasks.map(t => `
-      <div class="subsys-card prozess-task-item" data-task="${t.id}" onclick="selProcessTask('${t.id}')">
-        <div class="sub-name">⚙️ ${t.label}</div>
-        <div class="sub-desc">${t.sub}</div>
-      </div>
-    `).join('') + `</div>`;
-}
-
-
 function buildMandatoryBootstrap(claimCrate, taskId) {
   return `---MANDATORY BOOTSTRAP (nicht überspringen, nicht kürzen)---
 [SCHRITT 0 — Inventar-Realitätsabgleich, IMMER ZUERST]
@@ -4546,156 +4066,7 @@ function generateSubsystemPrompt() {
   if (sTask) sTask.textContent = 'Subsystem-Audit';
 }
 
-
-function generateEigenbauPrompt() {
-  if (!SS.eigenbau || !SS.eigenbauTask) return;
-  const eb = EIGENBAU_COMPONENTS.find(x => x.id === SS.eigenbau);
-  if (!eb) return;
-
-  const claimCrate = eb.crate;
-  const taskId = generateTaskId(`eigenbau_${eb.id}_${SS.eigenbauTask}`);
-  const mandatoryBootstrap = buildMandatoryBootstrap(claimCrate, taskId);
-
-  let body = `${PREAMBLE(claimCrate)}${FULL_PROTOCOL(claimCrate)}
-${ROLE_LOCK_BLOCK(SS.eigenbauTask === 'plan' ? 'planer' : (SS.eigenbauTask === 'review' ? 'reviewer' : 'implementer'), claimCrate)}
-
-# EIGENBAU-SPEZIALISTEN-PROMPT: ${eb.name.toUpperCase()}
-**Spezialisten-Rolle:** ${eb.role}
-**Dateipfade (Spans):** ${eb.spans.join(', ')}
-**Pflicht-Review-Fokus:** ${eb.review_focus}
-
----
-
-## Task: ${SS.eigenbauTask.toUpperCase()} für ${eb.name}
-
-`;
-
-  if (SS.eigenbauTask === 'plan') {
-    body += `### Phase 1: PLAN (TODO-Marker & Architektur-Entwurf)
-1. Liest alle Dateien in den Spans:
-   ${eb.spans.map(s => `cat ${s} 2>/dev/null | head -100`).join('\n   ')}
-2. Blende jegliche Code-Anpassung aus. Platziere ausschließlich Kommentare:
-   \`// TODO(memfuse-plan): <Beschreibung> [ref:${eb.id}]\`
-3. Erstelle einen detaillierten Plan inklusive Risikobetrachtung für: ${eb.desc}.
-4. Keine funktionalen Code-Änderungen in dieser Session!`;
-  } else if (SS.eigenbauTask === 'implement') {
-    body += `### Phase 2: IMPLEMENT (Abarbeitung von TODO-Markern)
-1. Finde alle geplanten Marker:
-   grep -rn "TODO(memfuse-plan)" ${eb.spans.join(' ')}
-2. Setze die geforderte Logik um.
-3. Markiere abgearbeitete Stellen als:
-   \`// DONE(memfuse-impl): <Lösung> [ref:${eb.id}]\`
-   oder \`// BLOCKED(memfuse-impl): <Grund> [ref:${eb.id}]\`
-4. Führe Verifizierungstests durch:
-   cargo check --workspace --all-targets --locked
-   cargo test -p ${eb.crate} --all-features`;
-  } else if (SS.eigenbauTask === 'review') {
-    body += `### Phase 3: REVIEW (Komponentenspezifischer Korrektheitsnachweis)
-**Pflicht-Nachweis für ${eb.id}:**
-`;
-    if (eb.review_focus === 'crash-simulation') {
-      body += `
-- **Crash-Simulation (LSM/WAL):**
-  Prüfe fsync-Disziplin und Intent-Files. Garantiere, dass ein plötzlicher Abbruch (\`kill -9\`) mitten im Rollback oder Log-Append nicht zu Datenverlust oder unvollständigen HMAC-Chains führt.
-  Führe Fault-Injection-Tests aus: \`cargo test -p memfuse-store --test fault_injection_recovery\`.`;
-    } else if (eb.review_focus === 'non-constant-output-proof') {
-      body += `
-- **Nicht-Konstanz-Beweis (Candle Tensor):**
-  Beweise numerisch, dass zwei fachlich unterschiedliche Prompts/Texte signifikant unterschiedliche Outputs liefern (Cosine-Distanz > Schwellwert).
-  Prüfe, dass keine Platzhalter (\`Ok(vec![0.0]\` oder \`Ok(format!("[Candle]")\`) zurückgegeben werden!
-  Prüfe GASP Wortgrenzen-Matching (z.B. "5" darf nicht "2025" matchen).`;
-    } else if (eb.review_focus === 'split-brain-simulation') {
-      body += `
-- **Split-Brain-Simulation (KV-Bridge):**
-  Simulatorisch prüfen: Was passiert, wenn nach Vektor-Index-Anpassung vor LSM-Commit ein Absturz erfolgt?
-  Überprüfe den CheckpointPinGuard-Mechanismus in \`crates/memfuse-db/src/collection/search.rs\`.`;
-    } else if (eb.review_focus === 'nan-and-tie-cases') {
-      body += `
-- **NaN- & Tie-Case Verifikation (RRF Fusion):**
-  Überprüfe f32 total_cmp Nutzung in \`crates/memfuse-db/src/fusion.rs\`.
-  Stelle sicher, dass NaN-Scores von BM25/Vektor-Signalen abgefangen werden und RRF-Ränge deterministisch sortieren.`;
-    }
-  } else if (SS.eigenbauTask === 'audit') {
-    body += `### Component Tiefen-Audit
-Inspeziere alle Dateien in den Spans (${eb.spans.join(', ')}) auf Architekturlücken, Memory Leaks, Lock Contention und Invarianten-Verletzungen.
-Erstelle detaillierte AI-TAG Befunde.`;
-  } else if (SS.eigenbauTask === 'fix') {
-    body += `### Component Direct Fix
-Arbeite offene Befunde für ${eb.name} ab unter Beachtung aller APM-Regeln und Invarianten.`;
-  }
-
-  body += `\n\n${DOD(claimCrate)}`;
-
-  _rawPrompt = mandatoryBootstrap + body;
-  document.getElementById('pt-empty').style.display = 'none';
-  document.getElementById('pt-output').style.display = 'block';
-  document.getElementById('pt-output').textContent = _rawPrompt;
-  const chars = _rawPrompt.length.toLocaleString('de');
-  document.getElementById('ochar').textContent = chars + ' Z.';
-  document.getElementById('ochar2').textContent = chars + ' Zeichen';
-}
-
-function generateProcessPrompt() {
-  if (!SS.process || !SS.processTask) return;
-  const po = PROCESS_OBJECTS.find(x => x.id === SS.process);
-  if (!po) return;
-
-  const claimCrate = 'memfuse-core';
-  const taskId = generateTaskId(`process_${po.id}_${SS.processTask}`);
-  const mandatoryBootstrap = buildMandatoryBootstrap(claimCrate, taskId);
-
-  let body = `${PREAMBLE(claimCrate)}${FULL_PROTOCOL(claimCrate)}
-${ROLE_LOCK_BLOCK('prozess_ingenieur', claimCrate)}
-
-# PROZESS-OBJEKT-PROMPT: ${po.name.toUpperCase()}
-**Typ:** ${po.type}
-**Spezialisten-Rolle:** ${po.role}
-**Dateipfade (Spans):** ${po.spans.join(', ')}
-
----
-
-## Task: ${SS.processTask.toUpperCase()} für ${po.name}
-
-`;
-
-  if (po.type === 'gate') {
-    body += `### Gate Maintenance & Hardening
-1. Inspeziere den IST-Zustand des Gates:
-   ${po.spans.map(s => `cat ${s} 2>/dev/null | head -100`).join('\n   ')}
-2. **Rot/Grün-Simulation (Pflicht):**
-   - Baue lokal einen künstlichen Regressionsfall ein (z. B. unwrap Hinzufügen oder Fehler im Workflow-Kommando).
-   - Prüfe, dass das Gate zuverlässig ROT wird.
-   - Entferne den Testfall wieder und verifiziere, dass das Gate GRÜN wird.
-3. **Ausschluss:** Ändere AUF KEINEN FALL Produktionscode außerhalb der Gate-Skripte!`;
-  } else if (po.type === 'docs') {
-    body += `### Governance & Doku Synchronization
-1. Synchronisiere den Dokumentationsstand nach Merges:
-   - Prüfe \`DECISIONS.md\`, \`WORKING_STATE.md\`, \`docs/CHANGELOG.md\`, \`README.md\`.
-   - Halte den aktuellen Status und Architektur-Stand synchron mit den jüngsten Commits.
-2. **Ausschluss:** Ändere AUF KEINEN FALL Quellcode (.rs, .py, etc.)! Reiner Doku-Scope!`;
-  } else if (po.type === 'process') {
-    body += `### Commit History & Claim Audit
-1. Führe ein Audit der jüngsten Commits durch:
-   git log --oneline --since="7 days ago" -n 30
-2. Überprüfe für jeden Merge-Commit:
-   - Stimmen die PR-Bodies und \`Claim-Crate:\`-Pflichtzeilen mit den tatsächlich geänderten Dateien überein?
-   - Identifiziere etwaigen Scope-Creep (Dateien außerhalb des deklarierten Claims).
-3. Erstelle einen Audit-Bericht ohne selbst Code-Fixes durchzuführen.`;
-  }
-
-  body += `\n\n${DOD(claimCrate)}`;
-
-  _rawPrompt = mandatoryBootstrap + body;
-  document.getElementById('pt-empty').style.display = 'none';
-  document.getElementById('pt-output').style.display = 'block';
-  document.getElementById('pt-output').textContent = _rawPrompt;
-  const chars = _rawPrompt.length.toLocaleString('de');
-  document.getElementById('ochar').textContent = chars + ' Z.';
-  document.getElementById('ochar2').textContent = chars + ' Zeichen';
-}
 function generate() {
-  if (SS.eigenbau) { generateEigenbauPrompt(); return; }
-  if (SS.process) { generateProcessPrompt(); return; }
   if (SS.subsystem) { generateSubsystemPrompt(); return; }
   if (!SS.task) return;
 
@@ -5203,7 +4574,7 @@ function resetProjectData() {
 
 // INIT
 initCrates();
-initSubsystems(); initEigenbau(); initProcess();
+initSubsystems();
 initAPM();
 renderComponents();
 renderInventoryBadge();
