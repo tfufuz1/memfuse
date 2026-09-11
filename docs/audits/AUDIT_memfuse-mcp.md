@@ -4,55 +4,7 @@
 **Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
 **Audit Target**: `crates/memfuse-mcp/` (MemFuse Model Context Protocol Server)
 **System Architecture Constraint**: ADR-010 (Exklusiver stdio IPC Transport, HTTP/axum/TCP Streng Verboten)
-**Session ID**: 1fa52dd6
-
----
-
-## 18. Session Audit Log (2026-09-10 / Session: 1fa52dd6)
-
-**Datum**: 2026-09-10
-**Session**: 1fa52dd6
-**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
-
-### Durchgeführte Aktionen:
-1. **Schritt 0 — Inventar-Realitätsabgleich**:
-   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 7 Dateien: `bin/memfuse-mcp-server.rs`, `config.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
-   - **Befund**: `Inventarabgleich: keine Abweichung, Stand 2026-09-10 bestätigt`.
-2. **Härtung & Re-Verifikation**:
-   - Stdio Transport Isolation (ADR-010): Keinerlei TCP/HTTP/axum Net-Sockets in `memfuse-mcp` nachgewiesen.
-   - Message & Query Bounds (`MAX_RPC_BYTES` = 4 MB, `MAX_SEARCH_QUERY_BYTES` = 64 KB) sowie Line Draining verifiziert.
-   - Sandbox Write Authorization (`allow_db_writes: false` default) & Zeroize Drop discipline verifiziert.
-   - Prompt Injection Guard & Untrusted Content Provenance Tagging verifiziert.
-3. **Workspace- & Gate-Verifikation**:
-   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
-   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
-   - `cargo fmt --check -p memfuse-mcp` -> OK
-   - `cargo test -p memfuse-mcp --all-features` -> 52 unit tests passed, 27 integration tests passed (79 total)
-   - `cargo check --workspace --exclude memfuse-tauri` -> OK
-
----
-
-## 18. Session Audit Log (2026-09-10 / Session: 1fa52dd6)
-
-**Datum**: 2026-09-10
-**Session**: 1fa52dd6
-**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
-
-### Durchgeführte Aktionen:
-1. **Schritt 0 — Inventar-Realitätsabgleich**:
-   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 7 Dateien: `bin/memfuse-mcp-server.rs`, `config.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
-   - **Befund**: `Inventarabgleich: keine Abweichung, Stand 2026-09-10 bestätigt`.
-2. **Härtung & Re-Verifikation**:
-   - Stdio Transport Isolation (ADR-010): Keinerlei TCP/HTTP/axum Net-Sockets in `memfuse-mcp` nachgewiesen.
-   - Message & Query Bounds (`MAX_RPC_BYTES` = 4 MB, `MAX_SEARCH_QUERY_BYTES` = 64 KB) sowie Line Draining verifiziert.
-   - Sandbox Write Authorization (`allow_db_writes: false` default) & Zeroize Drop discipline verifiziert.
-   - Prompt Injection Guard & Untrusted Content Provenance Tagging verifiziert.
-3. **Workspace- & Gate-Verifikation**:
-   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
-   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
-   - `cargo fmt --check -p memfuse-mcp` -> OK
-   - `cargo test -p memfuse-mcp --all-features` -> 52 unit tests passed, 27 integration tests passed (79 total)
-   - `cargo check --workspace --exclude memfuse-tauri` -> OK
+**Session ID**: ae8c2fb9
 
 ---
 
@@ -267,29 +219,6 @@ Sämtliche ausgehenden `JsonRpcResponse`-Fehlerobjekte wurden auditiert:
    - `cargo test -p memfuse-mcp --all-features` -> 34 unit tests passed, 25 integration tests passed
 
 ---
-
-## 18. Session Audit Log (2026-09-10 / Session: 1fa52dd6)
-
-**Datum**: 2026-09-10
-**Session**: 1fa52dd6
-**Auditor**: Senior Rust Protocol Engineer — stdio JSON-RPC, Sandbox, DoS-Schutz
-
-### Durchgeführte Aktionen:
-1. **Schritt 0 — Inventar-Realitätsabgleich**:
-   - `find crates/memfuse-mcp/src -name "*.rs"` ergab 7 Dateien: `bin/memfuse-mcp-server.rs`, `config.rs`, `lib.rs`, `prompt_injection.rs`, `protocol.rs`, `sandbox.rs`, `tests.rs`.
-   - **Befund**: `Inventarabgleich: keine Abweichung, Stand 2026-09-10 bestätigt`.
-2. **Härtung & Re-Verifikation**:
-   - Stdio Transport Isolation (ADR-010): Keinerlei TCP/HTTP/axum Net-Sockets in `memfuse-mcp` nachgewiesen.
-   - Message & Query Bounds (`MAX_RPC_BYTES` = 4 MB, `MAX_SEARCH_QUERY_BYTES` = 64 KB) sowie Line Draining verifiziert.
-   - Sandbox Write Authorization (`allow_db_writes: false` default) & Zeroize Drop discipline verifiziert.
-   - Prompt Injection Guard & Untrusted Content Provenance Tagging verifiziert.
-3. **Workspace- & Gate-Verifikation**:
-   - `cargo check -p memfuse-mcp --all-features` -> 0 Fehler, 0 Warnungen
-   - `cargo clippy -p memfuse-mcp -- -D warnings` -> 0 Findings
-   - `cargo fmt --check -p memfuse-mcp` -> OK
-   - `cargo test -p memfuse-mcp --all-features` -> 52 unit tests passed, 27 integration tests passed (79 total)
-   - `cargo check --workspace --exclude memfuse-tauri` -> OK
-
 
 ## 16. Session Audit Log (2026-09-09 / Session: fdf816df)
 

@@ -580,7 +580,7 @@ impl LsmStorage {
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
     // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
-        // AI-TAG[SMELL][MINOR] Implement recovery in P1 fix/lsm-startup-recovery (ID: AGT-STORE-nc3recov) (TS: 2026-09-11T02:00:00Z) (SESSION: 1fa52dd6)
+        // AI-TAG[SMELL][MINOR] Implement recovery in P1 fix/lsm-startup-recovery (ID: AGT-STORE-nc3recov) (TS: 2026-09-11T03:00:00Z) (SESSION: 1fa52dd6)
         // NC-3: Write crash-atomic rollback intent file before any mutation.
         // On recovery in new(), this file signals that rollback must be completed.
         let intent_path = self.config.path.join(
@@ -4122,24 +4122,24 @@ mod tests {
                 .await
                 .expect("create storage");
             let tx1 = TxId::new(1);
-            storage.put(tx1, b"key1", b"val1").await.expect("put tx1");
-            storage.commit(tx1).await.expect("commit tx1");
-            storage.force_flush().await.expect("flush tx1");
+            storage.put(tx1, b"key1", b"val1").await.unwrap();
+            storage.commit(tx1).await.unwrap();
+            storage.force_flush().await.unwrap();
 
             let tx2 = TxId::new(2);
-            storage.put(tx2, b"key2", b"val2").await.expect("put tx2");
-            storage.commit(tx2).await.expect("commit tx2");
+            storage.put(tx2, b"key2", b"val2").await.unwrap();
+            storage.commit(tx2).await.unwrap();
         }
 
         // Create a dummy second WAL file wal-1.log and sidecar wal-0.log.uuid
         let uuid_path = tmp.path().join("wal-0.log.uuid");
         tokio::fs::write(&uuid_path, b"test-uuid-content")
             .await
-            .expect("write uuid sidecar");
+            .unwrap();
         let wal1_path = tmp.path().join("wal-1.log");
         tokio::fs::write(&wal1_path, b"")
             .await
-            .expect("write wal1");
+            .unwrap();
         assert!(uuid_path.exists(), "Dummy .uuid file must exist before startup cleanup");
 
         // 2. Second run: startup sees wal-0.log (old) and wal-1.log (active).
