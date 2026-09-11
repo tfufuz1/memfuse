@@ -78,3 +78,8 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+## Session Audit Entry — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- **Scope:** `crates/memfuse-db/src/fusion.rs`, `crates/memfuse-db/tests/fusion_edge_cases_test.rs`
+- **Topic:** Eigenbau-Spezialist RRF Rank Fusion & Numerik
+- **Status:** All unit tests passing, RRF tie-breaking deterministic ID order verified (`test_rrf_tie_breaking_multiple_documents_same_score`), feature gating and k=0 boundary conditions hardened.
