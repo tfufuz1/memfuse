@@ -65,6 +65,7 @@ In `replicator.rs` implementiert `ReplicatorState` das Multiplicative Weights Up
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `AGT-CALIBRATION-16f90c35` | `isotonic.rs:97` | `AI-TAG[SMELL]` | `MAJOR` | RESOLVED (SESSION: `74eb6216`) | PAVA duplicate raw score observation pooling: Identische `raw_score`-Beobachtungen mit unterschiedlichen Ergebnissen (0.0 vs 1.0) erzeugen unzusammengefasste Blöcke mit gleichem X-Wert in `cached_model`, wenn sie in aufsteigender Ergebnisfolge sortiert werden (`last_avg <= prev_avg` ist false bei 1.0 <= 0.0). `binary_search_by` kann dadurch nicht-deterministisch den niedrigen oder hohen Block zurückgeben. |
 | `AGT-CALIBRATION-fca75496` | `pid.rs:57` | `AI-TAG[SMELL]` | `MAJOR` | RESOLVED (SESSION: `74eb6216`) | PID controller `measured_latency_ms` validation: In `update()` wird `measured_latency_ms` nicht auf `is_finite()` geprüft. Eine NaN- oder Inf-Latenzmessung propagiert in `self.integral` und `self.prev_error` und korrumpiert den Reglerzustand dauerhaft. |
+| `AGT-CALIBRATION-b4b9ce8f` | `isotonic.rs:201` | `AI-TAG[SMELL]` | `MINOR` | RESOLVED (SESSION: `9bff4e47`) | Cache fitted PAVA step function and rebuild PAVA model only when new observations are recorded (debounced dirty flag). |
 
 ---
 

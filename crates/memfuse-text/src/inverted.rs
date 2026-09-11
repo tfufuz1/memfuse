@@ -568,10 +568,16 @@ impl<S: StorageEngine> InvertedIndex<S> {
                     None => continue,
                 };
                 let doc_id = DocId::new(doc_id_raw);
+                let tf = u32::from_le_bytes(tf_bytes);
+                valid_postings.push((doc_id, tf));
+            }
 
-                let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid tf length in posting list".into())
-                })?);
+            let df = valid_postings.len() as u32;
+            if df == 0 {
+                continue;
+            }
+
+            for (doc_id, tf) in valid_postings {
 
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
