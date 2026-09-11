@@ -66,6 +66,70 @@ async fn test_cross_signal_isolation_single_run() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_graph_signal_snapshot_isolation_with_hops_strategy() -> Result<()> {
+    use memfuse_core::GraphTraversalStrategy;
+
+    let dir = tempdir().unwrap();
+    let config = MemFuseConfig {
+        dimension: 4,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+    let db = MemFuse::open_with_config(dir.path(), config).await?;
+    let collection = db.collection("default").await?;
+
+    // Step 1: Insert doc-1 and doc-2 at Tx 1 and relate them
+    collection
+        .insert(
+            "doc-1",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "graph node 1"})),
+        )
+        .await?;
+    collection
+        .insert(
+            "doc-2",
+            &[0.0, 1.0, 0.0, 0.0],
+            Some(json!({"text": "graph node 2"})),
+        )
+        .await?;
+
+    collection.relate("doc-1", "doc-2", "connected_to").await?;
+
+    // Pin snapshot sequence N after e1 -> e2 relation
+    let seq_n = collection.snapshot_seq().await?;
+
+    // Step 2: Insert doc-3 and relate doc-2 -> doc-3 at Tx > seq_n
+    collection
+        .insert(
+            "doc-3",
+            &[0.0, 0.0, 1.0, 0.0],
+            Some(json!({"text": "graph node 3"})),
+        )
+        .await?;
+    collection.relate("doc-2", "doc-3", "connected_to").await?;
+
+    // Step 3: Execute hybrid search pinned at seq_n with Hops strategy (max_hops = 2) starting from e1
+    let query = memfuse_core::HybridQueryBuilder::new()
+        .with_text_query("graph node 1")
+        .with_k(10)
+        .with_graph_strategy(GraphTraversalStrategy::Hops { max_hops: 2 })
+        .build()?;
+
+    let results = collection.hybrid_search_with_query_at(&query, seq_n).await?;
+
+    // Verifiziere:
+    // Im Snapshot seq_n existiert nur e1 -> e2. e2 -> e3 existiert erst nach seq_n.
+    // Daher darf doc-3 im 2-hop Traversal von e1 aus NICHT enthalten sein!
+    assert!(
+        !results.iter().any(|r| r.id == "doc-3"),
+        "doc-3 (added post-snapshot seq_n) must NOT be reachable in snapshot-isolated 2-hop graph search"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_hybrid_search_consistent_snapshot_across_signals() -> Result<()> {
     let dir = tempdir().unwrap();
     let config = MemFuseConfig {
