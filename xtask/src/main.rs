@@ -56,6 +56,7 @@ mod check_jules_context_freshness;
 mod check_phantom_files;
 mod check_placeholder_refs;
 mod check_recall_stability;
+mod check_stale_tags;
 mod check_type_registry;
 mod check_unwrap_baseline_trend;
 mod check_vetoes;
@@ -2104,9 +2105,15 @@ fn main() {
                 process::exit(1);
             }
         }
-        "check-adr-deadlines" => {
-            if let Err(e) = check_adr_deadlines::check_adr_deadlines() {
-                eprintln!("❌ check-adr-deadlines failed: {}", e);
+        "check-stale-tags" => {
+            let threshold_days = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("--days="))
+                .and_then(|val| val.parse::<i64>().ok())
+                .unwrap_or(60);
+            let strict = args.iter().any(|arg| arg == "--strict");
+            if let Err(e) = check_stale_tags::run_check_stale_tags(threshold_days, strict) {
+                eprintln!("❌ check-stale-tags failed: {}", e);
                 process::exit(1);
             }
         }
@@ -2332,7 +2339,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-phantom-files, check-doc-references, check-audit-duplication, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim, check-adr-deadlines");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-stale-tags [--days=N] [--strict], check-phantom-files, check-doc-references, check-audit-duplication, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim, check-adr-deadlines");
             process::exit(1);
         }
     }
