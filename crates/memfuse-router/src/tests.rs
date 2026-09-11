@@ -2966,7 +2966,7 @@ mod tests {
         // Test response returning result object without "answer" key
         let profile_json_obj = SlmProfile::new(
             "test-json-obj",
-            "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"custom_key\":\"val\"}}'",
+            "cat > /dev/null; echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"custom_key\":\"val\"}}'",
             vec![],
             TokenBudget::default(),
             0.5,
