@@ -295,6 +295,7 @@ impl LsmStorage {
                 // to prevent wal-0.log collision on next flush after legacy migration.
                 wal_files.push((0, entry.path()));
                 // Update max_wal_id to at least 0 so flush_counter initializes to 1
+                // AI-TAG[SMELL][MINOR] Simplify map_or(0, |m| m) to unwrap_or(0) to resolve clippy::map_or_identity warning. (ID: AGT-STORE-cbd72ab9) (TS: 2026-09-11T10:21:34Z) (SESSION: 31ada253)
                 max_wal_id = Some(max_wal_id.map_or(0, |m| m));
             }
         }
@@ -3643,6 +3644,7 @@ mod tests {
                     let val = storage_clone.get(key.as_bytes()).await.unwrap();
                     let elapsed = req_start.elapsed();
                     assert!(val.is_some());
+                    // AI-TAG[FLAKY][MINOR] 5ms threshold in test_concurrent_get_and_flush_latency is susceptible to thread contention under parallel test runs (--test-threads=8). Consider relaxing latency bound to 20ms or using adaptive threshold. (ID: AGT-STORE-1e73ead8) (TS: 2026-09-11T10:21:34Z) (SESSION: 31ada253)
                     assert!(
                         elapsed < std::time::Duration::from_millis(5),
                         "get() took {:?}, exceeding 5 ms latency threshold under concurrent flush",

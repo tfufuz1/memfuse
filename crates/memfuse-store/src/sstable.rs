@@ -1,3 +1,10 @@
+// FILE-CONTEXT
+// STAND: 2026-09-11T10:21:34Z (SESSION: 31ada253)
+// ZWECK: Immutables SSTable Format (Data Blocks + Index Block + Bloom Filter)
+// INVARIANTEN: Atomares Erstellen via .tmp und rename(); Block-Level Random Access via pread_exact
+// NICHT-OFFENSICHTLICH: Parent-Directory Sync nach rename zwingend erforderlich
+// SIEHE AUCH: lsm.rs, compaction.rs, DECISIONS.md
+
 //! SSTable (Sorted String Table) implementation.
 //!
 //! SSTables are persistent, immutable files containing sorted key-value pairs.
