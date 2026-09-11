@@ -31,7 +31,7 @@
 - **Status:** Vollständig gelesen, analysiert und per Conformance-Test (`tests/embedding_provider_conformance.rs`) abgedeckt.
 
 ### Invarianten- & Sicherheits-Prüfung
-- **Zero Unsafe:** `#![forbid(unsafe_code)]` konform (0 `unsafe` Blöcke in `src/`).
+- **Zero Unsafe:** `#![forbid(unsafe_code)]` konform (0 `unsafe` Blöcke in `src/`; Hinweis zur Historie: Bis zum Fix am 2026-09-11 lag nur ein ungesicherter Ist-Zustand mit 0 `unsafe`-Blöcken vor; das `#![forbid(unsafe_code)]`-Attribut wurde am 2026-09-11 in `crates/memfuse-candle/src/lib.rs` nachgerüstet und wird seitdem compiler-seitig erzwungen).
 - **Zero Production Unhandled Panics:** 0 `.unwrap()` oder `.expect()` Aufrufe im Produktionscode außerhalb von `#[cfg(test)]`-Blöcken.
 - **FILE-CONTEXT Header:** Alle 7 Quelldateien besitzen aktuelle `FILE-CONTEXT`-Header.
 
@@ -95,6 +95,7 @@
 
 ### Refactoring Details
 - **Unsafe Code Elimination:** Refactored `BertEmbedModel::load` in `crates/memfuse-candle/src/embedding.rs` to replace `unsafe { VarBuilder::from_mmaped_safetensors(...) }` with safe `VarBuilder::from_buffered_safetensors(weights_bytes, ...)` using safe `std::fs::read`. Production build is now 100% unsafe-free.
+- **Compiler Guarantee Enforcement (2026-09-11 Correction):** `#![forbid(unsafe_code)]` was added to `crates/memfuse-candle/src/lib.rs`. Prior audit statements regarding `#![forbid(unsafe_code)]` compliance reflected an unsafe-free implementation status but lacked the compiler-enforced lint attribute, which is now explicitly present and verified.
 - **Header Synchronization:** Updated `FILE-CONTEXT` header in `embedding.rs` with `STAND: 2026-09-11T14:38:03Z (SESSION: ec63623e)` and explicit unsafe-free invariant annotation.
 - **Inventory Reality Check:** Confirmed 7/7 source files in `crates/memfuse-candle/src/` (`embedding.rs`, `embedding_provider.rs`, `gasp.rs`, `gguf_loader.rs`, `inference.rs`, `lib.rs`, `model_registry.rs`) are fully accounted for. Documented `embedding_provider.rs` inventory drift relative to legacy snapshot.
 - **Verification Results:** 29/29 tests passed cleanly across unit, integration, and proptest suites. Zero clippy warnings with `-D warnings` and zero format diffs.

@@ -3,7 +3,7 @@ use std::process::Command;
 
 fn main() {
     let schema_path = "../../schemas/memfuse.fbs";
-    let out_dir = "src/ipc";
+    let out_dir = "src";
 
     if Path::new(schema_path).exists() {
         println!("cargo:rerun-if-changed={schema_path}");
@@ -27,7 +27,7 @@ fn main() {
         } else if !output_file.exists() {
             panic!("flatc not found and generated code does not exist. Please install flatbuffers compiler.");
         } else {
-            // AI-TAG[SPEC-DRIFT][MINOR] RESOLVED: flatc binary missing in environment, falling back to pre-generated ipc/memfuse_generated.rs (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d)
+            // AI-TAG[SPEC-DRIFT][MINOR] RESOLVED: flatc binary missing in environment, falling back to pre-generated src/memfuse_generated.rs (TS:2026-08-29T12:00:00Z) (SESSION: a3f29c1d)
             println!("cargo:warning=flatc not found, using existing generated code.");
         }
     }

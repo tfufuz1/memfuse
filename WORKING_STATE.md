@@ -15,7 +15,7 @@
 
 Stand letzter Prüfung: 2026-09-11
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **12 offene Tags**
+Ergebnis: **13 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
@@ -37,46 +37,48 @@ Ergebnis: **12 offene Tags**
 
 | Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
 | :--- | :---: | :---: | :--- | :--- |
-| `memfuse-core` | 0 | 10008 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 1 | 1875 | 🟢 Clean |  |
-| `memfuse-checkpoint` | 1 | 5587 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 1 | 10593 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 1 | 5068 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-text` | 1 | 5433 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-candle` | 2 | 1958 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
-| `memfuse-index` | 2 | 15787 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
-| `memfuse-ollama` | 2 | 3987 | 🟢 Clean |  |
-| `memfuse-store` | 2 | 19347 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-embed` | 3 | 1978 | 🧊 Optional |  |
-| `memfuse-db` | 4 | 28731 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
-| `memfuse-bench` | 5 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 5 | 5237 | 🟢 Clean |  |
-| `memfuse-tauri` | 5 | 6209 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
-| `memfuse-agent` | 6 | 5886 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 7 | 4403 | 🟢 Clean |  |
+| `memfuse-core-ipc-gen` | 0 | 858 | 🟢 Clean | Auto-generated FlatBuffers IPC code for MemFuse Core |
+| `memfuse-core` | 1 | 9142 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
+| `memfuse-calibration` | 2 | 1875 | 🟢 Clean |  |
+| `memfuse-checkpoint` | 2 | 5587 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
+| `memfuse-graph` | 2 | 10593 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-security` | 2 | 5068 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-text` | 2 | 5433 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-candle` | 3 | 1958 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
+| `memfuse-index` | 3 | 15787 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-ollama` | 3 | 3987 | 🟢 Clean |  |
+| `memfuse-store` | 3 | 19347 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-embed` | 4 | 1978 | 🧊 Optional |  |
+| `memfuse-db` | 5 | 28731 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-bench` | 6 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
+| `memfuse-router` | 6 | 5237 | 🟢 Clean |  |
+| `memfuse-tauri` | 6 | 6209 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
+| `memfuse-agent` | 7 | 5889 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
+| `memfuse-mcp` | 8 | 4403 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
 
 ```
-Layer 0:  memfuse-core — Core types, traits, and error handling for MemFuse
-Layer 1:  memfuse-calibration —  (deps: memfuse-core)
+Layer 0:  memfuse-core-ipc-gen — Auto-generated FlatBuffers IPC code for MemFuse Core
+Layer 1:  memfuse-core — Core types, traits, and error handling for MemFuse (deps: memfuse-core-ipc-gen)
+Layer 2:  memfuse-calibration —  (deps: memfuse-core)
           memfuse-checkpoint — Backup and snapshot management for MemFuse storage (deps: memfuse-core)
           memfuse-graph — CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) (deps: memfuse-core)
           memfuse-security — Encryption at Rest and KV-Cache Security utilities for MemFuse (deps: memfuse-core)
           memfuse-text — MemFuse — Text processing and BM25 search for Hybrid Search (deps: memfuse-core)
-Layer 2:  memfuse-candle — Native Candle GGUF ML inference backend for MemFuse (deps: memfuse-calibration, memfuse-core)
+Layer 3:  memfuse-candle — Native Candle GGUF ML inference backend for MemFuse (deps: memfuse-calibration, memfuse-core)
           memfuse-index — HNSW vector index with SIMD distance computation for MemFuse (deps: memfuse-core, memfuse-security)
           memfuse-ollama —  (deps: memfuse-calibration, memfuse-core)
           memfuse-store — LSM-Tree storage engine for MemFuse (deps: memfuse-core, memfuse-security)
-Layer 3:  memfuse-embed —  (deps: memfuse-calibration, memfuse-candle, memfuse-core)
-Layer 4:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-crypto, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)
-Layer 5:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
+Layer 4:  memfuse-embed —  (deps: memfuse-calibration, memfuse-candle, memfuse-core)
+Layer 5:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-crypto, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)
+Layer 6:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
           memfuse-tauri — DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
-Layer 6:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
-Layer 7:  memfuse-mcp —  (deps: memfuse-agent, memfuse-candle, memfuse-core, memfuse-db, memfuse-embed, memfuse-ollama, memfuse-security)
+Layer 7:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
+Layer 8:  memfuse-mcp —  (deps: memfuse-agent, memfuse-candle, memfuse-core, memfuse-db, memfuse-embed, memfuse-ollama, memfuse-security)
 ```
 
-**Aktiver Workspace-Build**: 17 Workspace Crates (16 Kern-Crates + 1 optionales Crate `memfuse-embed`).
+**Aktiver Workspace-Build**: 18 Workspace Crates (17 Kern-Crates + 1 optionales Crate `memfuse-embed`).
 <!-- AUTOGENERATED:END:FULL -->
