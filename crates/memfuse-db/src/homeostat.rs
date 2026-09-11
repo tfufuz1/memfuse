@@ -69,7 +69,9 @@ impl RerankPidController {
 
     /// Accessor for current `k_pool`.
     pub fn k_pool(&self) -> usize {
-        self.inner.current_pool_size.unwrap_or(self.inner.min_pool_size)
+        self.inner
+            .current_pool_size
+            .unwrap_or(self.inner.min_pool_size)
     }
 
     /// Accessor for `k_min`.
@@ -151,7 +153,8 @@ mod tests {
         }
 
         assert_eq!(
-            controller.k_pool(), 50,
+            controller.k_pool(),
+            50,
             "Pool size should settle at hard minimum k_min=50"
         );
     }
@@ -177,7 +180,8 @@ mod tests {
         }
 
         assert_eq!(
-            controller.k_pool(), 200,
+            controller.k_pool(),
+            200,
             "Pool size should settle at maximum k_max=200"
         );
     }
@@ -188,7 +192,8 @@ mod tests {
         // Attempt to create a controller with invalid k_min=10 (below scientific floor 50)
         let mut controller = RerankPidController::new(150.0, 10, 200, 100);
         assert_eq!(
-            controller.k_min(), 50,
+            controller.k_min(),
+            50,
             "Constructor must enforce hard floor k_min >= 50"
         );
 

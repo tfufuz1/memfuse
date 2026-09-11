@@ -460,7 +460,10 @@ mod tests {
             links: Vec::new(),
         };
         let res = validator
-            .validate_grounding("Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.", &[chunk])
+            .validate_grounding(
+                "Im Jahr 2025 betrug der Umsatz 50 Millionen Euro.",
+                &[chunk],
+            )
             .await;
         assert!(res.is_ok());
         validator.record_external_feedback(res.unwrap().score, true);

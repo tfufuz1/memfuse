@@ -116,7 +116,9 @@ async fn test_graph_signal_snapshot_isolation_with_hops_strategy() -> Result<()>
         .with_graph_strategy(GraphTraversalStrategy::Hops { max_hops: 2 })
         .build()?;
 
-    let results = collection.hybrid_search_with_query_at(&query, seq_n).await?;
+    let results = collection
+        .hybrid_search_with_query_at(&query, seq_n)
+        .await?;
 
     // Verifiziere:
     // Im Snapshot seq_n existiert nur e1 -> e2. e2 -> e3 existiert erst nach seq_n.

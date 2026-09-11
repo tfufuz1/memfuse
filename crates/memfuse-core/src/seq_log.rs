@@ -86,7 +86,9 @@ impl SequenceLog {
 
     /// Unpins a historical sequence number.
     pub fn unpin_snapshot(&mut self, seq_no: u64) {
-        if let std::collections::hash_map::Entry::Occupied(mut entry) = self.pinned_snapshots.entry(seq_no) {
+        if let std::collections::hash_map::Entry::Occupied(mut entry) =
+            self.pinned_snapshots.entry(seq_no)
+        {
             if *entry.get() <= 1 {
                 entry.remove();
             } else {
@@ -168,7 +170,8 @@ impl SequenceLog {
                 true
             }
         });
-        self.deletions.retain(|_, &mut del_seq| del_seq >= min_active_seqno);
+        self.deletions
+            .retain(|_, &mut del_seq| del_seq >= min_active_seqno);
     }
 
     /// Returns the number of entries in the sequence log.

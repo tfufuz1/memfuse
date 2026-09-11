@@ -644,7 +644,11 @@ impl HnswIndex {
         }
 
         // Must re-sort and truncate after Phase 2 reranking; tie-break equal scores by DocId for deterministic ordering
-        results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.doc_id.cmp(&b.doc_id)));
+        results.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.doc_id.cmp(&b.doc_id))
+        });
         results.truncate(k);
 
         Ok(results)
@@ -1339,7 +1343,9 @@ impl HnswIndexCore {
                                 if neighbor_idx >= mmap_node_count {
                                     let neighbor_ram_idx = neighbor_idx - mmap_node_count;
                                     if let Some(neighbor_node) = nodes_guard.get(neighbor_ram_idx) {
-                                        if let Some(del_seq) = seq_log.deletion_seq(neighbor_node.doc_id) {
+                                        if let Some(del_seq) =
+                                            seq_log.deletion_seq(neighbor_node.doc_id)
+                                        {
                                             return del_seq >= min_ret_seq;
                                         }
                                     }
@@ -1975,7 +1981,12 @@ impl HnswIndexCore {
                     } else if let Some(min_ret_seq) = min_retention_seq {
                         if let Some(del_seq) = seq_log.deletion_seq(node.doc_id) {
                             if del_seq >= min_ret_seq {
-                                all.push((node.doc_id, node.vector.clone(), node.committed_tx, true));
+                                all.push((
+                                    node.doc_id,
+                                    node.vector.clone(),
+                                    node.committed_tx,
+                                    true,
+                                ));
                             }
                         }
                     }

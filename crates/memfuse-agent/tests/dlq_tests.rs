@@ -107,14 +107,14 @@ async fn test_concurrent_allocate_tx_uniqueness() -> Result<()> {
     let mut handles = Vec::new();
     for _ in 0..50 {
         let dlq_clone = dlq.clone();
-        handles.push(tokio::spawn(async move {
-            dlq_clone.allocate_tx().await
-        }));
+        handles.push(tokio::spawn(async move { dlq_clone.allocate_tx().await }));
     }
 
     let mut tx_ids = Vec::new();
     for handle in handles {
-        let tx_id = handle.await.map_err(|e| MemFuseError::Internal(e.to_string()))??;
+        let tx_id = handle
+            .await
+            .map_err(|e| MemFuseError::Internal(e.to_string()))??;
         tx_ids.push(tx_id);
     }
 
