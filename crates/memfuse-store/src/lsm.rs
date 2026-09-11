@@ -429,6 +429,18 @@ impl LsmStorage {
         }
         pending_rollbacks.sort_unstable();
 
+        let manifest_path = config.path.join("MANIFEST");
+        let manifest_exists = manifest_path.exists();
+        let _valid_manifest_sstables: Option<std::collections::HashSet<std::path::PathBuf>> = if manifest_exists {
+            if let Ok(entries) = crate::manifest::Manifest::load(&manifest_path).await {
+                Some(crate::manifest::Manifest::reconstruct_valid_sstables(&entries).into_iter().collect())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Load existing SSTables and sort by filename (which includes seq_no)
         let mut sst_files = Vec::new();
         if let Ok(mut entries) = tokio::fs::read_dir(&config.path).await {
@@ -444,7 +456,7 @@ impl LsmStorage {
                         tracing::warn!("Failed to remove leftover temp file {:?}: {}", path, e);
                     }
                 } else if path.extension().is_some_and(|ext| ext == "sst") {
-                    if let Some(ref valid_set) = valid_manifest_sstables {
+                    if let Some(ref valid_set) = _valid_manifest_sstables {
                         let path_key = std::path::Path::new(file_name);
                         if valid_set.contains(path_key) {
                             sst_files.push(path);
@@ -1334,6 +1346,7 @@ impl StorageEngine for LsmStorage {
                 }
 
             // --- PHASE 2: Prepare WAL entries under commit_mutex ---
+            let mut state = self.state.write().await;
             let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
 
             // If group commit window is disabled (0 micros), perform immediate single commit
@@ -1396,8 +1409,9 @@ impl StorageEngine for LsmStorage {
                         .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
                 }
 
-                if state.memtable.size() > self.config.memtable_size_limit {
-                    drop(state);
+                let should_flush = state.memtable.size() > self.config.memtable_size_limit;
+                drop(state);
+                if should_flush {
                     self.flush().await?;
                 }
 
@@ -1474,8 +1488,7 @@ impl StorageEngine for LsmStorage {
                 }
 
                 if let Err(e) = state.wal.append_batch(&all_wal_entries).await {
-                    let _ = state
-                        .wal
+                    let _ = state.wal
                         .restore_last_hmac(pending_queue.first_prev_hmac)
                         .await;
                     drop(state);
@@ -1702,8 +1715,7 @@ impl StorageEngine for LsmStorage {
                 let mut state = self.state.write().await;
                 let mut sstables = self.sstables.write().await;
 
-                state
-                    .immutable_memtables
+                state.immutable_memtables
                     .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
 
                 // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
@@ -1752,8 +1764,7 @@ impl StorageEngine for LsmStorage {
                 // Cleanup on Phase 3 failure:
                 // 1. Remove old_memtable from state.immutable_memtables
                 let mut state = self.state.write().await;
-                state
-                    .immutable_memtables
+                state.immutable_memtables
                     .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
                 drop(state);
 
@@ -3748,7 +3759,7 @@ mod tests {
                     let scanned = storage.scan_prefix_at(b"pfx:", target_seq).await.unwrap(); // unwrap
                     let actual_map: std::collections::BTreeMap<_, _> = scanned.into_iter().collect();
 
-                    // Replay all committed ops up to target_seq to build expected state
+                    // Replay all committed ops up to target_seq to build expected self.state
                     let mut ref_map = std::collections::BTreeMap::new();
                     let state = storage.state.read().await;
 
