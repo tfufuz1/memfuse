@@ -64,7 +64,12 @@
    - **Verifikation:** `search.rs` nutzt durchgängig `CheckpointPinGuard::new` mit Asynchron-Inkrement und Unpinning in `pin_guard.release().await`.
    - **Status:** Tag als `[RESOLVED]` markiert.
 
-3. **Workspace Preflight Fixes:**
+3. **`eigenbau-rrf-fusion` (`fusion.rs`): RRF Rank Fusion & Numerical Boundary Hardening**
+   - **Befund:** `debug_assert!(rrf_k > 0.0)` in `build_provenance` and `weighted_reciprocal_rank_fusion_with_options` panicked when evaluating boundary condition $k = 0.0$.
+   - **Verifikation:** Since Cormack et al. RRF ranks are 1-based ($rank \ge 1$), $rrf\_k + rank \ge 1.0 > 0.0$ for non-negative $rrf\_k \ge 0.0$. Assertions updated to `debug_assert!(rrf_k >= 0.0)` with `DONE(memfuse-impl)` markers.
+   - **Status:** Verified via `test_k_parameter_zero_boundary` test suite.
+
+4. **Workspace Preflight Fixes:**
    - Behoben: Missing State Write Lock acquisition in `LsmStorage::commit` (`memfuse-store`).
    - Behoben: Missing `persist_sync` calls in `InstanceOrphanRegistry::register_orphan_sync` / `register_checkpoint_sync` (`memfuse-checkpoint`).
    - Behoben: Unsafe `VarBuilder::from_mmaped_safetensors` durch sicheres `VarBuilder::from_buffered_safetensors` in `memfuse-candle`.
