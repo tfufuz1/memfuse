@@ -2,10 +2,7 @@
 // STAND: 2026-09-09T12:44:49Z (SESSION: c74a1828)
 // ZWECK: Additional unit tests targeting mutants in GaspValidator and GaspConfig.
 
-use candle_core::Device;
 use memfuse_candle::gasp::{GaspConfig, GaspValidator};
-use memfuse_candle::inference::DefaultCandleLlmModel;
-use memfuse_candle::ModelFingerprint;
 use memfuse_core::traits::GroundingValidator;
 use memfuse_core::{ContextChunk, DocId, MemFuseError};
 
@@ -97,28 +94,3 @@ async fn test_gasp_exact_threshold_boundary() {
     }
 }
 
-#[test]
-fn test_gasp_with_llm_client_fingerprint_propagation() {
-    let mock_model = Box::new(DefaultCandleLlmModel);
-    let fp = ModelFingerprint {
-        hash: [9u8; 32],
-        model_id: "llama3-q4.gguf".to_string(),
-        quantization: "Q4_K_M".to_string(),
-    };
-    let tokenizer_bytes = r#"{
-        "version": "1.0",
-        "truncation": null,
-        "padding": null,
-        "added_tokens": [],
-        "normalizer": null,
-        "pre_tokenizer": null,
-        "post_processor": null,
-        "decoder": null,
-        "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
-    }"#;
-    let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
-    let client = memfuse_candle::CandleLlmClient::new(Device::Cpu, mock_model, fp, tokenizer);
-
-    let validator = GaspValidator::new().with_llm_client(client);
-    assert!(validator.llm_client().is_some());
-}

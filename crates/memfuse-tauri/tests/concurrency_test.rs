@@ -4,6 +4,7 @@ use memfuse_tauri_lib::commands::{
 };
 use std::sync::Arc;
 use tempfile::TempDir;
+use tauri::Manager;
 
 #[tokio::test]
 async fn test_app_state_concurrent_operations() {
@@ -18,21 +19,25 @@ async fn test_app_state_concurrent_operations() {
         .await
         .expect("open db");
 
-    let app_state = Arc::new(memfuse_tauri_lib::state::AppState::new());
+    let app_state = memfuse_tauri_lib::state::AppState::new();
     *app_state.db.write() = Some(Arc::new(db));
     *app_state.db_path.write() = Some(db_path);
 
     let mut handles = Vec::new();
 
+    let app = tauri::test::mock_builder()
+        .manage(app_state)
+        .build(tauri::generate_context!())
+        .expect("mock app");
+
+    let app_handle = app.handle();
+
     // 1. Concurrent collection creation
     for i in 0..10 {
-        let state_ref = app_state.clone();
         let name = format!("col_{i}");
+        let handle_clone = app_handle.clone();
         let handle = tokio::spawn(async move {
-            // SAFETY: In concurrent unit tests, `state_ref` is an Arc<AppState> that remains alive throughout the test execution.
-            // Transmuting the reference into `tauri::State` simulates Tauri's state injection framework safely.
-            let state: tauri::State<'_, memfuse_tauri_lib::state::AppState> =
-                unsafe { std::mem::transmute(&*state_ref) };
+            let state = handle_clone.state::<memfuse_tauri_lib::state::AppState>();
             create_collection(state, name).await.map(|_| ())
         });
         handles.push(handle);
@@ -40,15 +45,12 @@ async fn test_app_state_concurrent_operations() {
 
     // 2. Concurrent regex validations & transforms
     for i in 0..10 {
-        let state_ref = app_state.clone();
+        let handle_clone = app_handle.clone();
         let handle = tokio::spawn(async move {
             let val = validate_regex_pattern(format!(r"\bword_{i}\b"));
             assert!(val.is_valid);
 
-            // SAFETY: In concurrent unit tests, `state_ref` is an Arc<AppState> that remains alive throughout the test execution.
-            // Transmuting the reference into `tauri::State` simulates Tauri's state injection framework safely.
-            let state: tauri::State<'_, memfuse_tauri_lib::state::AppState> =
-                unsafe { std::mem::transmute(&*state_ref) };
+            let state = handle_clone.state::<memfuse_tauri_lib::state::AppState>();
             let res = run_bulk_regex_transform(
                 state,
                 format!("word_{i}"),
@@ -69,10 +71,7 @@ async fn test_app_state_concurrent_operations() {
         let _ = h.await.unwrap();
     }
 
-    // SAFETY: In unit tests, `app_state` is an Arc<AppState> owned by this thread and kept alive.
-    // Transmuting the reference into `tauri::State` simulates Tauri's state injection framework safely.
-    let state: tauri::State<'_, memfuse_tauri_lib::state::AppState> =
-        unsafe { std::mem::transmute(&*app_state) };
+    let state = app.state::<memfuse_tauri_lib::state::AppState>();
     let cols = list_collections(state).await.expect("list_collections");
     // 1 default collection + 10 created collections = 11
     assert_eq!(cols.len(), 11);

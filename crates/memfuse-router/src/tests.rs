@@ -3142,11 +3142,7 @@ mod tests {
         .with_resource_cost_estimate(10.0);
 
         // Input configuration order: expensive, cheapest, mid
-        let profiles = vec![
-            expensive_profile,
-            cheapest_profile,
-            mid_profile,
-        ];
+        let profiles = vec![expensive_profile, cheapest_profile, mid_profile];
 
         let router = RouterEngine::new(collection, profiles, None);
 

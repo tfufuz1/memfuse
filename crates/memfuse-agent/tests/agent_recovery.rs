@@ -357,3 +357,67 @@ async fn test_loop_rollback_integrity() {
     assert_eq!(ctx.current_node, "A");
     assert_eq!(ctx.step_count, 2);
 }
+
+#[tokio::test]
+async fn test_agent_engine_recovers_orphaned_checkpoint_on_restart() {
+    let (db, _tmp) = setup_env().await;
+
+    let engine_a = OrchestratorEngine::new(db.inner_storage());
+
+    // Simulate an abrupt step drop (uncommitted guard)
+    let orphan_cp = memfuse_checkpoint::StateCheckpoint {
+        tx_id: memfuse_core::TxId::new(505),
+        timestamp_ms: 1000,
+        namespace: Some("agent".to_string()),
+    };
+
+    let registry_a = engine_a
+        .checkpoint_store
+        .orphan_registry()
+        .expect("OrchestratorEngine persistent store must expose orphan registry")
+        .clone();
+
+    registry_a.register_checkpoint_sync(orphan_cp);
+    let initial_orphans = registry_a.get_orphaned_checkpoints();
+    assert!(
+        initial_orphans.iter().any(|cp| cp.tx_id == memfuse_core::TxId::new(505)),
+        "Orphaned checkpoint 505 must be registered in engine_a"
+    );
+
+    // Drop engine_a without performing recovery
+    drop(engine_a);
+
+    // Create a new OrchestratorEngine instance (simulating restart) and run a task
+    let engine_b = OrchestratorEngine::new(db.inner_storage());
+
+    let state_col = db.collection("agent_state_restart").await.unwrap();
+    let mut ctx = AgentContext::try_new(
+        "restart_task",
+        "start",
+        db.clone(),
+        state_col,
+        TokenBudget::new(100, 0),
+    )
+    .unwrap();
+
+    let mut graph = StateGraph::new();
+    graph
+        .try_add_node("start", "Start", NodeType::Start, None)
+        .unwrap();
+    graph
+        .try_add_node("end", "End", NodeType::End, None)
+        .unwrap();
+    graph.try_add_edge("start", "end", None, 1).unwrap();
+
+    // run() triggers run_internal which invokes recover_orphans() on startup
+    engine_b.run(&mut ctx, &graph).await.unwrap();
+
+    // Verify orphan registry is now clear of tx_id 505 after engine startup recovery
+    if let Some(registry) = engine_b.checkpoint_store.orphan_registry() {
+        let remaining = registry.get_orphaned_checkpoints();
+        assert!(
+            !remaining.iter().any(|cp| cp.tx_id == memfuse_core::TxId::new(505)),
+            "Orphaned checkpoint 505 must be recovered and cleared after OrchestratorEngine startup recovery"
+        );
+    }
+}
