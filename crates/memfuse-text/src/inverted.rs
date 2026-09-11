@@ -535,34 +535,21 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            // Filter entries to those whose suffix is purely a valid u64 doc_id.
-            // Longer terms that start with `term:` (e.g. `https://example.com` vs `https`)
-            // will have extra term components in the suffix and must be skipped.
-            let mut valid_postings = Vec::with_capacity(entries.len());
-            for (key, val_bytes) in entries {
-                let suffix = &key[prefix.len()..];
-                if let Ok(suffix_str) = std::str::from_utf8(suffix) {
-                    if let Ok(doc_id_raw) = suffix_str.parse::<u64>() {
-                        valid_postings.push((DocId::new(doc_id_raw), val_bytes));
-                    }
-                }
-            }
-
-            let df = valid_postings.len() as u32;
+            let df = entries.len() as u32;
             if df == 0 {
                 continue;
             }
 
-            for (key, val_bytes) in valid_entries {
+            for (key, val_bytes) in entries {
                 // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is guaranteed to parse as u64 due to filter above
+                // Suffix is just {doc_id}. Skip entries for longer terms sharing the prefix (e.g. term:subterm)
                 let suffix = &key[prefix.len()..];
-                let Ok(suffix_str) = std::str::from_utf8(suffix) else {
-                    continue;
-                };
-                let Ok(doc_id_raw) = suffix_str.parse::<u64>() else {
-                    // Suffix contains extra colons or non-digits (e.g. prefix match on longer term "term:subterm:123")
-                    continue;
+                let doc_id_raw = match std::str::from_utf8(suffix)
+                    .ok()
+                    .and_then(|s| s.parse::<u64>().ok())
+                {
+                    Some(id) => id,
+                    None => continue,
                 };
                 let doc_id = DocId::new(doc_id_raw);
 
@@ -1845,21 +1832,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_prefix_term_search_ignores_longer_colon_terms() -> Result<()> {
+    async fn test_search_bm25_prefix_overlapping_colon_terms() -> Result<()> {
         let storage = Arc::new(MockStorage::new());
         let index = InvertedIndex::new(storage, "colon_prefix");
 
         let tx = TxId::new(1);
-        index
-            .upsert_document(tx, DocId::new(1), "http")
-            .await?;
-        index
-            .upsert_document(tx, DocId::new(2), "http:example")
-            .await?;
+        // Insert doc 1 with term "user" and doc 2 with term "user:id"
+        index.upsert_document(tx, DocId::new(1), "user").await?;
+        index.upsert_document(tx, DocId::new(2), "user:id").await?;
         index.commit(tx).await?;
 
-        let results = index.search("http", 10).await?;
+        // Search for "user" must not crash on key for "user:id"
+        let results = index.search("user", 10).await?;
         assert!(!results.is_empty());
+        assert_eq!(results[0].doc_id, DocId::new(1));
 
         Ok(())
     }

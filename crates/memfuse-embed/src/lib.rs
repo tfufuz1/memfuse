@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-10T23:29:29Z (SESSION: 6bb96488)
+// STAND: 2026-09-10T19:24:15Z (SESSION: 3a20f416)
 // ZWECK: In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG).
 // INVARIANTEN: Default-Build ohne ONNX hat leere Feature-Flags (ADR-005, Pure-Rust-USP).
 // NICHT-OFFENSICHTLICH: Threading via tokio::task::spawn_blocking zur Vermeidung von Executor-Starvation.
@@ -606,4 +606,3 @@ mod tests {
 
 // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-02T08:17:15Z) (SESSION: f260cbf2) PRÜFER-KONTEXT: FRESH - Verified feature gate isolation, zero unsafe in production, and execution non-starvation model.
 // REVIEW-PASS[2/2] STATUS:PASS (TS: 2026-09-03T19:40:00Z) (SESSION: 6da6a1c8) PRÜFER-KONTEXT: FRESH - Verified Chaos Engineering fault tolerance, hermetic feature gate, and zero-unsafe invariants.
-// REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T23:29:29Z) (SESSION: 6bb96488) PRÜFER-KONTEXT: FRESH - Verified Layer 3 DAG boundaries, zero production unsafe, and feature gate isolation.
