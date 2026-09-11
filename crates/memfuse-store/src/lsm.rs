@@ -3835,7 +3835,10 @@ mod tests {
 
         // (b) Transaction B attempts put_if_absent for the same key while A is uncommitted/unrolled
         let res_b = storage.put_if_absent(tx_b, key, b"value_b").await.unwrap();
-        assert!(!res_b, "Transaction B must see uncommitted staged insert from Transaction A and return false");
+        assert!(
+            !res_b,
+            "Transaction B must see uncommitted staged insert from Transaction A and return false"
+        );
     }
 
     #[tokio::test]
