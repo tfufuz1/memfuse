@@ -578,7 +578,7 @@ impl LsmStorage {
     /// # Safety / Concurrency Invariant
     /// **MUST ONLY** be called while holding `commit_mutex`. Calling this function without
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
-    // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][MINOR] Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
         // NC-3-RECOVERY-NOTE: Implement recovery in P1 fix/lsm-startup-recovery
         // NC-3: Write crash-atomic rollback intent file before any mutation.
@@ -4131,13 +4131,13 @@ mod tests {
                 .await
                 .expect("create storage");
             let tx1 = TxId::new(1);
-            storage.put(tx1, b"key1", b"val1").await.unwrap();
-            storage.commit(tx1).await.unwrap();
-            storage.force_flush().await.unwrap();
+            storage.put(tx1, b"key1", b"val1").await.expect("put key1");
+            storage.commit(tx1).await.expect("commit tx1");
+            storage.force_flush().await.expect("flush");
 
             let tx2 = TxId::new(2);
-            storage.put(tx2, b"key2", b"val2").await.unwrap();
-            storage.commit(tx2).await.unwrap();
+            storage.put(tx2, b"key2", b"val2").await.expect("put key2");
+            storage.commit(tx2).await.expect("commit tx2");
         }
 
         // Create a dummy second WAL file wal-1.log and sidecar wal-0.log.uuid
