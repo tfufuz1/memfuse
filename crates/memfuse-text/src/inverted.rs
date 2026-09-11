@@ -542,9 +542,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
 
             for (key, val_bytes) in entries {
                 // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
+                // Extract doc_id from final colon-separated segment of key
+                let doc_id_bytes = key
+                    .rsplit(|&b| b == b':')
+                    .next()
+                    .ok_or_else(|| MemFuseError::Storage("Invalid doc_id in key".into()))?;
+                let doc_id_raw = std::str::from_utf8(doc_id_bytes)
                     .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
                     .parse::<u64>()
                     .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
