@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T15:49:44Z (SESSION: 5b65397f)
+// STAND: 2026-09-10T23:34:53Z (SESSION: d1865551)
 // ZWECK: Proaktiver Distributional-Drift-Wächter via Lyapunov-Exponenten über KL-Divergenzen.
 // INVARIANTEN: Orthogonal zu ConfigFingerprint; λ_t > 0.0 indiziert Verteilungsverschiebung.
 // SIEHE AUCH: docs/decisions/ADR-020-memfuse-brain.md, rules/tag_taxonomy.md
@@ -148,10 +148,7 @@ impl LyapunovDriftWatcher {
         }
 
         // 2. KL-Divergenz D_t = KL(N_t || N_baseline) mit Laplace-1-Smoothing (Additive Smoothing)
-        // AI-TAG[SMELL][MINOR] Increase Laplace smoothing epsilon or add bounds clipping to prevent numerical instability during KL divergence calculations. (ID: AGT-ROUTER-00808347) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
-        // BEFUND: Laplace smoothing uses alpha=1.0f32, but edge cases in ratio log calculation require explicit bounds checking.
-        // RISIKO: Potential numerical edge cases if probabilities degenerate.
-        // EMPFEHLUNG: Consider bounds clipping or increasing epsilon in future iterations if instability is observed.
+        // RESOLVED: AGT-ROUTER-00808347 — Added explicit ratio bounds clipping for KL divergence ratio (TS: 2026-09-10T23:34:53Z)
         let alpha = 1.0f32;
         let k = NUM_BINS as f32;
         let n_curr = current_scores.len() as f32;
@@ -161,7 +158,8 @@ impl LyapunovDriftWatcher {
         for i in 0..NUM_BINS {
             let p_i = (current_counts[i] as f32 + alpha) / (n_curr + k * alpha);
             let q_i = (baseline_counts[i] as f32 + alpha) / (n_base + k * alpha);
-            d_t += p_i * (p_i / q_i).ln();
+            let ratio = (p_i / q_i).clamp(1e-10, 1e10);
+            d_t += p_i * ratio.ln();
         }
         let d_t = d_t.max(0.0);
 
@@ -353,6 +351,32 @@ mod tests {
         assert!(
             latest_kl < 1e-5,
             "KL divergence for identical distributions should be ~0.0, got {latest_kl}"
+        );
+    }
+
+    #[test]
+    fn test_kl_divergence_extreme_degenerate_ratios_bounded() {
+        let mut watcher = LyapunovDriftWatcher::new(5);
+        // Deagenerate scenario: Baseline has all points in Bin 0 ([0.0, 0.1))
+        let baseline: Vec<f32> = vec![0.01; 1000];
+        watcher.set_baseline(&baseline);
+
+        // Current scores all in Bin 9 ([0.9, 1.0])
+        let current: Vec<f32> = vec![0.99; 1000];
+        watcher.update(&current);
+
+        let latest_kl = match watcher.divergence_history.back().copied() {
+            Some(kl) => kl,
+            None => panic!("KL divergence should be in history"),
+        };
+
+        assert!(
+            latest_kl.is_finite(),
+            "KL divergence must be finite even under degenerate distributions"
+        );
+        assert!(
+            latest_kl > 0.0,
+            "KL divergence must be strictly positive for disjoint distributions"
         );
     }
 }
