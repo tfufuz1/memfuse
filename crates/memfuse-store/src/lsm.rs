@@ -87,6 +87,12 @@ pub const MAX_BATCH_SIZE: usize = 10_000;
 /// Maximum factor for internal merge set size relative to limit in bounded scans.
 pub const MAX_INTERNAL_MERGE_ENTRIES_FACTOR: usize = 8;
 
+/// Default window for group commit batching in microseconds (500us).
+pub const GROUP_COMMIT_WINDOW_MICROS: u64 = 500;
+
+/// Maximum number of commits allowed in a single group commit batch before forcing flush.
+pub const MAX_GROUP_COMMIT_BATCH_SIZE: usize = 100;
+
 /// Atomically creates and writes the 32-byte SALT file using a temporary file pattern:
 /// tmp file -> fsync -> rename -> parent dir fsync.
 async fn write_salt_atomically(salt_path: &std::path::Path, buf: &[u8; 32]) -> Result<()> {
@@ -187,6 +193,9 @@ pub struct LsmConfig {
     /// Configuration for background compaction.
     pub compaction: CompactionConfig,
     pub encryption_passphrase: Option<String>,
+    /// Group commit window duration in microseconds.
+    /// Set to 0 to disable group commit delay and execute writes immediately.
+    pub group_commit_window_micros: u64,
 }
 
 impl Default for LsmConfig {
@@ -198,8 +207,23 @@ impl Default for LsmConfig {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            group_commit_window_micros: GROUP_COMMIT_WINDOW_MICROS,
         }
     }
+}
+
+/// A prepared transaction commit waiting in the group-commit batch.
+struct PreparedCommit {
+    tx_id: TxId,
+    wal_ops: Vec<(WalOp, u64)>,
+    mem_updates: Vec<(Vec<u8>, Vec<u8>, u64)>,
+    notifier: tokio::sync::oneshot::Sender<Result<()>>,
+}
+
+/// A batch of commits collected during the group-commit window.
+struct GroupCommitBatch {
+    commits: tokio::sync::Mutex<Vec<PreparedCommit>>,
+    notify: tokio::sync::Notify,
 }
 
 /// Proof that `commit_mutex` is currently held by the calling task.
@@ -232,6 +256,7 @@ pub struct LsmStorage {
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
+    pending_batch: tokio::sync::Mutex<Option<Arc<GroupCommitBatch>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
     flush_counter: AtomicU64,
@@ -465,6 +490,7 @@ impl LsmStorage {
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
+            pending_batch: tokio::sync::Mutex::new(None),
             cancel_token,
             task_tracker,
             flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
@@ -554,6 +580,36 @@ impl LsmStorage {
         F: std::future::Future<Output = ()> + Send + 'static,
     {
         self.task_tracker.spawn(future);
+    }
+
+    #[doc(hidden)]
+    pub async fn simulate_wal_append_failure_for_test(&self) {
+        let state = self.state.read().await;
+        let wal_path = state.wal.path().to_path_buf();
+        if let Ok(ro_file) = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .open(&wal_path)
+            .await
+        {
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = ro_file;
+        }
+    }
+
+    #[doc(hidden)]
+    pub async fn restore_wal_file_handle_for_test(&self) {
+        let state = self.state.read().await;
+        let wal_path = state.wal.path().to_path_buf();
+        if let Ok(rw_file) = tokio::fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(&wal_path)
+            .await
+        {
+            let mut file_guard = state.wal.file.lock().await;
+            *file_guard = rw_file;
+        }
     }
 
     /// Returns the accumulated total memory budget tracking drift in bytes caused by
@@ -955,9 +1011,35 @@ impl StorageEngine for LsmStorage {
                 }
             }
 
-            let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
-            if self.get_at_seq(key, current_max_seq).await?.is_some() {
-                return Ok(false);
+            let mut deleted_in_pending = false;
+            {
+                let pending_guard = self.pending_batch.lock().await;
+                if let Some(batch_arc) = pending_guard.as_ref() {
+                    let commits = batch_arc.commits.lock().await;
+                    for commit in commits.iter().rev() {
+                        let mut found = false;
+                        for (k, _v, seq) in commit.mem_updates.iter().rev() {
+                            if k.as_slice() == key {
+                                if (seq & TOMBSTONE_BIT) == 0 {
+                                    return Ok(false);
+                                }
+                                deleted_in_pending = true;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if found {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !deleted_in_pending {
+                let current_max_seq = self.next_seq_no.load(Ordering::Acquire);
+                if self.get_at_seq(key, current_max_seq).await?.is_some() {
+                    return Ok(false);
+                }
             }
 
             let doc_id = {
@@ -1073,130 +1155,224 @@ impl StorageEngine for LsmStorage {
                 return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
             }
 
-            // ANCHOR[ALG-FIX:D6-001] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Snapshot-Inversion bei parallel commit (INV-MVCC-1)
-            // FIX: Commit-Mutex serialisiert fetch_add + memtable.put.
-            // Ohne Mutex könnte seq=11 vor seq=10 fertig sein → Reader seq=11 sieht Lücke bei 10.
-            let _commit_lock = self.commit_mutex.lock().await;
+            // Phase 1: Sequence allocation and WAL ops preparation under commit_mutex
+            let (is_leader, batch_arc, rx_chan) = {
+                let _commit_lock = self.commit_mutex.lock().await;
 
-            let ops = self.tx_buffer.drain(tx_id);
-            if ops.is_empty() {
-                return Ok(());
-            }
-            let state = self.state.read().await;
+                let ops = self.tx_buffer.drain(tx_id);
+                if ops.is_empty() {
+                    return Ok(());
+                }
 
-            let mut wal_ops = Vec::with_capacity(ops.len());
-            let mut mem_updates = Vec::with_capacity(ops.len());
+                let mut wal_ops = Vec::with_capacity(ops.len());
+                let mut mem_updates = Vec::with_capacity(ops.len());
 
-            for op in &ops {
-                let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
-                match op {
-                    IndexOp::Insert { doc_id: _, data } => {
-                        let (key, value) = data;
-                        wal_ops.push((
-                            WalOp::Put {
-                                tx_id,
-                                key: key.clone(),
-                                value: value.clone(),
-                            },
-                            seq_no,
-                        ));
-                        mem_updates.push((key.clone(), value.clone(), seq_no));
-                    }
-                    IndexOp::Delete { doc_id: _, data } => {
-                        if let Some((key, _)) = data {
+                for op in &ops {
+                    let seq_no = self.next_seq_no.fetch_add(1, Ordering::SeqCst);
+                    match op {
+                        IndexOp::Insert { doc_id: _, data } => {
+                            let (key, value) = data;
                             wal_ops.push((
-                                WalOp::Delete {
+                                WalOp::Put {
                                     tx_id,
                                     key: key.clone(),
+                                    value: value.clone(),
                                 },
                                 seq_no,
                             ));
-                            mem_updates.push((key.clone(), Vec::new(), seq_no | TOMBSTONE_BIT));
+                            mem_updates.push((key.clone(), value.clone(), seq_no));
+                        }
+                        IndexOp::Delete { doc_id: _, data } => {
+                            if let Some((key, _)) = data {
+                                wal_ops.push((
+                                    WalOp::Delete {
+                                        tx_id,
+                                        key: key.clone(),
+                                    },
+                                    seq_no,
+                                ));
+                                mem_updates.push((
+                                    key.clone(),
+                                    Vec::new(),
+                                    seq_no | TOMBSTONE_BIT,
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(MemFuseError::InvalidInput(
+                                "Unsupported operation type staged in LSM commit".to_string(),
+                            ));
                         }
                     }
-                    _ => {
-                        return Err(MemFuseError::InvalidInput(
-                            "Unsupported operation type staged in LSM commit".to_string(),
-                        ));
-                    }
                 }
-            }
 
-            // --- PHASE 2: Group Commit to WAL ---
-            let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
-            if let Err(e) = state.wal.append_batch(&wal_entries).await {
-                let _ = state.wal.restore_last_hmac(prev_hmac_snapshot).await;
-                // FATAL I/O ERROR: Physical Rollback to last committed transaction state
-                drop(state);
-                let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
-                let commit_guard = CommitGuard {
-                    _lock: &_commit_lock,
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let prepared = PreparedCommit {
+                    tx_id,
+                    wal_ops,
+                    mem_updates,
+                    notifier: tx,
                 };
-                if let Err(rollback_err) = self.rollback_to_tx_locked(last_tx, &commit_guard).await
-                {
-                    tracing::error!(
-                        "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
-                        rollback_err
-                    );
-                }
-                return Err(MemFuseError::Storage(format!(
-                    "Commit failed (at WAL append), WAL rollback executed: {}",
-                    e
-                )));
-            }
 
-            // INVARIANT (Task D - Commit Ordering):
-            // 1. WAL append must succeed FIRST (done in PHASE 2).
-            // 2. last_committed_tx.store() must happen AFTER successful WAL append (done here before/during MemTable write).
-            // 3. MemTable write happens AFTER WAL append succeeds.
-            if tx_id.inner() < TxId::INTERNAL_BASE {
-                let mut current = self.last_committed_tx.load(Ordering::Acquire);
-                while tx_id.inner() > current {
-                    match self.last_committed_tx.compare_exchange_weak(
-                        current,
-                        tx_id.inner(),
-                        Ordering::SeqCst,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => {
-                            break;
+                let mut pending = self.pending_batch.lock().await;
+                match pending.as_ref() {
+                    None => {
+                        let batch = Arc::new(GroupCommitBatch {
+                            commits: tokio::sync::Mutex::new(vec![prepared]),
+                            notify: tokio::sync::Notify::new(),
+                        });
+                        *pending = Some(batch.clone());
+                        (true, batch, rx)
+                    }
+                    Some(existing_batch) => {
+                        let mut commits = existing_batch.commits.lock().await;
+                        commits.push(prepared);
+                        let count = commits.len();
+                        drop(commits);
+
+                        let batch = existing_batch.clone();
+                        if count >= MAX_GROUP_COMMIT_BATCH_SIZE {
+                            *pending = None;
+                            batch.notify.notify_one();
                         }
-                        Err(actual) => current = actual,
+                        (false, batch, rx)
                     }
                 }
-                if tx_id.inner() <= current && tx_id.inner() != 0 {
-                    // Already superseded
-                } else if tx_id.inner() == 0 {
-                    tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
+            };
+
+            // Phase 2: Leader execution or Follower wait
+            if is_leader {
+                if self.config.group_commit_window_micros > 0 {
+                    let _ = tokio::time::timeout(
+                        Duration::from_micros(self.config.group_commit_window_micros),
+                        batch_arc.notify.notified(),
+                    )
+                    .await;
+                }
+
+                // Ensure pending_batch no longer points to batch_arc
+                {
+                    let mut pending = self.pending_batch.lock().await;
+                    if let Some(p) = pending.as_ref() {
+                        if Arc::ptr_eq(p, &batch_arc) {
+                            *pending = None;
+                        }
+                    }
+                }
+
+                // Leader acquires commit_mutex to perform atomic HMAC preparation, WAL append, and MemTable update
+                let _commit_lock = self.commit_mutex.lock().await;
+
+                let mut commits = batch_arc.commits.lock().await;
+                let commits = std::mem::take(&mut *commits);
+
+                if !commits.is_empty() {
+                    let state = self.state.read().await;
+
+                    let mut all_wal_ops = Vec::new();
+                    for c in &commits {
+                        all_wal_ops.extend(c.wal_ops.iter().cloned());
+                    }
+
+                    // Prepare WAL entries for the ENTIRE batch under commit_mutex
+                    let (all_wal_entries, prev_hmac_snapshot) =
+                        state.wal.prepare_batch(all_wal_ops).await?;
+
+                    if let Err(e) = state.wal.append_batch(&all_wal_entries).await {
+                        let _ = state.wal.restore_last_hmac(prev_hmac_snapshot).await;
+                        drop(state);
+
+                        let last_tx = TxId::new(self.last_committed_tx.load(Ordering::Acquire));
+                        let commit_guard = CommitGuard {
+                            _lock: &_commit_lock,
+                        };
+                        if let Err(rollback_err) =
+                            self.rollback_to_tx_locked(last_tx, &commit_guard).await
+                        {
+                            tracing::error!(
+                                "Failed to execute rollback_to_tx_locked after failed WAL append: {}",
+                                rollback_err
+                            );
+                        }
+
+                        let err_msg = format!(
+                            "Commit failed (at WAL append), WAL rollback executed: {}",
+                            e
+                        );
+                        for c in commits {
+                            let _ = c
+                                .notifier
+                                .send(Err(MemFuseError::Storage(err_msg.clone())));
+                        }
+                    } else {
+                        // Success path
+                        for c in &commits {
+                            if c.tx_id.inner() < TxId::INTERNAL_BASE {
+                                let mut current = self.last_committed_tx.load(Ordering::Acquire);
+                                while c.tx_id.inner() > current {
+                                    match self.last_committed_tx.compare_exchange_weak(
+                                        current,
+                                        c.tx_id.inner(),
+                                        Ordering::SeqCst,
+                                        Ordering::Relaxed,
+                                    ) {
+                                        Ok(_) => break,
+                                        Err(actual) => current = actual,
+                                    }
+                                }
+                                if c.tx_id.inner() <= current && c.tx_id.inner() != 0 {
+                                    // Already superseded
+                                } else if c.tx_id.inner() == 0 {
+                                    tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
+                                }
+                            }
+
+                            for (key, value, seq) in &c.mem_updates {
+                                let entry_size = key.len() + value.len() + 8;
+                                if let Err(e) = self.budget.consume_memory(entry_size as u64) {
+                                    self.budget_tracking_drift_bytes.fetch_add(
+                                        entry_size as u64,
+                                        std::sync::atomic::Ordering::Relaxed,
+                                    );
+                                    tracing::warn!(
+                                        drift_bytes = entry_size,
+                                        total_drift_bytes = self
+                                            .budget_tracking_drift_bytes
+                                            .load(std::sync::atomic::Ordering::Relaxed),
+                                        "Memory budget tracking warning during commit: {e}"
+                                    );
+                                }
+                                state.memtable.put(
+                                    Bytes::from(key.clone()),
+                                    Bytes::from(value.clone()),
+                                    *seq,
+                                    c.tx_id.inner(),
+                                );
+                            }
+                        }
+
+                        let flush_needed = state.memtable.size() > self.config.memtable_size_limit;
+                        drop(state);
+
+                        for c in commits {
+                            let _ = c.notifier.send(Ok(()));
+                        }
+
+                        if flush_needed {
+                            self.flush().await?;
+                        }
+                    }
                 }
             }
 
-            // --- PHASE 3: Apply to MemTable ---
-            for (key, value, seq) in mem_updates {
-                let entry_size = key.len() + value.len() + 8;
-                if let Err(e) = self.budget.consume_memory(entry_size as u64) {
-                    self.budget_tracking_drift_bytes
-                        .fetch_add(entry_size as u64, std::sync::atomic::Ordering::Relaxed);
-                    tracing::warn!(
-                        drift_bytes = entry_size,
-                        total_drift_bytes = self
-                            .budget_tracking_drift_bytes
-                            .load(std::sync::atomic::Ordering::Relaxed),
-                        "Memory budget tracking warning during commit: {e}"
-                    );
-                }
-                state
-                    .memtable
-                    .put(Bytes::from(key), Bytes::from(value), seq, tx_id.inner());
-            }
-
-            // Check if flush is needed
-            if state.memtable.size() > self.config.memtable_size_limit {
-                drop(state);
-                self.flush().await?;
-            }
-
-            Ok(())
+            // Phase 3: Await oneshot response (both Leader and Follower)
+            rx_chan
+                .await
+                .map_err(|_| {
+                    MemFuseError::Internal(
+                        "Group commit batch channel closed unexpectedly".to_string(),
+                    )
+                })?
         })
     }
 
@@ -1930,6 +2106,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            group_commit_window_micros: GROUP_COMMIT_WINDOW_MICROS,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
         (storage, tmp)
@@ -2127,6 +2304,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            group_commit_window_micros: GROUP_COMMIT_WINDOW_MICROS,
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -2262,6 +2440,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
 
         {
@@ -2318,6 +2497,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -2394,6 +2574,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -2476,6 +2657,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -2521,6 +2703,7 @@ mod tests {
                 max_memory_bytes: Some(1024 * 1024),
             },
             encryption_passphrase: None,
+            group_commit_window_micros: GROUP_COMMIT_WINDOW_MICROS,
         };
         let storage = LsmStorage::new(config.clone())
             .await
@@ -2580,6 +2763,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
 
         {
@@ -2800,6 +2984,7 @@ mod tests {
                 max_memory_bytes: Some(1024 * 1024),
             },
             encryption_passphrase: None,
+            group_commit_window_micros: GROUP_COMMIT_WINDOW_MICROS,
         };
         let storage = LsmStorage::new(config.clone())
             .await
@@ -2867,6 +3052,7 @@ mod tests {
                 max_memory_bytes: Some(1024 * 1024),
             },
             encryption_passphrase: None,
+            ..Default::default()
         };
         let storage = LsmStorage::new(config).await.expect("create storage"); // expect
 
@@ -3187,6 +3373,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            group_commit_window_micros: GROUP_COMMIT_WINDOW_MICROS,
         };
 
         // 1. Open storage, write, commit WITHOUT explicit force_flush(), call close()
@@ -3328,6 +3515,7 @@ mod tests {
                     tx_timeout: Duration::from_secs(60),
                     compaction: CompactionConfig::default(),
                     encryption_passphrase: None,
+                    ..Default::default()
                 };
                 let storage = LsmStorage::new(config).await.unwrap(); // unwrap
 
@@ -3680,6 +3868,7 @@ mod tests {
             tx_timeout: std::time::Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
 
         let storage = LsmStorage::new(config)
@@ -4019,6 +4208,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
         let storage = LsmStorage::new(config).await.expect("create storage");
 
@@ -4066,6 +4256,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
 
         // 1. First run: write entries and rotate WAL (force_flush creates second WAL file)
@@ -4125,6 +4316,7 @@ mod tests {
             tx_timeout: Duration::from_secs(60),
             compaction: CompactionConfig::default(),
             encryption_passphrase: None,
+            ..Default::default()
         };
 
         // 1. First run: write key1, force_flush (creates wal-0.log), write key2 (into active wal-0.log)
