@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-10T19:29:31Z (SESSION: c9240483)
+// STAND: 2026-09-11T14:35:00Z (SESSION: d4dec121)
 // ZWECK: Replicator dynamics for online adaptive RRF signal weight allocation (F-07).
 // INVARIANTEN: Sum of weights always equals 1.0 (normalized), weights strictly positive (> 0.0).
 // NICHT-OFFENSICHTLICH: Uses Multiplicative Weights Update Method (Arora et al., 2012) with regret O(sqrt(T log N)).
@@ -140,10 +140,7 @@ impl ReplicatorState {
             let n = self.weights.len();
             if n > 0 {
                 let uniform = 1.0 / n as f32;
-                // AI-TAG[SMELL][MINOR] Replaced manual slice fill loop with `self.weights.fill(uniform)` // FIX: Ersetze manual fill loop mit self.weights.fill(uniform) (ID: AGT-CALIBRATION-84b140c7) (TS: 2026-09-10T23:35:15Z) (SESSION: c0f02350)
-                // BEFUND: Clippy `-D clippy::manual_slice_fill` triggers on `for w in &mut self.weights { *w = uniform; }`.
-                // RISIKO: Fails CI clippy lint when run with strict warnings on manual slice fill patterns.
-                // EMPFEHLUNG: Replaced loop with `self.weights.fill(uniform);`.
+                // RESOLVED: AGT-CALIBRATION-84b140c7 — replaced manual slice fill loop with `self.weights.fill(uniform)` (TS: 2026-09-11T14:35:00Z) (SESSION: d4dec121)
                 self.weights.fill(uniform);
             }
             self.fingerprint = Some(new_fp);
@@ -246,6 +243,29 @@ mod tests {
         let w0_before = state.weights[0];
         state.invalidate_on_config_change(fp);
         assert_eq!(state.weights[0], w0_before);
+    }
+
+    #[test]
+    fn test_replicator_invalidate_slice_fill_varying_sizes() {
+        // Test with 5 signals
+        let signals = vec![
+            "s1".to_string(),
+            "s2".to_string(),
+            "s3".to_string(),
+            "s4".to_string(),
+            "s5".to_string(),
+        ];
+        let mut state = ReplicatorState::new(signals, 0.05);
+        state.update(&[1.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!((state.weights[0] - 0.2).abs() > 1e-4);
+
+        let fp = ConfigFingerprint::new("model-b", "Q8", "template", 0.2);
+        state.invalidate_on_config_change(fp);
+
+        assert_eq!(state.weights.len(), 5);
+        for &w in &state.weights {
+            assert!((w - 0.2).abs() < 1e-6);
+        }
     }
 
     #[test]
