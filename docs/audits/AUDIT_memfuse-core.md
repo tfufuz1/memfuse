@@ -13,7 +13,7 @@ Das Crate `memfuse-core` bildet als Layer 0 das Triebwerk-Fundament des gesamten
 
 ### Kernaussagen des Audits:
 1. **DAG-Architektur Invariante:** **PASSED (100% Konformität)**. `memfuse-core` besitzt 0 Workspace-Abhängigkeiten. Es existieren keinerlei Aufwärts-Importe zu höheren Layern (Layer 1–4).
-2. **Unsafe-Code Invariante:** **PASSED (100% Zero-Unsafe im Kern)**. `src/lib.rs` erzwingt `#![deny(unsafe_code)]`. Der einzige Ausnahmebereich in `src/ipc/memfuse_generated.rs` stammt aus der FlatBuffers Schema-Generierung (`flatc`) und ist auf Modulebene in `ipc/mod.rs` explizit isoliert.
+2. **Unsafe-Code Invariante:** **PASSED (Compiler-verifiziertes `#![forbid(unsafe_code)]`)**. `src/lib.rs` erzwingt compiler-seitig `#![forbid(unsafe_code)]`. Der auto-generierte FlatBuffers IPC-Code aus Schema-Generierung (`flatc`) ist in ein eigens dafuer vorgesehenes Layer-0-Hilfscrate `memfuse-core-ipc-gen` ausgelagert und wird von `memfuse-core` re-exportiert.
 3. **MVCC & Type System:** **PASSED**. `TxId`, `DocId` und `EntityId` verwenden typsichere `u64`-Newtypes mit `#[repr(transparent)]`. Invariante ADR-028 (Separation der Sequence- und System-Internal Ranges) und AGT-GRAPH-001 (Monotonie & Failure-Boundary-Protection) sind nachgewiesen.
 4. **Zero-Panic Propagation:** **PASSED**. Fehlerbehandlung erfolgt konsequent über `MemFuseError` und `Result<T, MemFuseError>`.
 5. **Quality Gate Stack:** **PASSED**. `cargo check`, `cargo clippy -D warnings`, `cargo fmt` und 133 Unit/Integration-Tests in `memfuse-core` laufen zu 100% grün ab.
@@ -46,7 +46,7 @@ Das Crate `memfuse-core` bildet als Layer 0 das Triebwerk-Fundament des gesamten
 2. **Timing-Seitenkanal & Cryptography:**
    - `memfuse-core` speichert keine kryptografischen Keys und führt keine HMAC/AES-Operationen aus (diese liegen isoliert in `memfuse-crypto`).
 3. **Memory Safety & Unsafe Analysis:**
-   - `#![deny(unsafe_code)]` ist im Kisten-Root `src/lib.rs` deklariert.
+   - `#![forbid(unsafe_code)]` ist im Kisten-Root `src/lib.rs` deklariert und schliesst lokale `#[allow(unsafe_code)]`-Overrides zur Kompilierzeit aus.
 
 ---
 
