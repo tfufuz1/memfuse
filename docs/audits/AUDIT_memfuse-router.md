@@ -61,6 +61,11 @@ TOTAL                             288                 5    98.26%          23   
 
 ---
 
+## 5f. Session Log & Verification (2026-09-10 — Task JULES-20260910-FIX, SESSION: d1865551)
+- **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `lyapunov.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Inventory state confirmed 100% aligned with 2026-09-10 snapshot (zero drift).
+- **Resolution of AGT-ROUTER-00808347**: Resolved `AI-TAG[SMELL][MINOR]` (`AGT-ROUTER-00808347`) in `crates/memfuse-router/src/lyapunov.rs` by introducing explicit ratio bounds clipping (`(p_i / q_i).clamp(1e-10, 1e10)`) prior to `.ln()` calculation to prevent numerical instability or log domain violations.
+- **Test Suite Expansion & Verification**: Added `test_kl_divergence_extreme_degenerate_ratios_bounded` in `lyapunov.rs` verifying that degenerate probability distributions produce bounded, finite KL divergence values. Executed 82/82 unit and integration tests green (`cargo test -p memfuse-router --all-features`). Passed `cargo check -p memfuse-router --all-features` and workspace compilation checks cleanly.
+
 ## 5e. Session Log & Verification (2026-09-10 — Task JULES-20260910-REVIEW, SESSION: 21a8d3e8)
 - **Inventory & Alignment Check**: Verified file inventory in `crates/memfuse-router/src/` (`dispatch.rs`, `lib.rs`, `lyapunov.rs`, `outcome.rs`, `profile.rs`, `router.rs`, `serde_helpers.rs`, `tests.rs`). Inventory state confirmed 100% aligned with 2026-09-10 snapshot (zero drift).
 - **Tag Taxonomy Hardening**: Converted unformatted TODO comment in `crates/memfuse-router/src/lyapunov.rs:151` to a properly formatted `AI-TAG[SMELL][MINOR]` comment (`AGT-ROUTER-00808347`) complying with `rules/tag_taxonomy.md` grammar.
