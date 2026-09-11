@@ -75,10 +75,6 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-09-10T23:29:29Z (SESSION: 6bb96488)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
-| `2026-09-10T23:29:29Z (SESSION: 6bb96488)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
-| `2026-09-10T23:29:29Z` | `crates/memfuse-embed/src/lib.rs` | `REVIEW-PASS` | `-` | `6bb96488` | `PASS` | `-` | // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T23:29:29Z) (SESSION: 6bb96488) PRÜFER-KONTEXT: FRESH - Verified Layer 3 DAG boundaries, zero production unsafe, and feature gate isolation. |
-| `2026-09-10T23:29:29Z` | `crates/memfuse-embed/src/reranker.rs` | `REVIEW-PASS` | `-` | `6bb96488` | `PASS` | `-` | // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T23:29:29Z) (SESSION: 6bb96488) PRÜFER-KONTEXT: FRESH - Verified CrossEncoderReranker score calibration, candidate bounds, and passthrough fallback paths. |
 | `2026-09-10T19:35:00Z` | `crates/memfuse-crypto/src/crypto.rs` | `REVIEW-PASS` | `TEST:CRY-001` | `b434cc40` | `PASS` | `6` | // REVIEW-PASS[7/3] STATUS:PASS (ID: TEST:CRY-001) (TS: 2026-09-10T19:35:00Z) (SESSION: b434cc40) |
 | `2026-09-10T19:29:31Z (SESSION: c9240483)` | `crates/memfuse-calibration/src/isotonic.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Non-parametric probability calibration via PAVA (Pool-Adjacent Violators Algorithm). |
 | `2026-09-10T19:29:31Z (SESSION: c9240483)` | `crates/memfuse-calibration/src/pid.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Adaptive Reranking candidate pool-size regulation via PID latency control. |
@@ -92,6 +88,8 @@
 | `2026-09-10T19:25:24Z (SESSION: ae8c2fb9)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-09-10T19:25:24Z (SESSION: ae8c2fb9)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
 | `2026-09-10T19:24:58Z (SESSION: 2299f6ae)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
+| `2026-09-10T19:24:15Z (SESSION: 3a20f416)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
+| `2026-09-10T19:24:15Z (SESSION: 3a20f416)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-09-10T19:23:40Z` | `crates/memfuse-graph/src/lib.rs` | `REVIEW-PASS` | `-` | `bd6ff800` | `PASS` | `-` | // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T19:23:40Z) (SESSION: bd6ff800) |
 | `2026-09-10T19:22:55Z (SESSION: 0b2ff57d)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
 | `2026-09-10T19:21:35Z` | `crates/memfuse-text/src/morphology.rs` | `REVIEW-PASS` | `TEST:TXT-001` | `4dd1c98c` | `PASS` | `8` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-10T19:21:35Z) (SESSION: 4dd1c98c) |
