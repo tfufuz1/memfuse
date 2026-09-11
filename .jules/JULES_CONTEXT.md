@@ -1,5 +1,5 @@
 # MemFuse — Jules Agent Context
-> Version: 2.1 | Stand: 2026-09-08 | Permanent Ambient Context für Jules Sessions
+> Version: 2.1 | Stand: 2026-09-12 | Permanent Ambient Context für Jules Sessions
 >
 > ⚠️ **FRISCHEGARANTIE**: Diese Datei regelt ausschließlich die Session-Prozessführung für Jules.
 > Die tatsächlichen Code-Fakten, Crate-Strukturen, Invarianten und Implementierungsstände
