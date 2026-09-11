@@ -13,15 +13,22 @@ use crate::profile::{ProfileCalibrationState, SlmProfile};
 use memfuse_core::{ContextChunk, ContextWindow, EntityId, MemFuseError, Result};
 use memfuse_db::{collection::Collection, context::ContextManager};
 use memfuse_store::LsmStorage;
+use arc_swap::ArcSwap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Mindestanzahl Calibration-Samples für verlässliche Conformal-Quantile.
-/// Unterhalb dieses Wertes gelten alle Konfidenzmetriken als "unkalibriert".
-pub(crate) const CALIBRATION_WARMUP_WINDOW: u32 = 30;
+/// Minimum calibration samples before conformal quantiles are considered reliable.
+/// Statistical basis: ≥100 samples required for α=0.1 coverage guarantee per
+/// Venn & Gammerman (2005). At 30 samples the quantile interval is too wide
+/// to provide meaningful routing signal — the router behaves as a random router.
+pub(crate) const CALIBRATION_WARMUP_WINDOW: u32 = 100;
+
+/// Minimum calibration samples required for high confidence coverage (α=0.05).
+#[allow(dead_code)]
+pub(crate) const CALIBRATION_HIGH_CONFIDENCE_WINDOW: u32 = 200;
 
 /// Maximale TTL für ausstehende Routing-Entscheidungen bevor sie bereinigt werden.
 pub(crate) const PENDING_DECISION_TTL: Duration = Duration::from_secs(300);
@@ -61,13 +68,25 @@ pub struct RoutingDecision {
     pub drift_status: Option<LyapunovResult>,
 }
 
+/// Inner state for `RouterEngine` holding active profiles, calibration states, and Lyapunov drift watchers.
+///
+/// Atomic state swap via ArcSwap: profiles, calibration, and watchers
+/// are always seen as a consistent unit by all readers.
+#[derive(Clone)]
+pub struct RouterState {
+    pub profiles: Vec<SlmProfile>,
+    pub calibration: HashMap<String, ProfileCalibrationState>,
+    pub lyapunov_watchers: HashMap<String, LyapunovDriftWatcher>,
+}
+
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
-    profiles: RwLock<Vec<SlmProfile>>,
-    pub(crate) calibration: RwLock<HashMap<String, ProfileCalibrationState>>,
+    /// Atomic state swap via ArcSwap: profiles, calibration, and watchers
+    /// are always seen as a consistent unit by all readers.
+    pub(crate) state: ArcSwap<RouterState>,
+    /// Kept in a separate RwLock to avoid cloning overhead on high-frequency routing decision tracking writes.
     pub(crate) pending_decisions: RwLock<HashMap<DecisionId, (String, Instant)>>,
-    lyapunov_watchers: RwLock<HashMap<String, LyapunovDriftWatcher>>,
 }
 
 impl RouterEngine {
@@ -87,12 +106,10 @@ impl RouterEngine {
             })
             .collect();
 
-        let lyapunov_watchers = RwLock::new(
-            profiles
-                .iter()
-                .map(|p| (p.name.clone(), LyapunovDriftWatcher::default()))
-                .collect(),
-        );
+        let lyapunov_watchers: HashMap<String, LyapunovDriftWatcher> = profiles
+            .iter()
+            .map(|p| (p.name.clone(), LyapunovDriftWatcher::default()))
+            .collect();
 
         if let Some(ref path) = calibration_store_path {
             if let Ok(bytes) = std::fs::read(path) {
@@ -110,12 +127,16 @@ impl RouterEngine {
             }
         }
 
+        let router_state = RouterState {
+            profiles,
+            calibration,
+            lyapunov_watchers,
+        };
+
         Self {
             collection,
-            profiles: RwLock::new(profiles),
-            calibration: RwLock::new(calibration),
+            state: ArcSwap::from(Arc::new(router_state)),
             pending_decisions: RwLock::new(HashMap::new()),
-            lyapunov_watchers,
         }
     }
 
@@ -133,30 +154,35 @@ impl RouterEngine {
 
     /// Dynamically updates configured SLM profiles at runtime (Hot-Reload).
     pub fn update_profiles(&self, new_profiles: Vec<SlmProfile>) {
-        let mut cal = self.calibration.write();
+        let current = self.state.load_full();
+        let mut old_cal = current.calibration.clone();
         let new_cal: HashMap<String, ProfileCalibrationState> = new_profiles
             .iter()
             .map(|p| {
-                let mut state = cal
+                let mut state = old_cal
                     .remove(&p.name)
                     .unwrap_or_else(|| ProfileCalibrationState::new(p.min_relevance_score));
                 state.check_and_invalidate_fingerprint(p.fingerprint.as_ref());
                 (p.name.clone(), state)
             })
             .collect();
-        *cal = new_cal;
 
-        let mut watchers = self.lyapunov_watchers.write();
+        let mut old_watchers = current.lyapunov_watchers.clone();
         let new_watchers: HashMap<String, LyapunovDriftWatcher> = new_profiles
             .iter()
             .map(|p| {
-                let watcher = watchers.remove(&p.name).unwrap_or_default();
+                let watcher = old_watchers.remove(&p.name).unwrap_or_default();
                 (p.name.clone(), watcher)
             })
             .collect();
-        *watchers = new_watchers;
 
-        *self.profiles.write() = new_profiles;
+        let new_state = RouterState {
+            profiles: new_profiles,
+            calibration: new_cal,
+            lyapunov_watchers: new_watchers,
+        };
+
+        self.state.store(Arc::new(new_state));
     }
 
     /// Validates all profiles and updates configured SLM profiles at runtime (Hot-Reload).
@@ -170,34 +196,44 @@ impl RouterEngine {
 
     /// Returns a copy of the active SLM profiles.
     pub fn profiles(&self) -> Vec<SlmProfile> {
-        self.profiles.read().clone()
+        self.state.load().profiles.clone()
     }
 
     /// Gibt aktuelle Kalibrierungsstatistik für alle Profile zurück.
     pub fn calibration_stats(&self) -> HashMap<String, ProfileCalibrationState> {
-        self.calibration.read().clone()
+        self.state.load().calibration.clone()
     }
 
     /// Setzt Kalibrierungsstatistik für ein bestimmtes Profil zurück.
     pub fn reset_calibration(&self, profile_name: &str) {
-        if let Some(state) = self.calibration.write().get_mut(profile_name) {
-            state.reset();
+        let current = self.state.load_full();
+        if current.calibration.contains_key(profile_name) {
+            let mut new_state = (*current).clone();
+            if let Some(state) = new_state.calibration.get_mut(profile_name) {
+                state.reset();
+            }
+            self.state.store(Arc::new(new_state));
         }
     }
 
     /// Gibt den aktuellen Lyapunov-Drift-Status für ein Profil zurück.
     pub fn drift_status(&self, profile_name: &str) -> Option<LyapunovResult> {
-        self.lyapunov_watchers
-            .read()
+        self.state
+            .load()
+            .lyapunov_watchers
             .get(profile_name)
             .and_then(|w| w.latest_result.clone())
     }
 
     /// Setzt die Baseline für den Lyapunov-Drift-Wächter eines bestimmten Profils.
     pub fn set_lyapunov_baseline(&self, profile_name: &str, baseline: &[f32]) -> bool {
-        let mut watchers = self.lyapunov_watchers.write();
-        if let Some(watcher) = watchers.get_mut(profile_name) {
-            watcher.set_baseline(baseline);
+        let current = self.state.load_full();
+        if current.lyapunov_watchers.contains_key(profile_name) {
+            let mut new_state = (*current).clone();
+            if let Some(watcher) = new_state.lyapunov_watchers.get_mut(profile_name) {
+                watcher.set_baseline(baseline);
+            }
+            self.state.store(Arc::new(new_state));
             true
         } else {
             false
@@ -233,17 +269,17 @@ impl RouterEngine {
             }
         };
 
-        let active_fp = self
+        let current = self.state.load_full();
+        let active_fp = current
             .profiles
-            .read()
             .iter()
             .find(|p| p.name == profile_name)
             .and_then(|p| p.fingerprint.clone());
 
         let non_conformity = outcome.non_conformity_score();
 
-        let mut cal = self.calibration.write();
-        if let Some(state) = cal.get_mut(&profile_name) {
+        let mut new_state = (*current).clone();
+        if let Some(state) = new_state.calibration.get_mut(&profile_name) {
             state.check_and_invalidate_fingerprint(active_fp.as_ref());
             if active_fp.is_some() {
                 state.recalibrate_conformal(non_conformity);
@@ -255,6 +291,7 @@ impl RouterEngine {
                 );
             }
         }
+        self.state.store(Arc::new(new_state));
         true
     }
 
@@ -266,9 +303,12 @@ impl RouterEngine {
 
     /// Setzt Kalibrierungsstatistik für alle Profile zurück.
     pub fn reset_all_calibration(&self) {
-        for state in self.calibration.write().values_mut() {
+        let current = self.state.load_full();
+        let mut new_state = (*current).clone();
+        for state in new_state.calibration.values_mut() {
             state.reset();
         }
+        self.state.store(Arc::new(new_state));
     }
 
     /// Routes a query with embedding and text to the best matching SLM profile.
@@ -286,8 +326,9 @@ impl RouterEngine {
             ));
         }
 
-        // Snapshot profiles atomically to guarantee caller consistency during hot-reloads
-        let profiles = self.profiles.read().clone();
+        // Snapshot state atomically via ArcSwap to guarantee caller consistency during hot-reloads
+        let state_snap = self.state.load_full();
+        let profiles = state_snap.profiles.clone();
 
         if profiles.is_empty() {
             return Err(MemFuseError::NotFound(
@@ -329,9 +370,12 @@ impl RouterEngine {
         }
 
         // 3. Perform profile selection, scoring, calibration tracking, and confidence metric generation
-        // atomically within a single write lock acquisition on calibration state.
+        // using an updated state snapshot swapped atomically via ArcSwap.
+        let current_state = self.state.load_full();
+        let mut new_state = (*current_state).clone();
+
         let (selected_profile, confidence_metrics) = {
-            let mut cal = self.calibration.write();
+            let cal = &mut new_state.calibration;
 
             // 1. Derive effective profiles using calibrated_min_score from calibration state
             let effective_profiles: Vec<SlmProfile> = profiles
@@ -350,7 +394,7 @@ impl RouterEngine {
 
             // 2. Scoring + Cascade Selection
             let (selected_idx, selected_profile, _) =
-                self.select_profile_cascade(&chunks, &effective_profiles, &mut cal)?;
+                self.select_profile_cascade(&chunks, &effective_profiles, cal)?;
 
             let profile_scores = compute_profile_scores(&profiles, &chunks);
             let best_score = profile_scores.get(&selected_idx).copied().unwrap_or(0.0);
@@ -377,9 +421,17 @@ impl RouterEngine {
                 state.cumulative_confidence += confidence_ratio;
             }
 
-            // 4. Construct ConfidenceMetrics from updated lock state
+            // 4. Construct ConfidenceMetrics from updated state
             let metrics = cal.get(&selected_profile.name).map(|state| {
                 let calibrated = state.conformal.window_total >= CALIBRATION_WARMUP_WINDOW as u64;
+                if !calibrated {
+                    tracing::info!(
+                        profile = %selected_profile.name,
+                        samples = state.conformal.window_total,
+                        required = CALIBRATION_WARMUP_WINDOW,
+                        "Router in random-fallback mode: calibration not yet reliable"
+                    );
+                }
                 ConfidenceMetrics {
                     score_lower: if calibrated {
                         Some(best_score * (1.0 - state.conformal.alpha))
@@ -399,7 +451,7 @@ impl RouterEngine {
             });
 
             (selected_profile, metrics)
-        }; // Write lock released
+        };
 
         let decision_id = DecisionId::new();
         self.pending_decisions
@@ -416,7 +468,7 @@ impl RouterEngine {
             .unwrap_or(1.0);
 
         let drift_status = {
-            let mut watchers = self.lyapunov_watchers.write();
+            let watchers = &mut new_state.lyapunov_watchers;
             if let Some(watcher) = watchers.get_mut(&selected_profile.name) {
                 watcher.observe_score(non_conformity_score);
                 let res = watcher.analyze();
@@ -442,6 +494,9 @@ impl RouterEngine {
                 None
             }
         };
+
+        // Store updated state atomically via ArcSwap
+        self.state.store(Arc::new(new_state));
 
         let mut context_mgr = ContextManager::new(selected_profile.token_budget.clone());
         context_mgr.set_relevance_threshold(selected_profile.min_relevance_score);
@@ -849,10 +904,12 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile], None);
         {
-            let mut cal = router.calibration.write();
-            if let Some(state) = cal.get_mut("p1") {
+            let current = router.state.load_full();
+            let mut new_state = (*current).clone();
+            if let Some(state) = new_state.calibration.get_mut("p1") {
                 state.times_selected = 5;
             }
+            router.state.store(Arc::new(new_state));
         }
         assert_eq!(router.calibration_stats()["p1"].times_selected, 5);
 
