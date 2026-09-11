@@ -18341,6 +18341,10 @@
   },
   {
     "file": "crates/memfuse-text/src/inverted.rs",
+    "hash": "6f648aecf58e92f6"
+  },
+  {
+    "file": "crates/memfuse-text/src/inverted.rs",
     "hash": "90cf376e97c964ec"
   },
   {
