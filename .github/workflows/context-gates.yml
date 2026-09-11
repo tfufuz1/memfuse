@@ -41,10 +41,10 @@ jobs:
       - name: "Gate 1: Keine ungelösten kritischen AI-TAGs"
         run: |
           COUNT=$(grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ \
-            --include="*.rs" | grep -vc "RESOLVED" || true)
+            --include="*.rs" | grep -vcP "(?<!UN)RESOLVED" || true)
           if [ "$COUNT" -gt 0 ]; then
             echo "❌ $COUNT ungelöste AI-TAG[CRITICAL|BLOCKER] gefunden"
-            grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ --include="*.rs" | grep -v "RESOLVED"
+            grep -rE "AI-TAG\[[^]]+\]\[(CRITICAL|BLOCKER)\]" crates/ --include="*.rs" | grep -vP "(?<!UN)RESOLVED"
             exit 1
           fi
           echo "✅ Keine offenen kritischen/blockierenden Tags"
@@ -52,6 +52,9 @@ jobs:
       - name: "Gate 2: Keine neuen .unwrap()/.expect() in Produktionscode"
         run: cargo xtask check-unwrap-baseline
 
+      # Gate 2b: Trend-Überwachung der .unwrap()/.expect() Baseline
+      # - BLOCKING: Nettowachstum (net > 0) in Tier-1-Crates (memfuse-core, memfuse-crypto, memfuse-store, memfuse-index) lässt den xtask-Check mit Exit-Code 1 fehlschlagen.
+      # - NON-BLOCKING: Nettowachstum in Tier-2/3-Crates wird dokumentiert und in der Historie erfasst, blockiert die CI jedoch nicht direkt.
       - name: "Gate 2b: Trend-Überwachung der .unwrap()/.expect() Baseline"
         env:
           MEMFUSE_CI_BASE_REF: ${{ github.base_ref || github.event.before || 'origin/main' }}
@@ -64,6 +67,9 @@ jobs:
             echo "❌ Silent IO-Fehler gefunden — propagiere mit ?"
             exit 1
           fi
+          cargo clippy --workspace -- \
+            -D clippy::unused_must_use \
+            -W clippy::let_underscore_must_use
           echo "✅ Keine silent IO-Fehler"
 
       - name: "Gate 4: axum nicht in memfuse-mcp"
