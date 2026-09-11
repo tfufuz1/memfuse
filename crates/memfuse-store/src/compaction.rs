@@ -107,7 +107,7 @@ impl CompactionEngine {
     ///
     /// Takes a write-lock on the SSTable list to atomically swap old SSTables
     /// for the compacted result.
-    // AI-TAG[SMELL][MINOR] TODO(audit-H-3): Preserve compaction state and counters across CompactionEngine instantiations to prevent losing historical level statistics. (ID: AGT-STORE-41af03c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-H-3: LsmStorage hält eine persistente CompactionEngine-Instanz (LsmStorage.compaction_engine), wodurch Compaction-State & Zähler erhalten bleiben.
     pub async fn maybe_compact(
         &self,
         sstables: &RwLock<Vec<Arc<SstableReader>>>,

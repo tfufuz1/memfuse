@@ -424,7 +424,7 @@ impl LsmStorage {
         // COMP-001 — Implementiere CompactionEngine::run_loop.
         // TEST: cargo test -p memfuse-store test_concurrent_reads_during_compaction
         // DONE: Triple-Test grün, keine Deadlocks in tokio::spawn.
-        // AI-TAG[SMELL][MINOR] TODO(audit-C-1): Force a startup flush of replayed MemTable entries before deleting old WAL files, or delay deleting old WAL files until after the subsequent flush + fsync_parent_dir. (ID: AGT-STORE-bae66245) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+        // AI-TAG[SMELL][RESOLVED] audit-C-1: Startup-Flush erzwungen vor Löschung alter WAL-Dateien in LsmStorage::new (Zeilen ~480-490).
         let compaction_engine = Arc::new(CompactionEngine::new(
             config.compaction.clone(),
             Arc::clone(&snapshot_registry),
@@ -1068,7 +1068,7 @@ impl StorageEngine for LsmStorage {
     ///
     /// # Panics
     /// Panikt nicht in Produktionscode.
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-6): Periodically recalculate memtable byte size during flushes to prevent monotonic memory budget drift accumulation. (ID: AGT-STORE-6fb33368) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-M-6: Drift-Counter budget_tracking_drift_bytes wird in LsmStorage::flush nach erfolgreichem Flush auf 0 zurückgesetzt.
     fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             self.apply_backpressure().await;
@@ -1446,7 +1446,7 @@ impl StorageEngine for LsmStorage {
     /// The candidates across sources are then merged in a `BTreeMap`.
     /// - Memory Complexity: O(N * limit) where N is the number of storage sources (SSTables + MemTables).
     /// - Time Complexity: O(N * limit * log(limit)) instead of O(M^2) across paginated calls over M entries.
-    // AI-TAG[SMELL][MINOR] TODO(audit-NC-1/M-5): Ensure range_bound is correctly declared in scope and found_count is incremented during prefix bounded scanning. (ID: AGT-STORE-b57a097f) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-NC-1/M-5: range_bound ist in scan_prefix_bounded korrekt im Scope deklariert und steuert die Paginierung.
     fn scan_prefix_bounded<'a>(
         &'a self,
         prefix: &'a [u8],
@@ -1586,7 +1586,7 @@ impl StorageEngine for LsmStorage {
         })
     }
 
-    // AI-TAG[SMELL][MINOR] TODO(audit-H-7): Acquire snapshot read lock before capturing last_tx to eliminate split-brain read race with concurrent commits. (ID: AGT-STORE-a75b9fdc) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-H-7: last_tx wird in scan_prefix_at nach dem Erwerb von self.state.read() geladen.
     fn scan_prefix_at<'a>(
         &'a self,
         prefix: &'a [u8],
