@@ -95,7 +95,6 @@
 | `2026-09-10T19:25:24Z (SESSION: ae8c2fb9)` | `crates/memfuse-mcp/src/prompt_injection.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Prompt-Injection-Erkennung & Quarantäne-System für MCP-Server |
 | `2026-09-10T19:25:24Z (SESSION: ae8c2fb9)` | `crates/memfuse-mcp/src/protocol.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP JSON-RPC 2.0 Protokoll-Typen & DTO-Abbildung für MemFuse |
 | `2026-09-10T19:25:24Z (SESSION: ae8c2fb9)` | `crates/memfuse-mcp/src/sandbox.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MCP Sandbox & Zero-Trust Tool Isolation Layer |
-| `2026-09-10T19:24:58Z (SESSION: 2299f6ae)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-09-10T19:24:15Z (SESSION: 3a20f416)` | `crates/memfuse-embed/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | In-process ONNX Embedding Engine (Layer 3 im 5-Schichten-DAG). |
 | `2026-09-10T19:24:15Z (SESSION: 3a20f416)` | `crates/memfuse-embed/src/reranker.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung. |
 | `2026-09-10T19:23:40Z` | `crates/memfuse-graph/src/lib.rs` | `REVIEW-PASS` | `-` | `bd6ff800` | `PASS` | `-` | // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T19:23:40Z) (SESSION: bd6ff800) |
