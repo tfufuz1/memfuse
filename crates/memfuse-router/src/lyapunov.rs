@@ -365,11 +365,10 @@ mod tests {
         let current: Vec<f32> = vec![0.99; 1000];
         watcher.update(&current);
 
-        let latest_kl = watcher
-            .divergence_history
-            .back()
-            .copied()
-            .expect("KL divergence should be in history");
+        let latest_kl = match watcher.divergence_history.back().copied() {
+            Some(kl) => kl,
+            None => panic!("KL divergence should be in history"),
+        };
 
         assert!(
             latest_kl.is_finite(),
