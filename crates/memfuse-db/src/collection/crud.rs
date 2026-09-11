@@ -989,7 +989,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     }
                 }
 
-                // Trigger cascading edge invalidation for the superseded document
+                // INVARIANT INV-GRAPH-PROV-1: Graph tombstone MUST precede LSM commit
+                // for Supersedes links. CSR is rebuilt from LSM on startup — tombstone state is recovered
+                // transitively.
                 if relation == memfuse_core::types::domain::LinkRelation::Supersedes {
                     memfuse_graph::cascade_invalidate_edges_for_superseded_doc(
                         &self.graph_index,
@@ -999,23 +1001,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .await?;
                 }
 
-                // Commit transaction to persist the link updates
+                // Commit transaction to persist the link updates and edge tombstones atomically
                 self.storage.commit(tx).await?;
             }
-        }
-
-        // Cascading-Invalidation: Alle CSR-Kanten die vom superseded Dokument abhängen
-        // werden tombstoniert, damit PathRAG-Sufficiency-Gate konsistent mit dem
-        // aktuellen Chunk-Bestand bleibt (schließt Lücke aus INV-GRAPH-PROV-1).
-        if relation == memfuse_core::types::domain::LinkRelation::Supersedes {
-            let affected_edges = self.graph_index.doc_edge_index.edges_for_doc(to);
-            for edge_id in affected_edges {
-                self.graph_index.tombstone_edge(edge_id, tx).await?;
-            }
-            tracing::debug!(
-                superseded_doc = ?to,
-                "Cascading-Invalidation: Supersedes -> CSR-Edge-Tombstone"
-            );
         }
 
         Ok(())

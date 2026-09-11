@@ -132,3 +132,62 @@ async fn test_pathrag_ignores_superseded_edges() {
         "PathRAG must ignore edge whose source document was superseded"
     );
 }
+
+#[tokio::test]
+async fn test_supersedes_tombstone_retained_after_db_reopen() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().to_path_buf();
+    let dummy_emb = vec![0.1f32; 768];
+
+    let eid_x = EntityId::from_key("doc-x").unwrap();
+    let eid_y = EntityId::from_key("doc-y").unwrap();
+
+    // 1. Initial scope: insert documents, relate them, link as Supersedes
+    {
+        let db = MemFuse::open(&db_path).await.unwrap();
+        let col = db.collection("default").await.unwrap();
+
+        db.insert(
+            "doc-x",
+            &dummy_emb,
+            Some(serde_json::json!({"text": "Document X text"})),
+        )
+        .await
+        .unwrap();
+
+        db.insert(
+            "doc-y",
+            &dummy_emb,
+            Some(serde_json::json!({"text": "Document Y text"})),
+        )
+        .await
+        .unwrap();
+
+        let doc_x_id = DocId::from_key("doc-x").unwrap();
+        let doc_y_id = DocId::from_key("doc-y").unwrap();
+
+        col.relate("doc-x", "doc-y", "relates_to").await.unwrap();
+
+        col.link_memories(doc_y_id, doc_x_id, LinkRelation::Supersedes)
+            .await
+            .unwrap();
+
+        let engine = PathRAGEngine::with_defaults(col.graph_index());
+        assert!(
+            engine.find_path(eid_x, eid_y).is_none(),
+            "Path must be invalidated before closing database"
+        );
+    }
+
+    // 2. Re-open database: verify tombstone state persists and CSR graph re-evaluates Supersedes
+    {
+        let db = MemFuse::open(&db_path).await.unwrap();
+        let col = db.collection("default").await.unwrap();
+
+        let engine = PathRAGEngine::with_defaults(col.graph_index());
+        assert!(
+            engine.find_path(eid_x, eid_y).is_none(),
+            "PathRAG must not find path over tombstoned edge post database restart"
+        );
+    }
+}

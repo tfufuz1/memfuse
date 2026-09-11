@@ -746,11 +746,15 @@ impl CsrGraph {
     /// Returns all edge IDs derived from the given source `DocId`.
     pub fn edges_for_doc(&self, doc_id: DocId) -> Vec<(EntityId, EntityId)> {
         let inner = self.inner.read();
-        inner
+        let mut edges: HashSet<(EntityId, EntityId)> = inner
             .doc_to_edges
             .get(&doc_id)
-            .map(|set| set.iter().copied().collect())
-            .unwrap_or_default()
+            .cloned()
+            .unwrap_or_default();
+        for edge in self.doc_edge_index.edges_for_doc(doc_id) {
+            edges.insert(edge);
+        }
+        edges.into_iter().collect()
     }
 
     /// Directly inserts an entity into the CSR graph without staging.
@@ -1157,6 +1161,33 @@ impl CsrGraph {
             graph
                 .last_tx_id
                 .fetch_max(last_tx.inner(), Ordering::SeqCst);
+        }
+
+        // CSR rebuilt from LSM on startup; Supersedes relations are re-evaluated to re-apply edge tombstones.
+        let doc_entries = storage.scan_prefix(b"").await?;
+        let wal_seq = graph.last_tx_id.load(Ordering::SeqCst);
+        for (_raw_key, raw_value) in doc_entries {
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&raw_value) {
+                let meta_obj = val
+                    .get("metadata")
+                    .and_then(|m| m.as_object())
+                    .or_else(|| val.as_object());
+                if let Some(obj) = meta_obj {
+                    if let Some(links_val) = obj.get("links") {
+                        if let Ok(links) = serde_json::from_value::<Vec<memfuse_core::types::domain::MemoryLink>>(links_val.clone()) {
+                            for link in links {
+                                if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+                                    let superseded_doc = link.target;
+                                    let edge_ids = graph.edges_for_doc(superseded_doc);
+                                    if !edge_ids.is_empty() {
+                                        let _ = graph.tombstone_edges_direct(&edge_ids, TxId::new(wal_seq));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 3. Communities laden
