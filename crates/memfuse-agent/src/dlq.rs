@@ -89,6 +89,10 @@ impl DeadLetterQueue {
 
     async fn allocate_tx(&self) -> Result<TxId> {
         let last_tx = self.storage.last_tx_id().await?.0;
+        // AI-TAG[SMELL][MINOR] Fallback transaction ID allocation via last_tx_id + 1 is non-atomic under concurrent writers. (ID: AGT-AGENT-49bfd02e) (TS: 2026-09-11T12:00:00Z) (SESSION: 81ef2364)
+        // BEFUND: allocate_tx liest last_tx_id() und addiert 1 statt Collection::allocate_tx() zu nutzen.
+        // RISIKO: Unter parallelen DLQ operations kann dieselbe TxId doppelt vergeben werden.
+        // EMPFEHLUNG: Vergabe über Collection oder atomare Sequenz im Storage vereinheitlichen.
         Ok(TxId::new(last_tx + 1))
     }
 }
