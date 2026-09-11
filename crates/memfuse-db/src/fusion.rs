@@ -72,8 +72,7 @@ pub fn apply_resonance_bonus(
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
-    // NC-6: NaN/Inf-Scores ans Ende (stable partition erhält Reihenfolge unter ihnen)
+    // Single sort: finite scores descending, non-finite scores to end (NC-6).
     results.sort_by(|a, b| {
         match (a.score.is_finite(), b.score.is_finite()) {
             (true, false) => std::cmp::Ordering::Less, // finite vor non-finite
@@ -169,18 +168,19 @@ pub enum MetadataMergePriority {
 impl MetadataMergePriority {
     /// Returns the precedence rank (lower number = processed earlier) for a given signal name.
     pub fn signal_rank(&self, signal_name: &str) -> usize {
+        // Stack-allocated array — avoids per-result heap allocation in hot path.
         let kind = SignalKind::from_name(signal_name);
-        let order = match self {
+        let order: &[SignalKind] = match self {
             MetadataMergePriority::VectorFirst => {
-                vec![SignalKind::Vector, SignalKind::Text, SignalKind::Graph]
+                &[SignalKind::Vector, SignalKind::Text, SignalKind::Graph]
             }
             MetadataMergePriority::TextFirst => {
-                vec![SignalKind::Text, SignalKind::Vector, SignalKind::Graph]
+                &[SignalKind::Text, SignalKind::Vector, SignalKind::Graph]
             }
             MetadataMergePriority::GraphFirst => {
-                vec![SignalKind::Graph, SignalKind::Vector, SignalKind::Text]
+                &[SignalKind::Graph, SignalKind::Vector, SignalKind::Text]
             }
-            MetadataMergePriority::Custom(custom_order) => custom_order.clone(),
+            MetadataMergePriority::Custom(custom_order) => custom_order.as_slice(),
         };
 
         if let Some(k) = kind {
@@ -212,6 +212,9 @@ pub fn build_provenance(
     index_type: Option<String>,
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
+    // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
+    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
 
@@ -219,40 +222,62 @@ pub fn build_provenance(
     let t_w = text_weight.unwrap_or(1.0);
     let g_w = graph_weight.unwrap_or(1.0);
 
+    let calc_contrib = |w: f32, rank: u32| -> (u32, f32) {
+        let rank = if rank == 0 {
+            tracing::warn!("build_provenance: rank=0 is invalid input (RRF rank is 1-based per Cormack et al.); defaulting to rank 1");
+            1
+        } else {
+            rank
+        };
+        let rrf_contrib = if rrf_k + rank as f32 == 0.0 {
+            tracing::warn!("rrf_k=0 and rank=0: defaulting rrf_contrib to 0.0");
+            0.0
+        } else {
+            w / (rrf_k + rank as f32)
+        };
+        let rrf_contrib = if rrf_contrib.is_finite() {
+            rrf_contrib
+        } else {
+            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            0.0
+        };
+        (rank, rrf_contrib)
+    };
+
     if let (Some(score), Some(rank)) = (vector_distance, vector_rank) {
-        signal_ranks.insert("vector".to_string(), rank);
-        let rrf_contrib = v_w / (rrf_k + rank as f32);
+        let (rank_1based, rrf_contrib) = calc_contrib(v_w, rank);
+        signal_ranks.insert("vector".to_string(), rank_1based);
         signal_contributions.insert(
             "vector".to_string(),
             crate::SignalContribution {
                 raw_score: score,
-                rank,
+                rank: rank_1based,
                 rrf_contribution: rrf_contrib,
             },
         );
     }
 
     if let (Some(score), Some(rank)) = (bm25_score, bm25_rank) {
-        signal_ranks.insert("text".to_string(), rank);
-        let rrf_contrib = t_w / (rrf_k + rank as f32);
+        let (rank_1based, rrf_contrib) = calc_contrib(t_w, rank);
+        signal_ranks.insert("text".to_string(), rank_1based);
         signal_contributions.insert(
             "text".to_string(),
             crate::SignalContribution {
                 raw_score: score,
-                rank,
+                rank: rank_1based,
                 rrf_contribution: rrf_contrib,
             },
         );
     }
 
     if let (Some(score), Some(rank)) = (graph_score, graph_rank) {
-        signal_ranks.insert("graph".to_string(), rank);
-        let rrf_contrib = g_w / (rrf_k + rank as f32);
+        let (rank_1based, rrf_contrib) = calc_contrib(g_w, rank);
+        signal_ranks.insert("graph".to_string(), rank_1based);
         signal_contributions.insert(
             "graph".to_string(),
             crate::SignalContribution {
                 raw_score: score,
-                rank,
+                rank: rank_1based,
                 rrf_contribution: rrf_contrib,
             },
         );
@@ -425,7 +450,11 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         }
         valid_signal_count += 1;
         let signal_kind = SignalKind::from_name(&signal_name);
-        for (rank, doc) in result_set.into_iter().enumerate() {
+        // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
+        let rrf_k = k as f32;
+        debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+
+        for (rank_idx, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {
                 tracing::error!(
                     signal = %signal_name,
@@ -434,11 +463,20 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                     "RRF fusion: non-finite raw score from upstream signal detected"
                 );
             }
-            let score = weight / (k as f32 + rank as f32 + 1.0);
-            debug_assert!(
-                score.is_finite(),
-                "RRF score must be finite after weight validation"
-            );
+            let rrf_rank = (rank_idx + 1) as u32;
+            let denom = rrf_k + rrf_rank as f32;
+            let score = if denom == 0.0 {
+                tracing::warn!(signal = %signal_name, rank = rrf_rank, "rrf_k=0 and rank=0: defaulting rrf_contrib to 0.0");
+                0.0
+            } else {
+                weight / denom
+            };
+            let score = if score.is_finite() {
+                score
+            } else {
+                tracing::warn!(signal = %signal_name, weight, denom, "non-finite RRF score detected; defaulting to 0.0");
+                0.0
+            };
             let entry = fused
                 .entry(doc.id)
                 .or_insert_with(|| (0.0, None, Vec::new(), ProvenanceRecord::default()));
@@ -448,6 +486,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 && signal_name != "unnamed"
                 && !entry.2.contains(&signal_name)
             {
+                // O(n) acceptable for n<=4 signals; revisit if signal count grows.
                 entry.2.push(signal_name.clone());
             }
 
@@ -455,14 +494,14 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
                 entry
                     .3
                     .signal_ranks
-                    .insert(signal_name.clone(), (rank + 1) as u32);
+                    .insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
                     signal_name.clone(),
                     crate::SignalContribution {
                         raw_score: doc.score,
-                        rank: (rank + 1) as u32,
+                        rank: rrf_rank,
                         rrf_contribution: score,
                     },
                 );
