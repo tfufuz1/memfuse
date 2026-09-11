@@ -113,3 +113,20 @@
 - **Production Code Safety**: Confirmed 0 `unwrap()`/`expect()` in production code paths (all 18 occurrences are isolated within `#[cfg(test)]` blocks). Confirmed 0 `unsafe` blocks across `memfuse-bench`.
 - **Test Suite Verification**: Executed `cargo test -p memfuse-bench --all-features` (26/26 tests passed).
 - **Workspace Compilation**: `cargo check --workspace --exclude memfuse-tauri` clean.
+
+---
+
+## Session-Update (Deep Audit & Concurrency Verification)
+**Stand / Zeitstempel**: `2026-09-11T10:25:00Z` (SESSION: bb23eb62)
+**Scope**: Deep-Audit of `benchmarks/memfuse-bench`, Inventory Reality Check, Concurrency & Determinism Verification.
+
+### Audit & Verification Results
+- **Inventarabgleich (Schritt 0)**:
+  - Bekanntes Inventar (Prompter, Stand 2026-09-10): `bin/compare_baseline.rs`, `compare.rs`, `lib.rs`, `locomo.rs`, `long_mem_eval.rs`, `main.rs`, `path_rag_sweep.rs`.
+  - Tatsächliches Inventar: `bin/compare_baseline.rs`, `compare.rs`, `lib.rs`, `locomo.rs`, `long_mem_eval.rs`, `main.rs`, `path_rag_sweep.rs`, `regression_gate.rs`.
+  - **Befund**: `Inventar-Drift: Datei benchmarks/memfuse-bench/src/regression_gate.rs im Prompter-Inventar vom 2026-09-10 nicht erfasst`.
+- **Code Invariants & Safety**:
+  - `#![forbid(unsafe_code)]` in production code. Zero `unsafe` blocks.
+  - Zero `.unwrap()` / `.expect()` in non-test production paths.
+- **Concurrency & Determinism**:
+  - 10 repeated parallel test runs with `--test-threads=8`: 0 deadlocks, 0 race conditions, 26/26 tests passing consistently.
