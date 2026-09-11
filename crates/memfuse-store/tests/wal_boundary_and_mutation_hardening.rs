@@ -33,7 +33,10 @@ async fn test_truncate_at_offset_zero_yields_empty_wal() -> Result<()> {
 
     // Physical file size before truncate must be > 0
     let meta_before = fs::metadata(&wal_path)?;
-    assert!(meta_before.len() > 0, "WAL file should contain written bytes before truncation");
+    assert!(
+        meta_before.len() > 0,
+        "WAL file should contain written bytes before truncation"
+    );
 
     // Execute truncate to offset 0 with reset HMAC
     wal.truncate(0, [0u8; 32]).await?;
@@ -50,7 +53,11 @@ async fn test_truncate_at_offset_zero_yields_empty_wal() -> Result<()> {
     drop(wal);
     let wal_reopened = Wal::open(&wal_path).await?;
     let entries = wal_reopened.replay().await?;
-    assert_eq!(entries.len(), 0, "Reopened WAL after truncate(0) must yield 0 entries");
+    assert_eq!(
+        entries.len(),
+        0,
+        "Reopened WAL after truncate(0) must yield 0 entries"
+    );
 
     Ok(())
 }
@@ -203,7 +210,7 @@ async fn test_single_entry_no_commit_marker_replay() -> Result<()> {
         wal.append(&entry1).await?;
     }
 
-    // AI-TAG[SMELL] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted.
+    // AI-TAG[SMELL][MINOR] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted. (ID: AGT-STORE-6eadc4f2) (TS: 2026-09-11T23:00:00Z) (SESSION: b4480840)
     // We simulate partial trailing write by appending partial garbage bytes at the tail.
     let mut file = OpenOptions::new().append(true).open(&wal_path)?;
     use std::io::Write;
@@ -362,7 +369,7 @@ async fn test_disk_full_mid_append_batch_rollback() -> Result<()> {
         "append_batch must return Err when fault injection triggers WAL append failure"
     );
 
-    // AI-TAG[SMELL] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity.
+    // AI-TAG[SMELL][MINOR] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity. (ID: AGT-STORE-e9a8ee22) (TS: 2026-09-11T23:00:00Z) (SESSION: b4480840)
     wal.restore_last_hmac(prev_hmac_snapshot).await?;
 
     // Verify system state after failure/rollback: reopening WAL yields only baseline entry

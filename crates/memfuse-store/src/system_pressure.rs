@@ -62,8 +62,7 @@ impl SystemPressureMonitor {
             || (max_permits > 0 && embedding_queue == 0)
         {
             PressureLevel::Critical
-        } else if blocking_util > BLOCKING_UTIL_ELEVATED
-            || wal_depth > WAL_QUEUE_ELEVATED_THRESHOLD
+        } else if blocking_util > BLOCKING_UTIL_ELEVATED || wal_depth > WAL_QUEUE_ELEVATED_THRESHOLD
         {
             PressureLevel::Elevated
         } else {
@@ -163,16 +162,17 @@ mod tests {
         let cancel_token = cancellation.clone();
 
         let handle = tokio::spawn(async move {
-            monitor
-                .run(cancel_token, || 0, || 10, 10)
-                .await;
+            monitor.run(cancel_token, || 0, || 10, 10).await;
         });
 
         tokio::time::sleep(Duration::from_millis(20)).await;
         cancellation.cancel();
 
         let res = tokio::time::timeout(Duration::from_secs(1), handle).await;
-        assert!(res.is_ok(), "Monitor run loop should terminate cleanly on cancellation");
+        assert!(
+            res.is_ok(),
+            "Monitor run loop should terminate cleanly on cancellation"
+        );
     }
 
     #[tokio::test]
