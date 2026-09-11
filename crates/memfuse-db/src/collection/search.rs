@@ -43,13 +43,41 @@ impl<'a, S: StorageEngine + ?Sized> CheckpointPinGuard<'a, S> {
         })
     }
 
+    /// Pin-first, read-after: the seq is read under the protection of the pin,
+    /// eliminating the TOCTOU window between snapshot_seq() and pin activation.
+    pub async fn new_at_latest(storage: &'a S) -> Result<(Self, u64)> {
+        let seq = storage.last_seq_no().await?;
+        storage.pin_checkpoint(seq).await?;
+        Ok((
+            Self {
+                storage,
+                seq,
+                unpinned: false,
+            },
+            seq,
+        ))
+    }
+
+    /// Pin-first, read-after alias for `new_at_latest`.
+    #[allow(dead_code)]
+    pub async fn new_pinning_latest(storage: &'a S) -> Result<(Self, u64)> {
+        Self::new_at_latest(storage).await
+    }
+
     /// Explicitly unpins the checkpoint and consumes the guard, preventing the fallback `Drop` warning.
     pub async fn release(mut self) -> Result<()> {
         self.unpinned = true;
         self.storage.unpin_checkpoint(self.seq).await
     }
+
+    /// Returns the sequence number protected by this pin guard.
+    #[allow(dead_code)]
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
 }
 
+// Drop impl is a safety net only — always use with_pinned_checkpoint() to guarantee release() is called.
 impl<'a, S: StorageEngine + ?Sized> Drop for CheckpointPinGuard<'a, S> {
     fn drop(&mut self) {
         if !self.unpinned {
@@ -60,6 +88,67 @@ impl<'a, S: StorageEngine + ?Sized> Drop for CheckpointPinGuard<'a, S> {
             );
         }
     }
+}
+
+/// Higher-order function wrapping an async block with a pinned checkpoint guard,
+/// ensuring `release()` is ALWAYS called even on error paths.
+pub(super) async fn with_pinned_checkpoint<S, F, Fut, T>(
+    storage: &S,
+    seq: u64,
+    f: F,
+) -> Result<T>
+where
+    S: StorageEngine + ?Sized,
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let pin_guard = CheckpointPinGuard::new(storage, seq).await?;
+    let result = f().await;
+    if let Err(e) = pin_guard.release().await {
+        tracing::warn!(error = %e, seq_no = seq, "CheckpointPinGuard release failed");
+    }
+    result
+}
+
+/// Higher-order function providing pin-first, read-after semantics with automatic release on completion/error.
+///
+/// Pin-first, read-after: the seq is read under the protection of the pin,
+/// eliminating the TOCTOU window between snapshot_seq() and pin activation.
+pub(super) async fn with_pinned_checkpoint_at_latest<S, F, Fut, T>(
+    storage: &S,
+    f: F,
+) -> Result<T>
+where
+    S: StorageEngine + ?Sized,
+    F: FnOnce(u64) -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let (pin_guard, seq) = CheckpointPinGuard::new_at_latest(storage).await?;
+    let result = f(seq).await;
+    if let Err(e) = pin_guard.release().await {
+        tracing::warn!(error = %e, seq_no = seq, "CheckpointPinGuard release failed");
+    }
+    result
+}
+
+/// Higher-order function passing the guard reference to the closure, ensuring `release()` is ALWAYS called.
+#[allow(dead_code)]
+pub(super) async fn with_pinned_checkpoint_and_guard<S, F, Fut, T>(
+    storage: &S,
+    seq: u64,
+    f: F,
+) -> Result<T>
+where
+    S: StorageEngine + ?Sized,
+    F: FnOnce(&CheckpointPinGuard<S>, u64) -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let pin_guard = CheckpointPinGuard::new(storage, seq).await?;
+    let result = f(&pin_guard, seq).await;
+    if let Err(e) = pin_guard.release().await {
+        tracing::warn!(error = %e, seq_no = seq, "CheckpointPinGuard release failed");
+    }
+    result
 }
 
 impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
@@ -122,12 +211,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
         // 🛡️ SICHERUNG: Snapshot-Isolation (FIND-DB-003)
-        // Wir pinnen den Snapshot für die gesamte Dauer der gefilterten Suche,
-        // um Konsistenz zwischen Vektor-Index, Metadaten-Filter und Re-Hydrierung zu garantieren.
-        let seq = self.snapshot_seq().await?;
-        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
-
-        let res = async {
+        // Pin-first, read-after: the seq is read under the protection of the pin,
+        // eliminating the TOCTOU window between snapshot_seq() and pin activation.
+        with_pinned_checkpoint_at_latest(self.storage.as_ref(), |seq| async move {
             let filter = match filter {
                 Some(f) => f,
                 None => return self.search_filtered_at(query, k, None, seq).await,
@@ -143,16 +229,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             let filter_fn = move |id: DocId| matched_ids.contains(&id);
             self.search_filtered_at(query, k, Some(&filter_fn), seq)
                 .await
-        }
-        .await;
-
-        if let Err(e) = pin_guard.release().await {
-            tracing::error!(
-                seq_no = seq,
-                "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert. Manuelles Eingreifen eventuell nötig."
-            );
-        }
-        res
+        })
+        .await
     }
 
     /// Performs semantic search using a raw text query (automatically embedded).
@@ -343,8 +421,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         filter: Option<&(dyn Fn(DocId) -> bool + Send + Sync)>,
     ) -> Result<Vec<crate::SearchResult>> {
         let k = k.min(memfuse_core::MAX_SEARCH_K);
-        let seq = self.snapshot_seq().await?;
-        self.search_filtered_at(query, k, filter, seq).await
+        // Pin-first, read-after: the seq is read under the protection of the pin,
+        // eliminating the TOCTOU window between snapshot_seq() and pin activation.
+        with_pinned_checkpoint_at_latest(self.storage.as_ref(), |seq| async move {
+            self.search_filtered_at(query, k, filter, seq).await
+        })
+        .await
     }
 
     /// Performs filtered semantic vector search at a specific MVCC sequence number.
@@ -606,10 +688,9 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         }
         let k = k.min(memfuse_core::MAX_SEARCH_K);
 
-        let seq = self.snapshot_seq().await?;
-        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
-
-        let res = async {
+        // Pin-first, read-after: the seq is read under the protection of the pin,
+        // eliminating the TOCTOU window between snapshot_seq() and pin activation.
+        with_pinned_checkpoint_at_latest(self.storage.as_ref(), |seq| async move {
             let is_vector_zero = vector.iter().all(|&v| v == 0.0);
             let is_text_empty = text.trim().is_empty();
 
@@ -766,16 +847,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 .await?;
             boosted.truncate(k);
             Ok(boosted)
-        }
-        .await;
-
-        if let Err(e) = pin_guard.release().await {
-            tracing::error!(
-                seq_no = seq,
-                "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert."
-            );
-        }
-        res
+        })
+        .await
     }
 
     /// Performs hybrid search combining BM25, vector, and graph signals configured via `HybridQuery`.
@@ -789,8 +862,12 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         &self,
         query: &memfuse_core::HybridQuery,
     ) -> Result<Vec<crate::SearchResult>> {
-        let seq = self.snapshot_seq().await?;
-        self.hybrid_search_with_query_at(query, seq).await
+        // Pin-first, read-after: the seq is read under the protection of the pin,
+        // eliminating the TOCTOU window between snapshot_seq() and pin activation.
+        with_pinned_checkpoint_at_latest(self.storage.as_ref(), |seq| async move {
+            self.hybrid_search_with_query_at(query, seq).await
+        })
+        .await
     }
 
     /// Performs hybrid search combining BM25, vector, and graph signals configured via `HybridQuery` at a specific snapshot sequence.
@@ -821,9 +898,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 }
             }
         }
-        let pin_guard = CheckpointPinGuard::new(self.storage.as_ref(), seq).await?;
 
-        let res = async {
+        with_pinned_checkpoint(self.storage.as_ref(), seq, || async move {
             let is_vector_zero = vector.is_empty() || vector.iter().all(|&v| v == 0.0);
             let is_text_empty = text.trim().is_empty();
 
@@ -841,60 +917,87 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                 (1, k)
             };
 
-        let mut candidate_k = k;
-        if !query.include_superseded {
-            candidate_k = candidate_k.max(k.saturating_mul(3));
-        }
-        let rerank_k = k.saturating_mul(mult).min(max_pool);
-        candidate_k = candidate_k
-            .max(rerank_k)
-            .min(memfuse_core::MAX_SEARCH_K)
-            .max(k);
-
-        let total_docs = self.len().await;
-
-        let filter_pre_rrf = |list: Vec<crate::SearchResult>| {
-            let mut filtered = Vec::with_capacity(list.len());
-            for res in list {
-                if let Some(ref filter_expr) = query.filter {
-                    let meta_ref = res.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
-                    if !filter_expr.evaluate(meta_ref) {
-                        continue;
-                    }
-                }
-
-                if let Some(ref type_filter) = query.memory_type_filter {
-                    let memory_type = crate::filter::extract_memory_type(&res.metadata);
-                    if !type_filter.contains(&memory_type) {
-                        continue;
-                    }
-                }
-
-                filtered.push(res);
+            let mut candidate_k = k;
+            if !query.include_superseded {
+                candidate_k = candidate_k.max(k.saturating_mul(3));
             }
-            filtered
-        };
+            let rerank_k = k.saturating_mul(mult).min(max_pool);
+            candidate_k = candidate_k
+                .max(rerank_k)
+                .min(memfuse_core::MAX_SEARCH_K)
+                .max(k);
 
-        let is_filtered = query.filter.is_some() || query.memory_type_filter.is_some();
+            let total_docs = self.len().await;
 
-        // 1. Vector Signal (Predicate Pushdown into HNSW + Adaptive Oversampling for Post-Filters)
-        let vector_results = if is_vector_zero {
-            Vec::new()
-        } else if is_filtered {
-            let matched_ids_opt = self.get_matching_doc_ids_for_query_at(query, seq).await?;
-            if let Some(ref matched_ids) = matched_ids_opt {
-                if matched_ids.is_empty() {
-                    Vec::new()
+            let filter_pre_rrf = |list: Vec<crate::SearchResult>| {
+                let mut filtered = Vec::with_capacity(list.len());
+                for res in list {
+                    if let Some(ref filter_expr) = query.filter {
+                        let meta_ref = res.metadata.as_ref().unwrap_or(&serde_json::Value::Null);
+                        if !filter_expr.evaluate(meta_ref) {
+                            continue;
+                        }
+                    }
+
+                    if let Some(ref type_filter) = query.memory_type_filter {
+                        let memory_type = crate::filter::extract_memory_type(&res.metadata);
+                        if !type_filter.contains(&memory_type) {
+                            continue;
+                        }
+                    }
+
+                    filtered.push(res);
+                }
+                filtered
+            };
+
+            let is_filtered = query.filter.is_some() || query.memory_type_filter.is_some();
+
+            // 1. Vector Signal (Predicate Pushdown into HNSW + Adaptive Oversampling for Post-Filters)
+            let vector_results = if is_vector_zero {
+                Vec::new()
+            } else if is_filtered {
+                let matched_ids_opt = self.get_matching_doc_ids_for_query_at(query, seq).await?;
+                if let Some(ref matched_ids) = matched_ids_opt {
+                    if matched_ids.is_empty() {
+                        Vec::new()
+                    } else {
+                        let matched_ids_cloned = matched_ids.clone();
+                        let filter_fn = move |id: DocId| matched_ids_cloned.contains(&id);
+                        let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
+                        let mut oversample = candidate_k;
+                        let mut iterations = 0;
+                        loop {
+                            iterations += 1;
+                            let raw_vec_results = self
+                                .search_filtered_at(vector, oversample, Some(&filter_fn), seq)
+                                .await?;
+                            let raw_len = raw_vec_results.len();
+                            let filtered = filter_pre_rrf(raw_vec_results);
+
+                            if filtered.len() >= candidate_k
+                                || oversample >= max_cap
+                                || raw_len < oversample
+                            {
+                                tracing::debug!(
+                                    search_iterations_needed = iterations,
+                                    signal = "vector",
+                                    matched_count = filtered.len(),
+                                    "Adaptive oversampling vector signal completed"
+                                );
+                                break filtered;
+                            }
+                            oversample = (oversample * 2).min(max_cap);
+                        }
+                    }
                 } else {
-                    let matched_ids_cloned = matched_ids.clone();
-                    let filter_fn = move |id: DocId| matched_ids_cloned.contains(&id);
                     let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
                     let mut oversample = candidate_k;
                     let mut iterations = 0;
                     loop {
                         iterations += 1;
                         let raw_vec_results = self
-                            .search_filtered_at(vector, oversample, Some(&filter_fn), seq)
+                            .search_filtered_at(vector, oversample, None, seq)
                             .await?;
                         let raw_len = raw_vec_results.len();
                         let filtered = filter_pre_rrf(raw_vec_results);
@@ -915,60 +1018,58 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     }
                 }
             } else {
+                let raw_vec_results = self
+                    .search_filtered_at(vector, candidate_k, None, seq)
+                    .await?;
+                filter_pre_rrf(raw_vec_results)
+            };
+
+            // 2. Text Signal
+            let text_results = if is_text_empty {
+                Vec::new()
+            } else if is_filtered {
+                let selectivity = if let Some(ref filter_expr) = query.filter {
+                    self.estimate_filter_selectivity(filter_expr, seq, total_docs)
+                        .await?
+                } else {
+                    0.1
+                };
                 let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
-                let mut oversample = candidate_k;
+                let calculated_initial =
+                    ((candidate_k as f64) / selectivity.max(0.0001)).ceil() as usize;
+                let min_oversample = candidate_k.min(max_cap);
+                let mut oversample = calculated_initial.clamp(min_oversample, max_cap);
+
                 let mut iterations = 0;
                 loop {
                     iterations += 1;
-                    let raw_vec_results = self
-                        .search_filtered_at(vector, oversample, None, seq)
+                    let bm25_results = self.text_index.search_at(text, oversample, seq).await?;
+                    let bm25_len = bm25_results.len();
+                    let hydrated = self
+                        .hydrate_from_tuples_at(
+                            bm25_results
+                                .into_iter()
+                                .map(|sd| (sd.doc_id, sd.score))
+                                .collect(),
+                            seq,
+                        )
                         .await?;
-                    let raw_len = raw_vec_results.len();
-                    let filtered = filter_pre_rrf(raw_vec_results);
+                    let filtered = filter_pre_rrf(hydrated);
 
-                    if filtered.len() >= candidate_k
-                        || oversample >= max_cap
-                        || raw_len < oversample
-                    {
+                    if filtered.len() >= candidate_k || oversample >= max_cap || bm25_len < oversample {
                         tracing::debug!(
                             search_iterations_needed = iterations,
-                            signal = "vector",
+                            signal = "text",
+                            selectivity = selectivity,
                             matched_count = filtered.len(),
-                            "Adaptive oversampling vector signal completed"
+                            "Adaptive oversampling hybrid text signal completed"
                         );
                         break filtered;
                     }
                     oversample = (oversample * 2).min(max_cap);
                 }
-            }
-        } else {
-            let raw_vec_results = self
-                .search_filtered_at(vector, candidate_k, None, seq)
-                .await?;
-            filter_pre_rrf(raw_vec_results)
-        };
-
-        // 2. Text Signal
-        let text_results = if is_text_empty {
-            Vec::new()
-        } else if is_filtered {
-            let selectivity = if let Some(ref filter_expr) = query.filter {
-                self.estimate_filter_selectivity(filter_expr, seq, total_docs)
-                    .await?
             } else {
-                0.1
-            };
-            let max_cap = total_docs.min(memfuse_core::MAX_SEARCH_K).max(candidate_k);
-            let calculated_initial =
-                ((candidate_k as f64) / selectivity.max(0.0001)).ceil() as usize;
-            let min_oversample = candidate_k.min(max_cap);
-            let mut oversample = calculated_initial.clamp(min_oversample, max_cap);
-
-            let mut iterations = 0;
-            loop {
-                iterations += 1;
-                let bm25_results = self.text_index.search_at(text, oversample, seq).await?;
-                let bm25_len = bm25_results.len();
+                let bm25_results = self.text_index.search_at(text, candidate_k, seq).await?;
                 let hydrated = self
                     .hydrate_from_tuples_at(
                         bm25_results
@@ -978,246 +1079,213 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         seq,
                     )
                     .await?;
-                let filtered = filter_pre_rrf(hydrated);
+                filter_pre_rrf(hydrated)
+            };
 
-                if filtered.len() >= candidate_k || oversample >= max_cap || bm25_len < oversample {
-                    tracing::debug!(
-                        search_iterations_needed = iterations,
-                        signal = "text",
-                        selectivity = selectivity,
-                        matched_count = filtered.len(),
-                        "Adaptive oversampling hybrid text signal completed"
-                    );
-                    break filtered;
-                }
-                oversample = (oversample * 2).min(max_cap);
-            }
-        } else {
-            let bm25_results = self.text_index.search_at(text, candidate_k, seq).await?;
-            let hydrated = self
-                .hydrate_from_tuples_at(
-                    bm25_results
-                        .into_iter()
-                        .map(|sd| (sd.doc_id, sd.score))
-                        .collect(),
-                    seq,
-                )
-                .await?;
-            filter_pre_rrf(hydrated)
-        };
-
-        // 3. Graph Signal
-        let implicit_anchors: Vec<memfuse_core::EntityId>;
-        let anchors_ref: Option<&[memfuse_core::EntityId]> =
-            if let Some(ref start_node) = query.graph_start_node {
-                let parsed_eid = if let Ok(u) = start_node.parse::<u64>() {
-                    Some(memfuse_core::EntityId::new(u))
-                } else if let Some(inner_str) = start_node
-                    .strip_prefix("EntityId(")
-                    .and_then(|s| s.strip_suffix(')'))
-                {
-                    inner_str
-                        .parse::<u64>()
-                        .ok()
-                        .map(memfuse_core::EntityId::new)
-                } else {
-                    memfuse_core::EntityId::from_key(start_node).ok()
-                };
-                if let Some(eid) = parsed_eid {
-                    implicit_anchors = vec![eid];
+            // 3. Graph Signal
+            let implicit_anchors: Vec<memfuse_core::EntityId>;
+            let anchors_ref: Option<&[memfuse_core::EntityId]> =
+                if let Some(ref start_node) = query.graph_start_node {
+                    let parsed_eid = if let Ok(u) = start_node.parse::<u64>() {
+                        Some(memfuse_core::EntityId::new(u))
+                    } else if let Some(inner_str) = start_node
+                        .strip_prefix("EntityId(")
+                        .and_then(|s| s.strip_suffix(')'))
+                    {
+                        inner_str
+                            .parse::<u64>()
+                            .ok()
+                            .map(memfuse_core::EntityId::new)
+                    } else {
+                        memfuse_core::EntityId::from_key(start_node).ok()
+                    };
+                    if let Some(eid) = parsed_eid {
+                        implicit_anchors = vec![eid];
+                        Some(&implicit_anchors)
+                    } else {
+                        None
+                    }
+                } else if !text_results.is_empty() {
+                    // Graph-Knoten MÜSSEN mit demselben String-Schlüssel wie das korrespondierende Textdokument erstellt werden (via `EntityId::from_key`), sonst wird das Graph-Signal für Multi-Step-Query-Expansion und Zettelkasten-Displacement unbemerkt leer.
+                    implicit_anchors = text_results
+                        .iter()
+                        .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
+                        .collect::<Result<Vec<_>>>()?;
                     Some(&implicit_anchors)
                 } else {
                     None
-                }
-            } else if !text_results.is_empty() {
-                // Graph-Knoten MÜSSEN mit demselben String-Schlüssel wie das korrespondierende Textdokument erstellt werden (via `EntityId::from_key`), sonst wird das Graph-Signal für Multi-Step-Query-Expansion und Zettelkasten-Displacement unbemerkt leer.
-                implicit_anchors = text_results
-                    .iter()
-                    .map(|r| memfuse_core::EntityId::from_key(r.id.as_str()))
-                    .collect::<Result<Vec<_>>>()?;
-                Some(&implicit_anchors)
+                };
+
+            // 3. Graph Signal
+            // AI-TAG[RESOLVED][MINOR] graph_search snapshot isolation via multi_traverse_at for Hops; PARTIAL with warning for PPR/PathRag. (ID: AGT-DB-6d724b1a)
+            let graph_results = if let Some(anchors) = anchors_ref {
+                let tuples = match &query.graph_strategy {
+                    memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
+                        self.graph_index
+                            .multi_traverse_at(anchors, *max_hops, seq)
+                            .await?
+                    }
+                    memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
+                        tracing::warn!(
+                            hybrid_search_graph_snapshot_skew = true,
+                            seq = seq,
+                            strategy = "PersonalizedPageRank",
+                            "PPR strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
+                        );
+                        self.graph_index
+                            .personalized_page_rank(anchors, ppr_config)
+                            .await?
+                    }
+                    memfuse_core::GraphTraversalStrategy::PathRag {
+                        max_hops,
+                        sufficiency_threshold,
+                    } => {
+                        tracing::warn!(
+                            hybrid_search_graph_snapshot_skew = true,
+                            seq = seq,
+                            strategy = "PathRag",
+                            "PathRag strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
+                        );
+                        use memfuse_graph::path_rag::PathRAGEngine;
+                        let engine = PathRAGEngine::new(
+                            self.graph_index.as_ref(),
+                            *max_hops,
+                            *sufficiency_threshold,
+                        );
+                        let mut all_results: std::collections::HashMap<EntityId, f32> =
+                            std::collections::HashMap::new();
+                        for anchor in anchors.iter() {
+                            let paths = engine.find_all_paths(*anchor);
+                            for (doc_id, score) in engine.to_rrf_signal(&paths) {
+                                let eid = EntityId::new(doc_id.0);
+                                let entry = all_results.entry(eid).or_insert(0.0);
+                                if score > *entry {
+                                    *entry = score;
+                                }
+                            }
+                        }
+                        let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
+                        res.sort_by(|a, b| b.1.total_cmp(&a.1));
+                        res
+                    }
+                };
+                let doc_tuples = tuples
+                    .into_iter()
+                    .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
+                    .collect();
+                let hydrated = self.hydrate_from_tuples_at(doc_tuples, seq).await?;
+                filter_pre_rrf(hydrated)
             } else {
-                None
+                Vec::new()
             };
 
-        // 3. Graph Signal
-        // AI-TAG[RESOLVED][MINOR] graph_search snapshot isolation via multi_traverse_at for Hops; PARTIAL with warning for PPR/PathRag. (ID: AGT-DB-6d724b1a)
-        let graph_results = if let Some(anchors) = anchors_ref {
-            let tuples = match &query.graph_strategy {
-                memfuse_core::GraphTraversalStrategy::Hops { max_hops } => {
-                    self.graph_index
-                        .multi_traverse_at(anchors, *max_hops, seq)
-                        .await?
-                }
-                memfuse_core::GraphTraversalStrategy::PersonalizedPageRank(ppr_config) => {
-                    tracing::warn!(
-                        hybrid_search_graph_snapshot_skew = true,
-                        seq = seq,
-                        strategy = "PersonalizedPageRank",
-                        "PPR strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
-                    );
-                    self.graph_index
-                        .personalized_page_rank(anchors, ppr_config)
-                        .await?
-                }
-                memfuse_core::GraphTraversalStrategy::PathRag {
-                    max_hops,
-                    sufficiency_threshold,
-                } => {
-                    tracing::warn!(
-                        hybrid_search_graph_snapshot_skew = true,
-                        seq = seq,
-                        strategy = "PathRag",
-                        "PathRag strategy does not support explicit snapshot parameter; executing against global unversioned graph state."
-                    );
-                    use memfuse_graph::path_rag::PathRAGEngine;
-                    let engine = PathRAGEngine::new(
-                        self.graph_index.as_ref(),
-                        *max_hops,
-                        *sufficiency_threshold,
-                    );
-                    let mut all_results: std::collections::HashMap<EntityId, f32> =
-                        std::collections::HashMap::new();
-                    for anchor in anchors.iter() {
-                        let paths = engine.find_all_paths(*anchor);
-                        for (doc_id, score) in engine.to_rrf_signal(&paths) {
-                            let eid = EntityId::new(doc_id.0);
-                            let entry = all_results.entry(eid).or_insert(0.0);
-                            if score > *entry {
-                                *entry = score;
+            if !text_results.is_empty() && graph_results.is_empty() && query.graph_start_node.is_none()
+            {
+                tracing::warn!(
+                    text_count = text_results.len(),
+                    "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
+                );
+            }
+
+            if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(Some(&query.fusion_weights));
+
+            // Target community for boosting
+            let target_community_id: Option<u64> =
+                if let Some(same_comm_entity) = query.same_community_as {
+                    self.get_community(same_comm_entity).await.ok().flatten()
+                } else {
+                    None
+                };
+
+            let mut signal_sets = Vec::new();
+            if !vector_results.is_empty() {
+                signal_sets.push(("vector".to_string(), vector_results, vw));
+            }
+            if !text_results.is_empty() {
+                signal_sets.push(("text".to_string(), text_results, tw));
+            }
+            if !graph_results.is_empty() {
+                signal_sets.push(("graph".to_string(), graph_results, gw));
+            }
+
+            let fused = crate::fusion::weighted_reciprocal_rank_fusion_with_options(
+                signal_sets,
+                usize::MAX,
+                crate::fusion::MetadataMergePriority::default(),
+                query.include_provenance,
+                None,
+            );
+
+            let mut fused_results = self
+                .apply_community_boost_post_rrf(
+                    fused,
+                    target_community_id,
+                    Self::DEFAULT_COMMUNITY_BOOST,
+                )
+                .await?;
+            // Use oversized candidate pool (3×k) for Supersedes resolution to prevent
+            // result shortfall when superseded docs are filtered out (P0 audit fix).
+            // This also ensures superseding documents outside the initial k window
+            // can still displace older ones.
+            let supersedes_pool_size = k.saturating_mul(3).max(k);
+            fused_results.truncate(supersedes_pool_size);
+
+            if !query.include_superseded {
+                // Post-RRF Supersedes Displacement (ADR-038)
+                // Scan the full oversized pool so that superseding docs on ranks k+1..3k
+                // can displace older docs at ranks 1..k.
+                let mut superseded_targets = std::collections::HashSet::new();
+                for res in &fused_results {
+                    if let Ok(doc_id) = DocId::from_key(&res.id) {
+                        let links = self.get_links(doc_id).await?;
+                        for link in links {
+                            if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
+                                superseded_targets.insert(link.target);
                             }
                         }
                     }
-                    let mut res: Vec<(EntityId, f32)> = all_results.into_iter().collect();
-                    res.sort_by(|a, b| b.1.total_cmp(&a.1));
-                    res
                 }
-            };
-            let doc_tuples = tuples
-                .into_iter()
-                .map(|(eid, score)| (memfuse_core::DocId::new(eid.inner()), score))
-                .collect();
-            let hydrated = self.hydrate_from_tuples_at(doc_tuples, seq).await?;
-            filter_pre_rrf(hydrated)
-        } else {
-            Vec::new()
-        };
-
-        if !text_results.is_empty() && graph_results.is_empty() && query.graph_start_node.is_none()
-        {
-            tracing::warn!(
-                text_count = text_results.len(),
-                "Implicit graph anchors derived from text results produced empty graph signal. Verify mapping invariant: graph nodes must share string keys with text documents (EntityId::from_key)."
-            );
-        }
-
-        if vector_results.is_empty() && text_results.is_empty() && graph_results.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let (vw, tw, gw) = crate::fusion::weights_to_signal_factors(Some(&query.fusion_weights));
-
-        // Target community for boosting
-        let target_community_id: Option<u64> =
-            if let Some(same_comm_entity) = query.same_community_as {
-                self.get_community(same_comm_entity).await.ok().flatten()
-            } else {
-                None
-            };
-
-        let mut signal_sets = Vec::new();
-        if !vector_results.is_empty() {
-            signal_sets.push(("vector".to_string(), vector_results, vw));
-        }
-        if !text_results.is_empty() {
-            signal_sets.push(("text".to_string(), text_results, tw));
-        }
-        if !graph_results.is_empty() {
-            signal_sets.push(("graph".to_string(), graph_results, gw));
-        }
-
-        let fused = crate::fusion::weighted_reciprocal_rank_fusion_with_options(
-            signal_sets,
-            usize::MAX,
-            crate::fusion::MetadataMergePriority::default(),
-            query.include_provenance,
-            None,
-        );
-
-        let mut fused_results = self
-            .apply_community_boost_post_rrf(
-                fused,
-                target_community_id,
-                Self::DEFAULT_COMMUNITY_BOOST,
-            )
-            .await?;
-        // Use oversized candidate pool (3×k) for Supersedes resolution to prevent
-        // result shortfall when superseded docs are filtered out (P0 audit fix).
-        // This also ensures superseding documents outside the initial k window
-        // can still displace older ones.
-        let supersedes_pool_size = k.saturating_mul(3).max(k);
-        fused_results.truncate(supersedes_pool_size);
-
-        if !query.include_superseded {
-            // Post-RRF Supersedes Displacement (ADR-038)
-            // Scan the full oversized pool so that superseding docs on ranks k+1..3k
-            // can displace older docs at ranks 1..k.
-            let mut superseded_targets = std::collections::HashSet::new();
-            for res in &fused_results {
-                if let Ok(doc_id) = DocId::from_key(&res.id) {
-                    let links = self.get_links(doc_id).await?;
-                    for link in links {
-                        if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
-                            superseded_targets.insert(link.target);
+                if !superseded_targets.is_empty() {
+                    fused_results.retain(|res| {
+                        if let Ok(doc_id) = DocId::from_key(&res.id) {
+                            !superseded_targets.contains(&doc_id)
+                        } else {
+                            true
                         }
-                    }
+                    });
                 }
             }
-            if !superseded_targets.is_empty() {
-                fused_results.retain(|res| {
-                    if let Ok(doc_id) = DocId::from_key(&res.id) {
-                        !superseded_targets.contains(&doc_id)
-                    } else {
-                        true
+
+            // Final truncation to requested k after Supersedes filtering
+            fused_results.truncate(k);
+
+            #[cfg(feature = "edge-reinforcement-learning")]
+            if fused_results.len() >= 2 {
+                let graph_index = self.graph_index.clone();
+                let result_eids: Vec<EntityId> = fused_results
+                    .iter()
+                    .filter_map(|r| EntityId::from_key(&r.id).ok())
+                    .collect();
+                tokio::spawn(async move {
+                    let _config = memfuse_graph::edge_reinforcement::EdgeReinforcementConfig::default();
+                    for i in 0..result_eids.len() {
+                        for j in (i + 1)..result_eids.len() {
+                            let e1 = result_eids[i];
+                            let _e2 = result_eids[j];
+                            // Fire-and-forget background synaptic update for returned document pairs
+                            let _ = graph_index.neighbors(e1).await;
+                        }
                     }
                 });
             }
-        }
-
-        // Final truncation to requested k after Supersedes filtering
-        fused_results.truncate(k);
-
-        #[cfg(feature = "edge-reinforcement-learning")]
-        if fused_results.len() >= 2 {
-            let graph_index = self.graph_index.clone();
-            let result_eids: Vec<EntityId> = fused_results
-                .iter()
-                .filter_map(|r| EntityId::from_key(&r.id).ok())
-                .collect();
-            tokio::spawn(async move {
-                let _config = memfuse_graph::edge_reinforcement::EdgeReinforcementConfig::default();
-                for i in 0..result_eids.len() {
-                    for j in (i + 1)..result_eids.len() {
-                        let e1 = result_eids[i];
-                        let _e2 = result_eids[j];
-                        // Fire-and-forget background synaptic update for returned document pairs
-                        let _ = graph_index.neighbors(e1).await;
-                    }
-                }
-            });
-        }
 
             Ok(fused_results)
-        }
-        .await;
-
-        if let Err(e) = pin_guard.release().await {
-            tracing::error!(
-                seq_no = seq,
-                "Checkpoint seq={seq} konnte nicht unpinnt werden: {e}. SSTable-GC wird blockiert."
-            );
-        }
-        res
+        })
+        .await
     }
 
     /// Standard community boost factor applied to RRF scores for matching community members.
