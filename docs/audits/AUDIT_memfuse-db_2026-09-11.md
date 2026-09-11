@@ -78,3 +78,19 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+
+---
+
+## 5. RRF Rank Fusion & Numerik Verification (2026-09-11T23:23:45Z)
+
+**Session:** `125eb16d`
+**Task-ID:** `JULES-20260911-EIGENB`
+
+### Key Findings & Fixes
+- **RRF Non-Negative Boundary (`rrf_k >= 0.0`)**: In `crates/memfuse-db/src/fusion.rs`, updated `debug_assert!(rrf_k > 0.0)` to `debug_assert!(rrf_k >= 0.0)` in `build_provenance` and `weighted_reciprocal_rank_fusion_with_options`.
+- **Reasoning**: At `k = 0.0`, denominator `rrf_k + rank >= 1.0` (since rank >= 1 is 1-based per Cormack et al.), ensuring division by zero is mathematically impossible. This enables boundary testing at `k = 0.0`.
+- **Test Verification**:
+  - `cargo test -p memfuse-db --test fusion_edge_cases_test`: `test_k_parameter_zero_boundary` passed cleanly.
+  - `cargo test -p memfuse-db --all-features`: 100% test suite green.
+- **Marker**: Added `// DONE(memfuse-impl): Allow rrf_k >= 0.0 non-negative boundary [ref:eigenbau-rrf-fusion]`.

@@ -553,11 +553,17 @@ impl MemFuse {
                         }
                     };
                     if let Err(e) = self.storage.put(tx, intent_key, &committed_bytes).await {
-                        tracing::error!("repair_on_open: failed to mark intent as committed: {}", e);
+                        tracing::error!(
+                            "repair_on_open: failed to mark intent as committed: {}",
+                            e
+                        );
                         continue;
                     }
                     if let Err(e) = self.storage.commit(tx).await {
-                        tracing::error!("repair_on_open: failed to commit committed intent marker: {}", e);
+                        tracing::error!(
+                            "repair_on_open: failed to commit committed intent marker: {}",
+                            e
+                        );
                     }
                 }
             } else {
@@ -584,7 +590,10 @@ impl MemFuse {
                         continue;
                     }
                     if let Err(e) = self.storage.commit(tx).await {
-                        tracing::error!("repair_on_open: failed to commit failed intent marker: {}", e);
+                        tracing::error!(
+                            "repair_on_open: failed to commit failed intent marker: {}",
+                            e
+                        );
                     }
                 }
             }
