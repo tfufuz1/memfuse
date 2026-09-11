@@ -72,9 +72,32 @@
 
 ---
 
-## 4. Test- & Gate-Verifikation
+## 4. Eigenbau-Spezialist Audit & Verifikation: RRF Rank Fusion & Numerik (Task `JULES-20260911-EIGENB`, Session `a8076bae`)
+
+**Spezialisten-Rolle:** Rank-Fusion-/Numerik-Spezialist
+**Komponente:** `crates/memfuse-db/src/fusion.rs`
+**Pflicht-Review-Fokus:** nan-and-tie-cases
+
+### Audit-Befunde & Verifikationen
+1. **Determinismus bei TIE-Cases (Gleiche RRF Scores):**
+   - `HeapEntry::cmp` verwendet `total_cmp(&self.result.score).then_with(|| self.result.id.cmp(&other.result.id))`.
+   - Bei identischen Scores greift die Sekundär-Sortierung nach `id` (alphabetisch), was deterministische Ergebnisse garantiert (`test_rrf_identical_ranks` mit 20 Iterationen verifiziert).
+2. **Numerische Stabilität bei non-finite Scores & Gewichten:**
+   - `weighted_reciprocal_rank_fusion_with_options` filtert Gewichte mit `!weight.is_finite() || weight <= 0.0` heraus.
+   - Nicht-finite raw scores in Eingabedokumenten werden geloggt (`tracing::error!`), während der berechnete RRF-Rangscore sicher als `f32` berechnet wird (`test_rrf_fusion_logs_nonfinite_raw_score`).
+   - `HeapEntry::cmp` platziert `NaN`-Scores via `total_cmp` sicher am Ende / in schlechtester Heap-Priorität (`test_heap_entry_nan_score_sorts_to_worst_position`).
+3. **Resonanz-Bonus (Feature `coherence-bonus-fusion`):**
+   - `apply_resonance_bonus` filtert/sortiert `NaN`-Scores ans Ende (`test_apply_resonance_bonus_handles_nan_score_deterministically`).
+   - `valid_signal_count` schließt ungültige Signal-Gewichte aus, sodass das Kohärenz-Verhältnis `(signal_count / valid_signal_count)^beta` korrekt skaliert.
+4. **Provenanz-Invariante INV-PROV-1:**
+   - `build_provenance` erzwingt `|expected_rrf - expected| < 1e-6` via `debug_assert!` und structured `tracing::error!`.
+   - `test_build_provenance_invariant_consistent` und `test_provenance_attribution_sums_to_rrf` verifizieren die Invariante.
+
+---
+
+## 5. Test- & Gate-Verifikation
 
 - `cargo check -p memfuse-db --all-features`: 0 Fehler.
-- `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
+- `cargo test -p memfuse-db --lib fusion`: 27/27 Tests grün (inkl. Property-Tests `prop_rrf_never_panics` und `prop_rrf_score_monotonicity`).
+- `cargo test -p memfuse-db --all-features`: Alle Unit- und Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
-- `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
