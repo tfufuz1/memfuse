@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod dispatch;
 pub mod lyapunov;
 pub mod outcome;
