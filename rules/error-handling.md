@@ -47,3 +47,5 @@ let val = map[&key];  // Use map.get(&key).ok_or_else(|| ...)?
 | `Text(String)` | BM25/text index errors |
 | `Crypto(String)` | Encryption/decryption failures |
 | `ParseError(String)` | Deserialization failures |
+| `ModelLoad { path, reason }` | GGUF/model file loading or parsing errors |
+| `OrphanedVectorReference { doc_id, index_id }` | Structural split-brain: vector index entry points to non-existent document |

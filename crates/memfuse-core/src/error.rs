@@ -203,6 +203,28 @@ pub enum MemFuseError {
         /// Context description of the scan or operation.
         context: String,
     },
+
+    /// GGUF-/Modell-Ladefehler (Candle-Backend). Nutzung: korrupte, unvollständige
+    /// oder dimensions-inkompatible Modell-Dateien beim Laden über memfuse-candle.
+    #[error("Model load error for {path}: {reason}")]
+    ModelLoad {
+        /// Path to model file.
+        path: String,
+        /// Detailed reason for failure.
+        reason: String,
+    },
+
+    /// Strukturelle Inkonsistenz zwischen Vektor-Index und Dokumentenspeicher:
+    /// eine Vektor-ID im Index verweist auf ein DocId, das im Store nicht (mehr)
+    /// existiert (Split-Brain-Zustand). Unterscheidet sich bewusst von `NotFound`,
+    /// das für normale, erwartbare Lookup-Misses (z.B. TTL-Expiry) reserviert bleibt.
+    #[error("Orphaned vector reference: index_id={index_id} -> doc_id={doc_id}")]
+    OrphanedVectorReference {
+        /// Identifier of document referenced by index.
+        doc_id: String,
+        /// Identifier of vector in index.
+        index_id: String,
+    },
 }
 
 impl MemFuseError {
@@ -213,6 +235,26 @@ impl MemFuseError {
             context: context.into(),
         }
     }
+
+    /// Creates a `ModelLoad` error.
+    pub fn model_load(path: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::ModelLoad {
+            path: path.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// Creates an `OrphanedVectorReference` error.
+    pub fn orphaned_vector_reference(
+        doc_id: impl Into<String>,
+        index_id: impl Into<String>,
+    ) -> Self {
+        Self::OrphanedVectorReference {
+            doc_id: doc_id.into(),
+            index_id: index_id.into(),
+        }
+    }
+
     /// Creates a `CapabilityUnsupported` error.
     pub fn capability_unsupported(
         capability: impl Into<String>,
@@ -302,6 +344,14 @@ mod tests {
             MemFuseError::CheckpointNotFound,
             MemFuseError::Cluster("test".into()),
             MemFuseError::ParseError("test".into()),
+            MemFuseError::ModelLoad {
+                path: "model.gguf".into(),
+                reason: "corrupt header".into(),
+            },
+            MemFuseError::OrphanedVectorReference {
+                doc_id: "doc_123".into(),
+                index_id: "idx_456".into(),
+            },
         ];
         for v in &variants {
             let _ = format!("{v}");
@@ -794,6 +844,35 @@ mod tests {
         assert_eq!(dto.kind, "CustomKind");
         assert_eq!(dto.message, "Custom message");
         assert_eq!(dto.details.expect("details present")["trace_id"], "12345"); // expect
+    }
+
+    #[test]
+    fn test_model_load_and_orphaned_vector_display() {
+        let err_model = MemFuseError::model_load("/models/llama3.gguf", "invalid tensor layout");
+        assert_eq!(
+            err_model.to_string(),
+            "Model load error for /models/llama3.gguf: invalid tensor layout"
+        );
+        match err_model {
+            MemFuseError::ModelLoad { path, reason } => {
+                assert_eq!(path, "/models/llama3.gguf");
+                assert_eq!(reason, "invalid tensor layout");
+            }
+            _ => panic!("Expected ModelLoad, got {:?}", err_model),
+        }
+
+        let err_orphan = MemFuseError::orphaned_vector_reference("doc_99", "vec_1001");
+        assert_eq!(
+            err_orphan.to_string(),
+            "Orphaned vector reference: index_id=vec_1001 -> doc_id=doc_99"
+        );
+        match err_orphan {
+            MemFuseError::OrphanedVectorReference { doc_id, index_id } => {
+                assert_eq!(doc_id, "doc_99");
+                assert_eq!(index_id, "vec_1001");
+            }
+            _ => panic!("Expected OrphanedVectorReference, got {:?}", err_orphan),
+        }
     }
 
     #[test]
