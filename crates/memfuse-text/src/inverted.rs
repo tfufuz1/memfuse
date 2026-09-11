@@ -544,10 +544,13 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 // Key format: {namespace}:pl:{term}:{doc_id}
                 // Suffix is just {doc_id}
                 let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
+                let Ok(suffix_str) = std::str::from_utf8(suffix) else {
+                    continue;
+                };
+                let Ok(doc_id_raw) = suffix_str.parse::<u64>() else {
+                    // Suffix contains extra colons or non-digits (e.g. prefix match on longer term "term:subterm:123")
+                    continue;
+                };
                 let doc_id = DocId::new(doc_id_raw);
 
                 let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
@@ -1824,6 +1827,26 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_prefix_term_search_ignores_longer_colon_terms() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "colon_prefix");
+
+        let tx = TxId::new(1);
+        index
+            .upsert_document(tx, DocId::new(1), "http")
+            .await?;
+        index
+            .upsert_document(tx, DocId::new(2), "http:example")
+            .await?;
+        index.commit(tx).await?;
+
+        let results = index.search("http", 10).await?;
+        assert!(!results.is_empty());
 
         Ok(())
     }
