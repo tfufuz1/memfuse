@@ -1521,9 +1521,9 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile], None);
 
-        // Perform 55 routing calls and record outcomes
+        // Perform 105 routing calls and record outcomes
         let mut last_calibrated = false;
-        for i in 0..55 {
+        for i in 0..105 {
             let decision = router
                 .route(&vec_data, "convergence test content")
                 .await
@@ -1543,7 +1543,7 @@ mod tests {
 
         assert!(
             last_calibrated,
-            "After 55 decisions with record_outcome (>= 30 samples) and unchanged fingerprint, decision must be calibrated (calibrated = true)"
+            "After 105 decisions with record_outcome (>= 100 samples) and unchanged fingerprint, decision must be calibrated (calibrated = true)"
         );
     }
 
@@ -1581,8 +1581,8 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile1], None);
 
-        // Warm up with 35 successful outcomes under fp1
-        for _ in 0..35 {
+        // Warm up with 105 successful outcomes under fp1
+        for _ in 0..105 {
             let decision = router
                 .route(&vec_data, "temperature shift content")
                 .await
@@ -1630,8 +1630,8 @@ mod tests {
             "Calibration state must report is_calibrated = false immediately after shift"
         );
 
-        // Warm up again with 35 decisions under fp2
-        for _ in 0..35 {
+        // Warm up again with 105 decisions under fp2
+        for _ in 0..105 {
             let d = router
                 .route(&vec_data, "temperature shift content")
                 .await
@@ -1680,7 +1680,7 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile1], None);
 
-        for _ in 0..35 {
+        for _ in 0..105 {
             let decision = router
                 .route(&vec_data, "prompt shift content")
                 .await
@@ -1754,7 +1754,7 @@ mod tests {
 
         let router = RouterEngine::new(collection, vec![profile1], None);
 
-        for _ in 0..35 {
+        for _ in 0..105 {
             let decision = router
                 .route(&vec_data, "quantization shift content")
                 .await
@@ -2038,13 +2038,15 @@ mod tests {
 
         // Simulate selected counts
         {
-            let mut cal = router.calibration.write();
-            if let Some(st1) = cal.get_mut("p1") {
+            let current = router.state.load_full();
+            let mut new_state = (*current).clone();
+            if let Some(st1) = new_state.calibration.get_mut("p1") {
                 st1.times_selected = 10;
             }
-            if let Some(st2) = cal.get_mut("p2") {
+            if let Some(st2) = new_state.calibration.get_mut("p2") {
                 st2.times_selected = 20;
             }
+            router.state.store(Arc::new(new_state));
         }
 
         assert_eq!(router.calibration_stats()["p1"].times_selected, 10);
@@ -2761,7 +2763,7 @@ mod tests {
         let fp = ConfigFingerprint::new("model", "F16", "hash", 0.7);
         assert!(!state.is_calibrated(Some(&fp)));
 
-        state.conformal.window_total = 30;
+        state.conformal.window_total = 100;
         state.last_calibrated_fingerprint = Some(fp.clone());
         assert!(state.is_calibrated(Some(&fp)));
 

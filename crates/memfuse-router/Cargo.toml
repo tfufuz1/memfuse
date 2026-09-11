@@ -16,6 +16,7 @@ memfuse-core = { workspace = true }
 memfuse-store = { workspace = true }
 memfuse-db = { workspace = true }
 memfuse-ollama = { workspace = true, optional = true }
+arc-swap = "1"
 parking_lot = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
