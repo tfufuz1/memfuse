@@ -66,6 +66,84 @@ async fn test_cross_signal_isolation_single_run() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_hybrid_search_consistent_snapshot_across_signals() -> Result<()> {
+    let dir = tempdir().unwrap();
+    let config = MemFuseConfig {
+        dimension: 4,
+        distance_metric: DistanceMetric::Cosine,
+        ..Default::default()
+    };
+    let db = MemFuse::open_with_config(dir.path(), config).await?;
+    let collection = db.collection("default").await?;
+
+    // (a) Erstelle Collection mit initialem Dokument
+    collection
+        .insert(
+            "doc-initial",
+            &[1.0, 0.0, 0.0, 0.0],
+            Some(json!({"text": "concurrent snapshot isolation test", "status": "v1"})),
+        )
+        .await?;
+
+    // Fixiere den initialen Snapshot
+    let snapshot_seq = collection.snapshot_seq().await?;
+
+    // (b) & (c) Füge parallel ein neues Dokument ein und aktualisiere das bestehende Dokument nach dem Snapshot
+    collection
+        .insert(
+            "doc-new",
+            &[0.0, 1.0, 0.0, 0.0],
+            Some(json!({"text": "concurrent snapshot isolation test", "status": "v2"})),
+        )
+        .await?;
+
+    collection
+        .update(
+            "doc-initial",
+            &[0.0, 0.0, 1.0, 0.0],
+            Some(json!({"text": "updated text post commit", "status": "v2"})),
+        )
+        .await?;
+
+    // (d) Führe gepinnte Hybrid-Suche aus gegen `snapshot_seq`
+    let results = collection
+        .query()
+        .text("concurrent snapshot isolation test")
+        .vector([1.0, 0.0, 0.0, 0.0])
+        .seq(snapshot_seq)
+        .k(10)
+        .execute()
+        .await?;
+
+    // Verifiziere:
+    // 1. `doc-new` darf im Snapshot NICHT existieren
+    assert!(
+        !results.iter().any(|r| r.id == "doc-new"),
+        "doc-new should not be present in snapshot search"
+    );
+
+    // 2. `doc-initial` muss mit den v1 Metadaten und v1 Vektor enthalten sein
+    let initial_res = results
+        .iter()
+        .find(|r| r.id == "doc-initial")
+        .expect("doc-initial must be present in snapshot results");
+
+    let status = initial_res
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("status"))
+        .and_then(|s| s.as_str());
+
+    assert_eq!(
+        status,
+        Some("v1"),
+        "Hydrated metadata must match v1 snapshot state"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_cross_signal_isolation_100_iterations_stress() -> Result<()> {
     let split_brain_count = Arc::new(AtomicUsize::new(0));
     let total_runs = 100;

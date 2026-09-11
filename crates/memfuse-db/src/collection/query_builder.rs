@@ -441,10 +441,16 @@ impl<'a, S: StorageEngine, V: VectorIndex> HybridQueryBuilder<'a, S, V> {
             k,
         };
 
+        let seq_no = if let Some(s) = self.seq {
+            s
+        } else {
+            self.collection.snapshot_seq().await?
+        };
+
         #[allow(deprecated)]
         let mut results = self
             .collection
-            .hybrid_search_with_query(&hybrid_query)
+            .hybrid_search_with_query_at(&hybrid_query, seq_no)
             .await?;
 
         if let Some(ref filter_expr) = self.filter {
