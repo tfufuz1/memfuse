@@ -352,7 +352,7 @@ async fn test_guard_uncommitted_drop_with_newer_committed_tx_preserves_newer_tx(
 
 /// MANDATORY TEST 2:
 /// Guard wird außerhalb einer Tokio-Runtime gedroppt.
-/// Verifiziere, dass ein "orphaned checkpoint"-Eintrag persistiert wird und beim nächsten Hochfahren verarbeitet wird.
+/// Verifiziere, dass ein "orphaned checkpoint"-Eintrag im In-Memory-Puffer erfasst, auf Disk geflusht und beim nächsten Hochfahren verarbeitet wird.
 #[test]
 fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_startup() {
     let _lock = TEST_LOCK.lock();
@@ -362,28 +362,30 @@ fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_star
         let _ = std::fs::remove_file(&orphan_file);
     }
 
-    // Step 1: Drop guard outside active Tokio runtime
-    let thread_handle = std::thread::spawn(|| {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    // Step 1: Drop guard outside active Tokio runtime, then flush orphan registry
+    rt.block_on(async {
         let storage = Arc::new(TrackingMockStorage::new());
         let store = PersistentCheckpointStore::new(storage, "outside_tokio").unwrap();
 
-        let _guard = store.create_guard(TxId::new(888)).unwrap();
-        // _guard drops here outside any Tokio runtime
+        {
+            let _guard = store.create_guard(TxId::new(888)).unwrap();
+            // _guard drops here
+        }
+
+        store.flush_orphan_registry().await.unwrap();
     });
 
-    thread_handle
-        .join()
-        .expect("Thread outside Tokio runtime should complete safely without panic");
-
-    // Step 2: Verify orphaned checkpoint was registered and persisted to disk file
+    // Step 2: Verify orphaned checkpoint was registered and persisted to disk file after flush
     assert!(
         orphan_file.exists(),
-        "Orphaned checkpoints file must be persisted to disk on drop outside Tokio runtime"
+        "Orphaned checkpoints file must be persisted to disk after registry flush"
     );
 
     // Step 3: Simulate next controlled application startup with new Tokio runtime
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
+    let rt2 = tokio::runtime::Runtime::new().unwrap();
+    rt2.block_on(async {
         let storage = Arc::new(TrackingMockStorage::new());
         let store = PersistentCheckpointStore::new(storage.clone(), "outside_tokio").unwrap();
 
@@ -402,4 +404,56 @@ fn test_guard_dropped_outside_tokio_runtime_persists_orphan_and_recovers_on_star
     if orphan_file.exists() {
         let _ = std::fs::remove_file(&orphan_file);
     }
+}
+
+/// Verify that dropping CheckpointGuard or PinGuard performs NO blocking fs::write during drop,
+/// registering orphans exclusively in-memory without creating or modifying persist_path.
+#[tokio::test]
+async fn test_drop_no_syscall_on_worker() {
+    let _lock = TEST_LOCK.lock();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let orphan_file = temp_dir.path().join("no_syscall_orphans.json");
+
+    let registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(&orphan_file));
+    let storage = Arc::new(TrackingMockStorage::new());
+
+    // 1. Drop PinGuard
+    {
+        let pin_guard = memfuse_checkpoint::PinGuard::pin(storage.clone(), 123, registry.clone())
+            .await
+            .unwrap();
+        drop(pin_guard);
+    }
+
+    // Verify orphan registered in-memory but orphan_file was NOT created on disk during drop
+    assert_eq!(registry.get_orphan_pins().len(), 1);
+    assert!(
+        !orphan_file.exists(),
+        "Dropping PinGuard must not write to disk synchronously"
+    );
+
+    // 2. Drop CheckpointGuard
+    {
+        let cp = memfuse_checkpoint::StateCheckpoint {
+            tx_id: TxId::new(999),
+            timestamp_ms: 1000,
+            namespace: Some("no_syscall".to_string()),
+        };
+        let guard = CheckpointGuard::with_registry(cp, storage.clone(), "no_syscall", registry.clone());
+        drop(guard);
+    }
+
+    // Verify orphan checkpoint registered in-memory but orphan_file still does not exist
+    assert_eq!(registry.get_orphaned_checkpoints().len(), 1);
+    assert!(
+        !orphan_file.exists(),
+        "Dropping CheckpointGuard must not write to disk synchronously"
+    );
+
+    // 3. Flush registry explicitly to verify I/O occurs on demand
+    registry.flush_orphan_registry().await.unwrap();
+    assert!(
+        orphan_file.exists(),
+        "Explicit flush_orphan_registry must persist orphan state to disk"
+    );
 }
