@@ -535,7 +535,20 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
+            // Filter entries to those whose suffix is purely a valid u64 doc_id.
+            // Longer terms that start with `term:` (e.g. `https://example.com` vs `https`)
+            // will have extra term components in the suffix and must be skipped.
+            let mut valid_postings = Vec::with_capacity(entries.len());
+            for (key, val_bytes) in entries {
+                let suffix = &key[prefix.len()..];
+                if let Ok(suffix_str) = std::str::from_utf8(suffix) {
+                    if let Ok(doc_id_raw) = suffix_str.parse::<u64>() {
+                        valid_postings.push((DocId::new(doc_id_raw), val_bytes));
+                    }
+                }
+            }
+
+            let df = valid_postings.len() as u32;
             if df == 0 {
                 continue;
             }
