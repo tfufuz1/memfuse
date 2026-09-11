@@ -299,6 +299,21 @@ impl<'a> Drop for RebuildGuard<'a> {
     }
 }
 
+struct SnapshotPinGuard<'a>(&'a HnswIndexCore, u64);
+
+impl<'a> SnapshotPinGuard<'a> {
+    fn new(core: &'a HnswIndexCore, seq_no: u64) -> Self {
+        core.seq_log.write().pin_snapshot(seq_no);
+        Self(core, seq_no)
+    }
+}
+
+impl<'a> Drop for SnapshotPinGuard<'a> {
+    fn drop(&mut self) {
+        self.0.seq_log.write().unpin_snapshot(self.1);
+    }
+}
+
 /// The HNSW (Hierarchical Navigable Small World) vector index.
 pub struct HnswIndex {
     inner: std::sync::Arc<HnswIndexCore>,
@@ -628,8 +643,8 @@ impl HnswIndex {
             results.push(ScoredDocument::new(doc_id, score));
         }
 
-        // Must re-sort and truncate after Phase 2 reranking
-        results.sort_by(|a, b| b.score.total_cmp(&a.score));
+        // Must re-sort and truncate after Phase 2 reranking; tie-break equal scores by DocId for deterministic ordering
+        results.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.doc_id.cmp(&b.doc_id)));
         results.truncate(k);
 
         Ok(results)
@@ -720,6 +735,16 @@ impl HnswIndex {
     /// Prunes sequence log entries that are tombstoned and older than `min_active_seqno`.
     pub fn compact_seq_log(&self, min_active_seqno: u64) {
         self.inner.seq_log.write().compact(min_active_seqno);
+    }
+
+    /// Pins a sequence number to preserve historical snapshot readability across rebuilds.
+    pub fn pin_snapshot(&self, seq_no: u64) {
+        self.inner.seq_log.write().pin_snapshot(seq_no);
+    }
+
+    /// Unpins a sequence number previously pinned with `pin_snapshot`.
+    pub fn unpin_snapshot(&self, seq_no: u64) {
+        self.inner.seq_log.write().unpin_snapshot(seq_no);
     }
 
     /// Returns all active (non-deleted) DocIds by reading the `doc_to_node` map directly.
@@ -1297,14 +1322,33 @@ impl HnswIndexCore {
             }
 
             // Incremental Lazy Neighbor Pruning:
-            // When traversing a RAM node that contains dead neighbors, lazily filter out tombstoned nodes from its adjacency list.
+            // When traversing a RAM node that contains dead neighbors, lazily filter out tombstoned nodes from its adjacency list
+            // UNLESS the dead neighbor is retained for active/pinned snapshots.
             if has_dead_neighbors && current.index >= mmap_node_count {
                 let ram_idx = current.index - mmap_node_count;
                 if let Some(node) = nodes_guard.get(ram_idx) {
                     if let Some(conn_rwlock) = node.connections.get(layer) {
+                        let seq_log = self.seq_log.read();
+                        let min_retention_seq = seq_log.min_retention_seq();
                         let mut conn_writer = conn_rwlock.write();
-                        conn_writer
-                            .retain(|&neighbor_u32| !deleted_guard.contains(neighbor_u32 as u64));
+                        conn_writer.retain(|&neighbor_u32| {
+                            if !deleted_guard.contains(neighbor_u32 as u64) {
+                                true
+                            } else if let Some(min_ret_seq) = min_retention_seq {
+                                let neighbor_idx = neighbor_u32 as usize;
+                                if neighbor_idx >= mmap_node_count {
+                                    let neighbor_ram_idx = neighbor_idx - mmap_node_count;
+                                    if let Some(neighbor_node) = nodes_guard.get(neighbor_ram_idx) {
+                                        if let Some(del_seq) = seq_log.deletion_seq(neighbor_node.doc_id) {
+                                            return del_seq >= min_ret_seq;
+                                        }
+                                    }
+                                }
+                                false
+                            } else {
+                                false
+                            }
+                        });
                     }
                 }
             }
@@ -1907,8 +1951,9 @@ impl HnswIndexCore {
     }
 
     fn rebuild_phase1_snapshot_and_build(&self) -> Result<(HnswIndex, u64)> {
-        // 1. Snapshot active nodes (RAM segment only) up to snapshot_tx
-        let (active_nodes, config, snapshot_tx) = {
+        // AI-TAG[SMELL][RESOLVED] audit-JULES-16-followup: HNSW-Rebuild respektiert jetzt aktive search_at()-Snapshots via retention window / seq_log pinning.
+        // 1. Snapshot active and soft-deleted retained nodes (RAM segment only) up to snapshot_tx
+        let (all_nodes, config, snapshot_tx) = {
             let nodes = self.nodes.read();
             let mmap_count = self
                 .mmap_index
@@ -1917,19 +1962,31 @@ impl HnswIndexCore {
                 .map(|m| m.header.node_count() as usize)
                 .unwrap_or(0);
             let deleted_nodes = self.deleted_nodes.read();
+            let seq_log = self.seq_log.read();
+            let min_retention_seq = seq_log.min_retention_seq();
             let snapshot_tx = self.last_tx_id.load(Ordering::SeqCst);
-            let mut active = Vec::with_capacity(nodes.len());
+            let mut all = Vec::with_capacity(nodes.len());
             for (i, node) in nodes.iter().enumerate() {
                 let global_idx = mmap_count + i;
-                if node.committed_tx <= snapshot_tx && !deleted_nodes.contains(global_idx as u64) {
-                    active.push((node.doc_id, node.vector.clone(), node.committed_tx));
+                if node.committed_tx <= snapshot_tx {
+                    let is_deleted = deleted_nodes.contains(global_idx as u64);
+                    if !is_deleted {
+                        all.push((node.doc_id, node.vector.clone(), node.committed_tx, false));
+                    } else if let Some(min_ret_seq) = min_retention_seq {
+                        if let Some(del_seq) = seq_log.deletion_seq(node.doc_id) {
+                            if del_seq >= min_ret_seq {
+                                all.push((node.doc_id, node.vector.clone(), node.committed_tx, true));
+                            }
+                        }
+                    }
                 }
             }
-            (active, self.config.clone(), snapshot_tx)
+            (all, self.config.clone(), snapshot_tx)
         };
 
         // 2. Build fresh index (this will be the NEW RAM segment)
         let new_index = HnswIndex::try_new(config)?;
+        *new_index.inner.seq_log.write() = self.seq_log.read().clone();
 
         // Ensure new_index knows about the Mmap segment to link against it
         {
@@ -1945,13 +2002,18 @@ impl HnswIndexCore {
             let sample_size = self
                 .config
                 .quantizer_recalibration_sample_size
-                .min(active_nodes.len());
+                .min(all_nodes.len());
             let mut train_data = Vec::with_capacity(sample_size);
 
-            for (_, vector, _) in active_nodes.iter().take(sample_size) {
-                match vector {
-                    VectorData::F32(v) => train_data.push(v.clone()),
-                    VectorData::U8(v) => train_data.push(old_q.dequantize(v)?),
+            for (_, vector, _, is_deleted) in all_nodes.iter() {
+                if !is_deleted {
+                    match vector {
+                        VectorData::F32(v) => train_data.push(v.clone()),
+                        VectorData::U8(v) => train_data.push(old_q.dequantize(v)?),
+                    }
+                    if train_data.len() >= sample_size {
+                        break;
+                    }
                 }
             }
 
@@ -1965,7 +2027,7 @@ impl HnswIndexCore {
             }
         }
 
-        for (doc_id, vector, committed_tx) in active_nodes {
+        for (doc_id, vector, committed_tx, is_deleted) in all_nodes {
             match vector {
                 VectorData::F32(v) => {
                     new_index.inner.do_insert(doc_id, &v)?;
@@ -1995,6 +2057,9 @@ impl HnswIndexCore {
                         node.committed_tx = committed_tx;
                     }
                 }
+            }
+            if is_deleted {
+                new_index.inner.do_delete(doc_id)?;
             }
         }
 
@@ -2481,6 +2546,7 @@ impl VectorIndex for HnswIndex {
 
     /// Searches for nearest neighbors at a specific snapshot sequence number.
     async fn search_at(&self, query: &[f32], k: usize, seq_no: u64) -> Result<Vec<ScoredDocument>> {
+        let _pin_guard = SnapshotPinGuard::new(&self.inner, seq_no);
         let log = self.inner.seq_log.read().clone();
         let filter_fn = move |doc_id: DocId| -> bool { log.is_visible(doc_id, seq_no) };
         self.search_filtered_internal(query, k, Some(&filter_fn), Some(seq_no))
