@@ -14,7 +14,6 @@
 // ANCHOR[REFACTOR:WP-0.0-STABLESIMD] STATUS:DONE (TS:2026-06-01T00:00:00Z) — Remove nightly portable_simd
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
-// REVIEW-PASS[1/2] (ID: AGT-INDEX-d2e833a9) (TS: 2026-09-10T23:30:00Z) (SESSION: d2e833a9) PRÜFER-KONTEXT: FRESH — Audited memfuse-index layer 1 invariants, SIMD bounds, zero-panic checks, and baseline gates.
 // INTENT: deny(unsafe_code) statt forbid(unsafe_code)
 // BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
 #![deny(unsafe_code)]

@@ -83,7 +83,7 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-security` | 1 | 4909 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
 | `memfuse-text` | 1 | 5412 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 2 | 1573 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
-| `memfuse-index` | 2 | 15616 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 2 | 15595 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 2 | 3985 | 🟢 Clean |  |
 | `memfuse-store` | 2 | 17543 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 3 | 1979 | 🧊 Optional |  |

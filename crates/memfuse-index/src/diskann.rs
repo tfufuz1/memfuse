@@ -1744,10 +1744,6 @@ impl DiskAnnIndex {
     }
 
     pub async fn search_internal(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>> {
-        if k == 0 {
-            return Ok(Vec::new());
-        }
-
         if k > memfuse_core::MAX_SEARCH_K {
             return Err(MemFuseError::invalid_input(format!(
                 "Requested k ({}) exceeds maximum allowed search limit ({})",
@@ -3053,22 +3049,6 @@ mod tests {
             "Error string was: {}",
             err_str
         );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_diskann_search_k_zero_returns_empty() -> Result<()> {
-        let temp_dir = tempfile::tempdir().map_err(MemFuseError::Io)?;
-        let config = DiskAnnConfig {
-            index_path: temp_dir.path().join("diskann_k_zero.idx"),
-            dimension: 4,
-            ..Default::default()
-        };
-        let index = DiskAnnIndex::try_new(config)?;
-        let query = vec![1.0, 2.0, 3.0, 4.0];
-        let res = index.search(&query, 0).await?;
-        assert!(res.is_empty());
 
         Ok(())
     }
