@@ -332,7 +332,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
 
     /// Performs filtered semantic vector search in the collection.
     // AI-TAG[SMELL][RESOLVED] audit-5.1: Vector-Suche clampt k stets auf k.min(memfuse_core::MAX_SEARCH_K) über alle Einstiegspunkte hinweg.
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-7): Ensure checkpoint unpinning is safely handled with PinGuard or explicit unpin calls across all error return paths. (ID: AGT-DB-6484e6e5) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][RESOLVED] audit-M-7: CheckpointPinGuard handles unpinning safely across all error return paths.
     #[deprecated(since = "0.1.0", note = "use Collection::query() instead")]
     #[allow(deprecated)]
     #[tracing::instrument(level = "trace", skip(self, query, filter))]
