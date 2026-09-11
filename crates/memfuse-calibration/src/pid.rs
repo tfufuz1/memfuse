@@ -50,7 +50,12 @@ pub struct PidController {
 
 impl Default for PidController {
     fn default() -> Self {
-        Self::new(150.0, PID_MIN_POOL_SIZE_DEFAULT, PID_MAX_POOL_SIZE_DEFAULT, None)
+        Self::new(
+            150.0,
+            PID_MIN_POOL_SIZE_DEFAULT,
+            PID_MAX_POOL_SIZE_DEFAULT,
+            None,
+        )
     }
 }
 
@@ -214,7 +219,8 @@ mod tests {
         }
 
         assert_eq!(
-            pid.current_pool_size, Some(50),
+            pid.current_pool_size,
+            Some(50),
             "Pool size should settle at hard minimum k_min=50"
         );
     }
@@ -239,7 +245,8 @@ mod tests {
         }
 
         assert_eq!(
-            pid.current_pool_size, Some(200),
+            pid.current_pool_size,
+            Some(200),
             "Pool size should settle at maximum k_max=200"
         );
     }
