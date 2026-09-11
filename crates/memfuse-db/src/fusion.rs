@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T23:02:53Z (SESSION: 1604a4f5)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -238,7 +238,12 @@ pub fn build_provenance(
         let rrf_contrib = if rrf_contrib.is_finite() {
             rrf_contrib
         } else {
-            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            tracing::warn!(
+                w,
+                rrf_k,
+                rank,
+                "non-finite rrf_contrib in build_provenance; defaulting to 0.0"
+            );
             0.0
         };
         (rank, rrf_contrib)
@@ -491,10 +496,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             }
 
             if !signal_name.is_empty() && signal_name != "unnamed" {
-                entry
-                    .3
-                    .signal_ranks
-                    .insert(signal_name.clone(), rrf_rank);
+                entry.3.signal_ranks.insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
@@ -2098,6 +2100,84 @@ mod tests {
                 res.score
             );
         }
+    }
+
+    #[test]
+    fn test_rrf_tie_breaking_multi_signal_identical_scores() {
+        let doc_b = SearchResult {
+            id: "doc_b".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+        let doc_a = SearchResult {
+            id: "doc_a".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+        let doc_c = SearchResult {
+            id: "doc_c".to_string(),
+            score: 0.9,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        };
+
+        // doc_a: rank 1 in set1, rank 2 in set2 => RRF score = 1/61 + 1/62
+        // doc_b: rank 2 in set1, rank 1 in set2 => RRF score = 1/62 + 1/61 (identical!)
+        let set1 = (
+            "vector".to_string(),
+            vec![doc_a.clone(), doc_b.clone(), doc_c.clone()],
+            1.0,
+        );
+        let set2 = (
+            "text".to_string(),
+            vec![doc_b.clone(), doc_a.clone(), doc_c.clone()],
+            1.0,
+        );
+
+        let fused = weighted_reciprocal_rank_fusion(vec![set1, set2], 3);
+        assert_eq!(fused.len(), 3);
+        assert!((fused[0].score - fused[1].score).abs() < f32::EPSILON);
+        // doc_a and doc_b have identical RRF scores; secondary sort by ID must place doc_a before doc_b
+        assert_eq!(fused[0].id, "doc_a");
+        assert_eq!(fused[1].id, "doc_b");
+    }
+
+    #[test]
+    fn test_build_provenance_handles_zero_rank_and_nonfinite_inputs() {
+        let prov = build_provenance(
+            Some(0.95),
+            Some(0), // Rank 0 should trigger fallback to rank 1
+            Some(1.0),
+            Some(f32::NAN), // Raw score NaN
+            Some(1),
+            Some(1.0),
+            None,
+            None,
+            None,
+            None,
+            60.0,
+            Some("test_col".to_string()),
+            Some("hnsw".to_string()),
+            None,
+        );
+
+        assert_eq!(prov.signal_ranks.get("vector"), Some(&1));
+        assert_eq!(prov.signal_ranks.get("text"), Some(&1));
+
+        let vec_contrib = prov
+            .signal_contributions
+            .get("vector")
+            .expect("vector contrib");
+        let text_contrib = prov.signal_contributions.get("text").expect("text contrib");
+
+        assert!((vec_contrib.rrf_contribution - (1.0 / 61.0)).abs() < 1e-6);
+        assert!(text_contrib.raw_score.is_nan());
+        assert!((text_contrib.rrf_contribution - (1.0 / 61.0)).abs() < 1e-6);
     }
 
     #[cfg(test)]

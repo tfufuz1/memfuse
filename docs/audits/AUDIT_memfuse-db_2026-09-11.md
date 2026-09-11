@@ -78,3 +78,28 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+---
+
+## 5. Audit & Verification: RRF Rank Fusion & Numerics (Session `1604a4f5`)
+
+### Task-ID: `JULES-20260911-EIGENB`
+
+**Fokus:** RRF Rank Fusion & Numerik in `crates/memfuse-db/src/fusion.rs`.
+
+#### Verifizierte Invarianten & Befunde
+1. **Determinismus bei tied scores & total_cmp Order (`HeapEntry::cmp`):**
+   - `HeapEntry::cmp` implementiert `Ord` über `total_cmp` für Fusions-Scores.
+   - Bei identischen Scores wird deterministisch ein sekundärer Vergleich der Dokument-IDs (`self.result.id.cmp(&other.result.id)`) durchgeführt.
+   - Verifiziert mit Unit-Test `test_rrf_tie_breaking_multi_signal_identical_scores`.
+
+2. **Handhabung von NaN, Inf & ungültigen Rängen:**
+   - In `build_provenance` und RRF Fusion (`weighted_reciprocal_rank_fusion_with_options`) werden non-finite RRF-Beiträge zu `0.0` gefallbackt und geloggt.
+   - Ein Rang 0 (`rank=0`) wird als ungültige Eingabe erkannt und mit Warnung auf 1-basierten Rang 1 gefallbackt (`Cormack et al.`).
+   - Verifiziert mit Unit-Test `test_build_provenance_handles_zero_rank_and_nonfinite_inputs`.
+
+3. **Verifikation des Gate-Stacks:**
+   - `cargo check -p memfuse-db --all-features`: 0 Fehler
+   - `cargo clippy -p memfuse-db --no-deps -- -D warnings`: 0 Warnungen
+   - `cargo fmt --check -p memfuse-db`: 0 Diffs
+   - `cargo test -p memfuse-db --all-features`: 244/244 Unit-Tests & Integrationstests grün
