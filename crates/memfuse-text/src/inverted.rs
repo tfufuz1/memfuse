@@ -535,14 +535,29 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
+            // Filter out entries belonging to longer terms (e.g. "foo:bar" when searching for "foo")
+            let valid_entries: Vec<(&Vec<u8>, &Vec<u8>)> = entries
+                .iter()
+                .filter(|(key, _)| {
+                    if key.len() <= prefix.len() {
+                        return false;
+                    }
+                    let suffix = &key[prefix.len()..];
+                    std::str::from_utf8(suffix)
+                        .map(|s| s.parse::<u64>().is_ok())
+                        .unwrap_or(false)
+                })
+                .map(|(k, v)| (k, v))
+                .collect();
+
+            let df = valid_entries.len() as u32;
             if df == 0 {
                 continue;
             }
 
-            for (key, val_bytes) in entries {
+            for (key, val_bytes) in valid_entries {
                 // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
+                // Suffix is guaranteed to parse as u64 due to filter above
                 let suffix = &key[prefix.len()..];
                 let doc_id_raw = std::str::from_utf8(suffix)
                     .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
@@ -1824,6 +1839,24 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_colon_term_prefix_collision() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage, "colon_collision_test");
+
+        let tx = TxId::new(1);
+        // Doc 1 contains term "foo" and "foo:bar"
+        index.insert(tx, DocId::new(1), "foo foo:bar").await?;
+        index.commit(tx).await?;
+
+        // Searching for "foo" should succeed and return Doc 1 without error
+        let results = index.search_bm25("foo", 10, None).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, DocId::new(1));
 
         Ok(())
     }
