@@ -1343,6 +1343,7 @@ impl StorageEngine for LsmStorage {
                 }
 
             // --- PHASE 2: Prepare WAL entries under commit_mutex ---
+            let state = self.state.read().await;
             let (wal_entries, prev_hmac_snapshot) = state.wal.prepare_batch(wal_ops).await?;
 
             // If group commit window is disabled (0 micros), perform immediate single commit
