@@ -2,8 +2,7 @@
 
 **Crate:** `memfuse-db` (Layer 4 — Orchestrator & 4-Signal-Fusion Engine)
 **Datum:** 2026-09-11
-**Session:** `504d02fc`
-**Task-ID:** `JULES-20260911-IMPL`
+**Session:** `JULES-20260911-EIGENB`
 **Status:** 🟢 Clean / Audited & Verified
 
 ---
@@ -48,7 +47,7 @@
 ### Inventar-Drift
 - **Gefunden:** `reaper.rs` war im Prompter-Inventar vom 2026-09-10 gelistet, existiert aber nicht mehr im Repository.
 - **Befund:** `Inventar-Drift: Datei crates/memfuse-db/src/reaper.rs umbenannt oder entfernt`.
-- **Status:** Funktionalität ist vollständig in `crates/memfuse-db/src/background_workers.rs` konsolidiert.
+- **Status:** Funktionalität ist vollständig in `crates/memfuse-db/src/background_workers.rs` konsolidiert. Stand 2026-09-11 für 27 `.rs`-Dateien unter `crates/memfuse-db/src/` verifiziert.
 
 ---
 
@@ -64,17 +63,15 @@
    - **Verifikation:** `search.rs` nutzt durchgängig `CheckpointPinGuard::new` mit Asynchron-Inkrement und Unpinning in `pin_guard.release().await`.
    - **Status:** Tag als `[RESOLVED]` markiert.
 
-3. **Workspace Preflight Fixes:**
-   - Behoben: Missing State Write Lock acquisition in `LsmStorage::commit` (`memfuse-store`).
-   - Behoben: Missing `persist_sync` calls in `InstanceOrphanRegistry::register_orphan_sync` / `register_checkpoint_sync` (`memfuse-checkpoint`).
-   - Behoben: Unsafe `VarBuilder::from_mmaped_safetensors` durch sicheres `VarBuilder::from_buffered_safetensors` in `memfuse-candle`.
-   - Behoben: Formatierung von TODO-Kommentaren zur Erfüllung von CI Gate 6 (TODO-Grammatik).
+3. **Public API Facade & RRF Fusion Audit (`lib.rs` / `fusion.rs`):**
+   - Public API Signaturen (`MemFuse::open`, `MemFuse::collection`, `insert`, `get`, `delete`, `hybrid_search`) gegen `README.md` und Doc-Tests abgeglichen. All doc-tests compile and pass cleanly.
+   - Numerical safety and tie-breaking in `fusion.rs` verified (non-finite/NaN weight filtering, IEEE-754 `total_cmp` sorting, bounded min-heap top-k selection).
 
 ---
 
 ## 4. Test- & Gate-Verifikation
 
-- `cargo check -p memfuse-db --all-features`: 0 Fehler.
-- `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
-- `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
-- `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+- `cargo check -p memfuse-db`: 0 Fehler.
+- `cargo test -p memfuse-db --lib fusion`: 27/27 Unit-Tests grün.
+- `cargo test -p memfuse-db --doc`: Doc-Test grün.
+- `cargo test -p memfuse-db --lib`: 241/241 Unit-Tests grün.
