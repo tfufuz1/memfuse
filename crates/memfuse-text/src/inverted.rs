@@ -544,6 +544,12 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 // Key format: {namespace}:pl:{term}:{doc_id}
                 // Suffix is just {doc_id}
                 let suffix = &key[prefix.len()..];
+                // Guard against term prefix collisions (e.g., searching term "http"
+                // matching keys for "http://schema.org:10"). If suffix contains ':',
+                // it belongs to a longer term with the same prefix and must be skipped.
+                if suffix.contains(&b':') {
+                    continue;
+                }
                 let doc_id_raw = std::str::from_utf8(suffix)
                     .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
                     .parse::<u64>()
@@ -1824,6 +1830,32 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_posting_list_term_prefix_collision_with_colons() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "collision_test");
+
+        let tx = TxId::new(1);
+        let d1 = DocId::new(100);
+        let d2 = DocId::new(200);
+
+        // Document 1 contains term "http"
+        index.upsert_document(tx, d1, "http web request").await?;
+        // Document 2 contains term "http://schema.org" or terms with colons
+        index
+            .upsert_document(tx, d2, "http://schema.org metadata")
+            .await?;
+        index.commit_stats(tx).await?;
+        storage.commit(tx).await?;
+
+        // Searching for "http" must not fail with ParseIntError due to prefix collision
+        let results = index.search_bm25("http", 10, None).await?;
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, d1);
 
         Ok(())
     }
