@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T23:30:00Z (SESSION: c123ad52)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -213,7 +213,8 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    // DONE(memfuse-impl): boundary rrf_k=0.0 supported (rank >= 1 prevents division by zero) [ref:eigenbau-rrf-fusion]
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative; division by zero risk");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -452,7 +453,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         let signal_kind = SignalKind::from_name(&signal_name);
         // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
         let rrf_k = k as f32;
-        debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+        debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative; division by zero risk");
 
         for (rank_idx, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {

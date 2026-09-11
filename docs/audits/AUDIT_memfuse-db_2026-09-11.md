@@ -78,3 +78,16 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+---
+
+## 5. RRF Rank Fusion & Numerik Hardening (Task `JULES-20260911-EIGENB`, Session `c123ad52`)
+
+### Audit & Implementierung
+- **Komponente:** `crates/memfuse-db/src/fusion.rs`
+- **Befund:** `debug_assert!(rrf_k > 0.0)` in `build_provenance` und `weighted_reciprocal_rank_fusion_with_options` war übermäßig restriktiv und verhinderte das Ausführen von RRF mit dem Randwert $k = 0.0$ (reine reziproke Ränge $1/\text{rank}$) in Debug-Builds, obwohl RRF-Ränge stets 1-basiert ($\text{rank} \ge 1$) sind und somit kein Divisions-durch-Null-Risiko bei $k = 0.0$ besteht ($0.0 + \text{rank} \ge 1.0$).
+- **Behebung:** `debug_assert!(rrf_k >= 0.0)` in beiden Funktionen aktualisiert und FILE-CONTEXT Header refreshed.
+- **Verifikation:**
+  - `cargo test -p memfuse-db --test fusion_edge_cases_test`: 8/8 Edge-Case-Tests bestanden (`test_k_parameter_zero_boundary`, NaN-Handling, Inf-Handling, Tie-Breaking).
+  - `cargo test -p memfuse-db --lib`: 216/216 Unit-Tests bestanden.
+  - `cargo test -p memfuse-db --all-features`: 242/242 Tests bestanden.
