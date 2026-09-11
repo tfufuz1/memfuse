@@ -36,6 +36,7 @@ tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 proptest = "1.4"
 memfuse-index = { workspace = true, features = ["experimental-diskann"] }
+memfuse-candle = { workspace = true }
 
 [features]
 default = []
