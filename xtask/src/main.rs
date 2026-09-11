@@ -67,6 +67,7 @@ mod gen_prompter_data;
 mod generate_adr;
 mod init_audit_fix;
 mod jules_preflight;
+mod record_mutation_score;
 mod validate_pr_checklist;
 
 pub use check_jules_context_freshness::run_check_jules_context_freshness;
@@ -2104,6 +2105,14 @@ fn main() {
             let check_only = args.iter().any(|arg| arg == "--check");
             let success = run_sync_docs(check_only);
             if !success {
+                process::exit(1);
+            }
+        }
+        "mutation-score-record" => {
+            let root = find_root_dir();
+            let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
+            if let Err(e) = record_mutation_score::run_record_mutation_score(extra_args, &root) {
+                eprintln!("❌ mutation-score-record failed: {}", e);
                 process::exit(1);
             }
         }
