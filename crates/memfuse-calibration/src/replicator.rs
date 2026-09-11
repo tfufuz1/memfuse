@@ -140,6 +140,10 @@ impl ReplicatorState {
             let n = self.weights.len();
             if n > 0 {
                 let uniform = 1.0 / n as f32;
+                // AI-TAG[SMELL][MAJOR] Manual slice fill loop should be replaced with `self.weights.fill(uniform)` (ID: AGT-CALIBRATION-84b140c7) (TS: 2026-09-10T23:35:15Z) (SESSION: c0f02350)
+                // BEFUND: Clippy `-D clippy::manual_slice_fill` triggers on `for w in &mut self.weights { *w = uniform; }`.
+                // RISIKO: Fails CI clippy lint when run with strict warnings on manual slice fill patterns.
+                // EMPFEHLUNG: In subsequent fix task, replace loop with `self.weights.fill(uniform);`.
                 for w in &mut self.weights {
                     *w = uniform;
                 }
