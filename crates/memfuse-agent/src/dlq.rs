@@ -12,19 +12,25 @@
 use crate::step::StepDeadLetter;
 use memfuse_core::traits::StorageEngine;
 use memfuse_core::{MemFuseError, Result, TxId};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use tokio::sync::OnceCell;
 
 /// Persistente Dead-Letter-Queue für fehlgeschlagene Agent-Schritte.
 /// Verwendet denselben Storage wie der Agent (LSM) mit einem fixen Key-Prefix.
 pub struct DeadLetterQueue {
     storage: Arc<dyn StorageEngine>,
+    next_tx: OnceCell<AtomicU64>,
 }
 
 impl DeadLetterQueue {
     pub const PREFIX: &'static [u8] = b"dlq:";
 
     pub fn new(storage: Arc<dyn StorageEngine>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            next_tx: OnceCell::new(),
+        }
     }
 
     pub async fn push(&self, letter: &StepDeadLetter) -> Result<()> {
@@ -87,12 +93,17 @@ impl DeadLetterQueue {
         Ok(letters)
     }
 
-    async fn allocate_tx(&self) -> Result<TxId> {
-        let last_tx = self.storage.last_tx_id().await?.0;
-        // AI-TAG[SMELL][MINOR] Fallback transaction ID allocation via last_tx_id + 1 is non-atomic under concurrent writers. (ID: AGT-AGENT-49bfd02e) (TS: 2026-09-11T12:00:00Z) (SESSION: 81ef2364)
-        // BEFUND: allocate_tx liest last_tx_id() und addiert 1 statt Collection::allocate_tx() zu nutzen.
-        // RISIKO: Unter parallelen DLQ operations kann dieselbe TxId doppelt vergeben werden.
-        // EMPFEHLUNG: Vergabe über Collection oder atomare Sequenz im Storage vereinheitlichen.
-        Ok(TxId::new(last_tx + 1))
+    pub async fn allocate_tx(&self) -> Result<TxId> {
+        let counter = self
+            .next_tx
+            .get_or_try_init(|| async {
+                let last_tx = self.storage.last_tx_id().await?.0;
+                Ok::<AtomicU64, MemFuseError>(AtomicU64::new(last_tx + 1))
+            })
+            .await?;
+
+        // AI-TAG[SMELL][MINOR] RESOLVED: AGT-AGENT-49bfd02e — Replaced non-atomic last_tx_id + 1 read with OnceCell initialized AtomicU64 fetch_add. (TS: 2026-09-11T14:30:00Z)
+        let tx_val = counter.fetch_add(1, Ordering::SeqCst);
+        Ok(TxId::new(tx_val))
     }
 }
