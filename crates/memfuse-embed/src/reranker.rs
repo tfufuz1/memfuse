@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-10T19:24:15Z (SESSION: 3a20f416)
+// STAND: 2026-09-11T10:21:21Z (SESSION: fe92d654)
 // ZWECK: Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 // INVARIANTEN: Falls onnx-Feature inaktiv, greift transparenter Passthrough-Fallback.
 // NICHT-OFFENSICHTLICH: OnnxReranker nutzt ein eigenes Arc<Mutex<Session>> getrennt von TextEmbedder.

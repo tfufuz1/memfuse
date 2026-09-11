@@ -476,3 +476,57 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 - `fault_injection_2pc` (11 Szenarien): All-or-Nothing Transaktionssicherheit unter künstlichen HNSW/LSM Injektionsfehlern verifiziert.
 - `cross_signal_isolation_test`: 100 Iterationen ohne Split-Brain-Reads oder MVCC Isolation-Anomalien bestanden.
 - Thread concurrency smoke tests: `cargo test -p memfuse-db --lib -- --test-threads=8` (213 Tests passed).
+
+## Tiefen-Audit 2026-09-11
+### SESSION: fa82a43d | TS: 2026-09-11T10:30:00Z
+### Crate: `memfuse-db` · Layer 2 — Orchestrator & 4-Signal-Fusion
+### Scope: 27 Source-Dateien (100% verifiziert)
+
+### 1. Inventar-Realitätsabgleich & Drift
+- **Inventar-Drift festgestellt:** `reaper.rs` (im Prompter-Inventar vom 2026-09-10 gelistet) wurde entfernt und in `background_workers.rs` konsolidiert.
+- **Aktuelles Quellcode-Inventar:** 27 `.rs`-Dateien in `crates/memfuse-db/src/`
+- **Datei-Aufschlüsselung:**
+  - `background_workers.rs` (685 LOC)
+  - `chunker.rs`
+  - `collection/crud.rs` (1499 LOC)
+  - `collection/kv_lock.rs`
+  - `collection/maintenance.rs`
+  - `collection/mod.rs`
+  - `collection/query_builder.rs` (1127 LOC)
+  - `collection/relate.rs`
+  - `collection/search.rs`
+  - `collection/tests.rs` (3044 LOC)
+  - `collection/tx.rs`
+  - `consolidation_executor.rs`
+  - `context.rs`
+  - `context_compaction.rs`
+  - `decay_controller.rs`
+  - `filter.rs`
+  - `fusion.rs`
+  - `homeostat.rs`
+  - `lib.rs`
+  - `maintenance_config.rs`
+  - `maintenance_scheduler.rs`
+  - `memory_consolidation.rs`
+  - `multistep.rs`
+  - `synthesis_phase.rs`
+  - `temporal_filter.rs`
+  - `transaction.rs`
+  - `volatile_vault.rs`
+
+### 2. Tier 1 Verification & Stresstest Results
+- **Concurrency Rauchtest (5 Iterationen mit `--test-threads=8`):** PASSED (0 Deadlocks, 0 Races).
+- **Proptest Suite:** `prop_rrf_never_panics` und `prop_rrf_score_monotonicity` grün.
+- **2PC Fault-Injection Suite (`tests/fault_injection_2pc.rs`):** 11/11 Scenarios bestanden (LSM-, HNSW-, Text-, Graph-Failure-Injection & Crash Recovery via `repair_on_open()`).
+- **Orchestrator Stress Concurrency (`tests/stress.rs`):** PASSED in 3.62s.
+- **Cross-Signal Isolation Stress (`tests/cross_signal_isolation_test.rs`):** 100-Iteration Stress PASSED in 5.40s.
+
+### 3. APM- & Domänen-Risiko-Scan
+- **APM-12 (Lock-Hierarchie):** Verifiziert. Strict Hierarchy: `MemFuse::collections` (RwLock) -> `Collection::insert_lock` (Mutex) -> `Collection::embedder` (RwLock). Transaction staging uses `std::sync::Mutex` without holding guards across `.await`.
+- **APM-14 (Tie-Breaker Determinismus):** Verifiziert. `fusion.rs` sortiert `HeapEntry` via `f32::total_cmp` mit `DocId` Tie-Breaker.
+- **APM-15 (Traversal Cap):** CSR-Graph Traversal caps bei `MAX_VISITED_NODES = 10_000` in `memfuse-graph`.
+- **APM-16 (NaN/Inf Propagation):** RRF Fusion-Scoring filtert non-finite weights/scores vor Normalisierung und Resonance-Bonus.
+- **APM-17 & APM-18 (MVCC Isolation & Snapshot Isolation):** `search_bm25_at` und `HnswIndex::search_at` pinnen Sequence Number und erzwingen Point-In-Time Reads.
+- **APM-19 (TxId Allocation):** Alle Transaktionen nutzen `collection.allocate_tx()` (AtomicU64 monotonic sequence), system intern base `TxId::INTERNAL_BASE`.
+- **APM-20 (Bounded Queues):** Telemetrie- und Event-Queues gecapped bei 10.000 Elementen.
+- **APM-21 (Mutex Poisoning):** `parking_lot::Mutex` / `tokio::sync::Mutex` im Einsatz (poisoning-free).
