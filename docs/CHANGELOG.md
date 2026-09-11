@@ -4,6 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-11T14:41:11Z (SESSION: b979ee5a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-10T19:30:00Z (SESSION: a9d67eae)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
 | `TS:2026-09-10T19:25:46Z (SESSION: c844907e)` | `crates/memfuse-text/src/inverted.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Speichert Postings-Listen, Dokumentlängen und BM25-Statistiken transaktional im StorageEngine. |
 | `TS:2026-09-10T19:25:46Z (SESSION: c844907e)` | `crates/memfuse-text/src/tokenizer.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Zerschneidet Eingabetexte in normalisierte Wort-Tokens mit optionaler deutscher Morphologie. |
@@ -26,7 +27,6 @@
 | `TS:2026-09-05T00:00:00Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/tests/no_blanket_allow_deprecated.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Automated regression guard ensuring no blanket crate-level `#![allow(deprecated)]` attribute is reintroduced. |
 | `TS:2026-09-04T11:41:54Z (SESSION: 9c384478)` | `crates/memfuse-index/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Layer-1 Vektor-Such- & Index-Engine mit HNSW, DiskANN, Quantisierung und SIMD. |
 | `TS:2026-09-02T23:19:10Z (SESSION: 088b4a44)` | `crates/memfuse-agent/src/step.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Step result structures and AgentTool trait definitions for orchestration. |
-| `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Workflow execution state context carrying task ID, budget, and memory. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/engine.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Deterministic graph-walker orchestrator engine for autonomous agent workflows. |
 | `TS:2026-09-01T23:11:04Z (SESSION: 5a38054a)` | `crates/memfuse-agent/src/event_source.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Continuous event stream abstractions delivering telemetry/trigger events to agents. |
@@ -107,7 +107,6 @@
 | `2026-09-10T19:23:40Z` | `crates/memfuse-graph/src/lib.rs` | `REVIEW-PASS` | `-` | `bd6ff800` | `PASS` | `-` | // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T19:23:40Z) (SESSION: bd6ff800) |
 | `2026-09-10T19:22:55Z (SESSION: 0b2ff57d)` | `crates/memfuse-py/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | PyO3 FFI bindings bridging MemFuse embedded vector DB functionality to Python. |
 | `2026-09-10T19:21:35Z` | `crates/memfuse-text/src/morphology.rs` | `REVIEW-PASS` | `TEST:TXT-001` | `4dd1c98c` | `PASS` | `8` | // REVIEW-PASS[2/2] STATUS:PASS (ID: TEST:TXT-001) (TS: 2026-09-10T19:21:35Z) (SESSION: 4dd1c98c) |
-| `2026-09-10T19:16:32Z` | `crates/memfuse-agent/src/audit.rs` | `AI-TAG` | `AGT-AGENT-bf5c7019` | `341c92d8` | `OPEN` | `0` | // AI-TAG[SMELL][MINOR] Unused parameter in mock storage engine scan implementation. (ID: AGT-AGENT-bf5c7019) (TS: 2026-09-10T19:16:32Z) (SESSION: 341c92d8) |
 | `2026-09-10T19:16:25Z (SESSION: 3f3e4637)` | `crates/memfuse-router/src/dispatch.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Client-seitiger MCP-Dispatch-Mechanismus über Stdio JSON-RPC 2.0 (ADR-010). |
 | `2026-09-10T19:16:25Z (SESSION: 3f3e4637)` | `crates/memfuse-router/src/outcome.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Outcome-Typen und DecisionId-Identifier für konformale Router-Kalibrierung. |
 | `2026-09-10T19:16:25Z (SESSION: 3f3e4637)` | `crates/memfuse-router/src/profile.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SLM-Profildefinitionen und konformale Quantil-Kalibrierung (Gibbs & Candès). |
