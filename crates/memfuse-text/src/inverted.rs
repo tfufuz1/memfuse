@@ -535,24 +535,28 @@ impl<S: StorageEngine> InvertedIndex<S> {
             let prefix = self.key_term_prefix(term);
             let entries = self.storage.scan_prefix_at(&prefix, seq).await?;
 
-            let df = entries.len() as u32;
+            // Filter entries to exact matches for {namespace}:pl:{term}:{doc_id}
+            // Ignore subterm keys (e.g. {namespace}:pl:{term}:{subterm}:{doc_id}) that match the prefix scan
+            let valid_entries: Vec<(DocId, u32)> = entries
+                .into_iter()
+                .filter_map(|(key, val_bytes)| {
+                    if key.len() <= prefix.len() {
+                        return None;
+                    }
+                    let suffix = &key[prefix.len()..];
+                    let suffix_str = std::str::from_utf8(suffix).ok()?;
+                    let doc_id_raw = suffix_str.parse::<u64>().ok()?;
+                    let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().ok()?);
+                    Some((DocId::new(doc_id_raw), tf))
+                })
+                .collect();
+
+            let df = valid_entries.len() as u32;
             if df == 0 {
                 continue;
             }
 
-            for (key, val_bytes) in entries {
-                // Key format: {namespace}:pl:{term}:{doc_id}
-                // Suffix is just {doc_id}
-                let suffix = &key[prefix.len()..];
-                let doc_id_raw = std::str::from_utf8(suffix)
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id in key".into()))?
-                    .parse::<u64>()
-                    .map_err(|_| MemFuseError::Storage("Invalid doc_id format in key".into()))?;
-                let doc_id = DocId::new(doc_id_raw);
-
-                let tf = u32::from_le_bytes(val_bytes.as_slice().try_into().map_err(|_| {
-                    MemFuseError::Storage("Invalid tf length in posting list".into())
-                })?);
+            for (doc_id, tf) in valid_entries {
 
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
@@ -1824,6 +1828,34 @@ mod tests {
         let results = index2.search("sharing", 10).await?;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].doc_id, DocId::new(10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_handles_terms_with_colon_prefix_collision() -> Result<()> {
+        let storage = Arc::new(MockStorage::new());
+        let index = InvertedIndex::new(storage.clone(), "prefix_collision");
+
+        let tx = TxId::new(1);
+        // Insert doc 1 with term "alpha"
+        index
+            .upsert_document(tx, DocId::new(1), "alpha")
+            .await?;
+        index.commit(tx).await?;
+
+        // Manually write a posting key for term "alpha:beta" for doc 2 to simulate subterm prefix collision
+        let subterm_key = index.key_term_prefix("alpha:beta");
+        let mut subterm_pl_key = subterm_key;
+        subterm_pl_key.extend_from_slice(b"2"); // {namespace}:pl:alpha:beta:2
+        storage
+            .put(tx, &subterm_pl_key, &1u32.to_le_bytes())
+            .await?;
+
+        // Searching for "alpha" must scan pl:alpha: without failing on pl:alpha:beta:2
+        let results = index.search("alpha", 10).await?;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].doc_id, DocId::new(1));
 
         Ok(())
     }
