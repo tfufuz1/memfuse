@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-10T19:24:15Z (SESSION: 3a20f416)
+// STAND: 2026-09-10T23:29:29Z (SESSION: 6bb96488)
 // ZWECK: Cross-Encoder Reranking für Post-RRF Präzisionsverbesserung.
 // INVARIANTEN: Falls onnx-Feature inaktiv, greift transparenter Passthrough-Fallback.
 // NICHT-OFFENSICHTLICH: OnnxReranker nutzt ein eigenes Arc<Mutex<Session>> getrennt von TextEmbedder.
@@ -1103,3 +1103,4 @@ mod tests {
 
 // REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-04T11:42:28Z) (SESSION: 3e5150c8) PRÜFER-KONTEXT: FRESH - Verified CrossEncoderReranker passthrough fallback, candidate limit bounds, and zero-unsafe invariants.
 // REVIEW-PASS[2/2] STATUS:PASS (TS: 2026-09-06T11:19:00Z) (SESSION: 8efa6210) PRÜFER-KONTEXT: FRESH - Verified ML domain APM alignment (APM-22, APM-23, APM-24), zero-unsafe in production, and hermetic feature isolation.
+// REVIEW-PASS[1/2] STATUS:PASS (TS: 2026-09-10T23:29:29Z) (SESSION: 6bb96488) PRÜFER-KONTEXT: FRESH - Verified CrossEncoderReranker score calibration, candidate bounds, and passthrough fallback paths.

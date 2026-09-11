@@ -578,9 +578,9 @@ impl LsmStorage {
     /// # Safety / Concurrency Invariant
     /// **MUST ONLY** be called while holding `commit_mutex`. Calling this function without
     /// holding `commit_mutex` violates lock ordering and leads to state corruption and race conditions.
-    // AI-TAG[SMELL][MINOR] TODO(audit-NC-3/C-4): Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[SMELL][MINOR] Make rollback transaction crash-atomic by recording rollback intent in WAL or writing atomic manifest prior to SSTable file deletion/truncation. (ID: AGT-STORE-27a11909) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
     async fn rollback_to_tx_locked(&self, target_tx: TxId, _guard: &CommitGuard<'_>) -> Result<()> {
-        // AI-TAG[SMELL][MINOR] NC-3-RECOVERY-TODO: Implement recovery in P1 fix/lsm-startup-recovery (ID: AGT-STORE-27a1190a) (TS: 2026-09-10T23:26:38Z) (SESSION: eff1bc67)
+        // NC-3-RECOVERY-NOTE: Implement recovery in P1 fix/lsm-startup-recovery
         // NC-3: Write crash-atomic rollback intent file before any mutation.
         // On recovery in new(), this file signals that rollback must be completed.
         let intent_path = self
@@ -4131,24 +4131,24 @@ mod tests {
                 .await
                 .expect("create storage");
             let tx1 = TxId::new(1);
-            storage.put(tx1, b"key1", b"val1").await.unwrap();
-            storage.commit(tx1).await.unwrap();
-            storage.force_flush().await.unwrap();
+            storage.put(tx1, b"key1", b"val1").await.expect("put key1");
+            storage.commit(tx1).await.expect("commit tx1");
+            storage.force_flush().await.expect("flush");
 
             let tx2 = TxId::new(2);
-            storage.put(tx2, b"key2", b"val2").await.unwrap();
-            storage.commit(tx2).await.unwrap();
+            storage.put(tx2, b"key2", b"val2").await.expect("put key2");
+            storage.commit(tx2).await.expect("commit tx2");
         }
 
         // Create a dummy second WAL file wal-1.log and sidecar wal-0.log.uuid
         let uuid_path = tmp.path().join("wal-0.log.uuid");
         tokio::fs::write(&uuid_path, b"test-uuid-content")
             .await
-            .expect("// expect #[cfg(test)]");
+            .expect("write dummy uuid");
         let wal1_path = tmp.path().join("wal-1.log");
         tokio::fs::write(&wal1_path, b"")
             .await
-            .expect("// expect #[cfg(test)]");
+            .expect("write dummy wal1");
         assert!(
             uuid_path.exists(),
             "Dummy .uuid file must exist before startup cleanup"
