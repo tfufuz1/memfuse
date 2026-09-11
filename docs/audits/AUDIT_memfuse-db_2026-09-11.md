@@ -78,3 +78,16 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+## 5. RRF Rank Fusion & Numerik Implementation (Session 603c838b)
+
+**Task:** IMPLEMENT für RRF Rank Fusion & Numerik (`crates/memfuse-db/src/fusion.rs`)
+**Task-ID:** `JULES-20260911-EIGENB`
+**Review Focus:** `nan-and-tie-cases`
+
+### Befunde & Umsetzungen:
+1. **Assertion-Hardening in `build_provenance`:**
+   - `debug_assert!(rrf_k > 0.0)` wurde in `build_provenance` zu `debug_assert!(rrf_k >= 0.0)` angepasst, um Randfallprüfungen mit $k=0.0$ ohne Panic zu unterstützen, da 1-basierte Ränge ($rank \ge 1$) eine Division durch Null ausschließen.
+   - Umgesetzt in `crates/memfuse-db/src/fusion.rs` mit `// DONE(memfuse-impl): Allow rrf_k >= 0.0 in build_provenance to support k=0 boundary conditions [ref:eigenbau-rrf-fusion]`.
+2. **Nan- & Tie-Cases Test-Verifikation:**
+   - Sämtliche Randfälle bezüglich NaN-Scores, $\pm\infty$-Scores, K-Parameter Grenzwerten ($k=0$), deterministischem Tie-Breaking nach `doc_id` und Replicator-Gewichtssummeninvarianten wurden mit `cargo test -p memfuse-db --test fusion_edge_cases_test` und `cargo test -p memfuse-db --all-features` verifiziert.

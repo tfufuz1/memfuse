@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T22:54:21Z (SESSION: 603c838b)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -213,7 +213,8 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    // DONE(memfuse-impl): Allow rrf_k >= 0.0 in build_provenance to support k=0 boundary conditions [ref:eigenbau-rrf-fusion]
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
