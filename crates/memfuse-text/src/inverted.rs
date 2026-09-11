@@ -540,8 +540,8 @@ impl<S: StorageEngine> InvertedIndex<S> {
                 let suffix_bytes = &key[prefix.len()..];
                 if let Ok(suffix) = std::str::from_utf8(suffix_bytes) {
                     if let Ok(doc_id_raw) = suffix.parse::<u64>() {
-                        if let Ok(tf_array) = val_bytes.as_slice().try_into() {
-                            let tf = u32::from_le_bytes(tf_array);
+                        if val_bytes.len() == 4 {
+                            let tf = u32::from_le_bytes(val_bytes[..4].try_into().unwrap());
                             valid_postings.push((DocId::new(doc_id_raw), tf));
                         }
                     }
@@ -554,7 +554,6 @@ impl<S: StorageEngine> InvertedIndex<S> {
             }
 
             for (doc_id, tf) in valid_postings {
-
                 // Fetch doc length
                 let doc_len = if let Some(&len) = doc_len_cache.get(&doc_id) {
                     len
