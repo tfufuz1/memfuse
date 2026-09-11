@@ -78,3 +78,12 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+---
+
+## 5. KV-Bridge (Index↔Store Sync) Eigenbau-Audit (2026-09-11 — SESSION: 08f138e5)
+
+- **Inventar-Drift (Schritt 0):** `reaper.rs` (im Prompter-Inventar vom 2026-09-10 gelistet) wurde früher entfernt und in `background_workers.rs` konsolidiert. 27 `.rs`-Dateien unter `crates/memfuse-db/src/` verifiziert.
+- **Marker-Prüfung:** `grep -rn "TODO(memfuse-plan)"` in `search.rs`, `crud.rs`, `memfuse-index` und `memfuse-store` ergab 0 offene Marker.
+- **Split-Brain- & Idempotenz-Verifikation:** Target-Testsuite `split_brain_vector_orphan_test.rs` inkl. `test_vector_deleted_process_killed_before_document_tombstone`, `test_duplicate_insert_transaction_replay_no_double_vector_entry`, `prop_no_dangling_search_result_under_random_insert_delete_sequence` und `test_concurrent_partial_rebuild_and_context_compaction_no_lock_starvation` erfolgreich ausgeführt (4/4 passed).
+- **2PC & Fault-Injection:** `atomic_commit.rs` (2/2) und `fault_injection_2pc.rs` (11/11) erfolgreich verifiziert.
