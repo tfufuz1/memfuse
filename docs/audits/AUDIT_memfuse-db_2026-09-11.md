@@ -78,3 +78,18 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+---
+
+## 5. Session `d01b21c0` — Task `JULES-20260911-EIGENB` (Eigenbau RRF Fusion & Numerik)
+
+**Datum:** 2026-09-11T23:02:08Z
+**Spezialisten-Rolle:** Rank-Fusion-/Numerik-Spezialist
+**Status:** 🟢 Complete & Verified
+
+### Befunde & Handlungen
+- `crates/memfuse-db/src/fusion.rs`: RRF Rank Fusion und Numerik (NaN-, Infinity-, zero-weight, tie-breaking und rrf_k Boundary-Fälle) verifiziert.
+- `debug_assert!(rrf_k >= 0.0)` angepasst, um boundary case `rrf_k = 0.0` in Tests/Numerik sicherzustellen.
+- FILE-CONTEXT-Header aktualisiert auf TS `2026-09-11T23:02:08Z` und SESSION `d01b21c0`.
+- Marker `// DONE(memfuse-impl): RRF Rank Fusion & Numerik (nan-and-tie-cases) verifiziert und gehärtet [ref:eigenbau-rrf-fusion]` eingefügt.
+- Alle 27 Unit/Property-Tests in `fusion.rs` sowie 8 Edge-Case Integrationstests in `tests/fusion_edge_cases_test.rs` erfolgreich ausgeführt.

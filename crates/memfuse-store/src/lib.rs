@@ -33,7 +33,7 @@ pub(crate) mod util;
 pub mod wal;
 
 pub use compaction::{CompactionConfig, CompactionEngine};
-pub use system_pressure::{PressureLevel, SystemPressure, SystemPressureMonitor};
 pub use lsm::{LsmConfig, LsmStorage};
 pub use manifest::{Manifest, ManifestEntry};
+pub use system_pressure::{PressureLevel, SystemPressure, SystemPressureMonitor};
 pub use tenant_codec::TenantKeyCodec;

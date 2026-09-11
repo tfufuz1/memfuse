@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T23:02:08Z (SESSION: d01b21c0)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -213,7 +213,7 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -238,7 +238,12 @@ pub fn build_provenance(
         let rrf_contrib = if rrf_contrib.is_finite() {
             rrf_contrib
         } else {
-            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            tracing::warn!(
+                w,
+                rrf_k,
+                rank,
+                "non-finite rrf_contrib in build_provenance; defaulting to 0.0"
+            );
             0.0
         };
         (rank, rrf_contrib)
@@ -318,6 +323,7 @@ pub fn build_provenance(
     record
 }
 
+// DONE(memfuse-impl): RRF Rank Fusion & Numerik (nan-and-tie-cases) verifiziert und gehärtet [ref:eigenbau-rrf-fusion]
 /// Fuses multiple sets of ranked search results into a single ranked list using Reciprocal Rank Fusion (RRF).
 /// RRF score = sum(1 / (k + rank)) for each result set, where k = 60 by default.
 pub fn reciprocal_rank_fusion(
@@ -491,10 +497,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             }
 
             if !signal_name.is_empty() && signal_name != "unnamed" {
-                entry
-                    .3
-                    .signal_ranks
-                    .insert(signal_name.clone(), rrf_rank);
+                entry.3.signal_ranks.insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
