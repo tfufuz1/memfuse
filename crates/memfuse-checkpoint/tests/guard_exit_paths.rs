@@ -460,3 +460,99 @@ async fn test_drop_no_syscall_on_worker() {
         "Explicit flush_orphan_registry must persist orphan state to disk"
     );
 }
+
+/// Regression Test: Drop latency MUST be strictly < 1ms on worker threads.
+#[tokio::test]
+async fn test_checkpoint_guard_drop_latency_sub_millisecond() {
+    let _lock = TEST_LOCK.lock();
+    let temp_dir = tempfile::tempdir().unwrap();
+    // Use non-existent file in directory to ensure any fs operation would be noticeable
+    let orphan_file = temp_dir.path().join("sub_ms_latency.json");
+
+    let registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(
+        &orphan_file,
+    ));
+    let storage = Arc::new(TrackingMockStorage::new());
+
+    let cp = memfuse_checkpoint::StateCheckpoint {
+        tx_id: TxId::new(7777),
+        timestamp_ms: 1000,
+        namespace: Some("latency_test".to_string()),
+    };
+
+    let guard = CheckpointGuard::with_registry(cp, storage, "latency_test", registry.clone());
+
+    let start = std::time::Instant::now();
+    drop(guard);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(1),
+        "CheckpointGuard drop latency was {:?}, expected < 1ms",
+        elapsed
+    );
+    assert_eq!(registry.get_orphaned_checkpoints().len(), 1);
+}
+
+/// Concurrency Sampling Test: 50 parallel CheckpointGuard drops under Multi-Thread Tokio Runtime.
+/// Verifies zero worker-thread starvation / blocking.
+#[test]
+fn test_concurrent_50_parallel_guard_drops_no_worker_blocking() {
+    let _lock = TEST_LOCK.lock();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let orphan_file = temp_dir.path().join("concurrent_50_drops.json");
+        let registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(
+            &orphan_file,
+        ));
+        let storage = Arc::new(TrackingMockStorage::new());
+
+        let mut handles = Vec::new();
+        let start = std::time::Instant::now();
+
+        for i in 0..50 {
+            let reg_clone = registry.clone();
+            let storage_clone = storage.clone();
+            let handle = tokio::spawn(async move {
+                let cp = memfuse_checkpoint::StateCheckpoint {
+                    tx_id: TxId::new(10000 + i),
+                    timestamp_ms: 1000 + i,
+                    namespace: Some("concurrency_50".to_string()),
+                };
+                let guard =
+                    CheckpointGuard::with_registry(cp, storage_clone, "concurrency_50", reg_clone);
+                let drop_start = std::time::Instant::now();
+                drop(guard);
+                drop_start.elapsed()
+            });
+            handles.push(handle);
+        }
+
+        let mut max_drop_dur = std::time::Duration::ZERO;
+        for handle in handles {
+            let dur = handle.await.unwrap();
+            if dur > max_drop_dur {
+                max_drop_dur = dur;
+            }
+        }
+
+        let total_elapsed = start.elapsed();
+        println!(
+            "50 parallel drops total execution time: {:?}, max single drop latency: {:?}",
+            total_elapsed, max_drop_dur
+        );
+
+        assert!(
+            max_drop_dur < std::time::Duration::from_millis(5),
+            "Max drop duration among 50 parallel drops was {:?}, expected < 5ms",
+            max_drop_dur
+        );
+        assert_eq!(registry.get_orphaned_checkpoints().len(), 50);
+    });
+}

@@ -273,13 +273,6 @@ impl InstanceOrphanRegistry {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
             lock.push(orphan);
-            drop(lock);
-            if let Err(err) = self.persist_sync() {
-                tracing::error!(
-                    ?err,
-                    "Failed to persist orphan registry after registering orphan pin"
-                );
-            }
         }
     }
 
@@ -287,13 +280,6 @@ impl InstanceOrphanRegistry {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
             lock.push(cp);
-            drop(lock);
-            if let Err(err) = self.persist_sync() {
-                tracing::error!(
-                    ?err,
-                    "Failed to persist orphan registry after registering orphaned checkpoint"
-                );
-            }
         }
     }
 
@@ -697,9 +683,19 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
     }
 
     pub fn commit(mut self) -> Result<StateCheckpoint> {
-        self.checkpoint
+        let cp = self
+            .checkpoint
             .take()
-            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))
+            .ok_or_else(|| MemFuseError::Internal("Checkpoint already consumed".into()))?;
+        let reg = Arc::clone(&self.orphan_registry);
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if let Err(err) = reg.flush_orphan_registry().await {
+                    tracing::warn!(?err, "Failed piggyback flush on CheckpointGuard commit");
+                }
+            });
+        }
+        Ok(cp)
     }
 
     /// Führt ein manuelles, asynchrones Rollback des Checkpoints aus.
@@ -718,7 +714,11 @@ impl<S: memfuse_core::StorageEngine> CheckpointGuard<S> {
                     last_tx.inner()
                 )));
             }
-            self.storage.rollback_to_tx(cp.tx_id).await
+            let res = self.storage.rollback_to_tx(cp.tx_id).await;
+            if let Err(err) = self.orphan_registry.flush_orphan_registry().await {
+                tracing::warn!(?err, "Failed piggyback flush on CheckpointGuard rollback");
+            }
+            res
         } else {
             Err(MemFuseError::Internal("Checkpoint already consumed".into()))
         }
@@ -1369,6 +1369,16 @@ impl<S: memfuse_core::StorageEngine> PersistentCheckpointStore<S> {
             .flush_orphan_registry()
             .await
             .map_err(|e| MemFuseError::Internal(format!("Failed to flush orphan registry: {e}")))
+    }
+
+    /// Performs an explicit shutdown flush of the orphan registry to disk.
+    pub async fn shutdown(&self) -> Result<()> {
+        self.flush_orphan_registry().await
+    }
+
+    /// Alias for `shutdown()`. Performs an explicit graceful close flush.
+    pub async fn close(&self) -> Result<()> {
+        self.shutdown().await
     }
 
     pub fn register_pinned_seq_no_orphan(&self, orphan: PinnedSeqNoOrphan) {
