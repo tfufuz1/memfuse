@@ -3158,4 +3158,49 @@ mod tests {
         );
         assert!(!decision.confidence.as_ref().unwrap().calibrated);
     }
+
+    #[test]
+    fn test_slm_profile_nan_and_negative_validation_bounds() {
+        // min_relevance_score NaN validation
+        let res_nan_score = SlmProfile::try_new(
+            "nan-score-slm",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            f32::NAN,
+        );
+        assert!(res_nan_score.is_err());
+        assert!(res_nan_score.unwrap_err().to_string().contains("min_relevance_score"));
+
+        // min_relevance_score negative validation
+        let res_neg_score = SlmProfile::try_new(
+            "neg-score-slm",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            -0.5,
+        );
+        assert!(res_neg_score.is_err());
+        assert!(res_neg_score.unwrap_err().to_string().contains("min_relevance_score"));
+
+        // resource_cost_estimate NaN validation
+        let profile_nan_cost = SlmProfile::new(
+            "nan-cost-slm",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.5,
+        ).with_resource_cost_estimate(f32::NAN);
+        assert!(profile_nan_cost.validate().is_err());
+
+        // resource_cost_estimate negative validation
+        let profile_neg_cost = SlmProfile::new(
+            "neg-cost-slm",
+            "http://localhost:8000/mcp",
+            vec![1],
+            TokenBudget::new(1000, 100),
+            0.5,
+        ).with_resource_cost_estimate(-10.0);
+        assert!(profile_neg_cost.validate().is_err());
+    }
 }
