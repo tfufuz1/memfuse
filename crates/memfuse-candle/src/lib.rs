@@ -16,6 +16,8 @@
 //! *Hinweis*: **Strategie A** (expliziter RoPE-Shift- und KV-Cache-Bridge-Zugriff für mandantenisolierte
 //! Cache-Projektionen) ist ein separates, zukünftiges Vorhaben und NICHT Gegenstand dieser Erstfassung.
 
+#![forbid(unsafe_code)]
+
 pub mod embedding;
 pub mod embedding_provider;
 pub mod gguf_loader;
