@@ -535,8 +535,8 @@ mod tests {
 
     #[test]
     fn test_derive_kv_key_length_prefix_prevents_collision() -> Result<()> {
-        use memfuse_core::TenantId;
         use crate::kv_cipher::ModelFingerprint;
+        use memfuse_core::TenantId;
 
         // Setup: Zwei ModelFingerprint-Instanzen mit gleichem hash, aber unterschiedlicher
         // Aufteilung von model_id/quantization die ohne Längenpräfix kollidieren würden.
@@ -567,8 +567,8 @@ mod tests {
 
     #[test]
     fn test_derive_kv_key_same_fingerprint_produces_same_key() -> Result<()> {
-        use memfuse_core::TenantId;
         use crate::kv_cipher::ModelFingerprint;
+        use memfuse_core::TenantId;
 
         // Determinismus-Test: Gleiche Eingaben → gleicher Key (HKDF ist deterministisch)
         let km = KeyManager::try_new("test-master-key-32bytes-exactly!", b"salt1")?;
@@ -580,7 +580,10 @@ mod tests {
         };
         let key_1 = km.derive_kv_key(tenant, &fp)?;
         let key_2 = km.derive_kv_key(tenant, &fp)?;
-        assert_eq!(key_1.inspect_key_bytes_for_test(), key_2.inspect_key_bytes_for_test());
+        assert_eq!(
+            key_1.inspect_key_bytes_for_test(),
+            key_2.inspect_key_bytes_for_test()
+        );
         Ok(())
     }
 
