@@ -213,7 +213,8 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    // DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]
+    debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative; division by zero risk");
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -452,7 +453,8 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         let signal_kind = SignalKind::from_name(&signal_name);
         // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
         let rrf_k = k as f32;
-        debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+        // DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]
+        debug_assert!(rrf_k >= 0.0, "rrf_k must be non-negative; division by zero risk");
 
         for (rank_idx, doc) in result_set.into_iter().enumerate() {
             if !doc.score.is_finite() {
@@ -693,6 +695,48 @@ pub fn weights_to_signal_factors(weights: Option<&memfuse_core::FusionWeights>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rrf_k_zero_boundary() {
+        let set = vec![
+            SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc2".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let prov = build_provenance(
+            Some(0.9),
+            Some(1),
+            Some(1.0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            Some("col".to_string()),
+            Some("hnsw".to_string()),
+            Some(1.0),
+        );
+        let contrib = prov
+            .signal_contributions
+            .get("vector")
+            .expect("vector contribution present");
+        assert_eq!(contrib.rrf_contribution, 1.0);
+    }
 
     #[test]
     fn test_rrf_dual_signal_higher_than_single_signal() {
