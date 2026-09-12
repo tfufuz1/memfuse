@@ -2,7 +2,7 @@
 // ZWECK: MemFuse Database Orchestrator & Facade (Layer 2).
 // INVARIANTEN: Monoton steigende TxId-Allokation; Reparaturgarantie beim Öffnen (repair_on_open); Strikte Isolation von Namespaces.
 // NICHT-OFFENSICHTLICH: Lock-Hierarchie: collections (RwLock) -> insert_lock (Mutex) -> embedder (RwLock).
-// STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
+// STAND: TS:2026-09-11T22:58:30Z (SESSION: e6ab3646)
 
 // INVARIANT: Orchestrator Facade (Getriebe — Layer 2).
 //! # MemFuse — Embedded Hybrid-Search for AI Agents
