@@ -45,12 +45,13 @@
       "released_at": "2026-09-11T21:43:09.241587927+00:00"
     },
     {
-      "krate": "memfuse-store",
-      "issue": "JULES-20260911-LSM-FIXES",
-      "timestamp": "2026-09-11T22:52:02.806978848+00:00",
-      "session_id": "4880313142721752491",
-      "active": true,
-      "expires_at": "2026-09-12T02:52:02.806967776+00:00"
+      "krate": "memfuse-db",
+      "issue": "JULES-20260911-EIGENB",
+      "timestamp": "2026-09-11T22:53:03.749858413+00:00",
+      "session_id": "10530929093827854156",
+      "active": false,
+      "expires_at": "2026-09-12T02:53:03.749846639+00:00",
+      "released_at": "2026-09-11T23:03:27.909050374+00:00"
     }
   ]
 }
