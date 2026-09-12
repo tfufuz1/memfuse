@@ -104,12 +104,16 @@ impl Ord for HeapEntry {
         // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
         // so that peek() returns the candidate with the lowest score (or highest ID on tie).
         // Therefore, lower score => Greater priority in max-heap.
-        // DONE(memfuse-impl): BinaryHeap HeapEntry uses f32::total_cmp for NaN score safety and secondary ID comparison for deterministic tie-breaking. [ref:eigenbau-rrf-fusion]
-        other
-            .result
-            .score
-            .total_cmp(&self.result.score)
-            .then_with(|| self.result.id.cmp(&other.result.id))
+        // NaN scores are considered worst (Greater Ord) so they get evicted first and sorted last.
+        match (self.result.score.is_nan(), other.result.score.is_nan()) {
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            _ => other
+                .result
+                .score
+                .total_cmp(&self.result.score)
+                .then_with(|| self.result.id.cmp(&other.result.id)),
+        }
     }
 }
 
