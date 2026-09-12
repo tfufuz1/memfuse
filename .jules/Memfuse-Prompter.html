@@ -671,6 +671,7 @@ let _rawPrompt = '';
 let INVENTORY_DATE = '2026-09-10';
 let INVENTORY_SOURCE = 'bundled'; // 'bundled' | 'imported'
 let INVENTORY_FILENAME = null;
+let CONTEXT_PREAMBLE = null;
 const APM_ON = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16',
   '17','18','19','20','21','22','23','24','25','26','27','28','29','30','31','32','33','34','35','36','37','38','39','40','41','42']);
 
@@ -1644,7 +1645,11 @@ cargo run -p memfuse-bench --release --bin compare_baseline`
 // ═══════════════════════════════════════════════════════════════════
 function PREAMBLE(crate) {
   const p = CRATE_PROFILES[crate] || {};
-  return `# Rolle und Aufgabe
+  const template = CONTEXT_PREAMBLE || 'Pflicht-Schritt 1 (vor jeder Aufgabe): Lies `.jules/JULES_CONTEXT.md`, dann `AGENTS.md`, dann `crates/{crate}/AGENTS.md`, dann `WORKING_STATE.md`. Fasse in 2 Sätzen zusammen, was du gelesen hast, bevor du mit der Aufgabe beginnst.';
+  const preambleText = template.replace(/\{crate\}/g, crate).trim();
+  return `${preambleText}
+
+# Rolle und Aufgabe
 **Persona:** ${p.title || 'Senior Rust Engineer'}
 **Crate:** \`${crate}\` · ${p.layer || ''}
 
@@ -5013,6 +5018,9 @@ function mergeProjectData(data) {
           'nicht verfügbar (cargo xtask gen-prompter-data ausführen)';
   }
 
+  if (data.context_preamble) {
+    CONTEXT_PREAMBLE = data.context_preamble;
+  }
   if (data.target_architecture && typeof data.target_architecture === 'object') {
     TARGET_ARCH = data.target_architecture;
   }
@@ -5053,6 +5061,7 @@ function resetProjectData() {
   INVENTORY_SOURCE = 'bundled';
   INVENTORY_FILENAME = null;
   INVENTORY_DATE = '2026-09-10';
+  CONTEXT_PREAMBLE = null;
   const fileInput = document.getElementById('data-file-input');
   if (fileInput) fileInput.value = '';
   const resultEl = document.getElementById('data-result');

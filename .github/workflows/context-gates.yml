@@ -171,6 +171,18 @@ jobs:
       - name: "Gate 15: Validierung von Dateipfad-Referenzen in Dokumenten"
         run: cargo run -p xtask -- check-doc-references
 
+      # TODO(P0-3): Nach 2 Wochen (ab 2026-09-26) manuell zu einem Hard-Gate hochstufen (exit 1 bei fehlender Zeile)
+      - name: "Gate 15: Context-Read-Evidence im PR-Body"
+        env:
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+        run: |
+          if echo "$PR_BODY" | grep -q "Context-Read:"; then
+            echo "✅ Context-Read-Evidence im PR-Body gefunden"
+          else
+            echo "⚠️ SOFT-WARNING: Keine 'Context-Read:' Zeile im PR-Body gefunden."
+            echo "Bitte Pflicht-Leseordnung beachten: JULES_CONTEXT.md → AGENTS.md → crates/{crate}/AGENTS.md → WORKING_STATE.md"
+          fi
+
       # TODO(opt-RC-1/A-2): Enforce MEMFUSE_CLAIM_CRATE extraction from PR body across all PR gates and verify required check status on main.
       - name: "Gate 14: Jules Preflight Aggregator + Claim-Check"
         env:
