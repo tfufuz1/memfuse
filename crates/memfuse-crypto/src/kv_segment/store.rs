@@ -401,10 +401,10 @@ mod tests {
         assert_eq!(store.get_tenant_segment_len(tenant_b), 2);
     }
 
-    // AI-TAG[TEST][MAJOR] Lock release test timing dependency under high contention (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-10T23:43:03Z) (SESSION: 504d02fc)
-    // BEFUND: test_evict_lru_fair_releases_lock_between_batches assumes reader thread schedules within eviction loop time window; fast CPU execution completes eviction in < 1ms before reader thread performs reads while is_evicting is true.
-    // RISIKO: Intermittent unit test failures under unthrottled CPU environments during test execution.
-    // EMPFEHLUNG: Add yield or micro-sleep in eviction batch loop or adjust reader thread spin mechanism.
+    // AI-TAG[TEST][ANALYZED-SAFE] Lock release test timing dependency resolved via Notify handshake (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-12T09:35:00Z) (SESSION: 5f10d4f0)
+    // BEFUND: Befund beschrieb ursprüngliche sleep/timing-basierte Annahmen. Der Test nutzt nun synchrone Notify-Handshakes (`notify_batch_released` / `notify_read_complete`), die Ping-Pong-synchronisiert ablaufen.
+    // RISIKO: Analyse auf Permit-Verlust bei `Notify`: Da jede Runde exakt einen Handshake-Schritt ausführt und erst nach `notify_read_complete.notified().await` in die nächste Eviction-Runde geht, existiert kein ausstehendes unbehandeltes Permit während der Iterationen.
+    // EMPFEHLUNG: Test ist vollständig deterministisch und race-frei. Markiert als ANALYZED-SAFE.
     #[test]
     fn test_evict_lru_fair_releases_lock_between_batches() {
         let store = Arc::new(TenantIsolatedKvStore::new());
