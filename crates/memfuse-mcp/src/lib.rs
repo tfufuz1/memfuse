@@ -135,11 +135,58 @@ fn validate_collection_name(name: &str) -> Result<(), McpError> {
     Ok(())
 }
 
+/// Holds strong Arc references to routing and calibration components to maintain live Weak references in `MemFuse`.
+pub struct RoutingHandle {
+    pub router: Arc<memfuse_router::RouterEngine>,
+    pub calibrator: Arc<parking_lot::Mutex<memfuse_calibration::IsotonicCalibrator>>,
+    pub pid_controller: Arc<parking_lot::Mutex<memfuse_calibration::PidController>>,
+}
+
+/// Conditionally sets up `RouterEngine`, `IsotonicCalibrator`, and `PidController` if routing profiles are configured.
+/// Attaches their `Weak` pointers to `db` via `set_router`, `set_calibrator`, and `set_pid_controller`.
+/// Returns `Some(RoutingHandle)` if profiles were present, or `None` if no profiles were configured.
+pub async fn setup_routing(
+    db: &Arc<MemFuse>,
+    config: &RouterConfig,
+) -> Result<Option<Arc<RoutingHandle>>, MemFuseError> {
+    if config.profiles.is_empty() {
+        return Ok(None);
+    }
+
+    let default_col = db.collection("default").await?;
+    let router = Arc::new(memfuse_router::RouterEngine::new(
+        default_col,
+        config.profiles.clone(),
+        config.calibration_store_path.clone(),
+    ));
+
+    let calibrator = Arc::new(parking_lot::Mutex::new(
+        memfuse_calibration::IsotonicCalibrator::with_defaults(),
+    ));
+
+    let pid_controller = Arc::new(parking_lot::Mutex::new(
+        memfuse_calibration::PidController::default(),
+    ));
+
+    let router_weak =
+        Arc::downgrade(&router) as std::sync::Weak<dyn memfuse_db::DriftStatusProvider>;
+    db.set_router(router_weak);
+    db.set_calibrator(Arc::downgrade(&calibrator));
+    db.set_pid_controller(Arc::downgrade(&pid_controller));
+
+    Ok(Some(Arc::new(RoutingHandle {
+        router,
+        calibrator,
+        pid_controller,
+    })))
+}
+
 pub struct McpServer {
     pub db: Arc<MemFuse>,
     pub embedder: Arc<dyn EmbeddingProvider>,
     pub sandbox: Arc<McpSandbox>,
     pub injection_guard: Arc<PromptInjectionGuard>,
+    pub routing: Option<Arc<RoutingHandle>>,
 }
 
 impl McpServer {
@@ -176,11 +223,17 @@ impl McpServer {
             embedder,
             sandbox,
             injection_guard: Arc::new(PromptInjectionGuard::from_env()),
+            routing: None,
         }
     }
 
     pub fn with_injection_guard(mut self, injection_guard: Arc<PromptInjectionGuard>) -> Self {
         self.injection_guard = injection_guard;
+        self
+    }
+
+    pub fn with_routing(mut self, routing: Option<Arc<RoutingHandle>>) -> Self {
+        self.routing = routing;
         self
     }
 

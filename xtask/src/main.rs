@@ -63,6 +63,7 @@ mod check_unwrap_baseline_trend;
 mod check_vetoes;
 mod check_workflow_commands;
 mod claim;
+mod lint_unsafe_slice_bounds;
 mod gen_prompter_data;
 mod generate_adr;
 mod init_audit_fix;
@@ -2128,6 +2129,11 @@ fn main() {
                 process::exit(1);
             }
         }
+        "lint-unsafe-slices" => {
+            if !lint_unsafe_slice_bounds::run_lint_unsafe_slice_bounds() {
+                process::exit(1);
+            }
+        }
         "mutation-score-record" => {
             let root = find_root_dir();
             let extra_args = if args.len() > 2 { &args[2..] } else { &[] };
@@ -2390,7 +2396,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols [--cross-module], check-duplicate-intent, check-placeholder-refs, check-phantom-files, check-doc-references, check-audit-duplication, check-compile, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim, check-adr-deadlines, jules-submit-gate [--crate=<CRATE>]");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, lint-unsafe-slices, check-recall-stability, check-commit-messages, check-duplicate-symbols [--cross-module], check-duplicate-intent, check-placeholder-refs, check-phantom-files, check-doc-references, check-audit-duplication, check-compile, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim, check-adr-deadlines, jules-submit-gate [--crate=<CRATE>]");
             process::exit(1);
         }
     }
