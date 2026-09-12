@@ -343,11 +343,6 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
         self.consolidation_in_progress.clone()
     }
 
-    /// Liefert den `consolidation_guard` für gegenseitigen Ausschluss von Konsolidierungsdurchläufen (ADR-081).
-    pub fn consolidation_guard(&self) -> &Arc<tokio::sync::Mutex<()>> {
-        &self.consolidation_guard
-    }
-
     /// Returns the CSR graph index for this collection.
     pub fn graph_index(&self) -> Arc<CsrGraph> {
         self.graph_index.clone()
