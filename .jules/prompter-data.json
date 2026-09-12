@@ -1,7 +1,6 @@
 {
-  "generated_at": "2026-09-12T11:18:28Z",
+  "generated_at": "2026-09-12T11:19:38Z",
   "head": "b61fbb2",
-  "context_preamble": "Pflicht-Schritt 1 (vor jeder Aufgabe): Lies `.jules/JULES_CONTEXT.md`, dann `AGENTS.md`, dann `crates/{crate}/AGENTS.md`, dann `WORKING_STATE.md`. Fasse in 2 Sätzen zusammen, was du gelesen hast, bevor du mit der Aufgabe beginnst.\n",
   "target_architecture": {
     "memfuse-agent": "memfuse-agentic",
     "memfuse-calibration": "memfuse-inference",
@@ -128,7 +127,7 @@
       "loc": 3990,
       "tests": "80+",
       "desc": "",
-      "status": "🟡",
+      "status": "✅",
       "risk": "inj",
       "tier": "3"
     },
@@ -150,7 +149,7 @@
       "loc": 2033,
       "tests": "34+",
       "desc": "",
-      "status": "🟡",
+      "status": "🧊",
       "risk": "gate",
       "tier": "3"
     },
@@ -194,7 +193,7 @@
       "loc": 6209,
       "tests": "118+",
       "desc": "DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren.",
-      "status": "🟡",
+      "status": "✅",
       "risk": "parse",
       "tier": "2"
     },
@@ -1556,7 +1555,7 @@
     ]
   },
   "working_state_snapshot": {
-    "generated_at": "2026-09-12T11:18:28Z",
+    "generated_at": "2026-09-12T11:19:38Z",
     "crate_count": 18,
     "crates": [
       {

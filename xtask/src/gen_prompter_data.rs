@@ -132,6 +132,35 @@ fn get_git_head_short() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+fn derive_status_from_working_state(crate_id: &str, ws_content: &str) -> String {
+    for line in ws_content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("| `") {
+            let parts: Vec<&str> = trimmed.split('|').collect();
+            if parts.len() >= 5 {
+                let name = parts[1].trim().trim_matches('`');
+                if name == crate_id {
+                    let status_col = parts[4].trim();
+                    if status_col.starts_with('🟢') {
+                        return "✅".to_string();
+                    } else if status_col.starts_with('🟡') {
+                        return "🟡".to_string();
+                    } else if status_col.starts_with('🔴') {
+                        return "🔴".to_string();
+                    } else if status_col.starts_with('🧊') {
+                        return "🧊".to_string();
+                    } else if status_col.starts_with('✅') {
+                        return "✅".to_string();
+                    } else {
+                        return "❓".to_string();
+                    }
+                }
+            }
+        }
+    }
+    "❓".to_string()
+}
+
 pub fn run() -> bool {
     println!("=== Running xtask gen-prompter-data ===");
     let root = find_root_dir();
@@ -182,14 +211,9 @@ pub fn run() -> bool {
             .unwrap_or_else(|| "none".to_string());
 
         // Status
-        let status = if crate_id == "memfuse-embed"
-            || crate_id == "memfuse-ollama"
-            || crate_id == "memfuse-tauri"
-        {
-            "🟡".to_string()
-        } else {
-            "✅".to_string()
-        };
+        let ws_path = root.join("WORKING_STATE.md");
+        let ws_content = fs::read_to_string(&ws_path).unwrap_or_default();
+        let status = derive_status_from_working_state(crate_id, &ws_content);
 
         crates_json.push(CrateJsonData {
             id: crate_id.clone(),
@@ -366,4 +390,31 @@ pub fn run() -> bool {
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_derive_status_from_working_state() {
+        let sample_ws = r#"
+## Crate-Inventar & Status
+
+| Crate | Layer | LOC | Status | Beschreibung / Hauptaufgabe |
+| :--- | :---: | :---: | :--- | :--- |
+| `memfuse-core` | 1 | 9364 | 🟢 Clean | Core types |
+| `memfuse-embed` | 4 | 2033 | 🧊 Optional | Embedder |
+| `memfuse-custom` | 5 | 1000 | 🟡 Warning | Custom |
+| `memfuse-broken` | 6 | 500 | 🔴 Critical | Broken |
+| `memfuse-unknown-status` | 7 | 100 | ⚪ Unknown | Unknown |
+"#;
+
+        assert_eq!(derive_status_from_working_state("memfuse-core", sample_ws), "✅");
+        assert_eq!(derive_status_from_working_state("memfuse-embed", sample_ws), "🧊");
+        assert_eq!(derive_status_from_working_state("memfuse-custom", sample_ws), "🟡");
+        assert_eq!(derive_status_from_working_state("memfuse-broken", sample_ws), "🔴");
+        assert_eq!(derive_status_from_working_state("memfuse-unknown-status", sample_ws), "❓");
+        assert_eq!(derive_status_from_working_state("nonexistent-crate", sample_ws), "❓");
+    }
 }
