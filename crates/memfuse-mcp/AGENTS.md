@@ -39,7 +39,7 @@ Diese Events werden im `SecurityAuditLogger` unwiderruflich erfasst.
 ### Volatile Results (Anthropic Containment)
 Sehr große Tool-Ergebnisse (MAX_VOLATILE_OUTPUT_BYTES = 16 MB) oder sensitive Daten 
 werden nicht als JSON im Klartext zurückgeschickt, sondern im `VolatileToolResult` 
-RAM-verschlüsselt (via `memfuse-crypto::VolatileEncryptionKey`). Der Agent erhält 
+RAM-verschlüsselt (via `memfuse-crypto::VolatileEncryptionKey`, Cargo-Package-Name: `memfuse-security`). Der Agent erhält
 nur einen Reference-Key, den andere Tools einlösen können.
 Die Anzahl ist begrenzt (`MAX_VOLATILE_RESULTS` = 1000).
 
@@ -89,7 +89,7 @@ Regel `detect_nested_locks.yml` verbietet geschachtelte Locks innerhalb von Laye
 
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
-- **Erlaubte Imports**: Alle L0-L3 Crates (`memfuse-core`, `memfuse-db`, `memfuse-agent`, `memfuse-crypto`)
+- **Erlaubte Imports**: Alle L0-L3 Crates (`memfuse-core`, `memfuse-db`, `memfuse-agent`, `memfuse-crypto` / `memfuse-security`)
 - **Verbotene Imports**: Keine (Layer 4 Top Crate)
 - **Genutzt von**: CLI (`memfuse-cli`) und externen MCP-Clients (Cursor, Jules, Claude)
 
