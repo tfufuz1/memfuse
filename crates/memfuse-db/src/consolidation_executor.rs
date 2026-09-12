@@ -16,7 +16,37 @@ use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
 use memfuse_graph::{detect_communities, CommunityDetectionConfig};
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// RAII Guard zur Koordination des Konsolidierungslaufs.
+/// Stellt sicher, dass das `consolidation_in_progress`-Flag bei Beendigung oder Panic
+/// stets panic-sicher auf `false` zurückgesetzt wird.
+pub struct ConsolidationLockGuard {
+    flag: Arc<AtomicBool>,
+}
+
+impl ConsolidationLockGuard {
+    /// Versucht, das Konsolidierungs-Lock atomic zu erwerben (`compare_exchange`).
+    /// Gibt `Some(ConsolidationLockGuard)` zurück, wenn das Lock erfolgreich reserviert wurde.
+    /// Gibt `None` zurück, falls bereits ein Konsolidierungslauf aktiv ist.
+    pub fn try_acquire(flag: &Arc<AtomicBool>) -> Option<Self> {
+        if flag
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+        {
+            Some(Self { flag: flag.clone() })
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for ConsolidationLockGuard {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::Release);
+    }
+}
 
 /// Führt den Structural Consolidation Pass aus UND wendet die Ergebnisse an (Tombstones, Graph-Cascade).
 ///
@@ -34,6 +64,23 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
             cascade_errors: Vec::new(),
         });
     }
+
+    // Erwerbe consolidation_guard per try_lock(), um parallele Durchläufe auf derselben Collection zu verhindern (ADR-081)
+    let _guard = match collection.consolidation_guard().try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            tracing::warn!(
+                collection = %collection.name(),
+                "Konsolidierungsdurchlauf übersprungen — anderer Pfad aktiv (H-19-Schutz)"
+            );
+            return Ok(ConsolidationPhaseResult {
+                segments_created: 0,
+                duplicates_tombstoned: Vec::new(),
+                cascade_edge_tombstones_needed: Vec::new(),
+                cascade_errors: Vec::new(),
+            });
+        }
+    };
 
     let mut result = run_consolidation_pass(turns, config);
 
@@ -326,6 +373,29 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
     pub async fn run_cycle(
         &self,
     ) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
+        // P14-Compliance: Koordination zwischen ConsolidationEngine und MaintenanceScheduler.
+        // Versuche das Konsolidierungs-Lock atomic zu erwerben. Bei Konflikt überspringe diesen Lauf.
+        let _guard = match ConsolidationLockGuard::try_acquire(
+            &self.collection.consolidation_in_progress(),
+        ) {
+            Some(g) => g,
+            None => {
+                tracing::debug!(
+                    collection = %self.collection.name(),
+                    "consolidation_in_progress, skipping trigger"
+                );
+                return Ok((
+                    ConsolidationPhaseResult {
+                        segments_created: 0,
+                        duplicates_tombstoned: Vec::new(),
+                        cascade_edge_tombstones_needed: Vec::new(),
+                        cascade_errors: Vec::new(),
+                    },
+                    None,
+                ));
+            }
+        };
+
         // 1. Turns chronologisch aus der Collection lesen
         let user_key_prefix = self.collection.user_key_prefix();
         let entries = match self
@@ -607,5 +677,28 @@ mod tests {
         assert!(cycle3.is_ok());
 
         cancel_token.cancel();
+    }
+
+    #[tokio::test]
+    async fn test_execute_consolidation_pass_skips_when_guard_locked() {
+        let (col, _dir) = create_test_collection().await;
+
+        let turn1 = (DocId::new(1), vec![1.0, 0.0, 0.0, 0.0]);
+        let turn2 = (DocId::new(2), vec![1.0, 0.0, 0.0, 0.0]);
+        let turns = vec![turn1, turn2];
+
+        let config = ConsolidationConfig {
+            near_duplicate_cosine_threshold: 0.99,
+            ..Default::default()
+        };
+
+        // Lock guard manually
+        let _guard = col.consolidation_guard().try_lock().expect("try_lock");
+
+        let res = execute_consolidation_pass(col.as_ref(), &turns, &config).await;
+        assert!(res.is_ok(), "Should return Ok when guard is locked");
+        let phase_res = res.unwrap();
+        assert_eq!(phase_res.segments_created, 0);
+        assert!(phase_res.duplicates_tombstoned.is_empty());
     }
 }
