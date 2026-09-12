@@ -19,7 +19,7 @@
 //! - `synthesis_phase::run_synthesis_pass()` in `synthesis_phase.rs` ist der LLM-basierte Generative Synthesis Pass über Segmenten (erzeugt `SynthesizedChunk`s via `SegmentSynthesizer`-Trait).
 
 use crate::context_compaction::{CompactedContext, ContextCompactor};
-use memfuse_core::traits::LlmTextGenerator;
+use memfuse_core::traits::{LlmTextGenerator, ResponseGroundingValidator};
 use memfuse_core::{ContextChunk, DocId, TxId};
 use std::collections::HashSet;
 
@@ -317,6 +317,8 @@ pub struct SynthesisConfig {
     pub stability_cycles_required: u32,
     /// Maximale Anzahl von LLM-Aufrufen pro Consolidation-Cycle (Default: 10, P12-Kostenschutz).
     pub max_llm_calls_per_cycle: u32,
+    /// Mindest-Grounding-Score (Default: None = keine Validierung / Deaktiviert).
+    pub min_grounding_score: Option<f32>,
 }
 
 impl Default for SynthesisConfig {
@@ -325,6 +327,7 @@ impl Default for SynthesisConfig {
             min_community_size: 4,
             stability_cycles_required: 3,
             max_llm_calls_per_cycle: 10,
+            min_grounding_score: None,
         }
     }
 }
@@ -402,6 +405,7 @@ pub async fn run_structural_synthesis_pass(
     source_texts: &std::collections::HashMap<DocId, String>,
     llm: &dyn LlmTextGenerator,
     config: &SynthesisConfig,
+    validator: Option<&dyn ResponseGroundingValidator>,
 ) -> memfuse_core::Result<SynthesisPhaseResult> {
     if stable_communities.is_empty() {
         return Ok(SynthesisPhaseResult {
@@ -460,6 +464,34 @@ pub async fn run_structural_synthesis_pass(
 
         match llm.generate(&prompt_builder).await {
             Ok(generated_text) => {
+                if let (Some(threshold), Some(val)) = (config.min_grounding_score, validator) {
+                    let source_str_refs: Vec<&str> = valid_doc_ids
+                        .iter()
+                        .filter_map(|id| source_texts.get(id).map(|s| s.as_str()))
+                        .collect();
+                    match val.score_grounding(&generated_text, &source_str_refs) {
+                        Ok(score) => {
+                            if score < threshold {
+                                tracing::warn!(
+                                    community_hash = comm_hash,
+                                    score = score,
+                                    threshold = threshold,
+                                    "Generative Synthesis: Grounding-Score unter Schwelle — Chunk verworfen"
+                                );
+                                continue;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                community_hash = comm_hash,
+                                error = %e,
+                                "Generative Synthesis: Grounding-Score Berechnung fehlgeschlagen — Chunk verworfen"
+                            );
+                            continue;
+                        }
+                    }
+                }
+
                 let n = valid_doc_ids.len();
                 let content = format!("[SYNTHESIZED FROM {} SOURCES] {}", n, generated_text);
 
@@ -739,6 +771,7 @@ mod tests {
             min_community_size: 4,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
+            min_grounding_score: None,
         };
 
         // Community with 3 members < min_community_size = 4
@@ -747,9 +780,10 @@ mod tests {
         let stable_communities = vec![(hash, members)];
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .expect("run_synthesis_pass should succeed");
+        let res =
+            run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config, None)
+                .await
+                .expect("run_synthesis_pass should succeed");
 
         assert_eq!(res.synthesized.len(), 0);
         assert_eq!(res.deferred_community_hashes.len(), 0);
@@ -787,6 +821,7 @@ mod tests {
             min_community_size: 2,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
+            min_grounding_score: None,
         };
 
         // Create 15 qualified communities
@@ -799,9 +834,10 @@ mod tests {
 
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .expect("run_synthesis_pass should succeed");
+        let res =
+            run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config, None)
+                .await
+                .expect("run_synthesis_pass should succeed");
 
         assert_eq!(
             res.synthesized.len(),
@@ -824,6 +860,7 @@ mod tests {
             min_community_size: 2,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
+            min_grounding_score: None,
         };
 
         let members = vec![DocId::new(10), DocId::new(20), DocId::new(30)];
@@ -835,9 +872,10 @@ mod tests {
         source_texts.insert(DocId::new(20), "Text B".to_string());
         source_texts.insert(DocId::new(30), "Text C".to_string());
 
-        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .expect("run_synthesis_pass should succeed");
+        let res =
+            run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config, None)
+                .await
+                .expect("run_synthesis_pass should succeed");
 
         assert_eq!(res.synthesized.len(), 1);
         let chunk = &res.synthesized[0];
@@ -859,6 +897,7 @@ mod tests {
             min_community_size: 2,
             stability_cycles_required: 1,
             max_llm_calls_per_cycle: 10,
+            min_grounding_score: None,
         };
 
         let members_1 = vec![DocId::new(10), DocId::new(11)];
@@ -873,14 +912,65 @@ mod tests {
 
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
-            .await
-            .expect("run_synthesis_pass should not fail even if one community errors out");
+        let res =
+            run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config, None)
+                .await
+                .expect("run_synthesis_pass should not fail even if one community errors out");
 
         assert_eq!(
             res.synthesized.len(),
             2,
             "Communities 1 and 3 should be synthesized, community 2 skipped due to error"
+        );
+    }
+
+    struct MockLowScoreGroundingValidator;
+
+    impl ResponseGroundingValidator for MockLowScoreGroundingValidator {
+        fn score_grounding(
+            &self,
+            _response: &str,
+            _sources: &[&str],
+        ) -> memfuse_core::Result<f32> {
+            Ok(0.2) // Score 0.2 is below threshold 0.70
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_synthesis_pass_ungrounded_response_discarded() {
+        let llm = MockLlmGenerator {
+            fail_community_contains: None,
+        };
+        let validator = MockLowScoreGroundingValidator;
+        let config = SynthesisConfig {
+            min_community_size: 2,
+            stability_cycles_required: 1,
+            max_llm_calls_per_cycle: 10,
+            min_grounding_score: Some(0.70),
+        };
+
+        let members = vec![DocId::new(10), DocId::new(20)];
+        let hash = compute_community_hash(&members);
+        let stable_communities = vec![(hash, members)];
+
+        let mut source_texts = std::collections::HashMap::new();
+        source_texts.insert(DocId::new(10), "The sky is blue.".to_string());
+        source_texts.insert(DocId::new(20), "Grass is green.".to_string());
+
+        let res = run_structural_synthesis_pass(
+            &stable_communities,
+            &source_texts,
+            &llm,
+            &config,
+            Some(&validator),
+        )
+        .await
+        .expect("synthesis pass should execute without fatal error");
+
+        assert_eq!(
+            res.synthesized.len(),
+            0,
+            "Ungrounded response (score 0.2 < threshold 0.7) must be discarded"
         );
     }
 }

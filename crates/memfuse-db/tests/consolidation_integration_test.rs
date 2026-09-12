@@ -179,6 +179,7 @@ async fn test_execute_background_consolidation_with_synthesis_pass() {
         min_community_size: 3,
         stability_cycles_required: 2,
         max_llm_calls_per_cycle: 5,
+        min_grounding_score: None,
     };
 
     let llm = TestLlmGenerator;
@@ -191,6 +192,7 @@ async fn test_execute_background_consolidation_with_synthesis_pass() {
         &consolidation_config,
         Some(&synthesis_config),
         Some(&llm),
+        None,
         Some(&mut tracker),
     )
     .await
@@ -211,6 +213,7 @@ async fn test_execute_background_consolidation_with_synthesis_pass() {
         &consolidation_config,
         Some(&synthesis_config),
         Some(&llm),
+        None,
         Some(&mut tracker),
     )
     .await
