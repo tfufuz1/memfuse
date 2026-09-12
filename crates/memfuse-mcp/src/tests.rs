@@ -659,6 +659,8 @@ async fn test_memfuse_consolidate_fault_injection() {
     // Direct RPC invocation with invalid params
     let req_direct = make_request("memfuse_consolidate", json!({ "collection": 9999 }));
     let direct_resp = server.handle(req_direct).await;
-    let err = direct_resp.error.expect("error expected for direct invalid call");
+    let err = direct_resp
+        .error
+        .expect("error expected for direct invalid call");
     assert_eq!(err.code, -32602);
 }

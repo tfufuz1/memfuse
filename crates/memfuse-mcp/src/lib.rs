@@ -457,7 +457,11 @@ impl McpServer {
                 }
             }
 
-            "memfuse_search" | "memfuse_insert" | "memfuse_get" | "memfuse_collections" | "memfuse_consolidate" => {
+            "memfuse_search"
+            | "memfuse_insert"
+            | "memfuse_get"
+            | "memfuse_collections"
+            | "memfuse_consolidate" => {
                 let tool_name = req.method.as_str();
                 match self
                     .sandbox
@@ -888,7 +892,8 @@ impl McpServer {
                     .map_err(McpError::from)?;
 
                 let duplicates_tombstoned_count = consolidation_res.duplicates_tombstoned.len();
-                let cascade_tombstones_count = consolidation_res.cascade_edge_tombstones_needed.len();
+                let cascade_tombstones_count =
+                    consolidation_res.cascade_edge_tombstones_needed.len();
                 let synthesized_count = synthesis_res
                     .as_ref()
                     .map(|s| s.synthesized.len())

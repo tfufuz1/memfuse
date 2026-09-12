@@ -812,13 +812,13 @@ mod tests {
 
         // Task 2 attempts to generate, but times out while waiting for permit (simulating McpSandbox timeout)
         let c2 = Arc::clone(&client);
-        let timed_out = tokio::time::timeout(
-            std::time::Duration::from_millis(30),
-            c2.generate("task 2"),
-        )
-        .await;
+        let timed_out =
+            tokio::time::timeout(std::time::Duration::from_millis(30), c2.generate("task 2")).await;
 
-        assert!(timed_out.is_err(), "Task 2 must time out while permit is held by Task 1");
+        assert!(
+            timed_out.is_err(),
+            "Task 2 must time out while permit is held by Task 1"
+        );
 
         let _ = h1.await.unwrap().unwrap();
         // Give tokio a tick to return permit
