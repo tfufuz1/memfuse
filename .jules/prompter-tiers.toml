@@ -1,3 +1,8 @@
+[defaults]
+context_preamble = """
+Pflicht-Schritt 1 (vor jeder Aufgabe): Lies `.jules/JULES_CONTEXT.md`, dann `AGENTS.md`, dann `crates/{crate}/AGENTS.md`, dann `WORKING_STATE.md`. Fasse in 2 Sätzen zusammen, was du gelesen hast, bevor du mit der Aufgabe beginnst.
+"""
+
 # Tier/Risk/Focus — werden von `cargo xtask gen-prompter-data` mit den
 # automatisch erhobenen Fakten (LOC, Layer, Datei-Existenz) gemerged.
 # Diese Datei ändert sich NUR bei echten Architekturentscheidungen,

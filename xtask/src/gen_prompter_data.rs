@@ -11,11 +11,18 @@ use walkdir::WalkDir;
 #[derive(Debug, Deserialize, Default)]
 struct PrompterTiers {
     #[serde(default)]
+    defaults: DefaultsConfig,
+    #[serde(default)]
     crate_overrides: BTreeMap<String, CrateOverride>,
     #[serde(default)]
     target_architecture: BTreeMap<String, String>,
     #[serde(default)]
     component_focus: BTreeMap<String, BTreeMap<String, ComponentFocus>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct DefaultsConfig {
+    context_preamble: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -35,6 +42,7 @@ struct ComponentFocus {
 struct PrompterDataOutput {
     generated_at: String,
     head: String,
+    context_preamble: Option<String>,
     target_architecture: BTreeMap<String, String>,
     crates: Vec<CrateJsonData>,
     components: BTreeMap<String, Vec<ComponentJsonData>>,
@@ -319,6 +327,7 @@ pub fn run() -> bool {
     let output_data = PrompterDataOutput {
         generated_at: snapshot_now.clone(),
         head: get_git_head_short(),
+        context_preamble: tiers_cfg.defaults.context_preamble.clone(),
         target_architecture: tiers_cfg.target_architecture,
         crates: crates_json,
         components: components_json,
