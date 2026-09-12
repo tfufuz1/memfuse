@@ -41,6 +41,12 @@
       "session_id": "9287830603219245037",
       "active": true,
       "expires_at": "2026-09-12T15:56:16.893018162+00:00"
+      "krate": "memfuse-py",
+      "issue": "A3-build-wheels",
+      "timestamp": "2026-09-12T12:03:45.890784396+00:00",
+      "session_id": "13243758895585798598",
+      "active": true,
+      "expires_at": "2026-09-12T16:03:45.890767045+00:00"
     }
   ]
 }
