@@ -21,6 +21,7 @@ serde = { workspace = true }
 tracing = { workspace = true }
 memfuse-core = { workspace = true }
 memfuse-calibration = { workspace = true }
+memfuse-crypto = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -29,5 +30,6 @@ proptest = "1.4"
 [features]
 default = []
 candle = []
+kv-bridge = ["dep:memfuse-crypto", "memfuse-crypto/kv-encryption"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]

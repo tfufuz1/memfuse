@@ -11,6 +11,7 @@ default = []
 agent-workflows = ["memfuse-agent"]
 onnx = ["memfuse-embed", "memfuse-embed/onnx"]
 candle = ["dep:memfuse-candle"]
+kv-bridge = ["candle", "memfuse-candle/kv-bridge"]
 test-utils = ["memfuse-core/test-utils"]
 
 [dependencies]
