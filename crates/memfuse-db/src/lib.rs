@@ -305,9 +305,10 @@ impl Default for CommunityDetectionConfig {
 /// Specifying the embedding engine backend.
 ///
 /// Note: Ollama remains available via explicit configuration (`EmbeddingBackend::Ollama(...)`).
+/// Candle provides a pure Rust native embedding provider without C++ runtime dependencies (true air-gapped mode).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EmbeddingBackend {
-    /// ONNX Runtime local embedding provider (default).
+    /// ONNX Runtime local embedding provider (default). Requires C++ ONNX Runtime library dependencies.
     Onnx {
         /// Name or identifier of the ONNX embedding model (default: "nomic-embed-text").
         model_name: String,
@@ -320,6 +321,13 @@ pub enum EmbeddingBackend {
         base_url: String,
         /// Model identifier for Ollama embeddings (default: "nomic-embed-text").
         model: String,
+    },
+    /// Native Candle pure-Rust local embedding provider (pure Rust, true air-gap, no C++ runtime).
+    Candle {
+        /// Local directory containing model weights (safetensors/gguf) and tokenizer.json.
+        model_dir: std::path::PathBuf,
+        /// Quantization grade (e.g., "Q4KM", "Q8_0", "f32"). Default is Q4KM if None.
+        quantization: Option<String>,
     },
     /// Disabled / manual embedding provider.
     None,
@@ -511,7 +519,7 @@ impl MemFuse {
         Ok(db)
     }
 
-    /// Initializes configured embedding backend (ONNX or Ollama).
+    /// Initializes configured embedding backend (ONNX, Ollama, or Candle).
     async fn init_embedding_backend(&self, backend: &EmbeddingBackend) -> Result<()> {
         match backend {
             EmbeddingBackend::Onnx { model_name, cache_dir } => {
@@ -534,6 +542,15 @@ impl MemFuse {
             EmbeddingBackend::Ollama { base_url, model } => {
                 let embedder = memfuse_ollama::OllamaEmbedder::new(base_url, model);
                 let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(embedder);
+                self.set_embedder(embedder_arc).await?;
+            }
+            EmbeddingBackend::Candle { model_dir, quantization } => {
+                let quant = quantization
+                    .as_deref()
+                    .and_then(|q| q.parse().ok())
+                    .unwrap_or(memfuse_candle::CandleQuantization::Q4KM);
+                let client = memfuse_candle::CandleEmbedClient::from_dir(model_dir, quant)?;
+                let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(client);
                 self.set_embedder(embedder_arc).await?;
             }
             EmbeddingBackend::None => {}
@@ -2236,6 +2253,33 @@ mod tests {
             .await
             .expect("open_with_config");
         assert!(db.embedder.read().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_explicit_candle_backend_config_e2e() {
+        let tmp = TempDir::new().expect("temp dir");
+        let model_dir = tmp.path().join("mock_candle_model");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        let config = MemFuseConfig {
+            dimension: 384,
+            embedding_backend: EmbeddingBackend::Candle {
+                model_dir,
+                quantization: Some("Q4KM".to_string()),
+            },
+            ..Default::default()
+        };
+
+        let db = MemFuse::open_with_config(tmp.path().join("db"), config)
+            .await
+            .expect("open_with_config");
+
+        assert!(db.embedder.read().is_some());
+        let embedder = db.embedder.read().as_ref().cloned().expect("embedder");
+        let vec = embedder.embed("test candle document").await.expect("embed test");
+        assert_eq!(vec.len(), 384);
+        let norm_sq: f32 = vec.iter().map(|v| v * v).sum();
+        assert!((norm_sq.sqrt() - 1.0).abs() < 1e-4);
     }
 
     #[tokio::test]
