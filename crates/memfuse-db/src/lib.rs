@@ -88,9 +88,14 @@ pub mod collection;
 pub mod consolidation_executor;
 pub mod context;
 pub mod context_compaction;
+pub mod export;
+pub mod import;
 pub mod memory_consolidation;
 pub mod synthesis_phase;
 pub mod temporal_filter;
+
+pub use export::{ExportCollectionV1, ExportDocumentV1, ExportMemoryV1, ExportRelationV1, SCHEMA_VERSION_V1};
+pub use import::ImportSummary;
 
 #[cfg(feature = "background-maintenance")]
 pub use background_workers::start_decay_cleanup_worker;
