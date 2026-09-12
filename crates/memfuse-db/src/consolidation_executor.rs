@@ -187,6 +187,7 @@ pub async fn execute_background_consolidation<S: StorageEngine, V: VectorIndex>(
             }
         }
 
+        // Structural Consolidation Pass über stabile Communities ausführen
         let synth_res =
             run_structural_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg)
                 .await?;
