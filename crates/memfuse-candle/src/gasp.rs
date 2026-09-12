@@ -19,7 +19,9 @@
 //! anstatt die ungeprüfte/unsichere Antwort durchzureichen.
 
 use memfuse_calibration::IsotonicCalibrator;
-use memfuse_core::traits::{BoxFuture, GroundingAssessment, GroundingValidator};
+use memfuse_core::traits::{
+    BoxFuture, GroundingAssessment, GroundingValidator, ResponseGroundingValidator,
+};
 use memfuse_core::{ConfigFingerprint, ContextChunk, MemFuseError, Result};
 use std::sync::Mutex;
 
@@ -257,6 +259,25 @@ impl GaspValidator {
 impl Default for GaspValidator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl ResponseGroundingValidator for GaspValidator {
+    fn score_grounding(&self, response: &str, sources: &[&str]) -> Result<f32> {
+        let chunks: Vec<ContextChunk> = sources
+            .iter()
+            .enumerate()
+            .map(|(i, src)| ContextChunk {
+                doc_id: memfuse_core::DocId::new((i + 1) as u64),
+                content: src.to_string(),
+                relevance: 1.0,
+                token_count: 0,
+                metadata: None,
+                contextual_prefix: None,
+                links: Vec::new(),
+            })
+            .collect();
+        self.compute_raw_grounding_score(response, &chunks)
     }
 }
 

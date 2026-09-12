@@ -949,6 +949,13 @@ pub trait GroundingValidator: Send + Sync {
     ) -> BoxFuture<'a, Result<GroundingAssessment>>;
 }
 
+/// Abstract contract for grounding validation of LLM-generated responses against raw source strings.
+pub trait ResponseGroundingValidator: Send + Sync {
+    /// Evaluates the grounding score for an LLM-generated response against source text slices.
+    /// Returns a float score in [0.0, 1.0].
+    fn score_grounding(&self, response: &str, sources: &[&str]) -> Result<f32>;
+}
+
 #[cfg(test)]
 mod dyn_safety {
     use super::*;
@@ -956,6 +963,7 @@ mod dyn_safety {
     fn _assert_dyn_storage(_: Option<&dyn StorageEngine>) {}
     fn _assert_dyn_graph(_: Option<&dyn GraphIndex>) {}
     fn _assert_dyn_embedding(_: Option<&dyn TextEmbeddingEngine>) {}
+    fn _assert_dyn_response_grounding_validator(_: Option<&dyn ResponseGroundingValidator>) {}
 
     #[test]
     fn test_dyn_safety_compiles() {

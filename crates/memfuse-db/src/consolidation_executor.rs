@@ -12,7 +12,9 @@ use crate::memory_consolidation::{
     CommunityStabilityTracker, ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig,
     SynthesisPhaseResult,
 };
-use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
+use memfuse_core::traits::{
+    LlmTextGenerator, ResponseGroundingValidator, StorageEngine, VectorIndex,
+};
 use memfuse_core::{DocId, Result};
 use memfuse_graph::{detect_communities, CommunityDetectionConfig};
 use std::collections::{HashMap, HashSet};
@@ -144,6 +146,7 @@ pub async fn execute_background_consolidation<S: StorageEngine, V: VectorIndex>(
     consolidation_config: &ConsolidationConfig,
     synthesis_config: Option<&SynthesisConfig>,
     llm: Option<&dyn LlmTextGenerator>,
+    validator: Option<&dyn ResponseGroundingValidator>,
     stability_tracker: Option<&mut CommunityStabilityTracker>,
 ) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
     let consolidation_result =
@@ -217,10 +220,17 @@ pub async fn execute_background_consolidation<S: StorageEngine, V: VectorIndex>(
             }
         }
 
-        // Structural Consolidation Pass über stabile Communities ausführen
-        let synth_res =
-            run_structural_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg)
-                .await?;
+        // Structural Consolidation Pass über stabile Communities ausführen.
+        // HINWEIS: Grounding-Validierung wird ausgeführt, wenn ein `ResponseGroundingValidator` (z. B. `GaspValidator` aus dem Candle-Backend) übergeben wird.
+        // Bei LLM-Backends ohne GaspValidator-Unterstützung ist validator `None` und die Validierung wird übersprungen.
+        let synth_res = run_structural_synthesis_pass(
+            &stable_communities,
+            &source_texts,
+            llm_gen,
+            synth_cfg,
+            validator,
+        )
+        .await?;
 
         for (idx, meta_chunk) in synth_res.synthesized.iter().enumerate() {
             let chunk_id = format!("rem_synth_{}_{}", meta_chunk.source_community_hash, idx);
@@ -270,6 +280,7 @@ pub async fn execute_sleep_cycle<S: StorageEngine, V: VectorIndex>(
         consolidation_config,
         synthesis_config,
         llm,
+        None,
         stability_tracker,
     )
     .await
@@ -279,6 +290,7 @@ pub async fn execute_sleep_cycle<S: StorageEngine, V: VectorIndex>(
 pub struct ConsolidationEngine<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
     collection: Arc<Collection<S, V>>,
     llm: Option<Arc<dyn LlmTextGenerator>>,
+    validator: Option<Arc<dyn ResponseGroundingValidator>>,
     consolidation_config: ConsolidationConfig,
     synthesis_config: SynthesisConfig,
     interval: std::time::Duration,
@@ -298,6 +310,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
         Self {
             collection,
             llm: None,
+            validator: None,
             consolidation_config,
             synthesis_config,
             interval,
@@ -309,6 +322,12 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
     /// Fügt ein optionales LLM für die generative Wissenssynthese hinzu.
     pub fn with_llm(mut self, llm: Arc<dyn LlmTextGenerator>) -> Self {
         self.llm = Some(llm);
+        self
+    }
+
+    /// Fügt einen optionalen Grounding-Validator für den Generative Synthesis Pass hinzu.
+    pub fn with_validator(mut self, validator: Arc<dyn ResponseGroundingValidator>) -> Self {
+        self.validator = Some(validator);
         self
     }
 
@@ -427,6 +446,10 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
             .llm
             .as_ref()
             .map(|l| l.as_ref() as &dyn LlmTextGenerator);
+        let validator_ref = self
+            .validator
+            .as_ref()
+            .map(|v| v.as_ref() as &dyn ResponseGroundingValidator);
 
         let (consolidation_res, synthesis_res) = execute_background_consolidation(
             self.collection.as_ref(),
@@ -434,6 +457,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
             &self.consolidation_config,
             Some(&self.synthesis_config),
             llm_ref,
+            validator_ref,
             Some(&mut *tracker_guard),
         )
         .await?;
@@ -619,6 +643,7 @@ mod tests {
                     min_community_size: 2,
                     stability_cycles_required: 1,
                     max_llm_calls_per_cycle: 10,
+                    min_grounding_score: None,
                 },
                 Duration::from_secs(60),
                 cancel_token.clone(),
