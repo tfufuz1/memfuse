@@ -8,8 +8,9 @@
 
 use crate::collection::{Collection, StoredDocumentMeta};
 use crate::memory_consolidation::{
-    compute_community_hash, run_consolidation_pass, run_structural_synthesis_pass, CommunityStabilityTracker,
-    ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig, SynthesisPhaseResult,
+    compute_community_hash, run_consolidation_pass, run_structural_synthesis_pass,
+    CommunityStabilityTracker, ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig,
+    SynthesisPhaseResult,
 };
 use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
 use memfuse_core::{DocId, Result};
@@ -187,7 +188,8 @@ pub async fn execute_background_consolidation<S: StorageEngine, V: VectorIndex>(
         }
 
         let synth_res =
-            run_structural_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg).await?;
+            run_structural_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg)
+                .await?;
 
         for (idx, meta_chunk) in synth_res.synthesized.iter().enumerate() {
             let chunk_id = format!("rem_synth_{}_{}", meta_chunk.source_community_hash, idx);
@@ -325,7 +327,12 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
     ) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
         // 1. Turns chronologisch aus der Collection lesen
         let user_key_prefix = self.collection.user_key_prefix();
-        let entries = match self.collection.storage().scan_prefix(&user_key_prefix).await {
+        let entries = match self
+            .collection
+            .storage()
+            .scan_prefix(&user_key_prefix)
+            .await
+        {
             Ok(e) => e,
             Err(err) => {
                 tracing::error!(
@@ -381,7 +388,8 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
         // Synthetisierte Summaries wurden bereits in execute_background_consolidation erzeugt & persistiert.
         // Erst NACH dem Bestätigen der Summaries wird der Decay Controller angewendet.
         if synthesis_res.is_some() {
-            let decay_controller = crate::decay_controller::AdaptiveDecayController::with_defaults();
+            let decay_controller =
+                crate::decay_controller::AdaptiveDecayController::with_defaults();
             let _ = self
                 .collection
                 .evict_decayed_chunks(&decay_controller, 100)
@@ -435,7 +443,8 @@ mod tests {
         }
     }
 
-    async fn create_test_collection() -> (Arc<Collection<LsmStorage, HnswIndex>>, tempfile::TempDir) {
+    async fn create_test_collection() -> (Arc<Collection<LsmStorage, HnswIndex>>, tempfile::TempDir)
+    {
         let dir = tempdir().expect("tempdir");
         let storage = Arc::new(
             LsmStorage::new(memfuse_store::LsmConfig {
@@ -490,7 +499,12 @@ mod tests {
             insert_handles.push(tokio::spawn(async move {
                 let id = format!("fg_doc_{}", i);
                 let angle = (i as f32) * std::f32::consts::PI / 10.0;
-                let vec = vec![angle.cos(), angle.sin(), (angle * 2.0).cos(), (angle * 2.0).sin()];
+                let vec = vec![
+                    angle.cos(),
+                    angle.sin(),
+                    (angle * 2.0).cos(),
+                    (angle * 2.0).sin(),
+                ];
                 let _ = col_clone.insert(&id, &vec, Some(json!({"fg": true}))).await;
                 let _ = col_clone.query().embedding(&vec).k(5).execute().await;
             }));
@@ -561,10 +575,17 @@ mod tests {
         // Cycle 1: Inject fault
         llm.should_fail.store(true, Ordering::SeqCst);
         let cycle1 = engine.run_cycle().await;
-        assert!(cycle1.is_ok(), "Cycle 1 should handle LLM failure gracefully");
+        assert!(
+            cycle1.is_ok(),
+            "Cycle 1 should handle LLM failure gracefully"
+        );
         let (_cons1, synth1) = cycle1.unwrap();
         if let Some(s1) = synth1 {
-            assert_eq!(s1.synthesized.len(), 0, "No chunks synthesized due to LLM error");
+            assert_eq!(
+                s1.synthesized.len(),
+                0,
+                "No chunks synthesized due to LLM error"
+            );
         }
 
         // Cycle 2: Clear fault and resume
@@ -573,7 +594,11 @@ mod tests {
         assert!(cycle2.is_ok(), "Cycle 2 should succeed after fault cleared");
         let (_cons2, synth2) = cycle2.unwrap();
         if let Some(s2) = synth2 {
-            assert_eq!(s2.synthesized.len(), 1, "Synthesized 1 meta chunk after fault resolution");
+            assert_eq!(
+                s2.synthesized.len(),
+                1,
+                "Synthesized 1 meta chunk after fault resolution"
+            );
         }
 
         // Cycle 3: Re-run cycle to prove idempotency (no duplicate summaries)

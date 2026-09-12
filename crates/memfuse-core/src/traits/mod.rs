@@ -500,7 +500,6 @@ pub trait TextEmbeddingEngine: Send + Sync + 'static {
     }
 }
 
-
 /// Trait-Abstraktion für LLM-Synthesizer zur Segment-Zusammenfassung (REM-Phase).
 pub trait SegmentSynthesizer: Send + Sync {
     /// Synthetisiert ein Segment von Texten zu einer abstrakten Zusammenfassung.

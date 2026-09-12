@@ -11,7 +11,9 @@ use candle_transformers::generation::LogitsProcessor;
 use candle_transformers::models::quantized_llama::ModelWeights;
 use futures_util::stream;
 use memfuse_core::traits::{BoxFuture, BoxStream};
-use memfuse_core::{ConfigFingerprint, LlmTextGenerator, LlmTextGeneratorStreaming, MemFuseError, Result};
+use memfuse_core::{
+    ConfigFingerprint, LlmTextGenerator, LlmTextGeneratorStreaming, MemFuseError, Result,
+};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;

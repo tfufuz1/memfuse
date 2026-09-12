@@ -205,10 +205,7 @@ pub fn scan_crate_for_cross_module_duplicate_fns(
 
     let mut occurrences_by_fn: HashMap<String, Vec<FnOccurrence>> = HashMap::new();
 
-    for entry in WalkDir::new(crate_root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(crate_root).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
             let file_str = path.to_string_lossy().to_string();
@@ -247,10 +244,7 @@ pub fn scan_crate_for_cross_module_duplicate_fns(
                                 line_number: line_num,
                                 cfg_attr: pending_cfg.clone(),
                             };
-                            occurrences_by_fn
-                                .entry(fn_name)
-                                .or_default()
-                                .push(occ);
+                            occurrences_by_fn.entry(fn_name).or_default().push(occ);
                         }
                     }
                 }
@@ -391,11 +385,7 @@ fn find_crate_roots_to_scan(files: &[String]) -> Vec<std::path::PathBuf> {
     } else {
         for file in files {
             let p = Path::new(file);
-            let mut curr = if p.is_file() {
-                p.parent()
-            } else {
-                Some(p)
-            };
+            let mut curr = if p.is_file() { p.parent() } else { Some(p) };
             while let Some(dir) = curr {
                 if dir == Path::new(".") || dir.as_os_str().is_empty() {
                     break;

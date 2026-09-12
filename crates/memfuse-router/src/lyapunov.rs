@@ -126,7 +126,9 @@ impl LyapunovDriftWatcher {
     pub fn status_str(&self) -> &'static str {
         match &self.latest_result {
             Some(LyapunovResult::Stable { .. }) => "stabil",
-            Some(LyapunovResult::DriftDetected { lyapunov_exponent, .. }) => {
+            Some(LyapunovResult::DriftDetected {
+                lyapunov_exponent, ..
+            }) => {
                 if *lyapunov_exponent > 0.2 {
                     "kritisch"
                 } else {

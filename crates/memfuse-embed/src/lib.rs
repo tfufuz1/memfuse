@@ -46,9 +46,7 @@ pub fn default_model_cache_dir(model_name: &str) -> PathBuf {
             .join("models")
             .join(model_name)
     } else {
-        PathBuf::from(".memfuse")
-            .join("models")
-            .join(model_name)
+        PathBuf::from(".memfuse").join("models").join(model_name)
     }
 }
 
@@ -107,7 +105,14 @@ pub async fn ensure_onnx_model_download(
     }
 
     if !tokenizer_file.exists() {
-        download_onnx_file(&client, tokenizer_url, &tokenizer_file, "tokenizer.json", &target_dir).await?;
+        download_onnx_file(
+            &client,
+            tokenizer_url,
+            &tokenizer_file,
+            "tokenizer.json",
+            &target_dir,
+        )
+        .await?;
     }
 
     Ok(target_dir)
@@ -155,7 +160,9 @@ async fn download_onnx_file(
     })?;
 
     std::fs::write(&tmp_path, &bytes).map_err(|e| {
-        MemFuseError::Internal(format!("Konnte temporäre Datei {tmp_path:?} nicht schreiben: {e}"))
+        MemFuseError::Internal(format!(
+            "Konnte temporäre Datei {tmp_path:?} nicht schreiben: {e}"
+        ))
     })?;
 
     std::fs::rename(&tmp_path, dest_path).map_err(|e| {
@@ -172,7 +179,8 @@ pub async fn ensure_onnx_model_download(
 ) -> memfuse_core::Result<PathBuf> {
     Err(memfuse_core::MemFuseError::CapabilityUnsupported {
         capability: "onnx".to_string(),
-        reason: "ONNX support is disabled in this build. Recompile with feature flag 'onnx'.".to_string(),
+        reason: "ONNX support is disabled in this build. Recompile with feature flag 'onnx'."
+            .to_string(),
     })
 }
 
@@ -719,7 +727,9 @@ mod tests {
         std::fs::File::create(model_dir.join("model.onnx")).unwrap();
         std::fs::File::create(model_dir.join("tokenizer.json")).unwrap();
 
-        let resolved = ensure_onnx_model_download("nomic-embed-text", Some(&cache_dir)).await.unwrap();
+        let resolved = ensure_onnx_model_download("nomic-embed-text", Some(&cache_dir))
+            .await
+            .unwrap();
         assert_eq!(resolved, model_dir);
     }
 

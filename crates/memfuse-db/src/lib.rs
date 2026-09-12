@@ -94,7 +94,9 @@ pub mod memory_consolidation;
 pub mod synthesis_phase;
 pub mod temporal_filter;
 
-pub use export::{ExportCollectionV1, ExportDocumentV1, ExportMemoryV1, ExportRelationV1, SCHEMA_VERSION_V1};
+pub use export::{
+    ExportCollectionV1, ExportDocumentV1, ExportMemoryV1, ExportRelationV1, SCHEMA_VERSION_V1,
+};
 pub use import::ImportSummary;
 
 #[cfg(feature = "background-maintenance")]
@@ -573,10 +575,15 @@ impl MemFuse {
     /// Initializes configured embedding backend (ONNX, Ollama, or Candle).
     async fn init_embedding_backend(&self, backend: &EmbeddingBackend) -> Result<()> {
         match backend {
-            EmbeddingBackend::Onnx { model_name, cache_dir } => {
+            EmbeddingBackend::Onnx {
+                model_name,
+                cache_dir,
+            } => {
                 #[cfg(feature = "onnx")]
                 {
-                    let model_dir = memfuse_embed::ensure_onnx_model_download(model_name, cache_dir.as_deref()).await?;
+                    let model_dir =
+                        memfuse_embed::ensure_onnx_model_download(model_name, cache_dir.as_deref())
+                            .await?;
                     let embedder = memfuse_embed::OnnxEmbedder::load(model_dir)?;
                     let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(embedder);
                     self.set_embedder(embedder_arc).await?;
@@ -595,7 +602,10 @@ impl MemFuse {
                 let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(embedder);
                 self.set_embedder(embedder_arc).await?;
             }
-            EmbeddingBackend::Candle { model_dir, quantization } => {
+            EmbeddingBackend::Candle {
+                model_dir,
+                quantization,
+            } => {
                 let quant = quantization
                     .as_deref()
                     .and_then(|q| q.parse().ok())
@@ -2339,7 +2349,10 @@ mod tests {
 
         assert!(db.embedder.read().is_some());
         let embedder = db.embedder.read().as_ref().cloned().expect("embedder");
-        let vec = embedder.embed("test candle document").await.expect("embed test");
+        let vec = embedder
+            .embed("test candle document")
+            .await
+            .expect("embed test");
         assert_eq!(vec.len(), 384);
         let norm_sq: f32 = vec.iter().map(|v| v * v).sum();
         assert!((norm_sq.sqrt() - 1.0).abs() < 1e-4);
@@ -2360,8 +2373,13 @@ mod tests {
             .join("tests")
             .join("fixtures");
 
-        std::fs::copy(fixture_dir.join("model.onnx"), model_dir.join("model.onnx")).expect("copy model");
-        std::fs::copy(fixture_dir.join("tokenizer.json"), model_dir.join("tokenizer.json")).expect("copy tokenizer");
+        std::fs::copy(fixture_dir.join("model.onnx"), model_dir.join("model.onnx"))
+            .expect("copy model");
+        std::fs::copy(
+            fixture_dir.join("tokenizer.json"),
+            model_dir.join("tokenizer.json"),
+        )
+        .expect("copy tokenizer");
 
         let config = MemFuseConfig {
             dimension: 32, // Fixture BERT model output dim is 32

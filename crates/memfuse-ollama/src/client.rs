@@ -2713,15 +2713,18 @@ mod tests {
                     let chunk1 = serde_json::json!({
                         "message": { "content": "Das " },
                         "done": false
-                    }).to_string();
+                    })
+                    .to_string();
                     let chunk2 = serde_json::json!({
                         "message": { "content": "ist " },
                         "done": false
-                    }).to_string();
+                    })
+                    .to_string();
                     let chunk3 = serde_json::json!({
                         "message": { "content": "ein Test." },
                         "done": true
-                    }).to_string();
+                    })
+                    .to_string();
 
                     let body = format!("{}\n{}\n{}\n", chunk1, chunk2, chunk3);
                     let response = format!(
@@ -2733,7 +2736,8 @@ mod tests {
                 } else {
                     let body = serde_json::json!({
                         "message": { "content": "Das ist ein Test." }
-                    }).to_string();
+                    })
+                    .to_string();
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
                         body.len(),
@@ -2747,7 +2751,9 @@ mod tests {
         let client = OllamaClient::new(server_url);
         let cfg = ConfigFingerprint::default();
 
-        let sync_resp = LlmTextGenerator::generate(&client, "Test prompt").await.unwrap();
+        let sync_resp = LlmTextGenerator::generate(&client, "Test prompt")
+            .await
+            .unwrap();
 
         let mut stream = client.generate_stream("Test prompt", &cfg);
         let mut assembled = String::new();

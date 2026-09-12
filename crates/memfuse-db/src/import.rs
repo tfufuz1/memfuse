@@ -3,8 +3,8 @@
 // INVARIANTEN: Schema-Versionsprüfung (Pflicht); Idempotenz bezüglich ID (Upsert); Transaktionale Verlässlichkeit.
 // STAND: TS:2026-09-12
 
-use crate::export::{ExportCollectionV1, ExportDocumentV1, SCHEMA_VERSION_V1};
 use crate::collection::Collection;
+use crate::export::{ExportCollectionV1, ExportDocumentV1, SCHEMA_VERSION_V1};
 use crate::MemFuse;
 use memfuse_core::{Result, StorageEngine, VectorIndex};
 use serde::{Deserialize, Serialize};

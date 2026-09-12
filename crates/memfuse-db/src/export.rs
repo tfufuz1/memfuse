@@ -138,7 +138,10 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                         })
                 });
 
-                let importance_score = extract_effective_importance(&stored.metadata, memfuse_core::TxId::new(u64::MAX));
+                let importance_score = extract_effective_importance(
+                    &stored.metadata,
+                    memfuse_core::TxId::new(u64::MAX),
+                );
 
                 let links: Vec<MemoryLink> = stored
                     .metadata
@@ -356,7 +359,10 @@ mod tests {
 
         let err = db.import_memories(invalid_doc).await;
         assert!(err.is_err());
-        assert!(err.unwrap_err().to_string().contains("Incompatible export schema version"));
+        assert!(err
+            .unwrap_err()
+            .to_string()
+            .contains("Incompatible export schema version"));
     }
 }
 
