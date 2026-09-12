@@ -36,7 +36,7 @@ jobs:
       - name: "Gate 12b: Phantom-File-Verification"
         env:
           MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
-          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || (github.event.before != '' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD~1') }}
         run: |
           cargo run -p xtask -- check-phantom-files
           echo "✅ Gate 12b: Keine Phantom-Dateien in Commit-Messages/PR-Body"
@@ -191,5 +191,15 @@ jobs:
 
       - name: "Gate 16: Commit Message Quality"
         env:
-          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || (github.event.before != '' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD~1') }}
         run: cargo run -p xtask -- check-commit-messages
+
+      - name: "Wöchentlicher Shell-Commit-Audit"
+        run: |
+          COUNT=$(git log --since="7 days ago" --format="%s" origin/main 2>/dev/null | grep -ic "^shell-commit$" || true)
+          echo "ℹ️ Shell-Commits der letzten 7 Tage auf main: $COUNT"
+          if [ "$COUNT" -gt 5 ]; then
+            echo "⚠️ WARNUNG: Erhöhte Anzahl von Shell-Commits ($COUNT > 5) in den letzten 7 Tagen auf main erkannt!"
+          else
+            echo "✅ Shell-Commit-Audit unauffällig ($COUNT <= 5)"
+          fi
