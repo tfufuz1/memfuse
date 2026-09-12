@@ -308,6 +308,7 @@ async fn chaos_gpu_busy_disk_full_no_orphaned_embedding() {
 #[tokio::test]
 #[cfg(feature = "replicator-dynamics-weights")]
 #[ignore]
+#[cfg(feature = "replicator-dynamics-weights")]
 async fn chaos_tokio_abort_during_weighted_fusion_preserves_weight_invariant() {
     let seed = resolve_and_log_seed();
     let mut rng = SimpleRng::seed_from_u64(seed);
@@ -407,6 +408,7 @@ async fn chaos_tokio_abort_during_weighted_fusion_preserves_weight_invariant() {
 #[tokio::test]
 #[cfg(feature = "replicator-dynamics-weights")]
 #[ignore]
+#[cfg(feature = "replicator-dynamics-weights")]
 async fn chaos_fingerprint_change_during_pinned_checkpoint_and_inference_no_deadlock() {
     let seed = resolve_and_log_seed();
 
