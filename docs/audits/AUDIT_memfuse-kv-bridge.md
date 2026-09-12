@@ -54,3 +54,11 @@ Das Subsystem `memfuse-kv-bridge` (im Repository konsolidiert unter `crates/memf
 ## 5. Fazit & Freigabe
 
 Das Subsystem `memfuse-kv-bridge` (`crates/memfuse-crypto/src/kv_segment/`) erfüllt sämtliche Anforderungen an Mandantenisolierung, Speicherlöschung, faire Verdrängung und Nebenläufigkeitssicherheit. Es wird ohne Vorbehalte als **Produktionsreif (GO)** eingestuft.
+
+---
+
+## 6. Integrationsstatus (Nachtrag 2026-09-12)
+
+**Wichtige Abgrenzung zwischen Krypto-Primitiv und Ende-zu-Ende-Integration:**
+- **Krypto-/Isolations-Primitiv (GO):** Die im Crate `memfuse-security` (`crates/memfuse-crypto/src/kv_segment/`) implementierten Bausteine (`TenantIsolatedKvStore`, `KvSegmentCipher`, `EvictionWorker`, tenant-faire LRU-Eviction) sind vollständig verifiziert, speichersicher und produktionsreif (**GO**).
+- **Ende-zu-Ende-Integration (In Bearbeitung / Offen):** Die Anbindung und Verdrahtung des KV-Cache-Segment-Stores in die Inferenz-Engine (`memfuse-candle`) sowie den Retrieval-Pfad (Retrieval-Hit → Prefill-Einsparung) ist zum Zeitpunkt dieses Audits noch nicht abgeschlossen (Gegenstand der Prompts A–E).
