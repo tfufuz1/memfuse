@@ -14,6 +14,8 @@ use memfuse_db::fusion::{
     build_provenance, reciprocal_rank_fusion, weighted_reciprocal_rank_fusion,
     weighted_reciprocal_rank_fusion_with_options, MetadataMergePriority,
 };
+#[cfg(feature = "coherence-bonus-fusion")]
+use memfuse_db::fusion::ResonanceConfig;
 use memfuse_db::SearchResult;
 use proptest::prelude::*;
 
@@ -403,29 +405,20 @@ fn test_array_length_mismatch_across_signals_no_panic() {
 /// Test 5: `test_k_parameter_zero_boundary`
 ///
 /// Hand-calculated scenario:
-/// RRF contribution formula: score = weight / (k + rank + 1.0)
-/// When evaluating the mathematical boundary condition at k = 0:
-/// Rank 0: 1.0 / (0.0 + 0.0 + 1.0) = 1.0 / 1.0 = 1.0
-/// Rank 1: 1.0 / (0.0 + 1.0 + 1.0) = 1.0 / 2.0 = 0.5
-/// Rank 2: 1.0 / (0.0 + 2.0 + 1.0) = 1.0 / 3.0 = 0.33333333
+/// RRF rank is 1-based per Cormack et al., and rrf_k must be strictly positive (rrf_k > 0.0) to avoid division by zero risk.
+/// When evaluating the minimal valid boundary condition at k = 0.001:
+/// Rank 1: 1.0 / (0.001 + 1.0) = 1.0 / 1.001 ≈ 0.999000999
 ///
 /// Verification:
-/// 1. build_provenance with rrf_k = 0.0 produces exact expected contribution = 1.0 / (0.0 + 1.0) = 1.0.
-/// 2. Denominator rank + 1 guarantees zero-division is impossible at rank 0 even if k = 0.
+/// 1. build_provenance with rrf_k = 0.001 produces exact expected contribution = 1.0 / 1.001.
+/// 2. rrf_k = 0.0 is rejected via debug assertion in build_provenance.
 #[test]
-fn test_k_parameter_zero_boundary() {
+#[cfg_attr(debug_assertions, should_panic)]
+fn test_k_parameter_zero_boundary_panics() {
     let k_zero = 0.0f32;
-    let rank = 1u32; // 1-based rank in provenance
+    let rank = 1u32;
     let weight = 1.0f32;
-
-    // Hand calculation: 1.0 / (0.0 + 1.0) = 1.0
-    let expected_contrib = weight / (k_zero + rank as f32);
-    assert_eq!(
-        expected_contrib, 1.0,
-        "At k=0 and rank=1, expected contribution is exactly 1.0"
-    );
-
-    let prov = build_provenance(
+    build_provenance(
         Some(0.95),
         Some(rank),
         Some(weight),
@@ -439,6 +432,33 @@ fn test_k_parameter_zero_boundary() {
         k_zero,
         Some("test_col".to_string()),
         Some("hnsw".to_string()),
+        None,
+    );
+}
+
+#[test]
+fn test_k_parameter_minimal_positive_boundary() {
+    let k_min = 0.001f32;
+    let rank = 1u32; // 1-based rank in provenance
+    let weight = 1.0f32;
+
+    // Hand calculation: 1.0 / (0.001 + 1.0) ≈ 0.999000999
+    let expected_contrib = weight / (k_min + rank as f32);
+
+    let prov = build_provenance(
+        Some(0.95),
+        Some(rank),
+        Some(weight),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        k_min,
+        Some("test_col".to_string()),
+        Some("hnsw".to_string()),
         Some(expected_contrib),
     );
 
@@ -447,10 +467,7 @@ fn test_k_parameter_zero_boundary() {
         .get("vector")
         .expect("vector contribution present");
 
-    assert_eq!(
-        contrib.rrf_contribution, 1.0,
-        "Hand-calculated RRF contribution with k=0 must equal 1.0"
-    );
+    assert!((contrib.rrf_contribution - expected_contrib).abs() < 1e-6);
 }
 
 /// Test 6: `test_k_parameter_very_large_score_convergence`

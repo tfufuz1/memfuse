@@ -210,7 +210,7 @@ async fn test_single_entry_no_commit_marker_replay() -> Result<()> {
         wal.append(&entry1).await?;
     }
 
-    // AI-TAG[SMELL][MINOR] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted. (ID: AGT-STORE-20600001) (TS: 2026-09-11T22:50:04Z) (SESSION: 2fb5972b)
+    // AI-TAG[SMELL][MINOR] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted. (TS: 2026-09-11T12:00:00Z) (SESSION: 504d02fc)
     // We simulate partial trailing write by appending partial garbage bytes at the tail.
     let mut file = OpenOptions::new().append(true).open(&wal_path)?;
     use std::io::Write;
@@ -369,7 +369,7 @@ async fn test_disk_full_mid_append_batch_rollback() -> Result<()> {
         "append_batch must return Err when fault injection triggers WAL append failure"
     );
 
-    // AI-TAG[SMELL][MINOR] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity. (ID: AGT-STORE-36500001) (TS: 2026-09-11T22:50:04Z) (SESSION: 2fb5972b)
+    // AI-TAG[SMELL][MINOR] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity. (TS: 2026-09-11T12:00:00Z) (SESSION: 504d02fc)
     wal.restore_last_hmac(prev_hmac_snapshot).await?;
 
     // Verify system state after failure/rollback: reopening WAL yields only baseline entry

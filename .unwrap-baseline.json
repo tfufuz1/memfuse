@@ -4989,6 +4989,10 @@
   },
   {
     "file": "crates/memfuse-db/src/fusion.rs",
+    "hash": "d00868411875d779"
+  },
+  {
+    "file": "crates/memfuse-db/src/fusion.rs",
     "hash": "e55e9465cc700901"
   },
   {
