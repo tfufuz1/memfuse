@@ -53,9 +53,7 @@ pub enum CommitIntent {
         base_tx: TxId,
     },
     /// Transaction failed during forward recovery or commit.
-    Failed {
-        reason: String,
-    },
+    Failed { reason: String },
 }
 
 /// Staged key operation representing (key, optional_value).
@@ -692,13 +690,22 @@ impl<S: StorageEngine, V: VectorIndex> Drop for DbTransaction<S, V> {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
                     if let Err(e) = collection.graph_index.rollback(tx_id).await {
-                        tracing::error!("[INV-DB-3] Drop cleanup: Graph index rollback failed: {}", e);
+                        tracing::error!(
+                            "[INV-DB-3] Drop cleanup: Graph index rollback failed: {}",
+                            e
+                        );
                     }
                     if let Err(e) = collection.text_index.rollback(tx_id).await {
-                        tracing::error!("[INV-DB-3] Drop cleanup: Text index rollback failed: {}", e);
+                        tracing::error!(
+                            "[INV-DB-3] Drop cleanup: Text index rollback failed: {}",
+                            e
+                        );
                     }
                     if let Err(e) = collection.index.rollback(tx_id).await {
-                        tracing::error!("[INV-DB-3] Drop cleanup: Vector index rollback failed: {}", e);
+                        tracing::error!(
+                            "[INV-DB-3] Drop cleanup: Vector index rollback failed: {}",
+                            e
+                        );
                     }
                     if let Err(e) = collection.storage.rollback(tx_id).await {
                         tracing::error!("[INV-DB-3] Drop cleanup: Storage rollback failed: {}", e);
