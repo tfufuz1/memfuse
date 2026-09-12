@@ -241,15 +241,20 @@ MEMFUSE_MCP_ALLOW_WRITE=1 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- -
 MemFuse ist kein Ersatz für Cloud-Vektordatenbanken (Qdrant, Pinecone).
 MemFuse ist eine neue Kategorie: **Die lokale Embedded AI Memory Library für KI-Agenten** — in-process, air-gapped, Pure-Rust.
 
-| Kriterium | MemFuse | Mem0 | Zep/Graphiti | Chroma+ES+Neo4j |
-|-----------|---------|------|--------------|-----------------|
-| Air-gapped | ✅ | ❌ | ❌ | ✅ |
-| 4-Signal Fusion | ✅ | ❌ | Teilweise | Extern |
-| Pure Rust | ✅ | ❌ | ❌ | ❌ |
-| MCP-nativ | ✅ | ❌ | ❌ | ❌ |
-| Contextual Retrieval | ✅ | ❌ | ❌ | ❌ |
-| Session DAG | ✅ | ❌ | ❌ | ❌ |
-| Kein Docker | ✅ | ❌ | ❌ | ❌ |
+| Kriterium | MemFuse | VelesDB | Cognee (-RS) | Mem0 | Zep/Graphiti |
+|-----------|---------|---------|--------------|------|--------------|
+| Air-gapped | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Pure Rust | ✅ | ✅ | Teilweise | ❌ | ❌ |
+| Kein Docker | ✅ | ✅ | Teilweise | Teilweise | ❌ |
+| PyPI / crates.io Release | ✅ | ✅ | ✅ | Teilweise | Teilweise |
+| WASM-Target | ✅ | ✅ | ❌ | ❌ | ❌ |
+| HMAC-WAL-Integrität | ✅ | ❌ | ❌ | ❌ | ❌ |
+| MCP-nativ (stdio) | ✅ | ✅ | Teilweise | ❌ | Teilweise |
+| Kryptographischer Löschbeweis | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Conformal Routing (`ConfigFingerprint`) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 4-Signal Fusion | ✅ | ✅ | Teilweise | ❌ | Teilweise |
+| Contextual Retrieval | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Session DAG | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 *\*Hinweis: Alle Positionierungsclaims basieren auf den genannten Architekturmerkmalen. Zitierte Fehlerreduktions-Prozentangaben entstammen der Fachliteratur [Referenzwert aus Fachliteratur zu Contextual-Retrieval-Verfahren — nicht am MemFuse-Korpus validiert]. MemFuse stellt mit `benchmarks/memfuse-bench` ein eigenes Benchmark-Harness auf einem 9-Dokumenten Synthetik-Korpus bereit (Details in [`benchmarks/README.md`](benchmarks/README.md)).*
 

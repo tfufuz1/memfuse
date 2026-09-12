@@ -33,6 +33,14 @@
       "session_id": "16353459302414904012",
       "active": true,
       "expires_at": "2026-09-12T15:05:32.307097662+00:00"
+    },
+    {
+      "krate": "readme",
+      "issue": "P2-2-competitor-table",
+      "timestamp": "2026-09-12T11:56:16.893039727+00:00",
+      "session_id": "9287830603219245037",
+      "active": true,
+      "expires_at": "2026-09-12T15:56:16.893018162+00:00"
     }
   ]
 }
