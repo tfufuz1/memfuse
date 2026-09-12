@@ -68,7 +68,7 @@ pub async fn execute_consolidation_pass<S: StorageEngine, V: VectorIndex>(
     }
 
     // Erwerbe consolidation_guard per try_lock(), um parallele Durchläufe auf derselben Collection zu verhindern (ADR-081)
-    let _guard = match collection.consolidation_guard().try_lock() {
+    let _guard = match collection.consolidation_guard.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
             tracing::warn!(
@@ -718,7 +718,7 @@ mod tests {
         };
 
         // Lock guard manually
-        let _guard = col.consolidation_guard().try_lock().expect("try_lock");
+        let _guard = col.consolidation_guard.try_lock().expect("try_lock");
 
         let res = execute_consolidation_pass(col.as_ref(), &turns, &config).await;
         assert!(res.is_ok(), "Should return Ok when guard is locked");
