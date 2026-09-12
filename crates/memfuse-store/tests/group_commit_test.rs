@@ -1,6 +1,6 @@
 //! Group-Commit-Batching verification and benchmark tests for LsmStorage.
 
-use memfuse_core::{MemFuseError, StorageEngine, TxId};
+use memfuse_core::{StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -73,9 +73,10 @@ async fn test_group_commit_200_parallel_tasks_durability_and_replay_parity() {
     }
 }
 
-#[tokio::test]
 #[cfg(feature = "fault-injection")]
+#[tokio::test]
 async fn test_group_commit_mid_batch_fsync_failure_atomicity() {
+    use memfuse_core::MemFuseError;
     use memfuse_store::wal::FAIL_APPEND_FOR_TX;
 
     let tmp = TempDir::new().expect("temp dir");
