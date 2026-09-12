@@ -60,6 +60,14 @@
       "session_id": "8548725205189361830",
       "active": true,
       "expires_at": "2026-09-12T13:38:46.521448283+00:00"
+    },
+    {
+      "krate": "ci-workflows",
+      "issue": "P1-4-post-merge-verify",
+      "timestamp": "2026-09-12T11:22:18.853860769+00:00",
+      "session_id": "11897399302723713304",
+      "active": true,
+      "expires_at": "2026-09-12T15:22:18.853845502+00:00"
     }
   ]
 }
