@@ -331,6 +331,7 @@ pub fn build_provenance(
     record
 }
 
+// DONE(memfuse-impl): RRF Rank Fusion & Numerik (nan-and-tie-cases) verifiziert und gehärtet [ref:eigenbau-rrf-fusion]
 /// Fuses multiple sets of ranked search results into a single ranked list using Reciprocal Rank Fusion (RRF).
 /// RRF score = sum(1 / (k + rank)) for each result set, where k = 60 by default.
 pub fn reciprocal_rank_fusion(
