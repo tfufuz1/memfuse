@@ -17,6 +17,7 @@ memfuse-checkpoint = { workspace = true }
 memfuse-graph = { workspace = true }
 memfuse-ollama = { workspace = true }
 memfuse-calibration = { workspace = true }
+memfuse-candle = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
@@ -36,7 +37,6 @@ tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 proptest = "1.4"
 memfuse-index = { workspace = true, features = ["experimental-diskann"] }
-memfuse-candle = { workspace = true }
 
 [features]
 default = []

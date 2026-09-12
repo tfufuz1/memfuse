@@ -411,14 +411,13 @@ fn test_array_length_mismatch_across_signals_no_panic() {
 ///
 /// Verification:
 /// 1. build_provenance with rrf_k = 0.001 produces exact expected contribution = 1.0 / 1.001.
-/// 2. rrf_k = 0.0 is rejected via debug assertion in build_provenance.
+/// 2. rrf_k = 0.0 is permitted as boundary condition (rrf_k >= 0.0) per `fusion.rs` invariants [ref:eigenbau-rrf-fusion].
 #[test]
-#[cfg_attr(debug_assertions, should_panic)]
-fn test_k_parameter_zero_boundary_panics() {
+fn test_k_parameter_zero_boundary_permitted() {
     let k_zero = 0.0f32;
     let rank = 1u32;
     let weight = 1.0f32;
-    build_provenance(
+    let prov = build_provenance(
         Some(0.95),
         Some(rank),
         Some(weight),
@@ -432,8 +431,13 @@ fn test_k_parameter_zero_boundary_panics() {
         k_zero,
         Some("test_col".to_string()),
         Some("hnsw".to_string()),
-        None,
+        Some(1.0),
     );
+    let contrib = prov
+        .signal_contributions
+        .get("vector")
+        .expect("vector contribution present");
+    assert_eq!(contrib.rrf_contribution, 1.0);
 }
 
 #[test]
