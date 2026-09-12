@@ -35,6 +35,7 @@ pub struct IsotonicCalibrator {
     observations_since_rebuild: usize,
     fingerprint: Option<ConfigFingerprint>,
     last_calibration_at: Option<u64>,
+    cached_ece: Option<f32>,
 }
 
 impl IsotonicCalibrator {
@@ -49,6 +50,7 @@ impl IsotonicCalibrator {
             observations_since_rebuild: 0,
             fingerprint: None,
             last_calibration_at: None,
+            cached_ece: None,
         }
     }
 
@@ -80,6 +82,11 @@ impl IsotonicCalibrator {
     /// Gibt den Zeitstempel (UNIX-Timestamp in Sekunden) der letzten Kalibrierung (Model-Rebuild) zurück.
     pub fn last_calibration_at(&self) -> Option<u64> {
         self.last_calibration_at
+    }
+
+    /// Gibt den gecachten Expected Calibration Error (ECE) zurück, ohne ein Model-Rebuild auszulösen.
+    pub fn cached_ece(&self) -> Option<f32> {
+        self.cached_ece
     }
 
     /// Kalibrierte Wahrscheinlichkeit.
@@ -120,6 +127,7 @@ impl IsotonicCalibrator {
             self.model_dirty = true;
             self.observations_since_rebuild = 0;
             self.fingerprint = Some(new_fingerprint);
+        self.cached_ece = None;
         }
     }
 
@@ -186,6 +194,7 @@ impl IsotonicCalibrator {
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
         );
+        self.cached_ece = self.calculate_ece();
     }
 
     fn lookup_isotonic(&self, raw_score: f32) -> f32 {
@@ -218,6 +227,13 @@ impl IsotonicCalibrator {
         }
         if self.model_dirty {
             self.rebuild_model();
+        }
+        self.cached_ece
+    }
+
+    fn calculate_ece(&self) -> Option<f32> {
+        if !self.is_calibrated() {
+            return None;
         }
 
         let n = self.observations.len() as f32;
