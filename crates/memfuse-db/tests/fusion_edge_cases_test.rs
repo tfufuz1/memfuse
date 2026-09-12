@@ -9,10 +9,10 @@
 //   3. Determinismus: Tie-breaking ist strikt deterministisch über doc_id.cmp().
 
 #[cfg(feature = "coherence-bonus-fusion")]
-use memfuse_db::fusion::apply_resonance_bonus;
+use memfuse_db::fusion::{apply_resonance_bonus, ResonanceConfig};
 use memfuse_db::fusion::{
     build_provenance, reciprocal_rank_fusion, weighted_reciprocal_rank_fusion,
-    weighted_reciprocal_rank_fusion_with_options, MetadataMergePriority, ResonanceConfig,
+    weighted_reciprocal_rank_fusion_with_options, MetadataMergePriority,
 };
 use memfuse_db::SearchResult;
 use proptest::prelude::*;

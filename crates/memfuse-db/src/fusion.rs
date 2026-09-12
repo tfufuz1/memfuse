@@ -2163,7 +2163,7 @@ mod tests {
         assert_eq!(
             prov.signal_contributions
                 .get("vector")
-                .unwrap()
+                .expect("vector contribution")
                 .rrf_contribution,
             1.0
         );
