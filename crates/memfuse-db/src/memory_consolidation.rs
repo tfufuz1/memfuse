@@ -927,11 +927,7 @@ mod tests {
     struct MockLowScoreGroundingValidator;
 
     impl ResponseGroundingValidator for MockLowScoreGroundingValidator {
-        fn score_grounding(
-            &self,
-            _response: &str,
-            _sources: &[&str],
-        ) -> memfuse_core::Result<f32> {
+        fn score_grounding(&self, _response: &str, _sources: &[&str]) -> memfuse_core::Result<f32> {
             Ok(0.2) // Score 0.2 is below threshold 0.70
         }
     }

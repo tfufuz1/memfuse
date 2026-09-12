@@ -394,26 +394,26 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> ConsolidationEngine<S
     ) -> Result<(ConsolidationPhaseResult, Option<SynthesisPhaseResult>)> {
         // P14-Compliance: Koordination zwischen ConsolidationEngine und MaintenanceScheduler.
         // Versuche das Konsolidierungs-Lock atomic zu erwerben. Bei Konflikt überspringe diesen Lauf.
-        let _guard = match ConsolidationLockGuard::try_acquire(
-            &self.collection.consolidation_in_progress(),
-        ) {
-            Some(g) => g,
-            None => {
-                tracing::debug!(
-                    collection = %self.collection.name(),
-                    "consolidation_in_progress, skipping trigger"
-                );
-                return Ok((
-                    ConsolidationPhaseResult {
-                        segments_created: 0,
-                        duplicates_tombstoned: Vec::new(),
-                        cascade_edge_tombstones_needed: Vec::new(),
-                        cascade_errors: Vec::new(),
-                    },
-                    None,
-                ));
-            }
-        };
+        let _guard =
+            match ConsolidationLockGuard::try_acquire(&self.collection.consolidation_in_progress())
+            {
+                Some(g) => g,
+                None => {
+                    tracing::debug!(
+                        collection = %self.collection.name(),
+                        "consolidation_in_progress, skipping trigger"
+                    );
+                    return Ok((
+                        ConsolidationPhaseResult {
+                            segments_created: 0,
+                            duplicates_tombstoned: Vec::new(),
+                            cascade_edge_tombstones_needed: Vec::new(),
+                            cascade_errors: Vec::new(),
+                        },
+                        None,
+                    ));
+                }
+            };
 
         // 1. Turns chronologisch aus der Collection lesen
         let user_key_prefix = self.collection.user_key_prefix();
