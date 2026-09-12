@@ -1,6 +1,43 @@
 use super::BoxFuture;
-use crate::ConfigFingerprint;
+use crate::{ConfigFingerprint, ModelFingerprint};
 use thiserror::Error;
+
+/// Representation of a context segment passed to context-aware text generation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextSegment<'a> {
+    /// Unique identifier for the chunk.
+    pub chunk_id: u64,
+    /// Text content of the segment.
+    pub text: &'a str,
+    /// Optional model fingerprint reference.
+    pub model_fingerprint: Option<&'a ModelFingerprint>,
+    /// Optional RoPE positional offset.
+    pub rope_offset: Option<usize>,
+}
+
+impl<'a> ContextSegment<'a> {
+    /// Creates a new `ContextSegment` with default optional metadata set to `None`.
+    pub fn new(chunk_id: u64, text: &'a str) -> Self {
+        Self {
+            chunk_id,
+            text,
+            model_fingerprint: None,
+            rope_offset: None,
+        }
+    }
+
+    /// Builder method to set the model fingerprint.
+    pub fn with_fingerprint(mut self, fingerprint: &'a ModelFingerprint) -> Self {
+        self.model_fingerprint = Some(fingerprint);
+        self
+    }
+
+    /// Builder method to set the RoPE offset.
+    pub fn with_rope_offset(mut self, offset: usize) -> Self {
+        self.rope_offset = Some(offset);
+        self
+    }
+}
 
 /// Error types encountered during embedding operations.
 #[derive(Debug, Error)]
@@ -57,6 +94,23 @@ pub trait TextGenerator: Send + Sync + 'static {
 pub trait LlmTextGenerator: Send + Sync + 'static {
     /// Generates text for a given prompt using an LLM.
     fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, crate::Result<String>>;
+
+    /// Generates text for a given sequence of context segments using an LLM.
+    ///
+    /// Default implementation naively concatenates segment texts with `"\n\n"` and invokes `self.generate(&concatenated)`.
+    fn generate_with_context<'a>(
+        &'a self,
+        segments: &'a [ContextSegment<'a>],
+    ) -> BoxFuture<'a, crate::Result<String>> {
+        Box::pin(async move {
+            let concatenated = segments
+                .iter()
+                .map(|s| s.text)
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            self.generate(&concatenated).await
+        })
+    }
 }
 
 /// Abstract contract for streaming LLM text generation (token by token / chunk by chunk).
@@ -152,6 +206,29 @@ mod tests {
 
         let err3 = EmbeddingError::InputTooLong { len: 100, max: 50 };
         assert_eq!(err3.to_string(), "Input too long: 100 tokens, max 50");
+    }
+
+    struct MockDefaultLlm;
+    impl LlmTextGenerator for MockDefaultLlm {
+        fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, crate::Result<String>> {
+            let p = prompt.to_string();
+            Box::pin(async move { Ok(format!("Generated: {p}")) })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_context_segment_and_generate_with_context_default() -> Result<(), Box<dyn std::error::Error>> {
+        let seg1 = ContextSegment::new(101, "First segment");
+        let seg2 = ContextSegment::new(102, "Second segment");
+        assert_eq!(seg1.chunk_id, 101);
+        assert_eq!(seg1.text, "First segment");
+        assert!(seg1.model_fingerprint.is_none());
+        assert!(seg1.rope_offset.is_none());
+
+        let llm = MockDefaultLlm;
+        let res = llm.generate_with_context(&[seg1, seg2]).await?;
+        assert_eq!(res, "Generated: First segment\n\nSecond segment");
+        Ok(())
     }
 
     #[tokio::test]

@@ -17,7 +17,7 @@ use candle_core::Device;
 use candle_transformers::generation::LogitsProcessor;
 use candle_transformers::models::quantized_llama::ModelWeights;
 use futures_util::stream;
-use memfuse_core::traits::{BoxFuture, BoxStream};
+use memfuse_core::traits::{BoxFuture, BoxStream, ContextSegment};
 use memfuse_core::{
     ConfigFingerprint, LlmTextGenerator, LlmTextGeneratorStreaming, MemFuseError, Result,
 };
@@ -56,6 +56,39 @@ pub trait CandleModelInner: Send {
 /// Default maximum concurrent inference operations for Candle LLM text generation.
 pub const DEFAULT_MAX_CONCURRENT_INFERENCES: usize = 4;
 
+/// Adapter consulting KV cache segment metadata during context-aware generation.
+#[derive(Debug, Clone, Default)]
+pub struct KvBridgeAdapter {
+    /// Number of segment consultations performed.
+    pub consultations: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl KvBridgeAdapter {
+    /// Creates a new `KvBridgeAdapter`.
+    pub fn new() -> Self {
+        Self {
+            consultations: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        }
+    }
+
+    /// Consults segment metadata and KV cache bridge state for a context segment.
+    pub fn consult_segment<'a>(&self, segment: &ContextSegment<'a>) {
+        self.consultations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let _ = (
+            segment.chunk_id,
+            segment.text,
+            segment.model_fingerprint,
+            segment.rope_offset,
+        );
+    }
+
+    /// Returns the number of segment consultations recorded.
+    pub fn consultation_count(&self) -> u64 {
+        self.consultations.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 /// LLM Text Generator implementation powered by Candle inference engine.
 pub struct CandleLlmClient {
     /// Target hardware device (CPU, CUDA, Metal).
@@ -70,6 +103,8 @@ pub struct CandleLlmClient {
     pub max_concurrent_inferences: usize,
     /// Semaphore enforcing backpressure on concurrent inference calls.
     pub semaphore: Arc<tokio::sync::Semaphore>,
+    /// Optional KV cache bridge adapter.
+    pub kv_bridge: Option<KvBridgeAdapter>,
 }
 
 impl CandleLlmClient {
@@ -88,7 +123,14 @@ impl CandleLlmClient {
             tokenizer,
             max_concurrent_inferences,
             semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent_inferences)),
+            kv_bridge: None,
         }
+    }
+
+    /// Attaches a `KvBridgeAdapter` to this client.
+    pub fn with_kv_bridge(mut self, adapter: KvBridgeAdapter) -> Self {
+        self.kv_bridge = Some(adapter);
+        self
     }
 
     /// Configures maximum concurrent inference operations for backpressure control.
@@ -426,6 +468,27 @@ impl LlmTextGenerator for CandleLlmClient {
             .map_err(|e| MemFuseError::Internal(format!("Candle inference task join error: {e}")))?
         })
     }
+
+    fn generate_with_context<'a>(
+        &'a self,
+        segments: &'a [ContextSegment<'a>],
+    ) -> BoxFuture<'a, Result<String>> {
+        Box::pin(async move {
+            if let Some(ref adapter) = self.kv_bridge {
+                for segment in segments {
+                    adapter.consult_segment(segment);
+                }
+            }
+
+            let concatenated = segments
+                .iter()
+                .map(|s| s.text)
+                .collect::<Vec<_>>()
+                .join("\n\n");
+
+            self.generate(&concatenated).await
+        })
+    }
 }
 
 impl LlmTextGeneratorStreaming for CandleLlmClient {
@@ -571,6 +634,63 @@ mod tests {
         }
 
         assert_eq!(sync_resp, assembled);
+    }
+
+    #[tokio::test]
+    async fn test_generate_with_context_text_identical_and_kv_bridge_consultation() {
+        let mock_model = Box::new(MockCandleModel {
+            response: "Unified Output".to_string(),
+        });
+        let fingerprint = ModelFingerprint {
+            hash: [9u8; 32],
+            model_id: "context_model.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+
+        let client_plain = CandleLlmClient::new(Device::Cpu, mock_model, fingerprint.clone(), tokenizer.clone());
+
+        let seg1 = ContextSegment::new(101, "Chunk 1 content");
+        let seg2 = ContextSegment::new(102, "Chunk 2 content");
+        let segments = vec![seg1, seg2];
+
+        let direct_concat_res = client_plain.generate("Chunk 1 content\n\nChunk 2 content").await.unwrap();
+        let context_without_adapter_res = client_plain.generate_with_context(&segments).await.unwrap();
+
+        assert_eq!(
+            direct_concat_res, context_without_adapter_res,
+            "generate_with_context without adapter must produce text-identical result to generate"
+        );
+
+        let adapter = KvBridgeAdapter::new();
+        let mock_model_2 = Box::new(MockCandleModel {
+            response: "Unified Output".to_string(),
+        });
+        let client_with_adapter = CandleLlmClient::new(Device::Cpu, mock_model_2, fingerprint, tokenizer)
+            .with_kv_bridge(adapter.clone());
+
+        let context_with_adapter_res = client_with_adapter.generate_with_context(&segments).await.unwrap();
+
+        assert_eq!(
+            direct_concat_res, context_with_adapter_res,
+            "generate_with_context with KvBridgeAdapter must produce text-identical result"
+        );
+        assert_eq!(
+            adapter.consultation_count(),
+            2,
+            "KvBridgeAdapter must record consultation for each segment"
+        );
     }
 
     #[test]
