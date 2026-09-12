@@ -1,28 +1,13 @@
 {
   "claims": [
     {
-      "krate": "memfuse-core",
-      "issue": "B1-streaming-trait",
-      "timestamp": "2026-09-12T13:42:57.141843430+00:00",
-      "session_id": "11568475296178601156",
-      "active": true,
-      "expires_at": "2026-09-12T17:42:57.141822843+00:00"
-    },
-    {
-      "krate": "memfuse-candle",
-      "issue": "B1-streaming-trait",
-      "timestamp": "2026-09-12T13:42:57.640727990+00:00",
-      "session_id": "11568475296178601156",
-      "active": true,
-      "expires_at": "2026-09-12T17:42:57.640709246+00:00"
-    },
-    {
-      "krate": "memfuse-ollama",
-      "issue": "B1-streaming-trait",
-      "timestamp": "2026-09-12T13:42:58.064548743+00:00",
-      "session_id": "11568475296178601156",
-      "active": true,
-      "expires_at": "2026-09-12T17:42:58.064527210+00:00"
+      "krate": "memfuse-router",
+      "issue": "FIX-ROUTER-1-docs",
+      "timestamp": "2026-09-12T13:46:07.517649038+00:00",
+      "session_id": "9821766463430893175",
+      "active": false,
+      "expires_at": "2026-09-12T17:46:07.517633575+00:00",
+      "released_at": "2026-09-12T13:52:32.403973247+00:00"
     }
   ]
 }
