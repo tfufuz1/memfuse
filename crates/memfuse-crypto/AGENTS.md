@@ -1,4 +1,4 @@
-# AGENTS.md — memfuse-crypto (Cargo-Package-Name: memfuse-security)
+# AGENTS.md — memfuse-crypto (Cargo-Package-Name: `memfuse-security`)
 > Layer 1 | Encryption-at-Rest, HMAC-Chaining, Zeroize | ~2300 LOC
 
 ## 1. Zweck & Architekturrolle
@@ -6,6 +6,7 @@
 Verantwortlich für Encryption-at-Rest (AES-256-GCM-SIV) und Datenintegrität 
 (HMAC-Chaining im WAL). Kapselt die Key-Derivation (HKDF), Zeroize-Speicherhygiene 
 und den Anti-Tamper-Schutz der WAL-Einträge.
+*(Hinweis zur Namensgebung: Verzeichnisname `crates/memfuse-crypto`, Cargo-Package-Name `memfuse-security`).*
 
 ## 2. Modul-Karte
 
