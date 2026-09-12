@@ -33,10 +33,7 @@ async fn test_truncate_at_offset_zero_yields_empty_wal() -> Result<()> {
 
     // Physical file size before truncate must be > 0
     let meta_before = fs::metadata(&wal_path)?;
-    assert!(
-        meta_before.len() > 0,
-        "WAL file should contain written bytes before truncation"
-    );
+    assert!(meta_before.len() > 0, "WAL file should contain written bytes before truncation");
 
     // Execute truncate to offset 0 with reset HMAC
     wal.truncate(0, [0u8; 32]).await?;
@@ -53,11 +50,7 @@ async fn test_truncate_at_offset_zero_yields_empty_wal() -> Result<()> {
     drop(wal);
     let wal_reopened = Wal::open(&wal_path).await?;
     let entries = wal_reopened.replay().await?;
-    assert_eq!(
-        entries.len(),
-        0,
-        "Reopened WAL after truncate(0) must yield 0 entries"
-    );
+    assert_eq!(entries.len(), 0, "Reopened WAL after truncate(0) must yield 0 entries");
 
     Ok(())
 }

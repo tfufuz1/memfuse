@@ -92,7 +92,11 @@ impl<'a, S: StorageEngine + ?Sized> Drop for CheckpointPinGuard<'a, S> {
 
 /// Higher-order function wrapping an async block with a pinned checkpoint guard,
 /// ensuring `release()` is ALWAYS called even on error paths.
-pub(super) async fn with_pinned_checkpoint<S, F, Fut, T>(storage: &S, seq: u64, f: F) -> Result<T>
+pub(super) async fn with_pinned_checkpoint<S, F, Fut, T>(
+    storage: &S,
+    seq: u64,
+    f: F,
+) -> Result<T>
 where
     S: StorageEngine + ?Sized,
     F: FnOnce() -> Fut,
@@ -110,7 +114,10 @@ where
 ///
 /// Pin-first, read-after: the seq is read under the protection of the pin,
 /// eliminating the TOCTOU window between snapshot_seq() and pin activation.
-pub(super) async fn with_pinned_checkpoint_at_latest<S, F, Fut, T>(storage: &S, f: F) -> Result<T>
+pub(super) async fn with_pinned_checkpoint_at_latest<S, F, Fut, T>(
+    storage: &S,
+    f: F,
+) -> Result<T>
 where
     S: StorageEngine + ?Sized,
     F: FnOnce(u64) -> Fut,

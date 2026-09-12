@@ -746,8 +746,11 @@ impl CsrGraph {
     /// Returns all edge IDs derived from the given source `DocId`.
     pub fn edges_for_doc(&self, doc_id: DocId) -> Vec<(EntityId, EntityId)> {
         let inner = self.inner.read();
-        let mut edges: HashSet<(EntityId, EntityId)> =
-            inner.doc_to_edges.get(&doc_id).cloned().unwrap_or_default();
+        let mut edges: HashSet<(EntityId, EntityId)> = inner
+            .doc_to_edges
+            .get(&doc_id)
+            .cloned()
+            .unwrap_or_default();
         for edge in self.doc_edge_index.edges_for_doc(doc_id) {
             edges.insert(edge);
         }
@@ -1171,19 +1174,13 @@ impl CsrGraph {
                     .or_else(|| val.as_object());
                 if let Some(obj) = meta_obj {
                     if let Some(links_val) = obj.get("links") {
-                        if let Ok(links) = serde_json::from_value::<
-                            Vec<memfuse_core::types::domain::MemoryLink>,
-                        >(links_val.clone())
-                        {
+                        if let Ok(links) = serde_json::from_value::<Vec<memfuse_core::types::domain::MemoryLink>>(links_val.clone()) {
                             for link in links {
-                                if link.relation
-                                    == memfuse_core::types::domain::LinkRelation::Supersedes
-                                {
+                                if link.relation == memfuse_core::types::domain::LinkRelation::Supersedes {
                                     let superseded_doc = link.target;
                                     let edge_ids = graph.edges_for_doc(superseded_doc);
                                     if !edge_ids.is_empty() {
-                                        let _ = graph
-                                            .tombstone_edges_direct(&edge_ids, TxId::new(wal_seq));
+                                        let _ = graph.tombstone_edges_direct(&edge_ids, TxId::new(wal_seq));
                                     }
                                 }
                             }
