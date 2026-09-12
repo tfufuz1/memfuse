@@ -8,7 +8,7 @@
 // STAND: TS:2026-08-31T00:00:00Z
 
 use crate::collection::{Collection, StoredDocument};
-use crate::consolidation_executor::execute_consolidation_pass;
+use crate::consolidation_executor::{execute_consolidation_pass, ConsolidationLockGuard};
 use crate::decay_controller::AdaptiveDecayController;
 use crate::maintenance_config::MaintenanceConfig;
 use crate::memory_consolidation::ConsolidationConfig;
@@ -219,6 +219,21 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
 
         // Step f: Consolidation-Trigger
         if self.config.background_consolidation_enabled && self.active_agent_sessions() == 0 {
+            // P14-Compliance: Koordination zwischen ConsolidationEngine und MaintenanceScheduler.
+            // Versuche das Konsolidierungs-Lock atomic zu erwerben. Bei Konflikt überspringe diesen Lauf.
+            let _guard = match ConsolidationLockGuard::try_acquire(
+                &self.collection.consolidation_in_progress(),
+            ) {
+                Some(g) => g,
+                None => {
+                    tracing::debug!(
+                        collection = %self.collection.name(),
+                        "consolidation_in_progress, skipping trigger"
+                    );
+                    return;
+                }
+            };
+
             let user_key_prefix = self.collection.user_key_prefix();
             match self
                 .collection
