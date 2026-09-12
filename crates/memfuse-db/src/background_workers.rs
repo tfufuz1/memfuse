@@ -12,8 +12,62 @@ use memfuse_core::tx_buffer::TxBuffer;
 use memfuse_core::DocId;
 #[cfg(feature = "background-maintenance")]
 use memfuse_core::VectorIndex;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Configuration parameters for HNSW index rebuild backoff and failure escalation.
+#[derive(Debug, Clone, Copy)]
+pub struct OrphanCleanupBackoffConfig {
+    /// Initial cooldown duration after the first failed rebuild attempt.
+    pub base_delay: Duration,
+    /// Maximum cooldown cap between rebuild attempts.
+    pub max_delay: Duration,
+    /// Number of consecutive rebuild failures triggering a structural problem alert log.
+    pub alert_threshold: u32,
+}
+
+impl Default for OrphanCleanupBackoffConfig {
+    fn default() -> Self {
+        Self {
+            base_delay: Duration::from_secs(5),
+            max_delay: Duration::from_secs(300),
+            alert_threshold: 3,
+        }
+    }
+}
+
+/// Helper calculating exponential backoff cooldown given consecutive failures.
+pub fn calculate_rebuild_cooldown(
+    consecutive_failures: u32,
+    base_delay: Duration,
+    max_delay: Duration,
+) -> Duration {
+    if consecutive_failures == 0 {
+        Duration::ZERO
+    } else {
+        let shift = consecutive_failures.saturating_sub(1).min(30);
+        let multiplier = 1u64.checked_shl(shift).unwrap_or(u64::MAX);
+        let calculated = base_delay.saturating_mul(multiplier as u32);
+        calculated.min(max_delay)
+    }
+}
+
+/// Abstraction trait over vector indexes capable of connectivity check and rebuild.
+pub trait OrphanCleanupIndex: Send + Sync {
+    fn check_connectivity(&self) -> memfuse_core::Result<()>;
+    fn rebuild(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>>;
+}
+
+impl OrphanCleanupIndex for memfuse_index::hnsw::HnswIndex {
+    fn check_connectivity(&self) -> memfuse_core::Result<()> {
+        self.check_connectivity()
+    }
+
+    fn rebuild(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>> {
+        Box::pin(async move { self.rebuild().await })
+    }
+}
 
 #[cfg(feature = "background-maintenance")]
 use crate::decay_controller::{AdaptiveDecayController, DecayControllerConfig};
@@ -234,24 +288,28 @@ pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
     start_decay_cleanup_worker(collection, decay_config, interval, cancel_token)
 }
 
-/// Starts a background task to periodically clean up orphan transactions.
-///
-/// This worker handles the cleanup of transactions that have exceeded their
-/// configured timeout without being committed or rolled back.
-pub fn start_orphan_cleanup_worker<T: Clone + Send + Sync + 'static>(
+/// Starts a background task to periodically clean up orphan transactions and manage HNSW rebuilds with exponential backoff.
+pub fn start_orphan_cleanup_worker_with_config<T: Clone + Send + Sync + 'static, I: OrphanCleanupIndex + 'static>(
     buffer: Arc<TxBuffer<T>>,
-    hnsw_index: Arc<memfuse_index::hnsw::HnswIndex>,
+    hnsw_index: Arc<I>,
     interval: Duration,
+    backoff_config: OrphanCleanupBackoffConfig,
     cancel_token: tokio_util::sync::CancellationToken,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
+) -> (tokio::task::JoinHandle<()>, Arc<AtomicU32>) {
+    let consecutive_failed_rebuilds = Arc::new(AtomicU32::new(0));
+    let failure_counter = consecutive_failed_rebuilds.clone();
+
+    let handle = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        let mut last_rebuild_attempt: Option<std::time::Instant> = None;
+
         tracing::info!(
-            "Orphan cleanup worker started (timeout: {:?}, interval: {:?})",
+            "Orphan cleanup worker started (timeout: {:?}, interval: {:?}, base_backoff: {:?})",
             buffer.tx_timeout(),
-            interval
+            interval,
+            backoff_config.base_delay
         );
         loop {
             tokio::select! {
@@ -269,21 +327,81 @@ pub fn start_orphan_cleanup_worker<T: Clone + Send + Sync + 'static>(
                             expired.len()
                         );
                     }
-                    // AI-TAG[SMELL][MAJOR] Unbounded HNSW rebuild loop without backoff in orphan worker (ID: AGT-DB-c42e91a0) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
+
                     if let Err(err) = hnsw_index.check_connectivity() {
-                        tracing::warn!(
-                            error = %err,
-                            "HNSW index degraded — triggering automatic rebuild"
+                        let failures = consecutive_failed_rebuilds.load(Ordering::Relaxed);
+                        let cooldown = calculate_rebuild_cooldown(
+                            failures,
+                            backoff_config.base_delay,
+                            backoff_config.max_delay,
                         );
-                        match tokio::time::timeout(Duration::from_secs(120), hnsw_index.rebuild()).await {
-                            Ok(Ok(())) => {},
-                            Ok(Err(rebuild_err)) => {
-                                tracing::error!(error = %rebuild_err, "HNSW rebuild failed");
-                            }
-                            Err(_) => {
-                                tracing::warn!("HNSW rebuild timed out after 120s; skipping this tick");
+
+                        let is_on_cooldown = if let Some(last_attempt) = last_rebuild_attempt {
+                            last_attempt.elapsed() < cooldown
+                        } else {
+                            false
+                        };
+
+                        if is_on_cooldown {
+                            let remaining = cooldown.saturating_sub(last_rebuild_attempt.unwrap().elapsed());
+                            tracing::debug!(
+                                failures = failures,
+                                cooldown_remaining_ms = remaining.as_millis(),
+                                "HNSW index degraded but rebuild is on cooldown, skipping this tick"
+                            );
+                        } else {
+                            tracing::warn!(
+                                error = %err,
+                                failures = failures,
+                                "HNSW index degraded — triggering automatic rebuild"
+                            );
+
+                            last_rebuild_attempt = Some(std::time::Instant::now());
+
+                            let rebuild_res = tokio::time::timeout(
+                                Duration::from_secs(120),
+                                hnsw_index.rebuild(),
+                            )
+                            .await;
+
+                            let rebuild_ok = match rebuild_res {
+                                Ok(Ok(())) => true,
+                                Ok(Err(rebuild_err)) => {
+                                    tracing::error!(error = %rebuild_err, "HNSW rebuild failed");
+                                    false
+                                }
+                                Err(_) => {
+                                    tracing::warn!("HNSW rebuild timed out after 120s; skipping this tick");
+                                    false
+                                }
+                            };
+
+                            let connectivity_restored = rebuild_ok && hnsw_index.check_connectivity().is_ok();
+
+                            if connectivity_restored {
+                                consecutive_failed_rebuilds.store(0, Ordering::Relaxed);
+                                last_rebuild_attempt = None;
+                                tracing::info!("HNSW rebuild succeeded and index connectivity restored");
+                            } else {
+                                let new_failures = consecutive_failed_rebuilds.fetch_add(1, Ordering::Relaxed) + 1;
+                                tracing::error!(
+                                    consecutive_failures = new_failures,
+                                    "HNSW rebuild did not restore index connectivity"
+                                );
+
+                                if new_failures >= backoff_config.alert_threshold {
+                                    tracing::error!(
+                                        consecutive_failures = new_failures,
+                                        "ALERT[STRUCTURAL_PROBLEM]: HNSW index rebuild failed {} consecutive times to restore connectivity. Deletion rate may exceed rebuild capacity or index is corrupted.",
+                                        new_failures
+                                    );
+                                }
                             }
                         }
+                    } else if consecutive_failed_rebuilds.load(Ordering::Relaxed) > 0 {
+                        consecutive_failed_rebuilds.store(0, Ordering::Relaxed);
+                        last_rebuild_attempt = None;
+                        tracing::info!("HNSW index connectivity healthy, reset failed rebuild counter");
                     }
                 }
                 _ = cancel_token.cancelled() => {
@@ -292,7 +410,29 @@ pub fn start_orphan_cleanup_worker<T: Clone + Send + Sync + 'static>(
                 }
             }
         }
-    })
+    });
+
+    (handle, failure_counter)
+}
+
+/// Starts a background task to periodically clean up orphan transactions.
+///
+/// This worker handles the cleanup of transactions that have exceeded their
+/// configured timeout without being committed or rolled back.
+pub fn start_orphan_cleanup_worker<T: Clone + Send + Sync + 'static>(
+    buffer: Arc<TxBuffer<T>>,
+    hnsw_index: Arc<memfuse_index::hnsw::HnswIndex>,
+    interval: Duration,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    let (handle, _) = start_orphan_cleanup_worker_with_config(
+        buffer,
+        hnsw_index,
+        interval,
+        OrphanCleanupBackoffConfig::default(),
+        cancel_token,
+    );
+    handle
 }
 
 /// Deprecated legacy alias for `start_orphan_cleanup_worker`.
@@ -312,6 +452,112 @@ mod tests {
     use memfuse_core::tx_buffer::IndexOp;
     use memfuse_core::types::{DocId, TxId};
     use tokio::time::sleep;
+
+    #[test]
+    fn test_calculate_rebuild_cooldown_exponential() {
+        let base = Duration::from_secs(5);
+        let max = Duration::from_secs(300);
+
+        assert_eq!(calculate_rebuild_cooldown(0, base, max), Duration::ZERO);
+        assert_eq!(calculate_rebuild_cooldown(1, base, max), Duration::from_secs(5));
+        assert_eq!(calculate_rebuild_cooldown(2, base, max), Duration::from_secs(10));
+        assert_eq!(calculate_rebuild_cooldown(3, base, max), Duration::from_secs(20));
+        assert_eq!(calculate_rebuild_cooldown(4, base, max), Duration::from_secs(40));
+        assert_eq!(calculate_rebuild_cooldown(10, base, max), Duration::from_secs(300));
+    }
+
+    struct MockDegradedHnswIndex {
+        connectivity_ok: std::sync::atomic::AtomicBool,
+        rebuild_calls: Arc<AtomicU32>,
+        rebuild_should_restore: std::sync::atomic::AtomicBool,
+    }
+
+    impl OrphanCleanupIndex for MockDegradedHnswIndex {
+        fn check_connectivity(&self) -> memfuse_core::Result<()> {
+            if self.connectivity_ok.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(memfuse_core::MemFuseError::HnswConnectivityDegraded {
+                    deleted_ratio: 50.0,
+                })
+            }
+        }
+
+        fn rebuild(
+            &self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>>
+        {
+            let calls = self.rebuild_calls.clone();
+            let should_restore = self.rebuild_should_restore.load(Ordering::SeqCst);
+            Box::pin(async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                if should_restore {
+                    // connectivity will be restored after rebuild
+                }
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_orphan_cleanup_rebuild_backoff_and_alert() {
+        let buffer = Arc::new(TxBuffer::<String>::new_with_config(
+            64,
+            Duration::from_millis(500),
+        ));
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+
+        let rebuild_calls = Arc::new(AtomicU32::new(0));
+        let mock_index = Arc::new(MockDegradedHnswIndex {
+            connectivity_ok: std::sync::atomic::AtomicBool::new(false),
+            rebuild_calls: rebuild_calls.clone(),
+            rebuild_should_restore: std::sync::atomic::AtomicBool::new(false),
+        });
+
+        let backoff_config = OrphanCleanupBackoffConfig {
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_millis(1000),
+            alert_threshold: 3,
+        };
+
+        let (handle, failures_counter) = start_orphan_cleanup_worker_with_config(
+            buffer,
+            mock_index.clone(),
+            Duration::from_millis(10),
+            backoff_config,
+            cancel_token.clone(),
+        );
+
+        // Tick 1 (t=0ms): Rebuild attempt #1 fires immediately. Cooldown set to 100ms.
+        sleep(Duration::from_millis(40)).await;
+        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 1, "First rebuild attempt should fire immediately");
+        assert_eq!(failures_counter.load(Ordering::SeqCst), 1, "First failed rebuild incremented failure counter");
+
+        // During 100ms cooldown (t=40..120ms): Ticks occur every 10ms, but backoff prevents extra rebuild calls.
+        sleep(Duration::from_millis(50)).await;
+        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 1, "Backoff must prevent rebuild on subsequent ticks during cooldown");
+
+        // After cooldown expires (t > 140ms): Attempt #2 fires. Cooldown set to 200ms.
+        sleep(Duration::from_millis(80)).await;
+        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 2, "Second rebuild attempt should fire after 100ms cooldown");
+        assert_eq!(failures_counter.load(Ordering::SeqCst), 2, "Second failed rebuild incremented failure counter");
+
+        // After 200ms cooldown (t > 360ms): Attempt #3 fires. Counter reaches 3 (alert threshold).
+        sleep(Duration::from_millis(220)).await;
+        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 3, "Third rebuild attempt should fire after 200ms cooldown");
+        assert_eq!(failures_counter.load(Ordering::SeqCst), 3, "Failure counter should reach alert threshold 3");
+
+        // Now simulate successful restoration on next rebuild
+        mock_index.rebuild_should_restore.store(true, Ordering::SeqCst);
+        mock_index.connectivity_ok.store(true, Ordering::SeqCst);
+
+        // Next tick checks connectivity -> healthy -> resets failure counter
+        sleep(Duration::from_millis(50)).await;
+        assert_eq!(failures_counter.load(Ordering::SeqCst), 0, "Healthy connectivity must reset failure counter to 0");
+
+        cancel_token.cancel();
+        let _ = handle.await;
+    }
 
     #[tokio::test]
     async fn test_expiry_cleanup_worker_task_cleans_documents() {
