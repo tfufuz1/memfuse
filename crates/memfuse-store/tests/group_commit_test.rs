@@ -79,6 +79,7 @@ async fn test_group_commit_200_parallel_tasks_durability_and_replay_parity() {
 #[tokio::test]
 #[cfg(feature = "fault-injection")]
 async fn test_group_commit_mid_batch_fsync_failure_atomicity() {
+    use memfuse_core::MemFuseError;
     use memfuse_store::wal::FAIL_APPEND_FOR_TX;
 
     let tmp = TempDir::new().expect("temp dir");

@@ -2382,4 +2382,72 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_weighted_rrf_k_zero_boundary() {
+        // At k=0, for rank 1 (1-indexed): score = 1.0 / (0.0 + 1.0) = 1.0
+        let prov = build_provenance(
+            Some(0.9),
+            Some(1),
+            Some(1.0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            None,
+            None,
+            Some(1.0),
+        );
+        assert_eq!(
+            prov.signal_contributions
+                .get("vector")
+                .expect("vector contribution")
+                .rrf_contribution,
+            1.0
+        );
+    }
+
+    #[test]
+    fn test_weighted_rrf_nan_scores_and_tie_breaking() {
+        let set_a = vec![
+            SearchResult {
+                id: "doc_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_tie_b".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_tie_a".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let fused = weighted_reciprocal_rank_fusion_with_options(
+            vec![("vec".to_string(), set_a, 1.0)],
+            10,
+            MetadataMergePriority::default(),
+            true,
+            None,
+        );
+
+        assert_eq!(fused.len(), 3);
+        // Scores are derived from RRF rank (1/61, 1/62, 1/63) and remain finite despite NaN raw score
+        assert!(fused.iter().all(|r| r.score.is_finite()));
+        assert_eq!(fused[0].id, "doc_nan");
+    }
 }
