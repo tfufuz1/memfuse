@@ -1185,13 +1185,16 @@ memfuse_batch_methods!(PyCollection);
 
 /// Opens or creates a MemFuse database at the given path.
 ///
+/// Default `dimension` is 768 to align with `MemFuseConfig::default().dimension` in `memfuse-db`
+/// (matching `nomic-embed-text`, the default ONNX embedding model).
+///
 /// Supports Python context manager protocol:
 /// ```python
 /// with memfuse.open("./data") as db:
 ///     db.insert("doc1", vector, {"key": "value"})
 /// ```
 #[pyfunction]
-#[pyo3(signature = (path, dimension=1536, max_elements=None, encryption_passphrase=None, distance_metric=None))]
+#[pyo3(signature = (path, dimension=768, max_elements=None, encryption_passphrase=None, distance_metric=None))]
 fn open(
     py: Python<'_>,
     path: &str,
@@ -1622,7 +1625,7 @@ fn _trigger_panic_for_test(py: Python<'_>, message: Option<String>) -> PyResult<
 #[pymodule]
 fn _memfuse(_py: Python<'_>, m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     check_subinterpreter_guard(_py)?;
-    m.add("__version__", "0.2.0")?;
+    m.add("__version__", "0.1.0")?;
 
     // Initialize per-interpreter Tokio runtime state
     let worker_threads = std::env::var("MEMFUSE_WORKER_THREADS")

@@ -4,7 +4,7 @@ MCP (Model Context Protocol) integration for MemFuse using FastMCP.
 from typing import Optional, List, Dict, Any
 import memfuse
 
-def create_mcp_server(db_path: str, dimension: int = 1536, name: str = "MemFuse"):
+def create_mcp_server(db_path: str, dimension: int = 768, name: str = "MemFuse"):
     from fastmcp import FastMCP
     mcp = FastMCP(name)
 
