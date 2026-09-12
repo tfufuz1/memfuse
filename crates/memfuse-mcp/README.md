@@ -27,6 +27,14 @@ target/release/memfuse-mcp-server
 
 *(Auf Windows: `target\release\memfuse-mcp-server.exe`)*
 
+### Ausführung via `uvx` (empfohlen)
+
+Der MCP-Server kann ohne manuelle Kompilierung direkt über `uvx` ausgeführt werden:
+
+```bash
+uvx memfuse-mcp --db-path ~/.memfuse --allow-write
+```
+
 ---
 
 ## 2. CLI-Schnittstelle & Umgebungsvariablen
@@ -65,6 +73,29 @@ Fügen Sie den Server in Ihre Claude Desktop Konfigurationsdatei ein:
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ### Beispiel: `claude_desktop_config.json`
+
+Mit `uvx` (empfohlen):
+
+```json
+{
+  "mcpServers": {
+    "memfuse": {
+      "command": "uvx",
+      "args": [
+        "memfuse-mcp",
+        "--db-path",
+        "/ABSOLUTER/PFAD/ZU/ihrem_datenbank_ordner",
+        "--allow-write"
+      ],
+      "env": {
+        "MEMFUSE_MCP_ALLOW_WRITE": "1"
+      }
+    }
+  }
+}
+```
+
+Alternativ mit direktem Rust-Binary:
 
 ```json
 {
