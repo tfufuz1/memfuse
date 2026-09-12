@@ -82,7 +82,7 @@ impl Default for MaintenanceConfig {
             edge_reinforcement: memfuse_graph::EdgeReinforcementConfig::default(),
             percolation_enabled: true,
             percolation: PercolationConfig::default(),
-            replicator_enabled: true,
+            replicator_enabled: false,
             replicator_lr: 0.05,
             coherence_bonus_beta: 0.15,
             background_consolidation_enabled: false,

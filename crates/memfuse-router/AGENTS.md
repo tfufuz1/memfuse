@@ -1,5 +1,5 @@
 # AGENTS.md — memfuse-router
-> Layer 3 | SLM-Routing, Conformal Calibration, Context Windowing | ~1300 LOC
+> Layer 3 | SLM-Routing, Conformal Calibration, Context Windowing | ~5400 LOC
 
 ## 1. Zweck & Architekturrolle
 
@@ -12,10 +12,14 @@ die Modellauswahl basierend auf empirischen Fehler-Raten adaptiv zu steuern.
 
 | Datei | Verantwortung |
 |---|---|
-| `lib.rs` | `#![deny(unsafe_code)]` |
+| `lib.rs` | `#![deny(unsafe_code)]`, Modul-Deklarationen & Re-Exports |
 | `router.rs` | `RouterEngine` — Die Haupt-Logik, `RoutingDecision`, `ConfidenceMetrics` |
 | `profile.rs` | `SlmProfile` — Konfiguration eines Modells, `ConformalCalibrator`, `ProfileCalibrationState` |
 | `dispatch.rs` | `dispatch_to_slm` — Execution-Layer für den ausgewählten Pfad |
+| `lyapunov.rs` | `LyapunovDriftWatcher` — Drift-Erkennung & Adaptions-Steuerung für Conformal Calibration |
+| `outcome.rs` | `DecisionId`, `RoutingOutcome` — Aufzeichnung und Feedback von Routing-Entscheidungen |
+| `serde_helpers.rs` | Serde-Hilfsfunktionen für Deserialisierung |
+| `tests.rs` | Integrations- und Einheitentests für Router- und Dispatch-Logik (kein Produktionscode) |
 
 ## 3. Kritische Invarianten
 

@@ -391,7 +391,7 @@ pub fn compute_community_hash(member_doc_ids: &[DocId]) -> u64 {
 }
 
 /// Führt den Generative Synthesis Pass (generative Wissenssynthese) über stabile Graph-Communities aus.
-pub async fn run_synthesis_pass(
+pub async fn run_structural_synthesis_pass(
     stable_communities: &[(u64, Vec<DocId>)],
     source_texts: &std::collections::HashMap<DocId, String>,
     llm: &dyn LlmTextGenerator,
@@ -741,7 +741,7 @@ mod tests {
         let stable_communities = vec![(hash, members)];
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
+        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
             .expect("run_synthesis_pass should succeed");
 
@@ -793,7 +793,7 @@ mod tests {
 
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
+        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
             .expect("run_synthesis_pass should succeed");
 
@@ -829,7 +829,7 @@ mod tests {
         source_texts.insert(DocId::new(20), "Text B".to_string());
         source_texts.insert(DocId::new(30), "Text C".to_string());
 
-        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
+        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
             .expect("run_synthesis_pass should succeed");
 
@@ -867,7 +867,7 @@ mod tests {
 
         let source_texts = std::collections::HashMap::new();
 
-        let res = run_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
+        let res = run_structural_synthesis_pass(&stable_communities, &source_texts, &llm, &config)
             .await
             .expect("run_synthesis_pass should not fail even if one community errors out");
 

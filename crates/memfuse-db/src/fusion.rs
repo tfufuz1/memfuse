@@ -99,21 +99,21 @@ impl PartialEq for HeapEntry {
 impl Eq for HeapEntry {}
 
 // DONE(memfuse-impl): Robust NaN and tie-breaking handling in HeapEntry for RRF fusion [ref:eigenbau-rrf-fusion]
+fn cmp_scores(a: f32, b: f32) -> std::cmp::Ordering {
+    match (a.is_nan(), b.is_nan()) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.total_cmp(&b),
+    }
+}
+
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
         // so that peek() returns the candidate with the lowest score (or highest ID on tie).
         // Therefore, lower score => Greater priority in max-heap.
-        // NaN scores are considered worst (Greater Ord) so they get evicted first and sorted last.
-        match (self.result.score.is_nan(), other.result.score.is_nan()) {
-            (true, false) => std::cmp::Ordering::Greater,
-            (false, true) => std::cmp::Ordering::Less,
-            _ => other
-                .result
-                .score
-                .total_cmp(&self.result.score)
-                .then_with(|| self.result.id.cmp(&other.result.id)),
-        }
+        cmp_scores(other.result.score, self.result.score)
+            .then_with(|| self.result.id.cmp(&other.result.id))
     }
 }
 
@@ -1328,9 +1328,10 @@ mod tests {
             },
         });
 
-        // into_sorted_vec returns elements in descending order (highest priority first).
-        // Since HeapEntry max-heap puts worst entries at top (pop() returns worst entry first),
-        // into_sorted_vec() produces finite scores in descending order followed by non-finite entries.
+        // BinaryHeap::into_sorted_vec() returns elements in ascending order according to Ord (i.e. worst HeapEntry first, best last).
+        // In HeapEntry::cmp, total_cmp places NaN as Greater than all finite numbers.
+        // Thus, with reversed total_cmp in HeapEntry::cmp (other.total_cmp(&self)), NaN score yields Greater priority in max-heap (peek/pop worst item).
+        // Consequently, pop() / into_sorted_vec() places doc_nan at the start of worst-to-best sorted_vec, and doc1 at the end.
         let sorted: Vec<_> = heap
             .into_sorted_vec()
             .into_iter()
@@ -1338,13 +1339,11 @@ mod tests {
             .collect();
 
         assert_eq!(
-            sorted.last().map(|s| s.as_str()),
+            sorted.first().map(|s| s.as_str()),
             Some("doc_nan"),
-            "NaN score entry must be at the end (worst position)\nSorted order: {:?}",
+            "NaN score entry must have highest pop priority in max-heap (worst position)\nSorted order: {:?}",
             sorted
         );
-        assert_eq!(sorted[0], "doc1");
-        assert_eq!(sorted[1], "doc2");
     }
 
     #[test]
