@@ -4520,9 +4520,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "memfuse-bench",
+ "proc-macro2",
+ "quote",
  "regex",
  "serde",
  "serde_json",
+ "syn 2.0.119",
  "tempfile",
  "toml",
  "walkdir",
