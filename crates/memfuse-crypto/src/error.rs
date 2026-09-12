@@ -30,6 +30,14 @@ pub enum CryptoError {
     #[error("crypto error: {0}")]
     Crypto(String),
 
+    #[error("KV layer format version mismatch: expected {expected}, found {found}")]
+    KvFormatVersionMismatch {
+        /// Expected format version number.
+        expected: u8,
+        /// Format version number found in payload.
+        found: u8,
+    },
+
     #[error("WAL corruption detected at offset {offset}: {reason}")]
     WalCorruption {
         /// Byte offset in WAL file where corruption occurred.
@@ -92,6 +100,16 @@ mod tests {
         assert!(matches!(
             mf_err_gen,
             MemFuseError::Crypto(ref msg) if msg.contains("encryption failed")
+        ));
+
+        let version_mismatch = CryptoError::KvFormatVersionMismatch {
+            expected: 2,
+            found: 1,
+        };
+        let mf_err_version: MemFuseError = version_mismatch.into();
+        assert!(matches!(
+            mf_err_version,
+            MemFuseError::Crypto(ref msg) if msg.contains("expected 2, found 1")
         ));
     }
 }
