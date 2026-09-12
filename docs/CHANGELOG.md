@@ -4,6 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-11T22:58:30Z (SESSION: e6ab3646)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-09-11T14:41:11Z (SESSION: b979ee5a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-11T00:00:00Z` | `crates/memfuse-db/src/homeostat.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | P95 retrieval latency feedback-regulated PID controller and hard deadline management (Feature F-08 & P11 requirement). |
 | `TS:2026-09-10T19:30:00Z (SESSION: a9d67eae)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
@@ -72,7 +73,6 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kontextfenster-Verwaltung und Token-Budgetierung für RAG-Prompts. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/context_compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kontextkompaktierung und Zusammenfassung langer Gesprächs- und Dokumentverläufe. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Metadaten-Filterung und Extraktion von Kognitiven MemoryTypes (Episodic, Semantic, Working). |
-| `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
 | `2026-09-11T19:30:00Z` | `crates/memfuse-store/src/lsm.rs` | `AI-TAG` | `AGT-STORE-27a11909` | `4a9ccf21` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED(audit-NC-3/C-4): Rollback transaction crash-atomicity via rollback-{txid}.intent file and startup recovery confirmed fully operational in LsmStorage::new() and verified by test_rollback_crash_recovery_startup. (ID: AGT-STORE-27a11909) (TS: 2026-09-11T19:30:00Z) (SESSION: 4a9ccf21) |
@@ -240,7 +240,6 @@
 | `2026-08-29T09:14:07Z` | `crates/memfuse-core/src/lib.rs` | `ANCHOR` | `AGT-CORE-a3f29c1d` | `a3f29c1d` | `DONE` | `4` | // ANCHOR[DEBT:CORE-INLINE-001] STATUS:DONE (ID: AGT-CORE-a3f29c1d) (TS:2026-08-29T09:14:07Z) (SESSION: a3f29c1d) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-checkpoint/src/lib.rs` | `AI-TAG` | `AGT-CKPT-f3a1b2c4` | `14348074` | `RESOLVED` | `0` | /// AI-TAG\[PANIC-SAFETY\]\[CRITICAL\] RESOLVED: AGT-CKPT-f3a1b2c4 (TS:2026-08-29T08:06:29Z) (SESSION:14348074) |
 | `2026-08-29T08:06:29Z` | `crates/memfuse-store/src/wal.rs` | `AI-TAG` | `-` | `a3f29c1d` | `RESOLVED` | `-` | // AI-TAG[SECURITY][CRITICAL] RESOLVED: Atomic WAL integrity key creation (TS:2026-08-29T08:06:29Z) (SESSION: a3f29c1d) |
-| `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-db/src/fusion.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge |
 | `2026-08-29T05:41:20Z (SESSION: f7999509)` | `crates/memfuse-index/src/distance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | SIMD-beschleunigte Distanzmetriken (Cosinus, L2) für HNSW-Index |
 | `2026-08-29T00:00:00Z` | `crates/memfuse-db/tests/semantic_recall.rs` | `ANCHOR` | `PERF:EVAL-001` | `a3f29c1d` | `DONE` | `2` | // ANCHOR[PERF:EVAL-001] STATUS:DONE (TS:2026-08-29T00:00:00Z) (SESSION: a3f29c1d) — Semantic Retrieval Evaluation Framework |
 | `2026-08-28T00:00:00Z` | `crates/memfuse-db/src/collection/relate.rs` | `AI-TAG` | `AGT-DB-005` | `-` | `RESOLVED` | `0` | // AI-TAG[CONCURRENCY][CRITICAL] RESOLVED: AGT-DB-005 — relate() rollback race behoben, siehe ADR-023 (TS:2026-08-28T00:00:00Z) |
