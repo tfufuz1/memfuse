@@ -1495,9 +1495,8 @@ $$\text{PENDING\_FLUSH\_THRESHOLD}(N) = \max\left(50, \min\left(1.000, \left\lfl
 
 # ADR-077: Produktvision PyPI-Library Fokus und Tauri Deprecation
 
-* **Status:** Akzeptiert
-* **Datum:** 2026-09-08
-* **Removal Deadline:** 2026-11-07
+* **Status:** Umgesetzt (physisch entfernt am 2026-09-12)
+* **Datum:** 2026-09-08 (Umsetzung: 2026-09-12)
 * **Target Path:** crates/memfuse-tauri
 * **Kontext / Auslöser:** Zielarchitektur v8.0 §6 & Entscheidungsdokumentation v1.0. Das Projekt führte zuvor drei unentschiedene Produktvisionen parallel (PyPI-Library, Desktop-Enterprise-App, Voice-Assistant).
 

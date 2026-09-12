@@ -6,8 +6,8 @@ MemFuse ist eine souveräne, lokal betriebene Embedded AI Memory Library für KI
 
 > ⚠️ **Status: Aktive Entwicklung.** Kern-Suchengine ist produktionsreif
 > verifiziert (LSM-Tree, HNSW, BM25, CSR-Graph-Persistenz). PyPI-Paket (`memfuse`)
-> dient als primärer Vertriebsweg. Die Tauri-Desktop-App (`memfuse-tauri`) ist
-> **deprecated** und wird am **2026-11-07** entfernt (siehe [ADR-077](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation)).
+> dient als primärer Vertriebsweg. Die veraltete Tauri-Desktop-App (`memfuse-tauri`) wurde
+> entfernt (siehe [ADR-077](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation)).
 > Bitte nutzen Sie `memfuse-py`.
 
 ## Warum MemFuse?
@@ -80,35 +80,9 @@ col.insert("doc-1", &embedding, Some(serde_json::json!({"text": "..."}))).await?
 let results = col.hybrid_search("meine Anfrage", &query_embedding, 5, None).await?;
 ```
 
-### Desktop-App (deprecated, Entfernung 2026-11-07)
-
-> ⚠️ **Deprecation-Hinweis (ADR-077):** Die Tauri-Desktop-App (`memfuse-tauri`) wird am **2026-11-07** aus dem Repository entfernt. Bitte migrieren Sie auf `memfuse-py` oder die Rust-Library `memfuse-db`.
-
-#### Systemanforderungen
-
-- Windows 10/11, macOS 11+, oder eine gängige Linux-Distribution
-- [Ollama](https://ollama.com) muss separat installiert und gestartet sein
-  (MemFuse nutzt Ollama als lokales LLM- & Embedding-Backend)
-- Mindestens ein Ollama-Modell heruntergeladen, z.B.:
-```bash
-  ollama pull llama3.2
-  ollama pull nomic-embed-text
-```
-
-#### Aus dem Quellcode bauen
-
-```bash
-# Bauen der Tauri Desktop App (deprecated)
-cd crates/memfuse-tauri
-cargo tauri build
-
-# Ausführen des MCP Servers
-cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
-```
-
 ## Architektur
 
-MemFuse ist ein Workspace mit 19 Rust-Crates in 5 Layern.
+MemFuse ist ein Workspace mit 17 Rust-Crates in 5 Layern.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -117,11 +91,6 @@ MemFuse ist ein Workspace mit 19 Rust-Crates in 5 Layern.
 │  │  memfuse-py (Python)  │  │  MCP Server              │  │
 │  │  (Primär / Empfohlen) │  │  (memfuse-mcp)           │  │
 │  └───────────┬───────────┘  └────────────┬─────────────┘  │
-│              │                           │                │
-│              │   ┌───────────────────────┴──────────────┐ │
-│              │   │ memfuse-tauri (Desktop App)          │ │
-│              │   │ (deprecated, Entfernung 2026-11-07)  │ │
-│              │   └───────────────────────┬──────────────┘ │
 │              │                           │                │
 │  ┌───────────▼───────────────────────────▼──────────────┐ │
 │  │  memfuse-ollama (lokales LLM & Embedding Backend)     │ │
@@ -151,7 +120,6 @@ MemFuse ist ein Workspace mit 19 Rust-Crates in 5 Layern.
 | memfuse-ollama | Ollama Client & Embeddings |
 | memfuse-mcp | MCP Server |
 | memfuse-py | Python FFI Bindings (PyO3) — Primärer Zugangsweg |
-| memfuse-tauri | Desktop App Shell (deprecated, Entfernung 2026-11-07) |
 | memfuse-checkpoint | Backup & Snapshot Management |
 | memfuse-bench | Synthetic Benchmark Harness |
 
@@ -170,13 +138,13 @@ RAG-Antworten in MemFuse sind instruiert, Antworten **ausschließlich** auf Basi
 
 > ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
-## Workspace Crates (19 Active Crates)
+## Workspace Crates (17 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
 - **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-security` (crates/memfuse-crypto) (AES-GCM & KV-Segment Security), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
 - **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker), `memfuse-py` (Python PyO3 FFI Bindings)
-- **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell — deprecated, Entfernung 2026-11-07)
+- **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult)
 - **Layer 5**: `memfuse-bench` (Reproduzierbarer Benchmark-Harness für Retrieval-Genauigkeit)
 
 ## MCP-Server (für Claude Desktop & andere MCP-Clients)

@@ -43,7 +43,6 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 - **Layer 5 — Benchmarking, Routing & Desktop-Shell**:
   - `memfuse-bench`: Reproducible benchmark harness (`benchmarks/memfuse-bench`)
   - `memfuse-router`: Conformal router engine & SLM profiles (`crates/memfuse-router`)
-  - `memfuse-tauri`: Desktop app shell (`crates/memfuse-tauri`, DEPRECATED ADR-077)
 - **Layer 6 — Agenten-Engine**:
   - `memfuse-agent`: Persistent agent workflow loop (`crates/memfuse-agent`)
 - **Layer 7 — Protocol & Sandbox**:

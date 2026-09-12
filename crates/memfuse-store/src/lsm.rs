@@ -1735,7 +1735,8 @@ impl StorageEngine for LsmStorage {
                         Some(w) => w,
                         None => {
                             let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
-                            let wal_path = self.config.path.join(format!("wal-{:020}.log", flush_id));
+                            let wal_path =
+                                self.config.path.join(format!("wal-{:020}.log", flush_id));
                             Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?
                         }
                     };

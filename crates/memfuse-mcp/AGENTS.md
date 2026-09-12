@@ -90,7 +90,7 @@ Regel `detect_nested_locks.yml` verbietet geschachtelte Locks innerhalb von Laye
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
 - **Erlaubte Imports**: Alle L0-L3 Crates (`memfuse-core`, `memfuse-db`, `memfuse-agent`, `memfuse-crypto`)
-- **Verbotene Imports**: `memfuse-tauri` (L4 Peer)
+- **Verbotene Imports**: Keine (Layer 4 Top Crate)
 - **Genutzt von**: CLI (`memfuse-cli`) und externen MCP-Clients (Cursor, Jules, Claude)
 
 ## 8. Relevante ADRs & Rules

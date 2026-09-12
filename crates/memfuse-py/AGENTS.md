@@ -92,7 +92,7 @@ memfuse-core/-db Tasks. Dieser Threadpool lebt unabhängig von Python-Threads.
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
 - **Erlaubte Imports**: Alle Layer 0-2 Crates (`memfuse-core`, `memfuse-db`, etc.)
-- **Verbotene Imports**: `memfuse-mcp` (L4), `memfuse-tauri` (L4), `memfuse-agent` (L3 Peer)
+- **Verbotene Imports**: `memfuse-mcp` (L4), `memfuse-agent` (L3 Peer)
 - **Genutzt von**: Python User-Space
 
 ## 8. Relevante ADRs & Rules

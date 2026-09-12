@@ -38,15 +38,9 @@ pub fn run_jules_submit_gate(crate_name: Option<&str>) -> bool {
     }
 
     // ── 6.2 COMPILE-VERIFIKATION ─────────────────────────────────────────
-    println!("→ [6.2 Compile-Check]: cargo check --workspace --exclude memfuse-tauri --quiet...");
+    println!("→ [6.2 Compile-Check]: cargo check --workspace --quiet...");
     let check_status = Command::new("cargo")
-        .args([
-            "check",
-            "--workspace",
-            "--exclude",
-            "memfuse-tauri",
-            "--quiet",
-        ])
+        .args(["check", "--workspace", "--quiet"])
         .status();
 
     match check_status {
@@ -76,12 +70,21 @@ pub fn run_jules_submit_gate(crate_name: Option<&str>) -> bool {
 
     // ── 6.4 CLAIM-RELEASE ────────────────────────────────────────────────
     if let Some(c) = crate_name {
-        println!("→ [6.4 Claim-Release]: Gebe Claim für Crate '{}' frei...", c);
+        println!(
+            "→ [6.4 Claim-Release]: Gebe Claim für Crate '{}' frei...",
+            c
+        );
         let release_ok = crate::claim::run_release_local(&["--crate".to_string(), c.to_string()]);
         if release_ok {
-            println!("✅ [6.4 Claim-Release]: Claim für '{}' erfolgreich freigegeben.", c);
+            println!(
+                "✅ [6.4 Claim-Release]: Claim für '{}' erfolgreich freigegeben.",
+                c
+            );
         } else {
-            eprintln!("❌ [6.4 Claim-Release]: Freigabe für '{}' fehlgeschlagen.", c);
+            eprintln!(
+                "❌ [6.4 Claim-Release]: Freigabe für '{}' fehlgeschlagen.",
+                c
+            );
             all_passed = false;
         }
     } else {

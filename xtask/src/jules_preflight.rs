@@ -433,8 +433,6 @@ pub fn run_jules_preflight(fast_only: bool) -> bool {
                     "clippy",
                     "--all-targets",
                     "--workspace",
-                    "--exclude",
-                    "memfuse-tauri",
                     "--",
                     "-D",
                     "warnings",
@@ -578,7 +576,10 @@ mod tests {
                     reason
                 );
             }
-            res => panic!("Expected Skip when no target crate/env var set and no crates/*.rs diff, got {:?}", res),
+            res => panic!(
+                "Expected Skip when no target crate/env var set and no crates/*.rs diff, got {:?}",
+                res
+            ),
         }
     }
 

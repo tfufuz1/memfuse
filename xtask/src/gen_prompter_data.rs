@@ -410,11 +410,29 @@ mod tests {
 | `memfuse-unknown-status` | 7 | 100 | ⚪ Unknown | Unknown |
 "#;
 
-        assert_eq!(derive_status_from_working_state("memfuse-core", sample_ws), "✅");
-        assert_eq!(derive_status_from_working_state("memfuse-embed", sample_ws), "🧊");
-        assert_eq!(derive_status_from_working_state("memfuse-custom", sample_ws), "🟡");
-        assert_eq!(derive_status_from_working_state("memfuse-broken", sample_ws), "🔴");
-        assert_eq!(derive_status_from_working_state("memfuse-unknown-status", sample_ws), "❓");
-        assert_eq!(derive_status_from_working_state("nonexistent-crate", sample_ws), "❓");
+        assert_eq!(
+            derive_status_from_working_state("memfuse-core", sample_ws),
+            "✅"
+        );
+        assert_eq!(
+            derive_status_from_working_state("memfuse-embed", sample_ws),
+            "🧊"
+        );
+        assert_eq!(
+            derive_status_from_working_state("memfuse-custom", sample_ws),
+            "🟡"
+        );
+        assert_eq!(
+            derive_status_from_working_state("memfuse-broken", sample_ws),
+            "🔴"
+        );
+        assert_eq!(
+            derive_status_from_working_state("memfuse-unknown-status", sample_ws),
+            "❓"
+        );
+        assert_eq!(
+            derive_status_from_working_state("nonexistent-crate", sample_ws),
+            "❓"
+        );
     }
 }
