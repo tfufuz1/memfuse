@@ -188,6 +188,9 @@ pub struct DeletionProof {
     pub covered_layers: Vec<DeletionLayer>,
     /// Pflicht für DSGVO Art. 17-Compliance.
     pub excluded_scopes: Vec<ExcludedScope>,
+    /// Integritätswarnung für Legacy-Proofs (Version 1).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub integrity_warning: Option<String>,
 }
 
 const fn default_signature_version() -> u8 {
@@ -250,6 +253,7 @@ impl DeletionProof {
             signature,
             covered_layers,
             excluded_scopes,
+            integrity_warning: None,
         })
     }
 
@@ -295,7 +299,18 @@ impl DeletionProof {
     /// Exportiert Proof als JSON für Compliance-Dokumentation.
     /// ExcludedScope-Liste ist maschinenlesbar enthalten.
     pub fn export_for_audit(&self) -> Result<String> {
-        serde_json::to_string_pretty(self).map_err(|e| MemFuseError::Internal(e.to_string()))
+        if self.signature_version == 1 {
+            let mut clone = self.clone();
+            clone.integrity_warning = Some(
+                "covered_layers/excluded_scopes are not cryptographically signed in this legacy proof version"
+                    .to_string(),
+            );
+            serde_json::to_string_pretty(&clone)
+                .map_err(|e| MemFuseError::Internal(e.to_string()))
+        } else {
+            serde_json::to_string_pretty(self)
+                .map_err(|e| MemFuseError::Internal(e.to_string()))
+        }
     }
 
     /// Gibt die Tenant-ID aus dem Scope zurück.
@@ -634,6 +649,7 @@ mod tests {
             signature: v1_signature,
             covered_layers: vec![DeletionLayer::LsmMemtable],
             excluded_scopes: vec![ExcludedScope::LlmParameterMemory],
+            integrity_warning: None,
         };
 
         // v1 proof verifies successfully with original 3 fields intact
@@ -657,5 +673,75 @@ mod tests {
         let deserialized: DeletionProof = serde_json::from_str(&json_missing_version).unwrap();
         assert_eq!(deserialized.signature_version, 1);
         assert!(deserialized.verify(&test_key()).unwrap());
+    }
+
+    #[test]
+    fn test_deletion_proof_v1_audit_export_integrity_warning() {
+        let scope = DeletionScope::Tenant {
+            tenant_id: TenantId::try_new(1).unwrap(),
+        };
+        let deleted_after_tx = TxId(10);
+        let deleted_keys = vec![b"k1".to_vec()];
+
+        let mut hasher = blake3::Hasher::new();
+        for key in &deleted_keys {
+            hasher.update(key);
+        }
+        let deleted_keys_hash: [u8; 32] = *hasher.finalize().as_bytes();
+
+        let scope_bytes = bincode::serialize(&scope).unwrap();
+        let tx_bytes = deleted_after_tx.0.to_le_bytes();
+
+        let v1_signature =
+            compute_hmac_sha256(&test_key(), &[&scope_bytes, &deleted_keys_hash, &tx_bytes])
+                .unwrap();
+
+        let v1_proof = DeletionProof {
+            signature_version: 1,
+            scope,
+            deleted_keys_hash,
+            deleted_after_tx,
+            signature: v1_signature,
+            covered_layers: vec![DeletionLayer::LsmMemtable],
+            excluded_scopes: vec![ExcludedScope::LlmParameterMemory],
+            integrity_warning: None,
+        };
+
+        let json = v1_proof.export_for_audit().unwrap();
+        assert!(
+            json.contains("integrity_warning"),
+            "v1 export MUST contain integrity_warning"
+        );
+        assert!(
+            json.contains(
+                "covered_layers/excluded_scopes are not cryptographically signed in this legacy proof version"
+            ),
+            "v1 export MUST contain the exact warning message"
+        );
+    }
+
+    #[test]
+    fn test_deletion_proof_v2_audit_export_no_integrity_warning() {
+        let scope = DeletionScope::Tenant {
+            tenant_id: TenantId::try_new(1).unwrap(),
+        };
+        let proof = DeletionProof::create(
+            scope,
+            vec![b"k1".to_vec()],
+            TxId(10),
+            vec![
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            ],
+            vec![ExcludedScope::LlmParameterMemory],
+            &test_key(),
+        )
+        .unwrap();
+
+        assert_eq!(proof.signature_version, 2);
+        let json = proof.export_for_audit().unwrap();
+        assert!(
+            !json.contains("integrity_warning"),
+            "v2 export MUST NOT contain integrity_warning"
+        );
     }
 }

@@ -256,6 +256,49 @@ pub fn create_llm_text_generator(
     }
 }
 
+/// Router configuration settings.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct RouterConfig {
+    /// List of SLM profiles. If non-empty, routing is enabled.
+    pub profiles: Vec<memfuse_router::SlmProfile>,
+    /// Optional path to routing profiles JSON file.
+    pub profiles_path: Option<PathBuf>,
+    /// Optional path to persistent calibration state.
+    pub calibration_store_path: Option<PathBuf>,
+}
+
+impl RouterConfig {
+    /// Loads configuration from environment variables with fallbacks.
+    pub fn from_env() -> Self {
+        let profiles_path = std::env::var("MEMFUSE_ROUTER_PROFILES_PATH")
+            .ok()
+            .map(PathBuf::from);
+
+        let calibration_store_path = std::env::var("MEMFUSE_ROUTER_CALIBRATION_PATH")
+            .ok()
+            .map(PathBuf::from);
+
+        let mut profiles = Vec::new();
+        if let Some(ref path) = profiles_path {
+            if let Ok(bytes) = std::fs::read(path) {
+                if let Ok(loaded) = serde_json::from_slice::<Vec<memfuse_router::SlmProfile>>(&bytes) {
+                    profiles = loaded;
+                }
+            }
+        } else if let Ok(json_str) = std::env::var("MEMFUSE_ROUTER_PROFILES_JSON") {
+            if let Ok(loaded) = serde_json::from_str::<Vec<memfuse_router::SlmProfile>>(&json_str) {
+                profiles = loaded;
+            }
+        }
+
+        Self {
+            profiles,
+            profiles_path,
+            calibration_store_path,
+        }
+    }
+}
+
 /// Fallback Mock LLM Text Generator.
 #[derive(Debug, Clone, Default)]
 pub struct MockLlmGenerator;

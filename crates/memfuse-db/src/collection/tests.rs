@@ -142,6 +142,103 @@ async fn test_collection_scan_prefix_batches_via_mock_storage() {
 }
 
 #[tokio::test]
+async fn test_maintenance_pagination_over_10k_documents() {
+    use memfuse_core::EXPIRY_METADATA_KEY;
+    use memfuse_graph::CsrGraph;
+    use memfuse_index::HnswIndex;
+    use memfuse_store::LsmStorage;
+    use serde_json::json;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let storage = Arc::new(
+        LsmStorage::new(memfuse_store::LsmConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        })
+        .await
+        .unwrap(),
+    );
+    let index = Arc::new(
+        HnswIndex::try_new(memfuse_index::HnswConfig {
+            dimension: 4,
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    let col = super::Collection::new(
+        "default".to_string(),
+        storage,
+        index,
+        Arc::new(CsrGraph::new()),
+        Arc::new(AtomicU64::new(1)),
+        4,
+        memfuse_text::Language::English,
+    );
+
+    let total_docs = 10_500;
+    // Insert 10,500 synthetic documents
+    for i in 0..total_docs {
+        let key = format!("doc_{:05}", i);
+        // Put expired TTL/sequence metadata on document at index 10,250
+        if i == 10_250 {
+            col.put_kv(
+                &key,
+                &json!({
+                    "created_at_ms": 1_000_000,
+                    "ttl_ms": 100,
+                    EXPIRY_METADATA_KEY: 0
+                }),
+            )
+            .await
+            .unwrap();
+        } else {
+            col.put_kv(&key, &json!({ "v": i })).await.unwrap();
+        }
+    }
+
+    let expired_key = "doc_10250";
+    assert!(
+        col.get_kv(expired_key).await.unwrap().is_some(),
+        "Document past 10,000 threshold must exist before cleanup"
+    );
+
+    // Call reap_expired_documents and verify document at index 10,250 is reaped
+    let reaped = col.reap_expired_documents(100).await.unwrap();
+    assert_eq!(
+        reaped, 1,
+        "reap_expired_documents must find and reap the expired document at index > 10,000"
+    );
+    assert!(
+        col.get_kv(expired_key).await.unwrap().is_none(),
+        "Reaped document past 10,000 threshold must be deleted"
+    );
+
+    // Now re-insert document at 10,250 with wall-clock expired TTL and test trigger_expiry_cleanup
+    col.put_kv(
+        expired_key,
+        &json!({
+            "created_at_ms": 1_000_000,
+            "ttl_ms": 100
+        }),
+    )
+    .await
+    .unwrap();
+
+    let cleaned = col.trigger_expiry_cleanup().await.unwrap();
+    assert_eq!(
+        cleaned, 1,
+        "trigger_expiry_cleanup must find and clean the expired document at index > 10,000"
+    );
+    assert!(
+        col.get_kv(expired_key).await.unwrap().is_none(),
+        "Cleaned document past 10,000 threshold must be deleted"
+    );
+}
+
+#[tokio::test]
 async fn test_insert_with_ttl_and_reap_expired_documents() {
     use memfuse_graph::CsrGraph;
     use memfuse_index::HnswIndex;

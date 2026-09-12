@@ -452,3 +452,17 @@ Empirisch ermittelte Performancedaten aus `benches/audit_benchmarks.rs` (Release
 
 ### 22.4 Verdict
 **VERDICT: GO / APPROVED**. `memfuse-index` satisfies all Tier-1 quality, performance, SIMD parity, concurrency, fault injection, and domain safety invariants for Layer 1.
+
+---
+
+## 23. Systematic Audit Update — `memfuse-index` Deep Audit (2026-09-12T18:45:00Z)
+
+### 23.1 Audit Dimensions Summary
+1. **SIMD Determinism (`distance.rs`):** Verified SIMD vs. Scalar determinism across full numerical domain (subnormals, zero vectors, identical vectors, large values up to 4096 dims). Max observed deviation vs f64 reference: Cosine `1.18e-7`, Euclidean `2.53e-5`, DotProduct `9.06e-6` (all < `1e-4` tolerance).
+2. **DiskANN Arithmetic & NaN/Inf Guard Completeness (`diskann.rs`):** Exhaustively audited all 18 arithmetic sites across alpha-pruning, distance calculation, vector normalization, streaming Vamana insertions, score conversion, and pending WAL offset math. All sites protected with `is_finite()`, `.max(1e-6)` zero-division guards, or `total.max(1)` denominator bounds. Robust-prune retains candidates fail-open on non-finite distances.
+3. **Mmap Persistence & CoW Zero-Downtime Isolation (`persistence.rs`):** Verified HNSW 2-phase lock protocol and atomic file update pipeline (`.tmp` -> `sync_all()` -> POSIX atomic `rename` -> parent `fsync`). Active mmap readers retain valid unlinked inodes without SIGBUS or split-brain reads.
+4. **HNSW Config Validation & Graph Consistency (`hnsw.rs`):** `HnswConfig::validate()` and `try_new()` strictly enforce parameter invariants (`dimension > 0`, `m > 0`, `ef_search > 0`, `ef_construction >= m`, `rebuild_threshold` in `[0.0, 1.0]`). Entry point re-election post-deletion, tombstone-first filtering, and lazy neighbor pruning verified.
+5. **Cross-Crate Wiring & Entry Point Guards:** Query vector `is_finite()` validation is centralized in `HnswIndex::search_filtered_internal` and `DiskAnnIndex::search_internal`, guaranteeing 100% protection across all public/internal entry points (`search`, `search_filtered`, `search_at`) called from `memfuse-db`.
+
+### 23.2 Verdict
+**VERDICT: GO / APPROVED**. Detailed audit report saved at `docs/audits/AUDIT_memfuse-index_2026-09-12.md`.

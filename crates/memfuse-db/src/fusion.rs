@@ -48,6 +48,16 @@ pub fn apply_resonance_bonus(
     valid_signal_count: usize,
     config: &ResonanceConfig,
 ) -> Vec<SearchResult> {
+    if !config.beta.is_finite() || !config.gamma.is_finite() {
+        tracing::warn!(
+            beta = config.beta,
+            gamma = config.gamma,
+            "ResonanceConfig contains non-finite value: beta={}, gamma={}; skipping resonance bonus",
+            config.beta,
+            config.gamma
+        );
+        return results;
+    }
     if valid_signal_count == 0 {
         return results;
     }
@@ -1329,7 +1339,11 @@ mod tests {
             },
         });
 
-        let sorted: Vec<_> = heap.into_sorted_vec().into_iter().map(|e| e.result.id).collect();
+        let sorted: Vec<_> = heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|e| e.result.id)
+            .collect();
 
         assert_eq!(
             sorted.last().map(|s| s.as_str()),
@@ -1592,6 +1606,46 @@ mod tests {
             None => panic!("provenance present"),
         };
         assert!((prov.coherence_bonus - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_apply_resonance_bonus_non_finite_beta_returns_unchanged() {
+        let results = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec!["vector".to_string(), "text".to_string()],
+            provenance: None,
+        }];
+        let config = ResonanceConfig {
+            beta: f32::NAN,
+            gamma: 0.3,
+        };
+        let output = apply_resonance_bonus(results.clone(), 2, &config);
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].score, 0.8);
+        assert_eq!(output[0].id, "doc1");
+    }
+
+    #[test]
+    #[cfg(feature = "coherence-bonus-fusion")]
+    fn test_apply_resonance_bonus_non_finite_gamma_returns_unchanged() {
+        let results = vec![SearchResult {
+            id: "doc1".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec!["vector".to_string(), "text".to_string()],
+            provenance: None,
+        }];
+        let config = ResonanceConfig {
+            beta: 0.5,
+            gamma: f32::INFINITY,
+        };
+        let output = apply_resonance_bonus(results.clone(), 2, &config);
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].score, 0.8);
+        assert_eq!(output[0].id, "doc1");
     }
 
     #[test]
