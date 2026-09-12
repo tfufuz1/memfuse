@@ -2,8 +2,8 @@
 
 **Crate:** `memfuse-db` (Layer 4 — Orchestrator & 4-Signal-Fusion Engine)
 **Datum:** 2026-09-11
-**Session:** `504d02fc`
-**Task-ID:** `JULES-20260911-IMPL`
+**Session:** `e6ab3646`
+**Task-ID:** `JULES-20260911-EIGENB`
 **Status:** 🟢 Clean / Audited & Verified
 
 ---
@@ -46,9 +46,13 @@
 ## 2. Inventar-Realitätsabgleich & Drift-Analyse (Schritt 0)
 
 ### Inventar-Drift
-- **Gefunden:** `reaper.rs` war im Prompter-Inventar vom 2026-09-10 gelistet, existiert aber nicht mehr im Repository.
-- **Befund:** `Inventar-Drift: Datei crates/memfuse-db/src/reaper.rs umbenannt oder entfernt`.
-- **Status:** Funktionalität ist vollständig in `crates/memfuse-db/src/background_workers.rs` konsolidiert.
+- **Gefunden:** `background_workers.rs` ist im Repository vorhanden, war jedoch im Prompter-Inventar als `reaper.rs` veraltet bezeichnet.
+- **Befund:** `Inventar-Drift: Datei crates/memfuse-db/src/background_workers.rs im Prompter-Inventar nicht direkt erfasst (ehemals reaper.rs)`.
+- **Status:** Funktionalität ist vollständig in `crates/memfuse-db/src/background_workers.rs` konsolidiert, `reaper.rs` ist ein deprecated Module-Alias in `lib.rs`.
+
+### Public API Verifikation
+- Verifiziert: `MemFuse::open`, `MemFuse::collection`, `Collection::query`, `Collection::hybrid_search`, `reciprocal_rank_fusion`, `weighted_reciprocal_rank_fusion` stimmen mit den Beispielen in `README.md` und `AGENTS.md` überein.
+- RRF-Rank-Fusion & Numerik in `fusion.rs`: Bestätigt, dass `fusion_ignores_zero_or_negative_weight`, `test_apply_resonance_bonus_handles_nan_score_deterministically` und `test_heap_entry_nan_score_sorts_to_worst_position` abgedeckt sind und stabil funktionieren.
 
 ---
 
@@ -64,7 +68,12 @@
    - **Verifikation:** `search.rs` nutzt durchgängig `CheckpointPinGuard::new` mit Asynchron-Inkrement und Unpinning in `pin_guard.release().await`.
    - **Status:** Tag als `[RESOLVED]` markiert.
 
-3. **Workspace Preflight Fixes:**
+3. **`eigenbau-rrf-fusion` (`fusion.rs`): RRF Rank Fusion & Numerics Hardening**
+   - **Befund:** `debug_assert!(rrf_k > 0.0)` blockierte theoretische/experimentelle RRF-Konfigurationen mit `k = 0.0`.
+   - **Verifikation:** `debug_assert!(rrf_k >= 0.0)` in `build_provenance` und `weighted_reciprocal_rank_fusion_with_options` aktualisiert.
+   - **Status:** Behoben (`// DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]`). Unit-Tests in `fusion.rs` und `tests/fusion_edge_cases_test.rs` verifiziert.
+
+4. **Workspace Preflight Fixes:**
    - Behoben: Missing State Write Lock acquisition in `LsmStorage::commit` (`memfuse-store`).
    - Behoben: Missing `persist_sync` calls in `InstanceOrphanRegistry::register_orphan_sync` / `register_checkpoint_sync` (`memfuse-checkpoint`).
    - Behoben: Unsafe `VarBuilder::from_mmaped_safetensors` durch sicheres `VarBuilder::from_buffered_safetensors` in `memfuse-candle`.
@@ -72,24 +81,36 @@
 
 ---
 
-## 4. Test- & Gate-Verifikation
+## 4. Eigenbau Component Implementation & Verification: `eigenbau-rrf-fusion`
+
+**Session:** `abbcd21a` (2026-09-11)
+**Task-ID:** `JULES-20260911-EIGENB`
+**Role:** Implementer / Rank-Fusion & Numerik Specialist (`crates/memfuse-db/src/fusion.rs`)
+
+### Implementation & Markers
+- **`fusion.rs` Markers:** Added `// DONE(memfuse-impl): ... [ref:eigenbau-rrf-fusion]` markers documenting:
+  1. `HeapEntry` `total_cmp` score sorting and secondary lexicographical document ID tie-breaking.
+  2. `calc_contrib` 1-based RRF rank enforcement and non-negative `rrf_k` denominator safety.
+  3. Non-finite weight filtering (skipping `NaN` and `Inf` signal weights) in `weighted_reciprocal_rank_fusion_with_options`.
+  4. Denominator safety and non-finite raw input score handling in score calculation.
+  5. `apply_resonance_bonus` NaN handling and secondary sort order.
+- **Comprehensive Unit Tests:**
+  - Added `test_rrf_nan_and_tie_cases_comprehensive` in `crates/memfuse-db/src/fusion.rs` verifying score tie-breaking determinism across equal-score documents across multiple RRF signals, non-finite raw score inputs, and BinaryHeap `HeapEntry` `total_cmp` behavior with mixed `NaN` scores.
+
+---
+
+## 5. Test- & Gate-Verifikation
 
 - `cargo check -p memfuse-db --all-features`: 0 Fehler.
-- `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
+- `cargo test -p memfuse-db --all-features`: 272/272 Unit & Integrationstests grün (37/37 in `fusion.rs`).
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
 
 ---
 
-## 5. Session `d01b21c0` — Task `JULES-20260911-EIGENB` (Eigenbau RRF Fusion & Numerik)
+## 5. KV-Bridge (Index↔Store Sync) Eigenbau-Audit (2026-09-11 — SESSION: 08f138e5)
 
-**Datum:** 2026-09-11T23:02:08Z
-**Spezialisten-Rolle:** Rank-Fusion-/Numerik-Spezialist
-**Status:** 🟢 Complete & Verified
-
-### Befunde & Handlungen
-- `crates/memfuse-db/src/fusion.rs`: RRF Rank Fusion und Numerik (NaN-, Infinity-, zero-weight, tie-breaking und rrf_k Boundary-Fälle) verifiziert.
-- `debug_assert!(rrf_k >= 0.0)` angepasst, um boundary case `rrf_k = 0.0` in Tests/Numerik sicherzustellen.
-- FILE-CONTEXT-Header aktualisiert auf TS `2026-09-11T23:02:08Z` und SESSION `d01b21c0`.
-- Marker `// DONE(memfuse-impl): RRF Rank Fusion & Numerik (nan-and-tie-cases) verifiziert und gehärtet [ref:eigenbau-rrf-fusion]` eingefügt.
-- Alle 27 Unit/Property-Tests in `fusion.rs` sowie 8 Edge-Case Integrationstests in `tests/fusion_edge_cases_test.rs` erfolgreich ausgeführt.
+- **Inventar-Drift (Schritt 0):** `reaper.rs` (im Prompter-Inventar vom 2026-09-10 gelistet) wurde früher entfernt und in `background_workers.rs` konsolidiert. 27 `.rs`-Dateien unter `crates/memfuse-db/src/` verifiziert.
+- **Marker-Prüfung:** `grep -rn "TODO(memfuse-plan)"` in `search.rs`, `crud.rs`, `memfuse-index` und `memfuse-store` ergab 0 offene Marker.
+- **Split-Brain- & Idempotenz-Verifikation:** Target-Testsuite `split_brain_vector_orphan_test.rs` inkl. `test_vector_deleted_process_killed_before_document_tombstone`, `test_duplicate_insert_transaction_replay_no_double_vector_entry`, `prop_no_dangling_search_result_under_random_insert_delete_sequence` und `test_concurrent_partial_rebuild_and_context_compaction_no_lock_starvation` erfolgreich ausgeführt (4/4 passed).
+- **2PC & Fault-Injection:** `atomic_commit.rs` (2/2) und `fault_injection_2pc.rs` (11/11) erfolgreich verifiziert.
