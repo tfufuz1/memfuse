@@ -1,7 +1,14 @@
 // FILE-CONTEXT
-// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
+// STAND: 2026-09-12T00:00:00Z (SESSION: BACKPRESSURE-CONTRACT-D1)
 // ZWECK: Candle LLM text generator client implementing LlmTextGenerator.
 // INVARIANTEN: Thread-safe model access via Mutex; spawn_blocking for CPU inference execution.
+// Backpressure contract: max_concurrent_inferences limits spawn_blocking calls.
+// Callers will experience backpressure (await on permit acquire) rather than Tokio thread pool exhaustion.
+
+//! memfuse-candle LLM inference module.
+//!
+//! Backpressure contract: `max_concurrent_inferences` limits `spawn_blocking` calls.
+//! Callers will experience backpressure (await on permit acquire) rather than Tokio thread pool exhaustion.
 
 use crate::gasp::GaspValidator;
 use crate::model_registry::ModelFingerprint;
@@ -46,6 +53,9 @@ pub trait CandleModelInner: Send {
     }
 }
 
+/// Default maximum concurrent inference operations for Candle LLM text generation.
+pub const DEFAULT_MAX_CONCURRENT_INFERENCES: usize = 4;
+
 /// LLM Text Generator implementation powered by Candle inference engine.
 pub struct CandleLlmClient {
     /// Target hardware device (CPU, CUDA, Metal).
@@ -56,22 +66,37 @@ pub struct CandleLlmClient {
     pub fingerprint: ModelFingerprint,
     /// HuggingFace Tokenizer instance.
     pub tokenizer: tokenizers::Tokenizer,
+    /// Maximum concurrent inference operations permitted.
+    pub max_concurrent_inferences: usize,
+    /// Semaphore enforcing backpressure on concurrent inference calls.
+    pub semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl CandleLlmClient {
-    /// Creates a new `CandleLlmClient`.
+    /// Creates a new `CandleLlmClient` with default concurrency limits.
     pub fn new(
         device: Device,
         model: Box<dyn CandleModelInner + Send>,
         fingerprint: ModelFingerprint,
         tokenizer: tokenizers::Tokenizer,
     ) -> Self {
+        let max_concurrent_inferences = DEFAULT_MAX_CONCURRENT_INFERENCES;
         Self {
             device,
             model: Arc::new(tokio::sync::Mutex::new(model)),
             fingerprint,
             tokenizer,
+            max_concurrent_inferences,
+            semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent_inferences)),
         }
+    }
+
+    /// Configures maximum concurrent inference operations for backpressure control.
+    pub fn with_max_concurrent_inferences(mut self, limit: usize) -> Self {
+        let limit = limit.max(1);
+        self.max_concurrent_inferences = limit;
+        self.semaphore = Arc::new(tokio::sync::Semaphore::new(limit));
+        self
     }
 
     /// Returns a reference to the model's fingerprint.
@@ -384,9 +409,15 @@ impl LlmTextGenerator for CandleLlmClient {
         let model = Arc::clone(&self.model);
         let tokenizer = self.tokenizer.clone();
         let device = self.device.clone();
+        let semaphore = Arc::clone(&self.semaphore);
         let prompt_owned = prompt.to_string();
 
         Box::pin(async move {
+            let _permit = semaphore
+                .acquire()
+                .await
+                .map_err(|_| MemFuseError::Internal("Candle inference semaphore closed".into()))?;
+
             tokio::task::spawn_blocking(move || {
                 let mut guard = model.blocking_lock();
                 guard.generate(&prompt_owned, &tokenizer, &device)
@@ -406,18 +437,39 @@ impl LlmTextGeneratorStreaming for CandleLlmClient {
         let model = Arc::clone(&self.model);
         let tokenizer = self.tokenizer.clone();
         let device = self.device.clone();
+        let semaphore = Arc::clone(&self.semaphore);
         let prompt_owned = prompt.to_string();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<String>>(32);
 
-        tokio::task::spawn_blocking(move || {
-            let mut guard = model.blocking_lock();
-            let res = guard.generate_stream(&prompt_owned, &tokenizer, &device, &mut |chunk| {
-                tx.blocking_send(Ok(chunk)).is_ok()
-            });
+        tokio::spawn(async move {
+            let permit = match semaphore.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    let _ = tx
+                        .send(Err(MemFuseError::Internal(
+                            "Candle inference semaphore closed".into(),
+                        )))
+                        .await;
+                    return;
+                }
+            };
 
-            if let Err(err) = res {
-                let _ = tx.blocking_send(Err(err));
+            let join_res = tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                let mut guard = model.blocking_lock();
+                let res = guard.generate_stream(&prompt_owned, &tokenizer, &device, &mut |chunk| {
+                    tx.blocking_send(Ok(chunk)).is_ok()
+                });
+
+                if let Err(err) = res {
+                    let _ = tx.blocking_send(Err(err));
+                }
+            })
+            .await;
+
+            if let Err(e) = join_res {
+                tracing::error!("Candle streaming task join error: {e}");
             }
         });
 
@@ -619,6 +671,163 @@ mod tests {
             validator.observation_count(),
             0,
             "validator observation_count must be reset to 0 after client.swap_model"
+        );
+    }
+
+    struct SlowCandleModel {
+        delay: std::time::Duration,
+    }
+
+    impl CandleModelInner for SlowCandleModel {
+        fn generate(
+            &mut self,
+            prompt: &str,
+            _tokenizer: &tokenizers::Tokenizer,
+            _device: &Device,
+        ) -> Result<String> {
+            std::thread::sleep(self.delay);
+            Ok(format!("Slow response to: {prompt}"))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_inference_backpressure_single_permit_awaits() {
+        let slow_model = Box::new(SlowCandleModel {
+            delay: std::time::Duration::from_millis(100),
+        });
+        let fp = ModelFingerprint {
+            hash: [3u8; 32],
+            model_id: "slow_model.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+
+        let client = Arc::new(
+            CandleLlmClient::new(Device::Cpu, slow_model, fp, tokenizer)
+                .with_max_concurrent_inferences(1),
+        );
+
+        assert_eq!(client.max_concurrent_inferences, 1);
+        assert_eq!(client.semaphore.available_permits(), 1);
+
+        let start = std::time::Instant::now();
+
+        let c1 = Arc::clone(&client);
+        let handle1 = tokio::spawn(async move { c1.generate("task 1").await });
+
+        // Short sleep to guarantee task 1 acquires the single permit
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert_eq!(client.semaphore.available_permits(), 0);
+
+        let c2 = Arc::clone(&client);
+        let handle2 = tokio::spawn(async move { c2.generate("task 2").await });
+
+        let res1 = handle1.await.unwrap().unwrap();
+        let res2 = handle2.await.unwrap().unwrap();
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(180),
+            "Sequential execution under limit=1 expected ~200ms, took {:?}",
+            elapsed
+        );
+        assert_eq!(res1, "Slow response to: task 1");
+        assert_eq!(res2, "Slow response to: task 2");
+        assert_eq!(client.semaphore.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_inference_configurable_concurrency_limit() {
+        let mock_model = Box::new(MockCandleModel {
+            response: "Fast".to_string(),
+        });
+        let fp = ModelFingerprint {
+            hash: [4u8; 32],
+            model_id: "fast_model.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+
+        let client = CandleLlmClient::new(Device::Cpu, mock_model, fp, tokenizer)
+            .with_max_concurrent_inferences(3);
+
+        assert_eq!(client.max_concurrent_inferences, 3);
+        assert_eq!(client.semaphore.available_permits(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_inference_timeout_cancellation_releases_no_permit_leak() {
+        let slow_model = Box::new(SlowCandleModel {
+            delay: std::time::Duration::from_millis(200),
+        });
+        let fp = ModelFingerprint {
+            hash: [5u8; 32],
+            model_id: "slow_timeout.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+
+        let client = Arc::new(
+            CandleLlmClient::new(Device::Cpu, slow_model, fp, tokenizer)
+                .with_max_concurrent_inferences(1),
+        );
+
+        let c1 = Arc::clone(&client);
+        let h1 = tokio::spawn(async move { c1.generate("task 1").await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        // Task 2 attempts to generate, but times out while waiting for permit (simulating McpSandbox timeout)
+        let c2 = Arc::clone(&client);
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_millis(30),
+            c2.generate("task 2"),
+        )
+        .await;
+
+        assert!(timed_out.is_err(), "Task 2 must time out while permit is held by Task 1");
+
+        let _ = h1.await.unwrap().unwrap();
+        // Give tokio a tick to return permit
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        assert_eq!(
+            client.semaphore.available_permits(),
+            1,
+            "Permit must be fully available after cancellation without leaks"
         );
     }
 }

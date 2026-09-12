@@ -1,8 +1,9 @@
 // FILE-CONTEXT
-// STAND: 2026-09-11T14:38:03Z (SESSION: ec63623e)
+// STAND: 2026-09-12T00:00:00Z (SESSION: BACKPRESSURE-CONTRACT-D1)
 // ZWECK: Native Candle ML vector embedding client implementation.
 // INVARIANTEN: Thread safety via Arc<tokio::sync::Mutex<Box<dyn CandleEmbedInner>>>; vector dimension matches model.dim. Zero unsafe code in production via VarBuilder::from_buffered_safetensors.
 // NICHT-OFFENSICHTLICH: CandleEmbedInner trait enables mock-based unit testing without binary weights in CI.
+// Backpressure contract: max_concurrent_embeddings limits spawn_blocking calls.
 
 use crate::model_registry::ModelFingerprint;
 use candle_core::{Device, Tensor};
@@ -11,6 +12,9 @@ use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use memfuse_core::{MemFuseError, Result};
 use std::path::Path;
 use std::sync::Arc;
+
+/// Default maximum concurrent embedding operations for Candle vector embedding.
+pub const DEFAULT_MAX_CONCURRENT_EMBEDDINGS: usize = 8;
 
 /// Inner trait abstracting low-level Candle forward execution for vector embeddings.
 ///
@@ -40,6 +44,10 @@ pub struct CandleEmbedClient {
     pub tokenizer: tokenizers::Tokenizer,
     /// Vector dimension produced by this model.
     pub dim: usize,
+    /// Maximum concurrent embedding operations permitted.
+    pub max_concurrent_embeddings: usize,
+    /// Semaphore enforcing backpressure on concurrent embedding calls.
+    pub semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl CandleEmbedClient {
@@ -51,13 +59,24 @@ impl CandleEmbedClient {
         tokenizer: tokenizers::Tokenizer,
     ) -> Self {
         let dim = model.dim();
+        let max_concurrent_embeddings = DEFAULT_MAX_CONCURRENT_EMBEDDINGS;
         Self {
             device,
             model: Arc::new(tokio::sync::Mutex::new(model)),
             fingerprint,
             tokenizer,
             dim,
+            max_concurrent_embeddings,
+            semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent_embeddings)),
         }
+    }
+
+    /// Configures maximum concurrent embedding operations for backpressure control.
+    pub fn with_max_concurrent_embeddings(mut self, limit: usize) -> Self {
+        let limit = limit.max(1);
+        self.max_concurrent_embeddings = limit;
+        self.semaphore = Arc::new(tokio::sync::Semaphore::new(limit));
+        self
     }
 
     /// Returns a reference to the model's fingerprint.

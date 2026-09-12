@@ -32,9 +32,14 @@ impl EmbeddingProvider for CandleEmbedClient {
         let model = Arc::clone(&self.model);
         let tokenizer = self.tokenizer.clone();
         let device = self.device.clone();
+        let semaphore = Arc::clone(&self.semaphore);
         let text_owned = text.to_string();
 
         Box::pin(async move {
+            let _permit = semaphore.acquire().await.map_err(|_| {
+                EmbeddingError::ComputationFailed("Candle embed semaphore closed".into())
+            })?;
+
             tokio::task::spawn_blocking(move || {
                 let mut guard = model.blocking_lock();
                 guard
@@ -52,6 +57,11 @@ impl EmbeddingProvider for CandleEmbedClient {
         &'a self,
         texts: &'a [&'a str],
     ) -> BoxFuture<'a, std::result::Result<Vec<Vec<f32>>, EmbeddingError>> {
+        let model = Arc::clone(&self.model);
+        let tokenizer = self.tokenizer.clone();
+        let device = self.device.clone();
+        let semaphore = Arc::clone(&self.semaphore);
+
         Box::pin(async move {
             let limit = MAX_CANDLE_EMBED_BATCH_SIZE;
             if texts.len() > limit {
@@ -61,9 +71,10 @@ impl EmbeddingProvider for CandleEmbedClient {
                 )));
             }
 
-            let model = Arc::clone(&self.model);
-            let tokenizer = self.tokenizer.clone();
-            let device = self.device.clone();
+            let _permit = semaphore.acquire().await.map_err(|_| {
+                EmbeddingError::ComputationFailed("Candle embed semaphore closed".into())
+            })?;
+
             let texts_owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
 
             tokio::task::spawn_blocking(move || {
