@@ -8,11 +8,15 @@
 //!
 //! # Architektur-Hinweis (Generative Synthesis Pass vs. Structural Consolidation Pass)
 //! Der Generative Synthesis Pass (generative Wissenssynthese via LLM) ist **NICHT** Teil dieses Moduls
-//! und wird in einer separaten Komponente implementiert.
+//! und wird in einer separaten Komponente (`synthesis_phase.rs`) implementiert.
 //! Dieses Modul deckt ausschließlich den Structural Consolidation Pass ab:
 //! - Sequenzielles Sliding-Window-Clustering zeitlich benachbarter Turn-Embeddings.
 //! - Segmentlokale Near-Duplicate-Detection (O(n²) nur innerhalb eines Segments).
 //! - Identifikation verwaister Graph-Kanten zur kaskadierenden Bereinigung.
+//!
+//! # Abgrenzung zu `synthesis_phase.rs`
+//! - `memory_consolidation::run_structural_synthesis_pass()` in diesem Modul verarbeitet Community-Strukturen.
+//! - `synthesis_phase::run_synthesis_pass()` in `synthesis_phase.rs` ist der LLM-basierte Generative Synthesis Pass über Segmenten (erzeugt `SynthesizedChunk`s via `SegmentSynthesizer`-Trait).
 
 use crate::context_compaction::{CompactedContext, ContextCompactor};
 use memfuse_core::traits::LlmTextGenerator;
@@ -390,6 +394,8 @@ pub fn compute_community_hash(member_doc_ids: &[DocId]) -> u64 {
     u64::from_le_bytes(hash_bytes)
 }
 
+/// Dies ist der DETERMINISTISCHE, LLM-FREIE Structural Consolidation Pass. Für den LLM-basierten Generative Synthesis Pass siehe `synthesis_phase::run_synthesis_pass()`.
+///
 /// Führt den Generative Synthesis Pass (generative Wissenssynthese) über stabile Graph-Communities aus.
 pub async fn run_structural_synthesis_pass(
     stable_communities: &[(u64, Vec<DocId>)],

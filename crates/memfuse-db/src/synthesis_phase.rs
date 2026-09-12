@@ -30,6 +30,8 @@ pub struct SynthesizedChunk {
 /// Trait-Abstraktion für den LLM-Synthesizer (testbar via Mock).
 pub use memfuse_core::SegmentSynthesizer as TraitSegmentSynthesizer;
 
+/// Dies ist der LLM-BASIERTE Generative Synthesis Pass (erzeugt `SynthesizedChunk`s via `SegmentSynthesizer`-Trait). Für den deterministischen Structural Consolidation Pass siehe `memory_consolidation::run_structural_synthesis_pass()`.
+///
 /// Führt den Generative Synthesis Pass aus: synthetisiert pro Segment einen abstrakten Chunk.
 ///
 /// # Fehlerverhalten
