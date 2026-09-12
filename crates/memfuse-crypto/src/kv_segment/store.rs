@@ -401,10 +401,13 @@ mod tests {
         assert_eq!(store.get_tenant_segment_len(tenant_b), 2);
     }
 
-    // AI-TAG[TEST][MAJOR] Lock release test timing dependency under high contention (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-10T23:43:03Z) (SESSION: 504d02fc)
-    // BEFUND: test_evict_lru_fair_releases_lock_between_batches assumes reader thread schedules within eviction loop time window; fast CPU execution completes eviction in < 1ms before reader thread performs reads while is_evicting is true.
-    // RISIKO: Intermittent unit test failures under unthrottled CPU environments during test execution.
-    // EMPFEHLUNG: Add yield or micro-sleep in eviction batch loop or adjust reader thread spin mechanism.
+    // AI-TAG[TEST][MAJOR][ANALYZED-SAFE] Lock release test timing dependency resolved via explicit Notify handshake (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-12T10:00:00Z) (SESSION: 504d02fc)
+    // ANALYSE: test_evict_lru_fair_releases_lock_between_batches uses two `tokio::sync::Notify` instances (`notify_batch_released` and `notify_read_complete`)
+    // that form a strict 1:1 lockstep handshake between the evictor hook and the reader thread:
+    // 1) Evictor releases lock and calls `notify_batch_released.notify_one()`, then awaits `notify_read_complete.notified()`.
+    // 2) Reader loop awaits `notify_batch_released.notified()`, performs concurrent read assertion, increments counter, and calls `notify_read_complete.notify_one()`.
+    // 3) Evictor receives notification, resumes eviction, and acquires write lock for next batch.
+    // Because each iteration waits for the response signal before producing the next signal, permit loss is impossible and thread scheduling is fully deterministic.
     #[test]
     fn test_evict_lru_fair_releases_lock_between_batches() {
         let store = Arc::new(TenantIsolatedKvStore::new());
