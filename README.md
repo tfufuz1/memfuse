@@ -187,6 +187,9 @@ Der `memfuse-mcp`-Server stellt MCP-Tools über stdio JSON-RPC 2.0 bereit (ADR-0
 > Siehe [crates/memfuse-mcp/README.md](crates/memfuse-mcp/README.md) für Installation, Claude-Desktop-Konfiguration (`claude_desktop_config.json`), Schritt-für-Schritt Demo und Troubleshooting.
 
 ```bash
+# Ausführung via uvx (empfohlen):
+uvx memfuse-mcp --db-path ./firma_daten --allow-write
+
 # Standardmäßig im Read-Only-Modus (Schreibzugriff gesperrt):
 cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 
