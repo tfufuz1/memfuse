@@ -1329,6 +1329,8 @@ mod tests {
             },
         });
 
+        let sorted: Vec<_> = heap.into_sorted_vec().into_iter().map(|e| e.result.id).collect();
+
         assert_eq!(
             sorted.last().map(|s| s.as_str()),
             Some("doc_nan"),
