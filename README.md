@@ -12,7 +12,7 @@ MemFuse ist eine souveräne, lokal betriebene Embedded AI Memory Library für KI
 
 ## Warum MemFuse?
 
-- **Air-Gapped by Design** — keine Cloud, keine Telemetrie, kein API-Key nötig
+- **Air-Gapped-fähig** — keine Cloud, keine Telemetrie, kein API-Key nötig (erfordert lokales LLM-/Embedding-Backend, standardmäßig Ollama)
 - **Lokal & Backend-flexibel** — läuft vollständig auf Ihrem Rechner; erfordert aktuell Ollama als LLM-/Embedding-Backend (separat zu installieren, siehe Installation unten); eine ONNX-basierte Embedding-Alternative (`memfuse-embed`) ist im Code bereits vorhanden.
 - **4-Signal-Hybridsuche** — Vektorsuche (HNSW) + Volltextsuche (BM25) +
   Wissensgraph (CSR) + Metadaten-Filter, fusioniert via Reciprocal Rank Fusion (RRF)
@@ -35,6 +35,8 @@ MemFuse ist eine souveräne, lokal betriebene Embedded AI Memory Library für KI
 ### Als Python-Library (empfohlen)
 
 Das PyPI-Paket `memfuse` bildet die primäre Schnittstelle für Python-Entwickler:
+
+> ℹ️ **Hinweis:** Dieses Release ist aktuell noch nicht auf PyPI veröffentlicht.
 
 ```bash
 pip install memfuse
@@ -106,7 +108,7 @@ cargo run -p memfuse-mcp --bin memfuse-mcp-server -- --db-path ./firma_daten
 
 ## Architektur
 
-MemFuse ist ein Workspace mit 18 Rust-Crates in 5 Layern.
+MemFuse ist ein Workspace mit 19 Rust-Crates in 5 Layern.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -137,7 +139,7 @@ MemFuse ist ein Workspace mit 18 Rust-Crates in 5 Layern.
 | Crate | Funktion |
 |---|---|
 | memfuse-core | Typen, Traits, Domain-Modell |
-| memfuse-crypto | WAL v3 HMAC-Chain, Kryptographie |
+| memfuse-security (crates/memfuse-crypto) | WAL v3 HMAC-Chain, Kryptographie, KV-Segment-Sicherheit |
 | memfuse-store | LSM-Storage, 16-Shard MemTable, SSTable-Compaction |
 | memfuse-index | HNSW (2-Phasen-CoW-Rebuild), DiskANN (Build) |
 | memfuse-text | BM25-Volltextsuche, Deutsche Morphologie |
@@ -151,7 +153,6 @@ MemFuse ist ein Workspace mit 18 Rust-Crates in 5 Layern.
 | memfuse-py | Python FFI Bindings (PyO3) — Primärer Zugangsweg |
 | memfuse-tauri | Desktop App Shell (deprecated, Entfernung 2026-11-07) |
 | memfuse-checkpoint | Backup & Snapshot Management |
-| memfuse-kv-bridge | KV-Cache-Bridge Sicherheitsschicht (Zeroize, Tenant-Isolation) |
 | memfuse-bench | Synthetic Benchmark Harness |
 
 ### In aktiver Entwicklung ⚙️
@@ -169,10 +170,10 @@ RAG-Antworten in MemFuse sind instruiert, Antworten **ausschließlich** auf Basi
 
 > ℹ️ **Hinweis zur Modell-Sicherheit:** Die Grounding- und Zitiergebot-Instruktionen dienen als systemische Heuristik für das lokale LLM. Kleinere Sprachmodelle (z. B. 7B-Modelle wie `llama3.2`) folgen diesen Anweisungen sehr gut, können jedoch in Einzelfällen vereinzelt abweichen.
 
-## Workspace Crates (17 Active Crates)
+## Workspace Crates (19 Active Crates)
 
 - **Layer 0**: `memfuse-core` (Typen, Traits, Error + ContextChunk mit Contextual Prefix)
-- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-security` (AES-GCM & KV-Segment Security), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
+- **Layer 1**: `memfuse-store` (LSM-Tree), `memfuse-index` (HNSW), `memfuse-text` (BM25), `memfuse-security` (crates/memfuse-crypto) (AES-GCM & KV-Segment Security), `memfuse-graph` (CSR Graph, + SessionBranchTree DAG), `memfuse-checkpoint` (Snapshotting)
 - **Layer 2**: `memfuse-db` (Collections & 4-Signal Fusion, + MultiStepEngine, ContextCompactor)
 - **Layer 3**: `memfuse-ollama` (Ollama Client & Embeddings, + ContextPrefixEngine, generate_text()), `memfuse-agent` (Persistent Agent Workflow Engine), `memfuse-router` (Conformal Profile Router), `memfuse-embed` (ONNX-Embeddings, **optional**, Feature-gated, `default=[]`, + CrossEncoderReranker), `memfuse-py` (Python PyO3 FFI Bindings)
 - **Layer 4**: `memfuse-mcp` (MCP Server, + McpSandbox, VolatileToolResult), `memfuse-tauri` (Desktop App Shell — deprecated, Entfernung 2026-11-07)

@@ -15,17 +15,12 @@
 
 Stand letzter Prüfung: 2026-09-12
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **9 offene Tags**
+Ergebnis: **4 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-crypto/src/kv_segment/store.rs` | 404 | `AGT-SECURITY-3edfea62` | `TEST` | `MAJOR` | `2026-09-10T23:43:03Z` | // AI-TAG[TEST][MAJOR] Lock release test timing dependency under high contention (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-10T23:43:03Z) (SESSION: 504d02fc) |
-| `crates/memfuse-store/src/lsm.rs` | 300 | `AGT-STORE-5a195b0b` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-NC-5): Enforce strict monotonic sequence IDs in WAL file naming instead of relying solely on sub-second timestamps to prevent wal.log vs wal-0.log collisions. (ID: AGT-STORE-5a195b0b) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
-| `crates/memfuse-store/src/lsm.rs` | 322 | `AGT-STORE-cbd72ab9` | `SMELL` | `MINOR` | `2026-09-11T10:21:34Z` | // AI-TAG[SMELL][MINOR] Simplify map_or(0, \|m\| m) to unwrap_or(0) to resolve clippy::map_or_identity warning. (ID: AGT-STORE-cbd72ab9) (TS: 2026-09-11T10:21:34Z) (SESSION: 31ada253) |
-| `crates/memfuse-store/src/lsm.rs` | 731 | `AGT-STORE-1f3c3709` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-4): Avoid creating a new SSTable when rolling back single-entry or small uncommitted transactions. (ID: AGT-STORE-1f3c3709) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
-| `crates/memfuse-store/src/lsm.rs` | 4111 | `AGT-STORE-1e73ead8` | `FLAKY` | `MINOR` | `2026-09-11T10:21:34Z` | // AI-TAG[FLAKY][MINOR] 5ms threshold in test_concurrent_get_and_flush_latency is susceptible to thread contention under parallel test runs (--test-threads=8). Consider relaxing latency bound to 20ms or using adaptive threshold. (ID: AGT-STORE-1e73ead8) (TS: 2026-09-11T10:21:34Z) (SESSION: 31ada253) |
+| `crates/memfuse-crypto/src/kv_segment/store.rs` | 404 | `AGT-SECURITY-3edfea62` | `TEST` | `ANALYZED-SAFE` | `2026-09-12T09:35:00Z` | // AI-TAG[TEST][ANALYZED-SAFE] Lock release test timing dependency resolved via Notify handshake (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-12T09:35:00Z) (SESSION: 5f10d4f0) |
 | `crates/memfuse-store/src/wal.rs` | 1048 | `AGT-STORE-d73203c0` | `SMELL` | `ANALYZED-SAFE` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][ANALYZED-SAFE] audit-C-3: Exklusiver Mutex-Lock self.file.lock() in append_batch serialisiert Header-Check (write_header) und Dateischreibzugriffe vollständig. (ID: AGT-STORE-d73203c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
-| `crates/memfuse-store/src/wal.rs` | 1739 | `AGT-STORE-7fb85765` | `SMELL` | `MINOR` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][MINOR] TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning. (ID: AGT-STORE-7fb85765) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
 | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | 213 | `-` | `SMELL` | `MINOR` | `2026-09-11T12:00:00Z` | // AI-TAG[SMELL][MINOR] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted. (TS: 2026-09-11T12:00:00Z) (SESSION: 504d02fc) |
 | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | 372 | `-` | `SMELL` | `MINOR` | `2026-09-11T12:00:00Z` | // AI-TAG[SMELL][MINOR] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity. (TS: 2026-09-11T12:00:00Z) (SESSION: 504d02fc) |
 
@@ -44,9 +39,9 @@ Ergebnis: **9 offene Tags**
 | `memfuse-candle` | 3 | 2686 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 3 | 15865 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 3 | 3990 | 🟢 Clean |  |
-| `memfuse-store` | 3 | 19963 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 3 | 20231 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 4 | 2033 | 🧊 Optional |  |
-| `memfuse-db` | 5 | 31205 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 5 | 31208 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 6 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 6 | 5456 | 🟢 Clean |  |
 | `memfuse-tauri` | 6 | 6209 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
