@@ -2,8 +2,6 @@
 > Maschinenausführbare Checkliste. Jede Session MUSS mit dieser
 > Sequenz beginnen, bevor Code geschrieben oder Dateien geändert werden.
 
-<!-- TODO(opt-B-1/B-2/B-3): Enforce Phase 6 Pre-Submit Gate (git fetch/rebase main check, compile verification, claimed test file check, status verification, and claim release). -->
-
 - **VETOES.md** (Root): Permanent abgelehnte oder eingeschränkt akzeptierte Features.
   Vor jeder neuen Feature-Implementierung mit "F-NN"-Bezeichnung prüfen ob ein
   Eintrag existiert. `just check-vetoes` läuft automatisch, ist aber kein Ersatz
@@ -110,53 +108,12 @@ just sync-docs-check
 
 ## Phase 6 — Pre-Submit Gate (BLOCKIEREND — kein Submit ohne ✅)
 
-> **Invariante:** Jede dieser Prüfungen muss explizit bestätigt sein, bevor
-> `submit` aufgerufen oder ein PR erstellt wird. Bei Fehlschlag: STOP, Fix,
-> Phase 6 von vorne.
+> **Invariante:** Führe zwingend `cargo xtask jules-submit-gate --crate <DEIN-CRATE>` aus.
+> Kein submit() vor ✅ SUBMIT GATE BESTANDEN. Bei Fehlschlag: STOP, Fix, Phase 6 erneut durchlaufen.
 
 ```bash
-# ── 6.1 REBASE-CHECK: Wurde gegen aktuellen main getestet? ──────────────────
-git fetch origin main
-if ! git merge-base --is-ancestor origin/main HEAD; then
-    echo "❌ STOP: main hat sich weiterentwickelt seit Sessionbeginn."
-    echo "   Ausführen: git rebase origin/main && cargo check --workspace --exclude memfuse-tauri"
-    echo "   Danach Phase 6 erneut durchlaufen."
-    exit 1
-fi
-echo "✅ 6.1 Branch ist aktuell gegenüber origin/main."
-
-# ── 6.2 COMPILE-VERIFIKATION: Nicht aus Erinnerung — live ausführen ──────────
-echo "→ 6.2 Compile-Gate..."
-if ! cargo check --workspace --exclude memfuse-tauri --quiet; then
-    echo "❌ STOP: Compile-Fehler. NICHT submitten."
-    exit 1
-fi
-echo "✅ 6.2 Workspace kompiliert."
-
-# ── 6.3 PHANTOM-FILE-CHECK: PR-Beschreibung vs. tatsächlicher Diff ───────────
-# Liste aller in der Commit-Message behaupteten .rs-Dateien prüfen
-# Ersetze DEINE_DATEILISTE durch die im PR-Body genannten Dateien.
-DIFF_FILES=$(git diff --name-only origin/main...HEAD)
-echo "→ 6.3 Phantom-File-Check. Dateien im Diff:"
-echo "$DIFF_FILES"
-echo "MANUELL PRÜFEN: Stimmen alle im PR-Body genannten Dateien mit obiger Liste überein?"
-echo "Bei Abweichung: PR-Body korrigieren, NIEMALS nicht-existente Dateien behaupten."
-
-# ── 6.4 CLAIM-RELEASE: Claim für bearbeiteten Scope freigeben ────────────────
-# Ersetze CRATE_NAME durch den tatsächlich bearbeiteten Crate.
-# cargo xtask claim --release --crate <CRATE_NAME>
-echo "→ 6.4 Claim-Release ausführen (Crate einsetzen):"
-echo "   cargo xtask claim --release --crate <DEIN_CRATE>"
-
-# ── 6.5 TEST-SMOKE: Kein Submit ohne zumindest doc-tests ─────────────────────
-echo "→ 6.5 Smoke-Test (doc-tests, schnell)..."
-cargo test --doc --workspace --exclude memfuse-tauri --quiet 2>&1 | tail -5
-echo "✅ 6.5 Doc-Tests bestanden."
-
-echo ""
-echo "════════════════════════════════════════════════"
-echo "✅ PHASE 6 BESTANDEN — Submit erlaubt."
-echo "════════════════════════════════════════════════"
+# Pre-Submit Gate ausführen (Schritte 6.1–6.5 automatisiert)
+cargo xtask jules-submit-gate --crate <DEIN-CRATE>
 ```
 
 > **Regel für Commit-Messages:** Jede in der PR-Beschreibung unter
