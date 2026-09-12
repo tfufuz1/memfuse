@@ -60,6 +60,23 @@
       "session_id": "8548725205189361830",
       "active": true,
       "expires_at": "2026-09-12T13:38:46.521448283+00:00"
+    },
+    {
+      "krate": "xtask",
+      "issue": "P0-1-claim-enforcement",
+      "timestamp": "2026-09-12T11:09:24.007775699+00:00",
+      "session_id": "8367311192054427334",
+      "active": false,
+      "expires_at": "2026-09-12T15:09:24.007758164+00:00",
+      "released_at": "2026-09-12T11:19:45.700481001+00:00"
+    },
+    {
+      "krate": "xtask",
+      "issue": "P0-1-claim-enforcement",
+      "timestamp": "2026-09-12T11:19:54.786969260+00:00",
+      "session_id": "8367311192054427334",
+      "active": true,
+      "expires_at": "2026-09-12T15:19:54.786946701+00:00"
     }
   ]
 }
