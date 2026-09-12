@@ -1,4 +1,5 @@
 use super::BoxFuture;
+use crate::ConfigFingerprint;
 use thiserror::Error;
 
 /// Error types encountered during embedding operations.
@@ -50,6 +51,22 @@ pub trait EmbeddingProvider: Send + Sync + 'static {
 pub trait TextGenerator: Send + Sync + 'static {
     /// Generates text response for a given prompt.
     fn generate_text<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, crate::Result<String>>;
+}
+
+/// Abstract contract for LLM text generation (summarization, importance evaluation, query expansion).
+pub trait LlmTextGenerator: Send + Sync + 'static {
+    /// Generates text for a given prompt using an LLM.
+    fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, crate::Result<String>>;
+}
+
+/// Abstract contract for streaming LLM text generation (token by token / chunk by chunk).
+pub trait LlmTextGeneratorStreaming: LlmTextGenerator {
+    /// Generates text stream for a given prompt using an LLM configuration.
+    fn generate_stream<'a>(
+        &'a self,
+        prompt: &'a str,
+        config: &'a ConfigFingerprint,
+    ) -> super::BoxStream<'a, crate::Result<String>>;
 }
 
 /// Blanket implementation of `TextEmbeddingEngine` for any `EmbeddingProvider`.

@@ -30,6 +30,8 @@ ahash = { workspace = true }
 blake3 = { workspace = true }
 # Cryptographic hash function SHA-256 for ConfigFingerprint.
 sha2 = "0.10"
+# Async stream types for streaming LLM generation.
+futures-util = "0.3"
 # Zero-copy IPC serialization support.
 flatbuffers = { workspace = true }
 memfuse-core-ipc-gen = { workspace = true }
