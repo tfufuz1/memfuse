@@ -529,7 +529,10 @@ mod tests {
         cfg.max_concurrent_embeddings = 0;
         let res = cfg.validate();
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("max_concurrent_embeddings must be > 0"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("max_concurrent_embeddings must be > 0"));
     }
 
     #[cfg(feature = "onnx")]
