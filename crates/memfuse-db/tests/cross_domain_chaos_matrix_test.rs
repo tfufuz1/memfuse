@@ -4,6 +4,7 @@
 //! Evaluates systemic resiliency across Candle embedding inference, LsmStorage disk I/O faults,
 //! ReplicatorState weighted fusion cancellation, and concurrent ConfigFingerprint model switches under pinned checkpoints.
 
+#[cfg(feature = "replicator-dynamics-weights")]
 use memfuse_calibration::ReplicatorState;
 use memfuse_core::traits::embedding::EmbeddingError;
 use memfuse_core::traits::{BoxFuture, EmbeddingProvider, TextEmbeddingEngine};
@@ -304,6 +305,7 @@ async fn chaos_gpu_busy_disk_full_no_orphaned_embedding() {
 }
 
 /// Scenario B: Tokio task cancellation during weighted fusion preserves ReplicatorState weight invariant.
+#[cfg(feature = "replicator-dynamics-weights")]
 #[tokio::test]
 #[ignore]
 async fn chaos_tokio_abort_during_weighted_fusion_preserves_weight_invariant() {
@@ -402,6 +404,7 @@ async fn chaos_tokio_abort_during_weighted_fusion_preserves_weight_invariant() {
 }
 
 /// Scenario C: Fingerprint change during pinned checkpoint and inference causes no deadlock.
+#[cfg(feature = "replicator-dynamics-weights")]
 #[tokio::test]
 #[ignore]
 async fn chaos_fingerprint_change_during_pinned_checkpoint_and_inference_no_deadlock() {
