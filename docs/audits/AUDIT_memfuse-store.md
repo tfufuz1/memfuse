@@ -615,3 +615,21 @@ Der Rollback-Intent Recovery-Pfad ist vollständig und korrekt verdrahtet. Der T
 - `cargo test -p memfuse-store --lib --all-features`: **PASSED** (141 unit tests passed)
 - `cargo check --workspace --exclude memfuse-tauri`: **PASSED** (Workspace compiles cleanly)
 - `cargo run -p xtask -- jules-preflight --fast`: **PASSED** (All gates passed)
+### Audit-Verifikation: LSM Hardening (AGT-STORE-5a195b0b, AGT-STORE-cbd72ab9, AGT-STORE-1f3c3709, AGT-STORE-1e73ead8)
+**Datum:** 12. September 2026
+
+Vollständige Behebung und Verifikation der vier zugewiesenen audit Findings in `crates/memfuse-store/src/lsm.rs`:
+
+| Finding ID | Severity | Kategorie | Kurzbeschreibung & Lösung | Status |
+|---|---|---|---|---|
+| `AGT-STORE-cbd72ab9` | `MINOR` | `SMELL` | `clippy::map_or_identity`: `max_wal_id.map_or(0, \|m\| m)` zu `max_wal_id.unwrap_or(0)` vereinfacht. | `RESOLVED` |
+| `AGT-STORE-1e73ead8` | `MINOR` | `FLAKY` | Fragile 5ms Einzellatenz-Schwelle unter Concurrency durch adaptiven 95th Percentile (p95 <= 5ms über 200 Abfragen) ersetzt. | `RESOLVED` |
+| `AGT-STORE-5a195b0b` | `MINOR` | `SMELL` | Explizite `u64::try_from(seq_component)` Überlaufsicherung beim WAL-Discovery-Scan verbaut; Regressionstest `test_wal_discovery_mixed_filenames` ergänzt. | `RESOLVED` |
+| `AGT-STORE-1f3c3709` | `MINOR` | `SMELL` | Schwellenwert `MIN_ENTRIES_FOR_SSTABLE_REBUILD = 8` eingeführt. Kleine uncommitted Transaktionen werden bei Rollback direkt in MemTable gefügt statt neuer SSTable. | `RESOLVED` |
+
+**Gate-Stack Results:**
+- `cargo check -p memfuse-store --all-features`: **PASSED**
+- `cargo clippy -p memfuse-store --all-features -- -D warnings`: **PASSED**
+- `cargo fmt --check -p memfuse-store`: **PASSED**
+- `cargo test -p memfuse-store rollback`: **PASSED** (13 tests)
+- 20x `test_concurrent_get_and_flush_latency` (--test-threads=8 / 1): **PASSED**
