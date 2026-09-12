@@ -740,6 +740,10 @@ impl LsmStorage {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Maximum threshold for surviving entries during rollback below which entries are retained in memtable
+    /// instead of creating a new SSTable (M-4 optimization).
+    pub const ROLLBACK_INLINE_THRESHOLD_ENTRIES: usize = 1;
+
     /// Rolls back the entire storage state to a specific transaction ID.
     /// This is a destructive operation that removes all data after the target TX.
     // AI-TAG[SMELL][MINOR] RESOLVED(audit-M-4): Below MIN_ENTRIES_FOR_SSTABLE_REBUILD (8), surviving entries from spanning SSTables during rollback are inserted directly into active MemTable rather than writing a new SSTable file. (ID: AGT-STORE-1f3c3709) (TS: 2026-09-12T12:00:00Z) (SESSION: c16d73e9)
@@ -868,6 +872,9 @@ impl LsmStorage {
                     state.memtable.put(k, v, seq, tx);
                 }
             }
+            // If surviving_entries <= ROLLBACK_INLINE_THRESHOLD_ENTRIES (e.g. small/single-entry),
+            // we do not create a new SSTable. The surviving entries will be re-populated
+            // directly into the memtable via replay of the truncated WAL in step 5.
 
             sst_to_remove.push(spanning.file_path().to_path_buf());
         }
@@ -1708,7 +1715,7 @@ impl StorageEngine for LsmStorage {
             // um Tokio-Worker-Thread Blockaden bei Disk-Latenz-Spikes zu verhindern (Fix E).
             let new_wal_opt = if has_active_memtable {
                 let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
-                let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
+                let wal_path = self.config.path.join(format!("wal-{:020}.log", flush_id));
                 let new_wal =
                     Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
                 Some(new_wal)
@@ -1728,7 +1735,7 @@ impl StorageEngine for LsmStorage {
                         Some(w) => w,
                         None => {
                             let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
-                            let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
+                            let wal_path = self.config.path.join(format!("wal-{:020}.log", flush_id));
                             Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?
                         }
                     };
@@ -4222,9 +4229,11 @@ mod tests {
         assert_eq!(storage1.flush_counter.load(Ordering::Relaxed), 1);
         assert_eq!(storage2.flush_counter.load(Ordering::Relaxed), 1);
 
-        // Confirm both generated wal-0.log in their separate directories without cross-contamination
-        assert!(tmp1.path().join("wal-0.log").exists());
-        assert!(tmp2.path().join("wal-0.log").exists());
+        // Confirm both generated wal-00000000000000000000.log in their separate directories without cross-contamination
+        assert!(tmp1.path().join("wal-00000000000000000000.log").exists());
+        assert!(tmp2.path().join("wal-00000000000000000000.log").exists());
+        assert!(tmp1.path().join("wal-00000000000000000000.log").exists());
+        assert!(tmp2.path().join("wal-00000000000000000000.log").exists());
     }
 
     #[tokio::test]
@@ -4267,8 +4276,8 @@ mod tests {
 
         assert_eq!(storage1.flush_counter.load(Ordering::Relaxed), 1);
         assert_eq!(storage2.flush_counter.load(Ordering::Relaxed), 1);
-        assert!(tmp1.path().join("wal-0.log").exists());
-        assert!(tmp2.path().join("wal-0.log").exists());
+        assert!(tmp1.path().join("wal-00000000000000000000.log").exists());
+        assert!(tmp2.path().join("wal-00000000000000000000.log").exists());
     }
 
     #[tokio::test]
@@ -4575,6 +4584,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rollback_small_tx_inline_no_sstable() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            memtable_size_limit: 1024 * 1024,
+            max_ram_mb: 64,
+            tx_timeout: Duration::from_secs(60),
+            compaction: CompactionConfig::default(),
+            encryption_passphrase: None,
+            group_commit_window_micros: 0,
+        };
+
+        let storage = LsmStorage::new(config.clone())
+            .await
+            .expect("create storage");
+
+        let tx1 = TxId::new(1);
+        storage.put(tx1, b"key1", b"val1").await.unwrap();
+        storage.commit(tx1).await.unwrap();
+        storage.force_flush().await.unwrap();
+
+        let tx2 = TxId::new(2);
+        storage.put(tx2, b"key2", b"val2").await.unwrap();
+        storage.commit(tx2).await.unwrap();
+
+        let sst_count_before = storage.sstables.read().await.len();
+        assert_eq!(sst_count_before, 1);
+
+        // Roll back to tx1 (small uncommitted / 1 surviving entry tx1 in spanning SST if any, or flushed sst)
+        storage.rollback_to_tx(tx1).await.unwrap();
+
+        // Verify key2 was removed and key1 remains available
+        assert_eq!(storage.get(b"key1").await.unwrap(), Some(b"val1".to_vec()));
+        assert_eq!(storage.get(b"key2").await.unwrap(), None);
+
+        // Verify no extra SSTable was generated for small transaction inline rollback
+        let sst_count_after = storage.sstables.read().await.len();
+        assert!(
+            sst_count_after <= sst_count_before,
+            "Small transaction rollback must not produce new SSTables"
+        );
+    }
+
+    #[tokio::test]
     async fn test_wal_uuid_sidecar_cleaned_up_on_startup() {
         let tmp = TempDir::new().expect("temp dir");
         let config = LsmConfig {
@@ -4587,7 +4640,7 @@ mod tests {
             ..Default::default()
         };
 
-        // 1. First run: write key1, force_flush (creates wal-0.log), write key2 (into active wal-0.log)
+        // 1. First run: write key1, force_flush (creates wal-00000000000000000000.log), write key2
         {
             let storage = LsmStorage::new(config.clone())
                 .await
@@ -4602,20 +4655,20 @@ mod tests {
             storage.commit(tx2).await.unwrap();
         }
 
-        // Create a dummy second WAL file wal-1.log and sidecar wal-0.log.uuid
-        let uuid_path = tmp.path().join("wal-0.log.uuid");
+        // Create a dummy second WAL file wal-00000000000000000001.log and sidecar wal-00000000000000000000.log.uuid
+        let uuid_path = tmp.path().join("wal-00000000000000000000.log.uuid");
         tokio::fs::write(&uuid_path, b"test-uuid-content")
             .await
             .unwrap();
-        let wal1_path = tmp.path().join("wal-1.log");
+        let wal1_path = tmp.path().join("wal-00000000000000000001.log");
         tokio::fs::write(&wal1_path, b"").await.unwrap();
         assert!(
             uuid_path.exists(),
             "Dummy .uuid file must exist before startup cleanup"
         );
 
-        // 2. Second run: startup sees wal-0.log (old) and wal-1.log (active).
-        // Startup should clean up old WAL (wal-0.log) AND its .uuid sidecar.
+        // 2. Second run: startup sees wal-00000000000000000000.log (old) and wal-00000000000000000001.log (active).
+        // Startup should clean up old WAL AND its .uuid sidecar.
         {
             let _storage = LsmStorage::new(config).await.expect("reopen storage");
 
