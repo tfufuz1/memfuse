@@ -1757,6 +1757,65 @@ mod tests {
     }
 
     #[test]
+    fn test_rrf_tie_breaking_multiple_documents_same_score() {
+        // DONE(memfuse-impl): Validate deterministic ID tie-breaking across multiple documents with identical scores [ref:eigenbau-rrf-fusion]
+        let set1 = vec![
+            SearchResult {
+                id: "doc_c".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_a".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc_b".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let fused = weighted_reciprocal_rank_fusion(vec![("vector".to_string(), set1, 1.0)], 3);
+        assert_eq!(fused.len(), 3);
+        // Scores are identical because ranks 1, 2, 3 give different scores, but let's test same-rank/same-score tie breaking
+        // With distinct ranks: rank 1 (doc_c) > rank 2 (doc_a) > rank 3 (doc_b)
+        // Let's create actual identical score situation: doc_a and doc_b appearing at rank 1 in two separate signals with same weight
+        let set_signal1 = vec![SearchResult {
+            id: "doc_b".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let set_signal2 = vec![SearchResult {
+            id: "doc_a".to_string(),
+            score: 0.8,
+            metadata: None,
+            matched_signals: vec![],
+            provenance: None,
+        }];
+        let fused_tied = weighted_reciprocal_rank_fusion(
+            vec![
+                ("signal1".to_string(), set_signal1, 1.0),
+                ("signal2".to_string(), set_signal2, 1.0),
+            ],
+            2,
+        );
+        assert_eq!(fused_tied.len(), 2);
+        assert_eq!(fused_tied[0].score, fused_tied[1].score);
+        assert_eq!(fused_tied[0].id, "doc_a", "Tie-breaking must place doc_a before doc_b when scores are equal");
+        assert_eq!(fused_tied[1].id, "doc_b");
+    }
+
+    #[test]
     fn test_rrf_fusion_rejects_nan_and_inf_weight_without_score_corruption() {
         let set1 = vec![
             SearchResult {

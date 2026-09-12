@@ -427,6 +427,7 @@ async fn chaos_fingerprint_change_during_pinned_checkpoint_and_inference_no_dead
 
     let storage = Arc::new(LsmStorage::new(config).await.expect("storage init"));
     let embedder = Arc::new(MockCandleEmbedder::new(32, Duration::from_millis(10)));
+    #[cfg(feature = "replicator-dynamics-weights")]
     let replicator: Arc<parking_lot::RwLock<ReplicatorState>> = Arc::new(parking_lot::RwLock::new(
         ReplicatorState::new(vec!["vector".to_string(), "text".to_string()], 0.05),
     ));
@@ -457,6 +458,7 @@ async fn chaos_fingerprint_change_during_pinned_checkpoint_and_inference_no_dead
             })
         };
 
+        #[cfg(feature = "replicator-dynamics-weights")]
         let fingerprint_task = {
             let r = Arc::clone(&replicator);
             tokio::spawn(async move {
@@ -469,6 +471,8 @@ async fn chaos_fingerprint_change_during_pinned_checkpoint_and_inference_no_dead
                 }
             })
         };
+        #[cfg(not(feature = "replicator-dynamics-weights"))]
+        let fingerprint_task = tokio::spawn(async move {});
 
         let (r1, r2, r3) = tokio::join!(storage_task, inference_task, fingerprint_task);
         r1.unwrap();
