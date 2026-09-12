@@ -10,14 +10,19 @@
 //! Implementierungsdetail für MVCC-Snapshot-Pinning (gekoppelt an `SnapshotRegistry`) und darf NIEMALS direkt von außerhalb
 //! des Store-Crates verwendet werden.
 //!
-//! # Architektur
+//! # Architektur & Crash-Safety
 //! `PersistentCheckpointStore` delegiert Persistenz an ein [`memfuse_core::StorageEngine`]-Objekt
 //! und cacht aktive Checkpoints in einem thread-sicheren In-Memory-Store (`parking_lot::RwLock`).
+//!
+//! **Drop-Semantik & Non-Blocking-I/O:**
+//! `CheckpointGuard::drop()` und `PinGuard::drop()` führen ausschließlich In-Memory-Mutationen im
+//! `InstanceOrphanRegistry` aus ohne blockierendes Disk-I/O. Persistenz auf Disk erfolgt entkoppelt
+//! über Piggyback-Flushes (z.B. bei commit/rollback/unpin) sowie explizite Lifecycle-Flushes (`shutdown()`, `close()`).
 
 #![forbid(unsafe_code)]
 
 // FILE-CONTEXT
-// STAND:       2026-09-11T14:30:00Z (SESSION: 7c5b91a2)
+// STAND:       2026-09-12T20:00:00Z (SESSION: 7c5b91a2)
 // ZWECK:       RAII CheckpointGuard + persistente Snapshot-Verwaltung
 // INVARIANTEN: CheckpointGuard darf NICHT mit PersistentCheckpointStore verwechselt werden; GC safety by pinning before store writes
 // HOTSPOTS:    CheckpointGuard::for_agent_step(), PersistentCheckpointStore::create_checkpoint()
@@ -27,7 +32,7 @@ use memfuse_core::{BoxFuture, MemFuseError, Result, TxId, WorkflowState};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -223,6 +228,7 @@ pub struct InstanceOrphanRegistry {
     pins: Mutex<Vec<PinnedSeqNoOrphan>>,
     checkpoints: Mutex<Vec<StateCheckpoint>>,
     persist_path: std::path::PathBuf,
+    is_dirty: AtomicBool,
 }
 
 impl Default for InstanceOrphanRegistry {
@@ -245,6 +251,7 @@ impl InstanceOrphanRegistry {
                         pins: Mutex::new(state.pinned_seq_nos),
                         checkpoints: Mutex::new(state.checkpoints),
                         persist_path: path.to_path_buf(),
+                        is_dirty: AtomicBool::new(false),
                     };
                 }
             }
@@ -253,6 +260,7 @@ impl InstanceOrphanRegistry {
             pins: Mutex::new(Vec::new()),
             checkpoints: Mutex::new(Vec::new()),
             persist_path: path.to_path_buf(),
+            is_dirty: AtomicBool::new(false),
         }
     }
 
@@ -269,37 +277,58 @@ impl InstanceOrphanRegistry {
         std::fs::write(&self.persist_path, data)
     }
 
+    /// Registers a pinned sequence number orphan in-memory without blocking disk I/O.
+    ///
+    /// # Crash-Safety & RAII Drop Semantics
+    /// This method is called synchronously from [`PinGuard::drop`]. It strictly performs
+    /// in-memory mutations (`Mutex<Vec<...>>`) and flags the registry as dirty without triggering
+    /// synchronous disk I/O on Tokio worker threads. Unpersisted orphans remain in memory and are
+    /// persisted during piggyback flushes (e.g., explicit unpin, commit, rollback) or graceful shutdown.
+    /// An orphan registered between drops and the next flush is retained in memory and would only be lost
+    /// across an ungraceful process panic/crash before the next flush, matching pre-existing crash window semantics.
     pub fn register_orphan_sync(&self, orphan: PinnedSeqNoOrphan) {
         let mut lock = self.pins.lock();
         if !lock.iter().any(|o| o.seq_no == orphan.seq_no) {
+            let seq_no = orphan.seq_no;
             lock.push(orphan);
             drop(lock);
-            if let Err(err) = self.persist_sync() {
-                tracing::error!(
-                    ?err,
-                    "Failed to persist orphan registry after registering orphan pin"
-                );
-            }
+            self.is_dirty.store(true, Ordering::Release);
+            tracing::debug!(
+                seq = seq_no,
+                "Registered orphan pin in memory (dirty); awaiting next flush"
+            );
         }
     }
 
+    /// Registers an orphaned checkpoint in-memory without blocking disk I/O.
+    ///
+    /// # Crash-Safety & RAII Drop Semantics
+    /// This method is called synchronously from [`CheckpointGuard::drop`]. It strictly performs
+    /// in-memory mutations (`Mutex<Vec<...>>`) and flags the registry as dirty without triggering
+    /// synchronous disk I/O on Tokio worker threads. Unpersisted orphans remain in memory and are
+    /// persisted during piggyback flushes (e.g., explicit unpin, commit, rollback) or graceful shutdown.
+    /// An orphan registered between drops and the next flush is retained in memory and would only be lost
+    /// across an ungraceful process panic/crash before the next flush, matching pre-existing crash window semantics.
     pub fn register_checkpoint_sync(&self, cp: StateCheckpoint) {
         let mut lock = self.checkpoints.lock();
         if !lock.iter().any(|o| o.tx_id == cp.tx_id) {
+            let tx_id = cp.tx_id;
             lock.push(cp);
             drop(lock);
-            if let Err(err) = self.persist_sync() {
-                tracing::error!(
-                    ?err,
-                    "Failed to persist orphan registry after registering orphaned checkpoint"
-                );
-            }
+            self.is_dirty.store(true, Ordering::Release);
+            tracing::debug!(
+                ?tx_id,
+                "Registered orphaned checkpoint in memory (dirty); awaiting next flush"
+            );
         }
     }
 
-    /// Asynchronously flushes the in-memory orphan registry to disk.
+    /// Asynchronously flushes the in-memory orphan registry to disk if dirty.
     pub async fn flush_orphan_registry(&self) -> std::io::Result<()> {
         if self.persist_path.as_os_str().is_empty() {
+            return Ok(());
+        }
+        if !self.is_dirty.swap(false, Ordering::AcqRel) {
             return Ok(());
         }
         let state = OrphanState {
@@ -307,13 +336,18 @@ impl InstanceOrphanRegistry {
             pinned_seq_nos: self.pins.lock().clone(),
             persist_path: self.persist_path.clone(),
         };
-        if tokio::runtime::Handle::try_current().is_ok() {
+        let res = if tokio::runtime::Handle::try_current().is_ok() {
             tokio::task::spawn_blocking(move || state.persist_sync())
                 .await
                 .map_err(|e| std::io::Error::other(e.to_string()))?
         } else {
             state.persist_sync()
+        };
+        if let Err(err) = &res {
+            self.is_dirty.store(true, Ordering::Release);
+            tracing::error!(?err, "Failed to persist orphan registry during flush");
         }
+        res
     }
 
     pub fn drain_orphan_pins(&self) -> Vec<PinnedSeqNoOrphan> {
@@ -321,10 +355,13 @@ impl InstanceOrphanRegistry {
         let drained = std::mem::take(&mut *lock);
         drop(lock);
         if let Err(err) = self.persist_sync() {
+            self.is_dirty.store(true, Ordering::Release);
             tracing::error!(
                 ?err,
                 "Failed to persist orphan registry after draining pins"
             );
+        } else {
+            self.is_dirty.store(false, Ordering::Release);
         }
         drained
     }
@@ -338,11 +375,14 @@ impl InstanceOrphanRegistry {
         lock.retain(|o| o.seq_no != seq_no);
         drop(lock);
         if let Err(err) = self.persist_sync() {
+            self.is_dirty.store(true, Ordering::Release);
             tracing::error!(
                 ?err,
                 seq_no = seq_no,
                 "Failed to persist orphan registry after clearing pin"
             );
+        } else {
+            self.is_dirty.store(false, Ordering::Release);
         }
     }
 
@@ -351,10 +391,13 @@ impl InstanceOrphanRegistry {
         let drained = std::mem::take(&mut *lock);
         drop(lock);
         if let Err(err) = self.persist_sync() {
+            self.is_dirty.store(true, Ordering::Release);
             tracing::error!(
                 ?err,
                 "Failed to persist orphan registry after draining checkpoints"
             );
+        } else {
+            self.is_dirty.store(false, Ordering::Release);
         }
         drained
     }
@@ -368,7 +411,10 @@ impl InstanceOrphanRegistry {
         lock.retain(|o| o.tx_id != tx_id);
         drop(lock);
         if let Err(err) = self.persist_sync() {
+            self.is_dirty.store(true, Ordering::Release);
             tracing::error!(?err, tx_id = ?tx_id, "Failed to persist orphan registry after clearing checkpoint");
+        } else {
+            self.is_dirty.store(false, Ordering::Release);
         }
     }
 
@@ -376,7 +422,10 @@ impl InstanceOrphanRegistry {
         self.pins.lock().clear();
         self.checkpoints.lock().clear();
         if let Err(err) = self.persist_sync() {
+            self.is_dirty.store(true, Ordering::Release);
             tracing::error!(?err, "Failed to persist orphan registry after clearing all");
+        } else {
+            self.is_dirty.store(false, Ordering::Release);
         }
     }
 }
@@ -543,6 +592,9 @@ impl<S: memfuse_core::StorageEngine> PinGuard<S> {
     pub async fn unpin(mut self) -> Result<()> {
         if let Some(seq_no) = self.seq_no.take() {
             self.storage.unpin_checkpoint(seq_no).await?;
+        }
+        if let Err(err) = self.orphan_registry.flush_orphan_registry().await {
+            tracing::warn!(?err, "Failed piggyback flush on PinGuard unpin");
         }
         Ok(())
     }
