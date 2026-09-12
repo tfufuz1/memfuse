@@ -1,8 +1,8 @@
-use crate::claim::ClaimsDatabase;
+use crate::claim::{expire_stale_claims, ClaimsDatabase};
 use crate::{
-    check_duplicate_symbols, get_changed_rs_files_from_git_diff, run_check_consistency,
-    run_check_dag, run_check_jules_context_freshness, run_check_review_coverage,
-    run_check_unwrap_baseline, run_sync_docs, run_validate_tags, scan_tags,
+    check_duplicate_symbols, run_check_consistency, run_check_dag,
+    run_check_jules_context_freshness, run_check_review_coverage, run_check_unwrap_baseline,
+    run_sync_docs, run_validate_tags, scan_tags,
 };
 use regex::Regex;
 use std::fs;
@@ -16,13 +16,81 @@ pub enum CheckResult {
     Skip(String),
 }
 
-// TODO(opt-RC-1/A-2): Strictly enforce active claim validation when MEMFUSE_CLAIM_CRATE is set or derived from PR metadata to stop multi-session collisions.
+fn get_changed_rs_files_from_git_diff() -> Result<Vec<String>, String> {
+    let output = std::process::Command::new("git")
+        .args(["diff", "--name-only", "HEAD"])
+        .output();
+
+    let mut files = match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| s.ends_with(".rs") && Path::new(s).exists())
+                .collect::<Vec<String>>()
+        }
+        _ => Vec::new(),
+    };
+
+    if files.is_empty() {
+        let output_head1 = std::process::Command::new("git")
+            .args(["diff", "--name-only", "HEAD~1"])
+            .output();
+        if let Ok(out) = output_head1 {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                files = stdout
+                    .lines()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| s.ends_with(".rs") && Path::new(s).exists())
+                    .collect();
+            }
+        }
+    }
+
+    Ok(files)
+}
+
+fn derive_crate_from_changed_files(files: &[String]) -> Option<String> {
+    for file in files {
+        if let Some(rest) = file.strip_prefix("crates/") {
+            if let Some(crate_name) = rest.split('/').next() {
+                if !crate_name.trim().is_empty() {
+                    return Some(crate_name.trim().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn check_no_active_claim_conflict(root: &Path, target_crate: Option<&str>) -> CheckResult {
+    let _ = expire_stale_claims(root);
+
     let krate = match target_crate {
         Some(c) if !c.trim().is_empty() => c.to_string(),
         _ => match std::env::var("MEMFUSE_CLAIM_CRATE") {
             Ok(c) if !c.trim().is_empty() => c,
-            _ => return CheckResult::Skip("MEMFUSE_CLAIM_CRATE nicht gesetzt".to_string()),
+            _ => {
+                let changed_files = get_changed_rs_files_from_git_diff().unwrap_or_default();
+                let has_crates_rs_changes = changed_files
+                    .iter()
+                    .any(|f| f.starts_with("crates/") && f.ends_with(".rs"));
+                if !has_crates_rs_changes {
+                    return CheckResult::Skip(
+                        "Keine geänderten .rs-Dateien unter crates/ gefunden".to_string(),
+                    );
+                }
+                match derive_crate_from_changed_files(&changed_files) {
+                    Some(derived) => derived,
+                    None => {
+                        return CheckResult::Skip(
+                            "Keine Crate aus geänderten .rs-Dateien ableitbar".to_string(),
+                        );
+                    }
+                }
+            }
         },
     };
 
@@ -481,14 +549,37 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn test_derive_crate_from_changed_files() {
+        let files = vec![
+            "README.md".to_string(),
+            "crates/memfuse-core/src/lib.rs".to_string(),
+            "crates/memfuse-db/src/lib.rs".to_string(),
+        ];
+        assert_eq!(
+            derive_crate_from_changed_files(&files),
+            Some("memfuse-core".to_string())
+        );
+
+        let non_crate_files = vec!["xtask/src/main.rs".to_string(), "docs/index.md".to_string()];
+        assert_eq!(derive_crate_from_changed_files(&non_crate_files), None);
+    }
+
+    #[test]
     fn test_claim_conflict_check_unset_crate_skips() {
         std::env::remove_var("MEMFUSE_CLAIM_CRATE");
         let dir = tempdir().unwrap();
         let result = check_no_active_claim_conflict(dir.path(), None);
-        assert_eq!(
-            result,
-            CheckResult::Skip("MEMFUSE_CLAIM_CRATE nicht gesetzt".to_string())
-        );
+        // If git diff in test workspace has no crates/*.rs changes, it skips with "Keine geänderten .rs-Dateien unter crates/ gefunden"
+        match result {
+            CheckResult::Skip(reason) => {
+                assert!(
+                    reason.contains("crates/") || reason.contains("MEMFUSE_CLAIM_CRATE"),
+                    "Unexpected skip reason: {}",
+                    reason
+                );
+            }
+            res => panic!("Expected Skip when no target crate/env var set and no crates/*.rs diff, got {:?}", res),
+        }
     }
 
     #[test]

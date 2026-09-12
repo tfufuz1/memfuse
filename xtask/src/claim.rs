@@ -88,6 +88,40 @@ impl ClaimsDatabase {
     }
 }
 
+/// Prüft alle Claims in `.jules/claims.json` auf TTL-Ablauf.
+/// Setzt abgelaufene aktive Claims auf `active = false` und befüllt `released_at` mit Timestamp + Suffix `[TTL-EXPIRED]`.
+/// Speichert die Datenbank nur zurück, wenn Claims abgelaufen sind.
+pub fn expire_stale_claims(root: &Path) -> usize {
+    let claims_path = root.join(".jules/claims.json");
+    let mut db = ClaimsDatabase::load(&claims_path);
+    let now = Utc::now();
+    let mut expired_count = 0;
+
+    for entry in db.claims.iter_mut() {
+        if !entry.active {
+            continue;
+        }
+        if let Some(exp) = &entry.expires_at {
+            if let Ok(exp_dt) = exp.parse::<chrono::DateTime<Utc>>() {
+                if now > exp_dt {
+                    entry.active = false;
+                    let ts_str = now.to_rfc3339();
+                    entry.released_at = Some(format!("{} [TTL-EXPIRED]", ts_str));
+                    expired_count += 1;
+                }
+            }
+        }
+    }
+
+    if expired_count > 0 {
+        if let Err(e) = db.save(&claims_path) {
+            eprintln!("⚠️ Fehler beim Speichern abgelaufener Claims: {}", e);
+        }
+    }
+
+    expired_count
+}
+
 /// Gibt einen aktiven Claim frei: setzt active=false und released_at.
 pub fn run_release_local(args: &[String]) -> bool {
     let mut krate = String::new();
@@ -518,5 +552,56 @@ mod tests {
             "--dry-run".to_string(),
         ];
         assert!(run_claim_github(&args));
+    }
+
+    #[test]
+    fn test_expire_stale_claims() {
+        let dir = tempdir().unwrap();
+        let jules_dir = dir.path().join(".jules");
+        fs::create_dir_all(&jules_dir).unwrap();
+        let claims_path = jules_dir.join("claims.json");
+
+        let past_exp = (Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        let future_exp = (Utc::now() + chrono::Duration::hours(2)).to_rfc3339();
+
+        let mut db = ClaimsDatabase::default();
+        db.claims.push(ClaimEntry {
+            krate: "memfuse-stale".to_string(),
+            issue: "STALE-1".to_string(),
+            timestamp: "2026-09-08T18:00:00Z".to_string(),
+            session_id: "s1".to_string(),
+            active: true,
+            expires_at: Some(past_exp),
+            released_at: None,
+        });
+        db.claims.push(ClaimEntry {
+            krate: "memfuse-active".to_string(),
+            issue: "ACTIVE-1".to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+            session_id: "s2".to_string(),
+            active: true,
+            expires_at: Some(future_exp),
+            released_at: None,
+        });
+        db.save(&claims_path).unwrap();
+
+        let expired_count = expire_stale_claims(dir.path());
+        assert_eq!(expired_count, 1);
+
+        let reloaded = ClaimsDatabase::load(&claims_path);
+        assert_eq!(reloaded.claims.len(), 2);
+
+        let stale = &reloaded.claims[0];
+        assert_eq!(stale.krate, "memfuse-stale");
+        assert!(!stale.active);
+        assert!(stale.released_at.is_some());
+        assert!(stale.released_at.as_ref().unwrap().contains("[TTL-EXPIRED]"));
+        assert_eq!(stale.issue, "STALE-1");
+        assert_eq!(stale.session_id, "s1");
+
+        let active = &reloaded.claims[1];
+        assert_eq!(active.krate, "memfuse-active");
+        assert!(active.active);
+        assert!(active.released_at.is_none());
     }
 }

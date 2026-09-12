@@ -86,9 +86,9 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-candle` | 3 | 2686 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 3 | 15865 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 3 | 3990 | 🟢 Clean |  |
-| `memfuse-store` | 3 | 19972 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-store` | 3 | 20231 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
 | `memfuse-embed` | 4 | 2033 | 🧊 Optional |  |
-| `memfuse-db` | 5 | 30869 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-db` | 5 | 31208 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 6 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 6 | 5456 | 🟢 Clean |  |
 | `memfuse-tauri` | 6 | 6209 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |

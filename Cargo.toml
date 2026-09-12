@@ -65,7 +65,7 @@ tempfile = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Internal crates (Sovereign Core — 7 Crates)
+# Workspace crates (19 Crates)
 memfuse-core-ipc-gen = { path = "crates/memfuse-core-ipc-gen" }
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }

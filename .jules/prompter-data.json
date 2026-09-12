@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-09-11T18:17:24Z",
-  "head": "086a261",
+  "generated_at": "2026-09-12T11:19:38Z",
+  "head": "b61fbb2",
   "target_architecture": {
     "memfuse-agent": "memfuse-agentic",
     "memfuse-calibration": "memfuse-inference",
@@ -22,11 +22,22 @@
   },
   "crates": [
     {
-      "id": "memfuse-core",
+      "id": "memfuse-core-ipc-gen",
       "layer": 0,
       "order": 1,
-      "loc": 10008,
-      "tests": "164+",
+      "loc": 858,
+      "tests": "0+",
+      "desc": "Auto-generated FlatBuffers IPC code for MemFuse Core",
+      "status": "✅",
+      "risk": "none",
+      "tier": "2"
+    },
+    {
+      "id": "memfuse-core",
+      "layer": 1,
+      "order": 2,
+      "loc": 9364,
+      "tests": "166+",
       "desc": "Core types, traits, and error handling for MemFuse",
       "status": "✅",
       "risk": "none",
@@ -34,10 +45,10 @@
     },
     {
       "id": "memfuse-calibration",
-      "layer": 1,
-      "order": 2,
-      "loc": 1855,
-      "tests": "61+",
+      "layer": 2,
+      "order": 3,
+      "loc": 2225,
+      "tests": "71+",
       "desc": "",
       "status": "✅",
       "risk": "calib",
@@ -45,10 +56,10 @@
     },
     {
       "id": "memfuse-checkpoint",
-      "layer": 1,
-      "order": 3,
-      "loc": 5570,
-      "tests": "80+",
+      "layer": 2,
+      "order": 4,
+      "loc": 5707,
+      "tests": "82+",
       "desc": "Backup and snapshot management for MemFuse storage",
       "status": "✅",
       "risk": "none",
@@ -56,9 +67,9 @@
     },
     {
       "id": "memfuse-graph",
-      "layer": 1,
-      "order": 4,
-      "loc": 10593,
+      "layer": 2,
+      "order": 5,
+      "loc": 10627,
       "tests": "161+",
       "desc": "CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion)",
       "status": "✅",
@@ -67,10 +78,10 @@
     },
     {
       "id": "memfuse-security",
-      "layer": 1,
-      "order": 5,
-      "loc": 5042,
-      "tests": "131+",
+      "layer": 2,
+      "order": 6,
+      "loc": 5068,
+      "tests": "132+",
       "desc": "Encryption at Rest and KV-Cache Security utilities for MemFuse",
       "status": "✅",
       "risk": "sec",
@@ -78,8 +89,8 @@
     },
     {
       "id": "memfuse-text",
-      "layer": 1,
-      "order": 6,
+      "layer": 2,
+      "order": 7,
       "loc": 5433,
       "tests": "94+",
       "desc": "MemFuse — Text processing and BM25 search for Hybrid Search",
@@ -89,10 +100,10 @@
     },
     {
       "id": "memfuse-candle",
-      "layer": 2,
-      "order": 7,
-      "loc": 1964,
-      "tests": "31+",
+      "layer": 3,
+      "order": 8,
+      "loc": 2686,
+      "tests": "43+",
       "desc": "Native Candle GGUF ML inference backend for MemFuse",
       "status": "✅",
       "risk": "candle",
@@ -100,9 +111,9 @@
     },
     {
       "id": "memfuse-index",
-      "layer": 2,
-      "order": 8,
-      "loc": 15787,
+      "layer": 3,
+      "order": 9,
+      "loc": 15865,
       "tests": "183+",
       "desc": "HNSW vector index with SIMD distance computation for MemFuse",
       "status": "✅",
@@ -111,21 +122,21 @@
     },
     {
       "id": "memfuse-ollama",
-      "layer": 2,
-      "order": 9,
-      "loc": 3985,
+      "layer": 3,
+      "order": 10,
+      "loc": 3990,
       "tests": "80+",
       "desc": "",
-      "status": "🟡",
+      "status": "✅",
       "risk": "inj",
       "tier": "3"
     },
     {
       "id": "memfuse-store",
-      "layer": 2,
-      "order": 10,
-      "loc": 19300,
-      "tests": "219+",
+      "layer": 3,
+      "order": 11,
+      "loc": 20231,
+      "tests": "230+",
       "desc": "LSM-Tree storage engine for MemFuse",
       "status": "✅",
       "risk": "crash",
@@ -133,21 +144,21 @@
     },
     {
       "id": "memfuse-embed",
-      "layer": 3,
-      "order": 11,
-      "loc": 1978,
-      "tests": "33+",
+      "layer": 4,
+      "order": 12,
+      "loc": 2033,
+      "tests": "34+",
       "desc": "",
-      "status": "🟡",
+      "status": "🧊",
       "risk": "gate",
       "tier": "3"
     },
     {
       "id": "memfuse-db",
-      "layer": 4,
-      "order": 12,
-      "loc": 28729,
-      "tests": "342+",
+      "layer": 5,
+      "order": 13,
+      "loc": 31208,
+      "tests": "367+",
       "desc": "MemFuse — Embedded hybrid-search for AI agents",
       "status": "✅",
       "risk": "fusion",
@@ -155,8 +166,8 @@
     },
     {
       "id": "memfuse-bench",
-      "layer": 5,
-      "order": 13,
+      "layer": 6,
+      "order": 14,
       "loc": 4641,
       "tests": "26+",
       "desc": "MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy",
@@ -166,10 +177,10 @@
     },
     {
       "id": "memfuse-router",
-      "layer": 5,
-      "order": 14,
-      "loc": 5239,
-      "tests": "82+",
+      "layer": 6,
+      "order": 15,
+      "loc": 5456,
+      "tests": "85+",
       "desc": "",
       "status": "✅",
       "risk": "nan",
@@ -177,20 +188,20 @@
     },
     {
       "id": "memfuse-tauri",
-      "layer": 5,
-      "order": 15,
-      "loc": 6175,
+      "layer": 6,
+      "order": 16,
+      "loc": 6209,
       "tests": "118+",
       "desc": "DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren.",
-      "status": "🟡",
+      "status": "✅",
       "risk": "parse",
       "tier": "2"
     },
     {
       "id": "memfuse-agent",
-      "layer": 6,
-      "order": 16,
-      "loc": 5889,
+      "layer": 7,
+      "order": 17,
+      "loc": 5935,
       "tests": "59+",
       "desc": "Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop",
       "status": "✅",
@@ -199,9 +210,9 @@
     },
     {
       "id": "memfuse-mcp",
-      "layer": 7,
-      "order": 17,
-      "loc": 4397,
+      "layer": 8,
+      "order": 18,
+      "loc": 4406,
       "tests": "81+",
       "desc": "",
       "status": "✅",
@@ -214,7 +225,7 @@
       {
         "file": "audit.rs",
         "size": "L",
-        "loc": 639,
+        "loc": 636,
         "risk": "Integrität",
         "desc": "Append-only Audit-Log",
         "focus": "Es darf KEINE öffentliche API zum nachträglichen Ändern oder Löschen von Einträgen geben — jede solche Erweiterung ist ein Integritätsverstoß. [KORR v22: Datei hieß zuvor audit_log.rs — tatsächlicher Dateiname ist audit.rs.]"
@@ -230,7 +241,7 @@
       {
         "file": "dlq.rs",
         "size": "S",
-        "loc": 98,
+        "loc": 109,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -238,7 +249,7 @@
       {
         "file": "engine.rs",
         "size": "L",
-        "loc": 963,
+        "loc": 961,
         "risk": "APM-4",
         "desc": "State-Machine — checkpoint → execute → commit → audit",
         "focus": "Budget-Check MUSS VOR tool.execute() erfolgen (APM-4 kritisch) — niemals execute() → consume() → check(), da das Tool dann bereits Seiteneffekte ausgeführt hat, bevor der Budget-Fehler erkannt wird. Exactly-Once: Crash zwischen execute und commit darf nach Recovery weder Doppel- noch Nichtausführung erzeugen."
@@ -362,7 +373,7 @@
       {
         "file": "pid.rs",
         "size": "M",
-        "loc": 325,
+        "loc": 432,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -378,7 +389,7 @@
       {
         "file": "replicator.rs",
         "size": "M",
-        "loc": 347,
+        "loc": 367,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -388,7 +399,7 @@
       {
         "file": "embedding.rs",
         "size": "M",
-        "loc": 381,
+        "loc": 389,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -403,8 +414,8 @@
       },
       {
         "file": "gasp.rs",
-        "size": "M",
-        "loc": 461,
+        "size": "L",
+        "loc": 604,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -420,7 +431,7 @@
       {
         "file": "inference.rs",
         "size": "M",
-        "loc": 379,
+        "loc": 492,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -428,7 +439,7 @@
       {
         "file": "lib.rs",
         "size": "S",
-        "loc": 31,
+        "loc": 33,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -446,7 +457,7 @@
       {
         "file": "lib.rs",
         "size": "XL",
-        "loc": 2707,
+        "loc": 2745,
         "risk": "RAII/Time-Travel",
         "desc": "GESAMTER Crate in einer Datei: CheckpointGuard (RAII, non-Clone, pin-before-save, Drop-Handling), CheckpointRegistry-Trait, PersistentCheckpointStore, Time-Travel-Rollback",
         "focus": "APM-8 kritisch: niemals tokio::spawn() im Drop-Handler — das bricht die RAII-Garantie (Task kann vor Completion gecancelled werden). Pin-before-Save-Reihenfolge (ADR-011) ist bindend: Snapshot muss gepinnt sein, BEVOR der Checkpoint gespeichert wird. Rollback zu Checkpoint X muss bytegenau den State nach X wiederherstellen — verifiziere dies mit einem Byte-Vergleich, nicht nur mit einem Existenz-Check. [KORR v22: Es gibt keine separate registry.rs — der komplette Crate (inkl. Registry/Time-Travel) ist eine einzige Datei; Größenklasse deshalb XL statt L, höchste Sorgfaltspflicht bei jeder Änderung.]"
@@ -456,7 +467,7 @@
       {
         "file": "error.rs",
         "size": "L",
-        "loc": 809,
+        "loc": 888,
         "risk": "FFI",
         "desc": "MemFuseError-Enum + serialisierbares FFI-DTO-Mapping",
         "focus": "JEDE MemFuseError-Variante muss eine korrespondierende MemFuseErrorDto-Variante besitzen — fehlende Zuordnung bricht memfuse-py und memfuse-mcp stillschweigend an der FFI-Grenze."
@@ -464,7 +475,7 @@
       {
         "file": "error_dto.rs",
         "size": "M",
-        "loc": 446,
+        "loc": 476,
         "risk": "FFI",
         "desc": "MemFuseError-Enum + serialisierbares FFI-DTO-Mapping",
         "focus": "JEDE MemFuseError-Variante muss eine korrespondierende MemFuseErrorDto-Variante besitzen — fehlende Zuordnung bricht memfuse-py und memfuse-mcp stillschweigend an der FFI-Grenze."
@@ -472,15 +483,7 @@
       {
         "file": "ipc/jsonrpc.rs",
         "size": "S",
-        "loc": 140,
-        "risk": "—",
-        "desc": "",
-        "focus": ""
-      },
-      {
-        "file": "ipc/memfuse_generated.rs",
-        "size": "L",
-        "loc": 815,
+        "loc": 144,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -488,7 +491,7 @@
       {
         "file": "ipc/mod.rs",
         "size": "S",
-        "loc": 58,
+        "loc": 37,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -504,7 +507,7 @@
       {
         "file": "seq_log.rs",
         "size": "M",
-        "loc": 339,
+        "loc": 410,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -528,7 +531,7 @@
       {
         "file": "traits/mod.rs",
         "size": "XL",
-        "loc": 1843,
+        "loc": 1868,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -560,7 +563,7 @@
       {
         "file": "types/domain.rs",
         "size": "XL",
-        "loc": 1929,
+        "loc": 1946,
         "risk": "TxId",
         "desc": "Kanonische Domain-Typen (DocId, EntityId, TxId, Embedding, Edge, Entity) — TxId::MAX_COLLECTION_SEQUENCE/INTERNAL_BASE-Trennung (ADR-028)",
         "focus": "Niemals SystemTime für TxId verwenden. Die Grenze zwischen Collection- und System-TxId-Bereich (INTERNAL_BASE = u64::MAX - 1_000_000) ist eine architektonische Invariante — jede Änderung hier erfordert einen ADR. [KORR v22: Datei hieß im Prompter zuvor fälschlich types/tx.rs — TxId liegt tatsächlich in types/domain.rs, es gibt keine eigene tx.rs.]"
@@ -590,6 +593,24 @@
         "focus": ""
       }
     ],
+    "memfuse-core-ipc-gen": [
+      {
+        "file": "lib.rs",
+        "size": "S",
+        "loc": 9,
+        "risk": "—",
+        "desc": "",
+        "focus": ""
+      },
+      {
+        "file": "memfuse_generated.rs",
+        "size": "L",
+        "loc": 815,
+        "risk": "—",
+        "desc": "",
+        "focus": ""
+      }
+    ],
     "memfuse-db": [
       {
         "file": "background_workers.rs",
@@ -610,7 +631,7 @@
       {
         "file": "collection/crud.rs",
         "size": "XL",
-        "loc": 1577,
+        "loc": 1565,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -658,7 +679,7 @@
       {
         "file": "collection/search.rs",
         "size": "L",
-        "loc": 1301,
+        "loc": 1388,
         "risk": "Snapshot",
         "desc": "hybrid_search() — Orchestrierung aller 4 Signale",
         "focus": "LSM/BM25/Metadaten binden an seq_no, HNSW und CSR-Graph lesen unpinnten Live-State — verlasse dich in neuem Code NIE auf implizite Snapshot-Konsistenz von HNSW/Graph; nachgelagerte Filterung muss veraltete/gelöschte Treffer aktiv verwerfen."
@@ -666,7 +687,7 @@
       {
         "file": "collection/tests.rs",
         "size": "XL",
-        "loc": 3187,
+        "loc": 3204,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -722,7 +743,7 @@
       {
         "file": "fusion.rs",
         "size": "XL",
-        "loc": 2101,
+        "loc": 2501,
         "risk": "APM-5",
         "desc": "reciprocal_rank_fusion() / weighted_reciprocal_rank_fusion() — Kern der 4-Signal-Fusion",
         "focus": "RRF nutzt AUSSCHLIESSLICH die Rang-Position, nicht den Score-Wert — jede score *= boost-Modifikation VOR der Fusion hat NULLEFFEKT (APM-5). Boosts müssen POST-RRF angewendet werden. Beachte zusätzlich: weighted_reciprocal_rank_fusion() materialisiert und sortiert VOLLSTÄNDIG (O(U log U)) — jede neue Aufruferstelle muss MAX_SEARCH_K respektieren."
@@ -730,7 +751,7 @@
       {
         "file": "homeostat.rs",
         "size": "M",
-        "loc": 241,
+        "loc": 230,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -738,7 +759,7 @@
       {
         "file": "lib.rs",
         "size": "XL",
-        "loc": 2260,
+        "loc": 2318,
         "risk": "—",
         "desc": "MemFuse-Orchestrator-Einstiegspunkt",
         "focus": "Prüfe die öffentliche API auf Konsistenz mit README.md-Beispielen."
@@ -794,7 +815,7 @@
       {
         "file": "transaction.rs",
         "size": "L",
-        "loc": 748,
+        "loc": 812,
         "risk": "2PC",
         "desc": "2PC-Koordination über alle 4 Sub-Engines, repair_on_open()",
         "focus": "Bei Fehler nach Commit von Signal N müssen die Signale N..4 vollständig zurückgerollt werden. repair_on_open() muss CommitIntent::Pending nach Crash forward-committen, nicht verwerfen."
@@ -812,7 +833,7 @@
       {
         "file": "lib.rs",
         "size": "L",
-        "loc": 607,
+        "loc": 662,
         "risk": "Feature-Gate",
         "desc": "Feature-Gate-Wurzel (default=[])",
         "focus": "cargo check --no-default-features MUSS 0 Fehler ergeben — dies ist die zentrale Hermetizitäts-Garantie des optionalen Crates."
@@ -854,7 +875,7 @@
       {
         "file": "csr.rs",
         "size": "XL",
-        "loc": 4567,
+        "loc": 4601,
         "risk": "Invariante/DoS",
         "desc": "CSR-Graph-Kern — offsets/reverse_map, compact(), rollback(), traverse()/traverse_at() Multi-Hop-BFS mit Hub-Node-Branching-Limit",
         "focus": "offsets.len() == reverse_map.len() + 1 MUSS immer gelten, auch bei entity-only-Commits ohne Kanten — compact() darf das offsets-Padding in diesem Fall nicht überspringen. rollback() MUSS id_map UND reverse_map bereinigen, nicht nur staged_edges. Ein Knoten mit sehr vielen Kanten (Hub) darf die Traversal-Queue nicht explodieren lassen — MAX_VISITED_NODES-Limit muss PER LEVEL greifen, nicht nur als globales Ergebnis-Limit. [KORR v22: Es gibt keine eigene bfs.rs — die komplette Traversal-Logik (traverse/traverse_at/traverse_at_bitemporal) lebt bereits in dieser Datei.]"
@@ -944,7 +965,7 @@
       {
         "file": "hnsw.rs",
         "size": "XL",
-        "loc": 4044,
+        "loc": 4121,
         "risk": "APM-2/3",
         "desc": "HNSW-Graph-Kern — Suche, Insert, Tombstone-Handling, SQ8-Bound-Expansion",
         "focus": "search_filtered(): Tombstone-Prüfung MUSS unconditional VOR jedem Custom-Filter erfolgen (zwei separate if-Blöcke, kein if/else-if — APM-2). SQ8-Bound-Expansion in do_insert() MUSS über write() laufen, nicht try_write() (APM-3) — sonst lastabhängige, stille Präzisionsverluste."
@@ -1002,7 +1023,7 @@
       {
         "file": "lib.rs",
         "size": "L",
-        "loc": 815,
+        "loc": 824,
         "risk": "Protokoll/DoS/Injection",
         "desc": "McpServer — stdio JSON-RPC 2.0 Server-Loop UND memfuse_search/insert/get/collections-Tool-Dispatch in EINER Datei (größte Datei des Crates)",
         "focus": "ADR-010: AUSSCHLIESSLICH stdio — kein axum/TcpListener/HTTP, jeder Rest davon ist ein kritischer Architektur-Befund. Grenzwerte MAX_RPC_BYTES=16MB / MAX_SEARCH_QUERY=64KB an n-1/n/n+1 Bytes testen. Prüfe Inaktivitäts-Timeout (Slowloris-Schutz) für sehr langsame Clients. Prüfe zusätzlich, dass interne Pfade/Stacktraces niemals in Fehlermeldungen an den Client durchsickern (Informations-Leck-Risiko). [KORR v22: Es gibt keine separaten server.rs/tools.rs — Server-Loop UND Tool-Dispatch liegen beide in lib.rs; Größenklasse deshalb XL statt S/L.]"
@@ -1076,7 +1097,7 @@
       {
         "file": "lib.rs",
         "size": "S",
-        "loc": 16,
+        "loc": 21,
         "risk": "—",
         "desc": "Modul-Exports des Ollama-Clients",
         "focus": "Prüfe, dass keine Business-Logik hier landet, die eigentlich in client.rs gehört."
@@ -1102,7 +1123,7 @@
       {
         "file": "lib.rs",
         "size": "S",
-        "loc": 15,
+        "loc": 17,
         "risk": "—",
         "desc": "Modul-Exports der Routing-Engine",
         "focus": "Prüfe, dass memfuse-mcp (Layer 4) hier nicht importiert wird (DAG-Verletzung, ADR-045-Kontext)."
@@ -1110,7 +1131,7 @@
       {
         "file": "lyapunov.rs",
         "size": "M",
-        "loc": 394,
+        "loc": 499,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1126,7 +1147,7 @@
       {
         "file": "profile.rs",
         "size": "M",
-        "loc": 475,
+        "loc": 473,
         "risk": "NaN",
         "desc": "SlmProfile::new() / try_new()",
         "focus": "SlmProfile::new() akzeptiert derzeit NaN, wodurch score >= NaN immer false ist und kein Routing mehr stattfindet — try_new() mit is_finite() && >= 0.0-Check ist der korrekte Pfad für neue Nutzung."
@@ -1134,7 +1155,7 @@
       {
         "file": "router.rs",
         "size": "L",
-        "loc": 863,
+        "loc": 920,
         "risk": "NaN",
         "desc": "SLM-Routing-Logik",
         "focus": "f32::max(0.0, NaN) = NaN → Routing wird nicht-deterministisch. Bei dieser Dateigröße ist 100%-Branch-Coverage (cargo llvm-cov --branch) das realistische und verbindliche Ziel — jede neue Branch braucht einen dedizierten Test."
@@ -1150,7 +1171,7 @@
       {
         "file": "tests.rs",
         "size": "XL",
-        "loc": 3161,
+        "loc": 3216,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1223,8 +1244,8 @@
       },
       {
         "file": "kv_segment/store.rs",
-        "size": "M",
-        "loc": 591,
+        "size": "L",
+        "loc": 617,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1258,7 +1279,7 @@
       {
         "file": "compaction.rs",
         "size": "XL",
-        "loc": 1598,
+        "loc": 1604,
         "risk": "Crash-Safety",
         "desc": "Compaction-Logik, Tombstone-Handling unter gepinnten Snapshots",
         "focus": "Ein gepinnter Snapshot MUSS Tombstones/Daten, die er referenziert, vor Compaction-GC schützen. Jede Änderung an der Compaction-Reihenfolge braucht einen Test mit aktiv gehaltenem Snapshot-Pin während laufender Compaction."
@@ -1266,7 +1287,7 @@
       {
         "file": "lib.rs",
         "size": "S",
-        "loc": 37,
+        "loc": 39,
         "risk": "—",
         "desc": "Modul-Exports, Storage-Engine-Einstiegspunkt",
         "focus": "Prüfe öffentliche API-Oberfläche auf versehentliche Lecks interner LSM-Implementierungsdetails."
@@ -1274,7 +1295,7 @@
       {
         "file": "lsm.rs",
         "size": "XL",
-        "loc": 4670,
+        "loc": 4841,
         "risk": "Locking",
         "desc": "LsmStorage — StorageEngine-Trait-Implementierung, commit_mutex-Verwaltung, rollback_to_tx (größte Einzeldatei des Crates — Größenklasse XL)",
         "focus": "rollback_to_tx darf niemals innerhalb eines bereits gehaltenen commit_mutex erneut aufgerufen werden (Deadlock-Risiko, APM-3-Kontext). [KORR v22: Es gibt keine commit.rs — diese Logik liegt in lsm.rs, das zuvor komplett im Komponenten-Inventar fehlte, obwohl es als architektonisch zentralste Datei des Crates gilt. Höchste Sorgfaltspflicht gilt hier uneingeschränkt.]"
@@ -1282,7 +1303,7 @@
       {
         "file": "manifest.rs",
         "size": "M",
-        "loc": 478,
+        "loc": 498,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1312,6 +1333,14 @@
         "focus": "APM-1 gilt hier absolut: tmp-Datei → sync_all → rename → fsync_parent_dir. Kein direktes tokio::fs::write ohne dieses Muster."
       },
       {
+        "file": "system_pressure.rs",
+        "size": "M",
+        "loc": 214,
+        "risk": "—",
+        "desc": "",
+        "focus": ""
+      },
+      {
         "file": "tenant_codec.rs",
         "size": "S",
         "loc": 123,
@@ -1330,7 +1359,7 @@
       {
         "file": "wal.rs",
         "size": "XL",
-        "loc": 3598,
+        "loc": 3701,
         "risk": "Crash-Safety",
         "desc": "Write-Ahead-Log — fsync-Disziplin, HMAC-Bindung, höchstes Crash-Safety-Risiko im gesamten Workspace",
         "focus": "sync_all() MUSS vor jeder Ok-Rückgabe aus append() erfolgen. Sequenznummer UND Datei-ID müssen in die HMAC-Berechnung eingebunden sein (nicht nur Payload). Jede Änderung braucht einen begleitenden Crash-Mid-Write-Fault-Injection-Test."
@@ -1380,7 +1409,7 @@
       {
         "file": "commands/session_dag.rs",
         "size": "M",
-        "loc": 530,
+        "loc": 564,
         "risk": "—",
         "desc": "",
         "focus": ""
@@ -1526,9 +1555,13 @@
     ]
   },
   "working_state_snapshot": {
-    "generated_at": "2026-09-11T18:17:24Z",
-    "crate_count": 17,
+    "generated_at": "2026-09-12T11:19:38Z",
+    "crate_count": 18,
     "crates": [
+      {
+        "name": "memfuse-core-ipc-gen",
+        "status": "🟢 Clean"
+      },
       {
         "name": "memfuse-core",
         "status": "🟢 Clean"

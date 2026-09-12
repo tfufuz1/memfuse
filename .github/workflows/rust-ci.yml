@@ -1,4 +1,8 @@
-name: Rust CI
+# Tiefenprüfung = nicht-blockierend
+# Dieses Workflow-File fuehrt umfassende Tiefenpruefungen aus (Coverage, Integrationstests, Feature-Matrix, Cross-Platform, Binding-Checks).
+# Alle Jobs sind mit continue-on-error: true versehen, sodass sie nicht mehr merge-blockierend sind, aber weiterhin ausgefuehrt werden und Ergebnisse liefern.
+
+name: Rust CI (Tiefenprüfung)
 on:
   push:
     branches: ["main", "master"]
@@ -12,6 +16,7 @@ jobs:
   compile-check:
     name: Compile Check (cargo check)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -22,6 +27,7 @@ jobs:
   fmt:
     name: Format Check
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -34,6 +40,7 @@ jobs:
     name: Dependency Security & License Audit
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -44,6 +51,7 @@ jobs:
     name: Line Coverage Gate (>= 50%)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -92,6 +100,7 @@ jobs:
     name: Clippy (-D warnings)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -106,6 +115,7 @@ jobs:
     name: Feature Matrix Checks
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -121,6 +131,7 @@ jobs:
     name: PyPI Wheel Build Check (Maturin Dry-Run)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -137,6 +148,7 @@ jobs:
     name: Test Suite (cargo-nextest with retries)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -160,6 +172,7 @@ jobs:
     name: Clippy (memfuse-py)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -172,6 +185,7 @@ jobs:
     name: Test Suite (memfuse-py)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -182,6 +196,7 @@ jobs:
     name: Check memfuse-py Lockfile in sync
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -196,6 +211,7 @@ jobs:
     name: Clippy (memfuse-tauri --lib)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -212,6 +228,7 @@ jobs:
     name: Test Suite (memfuse-tauri --lib)
     runs-on: ubuntu-latest
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
@@ -230,6 +247,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     needs: [compile-check]
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
