@@ -12,7 +12,7 @@ und Volatile-Result-Speicherung.
 
 | Datei | Verantwortung |
 |---|---|
-| `lib.rs` | `#![deny(unsafe_code)]`, `McpServer`, Stdio-Event-Loop |
+| `lib.rs` | `#![deny(unsafe_code)]`, `McpServer`, Stdio-Event-Loop (`memfuse_consolidate` Tool H-13 geschlossen, `uvx`-Distribution) |
 | `protocol.rs` | `McpError`, JSON-RPC 2.0 Message-Parser und Typen |
 | `sandbox.rs` | `McpSandbox`, `SandboxPolicy`, `VolatileToolResult` (verschlüsselter RAM) |
 | `prompt_injection.rs` | `PromptInjectionGuard`, `SecurityAuditLogger`, Pattern-Matching |

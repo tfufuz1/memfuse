@@ -103,7 +103,7 @@ impl ContextManager {
         // Filter by relevance threshold (retaining NaN chunks so total_cmp can order them safely without dropping)
         chunks.retain(|c| c.relevance.is_nan() || c.relevance >= self.relevance_threshold);
 
-        // Sort by relevance descending, then by doc_id ascending for deterministic tie-breaking (ADR-DB-001 / Spec §6.15)
+        // Sort by relevance descending, then by doc_id ascending for deterministic tie-breaking // TODO(H-17): ADR-Verweis nachführen — Spec §6.15 existiert nicht mehr
         chunks.sort_by(|a, b| {
             b.relevance
                 .total_cmp(&a.relevance)

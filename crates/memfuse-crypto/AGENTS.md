@@ -1,4 +1,4 @@
-# AGENTS.md — memfuse-crypto
+# AGENTS.md — memfuse-crypto (Cargo-Package-Name: memfuse-security)
 > Layer 1 | Encryption-at-Rest, HMAC-Chaining, Zeroize | ~2300 LOC
 
 ## 1. Zweck & Architekturrolle
