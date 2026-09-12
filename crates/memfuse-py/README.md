@@ -26,6 +26,10 @@ for res in results:
     print(res.id, res.score, res.text)
 ```
 
+## Breaking Changes & Release Notes
+
+- **Default Dimension Change**: The default `dimension` parameter in `memfuse.open()` was changed from `1536` to `768` to align with `MemFuseConfig::default().dimension` in `memfuse-db` (matching `nomic-embed-text`, the default ONNX embedding model). Callers relying implicitly on `1536` dimensions must explicitly pass `dimension=1536`.
+
 ## Development & Publishing
 
 Refer to [PUBLISHING.md](PUBLISHING.md) for instructions on local building, testing, and release management.
