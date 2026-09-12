@@ -4,6 +4,7 @@
 
 | Zeitstempel | Crate/Datei | Typ | ID | Session | Status | Review-Pässe (unabhängig) | Beschreibung |
 |---|---|---|---|---|---|---|---|
+| `TS:2026-09-11T22:58:30Z (SESSION: e6ab3646)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-09-11T14:41:11Z (SESSION: b979ee5a)` | `crates/memfuse-agent/src/audit.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Append-only immutable audit trail logging for agent state transitions. |
 | `TS:2026-09-11T00:00:00Z` | `crates/memfuse-db/src/homeostat.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | P95 retrieval latency feedback-regulated PID controller and hard deadline management (Feature F-08 & P11 requirement). |
 | `TS:2026-09-10T19:30:00Z (SESSION: a9d67eae)` | `crates/memfuse-index/src/diskann.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | DiskANN-Graphindex für Out-of-Core Approximate Nearest Neighbor Search (WP-4.3). |
@@ -72,10 +73,8 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/context.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kontextfenster-Verwaltung und Token-Budgetierung für RAG-Prompts. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/context_compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Kontextkompaktierung und Zusammenfassung langer Gesprächs- und Dokumentverläufe. |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Metadaten-Filterung und Extraktion von Kognitiven MemoryTypes (Episodic, Semantic, Working). |
-| `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | MemFuse Database Orchestrator & Facade (Layer 2). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
-| `2026-09-11T22:56:28Z (SESSION: c284a8b3)` | `crates/memfuse-db/src/fusion.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge |
 | `2026-09-11T19:30:00Z` | `crates/memfuse-store/src/lsm.rs` | `AI-TAG` | `AGT-STORE-27a11909` | `4a9ccf21` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED(audit-NC-3/C-4): Rollback transaction crash-atomicity via rollback-{txid}.intent file and startup recovery confirmed fully operational in LsmStorage::new() and verified by test_rollback_crash_recovery_startup. (ID: AGT-STORE-27a11909) (TS: 2026-09-11T19:30:00Z) (SESSION: 4a9ccf21) |
 | `2026-09-11T19:01:58Z` | `crates/memfuse-ollama/src/lib.rs` | `REVIEW-PASS` | `AGT-OLLAMA-4d606464` | `089dd3c0` | `PASS` | `0` | // REVIEW-PASS[2/2] STATUS:PASS (ID: AGT-OLLAMA-4d606464) (TS: 2026-09-11T19:01:58Z) (SESSION: 089dd3c0) PRÜFER-KONTEXT: FRESH - Clarified historical "zero unsafe" status observation vs compile-time enforced invariant via forbid(unsafe_code). |
 | `2026-09-11T16:00:00Z` | `crates/memfuse-candle/tests/embedding_normalization_proptest.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Property-based tests for numerical normalization, finite outputs, and empty/whitespace input edge cases. |
@@ -86,6 +85,8 @@
 | `2026-09-11T14:30:00Z (SESSION: 7c5b91a2)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-09-11T14:30:00Z` | `crates/memfuse-agent/src/dlq.rs` | `AI-TAG` | `AGT-AGENT-49bfd02e` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MINOR] RESOLVED: AGT-AGENT-49bfd02e — Replaced non-atomic last_tx_id + 1 read with OnceCell initialized AtomicU64 fetch_add. (TS: 2026-09-11T14:30:00Z) |
 | `2026-09-11T12:00:00Z` | `crates/memfuse-router/src/lyapunov.rs` | `AI-TAG` | `AGT-ROUTER-00808347` | `21a8d3e8` | `RESOLVED` | `0` | // AI-TAG[RESOLVED][MINOR] Added per-bin contribution clipping (`MAX_BIN_KL_CONTRIBUTION = 10.0`) to prevent numerical instability during KL divergence calculations under extreme distribution shift. (ID: AGT-ROUTER-00808347) (TS: 2026-09-11T12:00:00Z) (SESSION: 21a8d3e8) |
+| `2026-09-11T12:00:00Z` | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | `AI-TAG` | `-` | `504d02fc` | `OPEN` | `-` | // AI-TAG[SMELL][MINOR] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted. (TS: 2026-09-11T12:00:00Z) (SESSION: 504d02fc) |
+| `2026-09-11T12:00:00Z` | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | `AI-TAG` | `-` | `504d02fc` | `OPEN` | `-` | // AI-TAG[SMELL][MINOR] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity. (TS: 2026-09-11T12:00:00Z) (SESSION: 504d02fc) |
 | `2026-09-11T10:21:34Z (SESSION: 31ada253)` | `crates/memfuse-store/src/compaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Size-Tiered Compaction Strategy (STCS) für SSTables |
 | `2026-09-11T10:21:34Z (SESSION: 31ada253)` | `crates/memfuse-store/src/sstable.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Immutables SSTable Format (Data Blocks + Index Block + Bloom Filter) |
 | `2026-09-11T10:21:34Z (SESSION: 31ada253)` | `crates/memfuse-store/src/tenant_codec.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Tenant Key Isolation & Encoding für LSM Storage Engine |
@@ -126,7 +127,7 @@
 | `2026-09-10T00:00:00Z (SESSION: 61b93a6f)` | `crates/memfuse-graph/src/provenance.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Herkunftsnachweis für Graph-Kanten (DocEdgeIndex & EdgeProvenance) |
 | `2026-09-10T00:00:00Z` | `crates/memfuse-py/src/lib.rs` | `AI-TAG` | `AGT-PY-d5d2be30` | `55a96348` | `RESOLVED` | `0` | // AI-TAG[SECURITY][MAJOR][RESOLVED] panic="abort" in workspace Cargo.toml release profile disables catch_unwind (ID: AGT-PY-d5d2be30) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348) |
 | `2026-09-10T00:00:00Z` | `crates/memfuse-py/src/lib.rs` | `AI-TAG` | `AGT-PY-ff475c8e` | `55a96348` | `RESOLVED` | `0` | // AI-TAG[BUG][MAJOR][RESOLVED] _trigger_panic_for_test directly returns PyRuntimeError instead of invoking panic inside run_blocking_ffi (ID: AGT-PY-ff475c8e) (TS: 2026-09-10T00:00:00Z) (SESSION: 55a96348) |
-| `2026-09-09T22:00:00Z` | `crates/memfuse-db/tests/split_brain_vector_orphan_test.rs` | `ANCHOR` | `TEST:SPLIT_BRAIN_CONSISTENCY` | `-` | `IN_PROGRESS` | `0` | // ANCHOR[TEST:SPLIT_BRAIN_CONSISTENCY] STATUS:IN_PROGRESS (TS:2026-09-09T22:00:00Z) |
+| `2026-09-09T22:00:00Z` | `crates/memfuse-db/tests/split_brain_vector_orphan_test.rs` | `ANCHOR` | `TEST:SPLIT_BRAIN_CONSISTENCY` | `504d02fc` | `IN_PROGRESS` | `0` | // ANCHOR[TEST:SPLIT_BRAIN_CONSISTENCY] STATUS:IN_PROGRESS (TS:2026-09-09T22:00:00Z) (SESSION: 504d02fc) |
 | `2026-09-09T15:49:44Z (SESSION: 5b65397f)` | `crates/memfuse-router/src/lyapunov.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Proaktiver Distributional-Drift-Wächter via Lyapunov-Exponenten über KL-Divergenzen. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/embedding_provider.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Trait-based EmbeddingProvider implementation for CandleEmbedClient. |
 | `2026-09-09T15:45:22Z (SESSION: 6cae458a)` | `crates/memfuse-candle/src/gasp.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | GASP Grounding-Aware Sensitivity by Perturbation post-hoc hallucination validator. |
@@ -311,6 +312,4 @@
 | `` | `crates/memfuse-store/tests/disk_full_during_write.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/tests/fsync_timeout_rollback.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
 | `` | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
-| `` | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | `AI-TAG` | `-` | `-` | `OPEN` | `-` | // AI-TAG[SMELL] audit-M-9: WAL replay treats all valid WalEntry payloads on disk as implicitly committed unless corrupted. |
-| `` | `crates/memfuse-store/tests/wal_boundary_and_mutation_hardening.rs` | `AI-TAG` | `-` | `-` | `OPEN` | `-` | // AI-TAG[SMELL] audit-M-10: Restoring last HMAC manually after failed batch append ensures in-memory HMAC continuity. |
 | `` | `crates/memfuse-store/tests/wal_hmac_rollback_race.rs` | `FILE-CONTEXT` | `-` | `b448084` | `-` | `-` |  |
