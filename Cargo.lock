@@ -1989,6 +1989,7 @@ dependencies = [
  "futures-util",
  "memfuse-calibration",
  "memfuse-core",
+ "memfuse-security",
  "proptest",
  "serde",
  "sha2",
