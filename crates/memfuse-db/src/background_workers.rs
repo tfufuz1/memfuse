@@ -269,6 +269,7 @@ pub fn start_orphan_cleanup_worker<T: Clone + Send + Sync + 'static>(
                             expired.len()
                         );
                     }
+                    // AI-TAG[SMELL][MAJOR] Unbounded HNSW rebuild loop without backoff in orphan worker (ID: AGT-DB-c42e91a0) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
                     if let Err(err) = hnsw_index.check_connectivity() {
                         tracing::warn!(
                             error = %err,

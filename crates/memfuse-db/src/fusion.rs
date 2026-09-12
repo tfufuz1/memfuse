@@ -42,6 +42,7 @@ impl Default for ResonanceConfig {
 /// Feature-Flag: Nur aufrufen wenn `coherence-bonus-fusion` aktiv.
 #[cfg(feature = "coherence-bonus-fusion")]
 // AI-TAG[SMELL][RESOLVED] audit-NC-6: apply_resonance_bonus validiert Scores mit r.score.is_finite() bevor der Bonus berechnet wird.
+// AI-TAG[SMELL][MAJOR] ResonanceConfig beta/gamma clamp returns NaN if input is NaN (ID: AGT-DB-b31d8a72) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
 pub fn apply_resonance_bonus(
     results: Vec<SearchResult>,
     valid_signal_count: usize,

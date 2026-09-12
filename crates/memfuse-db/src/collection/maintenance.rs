@@ -333,6 +333,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn reap_expired_documents(&self, max_expired: usize) -> Result<usize> {
         let current_seq = self.snapshot_seq().await?;
+        // AI-TAG[SMELL][MAJOR] reap_expired_documents calls scan_prefix(None) which fails on collections > 10,000 items (ID: AGT-DB-f18d79a2) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
         let docs = self.scan_prefix("", None).await?;
         let mut expired_ids = Vec::new();
 

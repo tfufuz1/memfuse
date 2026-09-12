@@ -624,6 +624,7 @@ pub async fn cleanup_orphaned_consolidation_intents<S: StorageEngine>(
                     .unwrap_or(false);
 
             if is_consolidation {
+                // AI-TAG[SMELL][MINOR] Manual TxId allocation (last_tx + 1) in cleanup_orphaned_consolidation_intents (ID: AGT-DB-d81a20b4) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
                 let last_tx = storage.last_tx_id().await?.inner();
                 let tx = TxId::new(last_tx + 1);
                 storage.delete(tx, &key).await?;
