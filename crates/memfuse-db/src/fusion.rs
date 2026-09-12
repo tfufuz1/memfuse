@@ -1,7 +1,7 @@
 //! Reciprocal Rank Fusion implementation.
 
 // FILE-CONTEXT
-// STAND: 2026-08-29T05:41:20Z (SESSION: f7999509)
+// STAND: 2026-09-11T22:58:30Z (SESSION: e6ab3646)
 // ZWECK: Reciprocal Rank Fusion (RRF) — vereint HNSW, BM25 und Graph-Ränge
 // INVARIANTEN: k=60 Standard. Signale werden als Ränge fusioniert (NICHT rohe Scores).
 //              Keine Score-Normalisierung nötig (Hauptvorteil von RRF, ADR-003).
@@ -10,6 +10,7 @@
 //   2. `weighted_reciprocal_rank_fusion()` — mit Name + Gewicht pro Signal
 //   NIEMALS eine dritte `execute_rrf()`-Funktion anlegen — sie würde diese duplizieren.
 // SIEHE AUCH: DECISIONS.md ADR-003, crates/memfuse-db/AGENTS.md §4-Signal Fusion
+// DONE(memfuse-impl): Verified RRF Rank Fusion & Numerik handling (NaN/Inf weights, tie-breaking, and resonance bonus) [ref:eigenbau-rrf-fusion]
 
 use crate::{ProvenanceRecord, SearchResult};
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,7 @@ pub fn apply_resonance_bonus(
         .collect();
 
     // Single sort: finite scores descending, non-finite scores to end (NC-6).
+    // DONE(memfuse-impl): Resonance bonus places finite scores before non-finite scores and breaks ties via total_cmp and document ID. [ref:eigenbau-rrf-fusion]
     results.sort_by(|a, b| {
         match (a.score.is_finite(), b.score.is_finite()) {
             (true, false) => std::cmp::Ordering::Less, // finite vor non-finite
@@ -101,6 +103,7 @@ impl Ord for HeapEntry {
         // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
         // so that peek() returns the candidate with the lowest score (or highest ID on tie).
         // Therefore, lower score => Greater priority in max-heap.
+        // DONE(memfuse-impl): BinaryHeap HeapEntry uses f32::total_cmp for NaN score safety and secondary ID comparison for deterministic tie-breaking. [ref:eigenbau-rrf-fusion]
         other
             .result
             .score
@@ -213,7 +216,11 @@ pub fn build_provenance(
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
-    debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+    // DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]
+    debug_assert!(
+        rrf_k >= 0.0,
+        "rrf_k must be non-negative; division by zero risk"
+    );
 
     let mut signal_ranks = HashMap::new();
     let mut signal_contributions = HashMap::new();
@@ -222,6 +229,7 @@ pub fn build_provenance(
     let t_w = text_weight.unwrap_or(1.0);
     let g_w = graph_weight.unwrap_or(1.0);
 
+    // DONE(memfuse-impl): calc_contrib enforces 1-based RRF rank and guards against division by zero and non-finite contributions. [ref:eigenbau-rrf-fusion]
     let calc_contrib = |w: f32, rank: u32| -> (u32, f32) {
         let rank = if rank == 0 {
             tracing::warn!("build_provenance: rank=0 is invalid input (RRF rank is 1-based per Cormack et al.); defaulting to rank 1");
@@ -238,7 +246,12 @@ pub fn build_provenance(
         let rrf_contrib = if rrf_contrib.is_finite() {
             rrf_contrib
         } else {
-            tracing::warn!(w, rrf_k, rank, "non-finite rrf_contrib in build_provenance; defaulting to 0.0");
+            tracing::warn!(
+                w,
+                rrf_k,
+                rank,
+                "non-finite rrf_contrib in build_provenance; defaulting to 0.0"
+            );
             0.0
         };
         (rank, rrf_contrib)
@@ -440,6 +453,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
     let mut valid_signal_count = 0usize;
 
     for (signal_name, result_set, weight) in result_sets {
+        // DONE(memfuse-impl): RRF fusion validates weights filtering non-finite (NaN/Inf) and non-positive (<=0) weights to prevent score corruption. [ref:eigenbau-rrf-fusion]
         if !weight.is_finite() || weight <= 0.0 {
             tracing::warn!(
                 signal = %signal_name,
@@ -450,11 +464,16 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
         }
         valid_signal_count += 1;
         let signal_kind = SignalKind::from_name(&signal_name);
-        // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
+        // RRF rank is 1-based per Cormack et al. rank=0 is invalid input. With rank >= 1, rrf_k >= 0.0 guarantees non-zero denominator.
         let rrf_k = k as f32;
-        debug_assert!(rrf_k > 0.0, "rrf_k must be positive; division by zero risk");
+        // DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]
+        debug_assert!(
+            rrf_k >= 0.0,
+            "rrf_k must be non-negative; division by zero risk"
+        );
 
         for (rank_idx, doc) in result_set.into_iter().enumerate() {
+            // DONE(memfuse-impl): RRF fusion validates score calculation denominators and guards non-finite raw input scores. [ref:eigenbau-rrf-fusion]
             if !doc.score.is_finite() {
                 tracing::error!(
                     signal = %signal_name,
@@ -491,10 +510,7 @@ pub fn weighted_reciprocal_rank_fusion_with_options(
             }
 
             if !signal_name.is_empty() && signal_name != "unnamed" {
-                entry
-                    .3
-                    .signal_ranks
-                    .insert(signal_name.clone(), rrf_rank);
+                entry.3.signal_ranks.insert(signal_name.clone(), rrf_rank);
 
                 // Record per-signal RRF contribution (INV-PROV-1)
                 entry.3.signal_contributions.insert(
@@ -693,6 +709,48 @@ pub fn weights_to_signal_factors(weights: Option<&memfuse_core::FusionWeights>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rrf_k_zero_boundary() {
+        let set = vec![
+            SearchResult {
+                id: "doc1".to_string(),
+                score: 0.9,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+            SearchResult {
+                id: "doc2".to_string(),
+                score: 0.8,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        ];
+
+        let prov = build_provenance(
+            Some(0.9),
+            Some(1),
+            Some(1.0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            Some("col".to_string()),
+            Some("hnsw".to_string()),
+            Some(1.0),
+        );
+        let contrib = prov
+            .signal_contributions
+            .get("vector")
+            .expect("vector contribution present");
+        assert_eq!(contrib.rrf_contribution, 1.0);
+    }
 
     #[test]
     fn test_rrf_dual_signal_higher_than_single_signal() {
@@ -2157,6 +2215,134 @@ mod tests {
                 res.score
             );
         }
+    }
+
+    #[test]
+    fn test_rrf_nan_and_tie_cases_comprehensive() {
+        // 1. Equal scores across multiple signals -> secondary ID tie-breaker verification
+        let signal_a = (
+            "vector".to_string(),
+            vec![
+                SearchResult {
+                    id: "doc_beta".to_string(),
+                    score: 0.9,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc_alpha".to_string(),
+                    score: 0.9,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+            ],
+            1.0,
+        );
+        let signal_b = (
+            "text".to_string(),
+            vec![
+                SearchResult {
+                    id: "doc_alpha".to_string(),
+                    score: 0.8,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc_beta".to_string(),
+                    score: 0.8,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+            ],
+            1.0,
+        );
+
+        // doc_beta: vector rank 1 (1/61), text rank 2 (1/62) -> score = 1/61 + 1/62
+        // doc_alpha: vector rank 2 (1/62), text rank 1 (1/61) -> score = 1/62 + 1/61
+        // Exact tie in score! Lexicographical secondary sort by ID MUST place doc_alpha before doc_beta.
+        let fused_tie = weighted_reciprocal_rank_fusion(vec![signal_a, signal_b], 10);
+        assert_eq!(fused_tie.len(), 2);
+        assert_eq!(fused_tie[0].id, "doc_alpha");
+        assert_eq!(fused_tie[1].id, "doc_beta");
+        assert!((fused_tie[0].score - fused_tie[1].score).abs() < f32::EPSILON);
+
+        // 2. Input containing NaN raw scores, Infinity raw scores, and -0.0 vs +0.0 scores
+        let signal_nan_raw = (
+            "graph".to_string(),
+            vec![
+                SearchResult {
+                    id: "doc_nan".to_string(),
+                    score: f32::NAN,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc_inf".to_string(),
+                    score: f32::INFINITY,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc_neg_zero".to_string(),
+                    score: -0.0,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+                SearchResult {
+                    id: "doc_pos_zero".to_string(),
+                    score: 0.0,
+                    metadata: None,
+                    matched_signals: vec![],
+                    provenance: None,
+                },
+            ],
+            1.0,
+        );
+
+        let fused_nonfinite = weighted_reciprocal_rank_fusion(vec![signal_nan_raw], 10);
+        assert_eq!(fused_nonfinite.len(), 4);
+        for res in &fused_nonfinite {
+            assert!(
+                res.score.is_finite(),
+                "All RRF final scores must be finite despite non-finite raw inputs"
+            );
+        }
+
+        // 3. HeapEntry total_cmp behavior with NaN scores
+        let mut heap = std::collections::BinaryHeap::new();
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "b_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "a_nan".to_string(),
+                score: f32::NAN,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+
+        // BinaryHeap pop returns maximum element according to Ord (worst item at top)
+        let first_pop = heap.pop().expect("heap entry");
+        let second_pop = heap.pop().expect("heap entry");
+        // For equal NaN scores, other.result.id.cmp(&self.result.id) tie breaks.
+        // peek/pop priority = lower score or higher ID => "b_nan" has higher ID than "a_nan", so "b_nan" > "a_nan"
+        assert_eq!(first_pop.result.id, "b_nan");
+        assert_eq!(second_pop.result.id, "a_nan");
     }
 
     #[cfg(test)]

@@ -80,15 +80,15 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-core` | 1 | 9364 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
 | `memfuse-calibration` | 2 | 2225 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 2 | 5707 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-graph` | 2 | 10624 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-graph` | 2 | 10627 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-security` | 2 | 5068 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
 | `memfuse-text` | 2 | 5433 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 3 | 2686 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 3 | 15865 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 3 | 3990 | 🟢 Clean |  |
-| `memfuse-store` | 3 | 19965 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-embed` | 4 | 2030 | 🧊 Optional |  |
-| `memfuse-db` | 5 | 30801 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
+| `memfuse-store` | 3 | 19972 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-embed` | 4 | 2033 | 🧊 Optional |  |
+| `memfuse-db` | 5 | 30869 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 6 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 6 | 5456 | 🟢 Clean |  |
 | `memfuse-tauri` | 6 | 6209 | 🟢 Clean | DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. |
