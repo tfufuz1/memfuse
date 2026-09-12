@@ -70,7 +70,7 @@ pub struct RoutingDecision {
 
 /// Inner state for `RouterEngine` holding active profiles, calibration states, and Lyapunov drift watchers.
 ///
-/// Atomic state swap via ArcSwap: profiles, calibration, and watchers
+/// Atomic state swap via `ArcSwap`: profiles, calibration, and watchers
 /// are always seen as a consistent unit by all readers.
 #[derive(Clone)]
 pub struct RouterState {
@@ -80,12 +80,38 @@ pub struct RouterState {
 }
 
 /// Router engine that routes queries to optimal SLM backends based on community assignment and search scores.
+///
+/// # Concurrency & Lock Architecture
+/// `RouterEngine` utilizes a deliberate dual-state architecture:
+/// 1. **`state: ArcSwap<RouterState>`**: Stores active SLM profiles, conformal calibration states,
+///    and Lyapunov drift watchers as a single, atomically swapped unit. Readers acquire lock-free
+///    snapshots via `state.load()` / `state.load_full()`, ensuring atomic consistency across hot-reloads,
+///    routing decisions, and conformal updates without blocking concurrent queries.
+/// 2. **`pending_decisions: RwLock<HashMap<DecisionId, (String, Instant)>>`**: Maintained in a separate
+///    `parking_lot::RwLock` specifically to decouple transient decision tracking from core router state.
+///
+/// ### Design Rationale & Safety
+/// Keeping `pending_decisions` outside of `RouterState` is a deliberate, audited architectural decision:
+/// - **Contention Avoidance**: `pending_decisions` experiences high-frequency write activity (insertions on every
+///   routing call, removals on `record_outcome`, periodic pruning in `evict_stale_decisions`). If `pending_decisions`
+///   were included inside `RouterState`, every decision track write would require allocating and cloning the entire
+///   `RouterState` (profiles, calibration maps, Lyapunov score windows) to perform an `ArcSwap::store` or `rcu`.
+/// - **Isolation of Concerns**: Transient pending decision metadata is completely decoupled from statistical
+///   calibration and profile routing consistency. Decisions stored in `pending_decisions` are read/written
+///   independently per `DecisionId` and do not affect the atomic snapshot guarantees of `RouterState`.
+/// - **Concurrency Safety**: This separation presents **zero concurrency risk**. Routing queries read `RouterState`
+///   lock-free and briefly acquire a write lock on `pending_decisions` solely to record decision IDs.
 pub struct RouterEngine {
     collection: Arc<Collection<LsmStorage>>,
-    /// Atomic state swap via ArcSwap: profiles, calibration, and watchers
-    /// are always seen as a consistent unit by all readers.
+    /// Atomic state snapshot via `ArcSwap`: active profiles, conformal calibration, and Lyapunov drift
+    /// watchers are maintained together as an immutable, atomically replaceable snapshot.
     pub(crate) state: ArcSwap<RouterState>,
-    /// Kept in a separate RwLock to avoid cloning overhead on high-frequency routing decision tracking writes.
+    /// Intentionally kept in a separate `RwLock` outside of `RouterState`.
+    ///
+    /// **Rationale**: High-frequency writes (decision insertion, `record_outcome` removal, stale eviction)
+    /// would trigger full `RouterState` clones if held within `ArcSwap`. Separating `pending_decisions`
+    /// eliminates state-cloning overhead while keeping transient outcome tracking isolated from core
+    /// routing calibration consistency.
     pub(crate) pending_decisions: RwLock<HashMap<DecisionId, (String, Instant)>>,
 }
 
