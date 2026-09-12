@@ -117,7 +117,7 @@ pub fn evaluate_recall_stability(entries: &[RecallHistoryEntry], today: NaiveDat
         .collect();
 
     if has_30_days_history && outliers.is_empty() {
-        println!("✅ VETO-F02: 30-Tage-Recall-Stabilität nachgewiesen — physio-nucleation kann zur Review vorgelegt werden");
+        println!("✅ VETO-F02: 30-Tage-Recall-Stabilität nachgewiesen — partial-rebuild-pruning kann zur Review vorgelegt werden");
     } else {
         let days_recorded = match earliest_date {
             Some(d) => (today - d).num_days().max(0),

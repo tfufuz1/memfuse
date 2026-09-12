@@ -212,7 +212,7 @@ pub fn run_validate_pr_checklist() -> bool {
                 CheckStatus::Warn
             },
             detail: Some(
-                "HNSW-Code geändert. Prüfe ADR-071 / VETO-01 (physio-nucleation MUSS deaktiviert bleiben)."
+                "HNSW-Code geändert. Prüfe ADR-071 / VETO-01 (partial-rebuild-pruning MUSS deaktiviert bleiben)."
                     .to_string(),
             ),
         });

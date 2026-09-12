@@ -2721,8 +2721,8 @@ description = "Core crate"
 
     #[test]
     fn test_title_similarity_and_tokenization() {
-        let title1 = "refactor(memfuse-index): rename physio-nucleation feature flag";
-        let title2 = "refactor(memfuse-index): rename physio-nucleation feature flag to partial-index-rebuild";
+        let title1 = "refactor(memfuse-index): rename partial-rebuild-pruning feature flag";
+        let title2 = "refactor(memfuse-index): rename partial-rebuild-pruning feature flag to partial-index-rebuild";
 
         let tokens1 = tokenize_title(title1);
         let tokens2 = tokenize_title(title2);

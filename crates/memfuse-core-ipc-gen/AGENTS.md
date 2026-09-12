@@ -69,7 +69,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 | `ConsistencyEnforcer` (F-04) | `crates/memfuse-graph/src/consistency_enforcement.rs:86` | Widerspruchserkennung & Edge-Suppression (ADR-069) |
 | `memfuse-candle` | `crates/memfuse-candle/` | Workspace-Member (Layer 2), GGUF Inferenz-Backend |
 | `ConsolidationSession` | `crates/memfuse-db/src/context_compaction.rs:188` | Context Compaction mit Transaktionssicherheit |
-| `AdaptiveDecayController` (F-01) | `crates/memfuse-db/src/decay_controller.rs:64` | Thermodynamisches Adaptive-Decay hinter `decay-thermostat` / `adaptive-decay` (ADR-069) |
+| `AdaptiveDecayController` (F-01) | `crates/memfuse-db/src/decay_controller.rs:64` | Thermodynamisches Adaptive-Decay hinter `adaptive-decay-control` / `adaptive-decay` (ADR-069) |
 | `ConsolidationEngine` | `crates/memfuse-db/src/consolidation_executor.rs:107` | Hintergrund-Konsolidierung und Community-Synthese (`execute_sleep_cycle`) |
 | `MarkdownChunker` | `crates/memfuse-db/src/chunker.rs` | Strukturiertes Dokumentsplitting vor Vektor-Embedding |
 | `MultiStepEngine` & `total_cmp` (H) | `crates/memfuse-db/src/multistep.rs` & `fusion.rs` | Iterative Search Engine mit RRF-Signal-Fusion & robuster HeapEntry-Sortierung (PR #1925) |
@@ -100,7 +100,7 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 ## Bekannte offene Risiken
 
 1. **`rebuild_region()` ohne Recall-Tests (F-02, `crates/memfuse-index/src/hnsw.rs:1812`)**:
-   `rebuild_region()` führt reines Tombstone-Pruning durch, ohne dass wissenschaftliche Recall-Tests oder ein offizielles ADR vorliegen. Das Feature-Flag `physio-nucleation` MUSS deaktiviert bleiben, bis entsprechende Regressionstests vorliegen.
+   `rebuild_region()` führt reines Tombstone-Pruning durch, ohne dass wissenschaftliche Recall-Tests oder ein offizielles ADR vorliegen. Das Feature-Flag `partial-rebuild-pruning` MUSS deaktiviert bleiben, bis entsprechende Regressionstests vorliegen.
 2. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
    `memfuse-candle` ist zwar als Workspace-Crate vorhanden, dient aber derzeit als isoliertes Modul und ist noch nicht in die Haupt-Serving-Pipeline (`memfuse-db` / `memfuse-router`) eingebunden.
 

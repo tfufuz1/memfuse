@@ -101,7 +101,7 @@ Der Prompter bleibt der Erzeugungsweg für **tägliche, crate-gebundene Standard
 | `prune-branches.yml` | vermutlich zeitgesteuert | Branch-Proliferation-Reduktion |
 | `publish-pypi.yml` | vermutlich Release-Tag | Veröffentlichung von `memfuse-py` |
 | `tauri-release.yml` | vermutlich Release-Tag | **Noch aktiv trotz Deprecation** — physischer Rückbau von ADR-077 weiterhin nicht abgeschlossen (bestätigt, `crates/memfuse-tauri` unverändert vorhanden) |
-| **`nucleation-recall-history.yml`** *(neu seit v1)* | vermutlich täglich (cron) | 30-Tage-Recall-Stabilitätsmessung für `F-02`-Tombstone-Pruning (`VETO-F02`); schreibt nach `benchmarks/results/nucleation_recall_history.jsonl`, geprüft via `cargo xtask check-recall-stability`; Voraussetzung für die Freigabe des `physio-nucleation`-Feature-Flags nach dem `2026-10-07`-Review-Datum |
+| **`nucleation-recall-history.yml`** *(neu seit v1)* | vermutlich täglich (cron) | 30-Tage-Recall-Stabilitätsmessung für `F-02`-Tombstone-Pruning (`VETO-F02`); schreibt nach `benchmarks/results/nucleation_recall_history.jsonl`, geprüft via `cargo xtask check-recall-stability`; Voraussetzung für die Freigabe des `partial-rebuild-pruning`-Feature-Flags nach dem `2026-10-07`-Review-Datum |
 
 ### 4.2 `context-gates.yml` — die 15 Gates im Detail (aktualisiert: +1 gegenüber v1)
 | Gate | Prüfung | Mechanismus |
