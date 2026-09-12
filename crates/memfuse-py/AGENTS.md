@@ -14,7 +14,7 @@ in eine synchrone und asynchrone Python-API via PyO3. Konvertiert Python-Typen
 
 | Datei | Verantwortung |
 |---|---|
-| `lib.rs` | `#![deny(unsafe_code)]`, `PyMemFuse`, `PyCollection`, PyO3 Modul-Registrierung |
+| `lib.rs` | `#![deny(unsafe_code)]`, `PyMemFuse`, `PyCollection`, PyO3 Modul-Registrierung (Dimension Default 768 vereinheitlicht H-8 geschlossen) |
 | `types.rs` | Konvertierung (FFI) für Dokumente, Suchergebnisse, NumPy-Vektoren |
 | `error.rs` | FFI-Error-Mapping: `MemFuseError` -> Python Exceptions |
 | `gil.rs` | GIL-Management und Sub-Interpreter State-Isolation |

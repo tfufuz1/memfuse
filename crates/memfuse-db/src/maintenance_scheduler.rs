@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// ZWECK: Zentraler MaintenanceScheduler für koordiniertes, sequenzielles Ausführen aller Background-Maintenance-Prozesse (§10.1).
+// ZWECK: Zentraler MaintenanceScheduler für koordiniertes, sequenzielles Ausführen aller Background-Maintenance-Prozesse (ADR-079).
 // INVARIANTEN: P2 Zero-Panic-Doctrine (Isolierte Fehlerbehandlung pro Teilschritt).
 //              P10 Wiederverwendung bestehender Logik ohne Duplikation.
 // NICHT-OFFENSICHTLICH: F-11 (LyapunovDriftWatcher) ist bewusst NICHT im MaintenanceScheduler-Tick enthalten,
@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Zentraler Scheduler für die Ausführung der Background-Maintenance-Prozesse (§10.1).
+/// Zentraler Scheduler für die Ausführung der Background-Maintenance-Prozesse (ADR-079).
 pub struct MaintenanceScheduler<S: StorageEngine, V: VectorIndex = memfuse_index::HnswIndex> {
     config: MaintenanceConfig,
     collection: Arc<Collection<S, V>>,
@@ -119,7 +119,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
         })
     }
 
-    /// Führt einen einzelnen sequenziellen Maintenance-Tick durch (§10.1).
+    /// Führt einen einzelnen sequenziellen Maintenance-Tick durch (ADR-079).
     pub async fn run_tick(&self) {
         tracing::debug!(collection = %self.collection.name(), "MaintenanceScheduler tick started");
 

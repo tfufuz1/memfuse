@@ -10,7 +10,7 @@
 <!-- §7 = Non-Obvious Decisions (would cause wrong code without this knowledge) -->
 
 <a id="1"></a>
-## Verifizierter Codestand · HEAD `386d112f128ff6071d2c3982364dff45196cf540`, 2026-09-12 17:53:09 +0200
+## Verifizierter Codestand · HEAD `caad7178`, 2026-09-12
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
@@ -43,10 +43,11 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 - **Layer 5 — Benchmarking, Routing & Desktop-Shell**:
   - `memfuse-bench`: Reproducible benchmark harness (`benchmarks/memfuse-bench`)
   - `memfuse-router`: Conformal router engine & SLM profiles (`crates/memfuse-router`)
+  - `memfuse-tauri`: Deprecated/Entfernt (Produktfokus auf PyPI Library & MCP Server, ADR-077)
 - **Layer 6 — Agenten-Engine**:
   - `memfuse-agent`: Persistent agent workflow loop (`crates/memfuse-agent`)
 - **Layer 7 — Protocol & Sandbox**:
-  - `memfuse-mcp`: Model Context Protocol (MCP) stdio JSON-RPC 2.0 server (`crates/memfuse-mcp`)
+  - `memfuse-mcp`: Model Context Protocol (MCP) stdio JSON-RPC 2.0 server & `uvx`-paketierte Distribution (`crates/memfuse-mcp`)
 
 ---
 
@@ -76,7 +77,10 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 | `WAL Header State Atomicity` | `crates/memfuse-store/src/wal.rs` | Atomare Schreibzustandsverfolgung im WAL Header (PR #1924) |
 | `DiskANN HMAC Hardening` | `crates/memfuse-index/src/diskann.rs` | HMAC-Integritätsschutz für DiskANN-Indizes (PR #1919) |
 | `CheckpointGuard` | `crates/memfuse-checkpoint/src/lib.rs` | RAII-Checkpoint & Persistent Store Management |
-| `CrossEncoderReranker` | `crates/memfuse-embed/src/reranker.rs` | Cross-Encoder Reranking für High-Precision Retrieval |
+| `CrossEncoderReranker` | `crates/memfuse-embed/src/reranker.rs` | Cross-Encoder Reranking für High-Precision Retrieval (ONNX ist Default-Embedding-Backend) |
+| `Inference Semaphore & Backpressure` (H-5) | `crates/memfuse-candle/src/inference.rs` | Bounded Inferenz-Concurrency / Backpressure für Candle ML Engine geschlossen |
+| `Dimension Default 768` (H-8) | `crates/memfuse-py/` & `memfuse-core` | Dimension-Default auf 768 vereinheitlicht geschlossen |
+| `memfuse_consolidate Tool` (H-13) | `crates/memfuse-mcp/src/lib.rs` | Fünftes MCP-Tool für sofortigen Konsolidierungstrigger geschlossen |
 | `McpSandbox` | `crates/memfuse-mcp/src/lib.rs` | Read-Only MCP-Server Sandbox & Write Authorization Guard |
 | `ContextPrefixEngine` | `crates/memfuse-ollama/src/context_prefixer.rs` | Context Prefix Compression Engine |
 | `CSRGraph` & PPR | `crates/memfuse-graph/src/csr.rs` | Compressed Sparse Row Graph mit Personalized PageRank |

@@ -10,7 +10,7 @@ Inferenz-Backend auf Basis von Candle (`candle-core`, `candle-transformers`) fü
 | Datei | Verantwortung |
 |---|---|
 | `lib.rs` | Crate-Exports und Initialisierung |
-| `inference.rs` | Candle GGUF LlmTextGenerator Implementierung |
+| `inference.rs` | Candle GGUF LlmTextGenerator Implementierung (Inkrementelle Inferenz-Semaphore & Backpressure-Härtung H-5 geschlossen) |
 | `embedding.rs` | Candle GGUF EmbeddingProvider Implementierung |
 
 ## 3. Kritische Invarianten
