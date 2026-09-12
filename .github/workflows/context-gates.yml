@@ -36,7 +36,7 @@ jobs:
       - name: "Gate 12b: Phantom-File-Verification"
         env:
           MEMFUSE_PR_BODY: ${{ github.event.pull_request.body || '' }}
-          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || (github.event.before != '' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD~1') }}
         run: |
           cargo run -p xtask -- check-phantom-files
           echo "✅ Gate 12b: Keine Phantom-Dateien in Commit-Messages/PR-Body"
@@ -145,6 +145,27 @@ jobs:
           cargo run -p xtask -- check-jules-context-freshness
           echo "✅ Jules Context Frischeprüfung erfolgreich"
 
+      - name: "Gate 10b: Prompter-Data Freshness"
+        run: |
+          PROMPTER_JSON=".jules/prompter-data.json"
+          if [ ! -f "$PROMPTER_JSON" ]; then
+            echo "❌ $PROMPTER_JSON existiert nicht. Bitte 'cargo xtask gen-prompter-data' ausführen."
+            exit 1
+          fi
+          HEAD_JSON=$(python3 -c "import json, sys; d=json.load(open('$PROMPTER_JSON')); print(d.get('head', ''))" 2>/dev/null || echo "")
+          if [ -z "$HEAD_JSON" ]; then
+            echo "⚠️ Feld 'head' in $PROMPTER_JSON ist leer oder fehlt."
+            COMMITS_BEHIND=999
+          else
+            COMMITS_BEHIND=$(git rev-list --count ${HEAD_JSON}..HEAD 2>/dev/null || echo 999)
+          fi
+          if [ "$COMMITS_BEHIND" -gt 10 ]; then
+            echo "❌ Prompter-Data ist veraltet ($COMMITS_BEHIND Commits hinter HEAD, Schwellenwert: 10)."
+            echo "👉 Bitte ausführen: cargo xtask gen-prompter-data"
+            exit 1
+          fi
+          echo "✅ Gate 10b: Prompter-Data Freshness verifiziert ($COMMITS_BEHIND Commits hinter HEAD)"
+
       - name: "Gate 11: AGENTS.md Template Validierung"
         run: |
           # Prüft, ob alle AGENTS.md die erforderlichen 8 Sektionen enthalten
@@ -191,5 +212,15 @@ jobs:
 
       - name: "Gate 16: Commit Message Quality"
         env:
-          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+          MEMFUSE_CI_BASE_REF: ${{ github.base_ref != '' && format('origin/{0}', github.base_ref) || (github.event.before != '' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD~1') }}
         run: cargo run -p xtask -- check-commit-messages
+
+      - name: "Wöchentlicher Shell-Commit-Audit"
+        run: |
+          COUNT=$(git log --since="7 days ago" --format="%s" origin/main 2>/dev/null | grep -ic "^shell-commit$" || true)
+          echo "ℹ️ Shell-Commits der letzten 7 Tage auf main: $COUNT"
+          if [ "$COUNT" -gt 5 ]; then
+            echo "⚠️ WARNUNG: Erhöhte Anzahl von Shell-Commits ($COUNT > 5) in den letzten 7 Tagen auf main erkannt!"
+          else
+            echo "✅ Shell-Commit-Audit unauffällig ($COUNT <= 5)"
+          fi
