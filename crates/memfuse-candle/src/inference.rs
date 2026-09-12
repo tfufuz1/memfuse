@@ -690,6 +690,10 @@ mod tests {
             CandleLlmClient::new(Device::Cpu, mock_model, fingerprint, tokenizer)
                 .with_kv_bridge(adapter.clone());
 
+        let seg1 = ContextSegment::new(101, "Chunk 1 content");
+        let seg2 = ContextSegment::new(102, "Chunk 2 content");
+        let segments = vec![seg1, seg2];
+
         let context_with_adapter_res = client_with_adapter
             .generate_with_context(&segments)
             .await
