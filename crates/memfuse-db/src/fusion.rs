@@ -1328,21 +1328,10 @@ mod tests {
             },
         });
 
-        // BinaryHeap::into_sorted_vec() returns elements in ascending order according to Ord (i.e. worst HeapEntry first, best last).
-        // In HeapEntry::cmp, total_cmp places NaN as Greater than all finite numbers.
-        // Thus, with reversed total_cmp in HeapEntry::cmp (other.total_cmp(&self)), NaN score yields Greater priority in max-heap (peek/pop worst item).
-        // Consequently, pop() / into_sorted_vec() places doc_nan at the start of worst-to-best sorted_vec, and doc1 at the end.
-        let sorted: Vec<_> = heap
-            .into_sorted_vec()
-            .into_iter()
-            .map(|e| e.result.id)
-            .collect();
-
         assert_eq!(
-            sorted.first().map(|s| s.as_str()),
+            heap.peek().map(|e| e.result.id.as_str()),
             Some("doc_nan"),
-            "NaN score entry must have highest pop priority in max-heap (worst position)\nSorted order: {:?}",
-            sorted
+            "NaN score entry must have highest pop priority in max-heap (worst position)"
         );
     }
 

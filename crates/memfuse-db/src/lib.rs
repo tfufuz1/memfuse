@@ -307,6 +307,12 @@ pub struct MemFuseStats {
     pub storage_stats: memfuse_core::StorageStats,
 }
 
+/// Trait for querying Lyapunov drift status from an attached router engine without creating a cyclic dependency.
+pub trait DriftStatusProvider: Send + Sync {
+    /// Returns the overall drift status string ("stabil", "warnung", "kritisch", or "unbekannt").
+    fn overall_drift_status(&self) -> String;
+}
+
 /// Backward compatibility alias for `MemFuseStats`.
 pub type DbStats = MemFuseStats;
 
@@ -450,6 +456,16 @@ pub struct MemFuse {
     embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     /// Instance-scoped orphan registry for sequence pins and checkpoints (ADR-053).
     orphan_registry: Arc<memfuse_checkpoint::InstanceOrphanRegistry>,
+    /// Weak reference to `DriftStatusProvider` (e.g. `RouterEngine`) for live stats reporting (ADR-080).
+    router: parking_lot::RwLock<Option<std::sync::Weak<dyn DriftStatusProvider>>>,
+    /// Weak reference to `IsotonicCalibrator` for live stats reporting (ADR-080).
+    calibrator: parking_lot::RwLock<
+        Option<std::sync::Weak<parking_lot::Mutex<memfuse_calibration::IsotonicCalibrator>>>,
+    >,
+    /// Weak reference to `PidController` for live stats reporting (ADR-080).
+    pid_controller: parking_lot::RwLock<
+        Option<std::sync::Weak<parking_lot::Mutex<memfuse_calibration::PidController>>>,
+    >,
 }
 
 // BL-01-DB-001: Snapshot-Recovery API now exposed via create_snapshot() /
@@ -530,6 +546,9 @@ impl MemFuse {
             task_tracker: task_tracker.clone(),
             embedder: parking_lot::RwLock::new(None),
             orphan_registry,
+            router: parking_lot::RwLock::new(None),
+            calibrator: parking_lot::RwLock::new(None),
+            pid_controller: parking_lot::RwLock::new(None),
         };
 
         // Initialize already existing collections from storage
@@ -1418,9 +1437,33 @@ impl MemFuse {
         self.default_col().await?.scan(start, end, limit).await
     }
 
+    /// Sets a weak reference to a `DriftStatusProvider` (e.g. `RouterEngine`) for live stats reporting (ADR-080).
+    pub fn set_router(&self, router: std::sync::Weak<dyn DriftStatusProvider>) {
+        *self.router.write() = Some(router);
+    }
+
+    /// Sets a weak reference to the `IsotonicCalibrator` for live stats reporting (ADR-080).
+    pub fn set_calibrator(
+        &self,
+        calibrator: std::sync::Weak<parking_lot::Mutex<memfuse_calibration::IsotonicCalibrator>>,
+    ) {
+        *self.calibrator.write() = Some(calibrator);
+    }
+
+    /// Sets a weak reference to the `PidController` for live stats reporting (ADR-080).
+    pub fn set_pid_controller(
+        &self,
+        pid_controller: std::sync::Weak<parking_lot::Mutex<memfuse_calibration::PidController>>,
+    ) {
+        *self.pid_controller.write() = Some(pid_controller);
+    }
+
     /// Returns combined statistics for the vector index, storage engine, and calibration/drift observability.
     ///
-    /// Stats are approximate and read directly from existing internal states without triggering expensive recalculations.
+    /// Reads directly from existing internal states and weak references without triggering
+    /// expensive recalculations. If any injected weak reference (`router`, `calibrator`, `pid_controller`)
+    /// fails to upgrade (e.g. during shutdown or when unattached), defined safe fallback values
+    /// (`"nicht verfügbar"`, `None`) are returned without panicking.
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn stats(&self) -> Result<MemFuseStats> {
         let default_col = self.default_col().await?;
@@ -1428,12 +1471,42 @@ impl MemFuse {
         let index_stats = default_col.stats().await?;
         let storage_stats = self.storage.stats().await?;
 
+        // Live drift_status from RouterEngine via Weak upgrade
+        let drift_status = self
+            .router
+            .read()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+            .map(|r| r.overall_drift_status())
+            .unwrap_or_else(|| "nicht verfügbar".to_string());
+
+        // Live calibration_ece & last_calibration_at from IsotonicCalibrator via Weak upgrade
+        let (calibration_ece, last_calibration_at) = self
+            .calibrator
+            .read()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+            .map(|c| {
+                let guard = c.lock();
+                (guard.cached_ece(), guard.last_calibration_at())
+            })
+            .unwrap_or((None, None));
+
+        // Live pid_pool_size from PidController via Weak upgrade
+        let pid_pool_size = self
+            .pid_controller
+            .read()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+            .map(|p| p.lock().current_pool_size())
+            .unwrap_or(None);
+
         Ok(MemFuseStats {
-            drift_status: "stabil".to_string(),
-            calibration_ece: None,
-            last_calibration_at: None,
+            drift_status,
+            calibration_ece,
+            last_calibration_at,
             active_memory_count,
-            pid_pool_size: None,
+            pid_pool_size,
             index_stats,
             storage_stats,
         })
@@ -1789,8 +1862,66 @@ mod tests {
         let stats = db.stats().await.expect("stats"); // expect
         assert_eq!(stats.index_stats.num_vectors, 1);
         assert_eq!(stats.active_memory_count, 1);
-        assert_eq!(stats.drift_status, "stabil");
+        assert_eq!(stats.drift_status, "nicht verfügbar");
         assert!(stats.storage_stats.memtable_size_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn test_stats_live_data_and_weak_reference_lifecycle() {
+        let (db, _tmp) = test_db(4).await;
+
+        // 1. Unattached state
+        let stats_unattached = db.stats().await.expect("stats");
+        assert_eq!(stats_unattached.drift_status, "nicht verfügbar");
+        assert_eq!(stats_unattached.calibration_ece, None);
+        assert_eq!(stats_unattached.last_calibration_at, None);
+        assert_eq!(stats_unattached.pid_pool_size, None);
+
+        // 2. Attached state with live components
+        struct DummyRouter;
+        impl DriftStatusProvider for DummyRouter {
+            fn overall_drift_status(&self) -> String {
+                "stabil".to_string()
+            }
+        }
+
+        let router_arc: Arc<dyn DriftStatusProvider> = Arc::new(DummyRouter);
+        let calibrator_arc = Arc::new(parking_lot::Mutex::new(
+            memfuse_calibration::IsotonicCalibrator::new(5, 100),
+        ));
+        let pid_arc = Arc::new(parking_lot::Mutex::new(
+            memfuse_calibration::PidController::new(150.0, 50, 200, Some(100)),
+        ));
+
+        // Warmup calibrator so ECE is populated
+        {
+            let mut cal = calibrator_arc.lock();
+            for i in 0..10 {
+                cal.record_outcome(i as f32 / 10.0, i > 5);
+            }
+            cal.force_rebuild();
+        }
+
+        db.set_router(Arc::downgrade(&router_arc));
+        db.set_calibrator(Arc::downgrade(&calibrator_arc));
+        db.set_pid_controller(Arc::downgrade(&pid_arc));
+
+        let stats_attached = db.stats().await.expect("stats");
+        assert_eq!(stats_attached.drift_status, "stabil");
+        assert!(stats_attached.calibration_ece.is_some());
+        assert!(stats_attached.last_calibration_at.is_some());
+        assert_eq!(stats_attached.pid_pool_size, Some(100));
+
+        // 3. Drop strong references (simulating shutdown) -> stats() must not panic and fallback gracefully
+        drop(router_arc);
+        drop(calibrator_arc);
+        drop(pid_arc);
+
+        let stats_dropped = db.stats().await.expect("stats after drop");
+        assert_eq!(stats_dropped.drift_status, "nicht verfügbar");
+        assert_eq!(stats_dropped.calibration_ece, None);
+        assert_eq!(stats_dropped.last_calibration_at, None);
+        assert_eq!(stats_dropped.pid_pool_size, None);
     }
 
     #[tokio::test]

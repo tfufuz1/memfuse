@@ -25,6 +25,7 @@ serde = { workspace = true, features = ["derive"] }
 [features]
 default = []
 experimental-diskann = []
+graph = []
 # ACHTUNG: partial-index-rebuild aktiviert F-02 (Partial HNSW Rebuild), das gegen ein
 # dokumentiertes Architektur-Veto verstößt (siehe VETOES.md, falls vorhanden, sonst
 # docs/decisions/ nach "Nucleation" durchsuchen). Der aktuelle rebuild_region()

@@ -205,7 +205,7 @@ impl LyapunovDriftWatcher {
             // im niedrigen zweistelligen Bereich. Werte > 100 sind ein Symptom für einen
             // numerischen Randfall (z.B. extrem kleine Sample-Größen), nicht für echten Verteilungs-Drift,
             // und würden den Lyapunov-Exponenten via log|D_t/D_{t-1}| künstlich verzerren.
-            d_t.max(0.0).min(100.0)
+            d_t.clamp(0.0, 100.0)
         } else {
             100.0
         };

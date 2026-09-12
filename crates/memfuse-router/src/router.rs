@@ -251,6 +251,32 @@ impl RouterEngine {
             .and_then(|w| w.latest_result.clone())
     }
 
+    /// Gives a human-readable summary string of Lyapunov drift status across active profile watchers.
+    /// Priority order: "kritisch" > "warnung" > "stabil" > "unbekannt".
+    pub fn overall_drift_status(&self) -> String {
+        let state = self.state.load();
+        if state.lyapunov_watchers.is_empty() {
+            return "stabil".to_string();
+        }
+        let mut has_warning = false;
+        let mut has_stable = false;
+        for watcher in state.lyapunov_watchers.values() {
+            match watcher.status_str() {
+                "kritisch" => return "kritisch".to_string(),
+                "warnung" => has_warning = true,
+                "stabil" => has_stable = true,
+                _ => {}
+            }
+        }
+        if has_warning {
+            "warnung".to_string()
+        } else if has_stable {
+            "stabil".to_string()
+        } else {
+            "unbekannt".to_string()
+        }
+    }
+
     /// Setzt die Baseline für den Lyapunov-Drift-Wächter eines bestimmten Profils.
     pub fn set_lyapunov_baseline(&self, profile_name: &str, baseline: &[f32]) -> bool {
         let current = self.state.load_full();
