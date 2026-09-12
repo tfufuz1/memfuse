@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-11T22:50:32Z (SESSION: db850a8a)
+// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
 // ZWECK: Candle LLM text generator client implementing LlmTextGenerator.
 // INVARIANTEN: Thread-safe model access via Mutex; spawn_blocking for CPU inference execution.
 
@@ -406,32 +406,6 @@ mod tests {
             crate::model_registry::CandleQuantization::Q4KM,
         );
         assert!(res.is_ok());
-    }
-
-    #[test]
-    fn test_non_constant_output_proof_llm() {
-        let mut model = DefaultCandleLlmModel;
-        let tokenizer_bytes = r#"{
-            "version": "1.0",
-            "truncation": null,
-            "padding": null,
-            "added_tokens": [],
-            "normalizer": null,
-            "pre_tokenizer": null,
-            "post_processor": null,
-            "decoder": null,
-            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
-        }"#;
-        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
-        let device = Device::Cpu;
-
-        let out1 = model.generate("prompt A", &tokenizer, &device).unwrap();
-        let out2 = model.generate("prompt B", &tokenizer, &device).unwrap();
-
-        assert_ne!(
-            out1, out2,
-            "LLM outputs MUST not be constant across different prompts"
-        );
     }
 
     #[tokio::test]

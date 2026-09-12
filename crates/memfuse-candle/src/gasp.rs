@@ -1,5 +1,5 @@
 // FILE-CONTEXT
-// STAND: 2026-09-11T22:50:32Z (SESSION: db850a8a)
+// STAND: 2026-09-09T15:45:22Z (SESSION: 6cae458a)
 // ZWECK: GASP Grounding-Aware Sensitivity by Perturbation post-hoc hallucination validator.
 // INVARIANTEN: Grounding scores are clamped to [0.0, 1.0] with explicit NaN protection; ConfigFingerprint drift resets calibrator.
 // NICHT-OFFENSICHTLICH: Post-hoc validator returns PolicyViolation(LowConfidenceGrounding) on score below threshold.
