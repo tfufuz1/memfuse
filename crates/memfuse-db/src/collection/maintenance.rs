@@ -333,30 +333,65 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn reap_expired_documents(&self, max_expired: usize) -> Result<usize> {
         let current_seq = self.snapshot_seq().await?;
-        // AI-TAG[SMELL][MAJOR] reap_expired_documents calls scan_prefix(None) which fails on collections > 10,000 items (ID: AGT-DB-f18d79a2) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
-        let docs = self.scan_prefix("", None).await?;
+        // AI-TAG[SMELL][MAJOR] RESOLVED: AGT-DB-f18d79a2 — reap_expired_documents uses cursor-based batch pagination to avoid 10k silent truncation limit (TS: 2026-09-12T18:43:13Z)
+        let user_prefix = self.namespaced_key(b"", 0);
         let mut expired_ids = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
 
-        for (id, val) in docs {
-            if expired_ids.len() >= max_expired {
+        'outer: loop {
+            let (batch, next_cursor) = self
+                .storage
+                .scan_prefix_bounded(&user_prefix, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
                 break;
             }
 
-            if self.name == "default" && id.starts_with("__") {
-                continue;
-            }
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
+                    key_str
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
 
-            let meta_obj = val
-                .get("metadata")
-                .and_then(|m| m.as_object())
-                .or_else(|| val.as_object());
+                if self.name == "default" && user_key.starts_with("__") {
+                    continue;
+                }
 
-            if let Some(obj) = meta_obj {
-                if let Some(expiry_seq) = obj.get(EXPIRY_METADATA_KEY).and_then(|v| v.as_u64()) {
-                    if current_seq >= expiry_seq {
-                        expired_ids.push(id);
+                let Ok(val) = serde_json::from_slice::<serde_json::Value>(&v) else {
+                    continue;
+                };
+
+                let meta_obj = val
+                    .get("metadata")
+                    .and_then(|m| m.as_object())
+                    .or_else(|| val.as_object());
+
+                if let Some(obj) = meta_obj {
+                    if let Some(expiry_seq) = obj.get(EXPIRY_METADATA_KEY).and_then(|v| v.as_u64()) {
+                        if current_seq >= expiry_seq {
+                            expired_ids.push(user_key);
+                            if expired_ids.len() >= max_expired {
+                                break 'outer;
+                            }
+                        }
                     }
                 }
+            }
+
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+                tokio::task::yield_now().await;
+            } else {
+                break;
             }
         }
 
@@ -396,55 +431,91 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             .as_millis() as u64;
 
         let now_tx = self.next_tx.load(Ordering::SeqCst);
-        let docs = self.scan_prefix("", None).await?;
+        let user_prefix = self.namespaced_key(b"", 0);
         let mut expired_ids = Vec::new();
+        let mut cursor: Option<Vec<u8>> = None;
+        const BATCH_SIZE: usize = 1000;
 
-        for (id, val) in docs {
-            if self.name == "default" && id.starts_with("__") {
-                continue;
+        loop {
+            let (batch, next_cursor) = self
+                .storage
+                .scan_prefix_bounded(&user_prefix, BATCH_SIZE, cursor.as_deref())
+                .await?;
+
+            if batch.is_empty() {
+                break;
             }
 
-            let meta_obj = val
-                .get("metadata")
-                .and_then(|m| m.as_object())
-                .or_else(|| val.as_object());
+            for (k, v) in batch {
+                let key_str = String::from_utf8_lossy(&k).to_string();
+                let user_key = if self.name == "default" {
+                    key_str
+                } else {
+                    let prefix_len = self.prefix.len() + 1;
+                    if key_str.len() >= prefix_len {
+                        key_str[prefix_len..].to_string()
+                    } else {
+                        key_str
+                    }
+                };
 
-            let mut marked_for_deletion = false;
+                if self.name == "default" && user_key.starts_with("__") {
+                    continue;
+                }
 
-            if let Some(obj) = meta_obj {
-                // 1. Working-Memory wall-clock TTL check ZUERST
-                if let Some(ttl_val) = obj.get("ttl_ms").and_then(|v| v.as_u64()) {
-                    if ttl_val > 0 {
-                        if let Some(created_at) = obj
-                            .get("created_at_ms")
-                            .or_else(|| obj.get("timestamp_ms"))
-                            .and_then(|v| v.as_u64())
-                        {
-                            if let Some(expire_at) = created_at.checked_add(ttl_val) {
-                                if now_ms >= expire_at {
-                                    expired_ids.push(id.clone());
-                                    marked_for_deletion = true;
+                let Ok(val) = serde_json::from_slice::<serde_json::Value>(&v) else {
+                    continue;
+                };
+
+                let meta_obj = val
+                    .get("metadata")
+                    .and_then(|m| m.as_object())
+                    .or_else(|| val.as_object());
+
+                let mut marked_for_deletion = false;
+
+                if let Some(obj) = meta_obj {
+                    // 1. Working-Memory wall-clock TTL check ZUERST
+                    if let Some(ttl_val) = obj.get("ttl_ms").and_then(|v| v.as_u64()) {
+                        if ttl_val > 0 {
+                            if let Some(created_at) = obj
+                                .get("created_at_ms")
+                                .or_else(|| obj.get("timestamp_ms"))
+                                .and_then(|v| v.as_u64())
+                            {
+                                if let Some(expire_at) = created_at.checked_add(ttl_val) {
+                                    if now_ms >= expire_at {
+                                        expired_ids.push(user_key.clone());
+                                        marked_for_deletion = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. TxId-basierter Decay-Sweep (nur wenn decay != None)
+                    if !marked_for_deletion {
+                        if let Some(imp_val) = obj.get("importance") {
+                            if let Ok(imp) = serde_json::from_value::<memfuse_core::MemoryImportance>(
+                                imp_val.clone(),
+                            ) {
+                                if imp.decay != memfuse_core::DecayFunction::None {
+                                    let effective = imp.effective_score(TxId::new(now_tx));
+                                    if effective < Self::DECAY_DELETION_THRESHOLD {
+                                        expired_ids.push(user_key);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                // 2. TxId-basierter Decay-Sweep (nur wenn decay != None)
-                if !marked_for_deletion {
-                    if let Some(imp_val) = obj.get("importance") {
-                        if let Ok(imp) = serde_json::from_value::<memfuse_core::MemoryImportance>(
-                            imp_val.clone(),
-                        ) {
-                            if imp.decay != memfuse_core::DecayFunction::None {
-                                let effective = imp.effective_score(TxId::new(now_tx));
-                                if effective < Self::DECAY_DELETION_THRESHOLD {
-                                    expired_ids.push(id);
-                                }
-                            }
-                        }
-                    }
-                }
+            if let Some(next) = next_cursor {
+                cursor = Some(next);
+                tokio::task::yield_now().await;
+            } else {
+                break;
             }
         }
 
