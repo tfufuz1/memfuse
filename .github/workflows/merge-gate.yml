@@ -1,0 +1,44 @@
+# Merge Gate = schnell/blockierend
+# Dieses Workflow-File dient als einziger schnelllaufender (Ziel: < 5 Min) und blockierender Quality Gate für Pull Requests.
+# Es führt nur die essentiellen Prüfungen aus (Compile-Check, Fmt, Clippy, Unit-Tests der Libs).
+
+name: Merge Gate (Schnell)
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  merge-gate:
+    name: Merge Gate (Schnell)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile Check Gate
+        run: cargo run -p xtask -- check-compile
+
+      - name: Format Check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy Check
+        run: cargo clippy --workspace --exclude memfuse-tauri -- -D warnings
+
+      - name: Fast Unit Tests
+        run: cargo test --workspace --exclude memfuse-tauri --lib --quiet
