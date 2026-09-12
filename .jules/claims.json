@@ -1,20 +1,13 @@
 {
   "claims": [
     {
-      "krate": "memfuse-candle",
-      "issue": "B5-candle-embedding",
-      "timestamp": "2026-09-12T13:44:28.629845553+00:00",
-      "session_id": "4049299614642522150",
-      "active": true,
-      "expires_at": "2026-09-12T17:44:28.629821559+00:00"
-    },
-    {
-      "krate": "memfuse-db",
-      "issue": "B5-candle-embedding",
-      "timestamp": "2026-09-12T13:44:29.106623369+00:00",
-      "session_id": "4049299614642522150",
-      "active": true,
-      "expires_at": "2026-09-12T17:44:29.106609231+00:00"
+      "krate": "memfuse-router",
+      "issue": "FIX-ROUTER-1-docs",
+      "timestamp": "2026-09-12T13:46:07.517649038+00:00",
+      "session_id": "9821766463430893175",
+      "active": false,
+      "expires_at": "2026-09-12T17:46:07.517633575+00:00",
+      "released_at": "2026-09-12T13:52:32.403973247+00:00"
     }
   ]
 }
