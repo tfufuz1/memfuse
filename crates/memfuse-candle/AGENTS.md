@@ -4,6 +4,7 @@
 ## 1. Zweck & Architekturrolle
 
 Inferenz-Backend auf Basis von Candle (`candle-core`, `candle-transformers`) für native GGUF-Modellausführung (Datenhoheit ohne externe Services).
+In `memfuse-db` als `EmbeddingBackend::Candle` in die Haupt-Serving-Pipeline eingebunden.
 
 ## 2. Modul-Karte
 

@@ -10,7 +10,7 @@
 <!-- §7 = Non-Obvious Decisions (would cause wrong code without this knowledge) -->
 
 <a id="1"></a>
-## Verifizierter Codestand · HEAD `caad7178`, 2026-09-12
+## Verifizierter Codestand · HEAD `dabdc6317455a9e8111321dd883351eacc7f5b8d` · Stand 2026-09-12
 
 > **Für AI-Assistenten:** Diese Datei beschreibt was TATSÄCHLICH implementiert ist,
 > nicht was die Spec behauptet. Bei Widerspruch zwischen dieser Datei und Spec/README:
@@ -85,12 +85,15 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 | `ContextPrefixEngine` | `crates/memfuse-ollama/src/context_prefixer.rs` | Context Prefix Compression Engine |
 | `CSRGraph` & PPR | `crates/memfuse-graph/src/csr.rs` | Compressed Sparse Row Graph mit Personalized PageRank |
 | `PersistentAgentWorkflow` | `crates/memfuse-agent/src/lib.rs` | Multi-Step Agent Execution Loop mit State Graph & Checkpointing |
+| `EmbeddingBackend::Candle` | `crates/memfuse-db/src/lib.rs:605` | In Serving-Pipeline von `memfuse-db` als GGUF ML Inferenz/Embedding Backend verdrahtet |
+| `ExportDocumentV1` & `ExportCollectionV1` | `crates/memfuse-db/src/export.rs:17` | Memory-Export-Format v1 mit Schema Version "1.0" und Idempotenz |
+| `LlmTextGeneratorStreaming` | `crates/memfuse-core/src/traits/embedding.rs:63` | Streaming Trait-Abstraktion für LLM-Textgenerierung |
+| `PyDbStats` Metriken | `crates/memfuse-py/src/lib.rs:518` | FFI Export von `drift_status`, `calibration_ece` und `last_calibration_at` in Python API |
 
 ### Fehlt / Nicht integriert ❌
 
-| Komponente / Feature | Status | Befund / Grund |
-|---|---|---|
-| `memfuse-candle` Serving-Anbindung | NICHT VERDRAHTET | Crate existiert als Member, ist aber nicht in `memfuse-db`, `memfuse-router` oder `memfuse-ollama` eingebunden |
+*(Keine bekannten nicht-integrierten Workspace-Crates)*
+
 ### Bewusst entkoppelte Architektur-Komponenten (Keine technische Schuld) 🟢
 
 | Komponente / Feature | Status | Begründung / Dokumentation |
@@ -104,8 +107,6 @@ MemFuse ist in ein Schichten-Modell (Layer 0–7) gegliedert. Sämtliche Workspa
 
 1. **`rebuild_region()` ohne Recall-Tests (F-02, `crates/memfuse-index/src/hnsw.rs:1812`)**:
    `rebuild_region()` führt reines Tombstone-Pruning durch, ohne dass wissenschaftliche Recall-Tests oder ein offizielles ADR vorliegen. Das Feature-Flag `partial-rebuild-pruning` MUSS deaktiviert bleiben, bis entsprechende Regressionstests vorliegen.
-2. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet**:
-   `memfuse-candle` ist zwar als Workspace-Crate vorhanden, dient aber derzeit als isoliertes Modul und ist noch nicht in die Haupt-Serving-Pipeline (`memfuse-db` / `memfuse-router`) eingebunden.
 
 ---
 

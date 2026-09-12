@@ -38,7 +38,7 @@ Snapshot Isolation unter konkurrierenden Writes.
 
 ### WAL HMAC Key Sourcing
 **IMMER** `load_or_create_integrity_key()` verwenden. **NIEMALS** Schlüssel hartcodieren.
-Der Key wird via HKDF aus dem Master Key abgeleitet (siehe `memfuse-crypto`).
+Der Key wird via HKDF aus dem Master Key abgeleitet (siehe `memfuse-crypto`, Cargo-Package-Name: `memfuse-security`).
 
 ### TOMBSTONE_BIT-Disziplin (ADR-041)
 Bit 63 **strikt** maskieren (`seq & !TOMBSTONE_BIT`) vor allen `max_seq` Vergleichen.
@@ -135,7 +135,7 @@ use memfuse_checkpoint::CheckpointGuard;
 
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
-- **Erlaubte Imports**: `memfuse-core` (L0), `memfuse-crypto` (L1 Peer)
+- **Erlaubte Imports**: `memfuse-core` (L0), `memfuse-crypto` (Cargo-Package-Name: `memfuse-security`) (L1 Peer)
 - **Verbotene Imports**: `memfuse-db` (L2), `memfuse-index` (L1 Peer — kein Peer-Import!), `memfuse-text` (L1 Peer)
 - **Implementiert**: `StorageEngine` Trait aus `memfuse-core`
 - **Genutzt von**: `memfuse-db`, `memfuse-agent`, `memfuse-router` (als `Arc<dyn StorageEngine>`)

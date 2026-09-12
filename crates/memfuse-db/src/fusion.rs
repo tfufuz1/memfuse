@@ -1329,9 +1329,10 @@ mod tests {
         });
 
         assert_eq!(
-            heap.peek().map(|e| e.result.id.as_str()),
+            sorted.last().map(|s| s.as_str()),
             Some("doc_nan"),
-            "NaN score entry must have highest pop priority in max-heap (worst position)"
+            "NaN score entry must be at the end (worst position) in sorted results\nSorted order: {:?}",
+            sorted
         );
     }
 

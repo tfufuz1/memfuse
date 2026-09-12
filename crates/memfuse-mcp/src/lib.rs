@@ -887,6 +887,7 @@ impl McpServer {
                         None,
                         None,
                         None,
+                        None,
                     )
                     .await
                     .map_err(McpError::from)?;

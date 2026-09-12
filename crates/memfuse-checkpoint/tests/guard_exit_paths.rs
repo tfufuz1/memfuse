@@ -556,3 +556,35 @@ fn test_concurrent_50_parallel_guard_drops_no_worker_blocking() {
         assert_eq!(registry.get_orphaned_checkpoints().len(), 50);
     });
 }
+
+/// Regression Test: PinGuard drop latency MUST be strictly < 1ms without disk I/O.
+#[tokio::test]
+async fn test_pin_guard_drop_latency_sub_millisecond() {
+    let _lock = TEST_LOCK.lock();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let orphan_file = temp_dir.path().join("pin_guard_sub_ms.json");
+
+    let registry = Arc::new(memfuse_checkpoint::InstanceOrphanRegistry::new(
+        &orphan_file,
+    ));
+    let storage = Arc::new(TrackingMockStorage::new());
+
+    let pin_guard = memfuse_checkpoint::PinGuard::pin(storage, 12345, registry.clone())
+        .await
+        .unwrap();
+
+    let start = std::time::Instant::now();
+    drop(pin_guard);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(1),
+        "PinGuard drop latency was {:?}, expected < 1ms",
+        elapsed
+    );
+    assert_eq!(registry.get_orphan_pins().len(), 1);
+    assert!(
+        !orphan_file.exists(),
+        "Dropping PinGuard must not write to disk synchronously"
+    );
+}

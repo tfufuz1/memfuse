@@ -5,7 +5,7 @@
 // STAND: TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)
 
 use crate::collection::{Collection, StoredDocument};
-use crate::consolidation_executor::execute_consolidation_pass;
+use crate::consolidation_executor::{execute_consolidation_pass, ConsolidationLockGuard};
 use crate::memory_consolidation::ConsolidationConfig;
 use memfuse_core::traits::StorageEngine;
 use memfuse_core::tx_buffer::TxBuffer;
@@ -48,6 +48,20 @@ pub fn start_consolidation_worker<S: StorageEngine>(
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
+                    // P14-Compliance: Koordination mit ConsolidationEngine und MaintenanceScheduler
+                    let _guard = match ConsolidationLockGuard::try_acquire(
+                        &collection.consolidation_in_progress(),
+                    ) {
+                        Some(g) => g,
+                        None => {
+                            tracing::debug!(
+                                collection = %collection.name(),
+                                "consolidation_in_progress, skipping trigger"
+                            );
+                            continue;
+                        }
+                    };
+
                     // Extract turns from collection (chronologically sorted)
                     let user_key_prefix = collection.user_key_prefix();
                     let entries = match collection.storage().scan_prefix(&user_key_prefix).await {
