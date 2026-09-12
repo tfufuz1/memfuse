@@ -27,31 +27,7 @@ use memfuse_core::TenantId;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-/// Uniquely identifies a model weight file and its quantization tier for KV-cache key separation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelFingerprint {
-    /// SHA-256 hash digest over model weight blob and quantization tier string.
-    pub hash: [u8; 32],
-    /// Model identifier or filename (e.g. "llama-3.2-3b-instruct").
-    pub model_id: String,
-    /// String representation of quantization tier (e.g. "Q4_K_M", "Q8_0", "F16").
-    pub quantization: String,
-}
-
-impl ModelFingerprint {
-    /// Creates a new `ModelFingerprint`.
-    pub fn new(
-        hash: [u8; 32],
-        model_id: impl Into<String>,
-        quantization: impl Into<String>,
-    ) -> Self {
-        Self {
-            hash,
-            model_id: model_id.into(),
-            quantization: quantization.into(),
-        }
-    }
-}
+pub use memfuse_core::ModelFingerprint;
 
 /// Container for an encrypted KV-cache segment layer.
 ///
