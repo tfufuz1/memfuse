@@ -880,6 +880,12 @@ pub(crate) fn select_profile_from_chunks(
     }
 }
 
+impl memfuse_db::DriftStatusProvider for RouterEngine {
+    fn overall_drift_status(&self) -> String {
+        self.overall_drift_status()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

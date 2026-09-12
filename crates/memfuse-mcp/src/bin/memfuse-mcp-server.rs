@@ -6,7 +6,7 @@
 // SIEHE AUCH:  ADR-010, crates/memfuse-mcp/src/lib.rs
 
 use memfuse_db::MemFuse;
-use memfuse_mcp::{EmbeddingConfig, McpServer};
+use memfuse_mcp::{setup_routing, EmbeddingConfig, McpServer, RouterConfig};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -55,9 +55,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         memfuse_mcp::is_write_allowed_by_env()
     };
 
+    let mut router_config = RouterConfig::from_env();
+    if let Some(i) = args.iter().position(|a| a == "--router-profiles-path") {
+        if let Some(val) = args.get(i + 1) {
+            let path = std::path::PathBuf::from(val);
+            if let Ok(bytes) = std::fs::read(&path) {
+                if let Ok(loaded) =
+                    serde_json::from_slice::<Vec<memfuse_router::SlmProfile>>(&bytes)
+                {
+                    router_config.profiles = loaded;
+                }
+            }
+            router_config.profiles_path = Some(path);
+        }
+    }
+
     let db = Arc::new(MemFuse::open(&db_path).await?);
+    let routing = setup_routing(&db, &router_config).await?;
     let embedder = config.build_provider()?;
-    let server = Arc::new(McpServer::with_write_permission(db, embedder, allow_write)?);
+    let server = Arc::new(
+        McpServer::with_write_permission(db, embedder, allow_write)?.with_routing(routing),
+    );
 
     tracing::info!(
         db_path,

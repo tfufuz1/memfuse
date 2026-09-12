@@ -18,6 +18,8 @@ memfuse-db = { workspace = true }
 memfuse-core = { workspace = true }
 memfuse-security = { workspace = true }
 memfuse-ollama = { workspace = true }
+memfuse-router = { workspace = true }
+memfuse-calibration = { workspace = true }
 memfuse-embed = { workspace = true, optional = true }
 memfuse-agent = { workspace = true, optional = true }
 memfuse-candle = { workspace = true, optional = true }
