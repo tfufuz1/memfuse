@@ -428,7 +428,7 @@ fn test_k_parameter_zero_boundary_permitted() {
         None,
         None,
         None,
-        k_neg,
+        k_zero,
         Some("test_col".to_string()),
         Some("hnsw".to_string()),
         Some(1.0),

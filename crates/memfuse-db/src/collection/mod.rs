@@ -27,7 +27,7 @@ use memfuse_store::LsmStorage;
 use memfuse_text::inverted::InvertedIndex;
 use memfuse_text::Language;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -241,6 +241,8 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) mutations_since_community_detection: Arc<AtomicU64>,
     /// Trigger-Schwelle: bei Überschreitung wird Community Detection geplant (Default: 100, 0 = deaktiviert).
     pub(super) community_detection_trigger_threshold: Arc<AtomicU64>,
+    /// Koordination des Konsolidierungslaufs zur Vermeidung von Double-Triggern (Engine + Scheduler).
+    pub(super) consolidation_in_progress: Arc<AtomicBool>,
 }
 
 impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
@@ -261,6 +263,7 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             community_detection_trigger_threshold: self
                 .community_detection_trigger_threshold
                 .clone(),
+            consolidation_in_progress: self.consolidation_in_progress.clone(),
         }
     }
 }
@@ -328,7 +331,13 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             kv_locks: Arc::new(kv_lock::KvKeyLocks::new()),
             mutations_since_community_detection: Arc::new(AtomicU64::new(0)),
             community_detection_trigger_threshold: Arc::new(AtomicU64::new(100)),
+            consolidation_in_progress: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Returns a reference handle to the collection's consolidation lock flag.
+    pub fn consolidation_in_progress(&self) -> Arc<AtomicBool> {
+        self.consolidation_in_progress.clone()
     }
 
     /// Returns the CSR graph index for this collection.
