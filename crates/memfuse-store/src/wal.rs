@@ -1215,6 +1215,28 @@ impl Wal {
         &self,
         file_size: u64,
     ) -> Result<(Vec<(u64, WalEntry, u64)>, WalVersion)> {
+        let mut entries = Vec::new();
+        let version = self
+            .scan_entries_with_callback(file_size, |seq, entry, pos| {
+                entries.push((seq, entry, pos));
+                true
+            })
+            .await?;
+        Ok((entries, version))
+    }
+
+    /// Scans the WAL entry by entry, executing full HMAC chain validation, CRC checks, and key manager decryption.
+    ///
+    /// Invokes `callback(seq_no, entry, end_offset)` for each valid entry.
+    /// If `callback` returns `false`, scanning halts early.
+    async fn scan_entries_with_callback<F>(
+        &self,
+        file_size: u64,
+        mut callback: F,
+    ) -> Result<WalVersion>
+    where
+        F: FnMut(u64, WalEntry, u64) -> bool,
+    {
         let mut file = self.file.lock().await;
         use tokio::io::AsyncSeekExt;
         file.seek(std::io::SeekFrom::Start(0))
@@ -1223,12 +1245,12 @@ impl Wal {
 
         let mut reader = tokio::io::BufReader::new(&mut *file);
 
-        let mut entries = Vec::new();
+        let mut entries_count = 0u64;
         let mut pos = 0u64;
 
         let mut version = WalVersion::V1;
         if file_size == 0 {
-            return Ok((entries, version));
+            return Ok(version);
         }
 
         let integrity_key = self.get_integrity_key()?;
@@ -1256,14 +1278,12 @@ impl Wal {
                             })?;
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    return Ok((entries, version))
-                }
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(version),
                 Err(e) => return Err(MemFuseError::Storage(format!("WAL read failed: {}", e))),
             }
         }
 
-        loop {
+        'scan_loop: loop {
             let mut len_bytes = [0u8; 4];
             match reader.read_exact(&mut len_bytes).await {
                 Ok(_) => {}
@@ -1275,7 +1295,7 @@ impl Wal {
             if len > MAX_WAL_ENTRY_SIZE as usize {
                 if pos + 4 + len as u64 > file_size {
                     // STO-001: Massive Fehl-Länge am Anfang ist Korruption, am Ende (Tail) ignorable.
-                    if entries.is_empty() && file_size > 64 {
+                    if entries_count == 0 && file_size > 64 {
                         return Err(MemFuseError::wal_corruption(
                             pos,
                             format!(
@@ -1294,7 +1314,7 @@ impl Wal {
             }
 
             if pos + 4 + len as u64 > file_size {
-                if entries.is_empty() && file_size > 64 {
+                if entries_count == 0 && file_size > 64 {
                     return Err(MemFuseError::wal_corruption(
                         pos,
                         format!(
@@ -1474,7 +1494,11 @@ impl Wal {
                         }
                     }
 
-                    entries.push((entry.seq_no, entry, pos));
+                    entries_count += 1;
+                    let seq = entry.seq_no;
+                    if !callback(seq, entry, pos) {
+                        break 'scan_loop;
+                    }
                 }
             } else {
                 let decrypted_data;
@@ -1592,11 +1616,15 @@ impl Wal {
                     }
                 }
 
-                entries.push((entry.seq_no, entry, pos));
+                entries_count += 1;
+                let seq = entry.seq_no;
+                if !callback(seq, entry, pos) {
+                    break 'scan_loop;
+                }
             }
         }
 
-        Ok((entries, version))
+        Ok(version)
     }
 
     /// Rewrites legacy V1 or V2 WAL files as V3.
@@ -1736,32 +1764,39 @@ impl Wal {
     ///
     /// # Errors
     /// Returns `MemFuseError::Storage` or `MemFuseError::WalCorruption` if reading or replaying the WAL fails.
-    // AI-TAG[SMELL][MINOR] TODO(audit-M-2): Optimize transaction offset search from O(N) sequential replay scan to index lookup or reverse offset scanning. (ID: AGT-STORE-7fb85765) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8)
+    // AI-TAG[RESOLVED][MINOR] Optimized transaction offset search to O(1) memory streaming scan. (ID: AGT-STORE-7fb85765) (TS: 2026-09-12T12:00:00Z) (SESSION: 21a8d3e8)
     pub async fn find_tx_offset(&self, target_tx_id: TxId) -> Result<(u64, [u8; 32])> {
-        let entries = self.replay().await?;
-        let mut last_offset = 0;
-        let mut last_hmac = [0u8; 32];
+        let metadata = tokio::fs::metadata(&self.path)
+            .await
+            .map_err(|e| MemFuseError::Storage(e.to_string()))?;
+        let file_size = metadata.len();
 
-        for (_, entry, offset) in entries {
+        let mut last_offset = 0u64;
+        let mut last_hmac = [0u8; 32];
+        let mut found_rollback_point = false;
+
+        self.scan_entries_with_callback(file_size, |_seq, entry, offset| {
             let entry_tx = entry.tx_id().inner();
             // System metadata transactions (tx >= INTERNAL_BASE) are preserved during user state rollbacks
             if target_tx_id.inner() < TxId::INTERNAL_BASE && entry_tx >= TxId::INTERNAL_BASE {
                 last_offset = offset;
                 last_hmac = entry.checksum;
-                continue;
+                return true;
             }
 
             if entry_tx > target_tx_id.inner() {
                 // If this entry strictly exceeds target_tx_id,
                 // the rollback point is the end of the PREVIOUS entry.
-                return Ok((last_offset, last_hmac));
+                found_rollback_point = true;
+                return false;
             }
             last_offset = offset;
             last_hmac = entry.checksum;
-        }
+            true
+        })
+        .await?;
 
-        // If target_tx_id is not found or is beyond the last entry,
-        // no rollback is possible or needed at this point.
+        let _ = found_rollback_point;
         Ok((last_offset, last_hmac))
     }
 }
@@ -3594,5 +3629,73 @@ mod tests {
             "Forged entry 3 with prev_hmac=[0;32] must be rejected during fallback because chain state was non-zero! Got: {:?}",
             replay_err
         );
+    }
+
+    #[tokio::test]
+    async fn test_find_tx_offset_invariants() {
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("test_find_tx_offset.wal");
+        let wal = Wal::open(&wal_path).await.unwrap();
+
+        // Append user txs: 10, 20
+        let op1 = WalOp::Put {
+            tx_id: TxId::new(10),
+            key: b"k10".to_vec(),
+            value: b"v10".to_vec(),
+        };
+        let entry1 = wal.create_entry(op1, 1).await.unwrap();
+        wal.append(&entry1).await.unwrap();
+
+        let op2 = WalOp::Put {
+            tx_id: TxId::new(20),
+            key: b"k20".to_vec(),
+            value: b"v20".to_vec(),
+        };
+        let entry2 = wal.create_entry(op2, 2).await.unwrap();
+        wal.append(&entry2).await.unwrap();
+
+        // Append system tx: TxId::INTERNAL_BASE + 1
+        let sys_tx = TxId::new(TxId::INTERNAL_BASE + 1);
+        let op_sys = WalOp::Put {
+            tx_id: sys_tx,
+            key: b"sys_k".to_vec(),
+            value: b"sys_v".to_vec(),
+        };
+        let entry_sys = wal.create_entry(op_sys, 3).await.unwrap();
+        wal.append(&entry_sys).await.unwrap();
+
+        // Append user tx: 30
+        let op3 = WalOp::Put {
+            tx_id: TxId::new(30),
+            key: b"k30".to_vec(),
+            value: b"v30".to_vec(),
+        };
+        let entry3 = wal.create_entry(op3, 4).await.unwrap();
+        wal.append(&entry3).await.unwrap();
+
+        let replayed = wal.replay().await.unwrap();
+        assert_eq!(replayed.len(), 4);
+        let (_s1, _e1, offset1) = &replayed[0];
+        let (_s2, _e2, _offset2) = &replayed[1];
+        let (_ss, esys, offsetsys) = &replayed[2];
+        let (_s3, e3, offset3) = &replayed[3];
+
+        // Invariant 2: Target tx_id = 20. First entry with tx_id > 20 is sys_tx (tx_id = INTERNAL_BASE + 1).
+        // Since target_tx_id (20) < INTERNAL_BASE, sys_tx is preserved (`continue`), so the next entry triggering `entry_tx > target_tx_id` is e3 (tx_id = 30).
+        // Immediately preceding entry before e3 is esys.
+        let (offset, hmac) = wal.find_tx_offset(TxId::new(20)).await.unwrap();
+        assert_eq!(offset, *offsetsys);
+        assert_eq!(hmac, esys.checksum);
+
+        // Invariant 2 & 1: Target tx_id = 10. First entry with tx_id > 10 is e2 (tx_id = 20).
+        // Preceding entry is e1.
+        let (offset10, hmac10) = wal.find_tx_offset(TxId::new(10)).await.unwrap();
+        assert_eq!(offset10, *offset1);
+        assert_eq!(hmac10, entry1.checksum);
+
+        // Invariant 3: Target tx_id = 100 (beyond last entry). Returns last known offset & hmac (e3).
+        let (offset100, hmac100) = wal.find_tx_offset(TxId::new(100)).await.unwrap();
+        assert_eq!(offset100, *offset3);
+        assert_eq!(hmac100, e3.checksum);
     }
 }

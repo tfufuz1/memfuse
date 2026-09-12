@@ -223,7 +223,6 @@ impl Default for LsmConfig {
     }
 }
 
-
 /// Proof that `commit_mutex` is currently held by the calling task.
 /// Can only be constructed while holding the mutex guard.
 struct CommitGuard<'a> {
@@ -1525,14 +1524,15 @@ impl StorageEngine for LsmStorage {
                             "Fatal double-fault: WAL append failed ({e}) and subsequent rollback failed: {rollback_err}"
                         )
                     } else {
-                        format!(
-                            "Commit failed (at WAL append), WAL rollback executed: {e}"
-                        )
+                        format!("Commit failed (at WAL append), WAL rollback executed: {e}")
                     };
 
                     // Invariant: Every follower sender MUST be notified exactly once, even in double-fault (commit+rollback fail) paths.
                     for r in pending_queue.requests {
-                        if r.sender.send(Err(MemFuseError::Storage(err_msg.clone()))).is_err() {
+                        if r.sender
+                            .send(Err(MemFuseError::Storage(err_msg.clone())))
+                            .is_err()
+                        {
                             tracing::warn!(
                                 follower_tx = ?r.tx_id,
                                 "Follower dropped receiver during group commit failure notification"
@@ -1543,8 +1543,9 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::Storage(err_msg));
                 }
 
+                type MemUpdateBatch<'a> = (TxId, &'a [(Vec<u8>, Vec<u8>, u64)]);
                 // Group append succeeded: update last_committed_tx and memtable for leader + followers
-                let mut all_updates: Vec<(TxId, &[(Vec<u8>, Vec<u8>, u64)])> =
+                let mut all_updates: Vec<MemUpdateBatch> =
                     Vec::with_capacity(1 + pending_queue.requests.len());
                 all_updates.push((leader_tx_id, &leader_mem_updates));
                 for r in &pending_queue.requests {
