@@ -320,7 +320,7 @@ impl LsmStorage {
                 wal_files.push((0, entry.path()));
                 // Update max_wal_id to at least 0 so flush_counter initializes to 1
                 // AI-TAG[SMELL][MINOR] Simplify map_or(0, |m| m) to unwrap_or(0) to resolve clippy::map_or_identity warning. (ID: AGT-STORE-cbd72ab9) (TS: 2026-09-11T10:21:34Z) (SESSION: 31ada253)
-                max_wal_id = Some(max_wal_id.map_or(0, |m| m));
+                max_wal_id = Some(max_wal_id.unwrap_or(0));
             }
         }
         // NC-5: Stable sort with path tiebreaker prevents wal.log/wal-0.log ordering ambiguity
@@ -1457,12 +1457,10 @@ impl StorageEngine for LsmStorage {
                 }
 
                 match rx.await {
-                    Ok(res) => return res,
-                    Err(_) => {
-                        return Err(MemFuseError::Internal(
-                            "Group commit leader dropped without sending result".to_string(),
-                        ));
-                    }
+                    Ok(res) => res,
+                    Err(_) => Err(MemFuseError::Internal(
+                        "Group commit leader dropped without sending result".to_string(),
+                    )),
                 }
             } else {
                 // Batch Leader task: initialize batch for followers without pushing leader's own channel.
