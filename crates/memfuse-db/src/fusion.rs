@@ -98,6 +98,7 @@ impl PartialEq for HeapEntry {
 
 impl Eq for HeapEntry {}
 
+// DONE(memfuse-impl): Robust NaN and tie-breaking handling in HeapEntry for RRF fusion [ref:eigenbau-rrf-fusion]
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
@@ -1322,17 +1323,59 @@ mod tests {
             },
         });
 
-        // Extract all entries and verify NaN entry is last (worst)
-        let mut extracted = vec![];
-        while let Some(entry) = heap.pop() {
-            extracted.push(entry.result.id.clone());
-        }
+        // into_sorted_vec returns elements in descending order (highest priority first).
+        // Since HeapEntry max-heap puts worst entries at top (pop() returns worst entry first),
+        // into_sorted_vec() produces finite scores in descending order followed by non-finite entries.
+        let sorted: Vec<_> = heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|e| e.result.id)
+            .collect();
 
         assert_eq!(
-            extracted.last().map(|s| s.as_str()),
+            sorted.last().map(|s| s.as_str()),
             Some("doc_nan"),
-            "NaN score entry must be at the end (worst position) after total_cmp\nExtracted order: {:?}",
-            extracted
+            "NaN score entry must be at the end (worst position)\nSorted order: {:?}",
+            sorted
+        );
+        assert_eq!(sorted[0], "doc1");
+        assert_eq!(sorted[1], "doc2");
+    }
+
+    #[test]
+    fn test_heap_entry_tie_breaking_deterministic() {
+        use std::collections::BinaryHeap;
+
+        let mut heap = BinaryHeap::new();
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc_B".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+        heap.push(HeapEntry {
+            result: SearchResult {
+                id: "doc_A".to_string(),
+                score: 0.5,
+                metadata: None,
+                matched_signals: vec![],
+                provenance: None,
+            },
+        });
+
+        let sorted: Vec<_> = heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|e| e.result.id)
+            .collect();
+
+        assert_eq!(
+            sorted,
+            vec!["doc_A", "doc_B"],
+            "Identical scores must break ties lexicographically by ID (A before B)"
         );
     }
 
