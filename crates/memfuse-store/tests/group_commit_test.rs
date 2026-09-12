@@ -1,5 +1,7 @@
 //! Group-Commit-Batching verification and benchmark tests for LsmStorage.
 
+#![cfg(feature = "fault-injection")]
+
 use memfuse_core::{MemFuseError, StorageEngine, TxId};
 use memfuse_store::lsm::{LsmConfig, LsmStorage};
 use std::sync::atomic::{AtomicU64, Ordering};
