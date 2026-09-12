@@ -157,7 +157,14 @@ Bei Claim-Konflikt: STOP — warten oder koordinieren, nicht überschreiben.
 
 - **TxId generation**: ALWAYS `collection.allocate_tx()` — NEVER `SystemTime::as_nanos()`
 - **fsync errors**: ALWAYS propagate with `?` — NEVER `let _ = dir.sync_all()`
-- **unsafe scope**: ONLY in `memfuse-index/src/distance.rs` (SIMD, ADR-017/ADR-034), `memfuse-index/src/diskann.rs` (Mmap, ADR-017) and `memfuse-index/src/persistence.rs` (Mmap, ADR-017). Exception: test-only unsafe in `memfuse-crypto/src/anti_tamper.rs` exclusively for Zeroize drop-semantics verification via raw pointer inspection. Production builds are unsafe-free via `#![cfg_attr(not(test), forbid(unsafe_code))]`.
+- **unsafe scope**: EXCLUSIVELY in five production modules + test-only verification:
+  - `memfuse-index/src/distance.rs` (SIMD hardware optimizations: AVX2, AVX-512, NEON; ADR-017/ADR-034)
+  - `memfuse-index/src/diskann.rs` (Read-only memory-mapped index I/O: Mmap; ADR-017)
+  - `memfuse-index/src/persistence.rs` (Read-only memory-mapped index persistence: Mmap; ADR-017)
+  - `memfuse-store/src/wal.rs` (Win32 DACL/ACL file permission enforcement; `#[cfg(windows)]`)
+  - `memfuse-db/src/volatile_vault.rs` (RAM buffer memory locking against OS swapping: `mlock`/`munlock`; feature-gated `volatile-vault`)
+  - Exception: Test-only unsafe in `memfuse-crypto/src/anti_tamper.rs` (and `kv_segment/segment.rs` unit tests) exclusively for Zeroize drop-semantics verification via raw pointer inspection.
+  All other crates strictly enforce `#![forbid(unsafe_code)]` or `#![deny(unsafe_code)]` with inline rationale.
 - **AI-TAG[SMELL][CRITICAL]**: ALWAYS fix immediately — never just comment
 - **Document chunking**: ALWAYS use `MarkdownChunker` — NEVER embed entire text as 1 vector
 - **MCP transport**: stdio JSON-RPC 2.0 ONLY — axum was removed (ADR-010)
