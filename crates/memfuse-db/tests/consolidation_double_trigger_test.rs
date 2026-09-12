@@ -137,8 +137,7 @@ async fn test_consolidation_lock_guard_panic_safety() {
 
     // Demonstrate guard drop on panic / unwind
     let result = std::panic::catch_unwind(|| {
-        let _guard = ConsolidationLockGuard::try_acquire(&flag)
-            .expect("acquire in closure");
+        let _guard = ConsolidationLockGuard::try_acquire(&flag).expect("acquire in closure");
         assert!(flag.load(std::sync::atomic::Ordering::Relaxed));
         panic!("Simulated panic inside consolidation block");
     });

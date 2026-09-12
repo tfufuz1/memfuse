@@ -555,8 +555,11 @@ impl MemFuse {
         db.initialize_collections().await?;
 
         // Cleanup orphaned consolidation intents on startup
-        let cleaned_intents =
-            context_compaction::cleanup_orphaned_consolidation_intents(db.storage.as_ref()).await?;
+        let cleaned_intents = context_compaction::cleanup_orphaned_consolidation_intents(
+            db.storage.as_ref(),
+            &db.next_tx,
+        )
+        .await?;
         tracing::debug!(cleaned_intents, "Orphaned consolidation cleanup on startup");
 
         // Repair-on-Open: resolve pending transaction intents and re-sync indices

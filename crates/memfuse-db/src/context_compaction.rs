@@ -610,6 +610,7 @@ impl<'a, S: StorageEngine, V: VectorIndex> ConsolidationSession<'a, S, V> {
 /// aber vor dem eigentlichen Dokument-Commit crashed.
 pub async fn cleanup_orphaned_consolidation_intents<S: StorageEngine>(
     storage: &S,
+    next_tx: &std::sync::atomic::AtomicU64,
 ) -> Result<usize> {
     let prefixes: &[&[u8]] = &[b"consolidation_intent:", b"__tx_intent:"];
     let mut cleaned = 0usize;
@@ -624,9 +625,7 @@ pub async fn cleanup_orphaned_consolidation_intents<S: StorageEngine>(
                     .unwrap_or(false);
 
             if is_consolidation {
-                // AI-TAG[SMELL][MINOR] Manual TxId allocation (last_tx + 1) in cleanup_orphaned_consolidation_intents (ID: AGT-DB-d81a20b4) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646)
-                let last_tx = storage.last_tx_id().await?.inner();
-                let tx = TxId::new(last_tx + 1);
+                let tx = TxId::new(next_tx.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
                 storage.delete(tx, &key).await?;
                 storage.commit(tx).await?;
                 cleaned += 1;
@@ -1051,6 +1050,55 @@ mod tests {
             summary_doc.is_none(),
             "Target summary document must not be persisted if commit aborts"
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_orphaned_consolidation_intents_uses_next_tx_allocator_monotonically(
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let tmp = tempfile::tempdir()?;
+        let lsm_config = LsmConfig {
+            path: tmp.path().to_path_buf(),
+            ..Default::default()
+        };
+        let lsm = Arc::new(LsmStorage::new(lsm_config).await?);
+        let next_tx = Arc::new(AtomicU64::new(10));
+
+        // Create two orphaned consolidation intent entries
+        let target_doc_id = DocId::new(42);
+        let intent = crate::transaction::CommitIntent::Consolidation {
+            source_docs: vec![(DocId::new(1), TxId::new(1))],
+            target_id: target_doc_id,
+            base_tx: TxId::new(5),
+        };
+        let intent_bytes = serde_json::to_vec(&intent)?;
+
+        let setup_tx = TxId::new(1);
+        lsm.put(setup_tx, b"consolidation_intent:1", &intent_bytes)
+            .await?;
+        lsm.commit(setup_tx).await?;
+        lsm.put(setup_tx, b"consolidation_intent:2", &intent_bytes)
+            .await?;
+        lsm.commit(setup_tx).await?;
+
+        // Before cleanup, last_tx in storage might be 1, but next_tx counter is 10.
+        let prev_counter = next_tx.load(Ordering::SeqCst);
+        let cleaned = cleanup_orphaned_consolidation_intents(lsm.as_ref(), &next_tx).await?;
+        assert_eq!(cleaned, 2, "Should clean up exactly 2 orphaned intents");
+
+        let post_counter = next_tx.load(Ordering::SeqCst);
+        assert_eq!(
+            post_counter,
+            prev_counter + 2,
+            "next_tx counter must increment monotonically by the number of cleaned intents"
+        );
+
+        // Verify storage entries are removed
+        let remaining1 = lsm.get(b"consolidation_intent:1").await?;
+        let remaining2 = lsm.get(b"consolidation_intent:2").await?;
+        assert!(remaining1.is_none());
+        assert!(remaining2.is_none());
 
         Ok(())
     }

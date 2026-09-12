@@ -1329,6 +1329,11 @@ mod tests {
             },
         });
 
+        let mut sorted = Vec::new();
+        while let Some(entry) = heap.pop() {
+            sorted.push(entry.result.id);
+        }
+
         assert_eq!(
             sorted.last().map(|s| s.as_str()),
             Some("doc_nan"),

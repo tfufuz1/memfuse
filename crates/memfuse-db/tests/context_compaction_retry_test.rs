@@ -194,6 +194,7 @@ async fn test_cleanup_orphaned_intents_removes_stale_keys() -> Result<()> {
         ..Default::default()
     };
     let storage = memfuse_store::LsmStorage::new(lsm_config).await?;
+    let next_tx = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(10));
 
     let tx = memfuse_core::TxId::new(1);
     let key = b"consolidation_intent:orphaned_123";
@@ -209,7 +210,7 @@ async fn test_cleanup_orphaned_intents_removes_stale_keys() -> Result<()> {
 
     assert!(storage.get(key).await?.is_some());
 
-    let cleaned = cleanup_orphaned_consolidation_intents(&storage).await?;
+    let cleaned = cleanup_orphaned_consolidation_intents(&storage, &next_tx).await?;
     assert_eq!(cleaned, 1);
 
     assert!(storage.get(key).await?.is_none());
