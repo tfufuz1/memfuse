@@ -3,7 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>MEMFUSE.PROMPTER v29 — SDLC COCKPIT · 4 EBENEN (CRATE, SUBSYSTEM, EIGENBAU, PROZESS) · PLAN→IMPLEMENT→REVIEW TRIAS · ROLE-LOCK · CLAIM-KEYS</title>
+<title>MEMFUSE.PROMPTER v30 — SDLC COCKPIT · 4 EBENEN (CRATE, SUBSYSTEM, EIGENBAU, PROZESS) · PLAN→IMPLEMENT→REVIEW TRIAS · ROLE-LOCK · CLAIM-KEYS</title>
+<!-- v30 CHANGELOG (2026-09-13, gegen GESAMTSPEZIFIKATION_FINAL_2 + JULES_PROMPTS_KV_CRYPTO_GAP + JULES_PROMPTS_MEMFUSE_1 + Live-Repo-Stand tfufuz1/memfuse@main abgeglichen):
+  * memfuse-tauri VOLLSTÄNDIG ENTFERNT (nicht mehr nur deprecated) — ADR-077 wurde am 2026-09-12 physisch umgesetzt, Crate existiert nicht mehr im Workspace. Alle `--exclude memfuse-tauri`-Gate-Aufrufe entfernt (kein Exclude eines nicht-existenten Members nötig), CRATE_PROFILES-Eintrag, COMPONENTS-Block, TARGET_ARCH-Eintrag, Domain-Profile-Referenzen entfernt.
+  * KV-Cache-Bridge (neues Alleinstellungsmerkmal §2.3.6 der Spezifikation) ergänzt: memfuse-crypto (derive_kv_key, kv_cipher.rs jetzt VERDRAHTET statt "Migration ausstehend", kv_segment/eviction_worker.rs neu), memfuse-candle (kv_bridge.rs/KvBridgeAdapter, model_registry.rs/ModelFingerprint, gasp.rs/GaspConfig, generate_with_context() Fallback-Pfad), memfuse-core (model_fingerprint.rs).
+  * Memory-Export/-Import-Format v1 ergänzt: memfuse-db/export.rs, memfuse-db/import.rs (neues Alleinstellungsmerkmal §2.3.7).
+  * LOC/Test-Zahlen aller Crates gegen aktuellen Repo-Stand (cloc/grep-Zählung 2026-09-13) aktualisiert — vorherige Werte waren teils >1 Jahr veraltet.
+  * memfuse-candle-Prompt-Profil und -Komponenteninventar von Platzhalter-Stub auf vollständige fachliche Tiefe angehoben (war zuvor die am dünnsten spezifizierte Tier-relevante Crate trotz zentraler Rolle im Air-Gap- und KV-Bridge-Pfad).
+  * ADR-078 (GESAMTSPEZIFIKATION_v10.md), ADR-079 (F-11 event-driven statt Tick), ADR-080 (Weak<RouterEngine>-Injection für H-17 Live-Stats) als Kontext in memfuse-db/memfuse-router-Profile aufgenommen.
+  * Prompts aus JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md und JULES_PROMPTS_MEMFUSE_1.md gelten als in Umsetzung befindlich/umgesetzt und sind NICHT erneut als offene Lücke zu formulieren — betroffene Komponenten sind entsprechend als "in Arbeit/verdrahtet" statt "fehlend" markiert.
+-->
+
 <style>
 :root{
   --bg:#050508;--s1:#08080e;--s2:#0d0d17;--s3:#121220;
@@ -668,7 +678,7 @@ let _rawPrompt = '';
 // memfuse_prompter_review.md Abschnitt 1). Dieses Datum manuell aktualisieren,
 // sobald das Inventar unten per Hand neu gegen das Repo abgeglichen wurde.
 // ═══════════════════════════════════════════════════════════════════
-let INVENTORY_DATE = '2026-09-10';
+let INVENTORY_DATE = '2026-09-13';
 let INVENTORY_SOURCE = 'bundled'; // 'bundled' | 'imported'
 let INVENTORY_FILENAME = null;
 let CONTEXT_PREAMBLE = null;
@@ -688,6 +698,7 @@ const APM_ON = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13',
 // werden. Die ENGINE (TASKS, APM, Tag-Grammatik, Protokoll-Blöcke weiter unten)
 // bleibt davon unberührt und ist projektunabhängig.
 let TARGET_ARCH = {
+  "memfuse-core-ipc-gen": "memfuse-foundation",
   "memfuse-core": "memfuse-foundation",
   "memfuse-crypto": "memfuse-crypto",
   "memfuse-store": "memfuse-persistence",
@@ -704,29 +715,31 @@ let TARGET_ARCH = {
   "memfuse-agent": "memfuse-agentic",
   "memfuse-mcp": "memfuse-mcp",
   "memfuse-py": "memfuse-bindings",
-  "memfuse-tauri": "memfuse-bindings",
   "memfuse-bench": "memfuse-benchmarks",
 };
 const DEFAULT_CRATES = [
-  { id:'memfuse-core', layer:0, order:1, desc:'Typen · Traits · Fehler · SnapshotRegistry · TxBuffer', loc:'9615', tests:'163+', status:'✅', risk:'none', tier:'1' },
-  { id:'memfuse-calibration', layer:1, order:2, desc:'Score-Kalibrierung · ECE-Metriken · Confidence-Fitting', loc:'1034', tests:'22+', status:'✅', risk:'calib', tier:'3' },
-  { id:'memfuse-checkpoint', layer:1, order:3, desc:'RAII CheckpointGuard · Time-Travel · BLAKE3-Manifest', loc:'2619', tests:'77+', status:'✅', risk:'none', tier:'2' },
-  { id:'memfuse-crypto', layer:1, order:4, desc:'AES-256-GCM-SIV · HKDF · HMAC-SHA256 · Zeroize · KV-Segment-Sicherheit', loc:'4440', tests:'110+', status:'✅', risk:'sec', tier:'1' },
-  { id:'memfuse-graph', layer:1, order:5, desc:'CSR-Graph · PPR · Community · Session-DAG · BFS (in csr.rs)', loc:'10328', tests:'132+', status:'✅', risk:'none', tier:'2' },
-  { id:'memfuse-text', layer:1, order:6, desc:'BM25 · Invertierter Index (inverted.rs) · German Compound Splitter', loc:'5337', tests:'90+', status:'✅', risk:'utf8', tier:'2' },
-  { id:'memfuse-candle', layer:2, order:7, desc:'Pure-Rust ML Inferenz-Backend · GGUF/Quantisierung', loc:'1573', tests:'13+', status:'🟡', risk:'candle', tier:'3' },
-  { id:'memfuse-index', layer:2, order:8, desc:'HNSW · DiskANN · SIMD AVX2/NEON · SQ8-Quantisierung', loc:'15317', tests:'166+', status:'✅', risk:'simd', tier:'1' },
-  { id:'memfuse-ollama', layer:2, order:9, desc:'HTTP-Client · ContextPrefixEngine · xml_escape · Embedder', loc:'3925', tests:'76+', status:'🟡', risk:'inj', tier:'3' },
-  { id:'memfuse-store', layer:2, order:10, desc:'LSM-Tree · WAL · MemTable · SSTable · Compaction', loc:'16429', tests:'182+', status:'✅', risk:'crash', tier:'1' },
-  { id:'memfuse-embed', layer:3, order:11, desc:'ONNX CrossEncoder-Reranking · Feature-gated · SessionPool (in reranker.rs)', loc:'1940', tests:'30+', status:'🟡', risk:'gate', tier:'3' },
-  { id:'memfuse-db', layer:4, order:12, desc:'4-Signal-Fusion · RRF · 2PC · MultiStep · repair_on_open', loc:'27614', tests:'312+', status:'✅', risk:'fusion', tier:'1' },
-  { id:'memfuse-bench', layer:5, order:13, desc:'LOCOMO/Long-Mem-Eval-Benchmark-Harness · Retrieval-Accuracy-Vergleich ggü. Baselines (eigenständiges Workspace-Mitglied, kein Produktionscode im DAG-Sinn)', loc:'4610', tests:'10+', status:'🟡', risk:'none', tier:'2' },
-  { id:'memfuse-router', layer:5, order:14, desc:'SLM-Routing · NaN-Validierung · 100%-Branch-Ziel', loc:'4917', tests:'65+', status:'✅', risk:'nan', tier:'3' },
-  { id:'memfuse-tauri', layer:5, order:15, deprecated: true, desc:'[DEPRECATED ADR-077] Tauri-IPC · PDF/DOCX/E-Mail-Parser · Entfernung bis 2026-11-07', loc:'6176', tests:'118+', status:'🟡', risk:'parse', tier:'2' },
-  { id:'memfuse-agent', layer:6, order:16, desc:'State-Machine · Exactly-Once · AuditLog (audit.rs) · Token-Budget', loc:'5793', tests:'58+', status:'✅', risk:'budget', tier:'2' },
-  { id:'memfuse-mcp', layer:7, order:17, desc:'stdio JSON-RPC 2.0 (lib.rs) · Sandbox · Prompt-Injection-Guard · Slowloris', loc:'4396', tests:'79+', status:'✅', risk:'proto', tier:'1' },
-  { id:'memfuse-py', layer:null, order:18, desc:'PyO3-FFI · GIL-Release · Zero-Panic-Boundary · OnceLock — SEIT ADR-064 (2026-09-07) EIGENSTÄNDIGER Cargo-Workspace (eigenes [workspace] in crates/memfuse-py/Cargo.toml), NICHT Mitglied des Root-Workspace. Grund: Root-Workspace = panic-Strategie "abort", PyO3-FFI-Grenze braucht catch_unwind. Gates NUR via --manifest-path, niemals -p memfuse-py.', loc:'1505', tests:'14+', status:'✅', risk:'ffi', tier:'1' },
+  { id:'memfuse-core-ipc-gen', layer:0, order:0, desc:'NEU in v30 (war komplett unerfasst, obwohl realer Workspace-Member): Wurzel des Cargo-DAG, keine internen Abhängigkeiten. Auto-generierter FlatBuffers-IPC-Code (memfuse_generated.rs, 815 LOC) aus .fbs-Schemata via build.rs — Grundlage für search_fb()/hybrid_search_fb() in memfuse-py.', loc:'858', tests:'0', status:'✅', risk:'gen', tier:'3' },
+  { id:'memfuse-core', layer:0, order:1, desc:'Typen · Traits · Fehler · SnapshotRegistry · TxBuffer · ModelFingerprint (kanonisch, siehe memfuse-crypto/memfuse-candle) · LlmTextGeneratorStreaming/generate_with_context()', loc:'9286', tests:'168+', status:'✅', risk:'none', tier:'1' },
+  { id:'memfuse-calibration', layer:1, order:2, desc:'Score-Kalibrierung · ECE-Metriken · Confidence-Fitting', loc:'1249', tests:'59+', status:'✅', risk:'calib', tier:'3' },
+  { id:'memfuse-checkpoint', layer:1, order:3, desc:'RAII CheckpointGuard · Time-Travel · BLAKE3-Manifest', loc:'2797', tests:'83+', status:'✅', risk:'none', tier:'2' },
+  { id:'memfuse-crypto', layer:1, order:4, desc:'Package-Name memfuse-security · AES-256-GCM-SIV · HKDF · HMAC-SHA256 · Zeroize · TenantIsolatedKvStore (KV-Cache-Bridge-Fundament, kv_segment/) · DeletionProof (DSGVO Art. 17) · dedizierter EvictionWorker-Thread', loc:'3733', tests:'135+', status:'✅', risk:'sec', tier:'1' },
+  { id:'memfuse-graph', layer:1, order:5, desc:'CSR-Graph · PPR · Community · Session-DAG · BFS (in csr.rs) · cascade_invalidate_edges_for_superseded_doc', loc:'9486', tests:'161+', status:'✅', risk:'none', tier:'2' },
+  { id:'memfuse-text', layer:1, order:6, desc:'BM25 · Invertierter Index (inverted.rs) · German Compound Splitter', loc:'4116', tests:'94+', status:'✅', risk:'utf8', tier:'2' },
+  { id:'memfuse-candle', layer:2, order:7, desc:'Pure-Rust ML Inferenz-Backend (Air-Gap-Fundament) · GGUF/Quantisierung · KvBridgeAdapter (kv_bridge.rs, Feature kv-bridge) · ModelFingerprint-Berechnung (model_registry.rs) · GASP-Grounding-Validator (gasp.rs) · Streaming-Generierung', loc:'2602', tests:'54+', status:'🟡', risk:'candle', tier:'2' },
+  { id:'memfuse-index', layer:2, order:8, desc:'HNSW · DiskANN · SIMD AVX2/NEON · SQ8-Quantisierung', loc:'11172', tests:'183+', status:'✅', risk:'simd', tier:'1' },
+  { id:'memfuse-ollama', layer:2, order:9, desc:'HTTP-Client · ContextPrefixEngine · xml_escape · Embedder', loc:'4247', tests:'84+', status:'🟡', risk:'inj', tier:'3' },
+  { id:'memfuse-store', layer:2, order:10, desc:'LSM-Tree · WAL · MemTable · SSTable · Compaction', loc:'14271', tests:'231+', status:'✅', risk:'crash', tier:'1' },
+  { id:'memfuse-embed', layer:3, order:11, desc:'ONNX CrossEncoder-Reranking · Feature-gated · SessionPool (in reranker.rs)', loc:'1935', tests:'36+', status:'🟡', risk:'gate', tier:'3' },
+  { id:'memfuse-db', layer:4, order:12, desc:'4-Signal-Fusion · RRF · 2PC · MultiStep · repair_on_open · ConsolidationEngine (Sleep-Cycle) · Memory-Export/-Import-Format v1 (export.rs/import.rs)', loc:'23332', tests:'386+', status:'✅', risk:'fusion', tier:'1' },
+  { id:'memfuse-bench', layer:5, order:13, desc:'LOCOMO/Long-Mem-Eval-Benchmark-Harness · Retrieval-Accuracy-Vergleich ggü. Baselines (eigenständiges Workspace-Mitglied, kein Produktionscode im DAG-Sinn)', loc:'3920', tests:'10+', status:'🟡', risk:'none', tier:'2' },
+  { id:'memfuse-router', layer:5, order:14, desc:'SLM-Routing · NaN-Validierung · 100%-Branch-Ziel · Lyapunov-Drift-Watcher (F-11, event-driven, ADR-079) · Weak<RouterEngine>-Injection für Live-Stats (ADR-080)', loc:'5457', tests:'85+', status:'✅', risk:'nan', tier:'3' },
+  { id:'memfuse-agent', layer:6, order:15, desc:'State-Machine · Exactly-Once · AuditLog (audit.rs) · Token-Budget', loc:'2795', tests:'59+', status:'✅', risk:'budget', tier:'2' },
+  { id:'memfuse-mcp', layer:7, order:16, desc:'stdio JSON-RPC 2.0 (lib.rs) · Sandbox · Prompt-Injection-Guard · Slowloris · fünf Tools inkl. memfuse_consolidate', loc:'3601', tests:'88+', status:'✅', risk:'proto', tier:'1' },
+  { id:'memfuse-py', layer:null, order:17, desc:'PyO3-FFI · GIL-Release · Zero-Panic-Boundary · OnceLock — SEIT ADR-064 (2026-09-07) EIGENSTÄNDIGER Cargo-Workspace (eigenes [workspace] in crates/memfuse-py/Cargo.toml), NICHT Mitglied des Root-Workspace. Grund: Root-Workspace = panic-Strategie "abort", PyO3-FFI-Grenze braucht catch_unwind. Gates NUR via --manifest-path, niemals -p memfuse-py. PyDbStats trägt Live-Felder drift_status/calibration_ece/last_calibration_at/pid_pool_size (ADR-080).', loc:'1683', tests:'17+', status:'✅', risk:'ffi', tier:'1' },
 ];
+// memfuse-tauri (vormals layer:5, order:15) wurde per ADR-077 am 2026-09-12 PHYSISCH aus dem Repository
+// entfernt (nicht mehr nur deprecated). Der Eintrag existiert bewusst nicht mehr in DEFAULT_CRATES —
+// jede Referenz auf memfuse-tauri in Prompts/Gates ist ab v30 ein Bug, kein gültiger Zielzustand.
 // Aktive, ggf. durch mergeProjectData() ersetzte/erweiterte Arbeitskopie.
 let CRATES = DEFAULT_CRATES.map(c => ({ ...c }));
 
@@ -831,12 +844,14 @@ const DEFAULT_COMPONENTS = {
     { file:'replicator.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
   ],
   'memfuse-candle': [
-    { file:'embedding.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'gasp.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'gguf_loader.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'inference.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'lib.rs', size:'S', risk:'—', desc:'Candle Inferenz Engine Einstiegspunkt', focus:'Prüfe, dass keine C++-Abhängigkeiten lecken.' },
-    { file:'model_registry.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
+    { file:'embedding.rs', size:'M', risk:'Backpressure', desc:'Candle-basierte Embedding-Erzeugung. Referenzmuster für memfuse-embed::max_concurrent_embeddings (identisches Backpressure-Muster).', focus:'Arc<tokio::sync::Semaphore>-Feld (max_concurrent_embeddings) MUSS vor jedem spawn_blocking-Aufruf ein Permit erwerben — Caller erfahren so Backpressure statt Tokio-Thread-Pool-Erschöpfung. Kein Lock über einen .await-Punkt halten. Dimension-Konsistenz mit memfuse-embed/memfuse-ollama muss über EmbeddingBackend-Wechsel hinweg geprüft werden (kein stiller Dimensionswechsel).' },
+    { file:'embedding_provider.rs', size:'S', risk:'—', desc:'Trait-Adapter zwischen Candle-Embedding-Erzeugung (embedding.rs) und memfuse-core::traits::embedding::EmbeddingProvider.', focus:'Fehler-Mapping muss lückenlos auf EmbeddingError abbilden — kein eigener Fehlertyp, der an der Crate-Grenze verloren geht.' },
+    { file:'gasp.rs', size:'M', risk:'grounding', desc:'GASP-Validator (Grounding-Verifikation gegen Halluzination) — GaspConfig/DEFAULT_GROUNDING_THRESHOLD, implementiert GroundingValidator-Trait aus memfuse-core.', focus:'Ein Grounding-Score UNTER DEFAULT_GROUNDING_THRESHOLD MUSS zu einem expliziten GroundingAssessment mit Warnstatus führen — niemals stillschweigend eine unbegründete Antwort als "grounded" durchreichen. Threshold-Änderungen sind ein Qualitäts-/Sicherheits-Trade-off und brauchen einen begleitenden Regressionstest gegen ein bekanntes Halluzinations-Korpus, keine willkürliche Zahlenänderung ohne Nachweis (P7-Kontext).' },
+    { file:'gguf_loader.rs', size:'S', risk:'parse', desc:'GGUF-Modell-Loader — parst ein potenziell großes, aber grundsätzlich vertrauenswürdiges (lokal vom Nutzer bereitgestelltes) Binärformat.', focus:'Trotz "vertrauenswürdiger" Quelle: korrupte/trunkierte GGUF-Dateien MÜSSEN einen kontrollierten Err liefern, kein Panic — ein einzelner beschädigter Modell-Download darf den gesamten Prozess nicht crashen. Speicher-Mapping großer Gewichtsdateien: OOM-Risiko bei fehlender Validierung der deklarierten Tensor-Größen gegen die tatsächliche Dateigröße vor dem Allozieren.' },
+    { file:'inference.rs', size:'L', risk:'concurrency', desc:'CandleLlmClient — Device-Abstraktion (CPU/CUDA/Metal), swap_model() für Hot-Reload ohne Neustart. Implementiert LlmTextGenerator/LlmTextGeneratorStreaming sowie (Feature kv-bridge) die kontextbewusste generate_with_context()-Methode.', focus:'swap_model() MUSS laufende Inferenz-Aufrufe entweder sauber abwarten oder mit einer klar dokumentierten Racing-Semantik behandeln — ein Modell-Swap mitten in einem laufenden Forward-Pass darf nicht zu inkonsistenten Tensor-Zuständen führen. Arc<tokio::sync::Semaphore> (max_concurrent_inferences, konfigurierbar via with_max_concurrent_inferences()) MUSS vor jedem spawn_blocking-Aufruf erworben werden (identisches Muster zu memfuse-embed). generate_with_context() OHNE kv-bridge-Feature reduziert sich auf reine textuelle Konkatenation der ContextSegments — funktional identisch zu generate(); diese Degradation MUSS transparent und ohne Fehler erfolgen, niemals mit falscher KV-Bridge-Erfolgsmeldung.' },
+    { file:'kv_bridge.rs', size:'M', risk:'sec/fallback', desc:'NEU (v30, Feature kv-bridge): KvBridgeAdapter — verbindet Retrieval-Chunks mit der TenantIsolatedKvStore-KV-Cache-Bridge aus memfuse-crypto. Schlüssel: (chunk_id, ModelFingerprint, rope_offset). Bei Cache-Hit wird das entschlüsselte KV-Segment injiziert und der Prefill für diesen Chunk entfällt.', focus:'KRITISCHE INVARIANTE: ein Cache-Miss ODER JEDER Krypto-/Store-Fehler MUSS transparent auf vollständigen Prefill zurückfallen — ein KV-Bridge-Fehler darf NIEMALS eine Anfrage scheitern lassen (Fail-Open bei reiner Performance-Optimierung, nicht bei Sicherheit). Der Adapter MUSS das bestehende Semaphore-Backpressure-Muster respektieren und darf keinen Lock über einen .await-Punkt hinweg halten (FEHLER-KLASSE 11). ModelFingerprint-Mismatch (Modell-/Quantisierungswechsel) MUSS als Cache-Miss behandelt werden, niemals als Fehler eskaliert — altes Segment einfach verwerfen und neu berechnen. Dies ist die zentrale, in JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md spezifizierte Umsetzungsfläche — bei Bearbeitung zuerst dortigen Prompt-Verlauf/Status prüfen, nicht als unbearbeitete Lücke neu aufsetzen.' },
+    { file:'lib.rs', size:'S', risk:'—', desc:'Candle Inferenz Engine Einstiegspunkt. Feature-Flags: default = [], candle, cuda, metal, kv-bridge (schaltet memfuse-crypto/kv-encryption durch, standardmäßig deaktiviert).', focus:'Prüfe, dass keine C++/Libtorch-Abhängigkeiten lecken (Pure-Rust-Versprechen des Air-Gap-Modus). kv-bridge-Feature-Gate konsistent halten: kv_bridge.rs und die generate_with_context()-Erweiterung in inference.rs dürfen nur gemeinsam sichtbar sein, nie eines ohne das andere.' },
+    { file:'model_registry.rs', size:'S', risk:'sec', desc:'Modell-Verwaltung/-Auswahl; compute_fingerprint() berechnet den kanonischen ModelFingerprint (SHA-256 über Gewichtsdatei + Quantisierungsstufe) für ein gegebenes GGUF-Modell und dessen CandleQuantization-Variante (Q4_K_M, Q8_0, F16).', focus:'compute_fingerprint() MUSS deterministisch sein — identische Gewichtsdatei + identische Quantisierung liefert IMMER denselben Hash, über Prozessneustarts hinweg (Grundlage der KV-Cache-Bridge-Schlüsselableitung in memfuse-crypto). Große Modelldateien: Hashing MUSS gestreamt erfolgen (Chunk-weise), niemals die gesamte Datei ins RAM laden, sonst OOM-Risiko bei großen GGUF-Modellen. Re-exportiert ModelFingerprint aus memfuse-core — legt hier NIEMALS eine eigene Parallelstruktur an (P10).' },
   ],
   'memfuse-checkpoint': [
     { file:'lib.rs', size:'XL', risk:'RAII/Time-Travel', desc:'GESAMTER Crate in einer Datei: CheckpointGuard (RAII, non-Clone, pin-before-save, Drop-Handling), CheckpointRegistry-Trait, PersistentCheckpointStore, Time-Travel-Rollback', focus:'APM-8 kritisch: niemals tokio::spawn() im Drop-Handler — das bricht die RAII-Garantie (Task kann vor Completion gecancelled werden). Pin-before-Save-Reihenfolge (ADR-011) ist bindend: Snapshot muss gepinnt sein, BEVOR der Checkpoint gespeichert wird. Rollback zu Checkpoint X muss bytegenau den State nach X wiederherstellen — verifiziere dies mit einem Byte-Vergleich, nicht nur mit einem Existenz-Check. [KORR v22: Es gibt keine separate registry.rs — der komplette Crate (inkl. Registry/Time-Travel) ist eine einzige Datei; Größenklasse deshalb XL statt L, höchste Sorgfaltspflicht bei jeder Änderung.]' },
@@ -852,6 +867,7 @@ const DEFAULT_COMPONENTS = {
     { file:'snapshot.rs', size:'M', risk:'Concurrency', desc:'SnapshotRegistry + SnapshotGuard — Pin/Unpin-Verwaltung, Schutz gepinnter Snapshots vor GC', focus:'Das Pin-vs-GC-Race ist der bekannt sensibelste Pfad dieser Datei: jede Änderung an pin_snapshot()/unpin() erfordert einen begleitenden Concurrency-Test mit mind. 8 parallelen Threads. [KORR v22: Datei hieß zuvor snapshot_registry.rs — tatsächlicher Dateiname ist snapshot.rs.]' },
     { file:'traits/embedding.rs', size:'M', risk:'Konsistenz', desc:'EmbeddingError-Enum + TextEmbedder-Trait-Definition. EmbeddingError::InputTooLong mit len/max-Feldern — alle Provider-Implementierungen müssen diesen Typ nutzen.', focus:'Dimension-Konsistenz-Invariante: ALLE Embeddings einer Collection MÜSSEN identische Dimensionen haben — ein Dimensionswechsel ohne expliziten Fehler ist ein kritischer Befund der stille Ranking-Korruption verursacht. InputTooLong muss len und max korrekt befüllen — 0 als max ist ein Halluzinations-Risiko für Caller. Neue Embedding-Backends MÜSSEN EmbeddingError (nicht custom Error-Typen) nutzen.' },
     { file:'traits/mod.rs', size:'XL', risk:'Concurrency', desc:'Alle Kern-Trait-Definitionen: StorageEngine (129 Methoden), VectorIndex, TextIndex, GraphIndex, TextEmbeddingEngine, MemoryLifecycleManager, GroundingValidator, Checkpoint + BoxFuture-Typealias. 1843 LOC.', focus:'Breaking-Change-Regel: Neue Methoden in existierenden Traits MÜSSEN als Default-Impl hinzugefügt werden oder alle Crate-Implementierungen gleichzeitig aktualisiert werden — sonst Compile-Break im gesamten Workspace. capability_coverage-Test prüft VectorIndex::search_at und GraphIndex::traverse_at — jeder neue Trait-Implementor braucht expliziten Nachweis, dass er NICHT still auf Default-Impl zurückfällt. BoxFuture-Alias in dieser Datei ist der einzige authoritative Ort — nie nochmals definieren (Typ-Dopplungs-Prävention). LifecycleSweepReport: Felder sind stabil API — nie umbenennen ohne Migration.' },
+    { file:'model_fingerprint.rs', size:'S', risk:'sec', desc:'NEU (v30): kanonischer ModelFingerprint-Typ (hash: [u8; 32], model_id: String, quantization: String) — eindeutige Identifikation eines Modellgewicht-Blobs samt Quantisierungsstufe. Referenziert von memfuse-candle (compute_fingerprint() in model_registry.rs) UND memfuse-crypto (KeyManager::derive_kv_key() für die KV-Cache-Bridge-Schlüsselableitung).', focus:'P10-Invariante bindend: GENAU EINE Definition in memfuse-core — memfuse-candle und memfuse-crypto MÜSSEN diesen Typ re-exportieren/importieren, niemals eine eigene Parallelstruktur anlegen (Prüfung via check-duplicate-symbols-CI-Gate). Hash-Feld ist SHA-256 über Gewichtsdatei + Quantisierungsstufe — Änderung der Hash-Eingabe ist ein Breaking Change für ALLE persistierten KV-Cache-Segmente (P8: ModelFingerprint-Wechsel macht bestehende Segmente absichtlich unlesbar statt fälschlich gültig zu erscheinen). PartialEq/Hash-Ableitung muss bytegenau sein — kein Float-Vergleich, keine Normalisierung des quantization-Strings.' },
     { file:'tx_buffer.rs', size:'L', risk:'Concurrency', desc:'TxBuffer-Sharding, Lock-Granularität, Kapazitätsgrenze', focus:'Prüfe Lock-Granularität pro Shard — ein zu grobes Locking erzeugt Starvation unter hoher TX-Last, ein zu feines gefährdet Konsistenz zwischen Shards.' },
     { file:'types.rs', size:'S', risk:'—', desc:'Re-Export-Modul für alle Sub-Module in types/ (budget, domain, filter, importance, saos). Kein eigener Code — nur mod + pub use.', focus:'Thin re-export layer ohne Logik — Änderungen hier sind ausschließlich mod-Zeilen. Prüfe bei jeder Ergänzung, dass der neue Typ in docs/TYPE_REGISTRY.md registriert wird (Typ-Dopplungs-Prävention).' },
     { file:'types/budget.rs', size:'M', risk:'Budget', desc:'TokenBudget, consume()/available() — bewusst non-atomare Read-Modify-Write-Semantik', focus:'consume() ist heute durch &mut self (Borrow-Checker) vor Nebenläufigkeit geschützt — dokumentiere explizit jede Änderung, die diese Annahme berührt (z.B. Arc<Mutex<>>-Kapselung).' },
@@ -866,8 +882,9 @@ const DEFAULT_COMPONENTS = {
     { file:'crypto.rs', size:'L', risk:'RFC 8452/5869/4231', desc:'KeyManager — AES-256-GCM-SIV encrypt/decrypt + Nonce-Konstruktion, HKDF Key Derivation, HMAC-SHA256 (alle drei Primitiven in EINER Datei, Größenklasse L)', focus:'Nonce = 4B Instanz-Präfix (OsRng) + 8B per-Call OsRng-Suffix — jede Änderung an der Nonce-Konstruktion erfordert eine erneute Kollisionswahrscheinlichkeits-Betrachtung (Referenz p≈2.71e-8 bei 10⁶ Nonces). Jeder neue abgeleitete Schlüsseltyp braucht einen eigenen, disjunkten HKDF-Domain-Separator-String. Jeder Tag-/MAC-Vergleich MUSS über subtle::ConstantTimeEq laufen. [KORR v22: Es gibt KEINE separaten Dateien aes_gcm_siv.rs/hkdf.rs/hmac.rs — alle drei Primitiven sind im KeyManager in crypto.rs konsolidiert.]' },
     { file:'deletion_proof.rs', size:'L', risk:'sec', desc:'Kryptographischer Löschbeweis für DSGVO Art. 17 — DeletionProof + LayerCleanupProof. HMAC-SHA256 Signatur über scope + sorted key hash + tx_id. verify() nutzt constant-time comparison.', focus:'INV-DELETION-1 (KRITISCH): DeletionProof::create() darf NUR aufgerufen werden NACH physischer Layer-Bereinigung — ein Proof VOR Bereinigung ist semantisch falsch und nicht erkennbar. LayerCleanupProof._private: () macht direkte Instanziierung unmöglich (nur durch neue_after_physical_cleanup). Deckungsgrenze IMMER in Audit-Doku kommunizieren: Deckt LSM/WAL/HNSW/CSR/KV-Cache — NICHT LLM Fine-Tuning Parameter (arXiv:2505.16831).' },
     { file:'error.rs', size:'S', risk:'sec', desc:'CryptoError-Enum (KeyDerivation, Encryption, Decryption, Mac, Io, InvalidNonce, etc.) + Result<T>-Typealias. Standalone für Krypto-Operationen, mappt nach MemFuseError an der Crate-Grenze.', focus:'Keine vertraulichen Schlüssel-/Nonce-Daten in Display-Strings leaken — CryptoError::Decryption darf niemals den actual key oder nonce enthalten. Neue Varianten: #[non_exhaustive] beachten — externe Crates matchen nicht exhaustive. From<CryptoError> for MemFuseError muss synchron gepflegt werden (MemFuseError-JEDE-Variante-Regel).' },
-    { file:'kv_cipher.rs', size:'M', risk:'sec', desc:'KvSegmentCipher — AEAD-Verschlüsselung per (tenant_id, model_fingerprint)-Tupel via KeyManager HKDF-Expand. AES-256-GCM-SIV mit OsRng-generierten 12-Byte-Nonces pro Aufruf. Zwei-Schritt-Migration.', focus:'MIGRATION-STATUS: Modul existiert, ist aber noch NICHT mit memfuse-kv-bridge verdrahtet (Schritt 2 ist separater Follow-up-Task). AES-256-GCM-SIV Misuse-Resistance ersetzt NICHT die Pflicht zu frischen OsRng-Nonces — beides ist erforderlich. Key-Ableitung per (tenant_id, model_fingerprint)-Tupel: verschiedene Modell-Versionen MÜSSEN verschiedene Keys erzeugen — gleicher tenant + verschiedenes Fingerprint = verschiedener Key. #[zeroize] für alle key-haltenden Strukturen.' },
-    { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports der Krypto-Primitiven', focus:'Stelle sicher, dass ausschließlich geprüfte Primitiven exportiert werden — kein Ad-hoc-Crypto-Code außerhalb dieses Crates darf entstehen (Krypto-Isolation).' },
+    { file:'kv_cipher.rs', size:'M', risk:'sec', desc:'KvSegmentCipher/EncryptedKvLayer — AEAD-Verschlüsselung per (TenantId, ModelFingerprint)-Tupel via KeyManager::derive_kv_key() (HKDF-Expand). AES-256-GCM-SIV mit OsRng-generierten 12-Byte-Nonces pro Aufruf. STATUS v30: mit memfuse-candle::kv_bridge::KvBridgeAdapter VERDRAHTET (Feature kv-bridge, durchgereicht über memfuse-mcp/candle-Feature) — vormals als "Migration ausstehend" markiert, dieser Zustand ist überholt (siehe JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md).', focus:'EncryptedKvLayer trägt ein explizites Format-Versionsfeld — eine Versionsabweichung MUSS einen eigenen, sprechenden Fehler liefern statt eines generischen Auth-Fehlers (Migrationssicherheit). AES-256-GCM-SIV Misuse-Resistance ersetzt NICHT die Pflicht zu frischen OsRng-Nonces — beides ist erforderlich. Key-Ableitung per (TenantId, ModelFingerprint)-Tupel: verschiedene Modell-/Quantisierungsversionen MÜSSEN verschiedene Keys erzeugen (P8: ModelFingerprint-Wechsel macht bestehende Segmente kryptographisch unlesbar statt fälschlich gültig) — Kollisionstest bei Fingerprint-Wechsel Pflicht. #[zeroize] für alle key-haltenden Strukturen lückenlos.' },
+    { file:'kv_segment/eviction_worker.rs', size:'M', risk:'concurrency', desc:'EvictionWorker — dedizierter, nicht-blockierender OS-Thread (kein Tokio-Task) für Verdrängungs-Triggers von KV-Cache-Segmenten. Grund für eigenen OS-Thread statt spawn_blocking: synchrones Zeroizing der verdrängten Klartext-Puffer darf niemals den Tokio-Async-Executor blockieren.', focus:'evict_lru_fair() MUSS Round-Robin-Rotation über aktive Mandanten durchführen — eine naive globale LRU würde Cross-Tenant-Starvation ermöglichen (ein Mandant mit hoher Query-Last verdrängt systematisch die Segmente aller anderen). Kommunikation mit dem Haupt-Store (TenantIsolatedKvStore) MUSS über einen Channel/Queue erfolgen, niemals über einen direkt geteilten Lock, der vom Async-Pfad ebenfalls gehalten wird (sonst Deadlock- oder Priority-Inversion-Risiko zwischen OS-Thread und Tokio-Scheduler). clear_all() (Emergency-Wipe) muss synchron und vollständig blockierend sein — kein teilweiser Wipe bei Absturz während der Operation.' },
+    { file:'lib.rs', size:'S', risk:'—', desc:'Modul-Exports der Krypto-Primitiven. Feature-Flags: test-utils, kv-encryption (aktiviert verschlüsselte KV-Cache-Pfade, wird von memfuse-candle/memfuse-mcp über kv-bridge durchgereicht).', focus:'Stelle sicher, dass ausschließlich geprüfte Primitiven exportiert werden — kein Ad-hoc-Crypto-Code außerhalb dieses Crates darf entstehen (Krypto-Isolation). Bei neuen kv-encryption-Exporten: Feature-Gate konsistent zu kv_cipher.rs/kv_segment/ halten, kein ungegatetes Leak der KV-Bridge-Typen bei deaktiviertem Feature.' },
     { file:'wal_crypto.rs', size:'L', risk:'HMAC-Chain', desc:'WAL-HMAC-Chaining v3 — kryptographische Integritätskette über das gesamte WAL', focus:'Byte-Reihenfolge ist bindend: domain-separator → prev_hmac → seq_no → tx_id → op_type+kv. Jede Abweichung bricht die Chain rückwirkend. Änderungen hier erfordern Regressionstests gegen die bestehende v3-Testvektor-Suite UND explizite Versionierung (nie v3 stillschweigend überschreiben).' },
   ],
   'memfuse-db': [
@@ -899,6 +916,8 @@ const DEFAULT_COMPONENTS = {
     { file:'temporal_filter.rs', size:'M', risk:'—', desc:'Bi-temporaler Validity-Filter für Post-RRF-Fusion-Ergebnisse. Prüft gegen System-/Transaktionszeit (TxId/MVCC) UND Business-Zeit ([valid_from, valid_until)-Intervall, ADR-033/ADR-038).', focus:'Bi-temporale UND-Verknüpfung ist bindend — ein Kandidat muss BEIDE Zeitachsen erfüllen, nicht nur eine. Fail-Open-Regel für Alt-Daten OHNE Metadaten (Legacy-Dokumente ohne ValidityWindow gelten als immer gültig) — Fail-Closed hier würde bestehende Daten unsichtbar machen. Intervallgrenze [valid_from, valid_until) ist halboffen: valid_until selbst zählt bereits als ungültig, nicht mehr gültig.' },
     { file:'transaction.rs', size:'L', risk:'2PC', desc:'2PC-Koordination über alle 4 Sub-Engines, repair_on_open()', focus:'Bei Fehler nach Commit von Signal N müssen die Signale N..4 vollständig zurückgerollt werden. repair_on_open() muss CommitIntent::Pending nach Crash forward-committen, nicht verwerfen.' },
     { file:'volatile_vault.rs', size:'M', risk:'sec', desc:'VolatileContextVault — Ephemerer RAM-Puffer für sensitive Kontexte (Safe-Modus). Zeroize-on-Drop via #[zeroize(drop)]. mlock()-Fixierung (best-effort, UNIX/Windows).', focus:'std::mem::forget(vault) ÜBERSPRINGT Drop und damit Zeroize — Aufrufer MÜSSEN stattdessen purge() oder RAII nutzen. mlock()-Fehler sind nicht fatal aber müssen via tracing::warn! geloggt werden (nicht silent ignorieren). unsafe_code ist hier explizit erlaubt (allow(unsafe_code)) — ausschließlich für Zeroize und mlock. Jeder neue Struct mit sensitive Daten MUSS ZeroizeOnDrop implementieren.' },
+    { file:'export.rs', size:'M', risk:'—', desc:'NEU (v30): Memory-Export-Format v1 — erzeugt ein portables, versioniertes JSON-Exportformat je Collection (memfuse-export-v1.json): Dokumente, Roh-Embeddings, embedding_model, importance_score je Eintrag, alle bekannten relations (Graph-Kanten).', focus:'Export MUSS lesbar/deterministisch bleiben ohne MemFuse-interne Typen zu leaken (tool- und plattformunabhängiges JSON, siehe §2.3.7 Spezifikation) — keine internen TxId/seq_no-Implementierungsdetails im öffentlichen Exportformat, nur stabile, dokumentierte Felder. Große Collections: Export MUSS gestreamt/paginiert erfolgen, niemals alle Dokumente gleichzeitig ins RAM laden (OOM-Risiko analog HARD_SCAN_CEILING-Kontext in crud.rs). Format-Versionsfeld (v1) ist bindend — jede inkompatible Feldänderung braucht v2 statt stillem Überschreiben, sonst brechen ältere Import-Konsumenten.' },
+    { file:'import.rs', size:'M', risk:'idempotenz', desc:'NEU (v30): Memory-Import (Gegenstück zu export.rs) — Collection::import_memories() liest eine ExportCollectionV1 ein und schreibt sie idempotent (Upsert-Semantik über Dokument-ID) zurück. Wiederherstellung von memory_type/embedding_model/created_at_tx, Wiedereinspielung vorhandener Embeddings bei Dimensions-Kompatibilität, Re-Insertion der links-Beziehungen. Liefert ImportSummary (imported_memories, skipped_memories, imported_relations, skipped_relations).', focus:'IDEMPOTENZ-INVARIANTE bindend: ein zweifacher Import derselben Exportdatei MUSS zum selben Endzustand führen (Upsert über Dokument-ID), niemals zu Duplikaten — Grundlage für Instanzmigration/Restore-from-Backup. Dimensions-Mismatch zwischen Export-Embedding und Ziel-Collection-Konfiguration MUSS zu skipped_memories führen (mit Grund im Summary), NIEMALS zu einem Panic oder einer stillen Dimensions-Trunkierung. links-Re-Insertion MUSS gegen bereits vorhandene Kanten in der Ziel-Collection dedupliziert werden (kein doppelter CSR-Edge bei wiederholtem Import). Fehlerhafte/korrupte Einzeleinträge in der Exportdatei dürfen den Gesamtimport nicht abbrechen — isoliert überspringen und in skipped_* zählen (P2 Zero-Panic-Doctrine-Analogie).' },
   ],
   'memfuse-embed': [
     { file:'lib.rs', size:'M', risk:'Feature-Gate', desc:'Feature-Gate-Wurzel (default=[])', focus:'cargo check --no-default-features MUSS 0 Fehler ergeben — dies ist die zentrale Hermetizitäts-Garantie des optionalen Crates.' },
@@ -966,26 +985,6 @@ const DEFAULT_COMPONENTS = {
     { file:'util.rs', size:'S', risk:'crash', desc:'fsync_parent_dir() — POSIX-Directory-fsync für durables Persistieren neu erstellter Dateien/Verzeichniseinträge. Utility für die gesamte Store-Engine.', focus:'fsync_parent_dir() ist Pflicht-Nachfolger jedes APM-1-Schreibvorgangs (tmp→fsync→rename→fsync_parent_dir). Fehler hier: immer mit ? propagieren, NIEMALS let _ = — Verlust des Directory-fsync macht alle neuen Dateien nach Crash nicht wiederfindbar. Parent-Pfad-Fallback auf \".\" für Dateien im CWD ist korrekt.' },
     { file:'wal.rs', size:'XL', risk:'Crash-Safety', desc:'Write-Ahead-Log — fsync-Disziplin, HMAC-Bindung, höchstes Crash-Safety-Risiko im gesamten Workspace', focus:'sync_all() MUSS vor jeder Ok-Rückgabe aus append() erfolgen. Sequenznummer UND Datei-ID müssen in die HMAC-Berechnung eingebunden sein (nicht nur Payload). Jede Änderung braucht einen begleitenden Crash-Mid-Write-Fault-Injection-Test.' },
   ],
-  'memfuse-tauri': [
-    { file:'commands/chat.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'commands/collections.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'commands/ingest.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'commands/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'commands/search.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'commands/session_dag.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'commands/transform.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'ingestion/docx.rs', size:'M', risk:'Sicherheit/Parser', desc:'DOCX-Parser für externe Nutzerdateien', focus:'Gleiche Robustheitsanforderungen wie pdf.rs: leere/trunkierte Datei → Err, kein Panic. Geparste Inhalte landen später im RAG-Kontext — Prompt-Injection-Bewusstsein wie bei memfuse-ollama.' },
-    { file:'ingestion/email.rs', size:'M', risk:'Sicherheit/Parser', desc:'E-Mail-Parser für externe Nutzerdateien', focus:'Gleiche Robustheitsanforderungen wie pdf.rs/docx.rs. Zusätzlich: Header-Injection und verschachtelte MIME-Strukturen als Fuzzing-Ziel betrachten.' },
-    { file:'ingestion/entities.rs', size:'M', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'ingestion/mod.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'ingestion/pdf.rs', size:'S', risk:'Sicherheit/Parser', desc:'PDF-Parser für externe, nicht-vertrauenswürdige Nutzerdateien', focus:'Eingebettetes PDF-JavaScript MUSS ignoriert, niemals ausgeführt werden. Leere/trunkierte/falsch benannte Dateien → kontrollierter Err, kein Panic. Fehlendes Größenlimit ist ein DoS-Risiko (RAM-Erschöpfung).' },
-    { file:'ingestion/pipeline.rs', size:'L', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'ingestion/progress.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'lib.rs', size:'S', risk:'—', desc:'Tauri-App-Einstiegspunkt', focus:'Prüfe IPC-Command-Registrierung auf vollständige Fehlerbehandlung.' },
-    { file:'main.rs', size:'S', risk:'—', desc:'(unkommentiert — Existenz per gen-prompter-data verifiziert, redaktionelle Einschätzung ausstehend)', focus:'◆ AUSSTEHEND (Session: v27, TS: 2026-03-02) — Crate liegt außerhalb der Tier-1-Priorisierung dieser Sitzung.' },
-    { file:'ollama.rs', size:'S', risk:'Duplikation', desc:'OllamaBridge — Desktop-App-seitige Ollama-Anbindung', focus:'Prüfe auf Logik-Duplikation gegenüber memfuse-ollama::client.rs — jede Abweichung im Verhalten zwischen Bridge und Client ist ein Wartungsrisiko und potenzielle Inkonsistenzquelle. [KORR v22: Datei hieß zuvor ollama_bridge.rs — tatsächlicher Dateiname ist ollama.rs.]' },
-    { file:'state.rs', size:'S', risk:'Concurrency', desc:'AppState — geteilter Zustand über Tauri-Commands', focus:'Tauri-Commands laufen parallel — jeder Zugriff auf AppState braucht korrekte Synchronisation (RwLock/Arc/Mutex); prüfe explizit auf Data-Races bei gleichzeitigen Commands.' },
-  ],
   'memfuse-text': [
     { file:'bm25.rs', size:'M', risk:'Numerik', desc:'BM25-Scoring, IDF-Berechnung', focus:'ln(idf_arg) wird bei df>N/2 negativ — prüfe den IDF-Floor-Mechanismus (z.B. 1e-6 statt hartem 0), da ein harter 0-Floor Stoppwörter künstlich einfärbt.' },
     { file:'inverted.rs', size:'XL', risk:'Konsistenz', desc:'Postings-Listen, Update/Delete-Pfad', focus:'DF-Zähler MUSS bei jedem Update/Delete korrekt dekrementiert werden — sonst Ghost-Terms in den Postings, die Suchqualität schleichend verfälschen. [KORR v22: Datei hieß zuvor inverted_index.rs — tatsächlicher Dateiname ist inverted.rs.]' },
@@ -1036,7 +1035,7 @@ const APM = [
   { id:'24', label:'Provenienzverlust bei Aggregation', short:'APM-24: Fusion mehrerer Signalquellen ohne Herkunfts-Nachweis pro Teilergebnis', desc:'Jede Fusion mehrerer Signalquellen (RRF über HNSW+BM25+Graph+Metadaten, Reranking, PPR-Community-Aggregation) muss die Herkunft und Gewichtung jedes Teilergebnisses nachvollziehbar mitführen (Provenance). Ein reiner Endscore ohne Quellzuordnung ("dieses Ergebnis kam aus Signal X mit Gewicht Y") ist ein Befund, kein akzeptables Implementierungsdetail — er macht Debugging von Ranking-Anomalien und spätere Kalibrierung (APM-22) unmöglich, weil der kausale Beitrag jeder Quelle nicht mehr rekonstruierbar ist, sobald die Fusion einmal durchlaufen ist.' },
   { id:'25', label:'Fixe Byte-/Index-Grenzen ohne Bounds-Check', short:'APM-25: Direkter Slice-/Index-Zugriff ohne Bounds-Check = Panic/OOB', desc:'Jeder direkte Slice-/Index-Zugriff (arr[i], &buf[a..b]) außerhalb der bereits durch APM-7 abgedeckten UTF-8-Sonderfälle braucht einen expliziten Bounds-Check oder einen .get()/.get(a..b)-Pfad mit kontrolliertem Err/None-Handling — insbesondere bei Längen-/Offset-Feldern, die aus Dateien, Netzwerk oder deserialisierten Strukturen (WAL-Records, SSTable-Header, FlatBuffers) gelesen wurden und daher potenziell korrupt oder adversarial sind. Ein ungeprüfter Index aus externer Quelle ist ein Buffer-Overflow/Underflow-Risiko, kein reiner Panic-Safety-Stilfehler.' },
   { id:'26', label:'Ressourcen-Handle ohne RAII-Nachweis', short:'APM-26: Neuer Datei-/Socket-/Mmap-Pfad ohne Open/Close-Zyklustest', desc:'Jede neu geöffnete Datei, jeder Socket, jede mmap-Region braucht einen expliziten Test, der Erstellung und Freigabe über N Zyklen zählt und beweist, dass kein Handle/File-Descriptor je Zyklus zurückbleibt (Referenzmuster: tests/resource_leaks.rs, 1.000 Open/Close-Zyklen in memfuse-store). Dieses Muster gilt für JEDES Crate mit Datei-/Handle-I/O, nicht nur für den Storage-Layer — jeder neue I/O-Funktionspfad (SSTable-Open, WAL-Rotation, mmap-Remap, Socket-Accept) braucht diesen Nachweis bei seiner Einführung, nicht erst nachträglich als Audit-Befund.' },
-  { id:'27', label:'Kompressions-/Verschachtelungs-Bomben & Event-Flooding ungeprüft', short:'APM-27: Parser für Fremdformate ohne Verhältnis-/Tiefen-Limit + gedrosselte Events', desc:'Jeder Parser für komprimierte/verschachtelte Fremdformate (ZIP/DOCX-Container, verschachteltes XML/Entity-Expansion, PDF-Objekt-Streams, E-Mail-MIME) braucht ZUSÄTZLICH zur bereits geprüften absoluten Dateigröße ein hartes Kompressions-Verhältnis-Limit (komprimiert:dekomprimiert) UND eine Verschachtelungstiefen-Grenze — eine kleine Eingabedatei kann bei extremer Entpackungsrate trotzdem den Speicher erschöpfen (Zip Bomb/Billion-Laughs), auch wenn die absolute Größe unauffällig ist. Ergänzend für IPC-/Tauri-Events: jeder pro-Dokument oder pro-Datei ausgelöste Fortschritts-/Status-Event (z.B. Ingestion von 10.000 Dateien) MUSS gebatcht oder gedrosselt werden — ungepufferte Events pro Einzeldatei überlasten die Frontend-IPC-Schnittstelle (IPC Event Flooding).' },
+  { id:'27', label:'Kompressions-/Verschachtelungs-Bomben & Event-Flooding ungeprüft', short:'APM-27: Parser für Fremdformate ohne Verhältnis-/Tiefen-Limit + gedrosselte Events', desc:'Jeder Parser für komprimierte/verschachtelte Fremdformate (ZIP/DOCX-Container, verschachteltes XML/Entity-Expansion, PDF-Objekt-Streams, E-Mail-MIME) braucht ZUSÄTZLICH zur bereits geprüften absoluten Dateigröße ein hartes Kompressions-Verhältnis-Limit (komprimiert:dekomprimiert) UND eine Verschachtelungstiefen-Grenze — eine kleine Eingabedatei kann bei extremer Entpackungsrate trotzdem den Speicher erschöpfen (Zip Bomb/Billion-Laughs), auch wenn die absolute Größe unauffällig ist. Ergänzend für IPC-Events an der MCP-stdio-Grenze: jeder pro-Dokument oder pro-Datei ausgelöste Fortschritts-/Status-Event (z.B. Ingestion vieler Dateien via memfuse_insert-Batch) MUSS gebatcht oder gedrosselt werden — ungepufferte Events pro Einzeldatei überlasten die stdio-JSON-RPC-Schnittstelle (IPC Event Flooding). [v30: memfuse-tauri (vormaliger primärer Anwendungsfall dieses Musters für PDF/DOCX/E-Mail-Container) wurde per ADR-077 physisch entfernt — dieses APM bleibt für memfuse-mcp und künftige Fremdformat-Parser gültig.]' },
   { id:'28', label:'Dangling Edge nach inkonsistenter GC', short:'APM-28: Graph-Kanten-Löschung muss an dieselbe Tombstone-Transaktion gebunden sein', desc:'Graph-Kanten, die auf LSM-persistierte Dokument-IDs verweisen, dürfen niemals auf eine bereits per Tombstone gelöschte ID zeigen (Dangling Edge/Phantom Node). Die kaskadierende Löschung (Graph-GC bei Dokument-Löschung) MUSS an dieselbe Tombstone-Transaktion gebunden sein wie die Dokument-Löschung selbst — "best effort" oder asynchron nachgelagerte Graph-GC ist ein Befund, weil ein Crash zwischen Dokument-Tombstone und Graph-GC eine dauerhaft inkonsistente Kante hinterlässt. Jede neue remove_*-Funktion im Graph-Modul muss explizit dokumentieren, in welcher Transaktion die zugehörige Kanten-Bereinigung erfolgt.' },
   { id:'29', label:'Silent Fallback statt Fehlerpropagation', short:'APM-29: .ok()/.unwrap_or_default() auf Result-Pfaden = stille Fehlerunterdrückung', desc:'.ok(), .unwrap_or_default(), .unwrap_or_else(|_| ...) auf einem Pfad, der eigentlich ein Result mit ? weiterreichen sollte, ist Error Swallowing — ein Befund, keine Stilfrage, auch wenn das Projekt bereits eine "Zero-Panic"-Doktrin durchsetzt (die verhindert nur Panics, nicht stille Fehlerunterdrückung). Jeder Fallback-auf-Default nach einem fehlgeschlagenen Deserialisierungs-, I/O- oder Netzwerk-Aufruf muss explizit begründet werden ("Default ist hier fachlich korrekt, weil X") oder durch echte Fehlerpropagation ersetzt werden — ein unkommentierter Silent-Fallback in Produktionscode ist immer ein Fund.' },
   { id:'30', label:'God-Object-Verantwortungsdrift', short:'APM-30: Zentraler Struct akkumuliert Felder ohne Layer-Zugehörigkeits-Prüfung', desc:'Jeder zentrale, breit injizierte Typ (AppState, OrchestratorEngine, Facade-Structs) läuft über viele Sessions hinweg Gefahr, immer neue Felder/Methoden anzusammeln, die eigentlich in eine tiefere Schicht gehören (Layer/DAG-Verantwortungsdrift, God Object/Facade Bloat). Bei JEDER Erweiterung eines solchen zentralen Typs: explizit prüfen und im Review-Kommentar beantworten — "Ist dieses neue Feld/diese neue Methode originär Verantwortung dieses Layers, oder Symptom einer fehlenden Abstraktion in einer tieferen Schicht?" Eine unbeantwortete Erweiterung eines God-Object-Kandidaten ist ein Befund.' },
@@ -1050,7 +1049,7 @@ const APM = [
   { id:'38', label:'Sequenz-/TxId-Bindung gegen Wiedereinspielung', short:'APM-38: Alter, gültiger Log-Eintrag an neuer Position ohne kryptografische Bindung erkennbar', desc:'Ein alter, ursprünglich gültiger WAL-/Checkpoint-Eintrag darf nicht an einer NEUEN Position akzeptiert werden (Replay Attack) — dazu müssen Sequenznummer und/oder TxId kryptografisch IN das HMAC/den Hash eingebunden sein (nicht nur der Payload), sodass ein Verschieben eines validen, alten Eintrags an eine andere Position die Verifikation fehlschlagen lässt. Jeder neue Wiederherstellungs-/Replay-Pfad (WAL-Replay, Checkpoint-Restore, MCP-stdio-Request-Handling) muss explizit dokumentieren, ob und wie er gegen Wiedereinspielung geschützt ist — "das Protokoll ist zustandslos-idempotent" ist nur dann eine gültige Begründung, wenn dies explizit geprüft und nicht nur angenommen wurde.' },
   { id:'39', label:'Amplifikations-Budget-Regression', short:'APM-39: Write-/Read-/Space-Amplification ohne Regressions-Schranke', desc:'Write-, Read- und Space-Amplification (Verhältnis von tatsächlichem I/O bzw. Speicherverbrauch zur logischen Datenmenge) sind LSM-Tree-inhärente Kennzahlen, kein Zufallsprodukt — jede Änderung an Compaction-Strategie, SSTable-Layout oder WAL-Rotation braucht eine Vorher/Nachher-Messung gegen einen dokumentierten Budget-Schwellenwert, nicht nur eine einmalige Benchmark-Erwähnung im Audit-Report. Eine Änderung, die eine der drei Amplifikationskennzahlen signifikant verschlechtert, ohne dass dies als bewusster Trade-off (mit Begründung) dokumentiert ist, ist ein Befund.' },
   { id:'40', label:'Premature-Abstraction ohne Empirie-Beleg', short:'APM-40: Neue Komplexitätsschicht ohne gemessenen Performance-Gewinn', desc:'Jede neu eingeführte Abstraktionsschicht, Cache-Ebene, generische Parametrisierung oder Optimierung, die mit Performance begründet wird, braucht einen VORHER-Benchmark-Beleg (nicht nur eine plausible Vermutung) — Komplexitätsaufbau ohne gemessenen Gewinn ist Premature Optimization und ein Wartungsrisiko ohne belegten Nutzen. Bei Review/Korrektur-Aufgaben: Frage explizit stellen — "Existiert ein Benchmark, der diese Optimierung rechtfertigt, oder ist sie eine unbelegte Annahme?"' },
-  { id:'41', label:'Geteilter Zustand ohne Synchronisationsnachweis', short:'APM-41: Neuer shared-mutable State ohne expliziten Race-Test', desc:'Generisches Basismuster für Race Conditions/Data Races, komplementär zu den spezifischeren APM-12 (Lock-Reihenfolge), APM-18 (Check-Then-Act) und APM-21 (Poisoning): JEDER neu eingeführte geteilte veränderliche Zustand (Arc<Mutex<_>>, Arc<RwLock<_>>, static mit interior mutability, geteilter Zustand über Tauri-Commands/AppState) braucht bei seiner Einführung einen dedizierten Concurrency-Test mit mindestens 2 parallelen Zugreifern, nicht nur eine grep-basierte Plausibilitätsprüfung der Lock-Nutzung — ein "sieht synchronisiert aus" ersetzt keinen tatsächlichen parallelen Test-Lauf.' },
+  { id:'41', label:'Geteilter Zustand ohne Synchronisationsnachweis', short:'APM-41: Neuer shared-mutable State ohne expliziten Race-Test', desc:'Generisches Basismuster für Race Conditions/Data Races, komplementär zu den spezifischeren APM-12 (Lock-Reihenfolge), APM-18 (Check-Then-Act) und APM-21 (Poisoning): JEDER neu eingeführte geteilte veränderliche Zustand (Arc<Mutex<_>>, Arc<RwLock<_>>, static mit interior mutability, geteilter Zustand über mehrere MCP-Tool-Aufrufe/Sandbox-Sessions hinweg) braucht bei seiner Einführung einen dedizierten Concurrency-Test mit mindestens 2 parallelen Zugreifern, nicht nur eine grep-basierte Plausibilitätsprüfung der Lock-Nutzung — ein "sieht synchronisiert aus" ersetzt keinen tatsächlichen parallelen Test-Lauf.' },
   { id:'42', label:'Prüf-Tooling-Drift', short:'APM-42: Prüf-Tooling/Doku behauptet Vollständigkeit ohne Frische-Nachweis', desc:'Jedes Werkzeug, jede Dokumentation oder jedes Skript, das eine Vollständigkeits- oder Korrektheitsaussage über den Code trifft (Datei-Inventare, DAG-Diagramme, Coverage-Zahlen, "verifiziert"-Badges — eingeschlossen dieser Prompter selbst), muss selbst gegen die Quelle nachprüfbar sein: im Idealfall automatisch generiert, mindestens aber mit einem sichtbaren Stand-/Frische-Datum UND einem expliziten Reality-Check-Schritt versehen (siehe Schritt 0 in diesem Prompt). Eine hartkodierte oder von Hand gepflegte Aussage über den Code-Zustand ohne Mechanismus, sich selbst als veraltet zu erkennen, ist ein Befund — unabhängig davon, ob sie im Moment der Prüfung zufällig noch korrekt ist. Gilt für ARCHITECTURE.md-DAG-Diagramme, SOURCE_OF_TRUTH.md-Zahlen und jede sonstige "Stand: geprüft"-Behauptung im Repo gleichermaßen.' },
 ];
 
@@ -1065,12 +1064,14 @@ const APM = [
 const DOMAIN_PROFILES = {
   'mvcc-heavy':     { label:'MVCC/Transaktions-intensiv', crates:['memfuse-store','memfuse-checkpoint','memfuse-db','memfuse-core'], apms:['17','18','19','41'] },
   'ml-scoring':     { label:'ML-Scoring/Kalibrierung',     crates:['memfuse-router','memfuse-text','memfuse-embed','memfuse-ollama'], apms:['22','23','24'] },
-  'parser-external': { label:'Parser für nicht-vertrauenswürdige Fremdformate', crates:['memfuse-tauri'], apms:['27','25'] },
+  // 'parser-external' (vormals memfuse-tauri: PDF/DOCX/E-Mail-Parser) ENTFERNT v30 —
+  // memfuse-tauri wurde per ADR-077 physisch aus dem Workspace entfernt (kein Fremdformat-Parser-Crate mehr aktiv).
   'ffi-boundary':   { label:'FFI-/Sprachgrenze',            crates:['memfuse-py'], apms:['34','35','9'] },
   'graph-mutating': { label:'Graph-Mutation & -GC',         crates:['memfuse-graph','memfuse-db'], apms:['28','15'] },
   'crypto-core':    { label:'Krypto-Kern & Anti-Tamper',    crates:['memfuse-crypto','memfuse-store'], apms:['13','32','37','38'] },
-  'concurrency-core': { label:'Concurrency-/Lock-intensiver Kern', crates:['memfuse-store','memfuse-index','memfuse-db','memfuse-tauri','memfuse-checkpoint'], apms:['12','20','21','31','41'] },
-  'protocol-boundary': { label:'Externe Protokoll-/IPC-Außengrenze', crates:['memfuse-mcp','memfuse-tauri'], apms:['38','27'] },
+  'concurrency-core': { label:'Concurrency-/Lock-intensiver Kern', crates:['memfuse-store','memfuse-index','memfuse-db','memfuse-checkpoint'], apms:['12','20','21','31','41'] },
+  'protocol-boundary': { label:'Externe Protokoll-/IPC-Außengrenze', crates:['memfuse-mcp'], apms:['38','27'] },
+  'kv-cache-bridge': { label:'KV-Cache-Bridge (kryptographisch isolierte Inferenz-Beschleunigung)', crates:['memfuse-crypto','memfuse-candle'], apms:['13','16','20'] },
   'index-core':     { label:'Such-/Index-Kern (HNSW/BM25/RRF)', crates:['memfuse-index','memfuse-db','memfuse-text'], apms:['36','14','16'] },
   'singleton-risk':  { label:'Kritischer Prozess-Singleton', crates:['memfuse-py'], apms:['33'] },
   // v23: NICHT crate-scoped wie die übrigen Profile — meta-tooling betrifft Governance-Aufgaben
@@ -1174,6 +1175,7 @@ done
 • Zeroize: ZeroizeOnDrop für VolatileEncryptionKey, IntegrityVerifier und alle Key-Material-Structs lückenlos
 • WAL-HMAC-Chaining v3 KRITISCH: Reihenfolge domain-separator → prev_hmac → seq_no → tx_id → op_type+kv MUSS exakt eingehalten werden
 • Krypto-Isolation: KEIN anderes Crate darf eigene Ad-hoc-Crypto-Primitiven verwenden — ausschließlich memfuse-crypto
+• KV-Cache-Bridge (v30, siehe JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md): derive_kv_key() bindet an (TenantId, ModelFingerprint) — jeder Modell-/Quantisierungswechsel MUSS einen anderen Schlüssel erzeugen (P8-Fingerprint-Invalidierung). EvictionWorker läuft auf eigenem OS-Thread (nicht Tokio-Task) — synchrones Zeroizing darf den Async-Executor niemals blockieren
 • cargo audit: RUSTSEC-Einträge bekannt in lopdf (memfuse-text) und pyo3 (memfuse-py) — memfuse-crypto selbst muss isoliert bleiben`,
     audit_cmds:`cargo test -p memfuse-crypto -- rfc_vectors --nocapture
 grep -n "fn encrypt_auto_nonce\\|OsRng\\|NONCE_SIZE" crates/memfuse-crypto/src/*.rs
@@ -1181,6 +1183,8 @@ grep -n "memfuse-aes-256\\|memfuse-hmac\\|memfuse-file-key" crates/memfuse-crypt
 grep -n "ConstantTimeEq\\|ct_eq" crates/memfuse-crypto/src/*.rs
 grep -n "ZeroizeOnDrop\\|Zeroize" crates/memfuse-crypto/src/*.rs
 grep -n "compute_checksum_v3\\|verify_and_update_v3\\|WalHmac" crates/memfuse-crypto/src/wal_crypto.rs
+grep -n "derive_kv_key\\|derive_file_key" crates/memfuse-crypto/src/crypto.rs
+grep -rn "evict_lru_fair\\|EvictionWorker" crates/memfuse-crypto/src/kv_segment/
 cargo audit -p memfuse-crypto 2>/dev/null | grep -E "RUSTSEC|Severity"`,
     deep_extra:`**Nonce-Kollisions-Simulation (statistisch):**
 \`\`\`bash
@@ -1194,8 +1198,15 @@ cargo test -p memfuse-crypto -- tamper --nocapture 2>&1 | grep -E "ok|FAILED"
 \`\`\`
 **Key-Domain-Separation exhaustiv:**
 \`\`\`bash
-# Alle abgeleiteten Keys (encryption, hmac, file-key-vN) paarweise auf Byte-Gleichheit prüfen
+# Alle abgeleiteten Keys (encryption, hmac, file-key-vN, kv-key) paarweise auf Byte-Gleichheit prüfen
 grep -n "fn derive_\\|hkdf" crates/memfuse-crypto/src/*.rs
+\`\`\`
+**KV-Cache-Bridge Fingerprint-Isolation (v30, NEU):**
+\`\`\`bash
+# Zwei verschiedene ModelFingerprints (unterschiedliche Quantisierung, gleiches Modell) MÜSSEN disjunkte KV-Schlüssel liefern
+cargo test -p memfuse-crypto -- kv_key_fingerprint_isolation --nocapture 2>&1 | grep -E "ok|FAILED"
+# EvictionWorker darf Tokio-Executor nicht blockieren — Laufzeit auf separatem OS-Thread verifizieren
+grep -n "thread::spawn\\|std::thread" crates/memfuse-crypto/src/kv_segment/eviction_worker.rs
 \`\`\``
   },
   'memfuse-store': {
@@ -1568,39 +1579,6 @@ grep -n "fn read_line_bounded\\|tokio::time::timeout" crates/memfuse-mcp/src/ -r
 cargo test -p memfuse-mcp -- rpc_fuzz --nocapture 2>&1 | grep -E "ok|FAILED"
 \`\`\``
   },
-  'memfuse-tauri': {
-    title:'Senior Rust Desktop-Engineer — Parser-Robustheit, IPC-Sicherheit',
-    layer:'Layer 4 — Desktop App Shell (externe, nicht-vertrauenswürdige Dateien)',
-    focus:`KRIT. INVARIANTEN für memfuse-tauri:
-• Parser-Robustheit (SICHERHEITSKRITISCH — externe Nutzerdateien):
-  Für pdf/docx/email: leere Datei → Err, trunkierte Datei → Err, falsche Extension → Err
-• PDF-JavaScript: eingebettetes JS muss ignoriert werden, NICHT ausgeführt
-• AppState-Thread-Safety: Tauri-Commands parallel → Data-Race auf AppState?
-• OllamaBridge vs. OllamaClient: Logik-Duplikation = Wartungsrisiko
-• Parser-DoS: sehr große Datei ohne Größenlimit → RAM-Erschöpfung?`,
-    audit_cmds:`for parser in docx pdf email; do
-  grep -n "panic!\\|\\.unwrap()\\|\\.expect(" crates/memfuse-tauri/src/ingestion/\${parser}.rs | grep -v test
-done
-grep -n "javascript\\|JS\\|script\\|action" crates/memfuse-tauri/src/ingestion/pdf.rs | head -5
-grep -n "AppState\\|RwLock\\|Arc\\|Mutex" crates/memfuse-tauri/src/state.rs | head -10`,
-    deep_extra:`**Prompt-Injection über Ingestion-Pfad (bekannt: kein Denylist ausreichend):**
-\`\`\`bash
-# Geparste PDF/DOCX/E-Mail-Inhalte landen später im RAG-Kontext — dieselben 15 Evasion-Techniken wie memfuse-ollama gelten hier
-cargo test -p memfuse-tauri -- ingestion_prompt_injection --nocapture 2>&1 | grep -E "ok|FAILED"
-\`\`\`
-**Parser-Fuzz auf malformierte/trunkierte Dateien:**
-\`\`\`bash
-for parser in docx pdf email; do
-  cargo test -p memfuse-tauri -- \${parser}_malformed_fuzz --nocapture 2>&1 | grep -E "ok|FAILED"
-done
-\`\`\`
-**AppState-Data-Race unter parallelen Tauri-Commands:**
-\`\`\`bash
-for i in $(seq 1 20); do
-  cargo test -p memfuse-tauri -- appstate_concurrent --test-threads=8 2>&1 | grep FAILED
-done
-\`\`\``
-  },
   'memfuse-calibration': {
     title:'Senior Rust Performance-Engineer — Score-Kalibrierung & ECE-Metriken',
     layer:'Layer 1 — Calibration & Uncertainty-Quantification',
@@ -1613,15 +1591,41 @@ grep -rn "ece\|confidence\|bin" crates/memfuse-calibration/src/`,
     deep_extra:`cargo test -p memfuse-calibration --all-features -- --nocapture`
   },
   'memfuse-candle': {
-    title:'Senior Rust ML-Engineer — Candle Inferenz & GGUF Quantisierung',
-    layer:'Layer 2 — Pure-Rust ML-Inferenz-Backend',
+    title:'Senior Rust ML-Engineer — Candle Inferenz, GGUF Quantisierung & KV-Cache-Bridge',
+    layer:'Layer 3 — Pure-Rust ML-Inferenz-Backend (technisches Fundament des Air-Gap-Modus und der KV-Cache-Bridge)',
     focus:`KRIT. INVARIANTEN für memfuse-candle:
-• Pure-Rust ML: Inferenz über Candle, kein Libtorch/C++ Dependency-Leck
-• Tensor-Quantisierung: GGUF Q4/Q8 Handling
-• Blocking-Inferenz: Inferenz-Pfade müssen über spawn_blocking laufen`,
-    audit_cmds:`grep -rn "\.unwrap()\|\.expect(" crates/memfuse-candle/src/ | grep -v "#\[cfg(test)\]"
-grep -rn "spawn_blocking" crates/memfuse-candle/src/`,
-    deep_extra:`cargo test -p memfuse-candle --all-features -- --nocapture`
+• Pure-Rust ML: Inferenz über Candle, kein Libtorch/C++ Dependency-Leck (Air-Gap-Versprechen)
+• Tensor-Quantisierung: GGUF Q4_K_M/Q8_0/F16-Handling in gguf_loader.rs/model_registry.rs
+• Blocking-Inferenz: Inferenz-Pfade MÜSSEN über spawn_blocking laufen, mit Arc<Semaphore> (max_concurrent_inferences) als Backpressure-Vertrag (identisches Muster zu memfuse-embed)
+• ModelFingerprint (kanonisch aus memfuse-core, NICHT hier neu definieren): compute_fingerprint() in model_registry.rs MUSS deterministisch und über Prozessneustarts stabil sein (SHA-256 über Gewichtsdatei + Quantisierung)
+• KV-Cache-Bridge (Feature kv-bridge, v30 NEU): KvBridgeAdapter in kv_bridge.rs konsultiert memfuse-crypto::TenantIsolatedKvStore je Retrieval-Chunk (chunk_id, ModelFingerprint, rope_offset). FAIL-OPEN PFLICHT: Cache-Miss oder JEDER Krypto-/Store-Fehler → transparenter Fallback auf vollständigen Prefill, NIEMALS Request-Fehler
+• GASP-Grounding (gasp.rs): GaspConfig/DEFAULT_GROUNDING_THRESHOLD — Score unter Threshold MUSS explizites GroundingAssessment mit Warnstatus liefern, nie stillschweigend als "grounded" durchreichen
+• swap_model() Hot-Reload darf laufende Inferenz nicht in inkonsistenten Tensor-Zustand versetzen
+• generate_with_context() OHNE kv-bridge-Feature: reine Text-Konkatenation, funktional identisch zu generate() — Degradation muss transparent sein`,
+    audit_cmds:`grep -rn "\\.unwrap()\\|\\.expect(" crates/memfuse-candle/src/ | grep -v "#\\[cfg(test)\\]"
+grep -rn "spawn_blocking\\|max_concurrent_inferences\\|Semaphore" crates/memfuse-candle/src/
+grep -rn "compute_fingerprint\\|ModelFingerprint" crates/memfuse-candle/src/model_registry.rs
+grep -rn "KvBridgeAdapter\\|kv_bridge\\|rope_offset" crates/memfuse-candle/src/kv_bridge.rs
+grep -rn "GaspConfig\\|DEFAULT_GROUNDING_THRESHOLD\\|GroundingAssessment" crates/memfuse-candle/src/gasp.rs
+grep -rn "generate_with_context\\|LlmTextGeneratorStreaming" crates/memfuse-candle/src/inference.rs
+cargo tree -p memfuse-candle | grep -i "libtorch\\|torch-sys\\|cxx" # MUSS leer sein — Pure-Rust-Versprechen`,
+    deep_extra:`cargo test -p memfuse-candle --all-features -- --nocapture
+\`\`\`
+**KV-Cache-Bridge Fail-Open-Verifikation (v30, KRITISCH — siehe JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md):**
+\`\`\`bash
+# Simulierter Krypto-/Store-Fehler im KvBridgeAdapter darf NIEMALS die Anfrage scheitern lassen — nur auf vollen Prefill zurückfallen
+cargo test -p memfuse-candle --features kv-bridge -- kv_bridge_fallback_on_error --nocapture 2>&1 | grep -E "ok|FAILED"
+# ModelFingerprint-Wechsel (Modell-/Quantisierungswechsel) MUSS als sauberer Cache-Miss behandelt werden, nicht als Fehler
+cargo test -p memfuse-candle --features kv-bridge -- kv_bridge_fingerprint_mismatch --nocapture 2>&1 | grep -E "ok|FAILED"
+\`\`\`
+**GASP-Grounding-Regressionstest:**
+\`\`\`bash
+cargo test -p memfuse-candle -- gasp_grounding --nocapture 2>&1 | grep -E "ok|FAILED"
+\`\`\`
+**Semaphore-Backpressure unter Last:**
+\`\`\`bash
+cargo test -p memfuse-candle -- inference_backpressure_saturation --test-threads=4 --nocapture 2>&1 | grep -E "ok|FAILED"
+\`\`\``
   },
   'memfuse-bench': {
     title:'Senior Rust Benchmark-Engineer — Retrieval-Accuracy-Regression',
@@ -1824,7 +1828,7 @@ if ! git merge-base --is-ancestor origin/main HEAD; then
 fi
 cargo check ${PKG(crate)} --all-features 2>&1 | tee /tmp/postrebase_check_crate.log
 grep -q "^error" /tmp/postrebase_check_crate.log && { echo "❌ STOP: Compile-Fehler in Crate — NICHT submitten"; exit 1; }
-cargo check --workspace --exclude memfuse-tauri 2>&1 | tee /tmp/postrebase_check.log
+cargo check --workspace 2>&1 | tee /tmp/postrebase_check.log
 grep -q "^error" /tmp/postrebase_check.log && { echo "❌ STOP: Compile-Fehler im Workspace — NICHT submitten"; exit 1; }
 echo "✅ Workspace + Crate nach Rebase fehlerfrei"
 
@@ -1887,7 +1891,7 @@ cargo check  ${PKG(crate)} --all-features
 cargo clippy ${PKG(crate)} -- -D warnings
 cargo fmt    --check ${PKG(crate)}
 command -v cargo-nextest &>/dev/null && cargo nextest run ${PKG(crate)} --all-features || cargo test ${PKG(crate)} --all-features -- --nocapture
-cargo check  --workspace --exclude memfuse-tauri
+cargo check --workspace
 \`\`\`
 
 **Zusätzliche Governance-Gates (justfile/xtask — vor PR-Erstellung, nicht optional):**
@@ -2201,7 +2205,7 @@ function DOD(crate) {
 
 > **Wichtig:** Scheitert ein Schritt, stoppe sofort und dokumentiere den Befund — führe die nächsten Punkte nicht aus, bevor der Fehler behoben oder explizit als bekannt markiert ist.
 
-- [ ] Gate-Stack (s.o.: check/clippy/fmt/test für ${PKG(crate)} + \`cargo check --workspace --exclude memfuse-tauri\`) grün, 0 Fehler/Warnungen/Diffs/FAILED
+- [ ] Gate-Stack (s.o.: check/clippy/fmt/test für ${PKG(crate)} + \`cargo check --workspace\`) grün, 0 Fehler/Warnungen/Diffs/FAILED
 - [ ] 0 neues \`.unwrap()\`/\`.expect()\` außerhalb von \`#[cfg(test)]\`-Blöcken
 - [ ] 0 neues \`unsafe\` ohne direkt darunter stehendes \`// SAFETY:\` Kommentar
 - [ ] 0 Test-Expected-Wert direkt aus Implementierungs-Formel abgeleitet (Anti-Mirroring)
@@ -2257,6 +2261,9 @@ const SUBSYSTEMS = [
   { id:'mcp_sandbox', crate:'memfuse-mcp', file:'crates/memfuse-mcp/src/sandbox.rs',
     loc:'431', size:'M', icon:'🧪', name:'MCP-Sandbox',
     desc:'McpSandbox — Zero-Trust Tool-Output-Isolation, Volatile-Result-Verschlüsselung (AES-256-GCM-SIV via memfuse-crypto)' },
+  { id:'kv_cache_bridge', crate:'memfuse-candle', file:'crates/memfuse-candle/src/kv_bridge.rs',
+    loc:'—', size:'M', icon:'🔐', name:'KV-Cache-Bridge',
+    desc:'NEU (v30): KvBridgeAdapter — verbindet Retrieval-Chunks mandantenisoliert-verschlüsselt mit dem Candle-Inferenz-Pfad (Feature kv-bridge). Cross-Cutting über memfuse-candle/kv_bridge.rs + memfuse-crypto/kv_cipher.rs + kv_segment/. Kernrisiko: Fail-Open-Pflicht bei Cache-Miss/Krypto-Fehler UND ModelFingerprint-Isolation — siehe JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md.' },
 ];
 
 const EIGENBAU_COMPONENTS = [
@@ -2294,8 +2301,8 @@ const EIGENBAU_COMPONENTS = [
     desc: 'Reale GGUF Forward-Passes, Wortgrenzen-Analyse (GASP), Modell-Fingerprinting, Nicht-Konstanz-Beweis'
   },
   {
-    id: 'eigenbau-kv-bridge',
-    name: 'KV-Bridge (Index↔Store Sync)',
+    id: 'eigenbau-index-store-sync',
+    name: 'Index↔Store Transaktions-Sync',
     role: 'Cross-Engine-Konsistenz-Spezialist',
     icon: '🌉',
     crate: 'memfuse-db',
@@ -2307,7 +2314,25 @@ const EIGENBAU_COMPONENTS = [
     ],
     depends_on: ['eigenbau-lsm-wal'],
     review_focus: 'split-brain-simulation',
-    desc: 'Transaktionale Vektor-Index <-> LSM Sync, CheckpointPinGuard, Lösch-Split-Brain Schutz'
+    desc: 'Transaktionale Vektor-Index <-> LSM Sync, CheckpointPinGuard, Lösch-Split-Brain Schutz. [v30 UMBENANNT von "eigenbau-kv-bridge" auf "eigenbau-index-store-sync" — Namenskollision mit der NEUEN, fachlich unabhängigen KV-Cache-Bridge (Retrieval↔Inferenz-Beschleunigung, siehe eigenbau-kv-cache-bridge unten) aufgelöst. Beide Begriffe kommen im Repo/der Spezifikation vor und bezeichnen unterschiedliche Dinge — bei Bearbeitung IMMER die vollständige ID prüfen, nicht nur "KV-Bridge" im Namen.]'
+  },
+  {
+    id: 'eigenbau-kv-cache-bridge',
+    name: 'KV-Cache-Bridge (Retrieval↔Inferenz, kryptographisch isoliert)',
+    role: 'Inferenz-Beschleunigungs-/Krypto-Isolations-Spezialist',
+    icon: '🔐',
+    crate: 'memfuse-candle',
+    spans: [
+      'crates/memfuse-candle/src/kv_bridge.rs',
+      'crates/memfuse-candle/src/inference.rs',
+      'crates/memfuse-candle/src/model_registry.rs',
+      'crates/memfuse-crypto/src/kv_cipher.rs',
+      'crates/memfuse-crypto/src/kv_segment/',
+      'crates/memfuse-core/src/model_fingerprint.rs'
+    ],
+    depends_on: ['eigenbau-candle-tensor'],
+    review_focus: 'fail-open-and-fingerprint-isolation',
+    desc: 'NEU (v30, Alleinstellungsmerkmal §2.3.6 der Spezifikation): verbindet Retrieval-Treffer direkt mit dem Inferenz-Backend — bereits berechnete KV-Tensoren häufig wiederverwendeter Chunks werden mandantenisoliert verschlüsselt zwischengespeichert (memfuse-crypto::TenantIsolatedKvStore) und bei erneutem Treffer injiziert, wodurch der LLM-Prefill entfällt. Zwei Kern-Invarianten: (1) Fail-Open bei Cache-Miss/Krypto-Fehler — niemals Request-Fehler; (2) ModelFingerprint-Bindung — Modell-/Quantisierungswechsel macht alte Segmente kryptographisch unlesbar statt fälschlich gültig (P8). Betroffene Prompts: siehe JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md — gilt als in Umsetzung, nicht als unbearbeitete Lücke neu ansetzen.'
   },
   {
     id: 'eigenbau-rrf-fusion',
@@ -2579,7 +2604,7 @@ grep -rn "catch_unwind\\|#\\[pyfunction\\]\\|#\\[pymethods\\]" crates/${crate}/s
 # APM-10: Blockierter Async-Executor
 grep -rn "spawn_blocking\\|allow_threads\\|block_on" crates/${crate}/src/ | grep -v test
 
-# APM-11: Path-Traversal & Payload-Limits (primär memfuse-tauri, memfuse-mcp)
+# APM-11: Path-Traversal & Payload-Limits (primär memfuse-mcp, Ingestion-Pfade)
 grep -rn "canonicalize\\|validate_path\\|MAX_.*_SIZE\\|MAX_.*_BYTES" crates/${crate}/src/ | grep -v test
 
 # APM-12: Lock-Hierarchie-Inversion
@@ -2891,7 +2916,7 @@ cargo check  ${PKG(crate)} --all-features
 cargo clippy ${PKG(crate)} -- -D warnings
 cargo fmt    --check ${PKG(crate)}
 cargo test   ${PKG(crate)} --all-features
-cargo check  --workspace --exclude memfuse-tauri
+cargo check --workspace
 \`\`\`
 
 ---
@@ -2947,7 +2972,7 @@ ${APM.map(a => `- ${a.short}`).join('\n')}
 grep -rn "${crate.replace(/-/g,'_')}" crates/ --include="*.rs" | grep "use\\|extern" | \\
   grep -v "${crate}/" | head -10
 # Abhängige Crates kompilieren noch?
-cargo check --workspace --exclude memfuse-tauri
+cargo check --workspace
 \`\`\`
 
 ### Schritt 6: Audit-Report aktualisieren
@@ -3065,7 +3090,7 @@ grep -rn "unsafe" crates/${crate}/src/ | grep -v "// SAFETY:\\|#\\[cfg(test)\\]"
 # Jeder Treffer ohne SAFETY-Kommentar → KRITISCH
 \`\`\`
 
-### Schritt 3: Injection-Prüfung (Ollama/MCP/Tauri)
+### Schritt 3: Injection-Prüfung (Ollama/MCP/Ingestion-Pfade)
 \`\`\`bash
 grep -rn "xml_escape\\|sanitize\\|escape\\|prompt" crates/${crate}/src/ | head -15
 # Test alle 5 XML-Sonderzeichen: < > & " '
@@ -3222,7 +3247,7 @@ Erstelle einen ADR-Entwurf mit Kontext (welches Problem löst die Dependency), A
 ### Gate
 \`\`\`bash
 cargo audit 2>&1 | tail -20
-cargo check --workspace --exclude memfuse-tauri
+cargo check --workspace
 just dag-check
 \`\`\`
 
@@ -3993,6 +4018,99 @@ MCP_SANDBOX_EOF
 ${SUBSYS_DOD(sub)}`;
 },
 
+kv_cache_bridge_audit: (sub) => {
+  const crate = sub.crate;
+  return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
+${ROLE_LOCK_BLOCK('auditor', crate)}
+
+## KV-Cache-Bridge-Tiefen-Audit — kv_bridge.rs + kv_cipher.rs/kv_segment/ (crate-übergreifend, memfuse-candle ↔ memfuse-crypto)
+
+Dieser Subsystem-Audit prüft AUSSCHLIESSLICH die KV-Cache-Bridge-Pfade:
+\`crates/memfuse-candle/src/kv_bridge.rs\`, \`crates/memfuse-candle/src/inference.rs\` (nur generate_with_context()),
+\`crates/memfuse-crypto/src/kv_cipher.rs\`, \`crates/memfuse-crypto/src/kv_segment/\` sowie
+\`crates/memfuse-core/src/model_fingerprint.rs\` (nur lesend, Referenztyp).
+Keine anderen Dateien in dieser Sitzung — kein Scope-Creep. Owner-Crate (Claim automatisch hierauf gesetzt): \`${crate}\`.
+
+NEU in v30 (siehe JULES_PROMPTS_KV_CRYPTO_GAP_2026-09-12.md — diese Prompts gelten als
+in Umsetzung/umgesetzt, NICHT als unbearbeitete Lücke neu formulieren). Die KV-Cache-Bridge
+ist das in §2.3.6 der Spezifikation beschriebene Alleinstellungsmerkmal: bereits berechnete
+KV-Tensoren häufig wiederverwendeter Retrieval-Chunks werden mandantenisoliert verschlüsselt
+zwischengespeichert und bei erneutem Treffer injiziert, wodurch der LLM-Prefill entfällt.
+Ein Fehler hier ist entweder ein Sicherheits-Befund (Cross-Tenant-/Cross-Modell-Leck über
+den KV-Cache) oder ein Verfügbarkeits-Befund (ein Cache-Fehler lässt die Anfrage scheitern
+statt transparent zurückzufallen) — beide Fehlerklassen sind kritisch, keine Performance-Nebensache.
+
+### Phase K-1: Struktur erfassen (nie aus Erinnerung — immer lesen)
+\`\`\`bash
+wc -l crates/memfuse-candle/src/kv_bridge.rs crates/memfuse-crypto/src/kv_cipher.rs
+find crates/memfuse-crypto/src/kv_segment -name "*.rs" | xargs wc -l
+grep -n "^pub fn\\|^pub async fn\\|^pub struct\\|^pub enum\\|^impl" crates/memfuse-candle/src/kv_bridge.rs
+\`\`\`
+
+### Phase K-2: KV-Cache-Bridge-spezifische Invarianten (gegen den echten Quellcode verifiziert)
+
+\`\`\`bash
+# INV-1: FAIL-OPEN bei Cache-Miss/Krypto-Fehler (KRITISCHSTE Invariante dieses Subsystems)
+grep -n "fn consult\\|fn lookup\\|match.*Result\\|Err(" crates/memfuse-candle/src/kv_bridge.rs
+# Erwartung: JEDER Err-Pfad (Store-Fehler, Krypto-Fehler, Deserialisierungsfehler) führt zu
+# einem Fallback auf vollständigen Prefill — es darf KEINEN Pfad geben, der den Fehler mit ?
+# nach oben propagiert und damit die gesamte generate_with_context()-Anfrage scheitern lässt.
+# Ein "?" auf einem KV-Bridge-internen Result ist hier potenziell ein kritischer Befund.
+
+# INV-2: ModelFingerprint-Bindung / Fingerprint-Isolation (P8)
+grep -n "ModelFingerprint\\|model_fingerprint" crates/memfuse-candle/src/kv_bridge.rs crates/memfuse-crypto/src/kv_cipher.rs
+# Erwartung: der Schlüssel für ein KV-Segment ist an (chunk_id, ModelFingerprint, rope_offset)
+# gebunden. Ein Fingerprint-Mismatch (Modell- oder Quantisierungswechsel) MUSS als Cache-Miss
+# behandelt werden — niemals als Fehler eskaliert, niemals das alte Segment unter dem neuen
+# Fingerprint fälschlich als gültig akzeptiert.
+
+# INV-3: Tenant-Isolation im KV-Segment-Store
+grep -n "TenantId\\|tenant_id" crates/memfuse-crypto/src/kv_segment/store.rs
+# Erwartung: KEIN Codepfad liest ein KV-Segment eines fremden TenantId — Schlüsselableitung
+# UND Store-Lookup müssen beide über denselben TenantId laufen, keine implizite globale Sicht.
+
+# INV-4: Backpressure-Vertrag respektiert (kein Lock über .await)
+grep -n "Semaphore\\|\\.await" crates/memfuse-candle/src/kv_bridge.rs
+# Erwartung: KvBridgeAdapter hält keinen Lock über einen .await-Punkt hinweg (FEHLER-KLASSE 11)
+# und respektiert das bestehende max_concurrent_inferences-Semaphore-Muster aus inference.rs.
+
+# INV-5: EvictionWorker läuft nicht im Async-Pfad
+grep -n "thread::spawn\\|std::thread" crates/memfuse-crypto/src/kv_segment/eviction_worker.rs
+# Erwartung: Eviction/Zeroizing läuft auf einem dedizierten OS-Thread — niemals synchron im
+# Tokio-Async-Pfad des KvBridgeAdapter (würde den Executor blockieren).
+
+# INV-6: EncryptedKvLayer-Formatversionierung
+grep -n "version\\|Version" crates/memfuse-crypto/src/kv_cipher.rs
+# Erwartung: eine Versionsabweichung liefert einen eigenen, sprechenden Fehler — kein
+# generischer Authentifizierungsfehler, der Formatänderung von echtem Tamper nicht unterscheidet.
+\`\`\`
+
+### Phase K-3: Fail-Open- und Isolationstests laufen lassen
+\`\`\`bash
+cargo test -p memfuse-candle --features kv-bridge -- kv_bridge --nocapture 2>&1 | grep -E "ok|FAILED|panicked"
+cargo test -p memfuse-crypto -- kv_segment --nocapture 2>&1 | grep -E "ok|FAILED|panicked"
+# Gezielt: simulierter Store-/Krypto-Fehler MUSS zu vollem Prefill führen, nie zu Err() am Aufrufer
+cargo test -p memfuse-candle --features kv-bridge -- kv_bridge_fallback_on_error kv_bridge_fingerprint_mismatch --nocapture 2>&1 | grep -E "ok|FAILED"
+\`\`\`
+
+### Phase K-4: Subsystem-Audit-Report (APPEND-ONLY, getrennt vom Crate-Report)
+\`\`\`bash
+cat >> ${SUBSYS_AUDIT_PATH(sub.id)} << 'KV_BRIDGE_EOF'
+
+---
+## KV-Cache-Bridge-Sub-Audit $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- INV-1 Fail-Open bei Cache-Miss/Krypto-Fehler (kein Err an Aufrufer): [OK / BEFUND: ...]
+- INV-2 ModelFingerprint-Mismatch als Cache-Miss behandelt (nicht als Fehler): [OK / BEFUND: ...]
+- INV-3 Tenant-Isolation im KV-Segment-Store lückenlos: [OK / BEFUND: ...]
+- INV-4 Kein Lock über .await, Semaphore-Backpressure respektiert: [OK / BEFUND: ...]
+- INV-5 EvictionWorker auf dediziertem OS-Thread, kein Async-Blocking: [OK / BEFUND: ...]
+- INV-6 EncryptedKvLayer-Versionsfehler sprechend statt generisch: [OK / BEFUND: ...]
+KV_BRIDGE_EOF
+\`\`\`
+
+${SUBSYS_DOD(sub)}`;
+},
+
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4172,6 +4290,7 @@ function renderSubsystemTaskGrid(sub) {
     wal_audit: { label: 'WAL-Sub-Audit', sub: 'fsync-Disziplin · HMAC-Bindung · Crash-Recovery' },
     lsm_audit: { label: 'LSM-Sub-Audit', sub: 'StorageEngine-Trait · commit_mutex · rollback_to_tx' },
     mcp_sandbox_audit: { label: 'MCP-Sandbox-Sub-Audit', sub: 'SandboxPolicy · Volatile-Result-Grenzen · Zeroize' },
+    kv_cache_bridge_audit: { label: 'KV-Cache-Bridge-Sub-Audit', sub: 'Fail-Open-Pflicht · ModelFingerprint-Isolation · Semaphore-Backpressure' },
   };
   const taskIds = Object.keys(SUBSYSTEM_TASKS).filter(k => k === `${sub.id}_audit`);
   el.innerHTML = `<div class="subsys-task-grid">` + taskIds.map(tid => {
@@ -4592,14 +4711,6 @@ function generate() {
   const mandatoryBootstrap = buildMandatoryBootstrap(claimCrate, taskId);
 
   let promptBody = fn_(effectiveCrate, p, SS.par);
-  if (effectiveCrate === 'memfuse-tauri') {
-    promptBody = `⚠️ HINWEIS: memfuse-tauri ist DEPRECATED (ADR-077, 2026-09-08).
-Entfernung geplant bis 2026-11-07. Keine neuen Features implementieren.
-Nur Sicherheits-Fixes oder Aufräum-Arbeiten (Entfernung vorbereiten) sind zulässig.
-Vor jeder Änderung: Überprüfe ob die Änderung in memfuse-py stattdessen sinnvoller wäre.
-
-` + promptBody;
-  }
   if (SS.fmt === 'checklist') {
     promptBody = APM_BLOCK(APM_ON) + DOD(effectiveCrate);
   } else if (SS.fmt === 'compact') {
