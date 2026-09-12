@@ -595,7 +595,11 @@ mod tests {
         assert_eq!(stale.krate, "memfuse-stale");
         assert!(!stale.active);
         assert!(stale.released_at.is_some());
-        assert!(stale.released_at.as_ref().unwrap().contains("[TTL-EXPIRED]"));
+        assert!(stale
+            .released_at
+            .as_ref()
+            .unwrap()
+            .contains("[TTL-EXPIRED]"));
         assert_eq!(stale.issue, "STALE-1");
         assert_eq!(stale.session_id, "s1");
 

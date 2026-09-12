@@ -83,8 +83,8 @@ sind synchron und kurz.
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
 - **Erlaubte Imports**: `memfuse-core` (L0), `memfuse-db` (L2)
-- **Verbotene Imports**: `memfuse-mcp` (L4), `memfuse-tauri` (L4)
-- **Genutzt von**: `memfuse-mcp`, `memfuse-tauri`, ggf. `memfuse-agent` als Tool
+- **Verbotene Imports**: `memfuse-mcp` (L4)
+- **Genutzt von**: `memfuse-mcp`, ggf. `memfuse-agent` als Tool
 
 ## 8. Relevante ADRs & Rules
 

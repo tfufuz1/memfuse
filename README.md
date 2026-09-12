@@ -32,8 +32,8 @@ for res in results:
 
 > ⚠️ **Status: Aktive Entwicklung.** Kern-Suchengine ist produktionsreif
 > verifiziert (LSM-Tree, HNSW, BM25, CSR-Graph-Persistenz). PyPI-Paket (`memfuse`)
-> dient als primärer Vertriebsweg. Die Tauri-Desktop-App (`memfuse-tauri`) ist
-> **deprecated** und wird am **2026-11-07** entfernt (siehe [ADR-077](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation)).
+> dient als primärer Vertriebsweg. Die veraltete Tauri-Desktop-App (`memfuse-tauri`) wurde
+> entfernt (siehe [ADR-077](DECISIONS.md#adr-077-produktvision-pypi-library-fokus-und-tauri-deprecation)).
 > Bitte nutzen Sie `memfuse-py`.
 
 ## Warum MemFuse?

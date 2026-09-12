@@ -46,7 +46,6 @@ Layer 4:  memfuse-embed —  (deps: memfuse-calibration, memfuse-candle, memfuse
 Layer 5:  memfuse-db — MemFuse — Embedded hybrid-search for AI agents (deps: memfuse-calibration, memfuse-checkpoint, memfuse-core, memfuse-crypto, memfuse-embed, memfuse-graph, memfuse-index, memfuse-ollama, memfuse-store, memfuse-text)
 Layer 6:  memfuse-bench — MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy (deps: memfuse-core, memfuse-db, memfuse-embed, memfuse-graph, memfuse-index, memfuse-store, memfuse-text)
           memfuse-router —  (deps: memfuse-core, memfuse-db, memfuse-ollama, memfuse-store)
-          memfuse-tauri — DEPRECATED (ADR-077): Desktop-App 'MemFuse Brain'. Wird am 2026-11-07 entfernt. Bitte auf memfuse-py migrieren. (deps: memfuse-core, memfuse-db, memfuse-graph, memfuse-ollama)
 Layer 7:  memfuse-agent — Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop (deps: memfuse-checkpoint, memfuse-core, memfuse-db, memfuse-graph, memfuse-router, memfuse-store)
 Layer 8:  memfuse-mcp —  (deps: memfuse-agent, memfuse-candle, memfuse-core, memfuse-db, memfuse-embed, memfuse-ollama, memfuse-security)
 ```

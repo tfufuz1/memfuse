@@ -11,7 +11,6 @@ members = [
     "crates/memfuse-crypto",
     "crates/memfuse-graph",
     "crates/memfuse-embed",
-    "crates/memfuse-tauri",
     "crates/memfuse-mcp",
     "crates/memfuse-agent",
     "crates/memfuse-ollama",
@@ -65,7 +64,7 @@ tempfile = "3"
 criterion = { version = "0.5", features = ["async_tokio"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Workspace crates (19 Crates)
+# Workspace crates (18 Crates)
 memfuse-core-ipc-gen = { path = "crates/memfuse-core-ipc-gen" }
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }
@@ -77,7 +76,6 @@ memfuse-security = { path = "crates/memfuse-crypto" }
 memfuse-crypto = { path = "crates/memfuse-crypto", package = "memfuse-security" }
 memfuse-graph = { path = "crates/memfuse-graph" }
 memfuse-embed = { path = "crates/memfuse-embed" }
-memfuse-tauri = { path = "crates/memfuse-tauri" }
 memfuse-mcp   = { path = "crates/memfuse-mcp" }
 memfuse-agent = { path = "crates/memfuse-agent" }
 memfuse-ollama = { path = "crates/memfuse-ollama" }

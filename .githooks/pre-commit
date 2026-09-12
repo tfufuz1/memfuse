@@ -11,13 +11,13 @@ fi
 
 # ── STUFE 2: Compile-Gate (blockierend) ───────────────────────────────────────
 # TODO(opt-RC-2/A-4): Maintain local pre-commit compile gate to prevent uncompilable code commits.
-echo "→ [2/3] cargo check --workspace --exclude memfuse-tauri"
-if ! cargo check --workspace --exclude memfuse-tauri --quiet 2>/tmp/precommit_check_err.log; then
+echo "→ [2/3] cargo check --workspace"
+if ! cargo check --workspace --quiet 2>/tmp/precommit_check_err.log; then
     echo ""
     echo "❌ COMMIT ABGEBROCHEN — Compile-Fehler:"
     cat /tmp/precommit_check_err.log
     echo ""
-    echo "Beheben mit: cargo check --workspace --exclude memfuse-tauri"
+    echo "Beheben mit: cargo check --workspace"
     exit 1
 fi
 echo "  ✅ Workspace kompiliert."

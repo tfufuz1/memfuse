@@ -5,7 +5,7 @@
 // ZWECK: Serialisierbares Error-DTO für IPC/FFI-Schichten ohne Typverlust (ADR-028).
 // INVARIANTEN: Behält error kind, message und strukturierte JSON details verlustfrei über FFI.
 // HOTSPOTS: 20-80
-// NICHT-OFFENSICHTLICH: DTO erlaubt die Rekonstruktion strukturierter Fehler in memfuse-tauri und python.
+// NICHT-OFFENSICHTLICH: DTO erlaubt die Rekonstruktion strukturierter Fehler in FFI/Bindings und Python.
 // SIEHE AUCH: rules/tag_taxonomy.md, DECISIONS.md (ADR-028)
 
 use crate::error::MemFuseError;

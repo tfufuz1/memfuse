@@ -95,10 +95,6 @@ session-context:
 check-py:
     nix develop -c cargo check --manifest-path crates/memfuse-py/Cargo.toml || cargo check --manifest-path crates/memfuse-py/Cargo.toml
 
-# Modular check for memfuse-tauri
-check-tauri:
-    nix develop -c cargo check -p memfuse-tauri || cargo check -p memfuse-tauri
-
 # Modular check for memfuse-embed
 check-embed:
     nix develop -c cargo check -p memfuse-embed || cargo check -p memfuse-embed

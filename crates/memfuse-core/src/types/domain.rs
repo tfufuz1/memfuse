@@ -40,7 +40,7 @@ pub const EXPIRY_METADATA_KEY: &str = "__expires_at_seq";
 /// Duplicating the literal 1000 anywhere else in the workspace is prohibited — always import this constant.
 ///
 /// This cap is applied at the orchestration layer (memfuse-db) before forwarding `k`
-/// to HNSW and BM25 sub-searches. All upstream layers (memfuse-mcp, memfuse-tauri,
+/// to HNSW and BM25 sub-searches. All upstream layers (memfuse-mcp, memfuse-py,
 /// memfuse-py) MUST reference this constant — never duplicate the literal `1000`.
 ///
 /// # DECISION-REF

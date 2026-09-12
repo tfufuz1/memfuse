@@ -101,8 +101,8 @@ blockieren würden.
 ## 7. Cross-Crate-Schnittstellen & DAG-Grenzen
 
 - **Erlaubte Imports**: `memfuse-core` (L0), `memfuse-store` (L1), `memfuse-db` (L2)
-- **Verbotene Imports**: `memfuse-mcp` (L4), `memfuse-tauri` (L4)
-- **Genutzt von**: `memfuse-mcp`, `memfuse-router`, `memfuse-tauri`
+- **Verbotene Imports**: `memfuse-mcp` (L4)
+- **Genutzt von**: `memfuse-mcp`, `memfuse-router`
 
 ## 8. Relevante ADRs & Rules
 

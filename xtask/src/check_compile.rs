@@ -1,6 +1,6 @@
 //! Subkommando zur verifizierten Kompilierbarkeitsprüfung des Workspaces.
 //!
-//! Führt `cargo check --locked --workspace --all-targets --exclude memfuse-tauri`
+//! Führt `cargo check --locked --workspace --all-targets`
 //! aus, um festzustellen, ob alle Workspace-Crates und deren Targets (Tests, Benches,
 //! Examples) fehlerfrei kompilieren.
 
@@ -10,17 +10,10 @@ use std::time::Instant;
 pub fn run_check_compile() -> bool {
     let start = Instant::now();
     println!("=== Running xtask check-compile ===");
-    println!("Executing: cargo check --locked --workspace --all-targets --exclude memfuse-tauri");
+    println!("Executing: cargo check --locked --workspace --all-targets");
 
     let status = Command::new("cargo")
-        .args([
-            "check",
-            "--locked",
-            "--workspace",
-            "--all-targets",
-            "--exclude",
-            "memfuse-tauri",
-        ])
+        .args(["check", "--locked", "--workspace", "--all-targets"])
         .status();
 
     match status {

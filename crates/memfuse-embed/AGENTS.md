@@ -93,7 +93,7 @@ der ONNX-Runtime verwaltet seine eigenen internen Threadpools.
 
 - **Erlaubte Imports**: `memfuse-core` (L0)
 - **Verbotene Imports**: `memfuse-db` (L2), `memfuse-ollama` (L3 Peer)
-- **Genutzt von**: Optional in `memfuse-db` (falls konfiguriert) und `memfuse-tauri`.
+- **Genutzt von**: Optional in `memfuse-db` (falls konfiguriert).
 
 ## 8. Relevante ADRs & Rules
 
