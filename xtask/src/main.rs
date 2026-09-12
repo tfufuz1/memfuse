@@ -2183,8 +2183,12 @@ fn main() {
             }
         }
         "check-duplicate-symbols" => {
+            let cross_module = args.iter().any(|arg| arg == "--cross-module");
             let changed_files = get_changed_rs_files_from_git_diff().unwrap_or_default();
-            match check_duplicate_symbols::check_duplicate_symbols(&changed_files) {
+            match check_duplicate_symbols::check_duplicate_symbols_with_options(
+                &changed_files,
+                cross_module,
+            ) {
                 Ok(duplicates) => {
                     if !duplicates.is_empty() {
                         eprintln!(
@@ -2192,11 +2196,12 @@ fn main() {
                             duplicates.len()
                         );
                         for d in &duplicates {
+                            let second_file = d.duplicate_file.as_deref().unwrap_or(&d.file);
                             eprintln!(
                                 "  {}:{} und {}:{} — doppeltes {} '{}'",
                                 d.file,
                                 d.first_line,
-                                d.file,
+                                second_file,
                                 d.duplicate_line,
                                 d.symbol_kind,
                                 d.symbol_name
@@ -2385,7 +2390,7 @@ fn main() {
         }
         other => {
             eprintln!("Unknown xtask command: {}", other);
-            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols, check-duplicate-intent, check-placeholder-refs, check-phantom-files, check-doc-references, check-audit-duplication, check-compile, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim, check-adr-deadlines, jules-submit-gate [--crate=<CRATE>]");
+            eprintln!("Available commands: bench-gate, gen-prompter-data, sync-docs [--check], validate-tags, check-review-coverage, check-consistency, check-agents-integrity, check-jules-context-freshness, update-unwrap-baseline, check-unwrap-baseline, check-unwrap-baseline-trend, check-dag, check-vetoes, check-recall-stability, check-commit-messages, check-duplicate-symbols [--cross-module], check-duplicate-intent, check-placeholder-refs, check-phantom-files, check-doc-references, check-audit-duplication, check-compile, jules-preflight [--fast], check-type-registry [TYPE], generate-adr [TITLE], init-audit-fix [HASH], validate-pr-checklist, context-tags [*ARGS], run-community-detection, claim, check-adr-deadlines, jules-submit-gate [--crate=<CRATE>]");
             process::exit(1);
         }
     }
