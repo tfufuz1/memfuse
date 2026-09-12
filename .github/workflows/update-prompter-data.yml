@@ -1,0 +1,36 @@
+name: Update Prompter-Data
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-prompter-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Prompter Data
+        run: cargo run -p xtask -- gen-prompter-data
+
+      - name: Check for changes and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .jules/prompter-data.json
+          if git diff --staged --quiet; then
+            echo "ℹ️ Keine Änderungen in .jules/prompter-data.json — kein Commit erforderlich."
+          else
+            git commit -m "chore(prompter): auto-update prompter-data.json [skip ci]"
+            git push origin HEAD:main
+            echo "✅ prompter-data.json erfolgreich aktualisiert und ge-pusht."
+          fi
