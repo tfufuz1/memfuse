@@ -1110,6 +1110,15 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             }
         }
 
+        if results.len() == DEFAULT_SCAN_LIMIT {
+            tracing::warn!(
+                collection = %self.name,
+                prefix = %prefix,
+                limit = DEFAULT_SCAN_LIMIT,
+                "scan_prefix returned exactly DEFAULT_SCAN_LIMIT entries; potential truncation — use cursor-based pagination via scan_prefix_bounded instead"
+            );
+        }
+
         Ok(results)
     }
 
