@@ -98,3 +98,20 @@ hält keine langlebigen Mutexe. Cache-Strukturen (DF-Counts, Avg-Doc-Len) nutzen
 |---|---|
 | `rules/test_quality.md` | Deterministic Search Recall Verification (ANCHOR-TXT-001) |
 | ADR-024 | Snapshot Isolation bei `search_at` |
+
+## 9. GermanCompoundSplitter & Morphologie
+
+Die deutsche Komposita-Zerlegung (`GermanCompoundSplitter` in `src/morphology.rs`) ist eine
+Spezialisierung für deutschsprachige KMU-Texte im DACH-Raum.
+
+### Schlüssel-Eigenschaften
+- **Embed-Dictionary**: Ein eingebettetes Wörterbuch (`src/data/german_words.txt`, 1.256 Wörter)
+  wird zur Compile-Zeit via `include_str!` eingebunden.
+- **Datenstruktur & Algorithmus**: Nutzt einen In-Memory Prefix-Trie ([`Trie`]) zur schnellen
+  Präfix- und Stamm-Prüfung sowie Dynamic Programming (DP) mit Fugen-Element-Unterstützung
+  (`-s-`, `-en-`, `-e-`, `-er-`, `-n-`, `-es-`).
+- **Binary-Size & Memory Impact**: Vergrößert die Binary marginal (ca. 10–15 KB). Der Prefix-Trie
+  wird beim Initialisieren (`GermanCompoundSplitter::new()`) dynamisch im Heap instanziiert.
+- **Test-Abdeckung**: Die Unit-Tests und Evaluierungssuiten (inkl. 55-KMU-Komposita Recall Test
+  `test_kmu_55_compounds_suite` und 10k-Iteration-Fuzzer) befinden sich direkt im `tests`-Modul
+  in `src/morphology.rs`.

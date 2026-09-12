@@ -5,6 +5,36 @@
 // HOTSPOTS: GermanCompoundSplitter::decompose, normalize_umlauts
 // STAND: TS:2026-09-10T19:21:35Z (SESSION: 4dd1c98c)
 
+//! # Morphologische Analyse & Komposita-Zerlegung (`morphology`)
+//!
+//! Dieses Modul bietet Komponenten zur morphologischen Normalisierung und zerlegt deutsche
+//! Zusammensetzungen (*Komposita*) in ihre Bestandteile, um den BM25-Such-Recall für
+//! deutschsprachige Texte in MemFuse zu optimieren.
+//!
+//! ## Hauptkomponenten
+//!
+//! ### 1. `GermanCompoundSplitter`
+//! - **Algorithmus**: Wörterbuch-basierte Segmentierung unter Verwendung eines Prefix-Trie
+//!   ([`Trie`]) für effizientes Stem-Matching und Dynamic Programming (DP) zur Ermittlung der
+//!   optimalen Zerlegungspfade.
+//! - **Interfixe (Fugenelemente)**: Berücksichtigt Fugen-Elemente (`-s-`, `-en-`, `-e-`, `-er-`,
+//!   `-n-`, `-es-`) zwischen Komponenten.
+//! - **Wörterbuchquelle**: Ein integriertes Wörterbuch für den allgemeinen und KMU-Fachwortschatz,
+//!   eingebunden zur Kompilierzeit via `include_str!("data/german_words.txt")`.
+//! - **Binary-Size & Speicher-Implikation**: Das Wörterbuch umfasst 1.256 Zeilen / Wörter
+//!   (`data/german_words.txt`). Das Einbetten via `include_str!` vergrößert das Binary marginal
+//!   (ca. 10–15 KB Text). Beim Erzeugen der Instanz (`GermanCompoundSplitter::new()`) wird der
+//!   Prefix-Trie im Arbeitsspeicher aufgebaut.
+//!
+//! ### 2. `normalize_umlauts()`
+//! Normalisiert deutsche Umlaute und scharfes S für konsistente lexikalische Indizierung:
+//! - `ä` $\rightarrow$ `ae`, `ö` $\rightarrow$ `oe`, `ü` $\rightarrow$ `ue`
+//! - `ß` $\rightarrow$ `ss`
+//! - Konvertiert Eingaben zusätzlich in Kleinbuchstaben.
+//!
+//! ### 3. Stopword-Filterung (`get_german_stopwords`, `is_german_stopword`)
+//! Bereitstellung einer hochfrequenten deutschen Stopwort-Liste gemäß DACH-KMU-Analyse.
+
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
