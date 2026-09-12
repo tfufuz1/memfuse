@@ -216,6 +216,7 @@ pub fn build_provenance(
     index_type: Option<String>,
     expected_total: Option<f32>,
 ) -> ProvenanceRecord {
+    // DONE(memfuse-impl): Allow rrf_k >= 0.0 boundary in RRF calculation [ref:eigenbau-rrf-fusion]
     // RRF rank is 1-based per Cormack et al. rank=0 is invalid input.
     // DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]
     debug_assert!(
