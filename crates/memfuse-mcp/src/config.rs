@@ -281,7 +281,9 @@ impl RouterConfig {
         let mut profiles = Vec::new();
         if let Some(ref path) = profiles_path {
             if let Ok(bytes) = std::fs::read(path) {
-                if let Ok(loaded) = serde_json::from_slice::<Vec<memfuse_router::SlmProfile>>(&bytes) {
+                if let Ok(loaded) =
+                    serde_json::from_slice::<Vec<memfuse_router::SlmProfile>>(&bytes)
+                {
                     profiles = loaded;
                 }
             }

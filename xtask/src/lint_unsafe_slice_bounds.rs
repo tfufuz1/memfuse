@@ -194,7 +194,8 @@ fn expr_contains_length_check(expr: &Expr) -> bool {
 }
 
 pub fn lint_code_str(code: &str, file_name: &str) -> Result<Vec<LintViolation>, String> {
-    let file_ast = syn::parse_file(code).map_err(|e| format!("Parse error in {}: {}", file_name, e))?;
+    let file_ast =
+        syn::parse_file(code).map_err(|e| format!("Parse error in {}: {}", file_name, e))?;
     let mut visitor = SimdFnVisitor::new(file_name);
     visitor.visit_file(&file_ast);
     Ok(visitor.violations)

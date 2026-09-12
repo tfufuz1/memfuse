@@ -611,7 +611,9 @@ impl OllamaClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| classify_reqwest_error(e, self.base_url(), "Ollama generate_text_stream"))?;
+            .map_err(|e| {
+                classify_reqwest_error(e, self.base_url(), "Ollama generate_text_stream")
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -828,7 +830,9 @@ impl OllamaClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| classify_reqwest_error(e, self.base_url(), "Ollama generate connection"))?;
+            .map_err(|e| {
+                classify_reqwest_error(e, self.base_url(), "Ollama generate connection")
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -1006,7 +1010,9 @@ impl OllamaClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| classify_reqwest_error(e, self.base_url(), "Ollama chat_with_rag_streaming"))?;
+            .map_err(|e| {
+                classify_reqwest_error(e, self.base_url(), "Ollama chat_with_rag_streaming")
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -2286,7 +2292,9 @@ mod tests {
         match err {
             MemFuseError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::ConnectionRefused);
-                assert!(e.to_string().contains("Ensure Ollama is running (`ollama serve`)"));
+                assert!(e
+                    .to_string()
+                    .contains("Ensure Ollama is running (`ollama serve`)"));
             }
             _ => panic!("Expected MemFuseError::Io, got {:?}", err),
         }
@@ -2304,7 +2312,9 @@ mod tests {
         match err {
             MemFuseError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::ConnectionRefused);
-                assert!(e.to_string().contains("Ensure Ollama is running (`ollama serve`)"));
+                assert!(e
+                    .to_string()
+                    .contains("Ensure Ollama is running (`ollama serve`)"));
             }
             _ => panic!("Expected MemFuseError::Io, got {:?}", err),
         }

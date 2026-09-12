@@ -217,7 +217,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_context_segment_and_generate_with_context_default() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_context_segment_and_generate_with_context_default(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let seg1 = ContextSegment::new(101, "First segment");
         let seg2 = ContextSegment::new(102, "Second segment");
         assert_eq!(seg1.chunk_id, 101);

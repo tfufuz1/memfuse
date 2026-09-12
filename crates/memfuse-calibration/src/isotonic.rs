@@ -127,7 +127,7 @@ impl IsotonicCalibrator {
             self.model_dirty = true;
             self.observations_since_rebuild = 0;
             self.fingerprint = Some(new_fingerprint);
-        self.cached_ece = None;
+            self.cached_ece = None;
         }
     }
 

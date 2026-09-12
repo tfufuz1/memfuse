@@ -59,7 +59,9 @@ impl OllamaClient {
             .json(&req)
             .send()
             .await
-            .map_err(|e| crate::client::classify_reqwest_error(e, self.base_url(), "Ollama /api/show"))?;
+            .map_err(|e| {
+                crate::client::classify_reqwest_error(e, self.base_url(), "Ollama /api/show")
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -175,7 +177,9 @@ mod tests {
         match err {
             MemFuseError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::ConnectionRefused);
-                assert!(e.to_string().contains("Ensure Ollama is running (`ollama serve`)"));
+                assert!(e
+                    .to_string()
+                    .contains("Ensure Ollama is running (`ollama serve`)"));
             }
             _ => panic!("Expected MemFuseError::Io, got {:?}", err),
         }

@@ -8,6 +8,7 @@
 
 #![cfg(feature = "kv-bridge")]
 
+use memfuse_core::traits::ContextSegment;
 use memfuse_core::{ModelFingerprint, TenantId};
 use memfuse_crypto::{KvSegmentCipher, TenantIsolatedKvStore};
 use std::sync::Arc;
@@ -19,12 +20,35 @@ pub struct KvBridgeAdapter {
     pub store: Arc<TenantIsolatedKvStore>,
     /// High-level cipher engine for segment encryption and decryption.
     pub cipher: Arc<KvSegmentCipher>,
+    /// Number of segment consultations performed.
+    pub consultations: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl KvBridgeAdapter {
     /// Creates a new `KvBridgeAdapter` wrapping the given store and cipher handles.
     pub fn new(store: Arc<TenantIsolatedKvStore>, cipher: Arc<KvSegmentCipher>) -> Self {
-        Self { store, cipher }
+        Self {
+            store,
+            cipher,
+            consultations: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        }
+    }
+
+    /// Consults segment metadata and KV cache bridge state for a context segment.
+    pub fn consult_segment<'a>(&self, segment: &ContextSegment<'a>) {
+        self.consultations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let _ = (
+            segment.chunk_id,
+            segment.text,
+            segment.model_fingerprint,
+            segment.rope_offset,
+        );
+    }
+
+    /// Returns the number of segment consultations recorded.
+    pub fn consultation_count(&self) -> u64 {
+        self.consultations.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Attempts to retrieve and decrypt a cached KV segment for a tenant and chunk ID.
@@ -38,7 +62,10 @@ impl KvBridgeAdapter {
         _fingerprint: &ModelFingerprint,
         _rope_offset: Option<usize>,
     ) -> Option<Vec<u8>> {
-        match self.store.get_decrypted_segment(&self.cipher, tenant, chunk_id) {
+        match self
+            .store
+            .get_decrypted_segment(&self.cipher, tenant, chunk_id)
+        {
             Ok(Some(bytes)) => Some(bytes),
             Ok(None) => None,
             Err(err) => {
@@ -116,7 +143,10 @@ mod tests {
         let fp = dummy_fp();
 
         let cached = adapter.try_get_cached_segment(tenant, 999, &fp, None);
-        assert!(cached.is_none(), "Cache miss MUST return None without panic");
+        assert!(
+            cached.is_none(),
+            "Cache miss MUST return None without panic"
+        );
     }
 
     #[test]

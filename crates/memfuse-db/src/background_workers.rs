@@ -56,7 +56,9 @@ pub fn calculate_rebuild_cooldown(
 /// Abstraction trait over vector indexes capable of connectivity check and rebuild.
 pub trait OrphanCleanupIndex: Send + Sync {
     fn check_connectivity(&self) -> memfuse_core::Result<()>;
-    fn rebuild(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>>;
+    fn rebuild(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>>;
 }
 
 impl OrphanCleanupIndex for memfuse_index::hnsw::HnswIndex {
@@ -64,7 +66,10 @@ impl OrphanCleanupIndex for memfuse_index::hnsw::HnswIndex {
         self.check_connectivity()
     }
 
-    fn rebuild(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>> {
+    fn rebuild(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>>
+    {
         Box::pin(async move { self.rebuild().await })
     }
 }
@@ -289,7 +294,10 @@ pub fn start_thermostat_reaper<S: StorageEngine, V: VectorIndex>(
 }
 
 /// Starts a background task to periodically clean up orphan transactions and manage HNSW rebuilds with exponential backoff.
-pub fn start_orphan_cleanup_worker_with_config<T: Clone + Send + Sync + 'static, I: OrphanCleanupIndex + 'static>(
+pub fn start_orphan_cleanup_worker_with_config<
+    T: Clone + Send + Sync + 'static,
+    I: OrphanCleanupIndex + 'static,
+>(
     buffer: Arc<TxBuffer<T>>,
     hnsw_index: Arc<I>,
     interval: Duration,
@@ -459,11 +467,26 @@ mod tests {
         let max = Duration::from_secs(300);
 
         assert_eq!(calculate_rebuild_cooldown(0, base, max), Duration::ZERO);
-        assert_eq!(calculate_rebuild_cooldown(1, base, max), Duration::from_secs(5));
-        assert_eq!(calculate_rebuild_cooldown(2, base, max), Duration::from_secs(10));
-        assert_eq!(calculate_rebuild_cooldown(3, base, max), Duration::from_secs(20));
-        assert_eq!(calculate_rebuild_cooldown(4, base, max), Duration::from_secs(40));
-        assert_eq!(calculate_rebuild_cooldown(10, base, max), Duration::from_secs(300));
+        assert_eq!(
+            calculate_rebuild_cooldown(1, base, max),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            calculate_rebuild_cooldown(2, base, max),
+            Duration::from_secs(10)
+        );
+        assert_eq!(
+            calculate_rebuild_cooldown(3, base, max),
+            Duration::from_secs(20)
+        );
+        assert_eq!(
+            calculate_rebuild_cooldown(4, base, max),
+            Duration::from_secs(40)
+        );
+        assert_eq!(
+            calculate_rebuild_cooldown(10, base, max),
+            Duration::from_secs(300)
+        );
     }
 
     struct MockDegradedHnswIndex {
@@ -485,8 +508,9 @@ mod tests {
 
         fn rebuild(
             &self,
-        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>>
-        {
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = memfuse_core::Result<()>> + Send + '_>,
+        > {
             let calls = self.rebuild_calls.clone();
             let should_restore = self.rebuild_should_restore.load(Ordering::SeqCst);
             Box::pin(async move {
@@ -530,30 +554,64 @@ mod tests {
 
         // Tick 1 (t=0ms): Rebuild attempt #1 fires immediately. Cooldown set to 100ms.
         sleep(Duration::from_millis(40)).await;
-        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 1, "First rebuild attempt should fire immediately");
-        assert_eq!(failures_counter.load(Ordering::SeqCst), 1, "First failed rebuild incremented failure counter");
+        assert_eq!(
+            rebuild_calls.load(Ordering::SeqCst),
+            1,
+            "First rebuild attempt should fire immediately"
+        );
+        assert_eq!(
+            failures_counter.load(Ordering::SeqCst),
+            1,
+            "First failed rebuild incremented failure counter"
+        );
 
         // During 100ms cooldown (t=40..120ms): Ticks occur every 10ms, but backoff prevents extra rebuild calls.
         sleep(Duration::from_millis(50)).await;
-        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 1, "Backoff must prevent rebuild on subsequent ticks during cooldown");
+        assert_eq!(
+            rebuild_calls.load(Ordering::SeqCst),
+            1,
+            "Backoff must prevent rebuild on subsequent ticks during cooldown"
+        );
 
         // After cooldown expires (t > 140ms): Attempt #2 fires. Cooldown set to 200ms.
         sleep(Duration::from_millis(80)).await;
-        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 2, "Second rebuild attempt should fire after 100ms cooldown");
-        assert_eq!(failures_counter.load(Ordering::SeqCst), 2, "Second failed rebuild incremented failure counter");
+        assert_eq!(
+            rebuild_calls.load(Ordering::SeqCst),
+            2,
+            "Second rebuild attempt should fire after 100ms cooldown"
+        );
+        assert_eq!(
+            failures_counter.load(Ordering::SeqCst),
+            2,
+            "Second failed rebuild incremented failure counter"
+        );
 
         // After 200ms cooldown (t > 360ms): Attempt #3 fires. Counter reaches 3 (alert threshold).
         sleep(Duration::from_millis(220)).await;
-        assert_eq!(rebuild_calls.load(Ordering::SeqCst), 3, "Third rebuild attempt should fire after 200ms cooldown");
-        assert_eq!(failures_counter.load(Ordering::SeqCst), 3, "Failure counter should reach alert threshold 3");
+        assert_eq!(
+            rebuild_calls.load(Ordering::SeqCst),
+            3,
+            "Third rebuild attempt should fire after 200ms cooldown"
+        );
+        assert_eq!(
+            failures_counter.load(Ordering::SeqCst),
+            3,
+            "Failure counter should reach alert threshold 3"
+        );
 
         // Now simulate successful restoration on next rebuild
-        mock_index.rebuild_should_restore.store(true, Ordering::SeqCst);
+        mock_index
+            .rebuild_should_restore
+            .store(true, Ordering::SeqCst);
         mock_index.connectivity_ok.store(true, Ordering::SeqCst);
 
         // Next tick checks connectivity -> healthy -> resets failure counter
         sleep(Duration::from_millis(50)).await;
-        assert_eq!(failures_counter.load(Ordering::SeqCst), 0, "Healthy connectivity must reset failure counter to 0");
+        assert_eq!(
+            failures_counter.load(Ordering::SeqCst),
+            0,
+            "Healthy connectivity must reset failure counter to 0"
+        );
 
         cancel_token.cancel();
         let _ = handle.await;

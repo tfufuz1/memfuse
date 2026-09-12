@@ -63,12 +63,12 @@ mod check_unwrap_baseline_trend;
 mod check_vetoes;
 mod check_workflow_commands;
 mod claim;
-mod lint_unsafe_slice_bounds;
 mod gen_prompter_data;
 mod generate_adr;
 mod init_audit_fix;
 mod jules_preflight;
 mod jules_submit_gate;
+mod lint_unsafe_slice_bounds;
 mod record_mutation_score;
 mod validate_pr_checklist;
 

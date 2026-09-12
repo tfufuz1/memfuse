@@ -376,7 +376,8 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
                     .or_else(|| val.as_object());
 
                 if let Some(obj) = meta_obj {
-                    if let Some(expiry_seq) = obj.get(EXPIRY_METADATA_KEY).and_then(|v| v.as_u64()) {
+                    if let Some(expiry_seq) = obj.get(EXPIRY_METADATA_KEY).and_then(|v| v.as_u64())
+                    {
                         if current_seq >= expiry_seq {
                             expired_ids.push(user_key);
                             if expired_ids.len() >= max_expired {
