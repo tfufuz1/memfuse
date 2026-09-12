@@ -22,7 +22,7 @@
 #![forbid(unsafe_code)]
 
 use crate::crypto::KeyManager;
-use crate::error::Result;
+use crate::error::{CryptoError, Result};
 use memfuse_core::TenantId;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -53,13 +53,19 @@ impl ModelFingerprint {
     }
 }
 
+/// Current persisted format version for KV-cache segment layers.
+pub const CURRENT_KV_FORMAT_VERSION: u8 = 2;
+
 /// Container for an encrypted KV-cache segment layer.
 ///
-/// Plaintext data and nonce are zeroized on drop. Public metadata (`tenant_id`, `model_fingerprint`)
+/// Plaintext data and nonce are zeroized on drop. Public metadata (`tenant_id`, `model_fingerprint`, `format_version`)
 /// is explicitly skipped during zeroization (`#[zeroize(skip)]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
 #[zeroize(drop)]
 pub struct EncryptedKvLayer {
+    /// Format version number of this encrypted KV layer.
+    #[zeroize(skip)]
+    pub format_version: u8,
     /// AES-256-GCM-SIV ciphertext containing encrypted KV tensor payload and 16-byte auth tag.
     pub ciphertext: Vec<u8>,
     /// 12-byte initialization vector (nonce) generated via `OsRng`.
@@ -99,6 +105,7 @@ impl KvSegmentCipher {
         let (ciphertext, nonce) = sub_km.encrypt_auto_nonce(plaintext)?;
 
         Ok(EncryptedKvLayer {
+            format_version: CURRENT_KV_FORMAT_VERSION,
             ciphertext,
             nonce,
             tenant_id,
@@ -108,10 +115,18 @@ impl KvSegmentCipher {
 
     /// Decrypts an `EncryptedKvLayer` back to its original plaintext.
     ///
+    /// Checks that `encrypted.format_version == CURRENT_KV_FORMAT_VERSION`.
     /// Derives the exact sub-key for `(encrypted.tenant_id, encrypted.model_fingerprint)`.
-    /// Fails with a authentication error if the key, ciphertext, nonce, tenant_id, or model_fingerprint
+    /// Fails with a format version error or authentication error if the layer or key
     /// was tampered with.
     pub fn decrypt(&self, encrypted: &EncryptedKvLayer) -> Result<Vec<u8>> {
+        if encrypted.format_version != CURRENT_KV_FORMAT_VERSION {
+            return Err(CryptoError::KvFormatVersionMismatch {
+                expected: CURRENT_KV_FORMAT_VERSION,
+                found: encrypted.format_version,
+            });
+        }
+
         let sub_km = self
             .key_manager
             .derive_kv_key(encrypted.tenant_id, &encrypted.model_fingerprint)?;
@@ -206,5 +221,30 @@ mod tests {
             enc1.ciphertext, enc2.ciphertext,
             "Two encrypt calls for identical plaintext MUST produce distinct ciphertexts"
         );
+    }
+
+    #[test]
+    fn test_invalid_format_version_returns_version_mismatch_error() {
+        let master_km = KeyManager::try_new("master-passphrase", b"master-salt").unwrap();
+        let cipher = KvSegmentCipher::new(master_km);
+
+        let tenant_id = TenantId::try_new(101).unwrap();
+        let fp = dummy_fingerprint("model-v1");
+        let plaintext = b"KV tensor payload data";
+
+        let mut encrypted = cipher.encrypt(tenant_id, fp, plaintext).unwrap();
+        assert_eq!(encrypted.format_version, CURRENT_KV_FORMAT_VERSION);
+
+        // Tamper with format_version (e.g., set to old version 1 or future version 99)
+        encrypted.format_version = 1;
+        let res = cipher.decrypt(&encrypted);
+
+        match res {
+            Err(CryptoError::KvFormatVersionMismatch { expected, found }) => {
+                assert_eq!(expected, CURRENT_KV_FORMAT_VERSION);
+                assert_eq!(found, 1);
+            }
+            res => panic!("Expected KvFormatVersionMismatch error, got: {:?}", res),
+        }
     }
 }

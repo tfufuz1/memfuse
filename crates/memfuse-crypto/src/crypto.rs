@@ -141,12 +141,10 @@ impl KeyManager {
     /// specific `(tenant_id, model_fingerprint)` tuple.
     ///
     /// Cryptographically enforces both tenant isolation and model quantization separation via HKDF-Expand.
-    // BREAKING CHANGE (memfuse-kv-layer-v2):
-    // The HKDF info string now uses length-prefixed fields (audit S-2 fix).
-    // All KV-Cache segments encrypted before this commit are NOT readable without the old key.
-    // Migration: Re-encrypt all KV-Cache segments or evict/invalidate the cache entirely.
-    // Version marker: Update kv_cache version string to "memfuse-kv-layer-v2:" if needed
-    // to reject old segments with a clear error instead of silently producing garbage data.
+    ///
+    /// # HKDF Domain Separator (v2)
+    /// The HKDF domain separator is set to `b"memfuse-kv-layer-v2:"` combined with length-prefixed
+    /// variable fields (`model_id` and `quantization`) to prevent concatenation ambiguity (RFC 5869).
     pub fn derive_kv_key(
         &self,
         tenant_id: memfuse_core::TenantId,
@@ -164,13 +162,13 @@ impl KeyManager {
         let quantization_bytes = model_fingerprint.quantization.as_bytes();
 
         let mut info = Vec::with_capacity(
-            b"memfuse-kv-layer-v1:".len()
+            b"memfuse-kv-layer-v2:".len()
                 + 8  // tenant_id (u64 LE)
                 + 32 // model hash
                 + 4 + model_id_bytes.len()      // u32 len prefix + data
                 + 4 + quantization_bytes.len(), // u32 len prefix + data
         );
-        info.extend_from_slice(b"memfuse-kv-layer-v1:");
+        info.extend_from_slice(b"memfuse-kv-layer-v2:");
         info.extend_from_slice(&tenant_id.inner().to_le_bytes());
         info.extend_from_slice(&model_fingerprint.hash);
         // Length-prefixed fields (S-2 fix): u32 LE prefix prevents concatenation ambiguity

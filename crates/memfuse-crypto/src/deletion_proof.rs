@@ -305,11 +305,9 @@ impl DeletionProof {
                 "covered_layers/excluded_scopes are not cryptographically signed in this legacy proof version"
                     .to_string(),
             );
-            serde_json::to_string_pretty(&clone)
-                .map_err(|e| MemFuseError::Internal(e.to_string()))
+            serde_json::to_string_pretty(&clone).map_err(|e| MemFuseError::Internal(e.to_string()))
         } else {
-            serde_json::to_string_pretty(self)
-                .map_err(|e| MemFuseError::Internal(e.to_string()))
+            serde_json::to_string_pretty(self).map_err(|e| MemFuseError::Internal(e.to_string()))
         }
     }
 
