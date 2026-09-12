@@ -550,6 +550,9 @@ impl MemFuse {
         let default_col = db.collection("default").await?;
 
         if config.consolidation_enabled {
+            // TODO(H-19-followup): Siehe ADR-081 in DECISIONS.md. Eine künftige Aktivierung des MaintenanceSchedulers
+            // nutzt automatisch den in Collection integrierten consolidation_guard-Mechanismus per try_lock(),
+            // um Doppelverarbeitung derselben Collection durch MaintenanceScheduler und ConsolidationEngine sicher zu verhindern.
             let synthesis_config = memory_consolidation::SynthesisConfig {
                 max_llm_calls_per_cycle: config.max_llm_calls_per_cycle as u32,
                 ..Default::default()

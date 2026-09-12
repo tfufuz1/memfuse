@@ -236,6 +236,7 @@ pub struct Collection<S: StorageEngine = LsmStorage, V: VectorIndex = HnswIndex>
     pub(super) dimension: usize,
     pub(super) embedder: parking_lot::RwLock<Option<Arc<dyn TextEmbeddingEngine>>>,
     pub(super) insert_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(super) consolidation_guard: Arc<tokio::sync::Mutex<()>>,
     pub(super) kv_locks: Arc<kv_lock::KvKeyLocks>,
     /// Zählt Graph-Mutationen seit letzter Community Detection.
     pub(super) mutations_since_community_detection: Arc<AtomicU64>,
@@ -258,6 +259,7 @@ impl<S: StorageEngine, V: VectorIndex> Clone for Collection<S, V> {
             dimension: self.dimension,
             embedder: parking_lot::RwLock::new(self.embedder.read().as_ref().map(Arc::clone)),
             insert_lock: self.insert_lock.clone(),
+            consolidation_guard: self.consolidation_guard.clone(),
             kv_locks: self.kv_locks.clone(),
             mutations_since_community_detection: self.mutations_since_community_detection.clone(),
             community_detection_trigger_threshold: self
@@ -328,6 +330,7 @@ impl<S: StorageEngine, V: VectorIndex> Collection<S, V> {
             dimension,
             embedder: parking_lot::RwLock::new(None),
             insert_lock: Arc::new(tokio::sync::Mutex::new(())),
+            consolidation_guard: Arc::new(tokio::sync::Mutex::new(())),
             kv_locks: Arc::new(kv_lock::KvKeyLocks::new()),
             mutations_since_community_detection: Arc::new(AtomicU64::new(0)),
             community_detection_trigger_threshold: Arc::new(AtomicU64::new(100)),
