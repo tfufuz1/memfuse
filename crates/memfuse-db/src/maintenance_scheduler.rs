@@ -211,7 +211,7 @@ impl<S: StorageEngine + 'static, V: VectorIndex + 'static> MaintenanceScheduler<
             }
         }
 
-        // ARCHITEKTONISCHE ABWEICHUNG ZU §10.1:
+        // ARCHITEKTUR-ENTSCHEIDUNG (siehe ADR-079 in DECISIONS.md):
         // F-11 (LyapunovDriftWatcher.update()) ist bewusst NICHT hier im periodischen Tick enthalten.
         // F-11 ist stattdessen reaktionsschnell & event-driven direkt nach jeder Routing-Entscheidung
         // in `crates/memfuse-router/src/router.rs` integriert. Eine Auslagerung in diesen 60s-Tick
