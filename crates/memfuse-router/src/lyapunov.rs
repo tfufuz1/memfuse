@@ -117,6 +117,26 @@ impl LyapunovDriftWatcher {
             .unwrap_or(LyapunovResult::InsufficientData)
     }
 
+    /// Gibt eine Referenz auf das neueste Analyseergebnis zurück.
+    pub fn latest_result(&self) -> Option<&LyapunovResult> {
+        self.latest_result.as_ref()
+    }
+
+    /// Gibt den aktuellen Drift-Status als menschenlesbare Zeichenkette ("stabil", "warnung", "kritisch", "unbekannt") zurück.
+    pub fn status_str(&self) -> &'static str {
+        match &self.latest_result {
+            Some(LyapunovResult::Stable { .. }) => "stabil",
+            Some(LyapunovResult::DriftDetected { lyapunov_exponent, .. }) => {
+                if *lyapunov_exponent > 0.2 {
+                    "kritisch"
+                } else {
+                    "warnung"
+                }
+            }
+            Some(LyapunovResult::InsufficientData) | None => "unbekannt",
+        }
+    }
+
     /// Setzt die Baseline-Verteilung der Non-Conformity-Scores aus dem Kalibrierungs-Warmup.
     pub fn set_baseline(&mut self, baseline_scores: &[f32]) {
         self.baseline_distribution = baseline_scores.to_vec();

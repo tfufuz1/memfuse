@@ -106,6 +106,11 @@ impl PidController {
         clamped
     }
 
+    /// Gibt die aktuell empfohlene Pool-Größe zurück.
+    pub fn current_pool_size(&self) -> Option<usize> {
+        self.current_pool_size
+    }
+
     /// Setzt Integral und Derivative auf 0 zurück (z.B. bei Konfigurationsänderung).
     pub fn reset(&mut self) {
         self.integral = 0.0;

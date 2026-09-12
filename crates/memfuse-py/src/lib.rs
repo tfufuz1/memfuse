@@ -512,10 +512,20 @@ impl PyStorageStats {
     }
 }
 
-/// Overall database statistics.
+/// Overall database statistics and system observability.
 #[pyclass(get_all, name = "DbStats")]
 #[derive(Clone)]
 pub struct PyDbStats {
+    /// Lyapunov drift status ("stabil", "warnung", "kritisch", "unbekannt").
+    pub drift_status: String,
+    /// Expected Calibration Error (ECE) from IsotonicCalibrator if available.
+    pub calibration_ece: Option<f32>,
+    /// UNIX timestamp of the last calibration model rebuild.
+    pub last_calibration_at: Option<u64>,
+    /// Total count of active memory documents in default collection.
+    pub active_memory_count: usize,
+    /// Current PID-regulated candidate pool size if active.
+    pub pid_pool_size: Option<usize>,
     /// Statistics for the vector index.
     pub index_stats: PyVectorIndexStats,
     /// Statistics for the LSM storage engine.
@@ -526,8 +536,11 @@ pub struct PyDbStats {
 impl PyDbStats {
     fn __repr__(&self) -> String {
         format!(
-            "DbStats(vectors={}, size_bytes={})",
+            "DbStats(vectors={}, active_memories={}, drift='{}', ece={}, size_bytes={})",
             self.index_stats.num_vectors,
+            self.active_memory_count,
+            self.drift_status,
+            self.calibration_ece.map(|e| format!("{:.4}", e)).unwrap_or_else(|| "None".to_string()),
             self.storage_stats.total_size_bytes + self.storage_stats.memtable_size_bytes
         )
     }
@@ -1092,6 +1105,11 @@ impl PyMemFuse {
         let stats = run_blocking_ffi(py, || rt.block_on(self.inner.stats()).map_err(memfuse_err))?;
 
         Ok(PyDbStats {
+            drift_status: stats.drift_status,
+            calibration_ece: stats.calibration_ece,
+            last_calibration_at: stats.last_calibration_at,
+            active_memory_count: stats.active_memory_count,
+            pid_pool_size: stats.pid_pool_size,
             index_stats: PyVectorIndexStats {
                 num_vectors: stats.index_stats.num_vectors,
                 memory_usage_bytes: stats.index_stats.memory_usage_bytes,
