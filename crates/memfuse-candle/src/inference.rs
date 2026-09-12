@@ -103,8 +103,9 @@ pub struct CandleLlmClient {
     pub max_concurrent_inferences: usize,
     /// Semaphore enforcing backpressure on concurrent inference calls.
     pub semaphore: Arc<tokio::sync::Semaphore>,
-    /// Optional KV cache bridge adapter.
-    pub kv_bridge: Option<KvBridgeAdapter>,
+    /// Optional KV-Bridge Adapter connecting retrieval KV cache segments to Candle inference.
+    #[cfg(feature = "kv-bridge")]
+    pub kv_bridge: Option<crate::KvBridgeAdapter>,
 }
 
 impl CandleLlmClient {
@@ -123,6 +124,7 @@ impl CandleLlmClient {
             tokenizer,
             max_concurrent_inferences,
             semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent_inferences)),
+            #[cfg(feature = "kv-bridge")]
             kv_bridge: None,
         }
     }
@@ -138,6 +140,13 @@ impl CandleLlmClient {
         let limit = limit.max(1);
         self.max_concurrent_inferences = limit;
         self.semaphore = Arc::new(tokio::sync::Semaphore::new(limit));
+        self
+    }
+
+    /// Configures optional `KvBridgeAdapter` for KV cache segment retrieval and injection.
+    #[cfg(feature = "kv-bridge")]
+    pub fn with_kv_bridge(mut self, adapter: crate::KvBridgeAdapter) -> Self {
+        self.kv_bridge = Some(adapter);
         self
     }
 
@@ -895,6 +904,44 @@ mod tests {
 
         assert_eq!(client.max_concurrent_inferences, 3);
         assert_eq!(client.semaphore.available_permits(), 3);
+    }
+
+    #[cfg(feature = "kv-bridge")]
+    #[tokio::test]
+    async fn test_candle_llm_client_with_kv_bridge() {
+        use crate::KvBridgeAdapter;
+        use memfuse_crypto::{CryptoKey, KvSegmentCipher, TenantIsolatedKvStore};
+
+        let mock_model = Box::new(MockCandleModel {
+            response: "KV Response".to_string(),
+        });
+        let fp = ModelFingerprint {
+            hash: [9u8; 32],
+            model_id: "kv_model.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes()).unwrap();
+
+        let master_km = CryptoKey::try_new("passphrase", b"salt12345").unwrap();
+        let cipher = Arc::new(KvSegmentCipher::new(master_km));
+        let store = Arc::new(TenantIsolatedKvStore::new());
+        let adapter = KvBridgeAdapter::new(store, cipher);
+
+        let client = CandleLlmClient::new(Device::Cpu, mock_model, fp, tokenizer)
+            .with_kv_bridge(adapter);
+
+        assert!(client.kv_bridge.is_some());
     }
 
     #[tokio::test]

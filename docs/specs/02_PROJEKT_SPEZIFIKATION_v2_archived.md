@@ -41,7 +41,7 @@ Der wiederkehrende rote Faden über die gesamte Architektur ist **beweisbare, kr
 
 - **`DeletionProof`** (`crates/memfuse-crypto/src/deletion_proof.rs`, 341 LOC): kryptographischer Löschnachweis für DSGVO Art. 17 („Recht auf Vergessenwerden") — nicht nur ein Lösch-Flag, sondern ein verifizierbarer, HMAC-SHA256-signierter Beweis, dass Daten unwiederbringlich entfernt wurden. **Seit v1 in aktiver Härtung:** Prompt D1 (siehe Abschnitt 7) adressiert, dass die Vorbedingung „physische Bereinigung MUSS vor Proof-Erstellung erfolgen" (Invariante `INV-DELETION-1`) bislang nur durch Kommentar-Konvention, nicht durch das Typsystem gesichert ist — Status: **noch nicht gemerged** zum Zeitpunkt von HEAD `33226e2`.
 - **WAL-HMAC-Kette:** Jeder Write-Ahead-Log-Eintrag ist kryptographisch an seinen Vorgänger gebunden (Hash-Chaining), sodass nachträgliche Manipulation oder stille Truncation erkennbar wird. Seit v1 zusätzlich gehärtet: TOCTOU-Fenster zwischen physischer Truncation und In-Memory-`size`/`last_hmac`-Update geschlossen (Prompt N2, **gemerged**, Commit `59ce141`), Rollback-Pfad unter `commit_mutex` durch dedizierten Concurrency-Regressionstest abgesichert (Prompt N4, **gemerged**, Commit `33226e2`).
-- **Mandanten-Isolation (`TenantId`, `TenantIsolatedKvStore`):** Strikte kryptographische Trennung zwischen Mandanten-Kontexten, inklusive eines formalen, permanenten Vetos (`VETO-F10`) gegen jede Form von „Cross-Tenant Knowledge Sharing". Seit v1 zusätzlich in Härtung: tenant-faire LRU-Eviction (`evict_lru_fair()`, Prompt-Vorläufer bereits **gemerged**, Commit `b5a68b9`), Nachfolge-Härtung (Sichtbarkeitsreduktion von `evict_lru_global()`, Rotations-Bias-Fix, Lock-Batching — Prompts E1/E2) **noch nicht gemerged**.
+- **Mandanten-Isolation (`TenantId`, `TenantIsolatedKvStore`):** Strikte kryptographische Trennung zwischen Mandanten-Kontexten (Krypto-/Isolationsschicht implementiert, siehe `AUDIT_memfuse-kv-bridge.md`; Ende-zu-Ende-Bridge in Inferenz-Engine in Bearbeitung), inklusive eines formalen, permanenten Vetos (`VETO-F10`) gegen jede Form von „Cross-Tenant Knowledge Sharing". Seit v1 zusätzlich in Härtung: tenant-faire LRU-Eviction (`evict_lru_fair()`, Prompt-Vorläufer bereits **gemerged**, Commit `b5a68b9`), Nachfolge-Härtung (Sichtbarkeitsreduktion von `evict_lru_global()`, Rotations-Bias-Fix, Lock-Batching — Prompts E1/E2) **noch nicht gemerged**.
 
 ---
 
@@ -262,7 +262,7 @@ impl Ord for HeapEntry { fn cmp(&self, other: &Self) -> Ordering { /* aktuell pa
 ---
 
 ### 6.4 `memfuse-crypto` (Layer 1, Encryption-at-Rest, HMAC, Zeroize, KV-Segment-Store)
-> ~2.887 LOC · 11 Dateien · **enthält seit Konsolidierung auch den ehemaligen `memfuse-kv-bridge`-Bestandteil** (`src/kv_segment/`)
+> ~2.887 LOC · 11 Dateien · **enthält seit Konsolidierung auch den ehemaligen `memfuse-kv-bridge`-Bestandteil** (`src/kv_segment/`; Krypto-/Isolationsschicht implementiert, siehe `AUDIT_memfuse-kv-bridge.md`; Ende-zu-Ende-Bridge in Bearbeitung)
 
 **Modul-Karte:** `crypto.rs` (`KeyManager` — HKDF-Subkey-Derivation, AES-256-GCM-SIV) · `wal_crypto.rs` (`WalHmac`, `IntegrityVerifier`, `EncryptedWal`) · `anti_tamper.rs` (`VolatileEncryptionKey`, Zeroize) · `deletion_proof.rs` (`DeletionProof`, `DeletionLayer`, `DeletionScope`, `ExcludedScope`) · `kv_segment/store.rs` (`TenantIsolatedKvStore`, `evict_lru_fair()`, `evict_lru_global()`).
 

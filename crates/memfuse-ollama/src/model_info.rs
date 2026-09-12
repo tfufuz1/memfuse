@@ -59,7 +59,7 @@ impl OllamaClient {
             .json(&req)
             .send()
             .await
-            .map_err(|e| MemFuseError::Internal(format!("Ollama /api/show request failed: {e}")))?;
+            .map_err(|e| crate::client::classify_reqwest_error(e, self.base_url(), "Ollama /api/show"))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -163,6 +163,21 @@ mod tests {
                 assert!(msg.contains("Run: ollama pull missing-model"));
             }
             _ => panic!("Expected MemFuseError::NotFound, got {:?}", err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_info_fetch_offline_returns_io_error() {
+        let client = OllamaClient::new("http://127.0.0.1:1");
+        let result = client.show_model("llama3.2").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            MemFuseError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::ConnectionRefused);
+                assert!(e.to_string().contains("Ensure Ollama is running (`ollama serve`)"));
+            }
+            _ => panic!("Expected MemFuseError::Io, got {:?}", err),
         }
     }
 
