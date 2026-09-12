@@ -1,5 +1,5 @@
 //! Split-Brain & Idempotency Integration Testsuite for Vector-ID ↔ Document Consistency.
-// ANCHOR[TEST:SPLIT_BRAIN_CONSISTENCY] STATUS:IN_PROGRESS (TS:2026-09-09T22:00:00Z) (SESSION:08f138e5)
+// ANCHOR[TEST:SPLIT_BRAIN_CONSISTENCY] STATUS:IN_PROGRESS (TS:2026-09-09T22:00:00Z) (SESSION: 504d02fc)
 
 use memfuse_core::{DocId, StorageEngine, VectorIndex};
 use memfuse_db::context_compaction::ConsolidationSession;
@@ -82,9 +82,13 @@ async fn test_vector_deleted_process_killed_before_document_tombstone() {
     for i in 0..5 {
         let id = format!("doc_{}", i);
         let vec = vec![(i + 1) as f32, 1.0, 0.0, 0.0];
-        col.insert(&id, &vec, Some(json!({ "text": format!("Document {}", i) })))
-            .await
-            .expect("insert");
+        col.insert(
+            &id,
+            &vec,
+            Some(json!({ "text": format!("Document {}", i) })),
+        )
+        .await
+        .expect("insert");
         ground_truth.insert(id, vec);
     }
 
@@ -98,14 +102,25 @@ async fn test_vector_deleted_process_killed_before_document_tombstone() {
         let tx = col_clone.allocate_tx().expect("allocate_tx");
 
         // Delete vector from HNSW index and commit HNSW transaction
-        col_clone.vector_index().delete(tx, doc_id).await.expect("HNSW delete");
-        col_clone.vector_index().commit(tx).await.expect("HNSW commit");
+        col_clone
+            .vector_index()
+            .delete(tx, doc_id)
+            .await
+            .expect("HNSW delete");
+        col_clone
+            .vector_index()
+            .commit(tx)
+            .await
+            .expect("HNSW commit");
 
         // Delay to ensure abort occurs before writing LSM tombstone in crud.rs
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // This LSM deletion will never execute due to task abort below
-        col_clone.delete(&target_doc_str_clone).await.expect("LSM delete");
+        col_clone
+            .delete(&target_doc_str_clone)
+            .await
+            .expect("LSM delete");
     });
 
     // Brief yield to allow HNSW vector deletion & commit to complete in task
@@ -118,7 +133,10 @@ async fn test_vector_deleted_process_killed_before_document_tombstone() {
 
     // Save HNSW index to ensure vector deletion persists to disk
     let hnsw_path = dir_path.join("hnsw.index");
-    col.vector_index().save(&hnsw_path).await.expect("save hnsw");
+    col.vector_index()
+        .save(&hnsw_path)
+        .await
+        .expect("save hnsw");
 
     // 3. Direct query before repair_on_open: verify HNSW index alone returns 0 hits for doc_2
     let query_vec = vec![3.0, 1.0, 0.0, 0.0];
@@ -151,10 +169,16 @@ async fn test_vector_deleted_process_killed_before_document_tombstone() {
     let db_reopened = MemFuse::open_with_config(&dir_path, config)
         .await
         .expect("reopen db");
-    let col_reopened = db_reopened.collection("split_brain_col").await.expect("reopened collection");
+    let col_reopened = db_reopened
+        .collection("split_brain_col")
+        .await
+        .expect("reopened collection");
 
     // Verify LSM state: document still exists in LSM storage because tombstone was never written
-    let lsm_doc = col_reopened.get(&target_doc_str).await.expect("get lsm doc");
+    let lsm_doc = col_reopened
+        .get(&target_doc_str)
+        .await
+        .expect("get lsm doc");
     assert!(
         lsm_doc.is_some(),
         "LSM tombstone was not written, so get() in LSM storage still returns doc_2"
@@ -229,8 +253,14 @@ async fn test_duplicate_insert_transaction_replay_no_double_vector_entry() {
             "metadata": { "version": 1 }
         });
 
-        col.storage().put(tx, &user_key, &serde_json::to_vec(&stored).unwrap()).await.expect("put user_key");
-        col.storage().put(tx, &doc_key, &serde_json::to_vec(&meta_only).unwrap()).await.expect("put doc_key");
+        col.storage()
+            .put(tx, &user_key, &serde_json::to_vec(&stored).unwrap())
+            .await
+            .expect("put user_key");
+        col.storage()
+            .put(tx, &doc_key, &serde_json::to_vec(&meta_only).unwrap())
+            .await
+            .expect("put doc_key");
 
         // Write CommitIntent::Pending to simulate crash right after WAL/LSM commit
         let intent_key = col.namespaced_key(&tx.inner().to_le_bytes(), 3);
@@ -239,7 +269,10 @@ async fn test_duplicate_insert_transaction_replay_no_double_vector_entry() {
             has_text: false,
             has_graph: false,
         };
-        col.storage().put(tx, &intent_key, &serde_json::to_vec(&intent).unwrap()).await.expect("put intent");
+        col.storage()
+            .put(tx, &intent_key, &serde_json::to_vec(&intent).unwrap())
+            .await
+            .expect("put intent");
         col.storage().commit(tx).await.expect("commit LSM");
 
         db.close().await.expect("close db");
@@ -249,16 +282,27 @@ async fn test_duplicate_insert_transaction_replay_no_double_vector_entry() {
     let db_reopened = MemFuse::open_with_config(&dir_path, config.clone())
         .await
         .expect("reopen db");
-    let col_reopened = db_reopened.collection("idempotency_col").await.expect("reopened collection");
+    let col_reopened = db_reopened
+        .collection("idempotency_col")
+        .await
+        .expect("reopened collection");
 
     // 3. DANACH execute the transaction replay / duplicate upsert operation
     col_reopened
-        .upsert(doc_str, &vec_1, Some(json!({ "version": 1, "replayed": true })))
+        .upsert(
+            doc_str,
+            &vec_1,
+            Some(json!({ "version": 1, "replayed": true })),
+        )
         .await
         .expect("replayed upsert");
 
     // 4. Direct introspection of HNSW index doc IDs (not via search score interpretation)
-    let all_doc_ids = col_reopened.vector_index().all_doc_ids().await.expect("all_doc_ids");
+    let all_doc_ids = col_reopened
+        .vector_index()
+        .all_doc_ids()
+        .await
+        .expect("all_doc_ids");
     let count_all = all_doc_ids.iter().filter(|&&id| id == doc_id).count();
 
     assert_eq!(
@@ -420,15 +464,23 @@ async fn test_concurrent_partial_rebuild_and_context_compaction_no_lock_starvati
     let db = MemFuse::open_with_config(tmp.path(), config)
         .await
         .expect("open db");
-    let col = Arc::new(db.collection("compaction_rebuild_col").await.expect("collection"));
+    let col = Arc::new(
+        db.collection("compaction_rebuild_col")
+            .await
+            .expect("collection"),
+    );
 
     // Populate collection with documents
     for i in 0..20 {
         let id = format!("doc_{}", i);
         let vec = vec![(i + 1) as f32, 1.0, 0.0, 0.0];
-        col.insert(&id, &vec, Some(json!({ "text": format!("Content for document {}", i) })))
-            .await
-            .expect("insert");
+        col.insert(
+            &id,
+            &vec,
+            Some(json!({ "text": format!("Content for document {}", i) })),
+        )
+        .await
+        .expect("insert");
     }
 
     // Delete a subset to create tombstone density in HNSW
@@ -441,7 +493,10 @@ async fn test_concurrent_partial_rebuild_and_context_compaction_no_lock_starvati
     let col_rebuild = col.clone();
     let task_rebuild = tokio::spawn(async move {
         // Trigger region partial rebuild
-        col_rebuild.vector_index().rebuild_region(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).await
+        col_rebuild
+            .vector_index()
+            .rebuild_region(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+            .await
     });
 
     let col_compaction = col.clone();
@@ -450,28 +505,62 @@ async fn test_concurrent_partial_rebuild_and_context_compaction_no_lock_starvati
         let doc_6 = DocId::from_key("doc_6").expect("DocId from key");
         let target_doc_id = DocId::from_key("doc_target_compacted").expect("DocId target");
 
-        let session = ConsolidationSession::start(&col_compaction, &[doc_5, doc_6], target_doc_id).await?;
-        session.commit("doc_target_compacted", &[1.0, 1.0, 0.0, 0.0], "Compacted summary text", None).await
+        let session =
+            ConsolidationSession::start(&col_compaction, &[doc_5, doc_6], target_doc_id).await?;
+        session
+            .commit(
+                "doc_target_compacted",
+                &[1.0, 1.0, 0.0, 0.0],
+                "Compacted summary text",
+                None,
+            )
+            .await
     });
 
     // Enforce 30-second timeout to detect deadlocks or lock starvation
     let timeout_duration = Duration::from_secs(30);
     let combined_tasks = async move {
         let (res_a, res_b) = tokio::join!(task_rebuild, task_compaction);
-        (res_a.expect("rebuild task panic"), res_b.expect("compaction task panic"))
+        (
+            res_a.expect("rebuild task panic"),
+            res_b.expect("compaction task panic"),
+        )
     };
 
     let (res_rebuild, res_compaction) = tokio::time::timeout(timeout_duration, combined_tasks)
         .await
         .expect("Deadlock or lock starvation detected! Concurrent passes did not complete within 30s timeout.");
 
-    assert!(res_rebuild.is_ok(), "Partial rebuild failed: {:?}", res_rebuild);
-    assert!(res_compaction.is_ok(), "Context compaction failed: {:?}", res_compaction);
+    assert!(
+        res_rebuild.is_ok(),
+        "Partial rebuild failed: {:?}",
+        res_rebuild
+    );
+    assert!(
+        res_compaction.is_ok(),
+        "Context compaction failed: {:?}",
+        res_compaction
+    );
 
     // Verify system health post-concurrency
-    let doc_check = col.get("doc_target_compacted").await.expect("get compacted doc");
-    assert!(doc_check.is_some(), "Compacted target document must exist in storage");
+    let doc_check = col
+        .get("doc_target_compacted")
+        .await
+        .expect("get compacted doc");
+    assert!(
+        doc_check.is_some(),
+        "Compacted target document must exist in storage"
+    );
 
-    let search_res = col.query().embedding(&[1.0, 1.0, 0.0, 0.0]).k(5).execute().await.expect("search post-concurrency");
-    assert!(!search_res.is_empty(), "Collection search must function cleanly post-concurrency");
+    let search_res = col
+        .query()
+        .embedding(&[1.0, 1.0, 0.0, 0.0])
+        .k(5)
+        .execute()
+        .await
+        .expect("search post-concurrency");
+    assert!(
+        !search_res.is_empty(),
+        "Collection search must function cleanly post-concurrency"
+    );
 }

@@ -2,8 +2,8 @@
 
 **Crate:** `memfuse-db` (Layer 4 — Orchestrator & 4-Signal-Fusion Engine)
 **Datum:** 2026-09-11
-**Session:** `504d02fc`
-**Task-ID:** `JULES-20260911-IMPL`
+**Session:** `e6ab3646`
+**Task-ID:** `JULES-20260911-EIGENB`
 **Status:** 🟢 Clean / Audited & Verified
 
 ---
@@ -46,9 +46,13 @@
 ## 2. Inventar-Realitätsabgleich & Drift-Analyse (Schritt 0)
 
 ### Inventar-Drift
-- **Gefunden:** `reaper.rs` war im Prompter-Inventar vom 2026-09-10 gelistet, existiert aber nicht mehr im Repository.
-- **Befund:** `Inventar-Drift: Datei crates/memfuse-db/src/reaper.rs umbenannt oder entfernt`.
-- **Status:** Funktionalität ist vollständig in `crates/memfuse-db/src/background_workers.rs` konsolidiert.
+- **Gefunden:** `background_workers.rs` ist im Repository vorhanden, war jedoch im Prompter-Inventar als `reaper.rs` veraltet bezeichnet.
+- **Befund:** `Inventar-Drift: Datei crates/memfuse-db/src/background_workers.rs im Prompter-Inventar nicht direkt erfasst (ehemals reaper.rs)`.
+- **Status:** Funktionalität ist vollständig in `crates/memfuse-db/src/background_workers.rs` konsolidiert, `reaper.rs` ist ein deprecated Module-Alias in `lib.rs`.
+
+### Public API Verifikation
+- Verifiziert: `MemFuse::open`, `MemFuse::collection`, `Collection::query`, `Collection::hybrid_search`, `reciprocal_rank_fusion`, `weighted_reciprocal_rank_fusion` stimmen mit den Beispielen in `README.md` und `AGENTS.md` überein.
+- RRF-Rank-Fusion & Numerik in `fusion.rs`: Bestätigt, dass `fusion_ignores_zero_or_negative_weight`, `test_apply_resonance_bonus_handles_nan_score_deterministically` und `test_heap_entry_nan_score_sorts_to_worst_position` abgedeckt sind und stabil funktionieren.
 
 ---
 
@@ -64,7 +68,12 @@
    - **Verifikation:** `search.rs` nutzt durchgängig `CheckpointPinGuard::new` mit Asynchron-Inkrement und Unpinning in `pin_guard.release().await`.
    - **Status:** Tag als `[RESOLVED]` markiert.
 
-3. **Workspace Preflight Fixes:**
+3. **`eigenbau-rrf-fusion` (`fusion.rs`): RRF Rank Fusion & Numerics Hardening**
+   - **Befund:** `debug_assert!(rrf_k > 0.0)` blockierte theoretische/experimentelle RRF-Konfigurationen mit `k = 0.0`.
+   - **Verifikation:** `debug_assert!(rrf_k >= 0.0)` in `build_provenance` und `weighted_reciprocal_rank_fusion_with_options` aktualisiert.
+   - **Status:** Behoben (`// DONE(memfuse-impl): Updated rrf_k assertion to allow k=0 boundary condition [ref:eigenbau-rrf-fusion]`). Unit-Tests in `fusion.rs` und `tests/fusion_edge_cases_test.rs` verifiziert.
+
+4. **Workspace Preflight Fixes:**
    - Behoben: Missing State Write Lock acquisition in `LsmStorage::commit` (`memfuse-store`).
    - Behoben: Missing `persist_sync` calls in `InstanceOrphanRegistry::register_orphan_sync` / `register_checkpoint_sync` (`memfuse-checkpoint`).
    - Behoben: Unsafe `VarBuilder::from_mmaped_safetensors` durch sicheres `VarBuilder::from_buffered_safetensors` in `memfuse-candle`.
