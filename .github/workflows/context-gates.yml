@@ -145,6 +145,27 @@ jobs:
           cargo run -p xtask -- check-jules-context-freshness
           echo "✅ Jules Context Frischeprüfung erfolgreich"
 
+      - name: "Gate 10b: Prompter-Data Freshness"
+        run: |
+          PROMPTER_JSON=".jules/prompter-data.json"
+          if [ ! -f "$PROMPTER_JSON" ]; then
+            echo "❌ $PROMPTER_JSON existiert nicht. Bitte 'cargo xtask gen-prompter-data' ausführen."
+            exit 1
+          fi
+          HEAD_JSON=$(python3 -c "import json, sys; d=json.load(open('$PROMPTER_JSON')); print(d.get('head', ''))" 2>/dev/null || echo "")
+          if [ -z "$HEAD_JSON" ]; then
+            echo "⚠️ Feld 'head' in $PROMPTER_JSON ist leer oder fehlt."
+            COMMITS_BEHIND=999
+          else
+            COMMITS_BEHIND=$(git rev-list --count ${HEAD_JSON}..HEAD 2>/dev/null || echo 999)
+          fi
+          if [ "$COMMITS_BEHIND" -gt 10 ]; then
+            echo "❌ Prompter-Data ist veraltet ($COMMITS_BEHIND Commits hinter HEAD, Schwellenwert: 10)."
+            echo "👉 Bitte ausführen: cargo xtask gen-prompter-data"
+            exit 1
+          fi
+          echo "✅ Gate 10b: Prompter-Data Freshness verifiziert ($COMMITS_BEHIND Commits hinter HEAD)"
+
       - name: "Gate 11: AGENTS.md Template Validierung"
         run: |
           # Prüft, ob alle AGENTS.md die erforderlichen 8 Sektionen enthalten

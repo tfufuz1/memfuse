@@ -60,6 +60,14 @@
       "session_id": "8548725205189361830",
       "active": true,
       "expires_at": "2026-09-12T13:38:46.521448283+00:00"
+    },
+    {
+      "krate": "xtask",
+      "issue": "P0-4-prompter-freshness",
+      "timestamp": "2026-09-12T11:12:22.712754712+00:00",
+      "session_id": "6533974577686301085",
+      "active": true,
+      "expires_at": "2026-09-12T15:12:22.712735667+00:00"
     }
   ]
 }
