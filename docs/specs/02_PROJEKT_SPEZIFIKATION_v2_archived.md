@@ -84,7 +84,7 @@ MemFuse ist strikt als gerichteter azyklischer Graph (DAG) von Cargo-Workspace-C
 
 ### 3.3 Memory-Konsolidierung („Sleep-Cycle-Pattern")
 - **`ConsolidationEngine`** / `execute_sleep_cycle()` — Hintergrund-Konsolidierung und Community-Synthese.
-- **`AdaptiveDecayController`** (F-01, „Free Energy Thermostat") — hinter Feature-Flags `decay-thermostat`, `adaptive-decay` (ADR-069).
+- **`AdaptiveDecayController`** (F-01, „Free Energy Thermostat") — hinter Feature-Flags `adaptive-decay-control`, `adaptive-decay` (ADR-069).
 - **Kaskadierende CSR-Invalidierung** — `DocEdgeIndex`-basiertes Tombstoning verknüpfter Graph-Kanten bei Dokument-Superseding (`crates/memfuse-db/src/collection/crud.rs:958`).
 
 ### 3.4 Mandanten-Isolation & Sicherheit
@@ -106,7 +106,7 @@ Seit v1 als eigenständiges Härtungsthema identifiziert und in aktiver Bearbeit
 ## 4. Bekannte, im Projekt selbst dokumentierte offene Punkte (Stand HEAD, `AGENTS.md` §3/§4)
 
 1. **`memfuse-candle` nicht in Serving-Pipeline verdrahtet** — Crate existiert vollständig, ist aber weder in `memfuse-db`, `memfuse-router` noch `memfuse-ollama` eingebunden.
-2. **`rebuild_region()` (F-02) ohne stabile Recall-Regressionshistorie** — reines Tombstone-Pruning in `crates/memfuse-index/src/hnsw.rs`, Feature-Flag `physio-nucleation`. **Seit v1 konkretisiert:** `VETO-F02` verlangt eine automatisierte 30-Tage-Stabilitätsmessung, die inzwischen als eigener täglicher CI-Workflow existiert (`.github/workflows/nucleation-recall-history.yml`, Ergebnisse in `benchmarks/results/nucleation_recall_history.jsonl`, geprüft via `cargo xtask check-recall-stability`) — die Freigabefrist bleibt `2026-10-07`.
+2. **`rebuild_region()` (F-02) ohne stabile Recall-Regressionshistorie** — reines Tombstone-Pruning in `crates/memfuse-index/src/hnsw.rs`, Feature-Flag `partial-rebuild-pruning`. **Seit v1 konkretisiert:** `VETO-F02` verlangt eine automatisierte 30-Tage-Stabilitätsmessung, die inzwischen als eigener täglicher CI-Workflow existiert (`.github/workflows/nucleation-recall-history.yml`, Ergebnisse in `benchmarks/results/nucleation_recall_history.jsonl`, geprüft via `cargo xtask check-recall-stability`) — die Freigabefrist bleibt `2026-10-07`.
 
 Für die vollständige, laufend aktuelle Liste ist `AGENTS.md` §3/§4 im Repository selbst die maßgebliche Quelle.
 
