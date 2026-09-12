@@ -22,8 +22,6 @@
 #![deny(unsafe_code)]
 
 #[cfg(feature = "onnx")]
-use std::path::Path;
-#[cfg(feature = "onnx")]
 use std::sync::Arc;
 
 #[cfg(feature = "onnx")]
@@ -37,6 +35,146 @@ use tracing::{debug, info, warn};
 
 pub mod reranker;
 pub use reranker::{CrossEncoderReranker, PlattScaledSigmoid, RerankConfig, RerankResult};
+
+use std::path::{Path, PathBuf};
+
+/// Returns the default local cache directory for ONNX embedding models (`~/.memfuse/models/<model_name>`).
+pub fn default_model_cache_dir(model_name: &str) -> PathBuf {
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        PathBuf::from(home)
+            .join(".memfuse")
+            .join("models")
+            .join(model_name)
+    } else {
+        PathBuf::from(".memfuse")
+            .join("models")
+            .join(model_name)
+    }
+}
+
+/// Ensures the ONNX embedding model files (`model.onnx` and `tokenizer.json`) exist locally in `cache_dir`
+/// (or `~/.memfuse/models/<model_name>`). If missing, downloads them automatically.
+#[cfg(feature = "onnx")]
+pub async fn ensure_onnx_model_download(
+    model_name: &str,
+    cache_dir: Option<&Path>,
+) -> Result<PathBuf> {
+    let target_dir = match cache_dir {
+        Some(dir) => dir.join(model_name),
+        None => default_model_cache_dir(model_name),
+    };
+
+    let model_file = target_dir.join("model.onnx");
+    let tokenizer_file = target_dir.join("tokenizer.json");
+
+    if model_file.exists() && tokenizer_file.exists() {
+        return Ok(target_dir);
+    }
+
+    std::fs::create_dir_all(&target_dir).map_err(|e| {
+        MemFuseError::Internal(format!(
+            "Konnte Modellspeicherverzeichnis {:?} nicht erstellen: {}",
+            target_dir, e
+        ))
+    })?;
+
+    println!("Lade Standard-Embedding-Modell herunter (~270MB, einmalig)...");
+    info!(
+        model_name,
+        target_dir = ?target_dir,
+        "Lade Standard-Embedding-Modell herunter (~270MB, einmalig)..."
+    );
+
+    let (model_url, tokenizer_url) = match model_name {
+        "nomic-embed-text" | "nomic-embed-text-v1.5" => (
+            "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model.onnx",
+            "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/tokenizer.json",
+        ),
+        _ => {
+            return Err(MemFuseError::InvalidInput(format!(
+                "Unbekanntes ONNX-Modell '{model_name}'. Bitte erstelle die Modelldateien manuell in {target_dir:?}."
+            )));
+        }
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| MemFuseError::Internal(e.to_string()))?;
+
+    if !model_file.exists() {
+        download_onnx_file(&client, model_url, &model_file, "model.onnx", &target_dir).await?;
+    }
+
+    if !tokenizer_file.exists() {
+        download_onnx_file(&client, tokenizer_url, &tokenizer_file, "tokenizer.json", &target_dir).await?;
+    }
+
+    Ok(target_dir)
+}
+
+#[cfg(feature = "onnx")]
+async fn download_onnx_file(
+    client: &reqwest::Client,
+    url: &str,
+    dest_path: &Path,
+    file_name: &str,
+    target_dir: &Path,
+) -> Result<()> {
+    let tmp_path = dest_path.with_extension("tmp");
+    let response = client.get(url).send().await.map_err(|e| {
+        MemFuseError::model_load(
+            target_dir.display().to_string(),
+            format!(
+                "Download des Embedding-Modells ({file_name}) fehlgeschlagen: {e}. \
+                 Bitte überprüfe deine Internetverbindung oder lade die Datei manuell nach {target_dir:?} herunter."
+            ),
+        )
+    })?;
+
+    if !response.status().is_success() {
+        return Err(MemFuseError::model_load(
+            target_dir.display().to_string(),
+            format!(
+                "HTTP-Fehler {} beim Download von {file_name} aus {url}. \
+                 Manuelle Installation in {target_dir:?} erforderlich.",
+                response.status(),
+                target_dir = target_dir.display()
+            ),
+        ));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| {
+        MemFuseError::model_load(
+            target_dir.display().to_string(),
+            format!(
+                "Fehler beim Empfangen von {file_name}: {e}. \
+                 Bitte überprüfe deine Internetverbindung oder installiere das Modell manuell in {target_dir:?}"
+            ),
+        )
+    })?;
+
+    std::fs::write(&tmp_path, &bytes).map_err(|e| {
+        MemFuseError::Internal(format!("Konnte temporäre Datei {tmp_path:?} nicht schreiben: {e}"))
+    })?;
+
+    std::fs::rename(&tmp_path, dest_path).map_err(|e| {
+        MemFuseError::Internal(format!("Konnte {dest_path:?} nicht speichern: {e}"))
+    })?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "onnx"))]
+pub async fn ensure_onnx_model_download(
+    _model_name: &str,
+    _cache_dir: Option<&Path>,
+) -> memfuse_core::Result<PathBuf> {
+    Err(memfuse_core::MemFuseError::CapabilityUnsupported {
+        capability: "onnx".to_string(),
+        reason: "ONNX support is disabled in this build. Recompile with feature flag 'onnx'.".to_string(),
+    })
+}
 
 #[cfg(feature = "candle-backend")]
 pub use memfuse_candle::CandleEmbedClient;
@@ -473,11 +611,10 @@ impl TextEmbedder {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "onnx")]
-    use super::MAX_EMBED_BATCH_SIZE;
+    use super::*;
 
     #[cfg(feature = "onnx")]
-    use super::*;
+    use super::MAX_EMBED_BATCH_SIZE;
 
     #[cfg(feature = "onnx")]
     use std::fs::File;
@@ -563,6 +700,27 @@ mod tests {
         let err = MemFuseError::Internal("test".into());
         let formatted = format!("{:?}", err);
         assert!(formatted.contains("Internal"));
+    }
+
+    #[test]
+    fn test_default_model_cache_dir_resolution() {
+        let dir = default_model_cache_dir("nomic-embed-text");
+        assert!(dir.to_string_lossy().contains("nomic-embed-text"));
+        assert!(dir.to_string_lossy().contains(".memfuse"));
+    }
+
+    #[cfg(feature = "onnx")]
+    #[tokio::test]
+    async fn test_ensure_onnx_model_download_cached_returns_immediately() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache_dir = tmp.path().join("models");
+        let model_dir = cache_dir.join("nomic-embed-text");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        std::fs::File::create(model_dir.join("model.onnx")).unwrap();
+        std::fs::File::create(model_dir.join("tokenizer.json")).unwrap();
+
+        let resolved = ensure_onnx_model_download("nomic-embed-text", Some(&cache_dir)).await.unwrap();
+        assert_eq!(resolved, model_dir);
     }
 
     #[tokio::test]

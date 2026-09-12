@@ -302,6 +302,41 @@ impl Default for CommunityDetectionConfig {
     }
 }
 
+/// Specifying the embedding engine backend.
+///
+/// Note: Ollama remains available via explicit configuration (`EmbeddingBackend::Ollama(...)`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EmbeddingBackend {
+    /// ONNX Runtime local embedding provider (default).
+    Onnx {
+        /// Name or identifier of the ONNX embedding model (default: "nomic-embed-text").
+        model_name: String,
+        /// Optional custom path for model storage/cache.
+        cache_dir: Option<std::path::PathBuf>,
+    },
+    /// Ollama HTTP API embedding provider.
+    Ollama {
+        /// Base URL for Ollama HTTP API (default: "http://localhost:11434").
+        base_url: String,
+        /// Model identifier for Ollama embeddings (default: "nomic-embed-text").
+        model: String,
+    },
+    /// Disabled / manual embedding provider.
+    None,
+}
+
+impl Default for EmbeddingBackend {
+    /// Returns the default ONNX embedding backend with `nomic-embed-text`.
+    ///
+    /// Ollama remains available via explicit configuration (`EmbeddingBackend::Ollama(...)`).
+    fn default() -> Self {
+        Self::Onnx {
+            model_name: "nomic-embed-text".to_string(),
+            cache_dir: None,
+        }
+    }
+}
+
 /// Global configuration settings for the MemFuse database.
 #[derive(Debug, Clone)]
 pub struct MemFuseConfig {
@@ -320,6 +355,8 @@ pub struct MemFuseConfig {
     pub orphan_registry_path: Option<std::path::PathBuf>,
     /// Configuration for auto-triggered community detection.
     pub community_detection: CommunityDetectionConfig,
+    /// Configured text embedding engine backend (default: ONNX with nomic-embed-text).
+    pub embedding_backend: EmbeddingBackend,
 }
 
 impl Default for MemFuseConfig {
@@ -333,6 +370,7 @@ impl Default for MemFuseConfig {
             expiry_reaper_interval: std::time::Duration::from_secs(60),
             orphan_registry_path: None,
             community_detection: CommunityDetectionConfig::default(),
+            embedding_backend: EmbeddingBackend::default(),
         }
     }
 }
@@ -464,10 +502,43 @@ impl MemFuse {
         // Repair-on-Open: resolve pending transaction intents and re-sync indices
         db.repair_on_open().await?;
 
+        // Initialize configured embedding backend before default collection setup
+        db.init_embedding_backend(&config.embedding_backend).await?;
+
         // Initialize the default collection backwards compatibility
         let _ = db.collection("default").await?;
 
         Ok(db)
+    }
+
+    /// Initializes configured embedding backend (ONNX or Ollama).
+    async fn init_embedding_backend(&self, backend: &EmbeddingBackend) -> Result<()> {
+        match backend {
+            EmbeddingBackend::Onnx { model_name, cache_dir } => {
+                #[cfg(feature = "onnx")]
+                {
+                    let model_dir = memfuse_embed::ensure_onnx_model_download(model_name, cache_dir.as_deref()).await?;
+                    let embedder = memfuse_embed::OnnxEmbedder::load(model_dir)?;
+                    let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(embedder);
+                    self.set_embedder(embedder_arc).await?;
+                }
+                #[cfg(not(feature = "onnx"))]
+                {
+                    let _ = (model_name, cache_dir);
+                    tracing::debug!(
+                        "EmbeddingBackend::Onnx requested, but 'onnx' feature is disabled in this build. \
+                         Recompile with feature 'onnx' or 'reranking' to enable local ONNX embeddings."
+                    );
+                }
+            }
+            EmbeddingBackend::Ollama { base_url, model } => {
+                let embedder = memfuse_ollama::OllamaEmbedder::new(base_url, model);
+                let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(embedder);
+                self.set_embedder(embedder_arc).await?;
+            }
+            EmbeddingBackend::None => {}
+        }
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -2127,6 +2198,81 @@ mod tests {
                 err_msg
             );
         }
+    }
+
+    #[test]
+    fn test_memfuse_config_defaults_to_onnx_backend() {
+        let config = MemFuseConfig::default();
+        assert_eq!(config.dimension, 768);
+        assert_eq!(
+            config.embedding_backend,
+            EmbeddingBackend::Onnx {
+                model_name: "nomic-embed-text".to_string(),
+                cache_dir: None,
+            }
+        );
+        assert_eq!(
+            EmbeddingBackend::default(),
+            EmbeddingBackend::Onnx {
+                model_name: "nomic-embed-text".to_string(),
+                cache_dir: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_explicit_ollama_backend_config_e2e() {
+        let tmp = TempDir::new().expect("temp dir");
+        let config = MemFuseConfig {
+            dimension: 768,
+            embedding_backend: EmbeddingBackend::Ollama {
+                base_url: "http://127.0.0.1:11434".to_string(),
+                model: "nomic-embed-text".to_string(),
+            },
+            ..Default::default()
+        };
+
+        let db = MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open_with_config");
+        assert!(db.embedder.read().is_some());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "onnx")]
+    async fn test_onnx_default_backend_e2e_with_fixture() {
+        let tmp = TempDir::new().expect("temp dir");
+        let cache_tmp = TempDir::new().expect("cache temp dir");
+        let model_dir = cache_tmp.path().join("nomic-embed-text");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        let fixture_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("memfuse-embed")
+            .join("tests")
+            .join("fixtures");
+
+        std::fs::copy(fixture_dir.join("model.onnx"), model_dir.join("model.onnx")).expect("copy model");
+        std::fs::copy(fixture_dir.join("tokenizer.json"), model_dir.join("tokenizer.json")).expect("copy tokenizer");
+
+        let config = MemFuseConfig {
+            dimension: 32, // Fixture BERT model output dim is 32
+            embedding_backend: EmbeddingBackend::Onnx {
+                model_name: "nomic-embed-text".to_string(),
+                cache_dir: Some(cache_tmp.path().to_path_buf()),
+            },
+            ..Default::default()
+        };
+
+        let db = MemFuse::open_with_config(tmp.path(), config)
+            .await
+            .expect("open_with_config");
+
+        assert!(db.embedder.read().is_some());
+        let embedder = db.embedder.read().as_ref().cloned().expect("embedder");
+        let vec = embedder.embed("test document").await.expect("embed test");
+        assert_eq!(vec.len(), 32);
     }
 
     #[tokio::test]

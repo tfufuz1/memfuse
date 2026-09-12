@@ -42,6 +42,7 @@ memfuse-candle = { workspace = true }
 default = []
 bench = []
 sandbox = []
+onnx = ["memfuse-embed/onnx"]
 experimental-diskann = ["memfuse-index/experimental-diskann"]
 reranking = ["memfuse-embed/onnx"]
 background-maintenance = []
