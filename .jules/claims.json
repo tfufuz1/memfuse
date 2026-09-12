@@ -1,12 +1,13 @@
 {
   "claims": [
     {
-      "krate": "docs",
-      "issue": "FIX-DOCS-1-offen12",
-      "timestamp": "2026-09-12T14:04:34.549183153+00:00",
-      "session_id": "7652840396896854763",
-      "active": true,
-      "expires_at": "2026-09-12T18:04:34.549161801+00:00"
+      "krate": "memfuse-router",
+      "issue": "FIX-ROUTER-1-docs",
+      "timestamp": "2026-09-12T13:46:07.517649038+00:00",
+      "session_id": "9821766463430893175",
+      "active": false,
+      "expires_at": "2026-09-12T17:46:07.517633575+00:00",
+      "released_at": "2026-09-12T13:52:32.403973247+00:00"
     }
   ]
 }

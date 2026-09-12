@@ -8,7 +8,7 @@
 
 use crate::collection::{Collection, StoredDocumentMeta};
 use crate::memory_consolidation::{
-    compute_community_hash, run_consolidation_pass, run_synthesis_pass, CommunityStabilityTracker,
+    compute_community_hash, run_consolidation_pass, run_structural_synthesis_pass, CommunityStabilityTracker,
     ConsolidationConfig, ConsolidationPhaseResult, SynthesisConfig, SynthesisPhaseResult,
 };
 use memfuse_core::traits::{LlmTextGenerator, StorageEngine, VectorIndex};
@@ -186,7 +186,7 @@ pub async fn execute_background_consolidation<S: StorageEngine>(
         }
 
         let synth_res =
-            run_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg).await?;
+            run_structural_synthesis_pass(&stable_communities, &source_texts, llm_gen, synth_cfg).await?;
 
         for (idx, meta_chunk) in synth_res.synthesized.iter().enumerate() {
             let chunk_id = format!("rem_synth_{}_{}", meta_chunk.source_community_hash, idx);

@@ -9,6 +9,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::str::FromStr;
 
 /// Supported Candle quantization formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,21 @@ impl fmt::Display for CandleQuantization {
             Self::Q4KM => write!(f, "Q4_K_M"),
             Self::Q8_0 => write!(f, "Q8_0"),
             Self::F16 => write!(f, "F16"),
+        }
+    }
+}
+
+impl FromStr for CandleQuantization {
+    type Err = MemFuseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "Q4KM" | "Q4_K_M" | "Q4" => Ok(Self::Q4KM),
+            "Q8_0" | "Q8" => Ok(Self::Q8_0),
+            "F16" | "FP16" => Ok(Self::F16),
+            _ => Err(MemFuseError::InvalidInput(format!(
+                "Unsupported Candle quantization grade: {s}. Expected Q4KM, Q8_0, or F16"
+            ))),
         }
     }
 }
