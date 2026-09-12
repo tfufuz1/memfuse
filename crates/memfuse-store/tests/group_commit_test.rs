@@ -73,6 +73,7 @@ async fn test_group_commit_200_parallel_tasks_durability_and_replay_parity() {
     }
 }
 
+#[cfg(feature = "fault-injection")]
 #[tokio::test]
 async fn test_group_commit_mid_batch_fsync_failure_atomicity() {
     use memfuse_store::wal::FAIL_APPEND_FOR_TX;

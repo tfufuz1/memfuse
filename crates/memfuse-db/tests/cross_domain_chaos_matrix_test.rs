@@ -4,6 +4,7 @@
 //! Evaluates systemic resiliency across Candle embedding inference, LsmStorage disk I/O faults,
 //! ReplicatorState weighted fusion cancellation, and concurrent ConfigFingerprint model switches under pinned checkpoints.
 
+#[cfg(feature = "replicator-dynamics-weights")]
 use memfuse_calibration::ReplicatorState;
 use memfuse_core::traits::embedding::EmbeddingError;
 use memfuse_core::traits::{BoxFuture, EmbeddingProvider, TextEmbeddingEngine};
