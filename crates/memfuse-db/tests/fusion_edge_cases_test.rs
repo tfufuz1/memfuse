@@ -402,7 +402,7 @@ fn test_array_length_mismatch_across_signals_no_panic() {
     );
 }
 
-/// Test 5: `test_k_parameter_zero_boundary`
+/// Test 5: `test_k_parameter_negative_boundary_panics`
 ///
 /// Hand-calculated scenario:
 /// RRF rank is 1-based per Cormack et al., and rrf_k must be strictly positive (rrf_k > 0.0) to avoid division by zero risk.
@@ -428,7 +428,7 @@ fn test_k_parameter_zero_boundary_permitted() {
         None,
         None,
         None,
-        k_zero,
+        k_neg,
         Some("test_col".to_string()),
         Some("hnsw".to_string()),
         Some(1.0),

@@ -106,6 +106,7 @@ pub use background_workers::{
 #[allow(deprecated)]
 pub use consolidation_executor::{
     execute_background_consolidation, execute_consolidation_pass, execute_sleep_cycle,
+    ConsolidationEngine,
 };
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
@@ -370,6 +371,12 @@ pub struct MemFuseConfig {
     pub community_detection: CommunityDetectionConfig,
     /// Configured text embedding engine backend (default: ONNX with nomic-embed-text).
     pub embedding_backend: EmbeddingBackend,
+    /// Whether background consolidation engine is enabled.
+    pub consolidation_enabled: bool,
+    /// Interval between background consolidation passes.
+    pub consolidation_interval: std::time::Duration,
+    /// Maximum LLM calls allowed per consolidation cycle (APM-Unbegrenztes-LLM-Kosten-Risiko).
+    pub max_llm_calls_per_cycle: usize,
 }
 
 impl Default for MemFuseConfig {
@@ -384,6 +391,9 @@ impl Default for MemFuseConfig {
             orphan_registry_path: None,
             community_detection: CommunityDetectionConfig::default(),
             embedding_backend: EmbeddingBackend::default(),
+            consolidation_enabled: true,
+            consolidation_interval: std::time::Duration::from_secs(6 * 3600),
+            max_llm_calls_per_cycle: 10,
         }
     }
 }
@@ -498,8 +508,8 @@ impl MemFuse {
             expiry_reaper_interval: config.expiry_reaper_interval,
             community_detection_threshold: config.community_detection.auto_trigger_threshold,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
-            cancel_token,
-            task_tracker,
+            cancel_token: cancel_token.clone(),
+            task_tracker: task_tracker.clone(),
             embedder: parking_lot::RwLock::new(None),
             orphan_registry,
         };
@@ -519,7 +529,27 @@ impl MemFuse {
         db.init_embedding_backend(&config.embedding_backend).await?;
 
         // Initialize the default collection backwards compatibility
-        let _ = db.collection("default").await?;
+        let default_col = db.collection("default").await?;
+
+        if config.consolidation_enabled {
+            let synthesis_config = memory_consolidation::SynthesisConfig {
+                max_llm_calls_per_cycle: config.max_llm_calls_per_cycle as u32,
+                ..Default::default()
+            };
+            let engine = Arc::new(consolidation_executor::ConsolidationEngine::new(
+                default_col,
+                memory_consolidation::ConsolidationConfig::default(),
+                synthesis_config,
+                config.consolidation_interval,
+                cancel_token.clone(),
+            ));
+            let engine_handle = engine.start();
+            task_tracker.spawn(async move {
+                if let Err(e) = engine_handle.await {
+                    tracing::warn!(error = %e, "ConsolidationEngine task failed or was cancelled");
+                }
+            });
+        }
 
         Ok(db)
     }
