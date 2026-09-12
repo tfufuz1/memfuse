@@ -1563,9 +1563,9 @@ impl StorageEngine for LsmStorage {
                     return Err(MemFuseError::Storage(err_msg));
                 }
 
+                type MemUpdateBatch<'a> = (TxId, &'a [(Vec<u8>, Vec<u8>, u64)]);
                 // Group append succeeded: update last_committed_tx and memtable for leader + followers
-                type GroupCommitUpdate<'a> = (TxId, &'a [(Vec<u8>, Vec<u8>, u64)]);
-                let mut all_updates: Vec<GroupCommitUpdate<'_>> =
+                let mut all_updates: Vec<MemUpdateBatch> =
                     Vec::with_capacity(1 + pending_queue.requests.len());
                 all_updates.push((leader_tx_id, &leader_mem_updates));
                 for r in &pending_queue.requests {

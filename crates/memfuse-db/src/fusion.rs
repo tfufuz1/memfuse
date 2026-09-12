@@ -1856,7 +1856,10 @@ mod tests {
         );
         assert_eq!(fused_tied.len(), 2);
         assert_eq!(fused_tied[0].score, fused_tied[1].score);
-        assert_eq!(fused_tied[0].id, "doc_a", "Tie-breaking must place doc_a before doc_b when scores are equal");
+        assert_eq!(
+            fused_tied[0].id, "doc_a",
+            "Tie-breaking must place doc_a before doc_b when scores are equal"
+        );
         assert_eq!(fused_tied[1].id, "doc_b");
     }
 
