@@ -2082,7 +2082,7 @@ dependencies = [
  "ort",
  "parking_lot",
  "proptest",
- "reqwest 0.12.28",
+ "reqwest",
  "serde",
  "tempfile",
  "tokenizers 0.19.1",

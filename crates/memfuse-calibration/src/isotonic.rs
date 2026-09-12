@@ -34,6 +34,7 @@ pub struct IsotonicCalibrator {
     model_dirty: bool,
     observations_since_rebuild: usize,
     fingerprint: Option<ConfigFingerprint>,
+    last_calibration_at: Option<u64>,
 }
 
 impl IsotonicCalibrator {
@@ -47,6 +48,7 @@ impl IsotonicCalibrator {
             model_dirty: true,
             observations_since_rebuild: 0,
             fingerprint: None,
+            last_calibration_at: None,
         }
     }
 
@@ -73,6 +75,11 @@ impl IsotonicCalibrator {
     /// Prüft, ob genügend Beobachtungen für eine kalibrierte Ausgabe vorliegen.
     pub fn is_calibrated(&self) -> bool {
         self.observations.len() as u32 >= self.warmup_required
+    }
+
+    /// Gibt den Zeitstempel (UNIX-Timestamp in Sekunden) der letzten Kalibrierung (Model-Rebuild) zurück.
+    pub fn last_calibration_at(&self) -> Option<u64> {
+        self.last_calibration_at
     }
 
     /// Kalibrierte Wahrscheinlichkeit.
@@ -173,6 +180,12 @@ impl IsotonicCalibrator {
         );
         self.model_dirty = false;
         self.observations_since_rebuild = 0;
+        self.last_calibration_at = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        );
     }
 
     fn lookup_isotonic(&self, raw_score: f32) -> f32 {
