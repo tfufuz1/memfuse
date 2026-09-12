@@ -167,12 +167,9 @@ mod tests {
             TxId::new(500),
         );
 
-        let json = serde_json::to_string(&prov)
-            .ok()
-            .expect("serialization failed");
-        let deserialized: EdgeProvenance = serde_json::from_str(&json)
-            .ok()
-            .expect("deserialization failed");
+        let json = serde_json::to_string(&prov).expect("serialization failed");
+        let deserialized: EdgeProvenance =
+            serde_json::from_str(&json).expect("deserialization failed");
 
         assert_eq!(deserialized.edge_id, prov.edge_id);
         assert_eq!(deserialized.source_doc_ids, prov.source_doc_ids);

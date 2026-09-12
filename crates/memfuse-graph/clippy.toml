@@ -1,0 +1,13 @@
+await-holding-invalid-types = [
+    "parking_lot::raw_mutex::RawMutex",
+    "parking_lot::lock_api::MutexGuard",
+    "parking_lot::lock_api::RwLockReadGuard",
+    "parking_lot::lock_api::RwLockWriteGuard",
+    "parking_lot::MutexGuard",
+    "parking_lot::RwLockReadGuard",
+    "parking_lot::RwLockWriteGuard",
+    "memfuse_graph::session_dag::NodesGuard",
+    "memfuse_graph::session_dag::NodesWriteGuard",
+    "memfuse_graph::NodesGuard",
+    "memfuse_graph::NodesWriteGuard",
+]
