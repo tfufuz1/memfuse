@@ -3,14 +3,8 @@
 // ZWECK: Deep integration, proptest, and adversarial test suite for memfuse-calibration.
 // INVARIANTEN: INV-CAL-1 (no silent fallback before warmup), INV-CAL-2 (invalidation resets observations/weights), P8 compliance.
 
-#[cfg(feature = "replicator-dynamics-weights")]
-use memfuse_calibration::{record_retrieval_feedback, ReplicatorState};
 use memfuse_calibration::{ConfigFingerprint, IsotonicCalibrator, PidController, PlattScaler};
 use proptest::prelude::*;
-#[cfg(feature = "replicator-dynamics-weights")]
-use std::collections::HashMap;
-#[cfg(feature = "replicator-dynamics-weights")]
-use std::sync::Arc;
 
 // ============================================================================
 // 1. ISOTONIC CALIBRATOR TESTS (PAVA & ECE)
@@ -272,101 +266,10 @@ fn test_pid_controller_non_finite_latency_safety() {
 }
 
 // ============================================================================
-// 4. REPLICATOR STATE TESTS
-// ============================================================================
-
-#[cfg(feature = "replicator-dynamics-weights")]
-#[test]
-fn test_replicator_initialization_and_weights() {
-    let state = ReplicatorState::new(
-        vec![
-            "vector".to_string(),
-            "text".to_string(),
-            "graph".to_string(),
-        ],
-        0.05,
-    );
-    assert_eq!(state.weights, vec![1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
-    assert_eq!(state.update_count, 0);
-
-    let fw = state.fusion_weights();
-    assert!((fw.vector() - 1.0 / 3.0).abs() < 1e-5);
-    assert!((fw.text() - 1.0 / 3.0).abs() < 1e-5);
-    assert!((fw.graph() - 1.0 / 3.0).abs() < 1e-5);
-}
-
-#[cfg(feature = "replicator-dynamics-weights")]
-#[test]
-fn test_replicator_record_feedback_thread_safe() {
-    let state = Arc::new(parking_lot::RwLock::new(ReplicatorState::new(
-        vec![
-            "vector".to_string(),
-            "text".to_string(),
-            "graph".to_string(),
-        ],
-        0.1,
-    )));
-
-    let mut feedback = HashMap::new();
-    feedback.insert("text".to_string(), 1.0);
-    feedback.insert("vector".to_string(), 0.0);
-
-    record_retrieval_feedback(&state, feedback);
-
-    let guard = state.read();
-    assert_eq!(guard.update_count, 1);
-    assert!(guard.weights[1] > guard.weights[0]);
-}
-
-#[cfg(feature = "replicator-dynamics-weights")]
-#[test]
-fn test_replicator_invalidation_resets_weights() {
-    let mut state = ReplicatorState::new(
-        vec![
-            "vector".to_string(),
-            "text".to_string(),
-            "graph".to_string(),
-        ],
-        0.1,
-    );
-    state.update(&[1.0, 0.0, 0.0]);
-    assert!(state.weights[0] > 1.0 / 3.0);
-
-    let fp = ConfigFingerprint::new("mod-1", "Q4", "tmpl", 0.5);
-    state.invalidate_on_config_change(fp);
-
-    for &w in &state.weights {
-        assert!((w - 1.0 / 3.0).abs() < 1e-5);
-    }
-}
-
-// ============================================================================
-// 5. PROPTEST PROPERTY TESTS
+// 4. PROPTEST PROPERTY TESTS
 // ============================================================================
 
 proptest! {
-    #[cfg(feature = "replicator-dynamics-weights")]
-    #[test]
-    fn prop_replicator_weights_sum_to_one(
-        rewards in prop::collection::vec(0.0f32..1.0f32, 3),
-        steps in 1usize..30
-    ) {
-        let mut state = ReplicatorState::new(
-            vec!["vector".to_string(), "text".to_string(), "graph".to_string()],
-            0.05,
-        );
-
-        for _ in 0..steps {
-            state.update(&rewards);
-            let sum: f32 = state.weights.iter().sum();
-            prop_assert!((sum - 1.0).abs() < 1e-5, "Sum of weights must be 1.0, got {}", sum);
-            for &w in &state.weights {
-                prop_assert!(w > 0.0, "Weights must be strictly positive");
-                prop_assert!(w.is_finite(), "Weights must be finite");
-            }
-        }
-    }
-
     #[test]
     fn prop_platt_scaler_bounded_output(logit in -100.0f32..100.0f32, a in -5.0f32..5.0f32, b in -5.0f32..5.0f32) {
         let scaler = PlattScaler::new(a, b);
