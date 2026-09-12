@@ -77,6 +77,7 @@ async fn test_tools_list_returns_all_tools() {
     assert!(names.contains(&"memfuse_insert"));
     assert!(names.contains(&"memfuse_get"));
     assert!(names.contains(&"memfuse_collections"));
+    assert!(names.contains(&"memfuse_consolidate"));
 }
 
 #[tokio::test]
@@ -339,6 +340,7 @@ async fn test_write_tool_rejected_when_read_only() {
         "memfuse_relate",
         "memfuse_create_collection",
         "memfuse_drop_collection",
+        "memfuse_consolidate",
     ];
 
     for tool in write_tools {
@@ -534,4 +536,129 @@ async fn test_batch_request_handling() {
     } else {
         panic!("mixed response expected");
     }
+}
+
+#[tokio::test]
+async fn test_memfuse_consolidate_success() {
+    let (server, _tmp) = create_mock_server_with_write(true).await;
+
+    // Insert 2 documents into default collection
+    let insert_req1 = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "turn_doc_1",
+            "text": "First turn text",
+            "collection": "default"
+        }),
+    );
+    let resp1 = server.handle(insert_req1).await;
+    assert!(resp1.error.is_none());
+
+    let insert_req2 = make_request(
+        "memfuse_insert",
+        json!({
+            "id": "turn_doc_2",
+            "text": "Second turn text",
+            "collection": "default"
+        }),
+    );
+    let resp2 = server.handle(insert_req2).await;
+    assert!(resp2.error.is_none());
+
+    // Trigger manual consolidation via MCP
+    let consolidate_req = make_request(
+        "tools/call",
+        json!({
+            "name": "memfuse_consolidate",
+            "arguments": {
+                "collection": "default"
+            }
+        }),
+    );
+
+    let resp = server.handle(consolidate_req).await;
+    assert!(resp.error.is_none());
+
+    let res_val = serde_json::to_value(&resp).unwrap();
+    assert_ne!(res_val["result"]["isError"], true);
+
+    let text_out = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    let json_out: serde_json::Value = serde_json::from_str(text_out).unwrap();
+
+    assert_eq!(json_out["ok"], true);
+    assert_eq!(json_out["collection"], "default");
+    assert!(json_out["turns_scanned"].as_u64().unwrap() >= 2);
+    assert!(json_out.get("segments_created").is_some());
+    assert!(json_out.get("duplicates_tombstoned").is_some());
+    assert!(json_out.get("synthesized_chunks").is_some());
+}
+
+#[tokio::test]
+async fn test_memfuse_consolidate_read_only_rejected() {
+    let (server, _tmp) = create_mock_server_with_write(false).await;
+
+    let req = make_request(
+        "tools/call",
+        json!({
+            "name": "memfuse_consolidate",
+            "arguments": {
+                "collection": "default"
+            }
+        }),
+    );
+
+    let resp = server.handle(req).await;
+    let res_val = serde_json::to_value(&resp).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Sandbox: DB-Schreibzugriff gesperrt"));
+}
+
+#[tokio::test]
+async fn test_memfuse_consolidate_unknown_collection() {
+    let (server, _tmp) = create_mock_server_with_write(true).await;
+
+    let req = make_request(
+        "tools/call",
+        json!({
+            "name": "memfuse_consolidate",
+            "arguments": {
+                "collection": "invalid/collection:name"
+            }
+        }),
+    );
+
+    let resp = server.handle(req).await;
+    let res_val = serde_json::to_value(&resp).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("forbidden characters"));
+}
+
+#[tokio::test]
+async fn test_memfuse_consolidate_fault_injection() {
+    let (server, _tmp) = create_mock_server_with_write(true).await;
+
+    // Send malformed arguments (collection as integer instead of string)
+    let req_wrong_type = make_request(
+        "tools/call",
+        json!({
+            "name": "memfuse_consolidate",
+            "arguments": {
+                "collection": 12345
+            }
+        }),
+    );
+
+    let resp = server.handle(req_wrong_type).await;
+    let res_val = serde_json::to_value(&resp).unwrap();
+    assert_eq!(res_val["result"]["isError"], true);
+    let text = res_val["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("collection' must be a string"));
+
+    // Direct RPC invocation with invalid params
+    let req_direct = make_request("memfuse_consolidate", json!({ "collection": 9999 }));
+    let direct_resp = server.handle(req_direct).await;
+    let err = direct_resp.error.expect("error expected for direct invalid call");
+    assert_eq!(err.code, -32602);
 }

@@ -172,7 +172,8 @@ impl McpSandbox {
             | "memfuse_upsert"
             | "memfuse_relate"
             | "memfuse_create_collection"
-            | "memfuse_drop_collection" => ToolCategory::DatabaseWrite,
+            | "memfuse_drop_collection"
+            | "memfuse_consolidate" => ToolCategory::DatabaseWrite,
             _ => ToolCategory::CodeExecution,
         }
     }
