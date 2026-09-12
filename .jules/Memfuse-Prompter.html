@@ -376,7 +376,7 @@ kbd{font-family:monospace;font-size:8px}
         <div class="crate-grid" id="subsystem-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))"></div>
         <div id="subsystem-task-grid" style="margin-top:10px"></div>
       </div>
-
+    </div>
 
     <!-- EBENE 3: EIGENBAU-KOMPONENTE -->
     <div class="card" id="c-eigenbau">
@@ -405,7 +405,7 @@ kbd{font-family:monospace;font-size:8px}
         <div class="crate-grid" id="prozess-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))"></div>
         <div id="prozess-task-grid" style="margin-top:10px"></div>
       </div>
-    </div></div>
+    </div>
 
     <!-- COMPONENTS -->
     <div class="card" id="c-comp">
@@ -448,7 +448,7 @@ kbd{font-family:monospace;font-size:8px}
             <div class="th-desc">Finde TODO(memfuse-plan) → Umsetzen → DONE/BLOCKED markieren</div>
             <span class="th-phase ph-impl">IMPL</span>
           </div>
-          <div class="thero" id="tt-review" onclick="selTask('review')">
+          <div class="thero" id="tt-review_triad" onclick="selTask('review_triad')">
             <div class="th-ico">👁️</div>
             <div class="th-name">3. REVIEW</div>
             <div class="th-desc">Diff-only Review · Korrektheitsnachweis · Freigabe oder Ablehnung</div>
@@ -1664,22 +1664,16 @@ ${p.workspace_note ? `
 ---
 
 ## Projekt-Kontext
-MemFuse ist ein Pure-Rust Cognitive Operating System für lokale, air-gapped KI-Agenten:
-- **4-Signal-Hybridsuche:** HNSW + BM25 + CSR-Graph + Metadaten — fusioniert via RRF
-- **Persistenz:** LSM-Tree + WAL mit HMAC-Chaining + AES-256-GCM-SIV Encryption-at-Rest
-- **Agent-Loop:** checkpoint → execute → commit → audit (Exactly-Once-Semantik)
-- **Architektur-Constraint (DAG):** Layer 0→7, keine Aufwärts-Importe — jede Verletzung ist ein kritischer Befund
+Architektur (4-Signal-Hybridsuche, LSM+WAL-Persistenz, Agent-Loop, Layer-0→7-DAG) siehe \`AGENTS.md\` §Projektüberblick — nicht erneut nachlesen, wenn bereits im Session-Kontext geladen.
 
 ---
 
-## Status der Härtungs-Fix-Prompts (HEAD ff9ffecd)
-Folgende Systemhärtungen sind auf main bereits gemergt und müssen NICHT erneut implementiert werden:
-- **N1–N5 (✅ Gemergt):** RRF NaN/Inf-Guard (\`fusion.rs\`), WAL TOCTOU-Truncation (\`wal.rs\`), LSM-Budget-Drift, WAL HMAC-Rollback Concurrency, commit_mutex-Erzwingung.
-- **B & F (✅ Gemergt):** Max Scan-Limit \`MAX_SCAN_RESULTS\` (\`crud.rs\`) und speicherbeschränkter Range-Scan \`scan_bounded\` (\`traits/mod.rs\`, \`lsm.rs\`, \`crud.rs\`).
-- **D1 (✅ Gemergt):** Typsystemische Vorbedingungs-Erzwingung für \`DeletionProof\` via \`LayerCleanupProof\` (\`deletion_proof.rs\`).
-- **H (✅ Gemergt):** Robuste \`f32::total_cmp\`-Sortierung für \`HeapEntry\` (\`fusion.rs\`).
-- **Weitere Härtungen (✅ Gemergt):** WAL Header State Atomicity (\`wal.rs\`), DiskANN HMAC-Schutz (\`diskann.rs\`).
-Offene/ausstehende Härtungen (E1/E2, D2, G): KV-Segment LRU Fair Eviction & Lock-Granularität (E1/E2), DiskANN Robust Pruning & Query Vector Validierung (D2/G).
+## Härtungs-Status — live prüfen statt Snapshot vertrauen
+Ein hartcodierter „bereits gemergt"-Status veraltet mit jedem Merge und ist selbst eine Drift-Quelle (vgl. Schritt 0). Vor Beginn stattdessen:
+\`\`\`bash
+grep -A2 "^## Gehärtet\\|^## Härtung" WORKING_STATE.md
+\`\`\`
+Nur was dort als offen/ausstehend markiert ist, ist noch zu tun — nichts aus dem Gedächtnis oder einer alten Prompt-Fassung übernehmen.
 `;
 }
 
@@ -1814,91 +1808,49 @@ function SESSIONEND_BLOCK(crate) {
 
 ## Phase 6 — Pre-Submit Gate (BLOCKIEREND — kein Submit ohne grünes Ergebnis)
 
-Diese Phase ist kein Stilhinweis. Der Mensch merged blind. Beweislast liegt vollständig hier.
-Alle vier Schritte müssen grün sein — in dieser Reihenfolge, ohne Ausnahme.
+Diese Phase ist kein Stilhinweis. Der Mensch merged blind. Beweislast liegt vollständig hier. Alle drei Schritte müssen grün sein — in dieser Reihenfolge, ohne Ausnahme. Ein grüner Testlauf gegen einen veralteten main-Stand ist KEINE gültige Verifikation — nur der Stand unmittelbar vor Submit zählt.
 
-### Schritt 6-A: Rebase-Retest — gegen den AKTUELLEN main, nicht gegen den Stand von Sessionbeginn
+### Schritt 6-A: Rebase-Retest + Gate-Stack (gegen den AKTUELLEN main)
 \`\`\`bash
 git fetch origin main
 if ! git merge-base --is-ancestor origin/main HEAD; then
   echo "⚠️  main hat sich seit Sessionstart weiterentwickelt — Rebase erforderlich"
   git rebase origin/main
-  # Nach Rebase: Gesamter Workspace gegen den neuen Stand prüfen
-  cargo check --workspace --exclude memfuse-tauri 2>&1 | tee /tmp/postrebase_check.log
-  grep -q "^error" /tmp/postrebase_check.log && {
-    echo "❌ STOP: Rebase hat Compile-Fehler freigelegt — NICHT submitten, erst beheben"
-    cat /tmp/postrebase_check.log | grep "^error" | head -20
-    exit 1
-  }
-  echo "✅ Workspace nach Rebase fehlerfrei"
-else
-  echo "✅ Branch ist aktuell gegenüber origin/main — kein Rebase nötig"
-  # Trotzdem: Workspace-weiter Check zum Nachweis der Workspace-Kompatibilität
-  cargo check --workspace --exclude memfuse-tauri 2>&1 | grep "^error" | head -5 && exit 1 || true
 fi
-# Zusätzlich: crate-spezifischer Check mit allen Features
-cargo check ${PKG(crate)} --all-features
+cargo check ${PKG(crate)} --all-features 2>&1 | tee /tmp/postrebase_check_crate.log
+grep -q "^error" /tmp/postrebase_check_crate.log && { echo "❌ STOP: Compile-Fehler in Crate — NICHT submitten"; exit 1; }
+cargo check --workspace --exclude memfuse-tauri 2>&1 | tee /tmp/postrebase_check.log
+grep -q "^error" /tmp/postrebase_check.log && { echo "❌ STOP: Compile-Fehler im Workspace — NICHT submitten"; exit 1; }
+echo "✅ Workspace + Crate nach Rebase fehlerfrei"
+
+# Gate-Stack (s.o. im Arbeitsprotokoll definiert) muss hier erneut grün sein:
+cargo fmt --all
+just sync-docs            # generiert WORKING_STATE.md, docs/CHANGELOG.md, docs/ARCHITECTURE.md, docs/SOURCE_OF_TRUTH.md
+just sync-docs-check      # MUSS grün sein — sonst ist der Commit nicht vollständig
 \`\`\`
-Ein grüner Testlauf gegen einen veralteten main-Stand ist KEINE gültige Verifikation.
-Nur der Stand unmittelbar vor Submit zählt.
 
 ### Schritt 6-B: Phantom-Verifikation — Diff-Realität vs. Commit-Text-Behauptung
 \`\`\`bash
 echo "=== Dateien im tatsächlichen Diff ==="
 git diff --name-only origin/main...HEAD
-
-echo "=== Prüfe: Jede im Diff genannte .rs-Datei existiert tatsächlich ==="
 for f in \$(git diff --name-only origin/main...HEAD | grep -E '\\.rs\$'); do
-  if [ ! -f "\$f" ]; then
-    echo "❌ Behauptete Datei '\$f' existiert nicht im Working Tree"
-    exit 1
-  fi
+  [ -f "\$f" ] || { echo "❌ Behauptete Datei '\$f' existiert nicht im Working Tree"; exit 1; }
 done
 echo "✅ Alle diff-genannten Dateien verifiziert"
 
-echo "=== ANTI-PATTERN-PRÜFUNG: Keine Shell-Commit-Nachrichten ==="
 git log origin/main...HEAD --format="%s" | grep -i "^shell-commit\$" && {
-  echo "❌ Shell-Commit-Nachricht gefunden — umbenennen vor Submit"
-  exit 1
+  echo "❌ Shell-Commit-Nachricht gefunden — umbenennen vor Submit"; exit 1;
 } || echo "✅ Keine Shell-Commits"
 \`\`\`
-Test-Ergebnisse im PR/Session-Report NUR aus echtem Kommando-Output kopieren,
-niemals aus Erinnerung oder Vorlage formulieren. Bei Unsicherheit: rohen Output anhängen.
+Test-Ergebnisse im PR/Session-Report NUR aus echtem Kommando-Output kopieren, niemals aus Erinnerung oder Vorlage formulieren.
 
-### Schritt 6-C: Gate-Stack (nach Rebase, gegen den rebbasten Stand)
+### Schritt 6-C: Claim-Freigabe
 \`\`\`bash
-# 1. Rebase-vor-Submit gegen aktuellen main-Stand (blockierend)
-git fetch origin main
-if ! git merge-base --is-ancestor origin/main HEAD; then
-  echo "⚠️ main hat sich seit Sessionstart weiterentwickelt — REBASE + RE-TEST erforderlich"
-  git rebase origin/main
-  cargo check ${PKG(crate)} --all-features 2>&1 | tee /tmp/postrebase_check_crate.log
-  grep -q "^error" /tmp/postrebase_check_crate.log && { echo "❌ STOP: Rebase hat Compile-Fehler in Crate freigelegt — NICHT submitten"; exit 1; }
-  cargo check --workspace --exclude memfuse-tauri 2>&1 | tee /tmp/postrebase_check.log
-  grep -q "^error" /tmp/postrebase_check.log && { echo "❌ STOP: Rebase hat Compile-Fehler im Workspace freigelegt — NICHT submitten"; exit 1; }
-fi
-
-# 2. Phantom-Verifikation — jede im Diff behauptete Datei muss physikalisch existieren
-for f in \$(git diff --name-only origin/main...HEAD | grep -E '\\.rs\$'); do
-  [ -f "\$f" ] || { echo "❌ Behauptete/geänderte Datei \$f existiert nicht im Diff"; exit 1; }
-done
-
-# 3. Bestehender Gate-Stack
-cargo fmt --all
-just sync-docs            # generiert WORKING_STATE.md, docs/CHANGELOG.md, docs/ARCHITECTURE.md, docs/SOURCE_OF_TRUTH.md
-just sync-docs-check      # MUSS grün sein — sonst ist der Commit nicht vollständig
-
-# 4. Claim-Freigabe
 cargo xtask claim --release --crate ${crate} --issue "\$TASK_ID" 2>&1 | tail -5
 \`\`\`
+Ein am Sessionanfang gesetzter Claim ohne passende Freigabe am Sessionende ist selbst ein Befund — auch ein abgebrochener/BLOCKED-Task gibt seinen Claim frei.
 
-Ein am Sessionanfang gesetzter Claim ohne passende Freigabe am Sessionende ist selbst ein Befund. Auch ein abgebrochener/als BLOCKED markierter Task gibt seinen Claim frei.
-
-Falls diese Sitzung eine reine Review-Sitzung war (kein eigener Code-Beitrag, nur Prüfung fremder Arbeit): hinterlasse mindestens einen \`REVIEW-PASS\`-Eintrag mit \`PRÜFER-KONTEXT: FRESH\`, bevor \`just sync-docs\` läuft.
-
-Falls diese Sitzung eine reine Review-Sitzung war: mindestens einen \`REVIEW-PASS\`-Eintrag
-mit \`PRÜFER-KONTEXT: FRESH\` hinterlassen, dann die vier Schritte oben ausführen.
-\`WORKING_STATE.md\` niemals manuell editieren — bei Merge-Konflikten stets \`just sync-docs\`.
+Falls diese Sitzung eine reine Review-Sitzung war (kein eigener Code-Beitrag): hinterlasse vor \`just sync-docs\` mindestens einen \`REVIEW-PASS\`-Eintrag mit \`PRÜFER-KONTEXT: FRESH\`. \`WORKING_STATE.md\` niemals manuell editieren — bei Merge-Konflikten stets \`just sync-docs\`.
 `;
 }
 
@@ -2010,11 +1962,8 @@ function TOOLING_BLOCK(crate) {
 
 ## Werkzeug- & Kontext-Erfassungsprotokoll (Jules-Cloud-VM)
 
-Diese Aufgabe läuft in einer isolierten Jules-Ubuntu-VM mit vorinstallierter Rust-/Cargo-Toolchain, Shell-Zugriff und Git. **Nutze die Shell aktiv und wiederholt zur Kontexterfassung — rate niemals über Dateiinhalt, Historie, Testverhalten oder Aufrufer, sondern verifiziere jede Annahme per Kommando, bevor du sie in eine Codeänderung überführst.** Ein Tool-Aufruf zu viel kostet Sekunden, ein Tool-Aufruf zu wenig kostet einen Fehlbefund.
-
-**Struktur & Größe (vor jeder Datei-Auswahl):**
+Ergänzt das Arbeitsprotokoll oben um die konkreten Befehle: rate niemals über Dateiinhalt, Historie, Testverhalten oder Aufrufer — verifiziere jede Annahme per Kommando. Dateiliste kommt bereits aus Schritt 0 (Inventar-Realitätsabgleich); hier nur Größenordnung ergänzen:
 \`\`\`bash
-find crates/${crate}/src -name "*.rs" | sort
 wc -l crates/${crate}/src/**/*.rs 2>/dev/null | sort -rn
 \`\`\`
 **Historie & Verantwortlichkeit (vor jeder Änderung an bestehendem Code):**
@@ -2048,17 +1997,9 @@ function GITHUB_BLOCK(crate) {
 
 ## Branch- & Merge-Disziplin (bindend)
 
-**Kein neuer Feature-Branch.** Arbeite auf dem aktuell ausgecheckten Branch weiter bzw. committe direkt in den PR-Kontext, aus dem diese Aufgabe stammt. Ziel jeder Sitzung ist ein Ergebnis, das ohne einen weiteren manuellen Merge-Schritt integrierbar ist — nicht ein zusätzlicher isolierter Branch, der später erst zusammengeführt werden muss.
+**Kein neuer Feature-Branch.** Arbeite auf dem aktuell ausgecheckten Branch weiter bzw. committe direkt in den PR-Kontext, aus dem diese Aufgabe stammt. Ziel jeder Sitzung ist ein Ergebnis, das ohne einen weiteren manuellen Merge-Schritt integrierbar ist. Der Konflikt-/Duplikat-Check gegen offene Remote-Arbeit läuft bereits in Phase 0b (\`git fetch\`/\`git branch -r\`/\`git log --grep\`) — hier nicht wiederholen, nur zusätzlich gegen bekannte parallele Audit-Branches abgleichen (z.B. \`mmap-toctou-round2\`, \`diskann-sector-size-check\`, \`diskann-corrupt-neighbor-count-bounds-check\`, \`ckpt-raii-manifest-atomicity\`, \`agt-ckpt-agt-store-tags-resolved\`, \`core-anchor-and-headers\`, \`sec-mmap-index-hardening\`): falls einer denselben Befund bereits adressiert, rebase/cherry-pick darauf statt Parallel-Lösung.
 
-**Vor der ersten Änderung: Duplikate gegen bereits offene, ungemergte Arbeit prüfen** (reines \`git\`, immer verfügbar):
-\`\`\`bash
-git fetch origin 2>&1 | tail -3
-git branch -r
-git log --oneline --all --grep="${crate}" -i | head -20
-\`\`\`
-Prüfe insbesondere gegen aktuell bekannte offene Audit-Branches, die dieselbe Crate oder dieselbe Invariante betreffen könnten (z.B. \`mmap-toctou-round2\`, \`diskann-sector-size-check\`, \`diskann-corrupt-neighbor-count-bounds-check\`, \`ckpt-raii-manifest-atomicity\`, \`agt-ckpt-agt-store-tags-resolved\`, \`core-anchor-and-headers\`, \`sec-mmap-index-hardening\`) — falls einer davon denselben Befund bereits adressiert, rebase/cherry-pick darauf statt eine Parallel-Lösung zu erzeugen, oder dokumentiere den Bezug explizit im Commit.
-
-**Commit-Konvention:** \`<crate>: <präzise, imperativische Kurzbeschreibung>\` — z.B. \`${crate}: fix tombstone check order in search_filtered\`. Falls ein Issue referenziert wird: Commit-/PR-Body MUSS \`Fixes #<NR>\` bzw. \`Refs #<NR>\` enthalten und den betroffenen APM-Bezug sowie den aktualisierten Abschnitt in \`${AUDIT_PATH(crate)}\` benennen. Kein Force-Push über bereits von einem Menschen kommentierte Commits ohne expliziten Hinweis.
+**Commit-Konvention:** \`<crate>: <präzise, imperativische Kurzbeschreibung>\` — z.B. \`${crate}: fix tombstone check order in search_filtered\`. Bei Issue-Referenz: Commit-/PR-Body MUSS \`Fixes #<NR>\`/\`Refs #<NR>\` sowie den aktualisierten Abschnitt in \`${AUDIT_PATH(crate)}\` benennen. Kein Force-Push über bereits kommentierte Commits ohne expliziten Hinweis.
 `;
 }
 
@@ -2067,80 +2008,11 @@ function LOOP_BLOCK(crate) {
   const n = SS.maxLoop || '5';
   return `---
 
-## Verifikations-Loop — Plan → Act → Verify → Reflect (Pflicht-Arbeitsmodus)
+## Verifikations-Loop (Pflicht-Arbeitsmodus, rules/verification_loop.md)
 
-Bearbeite diese Aufgabe **nicht als linearen Einmal-Durchlauf**, sondern als begrenzten, sich selbst korrigierenden Loop (Loop-Engineering-Prinzip: Test-Time Compute ist der Hebel, nicht Prompt-Länge). Diese Disziplin ist der stärkste einzelne Hebel für Ergebnisqualität bei agentischer Coding-Arbeit — ein Schritt ohne anschließende Verifikation gilt als NICHT abgeschlossen, unabhängig davon, wie offensichtlich richtig er erscheint.
+Arbeite in PLAN→ACT→VERIFY→REFLECT-Zyklen (kleinster verifizierbarer Schritt, kein Vorgriff auf spätere Schritte; Verifikation = gezielter \`cargo test ${PKG(crate)} -- <testname>\`/\`cargo check ${PKG(crate)}\`/grep-Gegenscan). Volle Methodik inkl. der fünf Sackgassen-Routinen (Rollback, Signatur-Verifikation, Handoff-Manifest, Fuzzing, Exit-Condition) steht in \`rules/verification_loop.md\` — bei erstem VERIFY-Fehlschlag dort nachschlagen, nicht neu erfinden.
 
-Falls du zu Beginn dieser Sitzung einen Plan zur Freigabe vorschlägst (Jules-Planphase): gliedere ihn bereits jetzt in einzeln verifizierbare Schritte gemäß diesem Loop — nicht als einen einzigen großen Umsetzungsblock.
-
-**Der Loop pro Einzelschritt:**
-1. **PLAN** — Formuliere in 2–4 Sätzen den nächsten kleinsten sinnvoll verifizierbaren Schritt (nicht die gesamte Aufgabe auf einmal).
-2. **ACT** — Setze ausschließlich diesen einen Schritt um. Keine Vorgriffe auf spätere Schritte.
-3. **VERIFY** — Führe die zu diesem Schritt exakt passende Verifikation aus, bevor du weitermachst: ein gezielter \`cargo test ${PKG(crate)} -- <testname>\`, ein \`cargo check ${PKG(crate)}\`, ein gezielter \`grep\`-Gegenscan, oder — falls vorhanden — ein Build/Run-Check. Niemals ungeprüft auf dem nächsten Schritt aufbauen.
-4. **REFLECT** — Bestanden? Notiere kurz warum, plane den nächsten Schritt. Fehlgeschlagen? Diagnostiziere die tatsächliche Ursache (nicht die erstbeste Vermutung), nimm GENAU EINE gezielte Korrektur vor, verifiziere erneut.
-
-**Eskalationsregel (bindend):** Nach **${n} erfolglosen Verify-Zyklen für denselben Schritt**: STOPPEN. Dokumentiere den Befund als offenen Tag (inkl. aller bisher erfolglos versuchten Ansätze und warum sie scheiterten) statt endlos weiterzuprobieren oder eine großflächige Ersatzlösung zu erzwingen, die den Scope sprengt. Ein sauber dokumentierter Blocker ist einem stillschweigend übersprungenen oder einem mit Gewalt "gelösten" Problem immer vorzuziehen.
-
-**Empirischer Verhaltensbeweis (Pflicht vor DONE-Meldung für nicht-triviale Änderungen):** Bevor ein Implementierungsschritt als abgeschlossen gemeldet wird, weise das geänderte Verhalten durch konkrete Ausgaben nach — nicht durch Prosa-Behauptung. Das akzeptierte Format:
-\`\`\`bash
-# Vorher-Nachher-Diff des Verhaltens sichtbar machen:
-git stash  # alten Stand
-cargo test ${PKG(crate)} -- --nocapture 2>&1 | grep -E "ok|FAILED|test " > /tmp/before.txt
-git stash pop  # neuen Stand
-cargo test ${PKG(crate)} -- --nocapture 2>&1 | grep -E "ok|FAILED|test " > /tmp/after.txt
-diff /tmp/before.txt /tmp/after.txt  # zeigt genau welche Tests sich geändert haben
-\`\`\`
-Nur wenn dieser Diff das erwartete Delta zeigt (neue Tests grün, kein Rückschritt), gilt der Schritt als empirisch bestätigt. "Es kompiliert" oder "ich denke, es funktioniert" sind keine gültigen Verifikationen für dieses Projekt.
-
-**Nach Abschluss des gesamten Loops:** Jede dabei gewonnene, wiederverwendbare Erkenntnis (z.B. ein wiederkehrendes Fehlermuster, eine überraschende Nebenwirkung, ein Missverständnis über eine Invariante) MUSS als neuer Eintrag in \`AGENTS.md\` §4 (Non-Obvious Decisions) oder als \`AI-TAG\`-Kommentar im betroffenen Code festgehalten werden — jeder in diesem Loop gefangene Fehler wird so zu einer dauerhaften Korrektur, die zukünftige Sitzungen (auch andere Agenten) nicht erneut begehen.
-
-### Die fünf verborgenen Sackgassen-Routinen (greifen automatisch innerhalb des Loops)
-
-Bei jedem VERIFY-Fehlschlag prüfst du zuerst, welche der folgenden fünf Situationen vorliegt, und befolgst die zugehörige Routine, BEVOR du einen neuen Lösungsversuch startest. Diese Routinen sind kein Ersatz für den Loop oben, sondern die konkrete Handlungsanweisung für den REFLECT-Schritt in seinen fünf häufigsten Fehlschlagsformen:
-
-**1. State-Rollback & Reset (Git-Reißleine) — bei wiederholt komplexerem statt einfacherem Fehler:**
-Wenn ein Fix-Versuch den Fehler nicht löst, sondern einen NEUEN, komplexeren Compiler-/Test-Fehler erzeugt, UND das bereits beim 2. Versuch in Folge für denselben Schritt passiert: Deine aktuelle Hypothese ist in einer Sackgasse.
-\`\`\`bash
-git diff --stat                      # was wurde seit letztem validen Stand verändert?
-git checkout -- crates/${crate}/src/<datei>.rs   # gezielter Reset NUR der betroffenen Datei, nicht des ganzen Working Trees
-\`\`\`
-Verwirf den bisherigen Lösungsansatz vollständig aus dem Arbeitsgedächtnis. Analysiere den *ursprünglichen* Fehler aus einer erkennbar anderen Perspektive (anderer Verursacher-Layer, andere Invariante) und formuliere eine neue Hypothese, BEVOR du erneut Code schreibst.
-
-**2. Context-Deficiency & Signatur-Verifikation — bei Methode/Typ, der nicht existiert oder anders aussieht als erwartet:**
-Wenn der Compiler eine Methode, ein Feld oder eine Signatur nicht kennt, die du gerade verwendet hast: Das ist der Moment für \`.jules/COMMON_LLM_ERRORS.md §1\` (API-Halluzination) — NICHT für eine geratene Parameter-Anpassung.
-\`\`\`bash
-grep -n "pub fn <METHODE>\\|pub struct <TYP>\\|pub enum <TYP>" crates/*/src/*.rs
-grep "<TYPNAME>" docs/TYPE_REGISTRY.md
-cargo doc ${PKG(crate)} --no-deps --open 2>&1 | tail -5   # nur falls lokal aussagekräftig
-\`\`\`
-Pausiere die Code-Generierung bis die exakte Signatur aus dem tatsächlichen Quellcode (nicht aus Trainingswissen) gelesen wurde. Erst dann weiterschreiben.
-
-**3. Handoff-Manifest (Kontext-Burnout-Schutz) — bei sehr großer/XL-Datei oder spürbarem Kontextverlust:**
-Wenn du bei einer Datei der Größenklasse XL merkst, dass frühere Details der Datei nicht mehr präsent sind, oder eine Teilaufgabe isoliert lösbar ist, ohne den restlichen Auftrag im Kopf zu behalten:
-\`\`\`bash
-# Komprimiertes Übergabe-Manifest statt Weiterarbeiten mit lückenhaftem Kontext:
-cat >> WORKING_STATE.md << 'HANDOFF_EOF'
-### Handoff — ${crate} (SESSION: $SESSION_HASH, TS: $TS)
-ZIEL: <1 Satz>
-STAND: <was ist bereits fertig/verifiziert>
-FEHLER: <exakte letzte Fehlermeldung, wörtlich>
-NÄCHSTER SCHRITT: <konkret, für eine frische Session ohne Vorwissen verständlich>
-HANDOFF_EOF
-\`\`\`
-Danach: Diese eine Teilaufgabe zu Ende bringen oder sauber als \`ANCHOR STATUS:BLOCKED\` mit obigem Manifest im Kommentar übergeben — nicht mit erodiertem Kontext weiter improvisieren.
-
-**4. Fuzzing & Adversarial Re-Test — bei Code, der kompiliert und die eigenen Tests besteht, aber noch nie unter Last/Edge-Cases lief:**
-"Grün" bei den bisher geschriebenen Tests beweist nicht Robustheit. Vor Abschluss eines nicht-trivialen Implementierungsschritts:
-\`\`\`rust
-// Isoliertes Adversarial-Skript für die neue/geänderte Funktion:
-// - Extreme Edge-Cases (leer, u64::MAX, negative/NaN falls f32, sehr lange Strings)
-// - Massive Payload-Größen (falls Parser/Deserialisierung betroffen)
-// - Fehlerhafte/korrupte Eingabetypen (falls Bytes/Deserialisierung betroffen)
-\`\`\`
-Löst dieses Skript einen Panic oder ein unerwartetes Verhalten aus: der Stacktrace/Befund wird zur Grundlage des NÄCHSTEN Loop-Schritts (PLAN neu formulieren) — nicht stillschweigend als Sonderfall ignorieren.
-
-**5. Sanity-Check & Exit-Condition — Rückfallebene, falls die vier obigen Routinen nicht greifen:**
-Definiere für jeden Schritt VOR der ersten Änderung den exakten Verifikationsbefehl (\`cargo test ${PKG(crate)} -- <testname>\`). Dieser Befehl UND die Eskalationsregel oben (${n} Zyklen) sind gemeinsam die einzige gültige Abbruchbedingung — kein Loop läuft ohne vorab definiertes Exit-Kriterium.
+**Task-Parameter dieser Sitzung:** Eskalation nach **${n}** erfolglosen Verify-Zyklen für denselben Schritt → STOP, Befund als offenen Tag dokumentieren (keine Ersatzlösung erzwingen). Vor DONE-Meldung: Vorher/Nachher-Testdiff als Nachweis (\`git stash\`/\`pop\` + \`cargo test\`-Diff), reine Prosa-Behauptung zählt nicht. Wiederverwendbare Erkenntnisse → \`AGENTS.md\` §4 oder \`AI-TAG\`.
 `;
 }
 
@@ -2324,11 +2196,7 @@ function DOD(crate) {
 
 > **Wichtig:** Scheitert ein Schritt, stoppe sofort und dokumentiere den Befund — führe die nächsten Punkte nicht aus, bevor der Fehler behoben oder explizit als bekannt markiert ist.
 
-- [ ] \`cargo check ${PKG(crate)} --all-features\` → 0 Fehler, 0 Warnungen
-- [ ] \`cargo clippy ${PKG(crate)} -- -D warnings\` → 0 Findings
-- [ ] \`cargo fmt --check ${PKG(crate)}\` → 0 Diffs
-- [ ] \`cargo test ${PKG(crate)} --all-features\` → alle Tests grün, kein FAILED
-- [ ] \`cargo check --workspace --exclude memfuse-tauri\` → gesamter Workspace kompiliert (kanonischer Befehl, AGENTS.md §2)
+- [ ] Gate-Stack (s.o.: check/clippy/fmt/test für ${PKG(crate)} + \`cargo check --workspace --exclude memfuse-tauri\`) grün, 0 Fehler/Warnungen/Diffs/FAILED
 - [ ] 0 neues \`.unwrap()\`/\`.expect()\` außerhalb von \`#[cfg(test)]\`-Blöcken
 - [ ] 0 neues \`unsafe\` ohne direkt darunter stehendes \`// SAFETY:\` Kommentar
 - [ ] 0 Test-Expected-Wert direkt aus Implementierungs-Formel abgeleitet (Anti-Mirroring)
@@ -2376,10 +2244,10 @@ ${SESSIONEND_BLOCK(crate)}`;
 // ═══════════════════════════════════════════════════════════════════
 const SUBSYSTEMS = [
   { id:'wal', crate:'memfuse-store', file:'crates/memfuse-store/src/wal.rs',
-    loc:'3596', size:'XL', icon:'📜', name:'WAL',
+    loc:'3598', size:'XL', icon:'📜', name:'WAL',
     desc:'Write-Ahead-Log — fsync-Disziplin, HMAC-Bindung, höchstes Crash-Safety-Risiko im gesamten Workspace' },
   { id:'lsm', crate:'memfuse-store', file:'crates/memfuse-store/src/lsm.rs',
-    loc:'3984', size:'XL', icon:'🗂️', name:'LSM-Tree',
+    loc:'4689', size:'XL', icon:'🗂️', name:'LSM-Tree',
     desc:'LsmStorage — StorageEngine-Trait-Implementierung, commit_mutex-Verwaltung, rollback_to_tx (größte Einzeldatei des Crates)' },
   { id:'mcp_sandbox', crate:'memfuse-mcp', file:'crates/memfuse-mcp/src/sandbox.rs',
     loc:'431', size:'M', icon:'🧪', name:'MCP-Sandbox',
@@ -2608,7 +2476,7 @@ ${APM_BLOCK(APM_ON)}
 ${DOD(crate)}`;
 },
 
-review: (crate, p, showPar) => {
+review_triad: (crate, p, showPar) => {
   return `${PREAMBLE(crate)}${FULL_PROTOCOL(crate)}
 ${ROLE_LOCK_BLOCK('reviewer', crate)}
 ---
@@ -4256,7 +4124,7 @@ function selTask(id) {
   SS.task = id;
   document.querySelectorAll('.thero').forEach(t => t.classList.remove('on'));
   if (document.getElementById('tt-'+id)) document.getElementById('tt-'+id).classList.add('on');
-  const names = {audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation'};
+  const names = {plan:'1. PLAN',implement:'2. IMPLEMENT',review_triad:'3. REVIEW',audit:'Tages-Audit',deep:'Tiefen-Audit',impl:'Implementierung',fix:'Fix/Refactor',test:'Test-Ausbau',sec:'Sicherheit',review:'Unabh. Review',adr:'Architekturentscheidung',deps:'Dependency-Audit',korrektur:'Governance-Korrekturen',calib:'Score-Kalibrierung',flaky:'Flaky-Diagnose',chaos:'Chaos-Engineering',replay:'Replay-Verifikation'};
   document.getElementById('cv-task').textContent = names[id] || id;
   document.getElementById('s-task').textContent = names[id] || id;
   generate();
