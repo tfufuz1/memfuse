@@ -229,7 +229,7 @@ Gemäß v9.0 existieren strikt zwei Feature-Kategorien (KERN vs. ENTFERNEN/VETO)
 | OFFEN-09 | Prompter | Prompter v25 Bootstrap-Präfix und Claim-Step nicht hart im HTML-Baukasten verankert | P2 | P17-Garantie |
 | OFFEN-10 | `memfuse-tauri` | Deprecated per ADR-077, physische Entfernung aus Repo steht aus (Frist: 2026-11-07) | P3 | Vision-Clean-Up |
 | OFFEN-11 | `memfuse-db` | F-03 EdgeReinforcement Flush-Hook in `crates/memfuse-db/src/maintenance_scheduler.rs` implementiert | P3 | Scheduler-Ausbau |
-| OFFEN-12 | `memfuse-embed` | `ImportanceClassifier` zurückgestellt bis Benchmark-Baseline steht | P3 | LongMemEval |
+| OFFEN-12 | `memfuse-ollama` | `score_importance_batch` (Wichtigkeits-Bewertung) — Benchmark-Baseline zur Kalibrierung der Schwellenwerte steht aus | P3 | LongMemEval |
 
 ---
 
