@@ -15,8 +15,8 @@
 use crate::collection::Collection;
 use crate::ProvenanceRecord;
 use memfuse_core::{
-    ContextChunk, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine, TokenBudget, TxId,
-    VectorIndex,
+    ContextChunk, ContextSegment, DocId, LlmTextGenerator, MemFuseError, Result, StorageEngine,
+    TokenBudget, TxId, VectorIndex,
 };
 
 /// Strategie für Context Compaction.
@@ -172,14 +172,17 @@ impl ContextCompactor {
             ));
         }
 
-        let prompt = format!(
-            "Fasse die folgenden Kontext-Informationen faktentreu zu einem prägnanten Überblick zusammen.\n\
-             Erhalte wichtige Details und wahre den Bezug zu den ursprünglichen Dokumenten.\n\n\
-             Kontext-Chunks:\n{}\n\nZusammenfassung:",
-            prompt_content
-        );
+        let segments: Vec<ContextSegment> = chunks
+            .iter()
+            .map(|chunk| ContextSegment {
+                chunk_id: chunk.doc_id.inner(),
+                text: chunk.content.as_str(),
+                model_fingerprint: None,
+                rope_offset: None,
+            })
+            .collect();
 
-        let summary_text = generator.generate(&prompt).await?;
+        let summary_text = generator.generate_with_context(&segments).await?;
 
         let estimated_tokens = crate::context::ContextManager::estimate_tokens(&summary_text);
 
