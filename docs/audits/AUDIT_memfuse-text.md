@@ -361,3 +361,87 @@ Chaos-Engineering-Audit and Tier 2 Concurrency/Robustness Pass completed for `cr
    - `cargo fmt --check -p memfuse-text` $\rightarrow$ **0 Diffs**
    - `cargo test -p memfuse-text --all-features` $\rightarrow$ **82 passed, 0 failed**
    - `cargo check --workspace --exclude memfuse-tauri` $\rightarrow$ **Clean build**
+
+---
+
+## Systematischer Crate-Audit & Vollständige Modulverifikation 2026-09-12
+
+**Datum:** 12. September 2026
+**Audit-Typ:** Systematischer Crate-Audit (Reverifikation + Bislang unbeachtete Module)
+**Crate:** `crates/memfuse-text` (Layer 2 — Volltextsuche)
+**Task-ID:** `JULES-20260912-AUDIT-MEMFUSE-TEXT`
+
+### 1. Executive Summary & Audit-Verdict
+Ein vollständiger, systematischer Audit der gesamten Crate `memfuse-text` wurde durchgeführt. Sowohl die zuvor als positive Kontrolle gewerteten Komponenten (`bm25.rs`, `morphology.rs`) als auch alle bislang unberücksichtigten Module (`inverted.rs`, `tokenizer.rs`, `lib.rs`) wurden anhand des 6-Punkte-Prüfkatalogs und der Anti-Pattern-Matrix auf Korrektheit, Stabilität und Sicherheit hin analysiert.
+
+**Verdict: GO / PASSED** — Die Einstufung von `memfuse-text` als positive Kontrolle bestätigt sich vollständig:
+- 0 Compiler-Warnungen, 0 Clippy-Findings (`-D warnings`).
+- 0 Unsafe-Blöcke (`#![forbid(unsafe_code)]`).
+- 100% Test-Pass-Rate (83 Unit/Property-Tests, 10 Integrationstest-Dateien).
+- Keine Regressionen, logischen Lücken oder Sicherheitsrisiken identifiziert.
+
+---
+
+### 2. Reverifikation der Positiv-Kontrollen
+
+#### A. BM25 IDF-Formel & Mathematischer Beweis (`bm25.rs`)
+In `score_term_with_params` wird die Robertson-Spärck-Jones BM25+ Log-IDF-Formel verwendet:
+$$\text{IDF}(q_i) = \ln \left( 1.0 + \frac{N - df + 0.5}{df + 0.5} \right)$$
+- **Mathematische Garantie für $\text{IDF} \ge 0.0$:**
+  1. $df$ wird strikt auf $N$ geklemmt: $df_{\text{clamped}} = \min(df, N)$, womit $0 \le df_{\text{clamped}} \le N$.
+  2. Zähler: $N - df_{\text{clamped}} + 0.5 \ge 0.5 > 0$.
+  3. Nenner: $df_{\text{clamped}} + 0.5 \ge 0.5 > 0$.
+  4. Argument: $\text{arg} = 1.0 + \frac{N - df_{\text{clamped}} + 0.5}{df_{\text{clamped}} + 0.5} \ge 1.0 + \frac{0.5}{N + 0.5} > 1.0$.
+  5. Logarithmus: $\ln(\text{arg}) > \ln(1.0) = 0.0$.
+  6. Für $N=0$, $df=0$ oder $tf=0$ liefert die Funktion per Guard-Clause sofort $0.0$.
+  $\implies \text{IDF} \ge 0.0$ und $\text{Score} \ge 0.0$ gelten strikt für alle Eingabewerte $df, N \in \mathbb{N}_0$. Negative IDFs oder $NaN$-Ergebnisse sind mathematisch ausgeschlossen.
+- **Score-Aggregation über mehrere Terme & Long-Document Stability:**
+  - Der maximale Score eines einzelnen Terms ist durch $(k_1 + 1) \cdot \ln(2N + 1)$ beschränkt. Bei $N = 2^{32}-1$ beträgt $\ln(2N+1) \approx 22.87$, somit ist $\text{Score}_{\text{max}} \le 2.5 \cdot 22.87 \approx 57.18$.
+  - Auch bei Akkumulation über 1.000.000 Query-Terme liegt der Gesamtwert bei $\approx 5.7 \cdot 10^7 \ll 3.4 \cdot 10^{38}$ (`f32::MAX`). Ein Float-Overflow ist ausgeschlossen.
+  - Da alle Einzelschnitt-Scores strikt nicht-negativ sind ($\text{Score}_i \ge 0$), tritt keine katastrophale Auslöschung (Subtraktion großer positiver Zahlen) auf.
+
+#### B. Char-Boundary Slicing Safety (`morphology.rs` & `tokenizer.rs`)
+- In `morphology.rs`:
+  - `norm_stem`: Explizite Absicherung durch `if norm_sub.is_char_boundary(stem_len)`.
+  - `sub`: Explizite Absicherungen durch `token.is_char_boundary(i)` und `token.is_char_boundary(j)`.
+  - Backtracking-Path: Explizite Absicherung durch `if token.is_char_boundary(prev) && token.is_char_boundary(curr)`.
+- In `tokenizer.rs`:
+  - `segment_text`: Generierung via `Regex::find`, das von der Standardbibliothek garantiert auf UTF-8 Char-Boundaries endet. `clean_protected_match` erzeugtSubslicing auf `char`-Prädikaten. Bei leeren Treffern wird `last_idx += mat.end()` ausgeführt, was Endlosschleifen verhindert.
+- **Nicht-UTF-8 / Raw-Byte Inputs:**
+  - Konvertierung von Rohdaten erfolgt über `String::from_utf8_lossy()` bzw. `std::str::from_utf8()`. Invalide Byte-Sequenzen werden durch `U+FFFD` (3-Byte UTF-8) ersetzt, wodurch invalides Slicing ausgeschlossen ist.
+
+---
+
+### 3. Tiefenaudit der bisher nicht auditierten Module
+
+#### A. `crates/memfuse-text/src/inverted.rs` (LSM Inverted Index)
+1. **MVCC Snapshot Isolation:** `search_bm25_at` pinnt die Sequenznummer `seq` zu Beginn der Abfrage. Alle Folge-Schnittstellen (`scan_prefix_at`, `get_at_seq`) lesen strikt auf diesem Zustand $\implies$ Strikte Isolierung uncommitteter Transaktionen.
+2. **Sperrhierarchie & Async Lock Safety:**
+   - `commit_lock` (`tokio::sync::Mutex<()>`) steuert die serielle Verpflichtung.
+   - `staged_stats` (`parking_lot::Mutex<HashMap<TxId, StagedStatsChange>>`) ist ein synchroner Kurzzeit-Spinlock.
+   - **Invariante:** `staged_stats` wird vor `.await`-Punkten vollständig freigegeben. Verifiziert in `commit_stats`: Lock-Scope endet explizit vor `commit_lock.lock().await`.
+3. **Ressourcen-Schranken & OOM-Schutz:**
+   - `MAX_TEXT_BYTES = 10 MB`: Strikt geprüft in `upsert_document` und `search_bm25_at`.
+   - `MAX_STAGED_TRANSACTIONS = 10.000`: Strikt geprüft in `stage_stats_change`.
+   - `MAX_SEARCH_K`: Geklemmt via `k.min(MAX_SEARCH_K)` in `search_bm25_at`.
+4. **Statistik-Caching:** Fast Fixed-Point Representation `avg_doc_len_x1000` als Atomic `u64` ermöglicht thread-sichere BM25-Berechnungen ohne Locks.
+5. **Tombstone-Abwicklung (`resolve_tombstones`):** Korrekte Bincode-Fehlerbehandlung via `map_err` verhindert unabsichtliches Löschen valider Postings.
+
+#### B. `crates/memfuse-text/src/tokenizer.rs` (Tokenisierung & Schutzbereiche)
+1. **URL- & E-Mail-Schutz:**
+   - Regex-basierte Erkennung schützt URLs (`https://...`) und E-Mails (`user@domain.com`) vor der Zerstörung durch Wortgrenzen-Splitting.
+2. **`GermanMorphTokenizer` Integration:**
+   - Nutzt global geordneten `GermanCompoundSplitter` via `OnceLock<Arc<GermanCompoundSplitter>>`.
+   - Eingaben werden vor dem Morphologie-Aufruf sauber mit `normalize_umlauts()` und `to_lowercase()` präpariert.
+
+#### C. `crates/memfuse-text/src/lib.rs` (Facade & Unsafe-Invariante)
+1. **Unsafe-Safety:** `#![forbid(unsafe_code)]` strikt an oberster Stelle deklariert. Exactly **0** `unsafe`-Blöcke in der gesamten Crate.
+2. **`Bm25Scorer` Integration:** Reines Wrapper-Muster, leitet alle `TextIndex`-Aufrufe ohne Nebeneffekte an `InvertedIndex` weiter.
+
+---
+
+### 4. Verifikations-Ergebnisse
+- `cargo check -p memfuse-text --all-features` $\rightarrow$ **0 Fehler, 0 Warnungen**
+- `cargo clippy -p memfuse-text --all-features -- -D warnings` $\rightarrow$ **0 Findings**
+- `cargo test -p memfuse-text --all-features` $\rightarrow$ **83 passed, 0 failed**
+- `#![forbid(unsafe_code)]` $\rightarrow$ **0 unsafe blocks**
