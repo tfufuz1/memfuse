@@ -8,8 +8,11 @@
 use memfuse_calibration::ReplicatorState;
 use memfuse_core::traits::embedding::EmbeddingError;
 use memfuse_core::traits::{BoxFuture, EmbeddingProvider, TextEmbeddingEngine};
-use memfuse_core::{ConfigFingerprint, DocId, StorageEngine, VectorIndex};
+#[cfg(feature = "replicator-dynamics-weights")]
+use memfuse_core::ConfigFingerprint;
+use memfuse_core::{DocId, StorageEngine, VectorIndex};
 use memfuse_db::collection::Collection;
+#[cfg(feature = "replicator-dynamics-weights")]
 use memfuse_db::fusion::{weighted_reciprocal_rank_fusion_with_options, MetadataMergePriority};
 use memfuse_graph::csr::CsrGraph;
 use memfuse_index::{HnswConfig, HnswIndex};
@@ -47,6 +50,7 @@ impl SimpleRng {
         min + (self.next_u64() % (max - min))
     }
 
+    #[cfg(feature = "replicator-dynamics-weights")]
     fn gen_range_f32(&mut self, min: f32, max: f32) -> f32 {
         let frac = (self.next_u64() as f64) / (u64::MAX as f64);
         (min as f64 + frac * ((max - min) as f64)) as f32
@@ -305,6 +309,7 @@ async fn chaos_gpu_busy_disk_full_no_orphaned_embedding() {
 }
 
 /// Scenario B: Tokio task cancellation during weighted fusion preserves ReplicatorState weight invariant.
+#[cfg(feature = "replicator-dynamics-weights")]
 #[tokio::test]
 #[cfg(feature = "replicator-dynamics-weights")]
 #[ignore]
@@ -405,6 +410,7 @@ async fn chaos_tokio_abort_during_weighted_fusion_preserves_weight_invariant() {
 }
 
 /// Scenario C: Fingerprint change during pinned checkpoint and inference causes no deadlock.
+#[cfg(feature = "replicator-dynamics-weights")]
 #[tokio::test]
 #[cfg(feature = "replicator-dynamics-weights")]
 #[ignore]
