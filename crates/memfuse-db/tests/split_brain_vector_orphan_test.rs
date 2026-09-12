@@ -1,5 +1,5 @@
 //! Split-Brain & Idempotency Integration Testsuite for Vector-ID ↔ Document Consistency.
-// ANCHOR[TEST:SPLIT_BRAIN_CONSISTENCY] STATUS:IN_PROGRESS (TS:2026-09-09T22:00:00Z) (SESSION: 5afeaf78)
+// ANCHOR[TEST:SPLIT_BRAIN_CONSISTENCY] STATUS:IN_PROGRESS (TS:2026-09-09T22:00:00Z) (SESSION: 504d02fc)
 
 use memfuse_core::{DocId, StorageEngine, VectorIndex};
 use memfuse_db::context_compaction::ConsolidationSession;
