@@ -22,7 +22,7 @@ pub use prompt_injection::{
 // HOTSPOTS:    run_stdio_loop(), handle_request(), read_line_bounded()
 // SIEHE AUCH:  ADR-010, rules/async-io.md
 
-use memfuse_core::{DocId, EmbeddingProvider, MemFuseError, MAX_SEARCH_K};
+use memfuse_core::{DocId, EmbeddingProvider, MemFuseError, StorageEngine, MAX_SEARCH_K};
 use memfuse_db::chunker::{ChunkerConfig, MarkdownChunker};
 use memfuse_db::MemFuse;
 use protocol::{response_from_error, JsonRpcRequest, JsonRpcResponse, McpError};
@@ -407,6 +407,16 @@ impl McpServer {
                                 "type": "object",
                                 "properties": {}
                             }
+                        },
+                        {
+                            "name": "memfuse_consolidate",
+                            "description": "Manueller, synchroner Trigger für einen sofortigen Speicher-Konsolidierungslauf (Structural Consolidation Pass und optionale Synthese) auf der angegebenen Collection. Die automatische Hintergrund-Konsolidierung (ConsolidationEngine) läuft davon unberührt weiter.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "collection": { "type": "string", "default": "default" }
+                                }
+                            }
                         }
                     ]
                 }),
@@ -447,7 +457,7 @@ impl McpServer {
                 }
             }
 
-            "memfuse_search" | "memfuse_insert" | "memfuse_get" | "memfuse_collections" => {
+            "memfuse_search" | "memfuse_insert" | "memfuse_get" | "memfuse_collections" | "memfuse_consolidate" => {
                 let tool_name = req.method.as_str();
                 match self
                     .sandbox
@@ -814,6 +824,86 @@ impl McpServer {
             "memfuse_collections" => {
                 let names = self.db.list_collections().await.map_err(McpError::from)?;
                 Ok(json!({ "collections": names }))
+            }
+
+            "memfuse_consolidate" => {
+                let col_name = if let Some(col_val) = args.get("collection") {
+                    let s = col_val.as_str().ok_or_else(|| {
+                        McpError::invalid_params("Invalid params: 'collection' must be a string")
+                    })?;
+                    if s.trim().is_empty() {
+                        "default"
+                    } else {
+                        validate_collection_name(s)?;
+                        s
+                    }
+                } else {
+                    "default"
+                };
+
+                let col = self.db.collection(col_name).await.map_err(McpError::from)?;
+
+                // Turns chronologisch aus der Collection lesen (analog zur ConsolidationEngine)
+                let user_key_prefix = col.user_key_prefix();
+                let entries = col
+                    .storage()
+                    .scan_prefix(&user_key_prefix)
+                    .await
+                    .map_err(McpError::from)?;
+
+                let mut turns: Vec<(DocId, Vec<f32>)> = Vec::new();
+                for (k, v) in entries {
+                    if col_name == "default" && k.starts_with(b"__") {
+                        continue;
+                    }
+                    if let Ok(stored) = serde_json::from_slice::<serde_json::Value>(&v) {
+                        if let (Some(id_str), Some(arr)) = (
+                            stored.get("id").and_then(|i| i.as_str()),
+                            stored.get("embedding").and_then(|e| e.as_array()),
+                        ) {
+                            if let Ok(doc_id) = DocId::from_key(id_str) {
+                                let mut vec = Vec::with_capacity(arr.len());
+                                for elem in arr {
+                                    if let Some(f) = elem.as_f64() {
+                                        vec.push(f as f32);
+                                    }
+                                }
+                                turns.push((doc_id, vec));
+                            }
+                        }
+                    }
+                }
+
+                let turns_scanned = turns.len();
+                let (consolidation_res, synthesis_res) =
+                    memfuse_db::execute_background_consolidation(
+                        col.as_ref(),
+                        &turns,
+                        &memfuse_db::memory_consolidation::ConsolidationConfig::default(),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                    .map_err(McpError::from)?;
+
+                let duplicates_tombstoned_count = consolidation_res.duplicates_tombstoned.len();
+                let cascade_tombstones_count = consolidation_res.cascade_edge_tombstones_needed.len();
+                let synthesized_count = synthesis_res
+                    .as_ref()
+                    .map(|s| s.synthesized.len())
+                    .unwrap_or(0);
+
+                Ok(json!({
+                    "ok": true,
+                    "collection": col_name,
+                    "turns_scanned": turns_scanned,
+                    "segments_created": consolidation_res.segments_created,
+                    "duplicates_tombstoned": duplicates_tombstoned_count,
+                    "synthesized_chunks": synthesized_count,
+                    "cascade_edge_tombstones_needed": cascade_tombstones_count,
+                    "cascade_errors": consolidation_res.cascade_errors,
+                }))
             }
 
             other => Err(McpError::invalid_params(format!(
