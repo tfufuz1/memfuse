@@ -99,16 +99,20 @@ impl PartialEq for HeapEntry {
 impl Eq for HeapEntry {}
 
 // DONE(memfuse-impl): Robust NaN and tie-breaking handling in HeapEntry for RRF fusion [ref:eigenbau-rrf-fusion]
+fn cmp_scores(a: f32, b: f32) -> std::cmp::Ordering {
+    match (a.is_nan(), b.is_nan()) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.total_cmp(&b),
+    }
+}
+
 impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // We want BinaryHeap (a max-heap by default) to keep the worst item at the top (peek),
         // so that peek() returns the candidate with the lowest score (or highest ID on tie).
         // Therefore, lower score => Greater priority in max-heap.
-        // DONE(memfuse-impl): BinaryHeap HeapEntry uses f32::total_cmp for NaN score safety and secondary ID comparison for deterministic tie-breaking. [ref:eigenbau-rrf-fusion]
-        other
-            .result
-            .score
-            .total_cmp(&self.result.score)
+        cmp_scores(other.result.score, self.result.score)
             .then_with(|| self.result.id.cmp(&other.result.id))
     }
 }
