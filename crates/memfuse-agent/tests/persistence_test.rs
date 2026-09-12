@@ -90,6 +90,12 @@ async fn test_agent_persistence_and_recovery() {
         .unwrap();
     assert_eq!(final_doc.metadata.unwrap()["status"], "Completed");
 
+    // Drop first DB handle and engine to simulate crash/restart boundary cleanly
+    drop(state_collection);
+    drop(ctx);
+    drop(engine);
+    drop(db);
+
     // Test Replay (Simulation of recovery)
     let db2 = Arc::new(
         MemFuse::open_with_config(
@@ -113,7 +119,10 @@ async fn test_agent_persistence_and_recovery() {
     )
     .unwrap();
 
-    engine
+    let mut engine2 = OrchestratorEngine::new(db2.inner_storage());
+    engine2.try_register_tool(Box::new(IncrementTool)).unwrap();
+
+    engine2
         .replay_from(&mut ctx2, "task_1")
         .await
         .expect("Replay failed");
@@ -121,11 +130,6 @@ async fn test_agent_persistence_and_recovery() {
     // Deep assertions post-recovery
     assert_eq!(ctx2.current_node, "task_1");
     assert_eq!(ctx2.step_count, 1);
-
-    // Continue execution post-recovery to completion
-    let engine2 = OrchestratorEngine::new(db2.inner_storage());
-    let mut engine2 = engine2;
-    engine2.try_register_tool(Box::new(IncrementTool)).unwrap();
     engine2
         .run(&mut ctx2, &graph)
         .await
