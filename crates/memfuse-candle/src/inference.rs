@@ -9,8 +9,9 @@ use candle_core::quantized::gguf_file;
 use candle_core::Device;
 use candle_transformers::generation::LogitsProcessor;
 use candle_transformers::models::quantized_llama::ModelWeights;
-use memfuse_core::traits::BoxFuture;
-use memfuse_core::{ConfigFingerprint, LlmTextGenerator, MemFuseError, Result};
+use futures_util::stream;
+use memfuse_core::traits::{BoxFuture, BoxStream};
+use memfuse_core::{ConfigFingerprint, LlmTextGenerator, LlmTextGeneratorStreaming, MemFuseError, Result};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,6 +28,20 @@ pub trait CandleModelInner: Send {
         tokenizer: &tokenizers::Tokenizer,
         device: &Device,
     ) -> Result<String>;
+
+    /// Generates text stream for a given prompt, invoking `on_token` for each generated token or chunk.
+    /// Returns early if `on_token` returns `false`.
+    fn generate_stream(
+        &mut self,
+        prompt: &str,
+        tokenizer: &tokenizers::Tokenizer,
+        device: &Device,
+        on_token: &mut dyn FnMut(String) -> bool,
+    ) -> Result<String> {
+        let text = self.generate(prompt, tokenizer, device)?;
+        on_token(text.clone());
+        Ok(text)
+    }
 }
 
 /// LLM Text Generator implementation powered by Candle inference engine.
@@ -236,6 +251,21 @@ impl CandleModelInner for QuantizedLlamaModel {
         tokenizer: &tokenizers::Tokenizer,
         device: &Device,
     ) -> Result<String> {
+        let mut full_output = String::new();
+        self.generate_stream(prompt, tokenizer, device, &mut |chunk| {
+            full_output.push_str(&chunk);
+            true
+        })?;
+        Ok(full_output)
+    }
+
+    fn generate_stream(
+        &mut self,
+        prompt: &str,
+        tokenizer: &tokenizers::Tokenizer,
+        device: &Device,
+        on_token: &mut dyn FnMut(String) -> bool,
+    ) -> Result<String> {
         let tokens = tokenizer
             .encode(prompt, true)
             .map_err(|e| MemFuseError::InvalidInput(format!("Failed to tokenize prompt: {e}")))?;
@@ -249,6 +279,7 @@ impl CandleModelInner for QuantizedLlamaModel {
         let mut logits_processor = LogitsProcessor::new(299792458, Some(0.7), Some(0.9));
         let mut all_tokens = prompt_tokens.to_vec();
         let mut generated_tokens = Vec::new();
+        let mut full_output = String::new();
 
         let mut index_pos = 0;
         for i in 0..self.sample_len {
@@ -291,17 +322,22 @@ impl CandleModelInner for QuantizedLlamaModel {
             generated_tokens.push(next_token);
             index_pos += context_len;
 
+            if let Ok(piece) = tokenizer.decode(&[next_token], true) {
+                if !piece.is_empty() {
+                    full_output.push_str(&piece);
+                    if !on_token(piece) {
+                        break;
+                    }
+                }
+            }
+
             // Check EOS / stop tokens (e.g. tokenizer eos token if known or common Llama eos token ID 2)
             if next_token == 2 || next_token == 128001 || next_token == 128009 {
                 break;
             }
         }
 
-        let output_text = tokenizer.decode(&generated_tokens, true).map_err(|e| {
-            MemFuseError::Internal(format!("Failed to decode generated tokens: {e}"))
-        })?;
-
-        Ok(output_text)
+        Ok(full_output)
     }
 }
 
@@ -316,6 +352,28 @@ impl CandleModelInner for DefaultCandleLlmModel {
         _device: &Device,
     ) -> Result<String> {
         Ok(format!("[MockCandle] Response for prompt: {prompt}"))
+    }
+
+    fn generate_stream(
+        &mut self,
+        prompt: &str,
+        _tokenizer: &tokenizers::Tokenizer,
+        _device: &Device,
+        on_token: &mut dyn FnMut(String) -> bool,
+    ) -> Result<String> {
+        let text = format!("[MockCandle] Response for prompt: {prompt}");
+        let words: Vec<&str> = text.split_whitespace().collect();
+        for (i, word) in words.iter().enumerate() {
+            let chunk = if i == 0 {
+                word.to_string()
+            } else {
+                format!(" {word}")
+            };
+            if !on_token(chunk) {
+                break;
+            }
+        }
+        Ok(text)
     }
 }
 
@@ -334,6 +392,36 @@ impl LlmTextGenerator for CandleLlmClient {
             .await
             .map_err(|e| MemFuseError::Internal(format!("Candle inference task join error: {e}")))?
         })
+    }
+}
+
+impl LlmTextGeneratorStreaming for CandleLlmClient {
+    fn generate_stream<'a>(
+        &'a self,
+        prompt: &'a str,
+        _config: &'a ConfigFingerprint,
+    ) -> BoxStream<'a, Result<String>> {
+        let model = Arc::clone(&self.model);
+        let tokenizer = self.tokenizer.clone();
+        let device = self.device.clone();
+        let prompt_owned = prompt.to_string();
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String>>(32);
+
+        tokio::task::spawn_blocking(move || {
+            let mut guard = model.blocking_lock();
+            let res = guard.generate_stream(&prompt_owned, &tokenizer, &device, &mut |chunk| {
+                tx.blocking_send(Ok(chunk)).is_ok()
+            });
+
+            if let Err(err) = res {
+                let _ = tx.blocking_send(Err(err));
+            }
+        });
+
+        Box::pin(stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|item| (item, rx))
+        }))
     }
 }
 
@@ -387,6 +475,48 @@ mod tests {
 
         let output = client.generate("Hello world").await.unwrap();
         assert_eq!(output, "Hello world -> Generated Completion");
+    }
+
+    #[tokio::test]
+    async fn test_candle_llm_client_generate_stream() {
+        use futures_util::StreamExt;
+
+        let mock_model = Box::new(MockCandleModel {
+            response: "Generated Completion".to_string(),
+        });
+        let fingerprint = ModelFingerprint {
+            hash: [1u8; 32],
+            model_id: "mock_model.gguf".to_string(),
+            quantization: "Q4_K_M".to_string(),
+        };
+        let tokenizer_bytes = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": null,
+            "post_processor": null,
+            "decoder": null,
+            "model": { "type": "BPE", "dropout": null, "unk_token": null, "continuing_subword_prefix": null, "end_of_word_suffix": null, "fuse_unk": false, "vocab": {}, "merges": [] }
+        }"#;
+        let tokenizer = tokenizers::Tokenizer::from_bytes(tokenizer_bytes.as_bytes())
+            .map_err(|e| e.to_string())
+            .unwrap();
+
+        let client = CandleLlmClient::new(Device::Cpu, mock_model, fingerprint.clone(), tokenizer);
+        let cfg = ConfigFingerprint::new("mock_model.gguf", "Q4_K_M", "default", 0.0);
+
+        let sync_resp = client.generate("Hello world").await.unwrap();
+
+        let mut stream = client.generate_stream("Hello world", &cfg);
+        let mut assembled = String::new();
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res.unwrap();
+            assembled.push_str(&chunk);
+        }
+
+        assert_eq!(sync_resp, assembled);
     }
 
     #[test]

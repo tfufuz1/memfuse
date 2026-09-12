@@ -24,6 +24,9 @@ use std::pin::Pin;
 /// Type alias for a pinned, heap-allocated `Future` that is `Send` and dyn-compatible.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Type alias for a pinned, heap-allocated `Stream` that is `Send` and dyn-compatible.
+pub type BoxStream<'a, T> = Pin<Box<dyn futures_util::stream::Stream<Item = T> + Send + 'a>>;
+
 /// Trait and mock definitions for text embedding providers and LLMs.
 pub mod embedding;
 pub use embedding::*;
@@ -497,11 +500,6 @@ pub trait TextEmbeddingEngine: Send + Sync + 'static {
     }
 }
 
-/// Abstract contract for LLM text generation (summarization, importance evaluation, query expansion).
-pub trait LlmTextGenerator: Send + Sync + 'static {
-    /// Generates text for a given prompt using an LLM.
-    fn generate<'a>(&'a self, prompt: &'a str) -> BoxFuture<'a, Result<String>>;
-}
 
 /// Trait-Abstraktion für LLM-Synthesizer zur Segment-Zusammenfassung (REM-Phase).
 pub trait SegmentSynthesizer: Send + Sync {
