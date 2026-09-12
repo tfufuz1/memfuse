@@ -1,28 +1,13 @@
 {
   "claims": [
     {
-      "krate": "memfuse-db",
-      "issue": "B4-observability",
-      "timestamp": "2026-09-12T13:45:19.458669124+00:00",
-      "session_id": "9427804497968147708",
-      "active": true,
-      "expires_at": "2026-09-12T17:45:19.458617898+00:00"
-    },
-    {
       "krate": "memfuse-router",
-      "issue": "B4-observability",
-      "timestamp": "2026-09-12T13:45:20.133399676+00:00",
-      "session_id": "9427804497968147708",
-      "active": true,
-      "expires_at": "2026-09-12T17:45:20.133383107+00:00"
-    },
-    {
-      "krate": "memfuse-calibration",
-      "issue": "B4-observability",
-      "timestamp": "2026-09-12T13:45:20.668413878+00:00",
-      "session_id": "9427804497968147708",
-      "active": true,
-      "expires_at": "2026-09-12T17:45:20.668391711+00:00"
+      "issue": "FIX-ROUTER-1-docs",
+      "timestamp": "2026-09-12T13:46:07.517649038+00:00",
+      "session_id": "9821766463430893175",
+      "active": false,
+      "expires_at": "2026-09-12T17:46:07.517633575+00:00",
+      "released_at": "2026-09-12T13:52:32.403973247+00:00"
     }
   ]
 }

@@ -88,9 +88,14 @@ pub mod collection;
 pub mod consolidation_executor;
 pub mod context;
 pub mod context_compaction;
+pub mod export;
+pub mod import;
 pub mod memory_consolidation;
 pub mod synthesis_phase;
 pub mod temporal_filter;
+
+pub use export::{ExportCollectionV1, ExportDocumentV1, ExportMemoryV1, ExportRelationV1, SCHEMA_VERSION_V1};
+pub use import::ImportSummary;
 
 #[cfg(feature = "background-maintenance")]
 pub use background_workers::start_decay_cleanup_worker;
@@ -101,6 +106,7 @@ pub use background_workers::{
 #[allow(deprecated)]
 pub use consolidation_executor::{
     execute_background_consolidation, execute_consolidation_pass, execute_sleep_cycle,
+    ConsolidationEngine,
 };
 pub use context_compaction::{
     cleanup_orphaned_consolidation_intents, CompactedContext, CompactionStrategy,
@@ -321,9 +327,10 @@ impl Default for CommunityDetectionConfig {
 /// Specifying the embedding engine backend.
 ///
 /// Note: Ollama remains available via explicit configuration (`EmbeddingBackend::Ollama(...)`).
+/// Candle provides a pure Rust native embedding provider without C++ runtime dependencies (true air-gapped mode).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EmbeddingBackend {
-    /// ONNX Runtime local embedding provider (default).
+    /// ONNX Runtime local embedding provider (default). Requires C++ ONNX Runtime library dependencies.
     Onnx {
         /// Name or identifier of the ONNX embedding model (default: "nomic-embed-text").
         model_name: String,
@@ -336,6 +343,13 @@ pub enum EmbeddingBackend {
         base_url: String,
         /// Model identifier for Ollama embeddings (default: "nomic-embed-text").
         model: String,
+    },
+    /// Native Candle pure-Rust local embedding provider (pure Rust, true air-gap, no C++ runtime).
+    Candle {
+        /// Local directory containing model weights (safetensors/gguf) and tokenizer.json.
+        model_dir: std::path::PathBuf,
+        /// Quantization grade (e.g., "Q4KM", "Q8_0", "f32"). Default is Q4KM if None.
+        quantization: Option<String>,
     },
     /// Disabled / manual embedding provider.
     None,
@@ -373,6 +387,12 @@ pub struct MemFuseConfig {
     pub community_detection: CommunityDetectionConfig,
     /// Configured text embedding engine backend (default: ONNX with nomic-embed-text).
     pub embedding_backend: EmbeddingBackend,
+    /// Whether background consolidation engine is enabled.
+    pub consolidation_enabled: bool,
+    /// Interval between background consolidation passes.
+    pub consolidation_interval: std::time::Duration,
+    /// Maximum LLM calls allowed per consolidation cycle (APM-Unbegrenztes-LLM-Kosten-Risiko).
+    pub max_llm_calls_per_cycle: usize,
 }
 
 impl Default for MemFuseConfig {
@@ -387,6 +407,9 @@ impl Default for MemFuseConfig {
             orphan_registry_path: None,
             community_detection: CommunityDetectionConfig::default(),
             embedding_backend: EmbeddingBackend::default(),
+            consolidation_enabled: true,
+            consolidation_interval: std::time::Duration::from_secs(6 * 3600),
+            max_llm_calls_per_cycle: 10,
         }
     }
 }
@@ -501,8 +524,8 @@ impl MemFuse {
             expiry_reaper_interval: config.expiry_reaper_interval,
             community_detection_threshold: config.community_detection.auto_trigger_threshold,
             collections: tokio::sync::RwLock::new(std::collections::HashMap::new()),
-            cancel_token,
-            task_tracker,
+            cancel_token: cancel_token.clone(),
+            task_tracker: task_tracker.clone(),
             embedder: parking_lot::RwLock::new(None),
             orphan_registry,
         };
@@ -522,12 +545,32 @@ impl MemFuse {
         db.init_embedding_backend(&config.embedding_backend).await?;
 
         // Initialize the default collection backwards compatibility
-        let _ = db.collection("default").await?;
+        let default_col = db.collection("default").await?;
+
+        if config.consolidation_enabled {
+            let synthesis_config = memory_consolidation::SynthesisConfig {
+                max_llm_calls_per_cycle: config.max_llm_calls_per_cycle as u32,
+                ..Default::default()
+            };
+            let engine = Arc::new(consolidation_executor::ConsolidationEngine::new(
+                default_col,
+                memory_consolidation::ConsolidationConfig::default(),
+                synthesis_config,
+                config.consolidation_interval,
+                cancel_token.clone(),
+            ));
+            let engine_handle = engine.start();
+            task_tracker.spawn(async move {
+                if let Err(e) = engine_handle.await {
+                    tracing::warn!(error = %e, "ConsolidationEngine task failed or was cancelled");
+                }
+            });
+        }
 
         Ok(db)
     }
 
-    /// Initializes configured embedding backend (ONNX or Ollama).
+    /// Initializes configured embedding backend (ONNX, Ollama, or Candle).
     async fn init_embedding_backend(&self, backend: &EmbeddingBackend) -> Result<()> {
         match backend {
             EmbeddingBackend::Onnx { model_name, cache_dir } => {
@@ -550,6 +593,15 @@ impl MemFuse {
             EmbeddingBackend::Ollama { base_url, model } => {
                 let embedder = memfuse_ollama::OllamaEmbedder::new(base_url, model);
                 let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(embedder);
+                self.set_embedder(embedder_arc).await?;
+            }
+            EmbeddingBackend::Candle { model_dir, quantization } => {
+                let quant = quantization
+                    .as_deref()
+                    .and_then(|q| q.parse().ok())
+                    .unwrap_or(memfuse_candle::CandleQuantization::Q4KM);
+                let client = memfuse_candle::CandleEmbedClient::from_dir(model_dir, quant)?;
+                let embedder_arc: Arc<dyn TextEmbeddingEngine> = Arc::new(client);
                 self.set_embedder(embedder_arc).await?;
             }
             EmbeddingBackend::None => {}
@@ -2264,6 +2316,33 @@ mod tests {
             .await
             .expect("open_with_config");
         assert!(db.embedder.read().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_explicit_candle_backend_config_e2e() {
+        let tmp = TempDir::new().expect("temp dir");
+        let model_dir = tmp.path().join("mock_candle_model");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+        let config = MemFuseConfig {
+            dimension: 384,
+            embedding_backend: EmbeddingBackend::Candle {
+                model_dir,
+                quantization: Some("Q4KM".to_string()),
+            },
+            ..Default::default()
+        };
+
+        let db = MemFuse::open_with_config(tmp.path().join("db"), config)
+            .await
+            .expect("open_with_config");
+
+        assert!(db.embedder.read().is_some());
+        let embedder = db.embedder.read().as_ref().cloned().expect("embedder");
+        let vec = embedder.embed("test candle document").await.expect("embed test");
+        assert_eq!(vec.len(), 384);
+        let norm_sq: f32 = vec.iter().map(|v| v * v).sum();
+        assert!((norm_sq.sqrt() - 1.0).abs() < 1e-4);
     }
 
     #[tokio::test]

@@ -2048,7 +2048,6 @@ dependencies = [
  "criterion",
  "libc",
  "memfuse-calibration",
- "memfuse-candle",
  "memfuse-checkpoint",
  "memfuse-core",
  "memfuse-embed",
