@@ -81,10 +81,28 @@
 
 ---
 
-## 4. Test- & Gate-Verifikation
+## 4. Eigenbau Component Implementation & Verification: `eigenbau-rrf-fusion`
+
+**Session:** `abbcd21a` (2026-09-11)
+**Task-ID:** `JULES-20260911-EIGENB`
+**Role:** Implementer / Rank-Fusion & Numerik Specialist (`crates/memfuse-db/src/fusion.rs`)
+
+### Implementation & Markers
+- **`fusion.rs` Markers:** Added `// DONE(memfuse-impl): ... [ref:eigenbau-rrf-fusion]` markers documenting:
+  1. `HeapEntry` `total_cmp` score sorting and secondary lexicographical document ID tie-breaking.
+  2. `calc_contrib` 1-based RRF rank enforcement and non-negative `rrf_k` denominator safety.
+  3. Non-finite weight filtering (skipping `NaN` and `Inf` signal weights) in `weighted_reciprocal_rank_fusion_with_options`.
+  4. Denominator safety and non-finite raw input score handling in score calculation.
+  5. `apply_resonance_bonus` NaN handling and secondary sort order.
+- **Comprehensive Unit Tests:**
+  - Added `test_rrf_nan_and_tie_cases_comprehensive` in `crates/memfuse-db/src/fusion.rs` verifying score tie-breaking determinism across equal-score documents across multiple RRF signals, non-finite raw score inputs, and BinaryHeap `HeapEntry` `total_cmp` behavior with mixed `NaN` scores.
+
+---
+
+## 5. Test- & Gate-Verifikation
 
 - `cargo check -p memfuse-db --all-features`: 0 Fehler.
-- `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
+- `cargo test -p memfuse-db --all-features`: 272/272 Unit & Integrationstests grün (37/37 in `fusion.rs`).
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
 

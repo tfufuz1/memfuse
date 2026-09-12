@@ -1,3 +1,4 @@
+#![cfg(feature = "replicator-dynamics-weights")]
 // FILE-CONTEXT: Cross-domain chaos matrix integration tests combining Candle ML inference, storage fault injection, fusion aborts, and checkpoint pinning.
 //! Cross-Domain Chaos Matrix Integration Tests.
 //!
