@@ -60,6 +60,14 @@
       "session_id": "8548725205189361830",
       "active": true,
       "expires_at": "2026-09-12T13:38:46.521448283+00:00"
+    },
+    {
+      "krate": "ci-workflows",
+      "issue": "P0-6-shell-commit-gate",
+      "timestamp": "2026-09-12T11:04:13.310958646+00:00",
+      "session_id": "15580034724166652739",
+      "active": true,
+      "expires_at": "2026-09-12T15:04:13.310939481+00:00"
     }
   ]
 }
