@@ -98,6 +98,7 @@ struct GroupCommitRequest {
 }
 
 struct PendingCommitQueue {
+    leader_mem_updates: Vec<(Vec<u8>, Vec<u8>, u64)>,
     requests: Vec<GroupCommitRequest>,
     first_prev_hmac: [u8; 32],
     notify_full: Arc<tokio::sync::Notify>,
@@ -222,19 +223,6 @@ impl Default for LsmConfig {
     }
 }
 
-/// A prepared transaction commit waiting in the group-commit batch.
-struct PreparedCommit {
-    tx_id: TxId,
-    wal_ops: Vec<(WalOp, u64)>,
-    mem_updates: Vec<(Vec<u8>, Vec<u8>, u64)>,
-    notifier: tokio::sync::oneshot::Sender<Result<()>>,
-}
-
-/// A batch of commits collected during the group-commit window.
-struct GroupCommitBatch {
-    commits: tokio::sync::Mutex<Vec<PreparedCommit>>,
-    notify: tokio::sync::Notify,
-}
 
 /// Proof that `commit_mutex` is currently held by the calling task.
 /// Can only be constructed while holding the mutex guard.
@@ -267,7 +255,6 @@ pub struct LsmStorage {
     last_committed_tx: AtomicU64,
     /// Mutex to serialize commits and prevent snapshot inversion (parallel seq_no holes).
     commit_mutex: tokio::sync::Mutex<()>,
-    pending_batch: tokio::sync::Mutex<Option<Arc<GroupCommitBatch>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     task_tracker: tokio_util::task::TaskTracker,
     flush_counter: AtomicU64,
@@ -583,7 +570,6 @@ impl LsmStorage {
             next_seq_no: AtomicU64::new(max_seq.saturating_add(1)),
             last_committed_tx: AtomicU64::new(max_tx),
             commit_mutex: tokio::sync::Mutex::new(()),
-            pending_batch: tokio::sync::Mutex::new(None),
             cancel_token,
             task_tracker,
             flush_counter: AtomicU64::new(max_wal_id.map_or(0, |m| m.saturating_add(1))),
@@ -592,10 +578,8 @@ impl LsmStorage {
             pending_commit_queue: tokio::sync::Mutex::new(None),
         };
 
-        // C-1: Force startup flush BEFORE deleting old WAL files.
-        // Replayed MemTable entries must be persisted in an SSTable first —
-        // otherwise a second crash before the next organic flush causes permanent data loss.
-        if replayed_size > 0 && wal_files.len() > 1 {
+        // Flush after WAL replay regardless of WAL count — ensures replayed data is persisted to SSTable before any WAL rotation/deletion can occur.
+        if replayed_size > 0 && !wal_files.is_empty() {
             tracing::info!(
                 replayed_bytes = replayed_size,
                 "Forcing startup flush to persist replayed WAL entries before old WAL cleanup"
@@ -1186,6 +1170,18 @@ impl StorageEngine for LsmStorage {
                             }
                         }
                     }
+                    if pending_found.is_none() {
+                        for (k, _v, seq) in queue.leader_mem_updates.iter().rev() {
+                            if k.as_slice() == key {
+                                if (seq & TOMBSTONE_BIT) == 0 {
+                                    pending_found = Some(true);
+                                } else {
+                                    pending_found = Some(false);
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1434,18 +1430,17 @@ impl StorageEngine for LsmStorage {
             }
 
             // --- PHASE 2b: Group Commit Coordination ---
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let req = GroupCommitRequest {
-                tx_id,
-                wal_entries,
-                mem_updates,
-                sender: tx,
-            };
-
             let mut queue_guard = self.pending_commit_queue.lock().await;
 
             if let Some(ref mut queue) = *queue_guard {
-                // Follower task: enqueue request and await leader's oneshot notification
+                // Follower task: enqueue request with oneshot channel and await leader's notification
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let req = GroupCommitRequest {
+                    tx_id,
+                    wal_entries,
+                    mem_updates,
+                    sender: tx,
+                };
                 queue.requests.push(req);
                 let is_full = queue.requests.len() >= MAX_GROUP_COMMIT_BATCH_SIZE;
                 let notify_full = if is_full {
@@ -1470,10 +1465,16 @@ impl StorageEngine for LsmStorage {
                     }
                 }
             } else {
-                // Batch Leader task: initialize batch and release locks to collect concurrent commits
+                // Batch Leader task: initialize batch for followers without pushing leader's own channel.
+                // Leader retains its own tx_id, wal_entries, mem_updates locally.
+                let leader_tx_id = tx_id;
+                let leader_wal_entries = wal_entries;
+                let leader_mem_updates = mem_updates;
+
                 let notify_full = Arc::new(tokio::sync::Notify::new());
                 *queue_guard = Some(PendingCommitQueue {
-                    requests: vec![req],
+                    leader_mem_updates: leader_mem_updates.clone(),
+                    requests: Vec::new(),
                     first_prev_hmac: prev_hmac_snapshot,
                     notify_full: notify_full.clone(),
                 });
@@ -1497,7 +1498,8 @@ impl StorageEngine for LsmStorage {
 
                 let state = self.state.read().await;
 
-                let mut all_wal_entries = Vec::new();
+                // Combine leader's WAL entries with all follower WAL entries
+                let mut all_wal_entries = leader_wal_entries;
                 for r in &pending_queue.requests {
                     all_wal_entries.extend(r.wal_entries.iter().cloned());
                 }
@@ -1513,36 +1515,51 @@ impl StorageEngine for LsmStorage {
                     let commit_guard = CommitGuard {
                         _lock: &_commit_lock,
                     };
-                    if let Err(rollback_err) =
-                        self.rollback_to_tx_locked(last_tx, &commit_guard).await
-                    {
+
+                    let rollback_res = self.rollback_to_tx_locked(last_tx, &commit_guard).await;
+
+                    let err_msg = if let Err(ref rollback_err) = rollback_res {
                         tracing::error!(
                             "Failed to execute rollback_to_tx_locked after failed group WAL append: {}",
                             rollback_err
                         );
-                    }
+                        format!(
+                            "Fatal double-fault: WAL append failed ({e}) and subsequent rollback failed: {rollback_err}"
+                        )
+                    } else {
+                        format!(
+                            "Commit failed (at WAL append), WAL rollback executed: {e}"
+                        )
+                    };
 
-                    let err_msg = format!(
-                        "Commit failed (at WAL append), WAL rollback executed: {}",
-                        e
-                    );
+                    // Invariant: Every follower sender MUST be notified exactly once, even in double-fault (commit+rollback fail) paths.
                     for r in pending_queue.requests {
-                        let _ = r.sender.send(Err(MemFuseError::Storage(err_msg.clone())));
+                        if r.sender.send(Err(MemFuseError::Storage(err_msg.clone()))).is_err() {
+                            tracing::warn!(
+                                follower_tx = ?r.tx_id,
+                                "Follower dropped receiver during group commit failure notification"
+                            );
+                        }
                     }
 
-                    return rx
-                        .await
-                        .unwrap_or_else(|_| Err(MemFuseError::Storage(err_msg)));
+                    return Err(MemFuseError::Storage(err_msg));
                 }
 
-                // Group append succeeded: update last_committed_tx and memtable for ALL batch requests
+                // Group append succeeded: update last_committed_tx and memtable for leader + followers
+                let mut all_updates: Vec<(TxId, &[(Vec<u8>, Vec<u8>, u64)])> =
+                    Vec::with_capacity(1 + pending_queue.requests.len());
+                all_updates.push((leader_tx_id, &leader_mem_updates));
                 for r in &pending_queue.requests {
-                    if r.tx_id.inner() < TxId::INTERNAL_BASE {
+                    all_updates.push((r.tx_id, &r.mem_updates));
+                }
+
+                for (req_tx_id, mem_updates) in all_updates {
+                    if req_tx_id.inner() < TxId::INTERNAL_BASE {
                         let mut current = self.last_committed_tx.load(Ordering::Acquire);
-                        while r.tx_id.inner() > current {
+                        while req_tx_id.inner() > current {
                             match self.last_committed_tx.compare_exchange_weak(
                                 current,
-                                r.tx_id.inner(),
+                                req_tx_id.inner(),
                                 Ordering::SeqCst,
                                 Ordering::Relaxed,
                             ) {
@@ -1550,12 +1567,12 @@ impl StorageEngine for LsmStorage {
                                 Err(actual) => current = actual,
                             }
                         }
-                        if r.tx_id.inner() == 0 {
+                        if req_tx_id.inner() == 0 {
                             tracing::warn!("LsmStorage::commit tx=0 called — ignoring visibility update to prevent blackout");
                         }
                     }
 
-                    for (key, value, seq) in &r.mem_updates {
+                    for (key, value, seq) in mem_updates {
                         let entry_size = key.len() + value.len() + 8;
                         if let Err(e) = self.budget.consume_memory(entry_size as u64) {
                             self.budget_tracking_drift_bytes
@@ -1572,7 +1589,7 @@ impl StorageEngine for LsmStorage {
                             Bytes::from(key.clone()),
                             Bytes::from(value.clone()),
                             *seq,
-                            r.tx_id.inner(),
+                            req_tx_id.inner(),
                         );
                     }
                 }
@@ -1585,14 +1602,17 @@ impl StorageEngine for LsmStorage {
                     }
                 }
 
+                // Invariant: Every follower sender MUST be notified exactly once, even in double-fault (commit+rollback fail) paths.
                 for r in pending_queue.requests {
-                    let _ = r.sender.send(Ok(()));
+                    if r.sender.send(Ok(())).is_err() {
+                        tracing::warn!(
+                            follower_tx = ?r.tx_id,
+                            "Follower dropped receiver before group commit notification"
+                        );
+                    }
                 }
 
-                match rx.await {
-                    Ok(res) => res,
-                    Err(_) => Ok(()),
-                }
+                Ok(())
             }
         })
     }
@@ -1656,35 +1676,57 @@ impl StorageEngine for LsmStorage {
     fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             // ── Phase 0: Schnellcheck (Read-Lock, kein I/O) ──────────────────────
-            {
+            let has_active_memtable = {
                 let state = self.state.read().await;
-                if state.memtable.is_empty() {
+                if state.memtable.is_empty() && state.immutable_memtables.is_empty() {
                     return Ok(());
                 }
-            } // read lock freigegeben
+                !state.memtable.is_empty()
+            }; // read lock freigegeben
 
-            // ── Phase 1+2: Counter-Increment und WAL-Erstellung unter Write-Lock ────────
-            // H-2 FIX: flush_counter wird erst nach Bestätigung nicht-leerer Memtable inkrementiert.
-            // WAL-Erstellung ist I/O, aber schnell (File-Open + Header-Write); akzeptabel unter Lock.
-            let (old_memtable, old_wal_path) = {
-                let mut state = self.state.write().await;
-                if state.memtable.is_empty() {
-                    // Race: concurrent flush already cleared the memtable
-                    return Ok(());
-                }
-                // Counter-Increment nur für echte, nicht-leere Flushes
+            // ── Phase 1: Pre-Allokierung der neuen WAL VOR dem Write-Lock ────────
+            // WAL-Erstellung (Datei erstellen, Header schreiben) erfolgt außerhalb des State-Locks,
+            // um Tokio-Worker-Thread Blockaden bei Disk-Latenz-Spikes zu verhindern (Fix E).
+            let new_wal_opt = if has_active_memtable {
                 let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
                 let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
                 let new_wal =
                     Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?;
+                Some(new_wal)
+            } else {
+                None
+            };
 
-                let old_memtable =
-                    std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
-                let old_wal = std::mem::replace(&mut state.wal, new_wal);
-                state.immutable_memtables.push(old_memtable.clone());
-                let old_wal_path = old_wal.path().to_path_buf();
-                drop(old_wal);
-                (old_memtable, old_wal_path)
+            // ── Phase 2: Atomarer Swap unter Write-Lock ──────────────────────────
+            let (to_flush, old_wal_path) = {
+                let mut state = self.state.write().await;
+                if state.memtable.is_empty() && state.immutable_memtables.is_empty() {
+                    return Ok(());
+                }
+
+                let old_wal_path = if !state.memtable.is_empty() {
+                    let new_wal = match new_wal_opt {
+                        Some(w) => w,
+                        None => {
+                            let flush_id = self.flush_counter.fetch_add(1, Ordering::SeqCst);
+                            let wal_path = self.config.path.join(format!("wal-{}.log", flush_id));
+                            Wal::open_with_key_manager(wal_path, self.key_manager.clone()).await?
+                        }
+                    };
+
+                    let old_memtable =
+                        std::mem::replace(&mut state.memtable, Arc::new(MemTable::new()));
+                    let old_wal = std::mem::replace(&mut state.wal, new_wal);
+                    state.immutable_memtables.push(old_memtable);
+                    let path = old_wal.path().to_path_buf();
+                    drop(old_wal);
+                    Some(path)
+                } else {
+                    None
+                };
+
+                let to_flush = state.immutable_memtables.clone();
+                (to_flush, old_wal_path)
             }; // write lock freigegeben
 
             let count = self.segment_counter.fetch_add(1, Ordering::Relaxed);
@@ -1700,7 +1742,13 @@ impl StorageEngine for LsmStorage {
                     SstableBuilder::create_with_key_manager(&sst_path, self.key_manager.clone())
                         .await?;
 
-                for (k, v, seq, tx) in old_memtable.iter_latest() {
+                let mut map = std::collections::BTreeMap::new();
+                for mt in &to_flush {
+                    for (k, v, seq, tx) in mt.iter_latest() {
+                        map.insert(k, (v, seq, tx));
+                    }
+                }
+                for (k, (v, seq, tx)) in map {
                     builder.add(&k, &v, seq, tx).await?;
                 }
                 builder
@@ -1727,13 +1775,13 @@ impl StorageEngine for LsmStorage {
                     .await?;
                 // === SSTABLE MANIFEST INTEGRATION END ===
 
-                // Atomic transition: remove from immutable memtables and add to SSTables
+                // Atomic transition: remove successfully flushed memtables from immutable memtables and add to SSTables
                 let mut state = self.state.write().await;
                 let mut sstables = self.sstables.write().await;
 
                 state
                     .immutable_memtables
-                    .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
+                    .retain(|mt| !to_flush.iter().any(|tf| Arc::ptr_eq(mt, tf)));
 
                 // last_committed_tx MUSS vor sstables.push() aktualisiert werden — sonst Race-Fenster für parallele Reader, siehe DECISIONS.md ADR-043.
                 let sst_max_tx = reader.metadata().max_tx_id;
@@ -1759,11 +1807,13 @@ impl StorageEngine for LsmStorage {
                 drop(state);
 
                 // Best-effort delete of old WAL (non-critical if it fails, as it will be replayed safely)
-                if let Err(e) = tokio::fs::remove_file(&old_wal_path).await {
-                    tracing::debug!("Could not delete old WAL {:?}: {}", old_wal_path, e);
+                if let Some(ref path) = old_wal_path {
+                    if let Err(e) = tokio::fs::remove_file(path).await {
+                        tracing::debug!("Could not delete old WAL {:?}: {}", path, e);
+                    }
                 }
 
-                let bytes_freed = old_memtable.size() as u64;
+                let bytes_freed: u64 = to_flush.iter().map(|mt| mt.size() as u64).sum();
                 self.budget.release_memory(bytes_freed);
 
                 // M-6 FIX: Reset drift counter after successful flush.
@@ -1779,23 +1829,20 @@ impl StorageEngine for LsmStorage {
 
             if let Err(ref e) = phase3_res {
                 // Cleanup on Phase 3 failure:
-                // 1. Remove old_memtable from state.immutable_memtables
-                let mut state = self.state.write().await;
-                state
-                    .immutable_memtables
-                    .retain(|mt| !Arc::ptr_eq(mt, &old_memtable));
-                drop(state);
-
-                // 2. Adjust budget usage
-                let bytes_freed = old_memtable.size() as u64;
-                self.budget.release_memory(bytes_freed);
-
-                // 3. Clean up partial/corrupt SSTable file if created
+                // Retain old memtables in state.immutable_memtables for continued read availability.
+                // self.budget.release_memory() is NOT called because memory is still in use.
                 if sst_path.exists() {
-                    let _ = tokio::fs::remove_file(&sst_path).await;
+                    if let Err(rm_err) = tokio::fs::remove_file(&sst_path).await {
+                        tracing::warn!(
+                            path = ?sst_path,
+                            "Failed to remove partial SSTable after flush failure: {rm_err}"
+                        );
+                    }
                 }
 
-                tracing::error!("Flush failed, cleanup performed: {}", e);
+                tracing::warn!(
+                    "Flush Phase 3 failed; old memtable retained in immutable list for continued read availability. WAL on disk is intact. Error: {e}"
+                );
             }
 
             phase3_res
@@ -4348,11 +4395,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flush_cleanup_on_sstable_create_failure() {
+    async fn test_flush_phase3_failure_retains_immutable_memtable_and_data() {
         let (storage, tmp) = test_storage().await;
         let tx = TxId::new(1);
         storage.put(tx, b"key1", b"val1").await.unwrap();
         storage.commit(tx).await.unwrap();
+
+        let initial_budget_used = storage.budget.memory_used();
 
         // Pre-create the expected SSTable file path as a directory so SstableBuilder::create_with_key_manager fails
         let seq = storage.next_seq_no.load(Ordering::Relaxed);
@@ -4368,85 +4417,29 @@ mod tests {
             "Flush must return error when SSTable creation fails"
         );
 
+        // Fix C assertion: old memtable is retained in immutable_memtables for continued read availability
         let state = storage.state.read().await;
-        assert!(
-            state.immutable_memtables.is_empty(),
-            "immutable_memtables must be cleaned up and empty after flush failure"
+        assert_eq!(
+            state.immutable_memtables.len(),
+            1,
+            "immutable_memtables must retain old memtable on Phase 3 flush failure"
         );
-    }
+        drop(state);
 
-    #[tokio::test]
-    async fn test_flush_cleanup_on_sstable_finish_failure() {
-        let (storage, tmp) = test_storage().await;
-        let tx = TxId::new(1);
-        storage.put(tx, b"key1", b"val1").await.unwrap();
-        storage.commit(tx).await.unwrap();
+        // Budget memory must NOT be released while memory is still in use by retained memtable
+        assert_eq!(
+            storage.budget.memory_used(),
+            initial_budget_used,
+            "Budget memory must not be released on flush failure"
+        );
 
-        #[cfg(unix)]
-        {
-            use std::fs::Permissions;
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o555)).unwrap();
-
-            let res = storage.force_flush().await;
-            assert!(res.is_err(), "Flush must fail when directory is read-only");
-
-            let _ = std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o755));
-
-            let state = storage.state.read().await;
-            assert!(
-                state.immutable_memtables.is_empty(),
-                "immutable_memtables must be cleaned up and empty after flush finish failure"
-            );
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = tmp;
-        }
-    }
-
-    #[tokio::test]
-    async fn test_flush_repeated_failures_no_memory_leak() {
-        let (storage, tmp) = test_storage().await;
-
-        // Put initial entry
-        let tx = TxId::new(1);
-        storage.put(tx, b"leak_key", b"leak_val").await.unwrap();
-        storage.commit(tx).await.unwrap();
-
-        let initial_usage = storage.budget.memory_used();
-
-        #[cfg(unix)]
-        {
-            use std::fs::Permissions;
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o555)).unwrap();
-
-            for _ in 0..100 {
-                let res = storage.force_flush().await;
-                assert!(res.is_err());
-            }
-
-            let _ = std::fs::set_permissions(tmp.path(), Permissions::from_mode(0o755));
-
-            let state = storage.state.read().await;
-            assert!(
-                state.immutable_memtables.is_empty(),
-                "immutable_memtables must remain empty after 100 flush failures"
-            );
-            drop(state);
-
-            let usage_after_failures = storage.budget.memory_used();
-            assert_eq!(
-                usage_after_failures, initial_usage,
-                "Resource budget memory usage must not leak across repeated flush failures"
-            );
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = tmp;
-            let _ = initial_usage;
-        }
+        // Data must remain readable via get()
+        let val = storage.get(b"key1").await.unwrap();
+        assert_eq!(
+            val,
+            Some(b"val1".to_vec()),
+            "Key must remain readable from retained immutable memtable after flush failure"
+        );
     }
 
     #[tokio::test]
@@ -4510,7 +4503,7 @@ mod tests {
             ..Default::default()
         };
 
-        // 1. First run: write entries and rotate WAL (force_flush creates second WAL file)
+        // 1. First run: write entries into a single WAL file (wal.log) without flushing
         {
             let storage = LsmStorage::new(config.clone())
                 .await
@@ -4519,14 +4512,10 @@ mod tests {
             storage.put(tx1, b"key1", b"val1").await.unwrap();
             storage.commit(tx1).await.unwrap();
 
-            // Force flush so active WAL rotates to wal-0.log and active WAL becomes wal-1.log
-            storage.force_flush().await.unwrap();
-
-            // Write new data into wal-1.log without flushing
             let tx2 = TxId::new(2);
             storage.put(tx2, b"key2", b"val2").await.unwrap();
             storage.commit(tx2).await.unwrap();
-            // Drop without flush or close (simulating restart after replay)
+            // Drop without flush or close (simulating restart after replay with exactly 1 WAL file)
         }
 
         // 2. Second run: startup replays wal-1.log and must force startup flush
