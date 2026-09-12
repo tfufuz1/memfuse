@@ -38,6 +38,7 @@
 pub mod error;
 pub mod error_dto;
 pub mod ipc;
+pub mod model_fingerprint;
 pub mod seq_log;
 pub mod snapshot;
 pub mod traits;
@@ -46,6 +47,7 @@ pub mod types;
 
 pub use error::{MemFuseError, Result};
 pub use error_dto::MemFuseErrorDto;
+pub use model_fingerprint::ModelFingerprint;
 pub use seq_log::{SeqLogChange, SeqLogEntry, SequenceLog};
 pub use snapshot::{SnapshotGuard, SnapshotRegistry};
 pub use traits::*;

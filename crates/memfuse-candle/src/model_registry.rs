@@ -47,19 +47,7 @@ impl FromStr for CandleQuantization {
     }
 }
 
-/// Fingerprint uniquely identifying a model weight file and its quantization tier.
-///
-/// Note: If a central `ModelFingerprint` is added to Layer 0 (`memfuse-core`), this type
-/// can be migrated there in a future refactoring.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelFingerprint {
-    /// SHA-256 hash digest over the model weights concatenated with the quantization string.
-    pub hash: [u8; 32],
-    /// Identifier or filename of the model.
-    pub model_id: String,
-    /// String representation of quantization.
-    pub quantization: String,
-}
+pub use memfuse_core::ModelFingerprint;
 
 /// Computes a unique fingerprint for a model file and quantization variant.
 ///
