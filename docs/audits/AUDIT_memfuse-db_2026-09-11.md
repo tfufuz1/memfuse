@@ -78,3 +78,9 @@
 - `cargo test -p memfuse-db --all-features`: 241/241 Unit-Tests grün, alle Integrationstests grün.
 - `cargo check --workspace --exclude memfuse-tauri`: 0 Fehler.
 - `cargo run -p xtask -- jules-preflight --fast`: **ALLE GATES BESTANDEN**.
+
+## Audit & Hardening — RRF Rank Fusion & Numerics (2026-09-12)
+- **Scope**: `crates/memfuse-db/src/fusion.rs`
+- **Befund**: `debug_assert!(rrf_k > 0.0)` in `build_provenance` and `weighted_reciprocal_rank_fusion_with_options` caused panic on `rrf_k = 0.0` despite explicit handling for `rrf_k = 0.0` in RRF score division logic.
+- **Lösung**: `debug_assert!(rrf_k >= 0.0)` angepasst, sodass Randfall `rrf_k = 0.0` ohne Panic verarbeitet wird.
+- **Verifikation**: `cargo test -p memfuse-db --test fusion_edge_cases_test` und `cargo test -p memfuse-db --all-features` bestanden.
