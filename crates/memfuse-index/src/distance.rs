@@ -1969,8 +1969,8 @@ mod tests {
     fn test_avx2_u8_unequal_length_no_oob() {
         // Testet den AVX2-Pfad indirekt über den sicheren Wrapper.
         // Nach P-G1-Fix: beide sollten Err() zurückgeben, nicht UB oder Panic.
-        let a_long = vec![128u8; 96];  // Länge: 96 (3 AVX2-Blöcke)
-        let b_short = vec![64u8; 32];  // Länge: 32 (1 AVX2-Block) — b ist kürzer
+        let a_long = vec![128u8; 96]; // Länge: 96 (3 AVX2-Blöcke)
+        let b_short = vec![64u8; 32]; // Länge: 32 (1 AVX2-Block) — b ist kürzer
 
         // Sicherer Wrapper muss Err() zurückgeben statt OOB-Read
         assert!(
