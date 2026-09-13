@@ -1,3 +1,8 @@
+// TODO P-G8: Lint hinzufügen der bei `unsafe fn` mit zwei gleichnamigen Slice-Parametern
+// (z.B. `a: &[u8], b: &[u8]`) prüft, ob `let n = a.len().min(b.len())` oder ein
+// äquivalenter Längen-Check vorhanden ist. Implementierung: `cargo-geiger` oder
+// ein custom `proc-macro`-basierter Lint via `dylint`.
+
 #[allow(dead_code)]
 fn chrono_or_today_with_tags(tags: &[TagItem]) -> String {
     let mut latest_tag_date = String::new();
