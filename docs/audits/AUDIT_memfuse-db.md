@@ -530,3 +530,18 @@ snapshot_search_overhead time:   [209.88 µs 210.15 µs 210.43 µs]
 - **APM-19 (TxId Allocation):** Alle Transaktionen nutzen `collection.allocate_tx()` (AtomicU64 monotonic sequence), system intern base `TxId::INTERNAL_BASE`.
 - **APM-20 (Bounded Queues):** Telemetrie- und Event-Queues gecapped bei 10.000 Elementen.
 - **APM-21 (Mutex Poisoning):** `parking_lot::Mutex` / `tokio::sync::Mutex` im Einsatz (poisoning-free).
+
+## Tiefen-Audit 2026-09-13
+### SESSION: e095d708 | TS: 2026-09-13T02:58:57Z
+### Crate: `memfuse-db` · Layer 2 — Orchestrator & 4-Signal-Fusion
+### Scope: 29 Source-Dateien (100% verifiziert)
+
+### 1. Inventar & Stand
+- **Aktuelles Quellcode-Inventar:** 29 `.rs`-Dateien unter `crates/memfuse-db/src/` (inklusive `export.rs` und `import.rs`).
+- **Safety Status:** Unsafe ist ausschließlich in `volatile_vault.rs` für POSIX `mlock`/`munlock` Memory-Locking hinter der Feature-Flag `volatile-vault` zugelassen; `#![cfg_attr(not(feature = "volatile-vault"), forbid(unsafe_code))]` und `#![cfg_attr(feature = "volatile-vault", deny(unsafe_code))]` in `lib.rs` durchgesetzt.
+
+### 2. Tier 1 Verification & Stresstest Results
+- **2PC Fault-Injection Suite (`tests/fault_injection_2pc.rs`):** 11/11 Scenarios bestanden (`test_2a_hnsw_staging_failure`, `test_2b_text_staging_failure_after_hnsw_success`, `test_2c_graph_staging_failure_after_hnsw_and_text_success`, `test_2d1_lsm_commit_failure`, `test_2d2_hnsw_commit_failure_post_lsm_commit`, `test_2d3_text_commit_failure_post_lsm_and_hnsw_commit`, `test_2d4_graph_commit_failure_post_all_three_commits`, `test_insert_many_atomic_all_or_nothing_at_50_percent_failure`, `test_insert_rollback_writes_tombstone_returns_none`, `test_update_rollback_restores_original_document_state`, `test_2e_crash_points_and_repair_on_open`).
+- **Orchestrator Stress Concurrency (`tests/concurrent_collection_stress.rs`):** PASSED in 24.17s (0 Deadlocks, 0 Races).
+- **Cross-Signal Isolation Stress (`tests/cross_signal_isolation_test.rs`):** 4/4 Tests PASSED (100-Iteration Stress).
+- **Crate Library Suite (`cargo test -p memfuse-db --lib`):** 236/236 Tests PASSED in 38.72s.
