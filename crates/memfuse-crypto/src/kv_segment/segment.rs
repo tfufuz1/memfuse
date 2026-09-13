@@ -155,7 +155,11 @@ impl KvSegment {
         }
 
         if let Some(payload) = &self.encrypted_payload {
-            cipher.decrypt_with_version(&payload.layer, self.segment_id, self.key_derivation_version)
+            cipher.decrypt_with_version(
+                &payload.layer,
+                self.segment_id,
+                self.key_derivation_version,
+            )
         } else if self.model_fingerprint.is_some() {
             // AI-TAG[CRYPTO][MAJOR][RESOLVED] Fail fast on missing encrypted payload/nonce instead of dummy zero nonce (ID: AGT-CRYPTO-fae9dd56) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
             Err(crate::CryptoError::Crypto(
@@ -270,7 +274,10 @@ mod tests {
     fn test_kv_segment_version_1_derivation() {
         let tenant = TenantId::try_new(101).unwrap();
         let segment = KvSegment::new(tenant, 1, vec![1, 2, 3]);
-        assert_eq!(segment.key_derivation_version, CURRENT_KV_KEY_DERIVATION_VERSION);
+        assert_eq!(
+            segment.key_derivation_version,
+            CURRENT_KV_KEY_DERIVATION_VERSION
+        );
         assert_eq!(segment.key_derivation_version, 1);
     }
 
@@ -318,7 +325,8 @@ mod tests {
         let plaintext = b"version 1 plaintext payload";
 
         // Create new_encrypted segment (defaults to version 1)
-        let mut segment = KvSegment::new_encrypted(&cipher, tenant, 1, fp, None, plaintext).unwrap();
+        let mut segment =
+            KvSegment::new_encrypted(&cipher, tenant, 1, fp, None, plaintext).unwrap();
 
         // Roundtrip with version 1 MUST succeed
         let decrypted = segment.decrypt_data(&cipher).unwrap();
@@ -342,7 +350,8 @@ mod tests {
         let fp = ModelFingerprint::new([0x11u8; 32], "test-model", "Q4_K_M");
         let plaintext = b"unsupported version test payload";
 
-        let mut segment = KvSegment::new_encrypted(&cipher, tenant, 1, fp, None, plaintext).unwrap();
+        let mut segment =
+            KvSegment::new_encrypted(&cipher, tenant, 1, fp, None, plaintext).unwrap();
         // Set an unknown future version
         segment.key_derivation_version = 99;
 

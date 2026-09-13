@@ -183,9 +183,7 @@ pub async fn setup_routing(
 
 /// Conditionally sets up `KvBridgeAdapter` when feature `kv-bridge` is enabled.
 #[cfg(feature = "kv-bridge")]
-pub fn setup_kv_bridge(
-    _db: &Arc<MemFuse>,
-) -> Option<Arc<memfuse_candle::KvBridgeAdapter>> {
+pub fn setup_kv_bridge(_db: &Arc<MemFuse>) -> Option<Arc<memfuse_candle::KvBridgeAdapter>> {
     // AI-TAG[SMELL][RESOLVED] audit-kv-bridge: Cipher-Integration wenn MemFuse::kv_cipher() API existiert
     tracing::info!(
         "kv-bridge feature aktiv, aber keine Verschlüsselung konfiguriert — KvBridgeAdapter deaktiviert"
@@ -639,9 +637,7 @@ impl McpServer {
                 #[cfg(feature = "kv-bridge")]
                 if let Some(ref bridge) = self.kv_bridge {
                     for res in &results {
-                        let chunk_id = DocId::from_key(&res.id)
-                            .map(|d| d.inner())
-                            .unwrap_or(0);
+                        let chunk_id = DocId::from_key(&res.id).map(|d| d.inner()).unwrap_or(0);
                         let text = res
                             .metadata
                             .as_ref()
