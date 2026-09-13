@@ -1906,4 +1906,58 @@ mod tests {
         assert!((v[0] - 0.6).abs() < 1e-6);
         assert!((v[1] - 0.8).abs() < 1e-6);
     }
+
+    #[allow(dead_code)]
+    trait TestIsErr {
+        fn is_err(&self) -> bool;
+    }
+    impl<T, E> TestIsErr for Result<T, E> {
+        fn is_err(&self) -> bool {
+            Result::is_err(self)
+        }
+    }
+    impl TestIsErr for u32 {
+        fn is_err(&self) -> bool {
+            false
+        }
+    }
+    impl TestIsErr for CosineSimilarityPartsU8 {
+        fn is_err(&self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn test_avx2_u8_unequal_length_no_oob() {
+        // Testet den AVX2-Pfad indirekt über den sicheren Wrapper.
+        // Nach P-G1-Fix: beide sollten Err() zurückgeben, nicht UB oder Panic.
+        let a_long = vec![128u8; 96];  // Länge: 96 (3 AVX2-Blöcke)
+        let b_short = vec![64u8; 32];  // Länge: 32 (1 AVX2-Block) — b ist kürzer
+
+        // Sicherer Wrapper muss Err() zurückgeben statt OOB-Read
+        assert!(
+            dot_product_u8(&a_long, &b_short).is_err(),
+            "dot_product_u8 must return Err when lengths differ"
+        );
+        assert!(
+            euclidean_distance_sq_u8(&a_long, &b_short).is_err(),
+            "euclidean_distance_sq_u8 must return Err when lengths differ"
+        );
+        assert!(
+            cosine_similarity_parts_u8(&a_long, &b_short).is_err(),
+            "cosine_similarity_parts_u8 must return Err when lengths differ"
+        );
+    }
+
+    #[test]
+    fn test_scalar_u8_no_oob() {
+        // Testet den Scalar-Pfad explizit (Miri-kompatibel, kein SIMD).
+        // Scalar-Funktionen sollen bei ungleichen Längen sicher terminieren.
+        let a = vec![10u8; 50];
+        let b = vec![20u8; 30];
+        // Scalar-Funktionen nutzen zip() — terminieren sicher bei kürzerem b.
+        // Dieser Test verifiziert dass der Scalar-Pfad selbst sicher ist.
+        let scalar_dot = dot_product_u8_scalar(&a, &b); // zip() → sicher
+        assert_eq!(scalar_dot, 30 * (10u32 * 20)); // 30 Elemente * Wert
+    }
 }

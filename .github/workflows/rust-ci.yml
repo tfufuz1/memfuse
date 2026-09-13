@@ -34,7 +34,8 @@ jobs:
         with:
           components: rustfmt
       - name: Run rustfmt check
-        run: cargo fmt --all -- --check || (echo "❌ Format Check fehlgeschlagen! Lokal beheben mit: cargo fmt --all && git commit --amend --no-edit" && exit 1)
+        run: |
+          cargo fmt --all -- --check || (echo "❌ Format Check fehlgeschlagen! Lokal beheben mit: cargo fmt --all && git commit --amend --no-edit" && exit 1)
 
   supply-chain:
     name: Dependency Security & License Audit
@@ -125,6 +126,46 @@ jobs:
       - name: Run memfuse-index tests with AddressSanitizer
         run: |
           RUSTFLAGS="-Zsanitizer=address" cargo +nightly test -p memfuse-index --target x86_64-unknown-linux-gnu
+
+  asan-memfuse-index-unequal-lengths:
+    name: ASan Gate — u8 Distance Unequal Length Slices (memfuse-index)
+    runs-on: ubuntu-latest
+    needs: [compile-check]
+    # Dieser Job schlägt FEHL, solange P-G1 (AVX2 OOB-Fix) nicht gemergt ist.
+    # Er ist absichtlich als Sicherheitsnetz konzipiert, kein continue-on-error.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Run u8 distance unequal-length tests with AddressSanitizer
+        run: |
+          RUSTFLAGS="-Zsanitizer=address" cargo +nightly test \
+            -p memfuse-index \
+            --target x86_64-unknown-linux-gnu \
+            -- test_u8_distance_unequal_lengths_return_error \
+               test_avx2_u8_unequal_length_no_oob \
+            2>&1
+
+  miri-memfuse-index:
+    name: Miri Gate (memfuse-index unsafe fn boundary tests)
+    runs-on: ubuntu-latest
+    needs: [compile-check]
+    continue-on-error: true  # Miri-Failures blockieren nicht den Merge, werden aber sichtbar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Miri on memfuse-index
+        run: |
+          # Nur Scalar-Pfad unter Miri (SIMD-Intrinsics werden von Miri nicht unterstützt)
+          # Miri fängt OOB-Zugriffe im Scalar-Tail-Loop auf.
+          MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test \
+            -p memfuse-index \
+            -- test_u8_distance_unequal_lengths_return_error \
+               test_scalar_u8_no_oob \
+            2>&1
 
   feature-matrix:
     name: Feature Matrix Checks
