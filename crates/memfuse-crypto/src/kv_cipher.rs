@@ -119,7 +119,10 @@ impl KvSegmentCipher {
         let info = if version == 0 {
             format!("memfuse-kv-segment-{}-{}", tenant_id, segment_id)
         } else {
-            format!("memfuse-kv-v{}-segment-{}-{}", version, tenant_id, segment_id)
+            format!(
+                "memfuse-kv-v{}-segment-{}-{}",
+                version, tenant_id, segment_id
+            )
         };
         self.key_manager.derive_segment_key(&info)
     }

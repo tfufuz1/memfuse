@@ -360,6 +360,17 @@ impl<S: StorageEngine, V: VectorIndex> DbTransaction<S, V> {
 
         // 3. Commit Index (HNSW)
         if let Err(index_err) = self.collection.index.commit(self.tx_id).await {
+            // ADR-REF: INV-DB-3: Roll back vector index staged state prior to graph and text rollback.
+            // Forward-compatibility note: Ensures staged uncommitted entries in HNSW are dropped
+            // upon commit failure, avoiding orphaned vector states in 2PC sequence.
+            if let Err(e) = self.collection.index.rollback(self.tx_id).await {
+                tracing::error!(
+                    tx_id = ?self.tx_id,
+                    error = ?e,
+                    "[INV-DB-3] Failed to rollback vector index after commit failure; \
+                     graph may contain phantom nodes until compaction"
+                );
+            }
             if let Err(e) = self.collection.graph_index.rollback(self.tx_id).await {
                 tracing::error!(
                     "[INV-DB-3] CRITICAL: Failed to rollback graph_index after HNSW commit failure: {}",
