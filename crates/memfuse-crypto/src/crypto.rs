@@ -137,6 +137,24 @@ impl KeyManager {
         })
     }
 
+    /// Derives a sub-key specifically for a KV-cache segment based on a versioned info string.
+    pub fn derive_segment_key(&self, info: &str) -> Result<Self> {
+        let hk = Hkdf::<Sha256>::from_prk(self.key.as_bytes())
+            .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
+
+        let mut sub_key = [0u8; 32];
+        hk.expand(info.as_bytes(), &mut sub_key)
+            .map_err(|e| CryptoError::Crypto(format!("HKDF segment key expansion failed: {}", e)))?;
+
+        let mut nonce_prefix = [0u8; 4];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_prefix);
+
+        Ok(Self {
+            key: VolatileEncryptionKey::new(sub_key),
+            nonce_prefix,
+        })
+    }
+
     /// Derives a sub-key specifically for KV-cache segment encryption, bound to a
     /// specific `(tenant_id, model_fingerprint)` tuple.
     ///

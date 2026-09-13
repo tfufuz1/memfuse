@@ -9,6 +9,10 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[cfg(feature = "kv-encryption")]
 use crate::{EncryptedKvLayer, KvSegmentCipher, ModelFingerprint};
 
+/// Aktuelle Version der KV-Segment-Schlüsselableitung.
+/// Erhöhe diesen Wert, wenn sich der HKDF-Info-String oder der Salt-Aufbau ändert.
+pub const CURRENT_KV_KEY_DERIVATION_VERSION: u8 = 1;
+
 /// Monotoner Logical-Clock-Zähler für Recency-Ordering (P3: Keine SystemTime als Kausalitätsgarant).
 static GLOBAL_KV_ACCESS_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -37,6 +41,11 @@ pub struct KvSegment {
     pub tenant_id: TenantId,
     #[zeroize(skip)]
     pub segment_id: u64,
+    /// Versionsnummer der HKDF-Schlüsselableitung.
+    /// 0 = Legacy (vor Versionierung, kein Versionsfeld in HKDF-Info)
+    /// 1 = Aktuell (HKDF-Info enthält "v1" als explizites Byte)
+    #[zeroize(skip)]
+    pub key_derivation_version: u8,
     #[zeroize(skip)]
     pub encrypted: bool,
     #[zeroize(skip)]
@@ -59,6 +68,7 @@ impl KvSegment {
         Self {
             tenant_id,
             segment_id,
+            key_derivation_version: CURRENT_KV_KEY_DERIVATION_VERSION,
             encrypted: false,
             #[cfg(feature = "kv-encryption")]
             model_fingerprint: None,
@@ -82,6 +92,7 @@ impl KvSegment {
         Self {
             tenant_id,
             segment_id,
+            key_derivation_version: CURRENT_KV_KEY_DERIVATION_VERSION,
             encrypted: false,
             #[cfg(feature = "kv-encryption")]
             model_fingerprint,
@@ -104,12 +115,19 @@ impl KvSegment {
         plaintext: &[u8],
     ) -> Result<Self, crate::CryptoError> {
         let initial_clock = GLOBAL_KV_ACCESS_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let encrypted_layer = cipher.encrypt(tenant_id, model_fingerprint.clone(), plaintext)?;
+        let encrypted_layer = cipher.encrypt_with_version(
+            tenant_id,
+            segment_id,
+            CURRENT_KV_KEY_DERIVATION_VERSION,
+            model_fingerprint.clone(),
+            plaintext,
+        )?;
         let ciphertext_copy = encrypted_layer.ciphertext.clone();
 
         Ok(Self {
             tenant_id,
             segment_id,
+            key_derivation_version: CURRENT_KV_KEY_DERIVATION_VERSION,
             encrypted: true,
             model_fingerprint: Some(model_fingerprint),
             rope_offset,
@@ -129,8 +147,15 @@ impl KvSegment {
             return Ok(self.data.clone());
         }
 
+        if self.key_derivation_version > CURRENT_KV_KEY_DERIVATION_VERSION {
+            return Err(crate::CryptoError::Crypto(format!(
+                "Unsupported key derivation version: {}",
+                self.key_derivation_version
+            )));
+        }
+
         if let Some(payload) = &self.encrypted_payload {
-            cipher.decrypt(&payload.layer)
+            cipher.decrypt_with_version(&payload.layer, self.segment_id, self.key_derivation_version)
         } else if self.model_fingerprint.is_some() {
             // AI-TAG[CRYPTO][MAJOR][RESOLVED] Fail fast on missing encrypted payload/nonce instead of dummy zero nonce (ID: AGT-CRYPTO-fae9dd56) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
             Err(crate::CryptoError::Crypto(
@@ -239,5 +264,91 @@ mod tests {
         let empty_segment = KvSegment::new(tenant, 101, vec![]);
         assert!(empty_segment.is_empty());
         assert_eq!(empty_segment.len(), 0);
+    }
+
+    #[test]
+    fn test_kv_segment_version_1_derivation() {
+        let tenant = TenantId::try_new(101).unwrap();
+        let segment = KvSegment::new(tenant, 1, vec![1, 2, 3]);
+        assert_eq!(segment.key_derivation_version, CURRENT_KV_KEY_DERIVATION_VERSION);
+        assert_eq!(segment.key_derivation_version, 1);
+    }
+
+    #[test]
+    #[cfg(feature = "kv-encryption")]
+    fn test_kv_segment_v0_legacy_backward_compatibility() {
+        let km = crate::crypto::KeyManager::try_new("passphrase-123456", b"salt-123456").unwrap();
+        let cipher = KvSegmentCipher::new(km);
+        let tenant = TenantId::try_new(101).unwrap();
+        let fp = ModelFingerprint::new([0x11u8; 32], "test-model", "Q4_K_M");
+        let plaintext = b"legacy version 0 plaintext payload";
+
+        // Encrypt specifically with version 0
+        let encrypted_layer = cipher
+            .encrypt_with_version(tenant, 1, 0, fp.clone(), plaintext)
+            .unwrap();
+        let ciphertext_copy = encrypted_layer.ciphertext.clone();
+
+        let segment = KvSegment {
+            tenant_id: tenant,
+            segment_id: 1,
+            key_derivation_version: 0,
+            encrypted: true,
+            model_fingerprint: Some(fp),
+            rope_offset: None,
+            last_accessed: AtomicU64::new(1),
+            data: ciphertext_copy,
+            encrypted_payload: Some(EncryptedSegmentPayload {
+                layer: encrypted_layer,
+            }),
+        };
+
+        // Version 0 segment should successfully decrypt with version 0 HKDF info
+        let decrypted = segment.decrypt_data(&cipher).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    #[cfg(feature = "kv-encryption")]
+    fn test_kv_segment_v1_vs_v0_key_separation() {
+        let km = crate::crypto::KeyManager::try_new("passphrase-123456", b"salt-123456").unwrap();
+        let cipher = KvSegmentCipher::new(km);
+        let tenant = TenantId::try_new(101).unwrap();
+        let fp = ModelFingerprint::new([0x11u8; 32], "test-model", "Q4_K_M");
+        let plaintext = b"version 1 plaintext payload";
+
+        // Create new_encrypted segment (defaults to version 1)
+        let mut segment = KvSegment::new_encrypted(&cipher, tenant, 1, fp, None, plaintext).unwrap();
+
+        // Roundtrip with version 1 MUST succeed
+        let decrypted = segment.decrypt_data(&cipher).unwrap();
+        assert_eq!(decrypted, plaintext);
+
+        // Tampering version to 0 MUST fail decryption because key_v0 != key_v1
+        segment.key_derivation_version = 0;
+        let res = segment.decrypt_data(&cipher);
+        assert!(
+            res.is_err(),
+            "Decryption of v1 ciphertext with v0 key derivation MUST fail"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "kv-encryption")]
+    fn test_kv_segment_unsupported_version_error() {
+        let km = crate::crypto::KeyManager::try_new("passphrase-123456", b"salt-123456").unwrap();
+        let cipher = KvSegmentCipher::new(km);
+        let tenant = TenantId::try_new(101).unwrap();
+        let fp = ModelFingerprint::new([0x11u8; 32], "test-model", "Q4_K_M");
+        let plaintext = b"unsupported version test payload";
+
+        let mut segment = KvSegment::new_encrypted(&cipher, tenant, 1, fp, None, plaintext).unwrap();
+        // Set an unknown future version
+        segment.key_derivation_version = 99;
+
+        let res = segment.decrypt_data(&cipher);
+        assert!(res.is_err());
+        let err_msg = res.err().unwrap().to_string();
+        assert!(err_msg.contains("Unsupported key derivation version: 99"));
     }
 }

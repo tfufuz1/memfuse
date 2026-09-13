@@ -32,4 +32,7 @@ pub use deletion_proof::{
 };
 pub use error::{CryptoError, Result};
 pub use kv_cipher::{EncryptedKvLayer, KvSegmentCipher, ModelFingerprint};
-pub use kv_segment::{emergency_wipe, EvictionWorker, KvSegment, TenantIsolatedKvStore};
+pub use kv_segment::{
+    emergency_wipe, EvictionWorker, KvSegment, TenantIsolatedKvStore,
+    CURRENT_KV_KEY_DERIVATION_VERSION,
+};
