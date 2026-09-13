@@ -181,12 +181,26 @@ pub async fn setup_routing(
     })))
 }
 
+/// Conditionally sets up `KvBridgeAdapter` when feature `kv-bridge` is enabled.
+#[cfg(feature = "kv-bridge")]
+pub fn setup_kv_bridge(
+    _db: &Arc<MemFuse>,
+) -> Option<Arc<memfuse_candle::KvBridgeAdapter>> {
+    // AI-TAG[SMELL][RESOLVED] audit-kv-bridge: Cipher-Integration wenn MemFuse::kv_cipher() API existiert
+    tracing::info!(
+        "kv-bridge feature aktiv, aber keine Verschlüsselung konfiguriert — KvBridgeAdapter deaktiviert"
+    );
+    None
+}
+
 pub struct McpServer {
     pub db: Arc<MemFuse>,
     pub embedder: Arc<dyn EmbeddingProvider>,
     pub sandbox: Arc<McpSandbox>,
     pub injection_guard: Arc<PromptInjectionGuard>,
     pub routing: Option<Arc<RoutingHandle>>,
+    #[cfg(feature = "kv-bridge")]
+    pub kv_bridge: Option<Arc<memfuse_candle::KvBridgeAdapter>>,
 }
 
 impl McpServer {
@@ -218,13 +232,27 @@ impl McpServer {
         embedder: Arc<dyn EmbeddingProvider>,
         sandbox: Arc<McpSandbox>,
     ) -> Self {
+        #[cfg(feature = "kv-bridge")]
+        let kv_bridge = setup_kv_bridge(&db);
+
         Self {
             db,
             embedder,
             sandbox,
             injection_guard: Arc::new(PromptInjectionGuard::from_env()),
             routing: None,
+            #[cfg(feature = "kv-bridge")]
+            kv_bridge,
         }
+    }
+
+    #[cfg(feature = "kv-bridge")]
+    pub fn with_kv_bridge(
+        mut self,
+        kv_bridge: Option<Arc<memfuse_candle::KvBridgeAdapter>>,
+    ) -> Self {
+        self.kv_bridge = kv_bridge;
+        self
     }
 
     pub fn with_injection_guard(mut self, injection_guard: Arc<PromptInjectionGuard>) -> Self {
@@ -607,6 +635,23 @@ impl McpServer {
                     .execute()
                     .await
                     .map_err(McpError::from)?;
+
+                #[cfg(feature = "kv-bridge")]
+                if let Some(ref bridge) = self.kv_bridge {
+                    for res in &results {
+                        let chunk_id = DocId::from_key(&res.id)
+                            .map(|d| d.inner())
+                            .unwrap_or(0);
+                        let text = res
+                            .metadata
+                            .as_ref()
+                            .and_then(|m| m.get("text").or_else(|| m.get("content")))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let segment = memfuse_core::traits::ContextSegment::new(chunk_id, text);
+                        bridge.consult_segment(&segment);
+                    }
+                }
 
                 let mut enriched_results = Vec::with_capacity(results.len());
                 for res in results {
