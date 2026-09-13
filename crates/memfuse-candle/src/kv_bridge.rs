@@ -55,10 +55,10 @@ impl KvBridgeAdapter {
     ///
     /// Returns `None` on cache miss, format mismatch, or decryption failure,
     /// triggering a transparent fallback to full prefill in the inference pipeline (APM-HARD-FAIL-ON-CACHE-MISS).
-    // AI-TAG[SECURITY][MAJOR] try_get_cached_segment ignores caller requested fingerprint (ID: AGT-CANDLE-d0dacdd8) (TS: 2026-09-13T01:40:00Z) (SESSION: 50c8c755)
-    // BEFUND: try_get_cached_segment ignores the _fingerprint argument and returns decrypted KV segments from TenantIsolatedKvStore regardless of requested model quantization or fingerprint.
-    // RISIKO: When switching models or quantization levels, cached KV segments from a different model variant could be re-used, causing corrupted tensor attention states or inference crashes.
-    // EMPFEHLUNG: Verify caller's fingerprint against stored segment metadata in TenantIsolatedKvStore or KvBridgeAdapter before returning cached KV bytes.
+    // AI-TAG[SECURITY][MAJOR] ModelFingerprint parameter ignored during KV segment lookup in try_get_cached_segment (ID: AGT-CANDLE-fb44dd85) (TS: 2026-09-13T01:25:50Z) (SESSION: 38de9c27)
+    // BEFUND: try_get_cached_segment ignoriert den _fingerprint Parameter und delegiert an get_decrypted_segment(cipher, tenant, chunk_id). Während get_decrypted_segment die Entschlüsselung mit der gespeicherten Segment-Fingerprint durchführt, erfolgt keine vorherige Prüfung/Match gegen den angeforderten Fingerprint.
+    // RISIKO: Ein Wechsel von Modell/Quantisierung könnte bei übereinstimmender Chunk-ID und Tenant-ID versuchten Zugriff auf ein Segment mit abweichendem Fingerprint auslösen (wird zwar durch Crypto/AEAD-Tag abgefangen und scheitert, aber Fingerprint-Mismatch sollte explizit vorab als Cache-Miss behandelt werden).
+    // EMPFEHLUNG: Im Folge-Task Fingerprint-Validierung in try_get_cached_segment ergänzen.
     pub fn try_get_cached_segment(
         &self,
         tenant: TenantId,

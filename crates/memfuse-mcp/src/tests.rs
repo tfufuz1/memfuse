@@ -675,7 +675,8 @@ async fn test_kv_bridge_adapter_consulted_on_retrieve() {
     let embedder = Arc::new(MockEmbedder { dimension: dim });
 
     let store = Arc::new(memfuse_security::TenantIsolatedKvStore::new());
-    let master_km = memfuse_security::CryptoKey::try_new("test-mcp-kv", b"test-salt-mcp-kv").unwrap();
+    let master_km =
+        memfuse_security::CryptoKey::try_new("test-mcp-kv", b"test-salt-mcp-kv").unwrap();
     let cipher = Arc::new(memfuse_security::KvSegmentCipher::new(master_km));
     let bridge_adapter = Arc::new(memfuse_candle::KvBridgeAdapter::new(store, cipher));
 

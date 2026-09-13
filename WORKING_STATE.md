@@ -21,7 +21,6 @@ Ergebnis: **6 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
-| `crates/memfuse-candle/src/kv_bridge.rs` | 58 | `AGT-CANDLE-d0dacdd8` | `SECURITY` | `MAJOR` | `2026-09-13T01:40:00Z` | // AI-TAG[SECURITY][MAJOR] try_get_cached_segment ignores caller requested fingerprint (ID: AGT-CANDLE-d0dacdd8) (TS: 2026-09-13T01:40:00Z) (SESSION: 50c8c755) |
 | `crates/memfuse-crypto/src/kv_segment/store.rs` | 443 | `AGT-SECURITY-3edfea62` | `TEST` | `ANALYZED-SAFE` | `2026-09-12T09:35:00Z` | // AI-TAG[TEST][ANALYZED-SAFE] Lock release test timing dependency resolved via Notify handshake (ID: AGT-SECURITY-3edfea62) (TS: 2026-09-12T09:35:00Z) (SESSION: 5f10d4f0) |
 | `crates/memfuse-db/src/fusion.rs` | 45 | `AGT-DB-b31d8a72` | `SMELL` | `MAJOR` | `2026-09-12T18:43:13Z` | // AI-TAG[SMELL][MAJOR] ResonanceConfig beta/gamma clamp returns NaN if input is NaN (ID: AGT-DB-b31d8a72) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646) |
 | `crates/memfuse-store/src/wal.rs` | 1048 | `AGT-STORE-d73203c0` | `SMELL` | `ANALYZED-SAFE` | `2026-09-10T19:14:58Z` | // AI-TAG[SMELL][ANALYZED-SAFE] audit-C-3: Exklusiver Mutex-Lock self.file.lock() in append_batch serialisiert Header-Check (write_header) und Dateischreibzugriffe vollständig. (ID: AGT-STORE-d73203c0) (TS: 2026-09-10T19:14:58Z) (SESSION: 21a8d3e8) |
@@ -38,9 +37,9 @@ Ergebnis: **6 offene Tags**
 | `memfuse-calibration` | 2 | 1789 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 2 | 5791 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-graph` | 2 | 10625 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 2 | 5453 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-text` | 2 | 5463 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-candle` | 3 | 3659 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
+| `memfuse-security` | 2 | 5466 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-text` | 2 | 5464 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-candle` | 3 | 3492 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 3 | 15955 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 3 | 4247 | 🟢 Clean |  |
 | `memfuse-store` | 3 | 20285 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
@@ -49,7 +48,7 @@ Ergebnis: **6 offene Tags**
 | `memfuse-bench` | 6 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 6 | 5536 | 🟢 Clean |  |
 | `memfuse-agent` | 7 | 5939 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 8 | 5019 | 🟢 Clean |  |
+| `memfuse-mcp` | 8 | 5016 | 🟢 Clean |  |
 
 
 ## DAG-Topologie
