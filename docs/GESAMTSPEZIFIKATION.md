@@ -2,7 +2,7 @@
 
 > **Status:** Verbindlich · Normative Architektur- & Schnittstellenspezifikation für LLM-Agenten
 > **Stand:** 2026-09-12 · Vollständige Quellcode-Abbildung aller 18 Workspace-Crates, des `memfuse-py` FFI-Workspaces sowie der `xtask`- & `memfuse-bench`-Werkzeug-Crates
-> **Geltungsbereich:** Dieses Dokument ist die einzige normative Referenz für die Architektur, Datenstrukturen, Schnittstellen, Invarianten, Concurrency-Modelle, Sicherheitsinfrastrukturen und Datenflüsse von MemFuse. Es ersetzt jegliche manuelle Codebase-Analyse für LLMs und bietet eine exakte, vollständige Abbildung aller Komponenten.
+> **Geltungsbereich:** Dieses Dokument ist die einzige normative Referenz für die Architektur, Datenstrukturen, Schnittstellen, Invarianten, Concurrency-Modelle, Sicherheitsinfrastrukturen und Datenflüsse von MemFuse. Es ersetzt jegliche manuelle Codebase-Analyse für LLMs und bietet eine exakte, vollständige Abbildung aller Komponenten auf Volltext-Spezifikationsniveau pro `pub struct`, `pub enum`, `pub trait` und `pub fn`.
 
 ---
 
@@ -81,7 +81,7 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `types/domain.rs`: `DocId`, `EntityId`, `TxId`, `TenantId`, `CollectionId`, `DecisionId`, `Vector`, `Metadata`, `Entity`, `Edge`, `DistanceMetric`. All Core-IDs sind `#[repr(transparent)] u64` Newtypes.
   - `types/budget.rs`: `Budget`, `TokenBudget`.
   - `types/filter.rs`: `Filter`, `FilterExpr`.
-  - `types/importance.rs`: `ImportanceScore`.
+  - `types/importance.rs`: `ImportanceScore`, `DecayFunction`.
   - `types/saos.rs`: `SearchQuery`, `ScoredDocument`, `ProvenanceRecord`.
   - `traits/mod.rs` & `traits/embedding.rs`: `StorageEngine`, `VectorIndex`, `TextIndex`, `GraphIndex`, `ResponseGroundingValidator`, `EmbeddingProvider`, `LlmTextGenerator`, `LlmTextGeneratorStreaming`.
   - `snapshot.rs`: `SnapshotGuard`, `SnapshotRegistry` (MVCC Read Isolation).
@@ -93,6 +93,71 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `LlmTextGenerator`: `fn generate_text(&self, prompt: &str) -> BoxFuture<'_, Result<String>>`
 - **Invarianten:** Absolut zero `unsafe`. Kein I/O, async oder Netz-Code in `types`.
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-core`:
+
+##### `pub struct DocId(pub u64)`
+- **Beschreibung:** Interner Dokument-Identifikator wrapped als `#[repr(transparent)] u64`.
+- **Konstanten:** `MAX = DocId(u64::MAX)`, `MIN = DocId(0)`.
+- **Methoden:**
+  - `pub const fn new(id: u64) -> Self`: Erstellt `DocId`.
+  - `pub const fn inner(self) -> u64`: Gibt die innere primitive `u64` zurück.
+  - `pub fn from_key(key: &str) -> Result<Self>`: Deriviert deterministisch einen `DocId` aus den ersten 8 Bytes (Little-Endian) des BLAKE3-Hashes von `key` (ADR-016). Gibt `MemFuseError::InvalidInput` bei leerem `key` zurück.
+
+##### `pub struct EntityId(pub u64)`
+- **Beschreibung:** Interner Entitäts-Knoten-Identifikator im Wissensgraphen.
+- **Methoden:**
+  - `pub const fn new(id: u64) -> Self`: Erstellt `EntityId`.
+  - `pub const fn inner(self) -> u64`: Gibt die innere primitive `u64` zurück.
+  - `pub fn from_doc_id(doc_id: DocId) -> Self`: Erzeugt `EntityId` mit identischem inneren Wert wie `doc_id`.
+  - `pub fn from_key(key: &str) -> Result<Self>`: Deriviert `EntityId` analog via BLAKE3 Hash-Trunkierung.
+
+##### `pub struct TxId(pub u64)`
+- **Beschreibung:** Transaktions-Identifikator mit strikter Bereichstrennung zur Vermeidung von Kausalitätskonflikten (ADR-028).
+- **Konstanten:**
+  - `pub const INVALID: Self = Self(0);`
+  - `pub const MAX_COLLECTION_SEQUENCE: u64 = 1_000_000_000_000;` (Grenze für Collection-Sequenzen).
+  - `pub const INTERNAL_BASE: u64 = u64::MAX - 1_000_000;` (Untergrenze für System-Transaktionen).
+- **Methoden:**
+  - `pub const fn new(id: u64) -> Self`: Erstellt `TxId`.
+  - `pub const fn inner(self) -> u64`: Gibt die innere primitive `u64` zurück.
+  - `pub const fn internal() -> Self`: Gibt `TxId(INTERNAL_BASE)` zurück.
+  - `pub fn try_from_internal_offset(offset: u64) -> Result<Self>`: Erzeugt eine System-TxId `INTERNAL_BASE + offset` und garantiert Prüfschutz gegen `u64::MAX`-Überlauf.
+  - `pub fn is_valid_origin(&self) -> bool`: Verifiziert, dass die TxId entweder in `[0, MAX_COLLECTION_SEQUENCE]` oder in `[INTERNAL_BASE, u64::MAX]` liegt.
+
+##### `pub struct TenantId(pub u64)`
+- **Beschreibung:** Mandanten-Identifikator (INV-TENANT-1).
+- **Konstanten:** `pub const SYSTEM: Self = Self(0);`
+- **Methoden:**
+  - `pub fn try_new(id: u64) -> Result<Self>`: Erstellt `TenantId`. Lehnt `id == 0` strikt ab mit `MemFuseError::InvalidInput` (Reserviert für `SYSTEM`).
+  - `pub const fn inner(self) -> u64`: Gibt die innere primitive `u64` zurück.
+  - `pub fn is_system(self) -> bool`: Prüft ob `self.0 == 0`.
+
+##### `pub enum DistanceMetric`
+- **Varianten:** `Cosine` (Cosine Distance $1 - \cos(\theta)$), `Euclidean` (L2 Distanz), `DotProduct` (Negiertes Skalarprodukt).
+- **Methoden:**
+  - `pub fn compute(&self, a: &[f32], b: &[f32]) -> Result<f32>`: Berechnet Fließkommadistanz zwischen zwei Vektoren gleicher Dimension. Validiert auf Endlichkeit (`is_finite()`).
+  - `pub fn compute_u8(&self, a: &[u8], b: &[u8]) -> Result<u32>`: Skalierte Festkomma-Distanzberechnung für Quantisierung, garantiert "kleiner = ähnlicher".
+
+##### `pub trait StorageEngine: Send + Sync + 'static`
+- **Methoden:**
+  - `fn get<'a>(&'a self, key: &'a [u8]) -> BoxFuture<'a, Result<Option<Vec<u8>>>>;`
+  - `fn get_at_seq<'a>(&'a self, key: &'a [u8], seq: u64) -> BoxFuture<'a, Result<Option<Vec<u8>>>>;`
+  - `fn put<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<()>>;`
+  - `fn put_if_absent<'a>(&'a self, tx_id: TxId, key: &'a [u8], value: &'a [u8]) -> BoxFuture<'a, Result<bool>>;`
+  - `fn put_batch<'a>(&'a self, tx_id: TxId, entries: &'a [(Vec<u8>, Vec<u8>)]) -> BoxFuture<'a, Result<()>>;`
+  - `fn delete<'a>(&'a self, tx_id: TxId, key: &'a [u8]) -> BoxFuture<'a, Result<()>>;`
+  - `fn delete_many<'a>(&'a self, tx_id: TxId, keys: Vec<Vec<u8>>) -> BoxFuture<'a, Result<u64>>;`
+  - `fn delete_prefix<'a>(&'a self, tx_id: TxId, prefix: &'a [u8]) -> BoxFuture<'a, Result<u64>>;`
+  - `fn commit<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>>;`
+  - `fn rollback<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>>;`
+  - `fn rollback_to_tx<'a>(&'a self, tx_id: TxId) -> BoxFuture<'a, Result<()>>;`
+  - `fn flush<'a>(&'a self) -> BoxFuture<'a, Result<()>>;`
+  - `fn stats<'a>(&'a self) -> BoxFuture<'a, Result<StorageStats>>;`
+  - `fn last_seq_no<'a>(&'a self) -> BoxFuture<'a, Result<u64>>;`
+  - `fn last_tx_id<'a>(&'a self) -> BoxFuture<'a, Result<TxId>>;`
+  - `fn scan_prefix<'a>(&'a self, prefix: &'a [u8]) -> BoxFuture<'a, Result<Vec<(Vec<u8>, Vec<u8>)>>>;`
+  - `fn scan_prefix_bounded<'a>(&'a self, prefix: &'a [u8], limit: usize, cursor: Option<&'a [u8]>) -> BoxFuture<'a, Result<(Vec<(Vec<u8>, Vec<u8>)>, Option<Vec<u8>>)>>;`
+
 ---
 
 ### §3.3 `memfuse-checkpoint` — Layer 2 (Snapshot Pinning & Isolation)
@@ -103,6 +168,19 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `InstanceOrphanRegistry`: Instanz-spezifische Registratur verwaister Checkpoints und Pins (gemäß ADR-053/ADR-058 ohne globale Statics).
   - `PinGuard`, `CheckpointGuard`: RAII-Guards. Verfassen Mutation-Dirty-Flags (`is_dirty`) synchron im Speicher und führen I/O-Persistence verzögert via `flush_orphan_registry()` durch.
 - **Invarianten:** Droppen eines Guards ist lock-frei und blockiert den Ausführungsthread nicht mit Festplatten-I/O. Fehler werden via `tracing::error!` protokolliert.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-checkpoint`:
+
+##### `pub struct CheckpointManager`
+- **Methoden:**
+  - `pub fn new(storage: Arc<dyn StorageEngine>) -> Self`: Erstellt neuen Manager.
+  - `pub fn pin_checkpoint(&self, seq_no: u64) -> Result<PinGuard>`: Erzeugt einen RAII `PinGuard` für `seq_no`.
+  - `pub fn min_active_seq_no(&self) -> Option<u64>`: Ermittelt die kleinste aktive gepinnte Sequenznummer über alle Guards hinweg.
+
+##### `pub struct PinGuard`
+- **Spezifikation:** RAII Guard für gepinnte Sequenznummern. Beim Droppen wird der Pin automatisch aus der `InstanceOrphanRegistry` unpinned.
+- **Methoden:**
+  - `pub fn seq_no(&self) -> u64`: Gibt die gepinnte Sequenznummer zurück.
 
 ---
 
@@ -116,6 +194,20 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `PlattScaler`: Parametrische logistische Kalibrierung mit Platt-Smoothing.
   - `PidController`: Feedback-Loop zur dynamischen Anpassung der Kandidatenpool-Größe basierend auf Latenzmessungen. Validiert `measured_latency_ms.is_finite()`; gibt bei NaN/Inf den unveränderten Pool-Wert zurück.
   - `ReplicatorState` (Feature `physio-replicator-dynamics` / F-07): Dynamic Weight Allocation via Multiplicative Weights Update Method (MWUM), erzwingt $\sum w_i = 1.0$.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-calibration`:
+
+##### `pub struct IsotonicCalibrator`
+- **Methoden:**
+  - `pub fn new(warmup_required: usize) -> Self`: Erzeugt Kalibrator mit vorgegebenem Warmup-Schwellenwert.
+  - `pub fn add_observation(&mut self, score: f32, label: bool)`: Fügt Beobachtungspaar (Rohscore, Binäretikett) hinzu.
+  - `pub fn calibrate(&self, uncalibrated_score: f32) -> Option<f32>`: Kalibriert den Rohscore via PAVA. Liefert `None` bei unzureichenden Beobachtungen (< `warmup_required`).
+  - `pub fn invalidate_on_config_change(&mut self, new_fp: &ConfigFingerprint)`: Prüft auf Fingerabdrucksänderung und setzt gespeicherte Beobachtungen bei Modell- oder Prompt-Drift zurück (INV-CAL-2).
+
+##### `pub struct PidController`
+- **Methoden:**
+  - `pub fn new(kp: f32, ki: f32, kd: f32, target_latency_ms: f32, min_pool_size: usize, max_pool_size: usize) -> Self`: Erstellt PID-Regler für Suchpool-Sizing.
+  - `pub fn update(&mut self, measured_latency_ms: f32) -> usize`: Aktualisiert den Regelkreis basierend auf gemessener Suchlatenz in ms. Nutzt Anti-Windup-Grenzwerte und gibt geklemmte Kandidatengröße in `[min_pool_size, max_pool_size]` zurück.
 
 ---
 
@@ -131,6 +223,20 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `percolation` Modul (Feature `physio-percolation` / F-11): Berechnung der Perkulations-Gesundheitsmetrik $\phi(t) = \frac{\text{active\_edges}}{N \cdot \ln(N)}$ (gibt `None` für $N < 10$ zurück) und automatisches Re-Bonding unverbundener Knotenpaare oberhalb der `rebonding_similarity`.
   - `SessionDag`: Deadlock-freie Lock-Orchestrierung mittels compile-zeitlich geprüfter `NodesGuard`.
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-graph`:
+
+##### `pub struct CsrGraph`
+- **Methoden:**
+  - `pub fn new() -> Self`: Konstruiert leeren CSR-Graph.
+  - `pub fn add_entity(&self, tx: TxId, entity: Entity) -> Result<()>`: Staged Entität in der aktuellen Transaktion.
+  - `pub fn add_edge(&self, tx: TxId, edge: Edge) -> Result<()>`: Staged Gerichtete Kante.
+  - `pub fn commit(&self, tx: TxId) -> Result<()>`: Sortiert staged Entitäten und Kanten deterministisch nach `EntityId` und aktualisiert Offsets.
+  - `pub fn traverse(&self, start: EntityId, max_hops: usize) -> Result<Vec<(EntityId, f32)>>`: Führt Breitensuche durch, kappt `max_hops` bei `MAX_TRAVERSAL_HOPS = 3`.
+
+##### `pub struct PathRag`
+- **Methoden:**
+  - `pub fn find_paths(&self, source: EntityId, target: EntityId, max_depth: usize) -> Result<Vec<Vec<EntityId>>>`: Führt bidirektionale Suche durch, um relationale Verbindungs-Pfade zu ermitteln.
+
 ---
 
 ### §3.6 `memfuse-crypto` (Package-Name: `memfuse-security`) — Layer 2 (Kryptographie & Datenschutz)
@@ -142,6 +248,19 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `DeletionProof`: Kryptographischer Nachweis der Datenlöschung (DSGVO Art. 17) via BLAKE3 / HMAC Signaturkette.
   - `KvSegmentStore`: Verschlüsselter, mandantenisolierter KV-Cache für Inferenz-Prefill-Bypass mit LRU-Eviction. Verwendet Ping-Pong `tokio::sync::Notify` Handshake (`notify_batch_released` / `notify_read_complete`) in Evictions-Tests zur rennbedingungsfreien Sperren-Verifizierung.
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-security`:
+
+##### `pub struct DeletionProof`
+- **Felder:** `pub doc_id: DocId`, `pub tx_id: TxId`, `pub timestamp_ms: u64`, `pub blake3_hash: [u8; 32]`, `pub hmac_signature: [u8; 32]`.
+- **Methoden:**
+  - `pub fn generate(doc_id: DocId, tx_id: TxId, key: &[u8]) -> Self`: Erzeugt unveränderlichen kryptographischen Löschnachweis.
+  - `pub fn verify(&self, key: &[u8]) -> bool`: Verifiziert die Signaturkette gegen den Integritätsschlüssel.
+
+##### `pub struct KvSegmentStore`
+- **Methoden:**
+  - `pub fn put_segment(&self, tenant: TenantId, segment_id: &str, data: &[u8]) -> Result<()>`: Speichert KV-Segment verschlüsselt im Treibstoff-Cache.
+  - `pub fn get_segment(&self, tenant: TenantId, segment_id: &str) -> Result<Option<Vec<u8>>>`: Dekodiert und entschlüsselt das KV-Segment für `tenant`.
+
 ---
 
 ### §3.7 `memfuse-text` — Layer 2 (Textanalyse & BM25 Volltext-Index)
@@ -151,6 +270,18 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `Bm25Index`: Invertierter Index mit BM25-Termgewichtung ($k_1=1.2, b=0.75$) und TF-IDF-Normalisierung.
   - `GermanCompoundSplitter` / `Morphology`: Zerlegung deutscher Zusammensetzungen (z. B. "Donaudampfschifffahrt" -> ["Donau", "Dampf", "Schiff", "Fahrt"]).
   - `Tokenizer`: Unicode-Word-Boundary-Tokenisierung mit Stopwort-Filterung.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-text`:
+
+##### `pub struct Bm25Index`
+- **Methoden:**
+  - `pub fn new(k1: f32, b: f32) -> Self`: Erstellt BM25-Index mit Parametern.
+  - `pub fn insert(&self, tx: TxId, id: DocId, text: &str) -> Result<()>`: Indiziert Text-Inhalt.
+  - `pub fn search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>`: Berechnet BM25-Scores und gibt Top-k Resultate zurück.
+
+##### `pub struct GermanCompoundSplitter`
+- **Methoden:**
+  - `pub fn split(&self, word: &str) -> Vec<String>`: Zerlegt deutsches Kompositum in Grundwörter unter Verwendung des eingebetteten Wörterbuchs (`data/german_words.txt`).
 
 ---
 
@@ -163,6 +294,17 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `GaspValidator`: Implementiert `ResponseGroundingValidator` Trait zur Berechnung des Halluzinations-Scores ($[0.0, 1.0]$).
   - `KvBridge`: Verbindet `CandleInferenceEngine` mit `KvSegmentStore`.
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-candle`:
+
+##### `pub struct CandleEmbedClient`
+- **Methoden:**
+  - `pub fn embed(&self, text: &str) -> Result<Vec<f32>>`: Erzeugt Embedding-Vektor.
+  - `pub fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>`: Erzeugt Embeddings im Batch (max. 256 Texte).
+
+##### `pub struct GaspValidator`
+- **Methoden:**
+  - `pub fn score_grounding(&self, response: &str, sources: &[&str]) -> Result<f32>`: Berechnet Grounding Score im Bereich $[0.0, 1.0]$. Schützt strikt gegen `NaN` und non-finite Fließkommawerte.
+
 ---
 
 ### §3.9 `memfuse-index` — Layer 3 (Vektorindex Engine & Quantisierung)
@@ -174,6 +316,14 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `DiskAnnIndex`: Disk-backed Vektorindex für vergrößerte Datenmengen.
   - `PartialRebuild`: Reorganisiert den HNSW-Graph partiell unter Beibehaltung der Nucleation Recall Stabilität (kontrolliert über CI Toleranzband 0.05).
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-index`:
+
+##### `pub struct HnswIndex`
+- **Methoden:**
+  - `pub fn new(config: HnswConfig) -> Result<Self>`: Validiert Konfiguration (`dimension > 0`, `m > 0`, `ef_construction >= m`) und instanziiert HNSW Index.
+  - `pub fn insert(&self, tx: TxId, id: DocId, vector: &[f32]) -> Result<()>`: Fügt Vektor in den HNSW-Graph ein. Validiert `vector.len() == dimension` und `vector.all(f32::is_finite)`.
+  - `pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<ScoredDocument>>`: Traversiert HNSW-Graph für k-Nächste Nachbarn.
+
 ---
 
 ### §3.10 `memfuse-ollama` — Layer 3 (Ollama Integration & Query Rewriter)
@@ -183,6 +333,13 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `OllamaClient`: Implementiert `LlmTextGenerator` sowie `memfuse_db::QueryRewriter` via `OllamaClient::generate_text` für mehrstufige iteratives Query-Expansion.
   - `OllamaEmbedding`: Externe Embedding-Generierung über Ollama Endpunkte.
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-ollama`:
+
+##### `pub struct OllamaClient`
+- **Methoden:**
+  - `pub fn new(endpoint: &str, model: &str) -> Self`: Erstellt Ollama Client.
+  - `pub fn generate_text(&self, prompt: &str) -> BoxFuture<'_, Result<String>>`: Führt Text-Generierung mit exponentiellem Backoff und Jitter (max 3 Retries) durch.
+
 ---
 
 ### §3.11 `memfuse-embed` — Layer 4 (ONNX Embeddings & Cross-Encoder Reranker)
@@ -191,6 +348,13 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
 - **Hauptkomponenten & Types:**
   - `TextEmbedder`: ONNX / FastEmbed Client mit `MAX_EMBED_BATCH_SIZE = 512`. Exponiert `TextEmbedderConfig.max_batch_size`.
   - `CrossEncoderReranker` (Feature-gated via `#[cfg(feature = "onnx")]`): Cross-Encoder Reranking mit implizitem Feedback (`record_implicit_feedback`), Platt-Scaler Kalibrierung (`is_calibrated()`, `calibration_observation_count()`).
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-embed`:
+
+##### `pub struct TextEmbedder`
+- **Methoden:**
+  - `pub fn new(config: TextEmbedderConfig) -> Result<Self>`: Instanziiert ONNX-basierten Embedder.
+  - `pub fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>`: Erzeugt Batch-Embeddings (max 512 Texte).
 
 ---
 
@@ -205,6 +369,15 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `MemTable`: Lock-freie SkipList / BTreeMap Staging-Struktur.
   - `SSTable`: Blockbasierte SSTable-Dateien mit Bloom-Filter und CRC32-Fast Checksums. Chaos-Bit-Flip-geprüft.
   - *Rollback Invariant:* `MIN_ENTRIES_FOR_SSTABLE_REBUILD = 8`. Überlebende Einträge $<8$ aus einer SSTable werden beim Transaktions-Rollback (`rollback_to_tx_locked`) direkt in den Memtable eingefügt.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-store`:
+
+##### `pub struct LsmStorage`
+- **Methoden:**
+  - `pub async fn open(dir: impl AsRef<Path>, config: LsmConfig) -> Result<Self>`: Öffnet oder erstellt LSM-Engine, replayed WAL und führt bei Bedarf Recovery/Flush aus.
+  - `pub async fn put(&self, tx_id: TxId, key: &[u8], value: &[u8]) -> Result<()>`: Staged Key-Value-Paar im MemTable/WAL.
+  - `pub async fn commit(&self, tx_id: TxId) -> Result<()>`: Führt Gruppen-Commit durch, schreibt WAL-Einträge und wendet Memtable-Updates an.
+  - `pub async fn rollback_to_tx(&self, tx_id: TxId) -> Result<()>`: Schreibt Intent-Marker `rollback-<tx>.intent`, kürzt WAL und bereinigt SSTables.
 
 ---
 
@@ -237,6 +410,17 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `export.rs` & `import.rs`: Memory-Export/Import v1 Format (`memfuse-export-v1.json`). Liest und schreibt Dokumente, Roh-Embeddings, `importance_score` und Graph-Beziehungen idempotent wieder ein.
   - `scan_prefix` / `scan`: Erzwingt `MAX_SCAN_RESULTS_DEFAULT = 10_000` zum OOM-Schutz.
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-db`:
+
+##### `pub struct Collection<S: StorageEngine, V: VectorIndex>`
+- **Methoden:**
+  - `pub async fn insert(&self, text: &str, metadata: Option<Metadata>) -> Result<DocId>`: Fügt Dokument ein, generiert Chunk-Metadata, Bm25-Indexierung und Vektor-Embedding.
+  - `pub async fn get(&self, doc_id: DocId) -> Result<Option<Document>>`: Liest Dokument aus LSM-Storage.
+  - `pub async fn update(&self, doc_id: DocId, text: &str, metadata: Option<Metadata>) -> Result<()>`: Aktualisiert bestehendes Dokument atomar.
+  - `pub async fn delete(&self, doc_id: DocId) -> Result<()>`: Markiert Dokument als gelöscht, triggert Kaskaden-Invalidierung im Graphen und erzeugt DeletionProof.
+  - `pub async fn hybrid_search(&self, query: &str, k: usize) -> Result<Vec<ScoredDocument>>`: Führt 5-Signal RRF Fusion durch.
+  - `pub async fn relate(&self, from: DocId, to: DocId, relation: LinkRelation) -> Result<()>`: Erzeugt gerichteten Zettelkasten-Link zwischen zwei Chunks.
+
 ---
 
 ### §3.14 `memfuse-router` — Layer 6 (Conformal Prediction & Drift Surveillance)
@@ -245,6 +429,16 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
 - **Hauptkomponenten & Types:**
   - `RouterEngine`: Evaluierte Routing-Profile via `select_profile_cascade`. Benötigt `st.conformal.window_total >= 50` für Aktivierung der konformen Score-Kalibrierung (`is_calibrated = true`). Basiert Kandidaten-Scoring per ADR-059 ausschließlich auf `&effective_profiles` (`compute_profile_scores`).
   - `LyapunovDriftWatcher`: Berechnet zeitabhängige Lyapunov-Exponenten über Abfrage-Trajektorien zur Abweichungserkennung. Exponiert `record_outcome(decision_id, outcome) -> bool`.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-router`:
+
+##### `pub struct RouterEngine`
+- **Methoden:**
+  - `pub fn select_profile(&self, query: &str) -> ProfileSelection`: Ermittelt das beste SLM-Routingprofil unter Berücksichtigung der konformen Konfidenzintervalle.
+
+##### `pub struct LyapunovDriftWatcher`
+- **Methoden:**
+  - `pub fn record_outcome(&mut self, decision_id: DecisionId, outcome: RoutingOutcome) -> bool`: Aktualisiert Trajektorien-Metriken und liefert `true`, wenn signifikanter Drift erkannt wird.
 
 ---
 
@@ -256,6 +450,12 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `AgentTool` Trait: Definiert `fn estimated_cost(&self, input: &Value) -> usize` (Standard: 0). Wird von der `OrchestratorEngine` zur strikten prä-exekutiven atomaren Budget-Reservierung genutzt.
   - `AuditLogger`: Protokolliert Ausführungsschritte prozessisoliert.
   - `DeadLetterQueue`: Erfasst fehlgeschlagene Ausführungsschritte zur Wiederherstellung.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-agent`:
+
+##### `pub struct OrchestratorEngine`
+- **Methoden:**
+  - `pub async fn execute_step(&self, step: AgentStep) -> Result<StepOutcome>`: Prüft Vorbedingungen, reserviert atomar das geschätzte Kostenbudget und führt den Tool-Schritt aus.
 
 ---
 
@@ -272,6 +472,12 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
   - `PromptInjectionGuard`: NFKC-Unicode-Normalisierung, Removal von Zero-Width-Zeichen, rekursive Base64-Payload-Dekodierung bis Tiefe 2.
   - `VolatileSandbox`: AES-256-GCM-SIV RAM-Verschlüsselung via `memfuse-crypto::kv_segment` (Zeroize-on-Drop).
 
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-mcp`:
+
+##### `pub struct PromptInjectionGuard`
+- **Methoden:**
+  - `pub fn check_prompt(input: &str) -> Result<()>`: Bereinigt Zero-Width Characters, führt NFKC-Normalisierung durch und dekodiert rekursiv Base64-Segmente bis Tiefe 2 auf verdächtige Injection-Muster.
+
 ---
 
 ### §3.17 `memfuse-py` — Grenzschicht (Isoliertes FFI Workspace)
@@ -285,6 +491,12 @@ MemFuse ist reine Infrastruktur. Es wird über drei Schnittstellen verteilt:
 - **GIL & Runtime Safety:**
   - `run_blocking_ffi`: Gibt GIL via `py.allow_threads()` frei und fängt Rust-Panics an FFI-Grenze mit `std::panic::catch_unwind` in `PyRuntimeError` ab (`panic = "unwind"` in Cargo.toml).
   - PEP 684 Sub-Interpreter Isolation: Eigene `PyRuntimeState` Tokio-Runtime pro CPython Sub-Interpreter.
+
+#### Mikrospezifikationen & Volltext-Dokumentation für `memfuse-py`:
+
+##### `pub fn open(path: &str, ...)`
+- **Spezifikation:** CPython Einstiegspunkt.
+- **Methoden:** `collection`, `list_collections`, `flush`, `stats`.
 
 ---
 
