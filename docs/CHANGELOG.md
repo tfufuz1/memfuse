@@ -78,6 +78,7 @@
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/filter.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Metadaten-Filterung und Extraktion von Kognitiven MemoryTypes (Episodic, Semantic, Working). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/multistep.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Multi-Step Iterative Retrieval Engine für komplexe Agenten-Abfragen (o-series Pattern). |
 | `TS:2026-08-29T17:22:29Z (SESSION: 0dcb9f3b)` | `crates/memfuse-db/src/transaction.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Orchestrierung atomarer 4-Index 2-Phase-Commits und kompensierender Transaktionen. |
+| `2026-09-13T01:25:00Z` | `crates/memfuse-text/src/lib.rs` | `REVIEW-PASS` | `-` | `89a61398` | `-` | `-` | // REVIEW-PASS[2/2] Tier-2 audit verified: gate-stack green, 0 unsafe, APM-14/16/22/23/24/36 validated, 3x concurrency runs clean. (TS: 2026-09-13T01:25:00Z) (SESSION: 89a61398) (PRÜFER-KONTEXT: FRESH) |
 | `2026-09-12T20:00:00Z (SESSION: 7c5b91a2)` | `crates/memfuse-checkpoint/src/lib.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | RAII CheckpointGuard + persistente Snapshot-Verwaltung |
 | `2026-09-12T18:43:13Z` | `crates/memfuse-db/src/collection/maintenance.rs` | `AI-TAG` | `AGT-DB-f18d79a2` | `-` | `RESOLVED` | `0` | // AI-TAG[SMELL][MAJOR] RESOLVED: AGT-DB-f18d79a2 — reap_expired_documents uses cursor-based batch pagination to avoid 10k silent truncation limit (TS: 2026-09-12T18:43:13Z) |
 | `2026-09-12T18:43:13Z` | `crates/memfuse-db/src/fusion.rs` | `AI-TAG` | `AGT-DB-b31d8a72` | `e6ab3646` | `OPEN` | `0` | // AI-TAG[SMELL][MAJOR] ResonanceConfig beta/gamma clamp returns NaN if input is NaN (ID: AGT-DB-b31d8a72) (TS: 2026-09-12T18:43:13Z) (SESSION: e6ab3646) |
@@ -301,6 +302,7 @@
 | `` | `crates/memfuse-index/tests/diskann_corruption_fallback_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Corruption detection and DiskAnnFallbackPolicy test (Pflichttest 2). |
 | `` | `crates/memfuse-index/tests/diskann_fault_injection_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fault-Injection Test for DiskANN rebuild failures (Pflichttest 1). |
 | `` | `crates/memfuse-index/tests/hnsw_rebuild_search_consistency.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-mcp/src/lib.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SMELL][RESOLVED] audit-kv-bridge: Cipher-Integration wenn MemFuse::kv_cipher() API existiert |
 | `` | `crates/memfuse-mcp/src/lib.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SMELL][RESOLVED] audit-APM-38-mcp: Replay-Schutz für stdio-JSON-RPC |
 | `` | `crates/memfuse-store/examples/chaos_writer.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SMELL][RESOLVED] audit-H-3: LsmStorage hält eine persistente CompactionEngine-Instanz (LsmStorage.compaction_engine), wodurch Compaction-State & Zähler erhalten bleiben. |
