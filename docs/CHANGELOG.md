@@ -301,6 +301,7 @@
 | `` | `crates/memfuse-index/tests/diskann_corruption_fallback_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Corruption detection and DiskAnnFallbackPolicy test (Pflichttest 2). |
 | `` | `crates/memfuse-index/tests/diskann_fault_injection_test.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` | Fault-Injection Test for DiskANN rebuild failures (Pflichttest 1). |
 | `` | `crates/memfuse-index/tests/hnsw_rebuild_search_consistency.rs` | `FILE-CONTEXT` | `-` | `-` | `-` | `-` |  |
+| `` | `crates/memfuse-mcp/src/lib.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SMELL][RESOLVED] audit-kv-bridge: Cipher-Integration wenn MemFuse::kv_cipher() API existiert |
 | `` | `crates/memfuse-mcp/src/lib.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SMELL][RESOLVED] audit-APM-38-mcp: Replay-Schutz für stdio-JSON-RPC |
 | `` | `crates/memfuse-store/examples/chaos_writer.rs` | `FILE-CONTEXT` | `-` | `chaos_power_cut` | `-` | `-` |  |
 | `` | `crates/memfuse-store/src/compaction.rs` | `AI-TAG` | `-` | `-` | `RESOLVED` | `-` | // AI-TAG[SMELL][RESOLVED] audit-H-3: LsmStorage hält eine persistente CompactionEngine-Instanz (LsmStorage.compaction_engine), wodurch Compaction-State & Zähler erhalten bleiben. |
