@@ -699,24 +699,29 @@ pub(crate) fn normalize_inplace(v: &mut [f32]) {
 /// Computes the dot product of two u8 vectors.
 #[inline]
 #[allow(dead_code, unsafe_code)]
-pub(crate) fn dot_product_u8(a: &[u8], b: &[u8]) -> u32 {
-    debug_assert_eq!(a.len(), b.len());
+pub(crate) fn dot_product_u8(a: &[u8], b: &[u8]) -> Result<u32, MemFuseError> {
+    if a.len() != b.len() {
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx512vnni") {
             // SAFETY: AVX-512 VNNI Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { dot_product_u8_avx512vnni(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            return Ok(unsafe { dot_product_u8_avx512vnni(a, b) }); // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         if is_x86_feature_detected!("avx2") {
             // SAFETY: AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { dot_product_u8_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            return Ok(unsafe { dot_product_u8_avx2(a, b) }); // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
-    dot_product_u8_scalar(a, b)
+    Ok(dot_product_u8_scalar(a, b))
 }
 
 #[allow(dead_code)]
@@ -730,24 +735,29 @@ pub(crate) fn dot_product_u8_scalar(a: &[u8], b: &[u8]) -> u32 {
 /// Computes the squared Euclidean distance between two u8 vectors.
 #[inline]
 #[allow(dead_code, unsafe_code)]
-pub(crate) fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> u32 {
-    debug_assert_eq!(a.len(), b.len());
+pub(crate) fn euclidean_distance_sq_u8(a: &[u8], b: &[u8]) -> Result<u32, MemFuseError> {
+    if a.len() != b.len() {
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
             // SAFETY: AVX-512 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { euclidean_distance_sq_u8_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            return Ok(unsafe { euclidean_distance_sq_u8_avx512(a, b) }); // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         if is_x86_feature_detected!("avx2") {
             // SAFETY: AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { euclidean_distance_sq_u8_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            return Ok(unsafe { euclidean_distance_sq_u8_avx2(a, b) }); // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
-    euclidean_distance_sq_u8_scalar(a, b)
+    Ok(euclidean_distance_sq_u8_scalar(a, b))
 }
 
 #[allow(dead_code)]
@@ -772,8 +782,16 @@ pub struct CosineSimilarityPartsU8 {
 /// Computes the parts required for cosine similarity between two u8 vectors.
 #[inline]
 #[allow(dead_code, unsafe_code)]
-pub(crate) fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarityPartsU8 {
-    debug_assert_eq!(a.len(), b.len());
+pub(crate) fn cosine_similarity_parts_u8(
+    a: &[u8],
+    b: &[u8],
+) -> Result<CosineSimilarityPartsU8, MemFuseError> {
+    if a.len() != b.len() {
+        return Err(MemFuseError::EmbeddingDimensionMismatch {
+            expected: a.len(),
+            got: b.len(),
+        });
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx512f")
@@ -783,16 +801,16 @@ pub(crate) fn cosine_similarity_parts_u8(a: &[u8], b: &[u8]) -> CosineSimilarity
             // SAFETY: AVX-512 VNNI Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { cosine_similarity_parts_u8_avx512(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            return Ok(unsafe { cosine_similarity_parts_u8_avx512(a, b) }); // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
         if is_x86_feature_detected!("avx2") {
             // SAFETY: AVX2 Dispatch.
             // BEGRÜNDUNG: Hardware-Support wurde via is_x86_feature_detected geprüft.
             // SAFETY: Hardware support detected.
-            return unsafe { cosine_similarity_parts_u8_avx2(a, b) }; // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
+            return Ok(unsafe { cosine_similarity_parts_u8_avx2(a, b) }); // SAFETY: 1. Invariant: Valid vector alignment & slice bounds. 2. Guarantor: Hardware feature check & caller bounds validation. 3. Valid parameters at call-site. 4. ADR-017 SIMD.
         }
     }
-    cosine_similarity_parts_u8_scalar(a, b)
+    Ok(cosine_similarity_parts_u8_scalar(a, b))
 }
 
 #[allow(dead_code)]
@@ -1064,7 +1082,10 @@ unsafe fn hsum512_epi32_avx512(v: __m512i) -> i32 {
 /// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
 #[allow(dead_code)]
 pub(crate) unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
-    let n = a.len();
+    let n = a.len().min(b.len());
+    // SAFETY: n = a.len().min(b.len()) garantiert, dass alle Indexzugriffe auf
+    // sowohl `a` als auch `b` innerhalb ihrer jeweiligen Slice-Grenzen liegen.
+    // Analog zu den AVX-512-Varianten (dot_product_u8_avx512vnni etc.).
     let mut i = 0;
     // SAFETY: Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
@@ -1112,7 +1133,10 @@ pub(crate) unsafe fn dot_product_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
 /// This function is unsafe because it uses AVX2 intrinsics. The caller must ensure that the CPU supports AVX2.
 #[allow(dead_code)]
 pub(crate) unsafe fn euclidean_distance_sq_u8_avx2(a: &[u8], b: &[u8]) -> u32 {
-    let n = a.len();
+    let n = a.len().min(b.len());
+    // SAFETY: n = a.len().min(b.len()) garantiert, dass alle Indexzugriffe auf
+    // sowohl `a` als auch `b` innerhalb ihrer jeweiligen Slice-Grenzen liegen.
+    // Analog zu den AVX-512-Varianten (dot_product_u8_avx512vnni etc.).
     let mut i = 0;
     // SAFETY: Initialisierung.
     // BEGRÜNDUNG: _mm256_setzero_si256 ist immer sicher.
@@ -1166,7 +1190,10 @@ pub(crate) unsafe fn cosine_similarity_parts_u8_avx2(
     a: &[u8],
     b: &[u8],
 ) -> CosineSimilarityPartsU8 {
-    let n = a.len();
+    let n = a.len().min(b.len());
+    // SAFETY: n = a.len().min(b.len()) garantiert, dass alle Indexzugriffe auf
+    // sowohl `a` als auch `b` innerhalb ihrer jeweiligen Slice-Grenzen liegen.
+    // Analog zu den AVX-512-Varianten (dot_product_u8_avx512vnni etc.).
     let mut i = 0;
 
     // SAFETY: Initialisierung.
@@ -1302,7 +1329,7 @@ mod tests {
         ];
 
         // Dot product
-        let dot_scalar = dot_product_u8(&a, &b);
+        let dot_scalar = dot_product_u8(&a, &b).unwrap();
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni") {
@@ -1322,7 +1349,7 @@ mod tests {
         }
 
         // Euclidean
-        let euc_scalar = euclidean_distance_sq_u8(&a, &b);
+        let euc_scalar = euclidean_distance_sq_u8(&a, &b).unwrap();
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
@@ -1335,7 +1362,7 @@ mod tests {
         }
 
         // Cosine parts
-        let parts_scalar = cosine_similarity_parts_u8(&a, &b);
+        let parts_scalar = cosine_similarity_parts_u8(&a, &b).unwrap();
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
@@ -1360,7 +1387,7 @@ mod tests {
 
             // 1. Dot Product u8
             let dot_scalar = dot_product_u8_scalar(&a, &b);
-            let dot_dispatch = dot_product_u8(&a, &b);
+            let dot_dispatch = dot_product_u8(&a, &b).unwrap();
             assert_eq!(
                 dot_scalar, dot_dispatch,
                 "u8 DotProduct mismatch at dim {dim}: scalar={dot_scalar}, dispatch={dot_dispatch}"
@@ -1368,7 +1395,7 @@ mod tests {
 
             // 2. Squared Euclidean u8
             let euc_sq_scalar = euclidean_distance_sq_u8_scalar(&a, &b);
-            let euc_sq_dispatch = euclidean_distance_sq_u8(&a, &b);
+            let euc_sq_dispatch = euclidean_distance_sq_u8(&a, &b).unwrap();
             assert_eq!(
                 euc_sq_scalar, euc_sq_dispatch,
                 "u8 Squared Euclidean mismatch at dim {dim}: scalar={euc_sq_scalar}, dispatch={euc_sq_dispatch}"
@@ -1376,7 +1403,7 @@ mod tests {
 
             // 3. Cosine Parts u8
             let parts_scalar = cosine_similarity_parts_u8_scalar(&a, &b);
-            let parts_dispatch = cosine_similarity_parts_u8(&a, &b);
+            let parts_dispatch = cosine_similarity_parts_u8(&a, &b).unwrap();
             assert_eq!(
                 parts_scalar.dot, parts_dispatch.dot,
                 "u8 Cosine dot mismatch at dim {dim}"
@@ -1390,6 +1417,17 @@ mod tests {
                 "u8 Cosine norm_b_sq mismatch at dim {dim}"
             );
         }
+    }
+
+    #[test]
+    fn test_u8_distance_unequal_lengths_return_error() {
+        // Verifiziert, dass die sicheren Wrapper bei ungleichen Längen einen
+        // Fehler zurückgeben statt UB oder Panic zu erzeugen.
+        let a = vec![1u8; 64];
+        let b = vec![1u8; 32]; // b kürzer als a
+        assert!(dot_product_u8(&a, &b).is_err());
+        assert!(euclidean_distance_sq_u8(&a, &b).is_err());
+        assert!(cosine_similarity_parts_u8(&a, &b).is_err());
     }
 
     #[test]
