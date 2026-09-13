@@ -108,6 +108,60 @@ impl KvSegmentCipher {
             .derive_kv_key(encrypted.tenant_id, &encrypted.model_fingerprint)?;
         sub_km.decrypt_auto_nonce(&encrypted.ciphertext, &encrypted.nonce)
     }
+
+    /// Derives a sub-key for a specific segment given tenant_id, segment_id, and key_derivation_version.
+    pub fn derive_key_for_segment(
+        &self,
+        tenant_id: TenantId,
+        segment_id: u64,
+        version: u8,
+    ) -> Result<KeyManager> {
+        let info = if version == 0 {
+            format!("memfuse-kv-segment-{}-{}", tenant_id, segment_id)
+        } else {
+            format!("memfuse-kv-v{}-segment-{}-{}", version, tenant_id, segment_id)
+        };
+        self.key_manager.derive_segment_key(&info)
+    }
+
+    /// Encrypts KV-cache plaintext payload using versioned segment HKDF key derivation.
+    pub fn encrypt_with_version(
+        &self,
+        tenant_id: TenantId,
+        segment_id: u64,
+        version: u8,
+        model_fingerprint: ModelFingerprint,
+        plaintext: &[u8],
+    ) -> Result<EncryptedKvLayer> {
+        let sub_km = self.derive_key_for_segment(tenant_id, segment_id, version)?;
+        let (ciphertext, nonce) = sub_km.encrypt_auto_nonce(plaintext)?;
+
+        Ok(EncryptedKvLayer {
+            format_version: CURRENT_KV_FORMAT_VERSION,
+            ciphertext,
+            nonce,
+            tenant_id,
+            model_fingerprint,
+        })
+    }
+
+    /// Decrypts an `EncryptedKvLayer` using versioned segment HKDF key derivation.
+    pub fn decrypt_with_version(
+        &self,
+        encrypted: &EncryptedKvLayer,
+        segment_id: u64,
+        version: u8,
+    ) -> Result<Vec<u8>> {
+        if encrypted.format_version != CURRENT_KV_FORMAT_VERSION {
+            return Err(CryptoError::KvFormatVersionMismatch {
+                expected: CURRENT_KV_FORMAT_VERSION,
+                found: encrypted.format_version,
+            });
+        }
+
+        let sub_km = self.derive_key_for_segment(encrypted.tenant_id, segment_id, version)?;
+        sub_km.decrypt_auto_nonce(&encrypted.ciphertext, &encrypted.nonce)
+    }
 }
 
 #[cfg(test)]

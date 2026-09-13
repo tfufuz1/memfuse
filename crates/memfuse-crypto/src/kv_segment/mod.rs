@@ -7,5 +7,5 @@ pub mod segment;
 pub mod store;
 
 pub use eviction_worker::{emergency_wipe, EvictionWorker};
-pub use segment::KvSegment;
+pub use segment::{KvSegment, CURRENT_KV_KEY_DERIVATION_VERSION};
 pub use store::TenantIsolatedKvStore;
