@@ -143,8 +143,9 @@ impl KeyManager {
             .map_err(|_| CryptoError::Crypto("Invalid PRK length".to_string()))?;
 
         let mut sub_key = [0u8; 32];
-        hk.expand(info.as_bytes(), &mut sub_key)
-            .map_err(|e| CryptoError::Crypto(format!("HKDF segment key expansion failed: {}", e)))?;
+        hk.expand(info.as_bytes(), &mut sub_key).map_err(|e| {
+            CryptoError::Crypto(format!("HKDF segment key expansion failed: {}", e))
+        })?;
 
         let mut nonce_prefix = [0u8; 4];
         rand::rngs::OsRng.fill_bytes(&mut nonce_prefix);
