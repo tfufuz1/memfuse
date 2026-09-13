@@ -396,6 +396,11 @@ impl PromptInjectionGuard {
         )
     }
 
+    // AI-TAG[SMELL][MAJOR] Homoglyph script bypass in PromptInjectionGuard normalize_text (ID: AGT-MCP-cb8e9af7) (TS: 2026-09-13T01:25:57Z) (SESSION: bbfaa863)
+    // BEFUND: normalize_text uses NFKC normalization which folds full-width chars but does not fold cross-script Cyrillic/Greek homoglyphs.
+    // RISIKO: Cyrillic/Greek homoglyph substitutions (e.g. Cyrillic 'і', 'о', 'е') bypass pattern matching.
+    // EMPFEHLUNG: Add ASCII skeleton / confusable normalization mapping before pattern detection.
+
     /// Normalisiert den Eingabetext (Zero-Width-Stripping, NFKC Normalisierung, Lowercasing).
     pub fn normalize_text(text: &str) -> String {
         let stripped: String = text.chars().filter(|&c| !Self::is_zero_width(c)).collect();

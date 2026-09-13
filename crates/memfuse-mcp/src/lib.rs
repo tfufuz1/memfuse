@@ -36,6 +36,11 @@ pub const MAX_RPC_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum allowed search query length in bytes (64 KB).
 pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
+// AI-TAG[SMELL][MINOR] Missing inactivity timeout on stdio read_line_bounded (ID: AGT-MCP-a4c8ea50) (TS: 2026-09-13T01:25:57Z) (SESSION: bbfaa863)
+// BEFUND: read_line_bounded caps byte size at 4MB but has no idle read timeout.
+// RISIKO: Slowloris-style partial request streams can hold task handles open indefinitely.
+// EMPFEHLUNG: Wrap read_line_bounded invocations with tokio::time::timeout in run_stdio loop.
+
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
 pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
@@ -183,9 +188,7 @@ pub async fn setup_routing(
 
 /// Conditionally sets up `KvBridgeAdapter` when feature `kv-bridge` is enabled.
 #[cfg(feature = "kv-bridge")]
-pub fn setup_kv_bridge(
-    _db: &Arc<MemFuse>,
-) -> Option<Arc<memfuse_candle::KvBridgeAdapter>> {
+pub fn setup_kv_bridge(_db: &Arc<MemFuse>) -> Option<Arc<memfuse_candle::KvBridgeAdapter>> {
     // AI-TAG[SMELL][RESOLVED] audit-kv-bridge: Cipher-Integration wenn MemFuse::kv_cipher() API existiert
     tracing::info!(
         "kv-bridge feature aktiv, aber keine Verschlüsselung konfiguriert — KvBridgeAdapter deaktiviert"
@@ -639,9 +642,7 @@ impl McpServer {
                 #[cfg(feature = "kv-bridge")]
                 if let Some(ref bridge) = self.kv_bridge {
                     for res in &results {
-                        let chunk_id = DocId::from_key(&res.id)
-                            .map(|d| d.inner())
-                            .unwrap_or(0);
+                        let chunk_id = DocId::from_key(&res.id).map(|d| d.inner()).unwrap_or(0);
                         let text = res
                             .metadata
                             .as_ref()
@@ -874,6 +875,10 @@ impl McpServer {
             }
 
             "memfuse_get" => {
+                // AI-TAG[SMELL][MINOR] Missing explicit id.len() <= 256 length check in memfuse_get (ID: AGT-MCP-a2705ed3) (TS: 2026-09-13T01:25:57Z) (SESSION: bbfaa863)
+                // BEFUND: memfuse_get checks empty string but does not enforce id.len() <= 256 before col.get().
+                // RISIKO: Excessively long ID strings are passed down to storage layer lookup.
+                // EMPFEHLUNG: Add explicit id.len() <= 256 check in memfuse_get handler analog to memfuse_insert.
                 let id = match args.get("id") {
                     Some(v) => {
                         let s = v.as_str().ok_or_else(|| {
