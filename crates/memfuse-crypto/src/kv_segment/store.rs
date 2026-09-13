@@ -40,6 +40,45 @@ impl TenantIsolatedKvStore {
         }
     }
 
+    // INTEGRATION TODO (memfuse-db):
+    // In `crates/memfuse-db/src/transaction.rs` muss `compensate_*()` nach dem
+    // Rollback `kv_store.remove_segments_for_rollback(tenant_id, &rolled_back_segment_ids)`
+    // aufrufen. Dies ist der Schritt, der verwaiste Segmente verhindert.
+    // Zuständig: nachgelagerte PR nach diesem Fix.
+
+    /// Entfernt alle Segmente mit den angegebenen `segment_ids` für den gegebenen Tenant.
+    ///
+    /// Muss bei transaktionalem Rollback aufgerufen werden, wenn ein `DbTransaction::commit()`
+    /// fehlschlägt und `compensate_*()` ausgeführt wird, um verwaiste KV-Segmente zu
+    /// vermeiden (Memory-Leak-Prävention).
+    ///
+    /// Aktuell ist der Store ein reiner In-Memory-Cache — kein Disk-Write erforderlich.
+    /// Falls der Store zukünftig als autoritativer Store genutzt wird, muss hier ein
+    /// WAL-Rollback-Eintrag ergänzt werden.
+    pub fn remove_segments_for_rollback(&self, tenant: TenantId, segment_ids: &[u64]) {
+        if segment_ids.is_empty() {
+            return;
+        }
+        let mut map = self.segments.write();
+        if let Some(segs) = map.get_mut(&tenant) {
+            segs.retain(|s| !segment_ids.contains(&s.segment_id));
+            // Tenant-Eintrag entfernen wenn leer (wie in evict_lru_fair_internal)
+            if segs.is_empty() {
+                map.remove(&tenant);
+            }
+        }
+        tracing::debug!(
+            tenant_id = ?tenant,
+            removed_segment_ids = ?segment_ids,
+            "KvStore rollback: removed segments for failed transaction"
+        );
+    }
+
+    /// Entfernt ein einzelnes Segment. Convenience-Wrapper um `remove_segments_for_rollback`.
+    pub fn remove_segment(&self, tenant: TenantId, segment_id: u64) {
+        self.remove_segments_for_rollback(tenant, &[segment_id]);
+    }
+
     /// Liefert unverschlüsselte Segment-Bytes für einen Tenant (Klartext-Modus).
     // AI-TAG[API][MAJOR][RESOLVED] Add unencrypted segment retrieval API for plaintext mode (ID: AGT-CRYPTO-7e1f286d) (TS: 2026-09-09T13:17:00Z) (SESSION: a413a598)
     pub fn get_segment_bytes(&self, tenant: TenantId, segment_id: u64) -> Option<Vec<u8>> {
@@ -613,5 +652,48 @@ mod tests {
         store.clear_all();
         assert_eq!(store.get_tenant_segment_len(tenant_a), 0);
         assert_eq!(store.get_tenant_segment_len(tenant_b), 0);
+    }
+
+    #[test]
+    fn test_remove_segments_for_rollback_cleans_up_correctly() {
+        let store = TenantIsolatedKvStore::new();
+        let tenant = TenantId::try_new(42).unwrap();
+
+        // Einfügen von 3 Segmenten
+        for id in [1u64, 2, 3] {
+            store.insert_segment(tenant, KvSegment::new(tenant, id, vec![id as u8; 8]));
+        }
+        assert_eq!(store.get_tenant_segment_len(tenant), 3);
+
+        // Rollback für Segment 1 und 3
+        store.remove_segments_for_rollback(tenant, &[1, 3]);
+        assert_eq!(store.get_tenant_segment_len(tenant), 1);
+        assert!(
+            store.get_segment_bytes(tenant, 1).is_none(),
+            "Segment 1 muss entfernt sein"
+        );
+        assert!(
+            store.get_segment_bytes(tenant, 2).is_some(),
+            "Segment 2 muss erhalten bleiben"
+        );
+        assert!(
+            store.get_segment_bytes(tenant, 3).is_none(),
+            "Segment 3 muss entfernt sein"
+        );
+
+        // Rollback aller verbleibenden → Tenant-Eintrag muss vollständig entfernt werden
+        store.remove_segments_for_rollback(tenant, &[2]);
+        assert_eq!(store.get_tenant_segment_len(tenant), 0);
+        // Tenant-Key darf nicht mehr in der Map existieren
+        assert!(store.get_segments(tenant).is_empty());
+    }
+
+    #[test]
+    fn test_remove_segments_noop_on_empty_ids() {
+        let store = TenantIsolatedKvStore::new();
+        let tenant = TenantId::try_new(1).unwrap();
+        store.insert_segment(tenant, KvSegment::new(tenant, 1, vec![0u8; 8]));
+        store.remove_segments_for_rollback(tenant, &[]); // Kein Panic, kein Effekt
+        assert_eq!(store.get_tenant_segment_len(tenant), 1);
     }
 }
