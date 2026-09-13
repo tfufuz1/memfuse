@@ -17,7 +17,7 @@
 
 Stand letzter Prüfung: 2026-09-13
 Befehl: `cargo xtask sync-docs` / `grep -rn "AI-TAG\[SMELL\]\[CRITICAL\]" crates/ --include="*.rs" | grep -v RESOLVED`
-Ergebnis: **8 offene Tags**
+Ergebnis: **6 offene Tags**
 
 | Crate/Datei | Zeile | ID | Kat. | Sev. | Zeitstempel | Beschreibung |
 |---|---|---|---|---|---|---|
@@ -40,8 +40,8 @@ Ergebnis: **8 offene Tags**
 | `memfuse-calibration` | 2 | 1789 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 2 | 5791 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
 | `memfuse-graph` | 2 | 10625 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
-| `memfuse-security` | 2 | 5453 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-text` | 2 | 5463 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
+| `memfuse-security` | 2 | 5466 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-text` | 2 | 5464 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
 | `memfuse-candle` | 3 | 3492 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-index` | 3 | 15955 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 3 | 4247 | 🟢 Clean |  |
@@ -51,7 +51,7 @@ Ergebnis: **8 offene Tags**
 | `memfuse-bench` | 6 | 4641 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
 | `memfuse-router` | 6 | 5536 | 🟢 Clean |  |
 | `memfuse-agent` | 7 | 5939 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
-| `memfuse-mcp` | 8 | 5033 | 🟢 Clean |  |
+| `memfuse-mcp` | 8 | 5016 | 🟢 Clean |  |
 
 
 ## DAG-Topologie

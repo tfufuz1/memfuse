@@ -1388,6 +1388,42 @@
     "hash": "b768ba2736a2035a"
   },
   {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "04dbc2ba0cc150c2"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "6184fde09cded1ae"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "644a1f739614ce8b"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "6942ce7f01f3b9b0"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "6d9313fe52cf2473"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "83ab30ad1964cba5"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "b067de5d2e022fd0"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "b149dd3f3abca944"
+  },
+  {
+    "file": "crates/memfuse-candle/tests/kv_bridge_and_stress_test.rs",
+    "hash": "dfe7059980909fef"
+  },
+  {
     "file": "crates/memfuse-candle/tests/proptest_candle.rs",
     "hash": "0a26ee6b5571478c"
   },
