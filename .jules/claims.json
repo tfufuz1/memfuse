@@ -19,13 +19,12 @@
       "released_at": "2026-09-13T00:36:32.479859335+00:00"
     },
     {
-      "krate": "memfuse-checkpoint",
-      "issue": "JULES-20260913-DEEP",
-      "timestamp": "2026-09-13T01:21:55.744385841+00:00",
-      "session_id": "3916928778672748928",
-      "active": false,
-      "expires_at": "2026-09-13T05:21:55.744367003+00:00",
-      "released_at": "2026-09-13T01:36:48.969222130+00:00"
+      "krate": "memfuse-mcp",
+      "issue": "JULES-20260913-MCPSAN",
+      "timestamp": "2026-09-13T01:24:56.709294514+00:00",
+      "session_id": "15939913485339184752",
+      "active": true,
+      "expires_at": "2026-09-13T05:24:56.709269853+00:00"
     }
   ]
 }
