@@ -36,6 +36,11 @@ pub const MAX_RPC_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum allowed search query length in bytes (64 KB).
 pub const MAX_SEARCH_QUERY_BYTES: usize = 64 * 1024;
 
+// AI-TAG[SMELL][MINOR] Missing inactivity timeout on stdio read_line_bounded (ID: AGT-MCP-a4c8ea50) (TS: 2026-09-13T01:25:57Z) (SESSION: bbfaa863)
+// BEFUND: read_line_bounded caps byte size at 4MB but has no idle read timeout.
+// RISIKO: Slowloris-style partial request streams can hold task handles open indefinitely.
+// EMPFEHLUNG: Wrap read_line_bounded invocations with tokio::time::timeout in run_stdio loop.
+
 /// Reads a single line from an async reader into `buf` up to `max_bytes`.
 /// If the line exceeds `max_bytes`, consumes and discards the remainder of the line without allocating memory and returns `InvalidData`.
 pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
@@ -870,6 +875,10 @@ impl McpServer {
             }
 
             "memfuse_get" => {
+                // AI-TAG[SMELL][MINOR] Missing explicit id.len() <= 256 length check in memfuse_get (ID: AGT-MCP-a2705ed3) (TS: 2026-09-13T01:25:57Z) (SESSION: bbfaa863)
+                // BEFUND: memfuse_get checks empty string but does not enforce id.len() <= 256 before col.get().
+                // RISIKO: Excessively long ID strings are passed down to storage layer lookup.
+                // EMPFEHLUNG: Add explicit id.len() <= 256 check in memfuse_get handler analog to memfuse_insert.
                 let id = match args.get("id") {
                     Some(v) => {
                         let s = v.as_str().ok_or_else(|| {
