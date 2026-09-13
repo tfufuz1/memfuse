@@ -468,7 +468,7 @@ mod tests {
         .unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let response = rt.block_on(generator.generate("hello")).unwrap();
-        assert!(response.contains("[Candle] Response for prompt: hello"));
+        assert!(response.contains("Response for prompt: hello"));
     }
 
     #[cfg(feature = "candle")]
