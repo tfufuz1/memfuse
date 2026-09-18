@@ -1,7 +1,11 @@
-use memfuse_core::types::{DocId, TxId};
+use memfuse_core::types::DocId;
+#[cfg(feature = "volatile-vault")]
+use memfuse_core::types::TxId;
 use memfuse_db::memory_consolidation::compute_community_hash;
+#[cfg(feature = "volatile-vault")]
 use memfuse_db::volatile_vault::{SignalModality, VaultChunk};
 
+#[cfg(feature = "volatile-vault")]
 #[test]
 fn test_vault_chunk_docid_type() {
     if let Ok(doc_id) = DocId::from_key("vault_test_doc_key") {

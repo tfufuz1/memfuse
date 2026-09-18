@@ -62,6 +62,15 @@
       "active": false,
       "expires_at": "2026-09-17T11:06:26.852839738+00:00",
       "released_at": "2026-09-17T17:25:52.454754311+00:00 [TTL-EXPIRED]"
+    },
+    {
+      "krate": "memfuse-core",
+      "issue": "JULES-20260917-MEMFUSECOR-PROCES-CA6K",
+      "timestamp": "2026-09-17T17:47:52.037019193+00:00",
+      "session_id": "16968792186329222140",
+      "active": false,
+      "expires_at": "2026-09-17T21:47:52.036994897+00:00",
+      "released_at": "2026-09-17T17:54:30.403065076+00:00"
     }
   ]
 }
