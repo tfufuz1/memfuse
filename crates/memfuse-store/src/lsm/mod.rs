@@ -430,8 +430,8 @@ impl StorageEngine for LsmStorage {
                 return Err(MemFuseError::Storage("Memory budget exceeded (95%)".into()));
             }
 
-            // 1. Read-Your-Writes check for current transaction scope.
-            if self.tx_buffer.is_key_staged_for_tx(tx_id, key) {
+            // 1. Check if key is staged in tx_buffer (by any transaction)
+            if matches!(self.tx_buffer.staged_status(key), Some(true)) {
                 return Ok(false);
             }
 
