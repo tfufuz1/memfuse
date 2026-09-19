@@ -15,7 +15,8 @@
 // TEST: cargo +stable check -p memfuse-index
 // DONE: #![feature(portable_simd)] ist entfernt und distance.rs nutzt stabiles Rust.
 // INTENT: deny(unsafe_code) statt forbid(unsafe_code)
-// BEGRÜNDUNG: SIMD-Intrinsics in distance.rs benötigen unsafe für Performance.
+// BEGRÜNDUNG: SIMD-Kernels wurden nach `memfuse-simd` ausgelagert.
+// Die verbleibenden `unsafe`-Blöcke beschränken sich auf `Mmap::map` in `persistence.rs` / `diskann.rs`.
 #![deny(unsafe_code)]
 #![allow(unsafe_code)]
 #![allow(unsafe_op_in_unsafe_fn)]

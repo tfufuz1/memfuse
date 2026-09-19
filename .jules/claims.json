@@ -105,6 +105,22 @@
       "session_id": "16075693534472226469",
       "active": true,
       "expires_at": "2026-09-19T09:34:13.685235671+00:00"
+    },
+    {
+      "krate": "memfuse-index",
+      "issue": "UNSPECIFIED",
+      "timestamp": "2026-09-19T17:46:13.348920511+00:00",
+      "session_id": "14638300354081817690",
+      "active": true,
+      "expires_at": "2026-09-19T21:46:13.348910978+00:00"
+    },
+    {
+      "krate": "memfuse-simd",
+      "issue": "UNSPECIFIED",
+      "timestamp": "2026-09-19T17:46:13.967403252+00:00",
+      "session_id": "14638300354081817690",
+      "active": true,
+      "expires_at": "2026-09-19T21:46:13.967394174+00:00"
     }
   ]
 }

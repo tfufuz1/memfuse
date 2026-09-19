@@ -2515,6 +2515,7 @@ dependencies = [
  "loom",
  "memfuse-core",
  "memfuse-crypto",
+ "memfuse-simd",
  "memmap2",
  "parking_lot",
  "proptest",

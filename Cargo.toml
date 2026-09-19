@@ -95,6 +95,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 memfuse-wire = { path = "crates/memfuse-wire" }
 memfuse-sys = { path = "crates/memfuse-sys" }
 memfuse-core-ipc-gen = { path = "crates/memfuse-core-ipc-gen" }
+memfuse-simd = { path = "crates/memfuse-simd" }
 memfuse-core = { path = "crates/memfuse-core" }
 memfuse-store = { path = "crates/memfuse-store" }
 memfuse-index = { path = "crates/memfuse-index" }
