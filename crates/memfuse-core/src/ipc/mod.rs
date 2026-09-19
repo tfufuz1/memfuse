@@ -7,7 +7,7 @@
 pub mod jsonrpc;
 
 pub use jsonrpc::*;
-pub use memfuse_core_ipc_gen::*;
+pub use memfuse_wire::*;
 
 #[cfg(test)]
 mod tests {

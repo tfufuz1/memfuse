@@ -1,5 +1,5 @@
 //! CI Gate: FlatBuffers Schema Drift Checker & Code Regenerator.
-//! Validates whether `schemas/memfuse.fbs` matches `crates/memfuse-core-ipc-gen/src/memfuse_generated.rs`.
+//! Validates whether `schemas/memfuse.fbs` matches `crates/memfuse-wire/src/memfuse_generated.rs`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -80,7 +80,7 @@ pub fn check_flatbuffers_drift() -> Result<(), String> {
 
     let root = find_root_dir();
     let schema_path = root.join("schemas/memfuse.fbs");
-    let existing_generated_path = root.join("crates/memfuse-core-ipc-gen/src/memfuse_generated.rs");
+    let existing_generated_path = root.join("crates/memfuse-wire/src/memfuse_generated.rs");
 
     if !schema_path.exists() {
         return Err(format!(
@@ -143,7 +143,7 @@ pub fn check_flatbuffers_drift() -> Result<(), String> {
         println!("✅ Gate passed: FlatBuffers generated Rust code is in sync with 'schemas/memfuse.fbs'.");
         Ok(())
     } else {
-        let err_msg = "❌ Gate failed: FlatBuffers schema drift detected! 'schemas/memfuse.fbs' does not match 'crates/memfuse-core-ipc-gen/src/memfuse_generated.rs'.\n💡 Run 'cargo xtask regenerate-flatbuffers' to update the generated Rust code.".to_string();
+        let err_msg = "❌ Gate failed: FlatBuffers schema drift detected! 'schemas/memfuse.fbs' does not match 'crates/memfuse-wire/src/memfuse_generated.rs'.\n💡 Run 'cargo xtask regenerate-flatbuffers' to update the generated Rust code.".to_string();
         eprintln!("{}", err_msg);
         Err(err_msg)
     }

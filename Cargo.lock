@@ -2383,7 +2383,7 @@ dependencies = [
  "bytes",
  "flatbuffers",
  "futures-util",
- "memfuse-core-ipc-gen",
+ "memfuse-wire",
  "parking_lot",
  "proptest",
  "serde",
@@ -2398,6 +2398,7 @@ name = "memfuse-core-ipc-gen"
 version = "0.1.0"
 dependencies = [
  "flatbuffers",
+ "memfuse-wire",
 ]
 
 [[package]]

@@ -1,6 +1,8 @@
 //! PPR Allocation Profiling and Correctness Benchmark Test for memfuse-graph
 //! Verifies allocation reduction in Personalized PageRank (PPR) before and after optimization.
 
+#![allow(unsafe_code)]
+
 use memfuse_core::{Entity, EntityId, PprConfig};
 use memfuse_graph::{CsrGraph, PprContext};
 use std::alloc::{GlobalAlloc, Layout, System};

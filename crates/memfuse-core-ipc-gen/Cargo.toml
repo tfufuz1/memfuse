@@ -11,3 +11,4 @@ description = "Auto-generated FlatBuffers IPC code for MemFuse Core"
 
 [dependencies]
 flatbuffers = { workspace = true }
+memfuse-wire = { workspace = true }

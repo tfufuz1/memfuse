@@ -11,6 +11,7 @@
 
 #![cfg(feature = "kv-bridge")]
 
+use bytes::Bytes;
 use memfuse_core::traits::ContextSegment;
 #[cfg(feature = "memfuse-store")]
 use memfuse_core::traits::StorageEngine;
@@ -21,7 +22,6 @@ use memfuse_core::{ModelFingerprint, TenantId};
 use memfuse_crypto::EncryptedKvLayer;
 #[cfg(test)]
 use memfuse_crypto::KvSegment;
-use bytes::Bytes;
 use memfuse_crypto::{KvSegmentCipher, TenantIsolatedKvStore};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -588,7 +588,8 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "memfuse-store")]
     async fn test_lsm_fallback_golden_zero_copy_async_bytes() {
-        let master_km = CryptoKey::try_new("test-passphrase-golden", b"test-salt-golden123").unwrap();
+        let master_km =
+            CryptoKey::try_new("test-passphrase-golden", b"test-salt-golden123").unwrap();
         let cipher = Arc::new(KvSegmentCipher::new(master_km));
         let store = Arc::new(TenantIsolatedKvStore::with_capacity(1));
         let temp_dir = tempfile::tempdir().unwrap();
@@ -613,7 +614,10 @@ mod tests {
         let mut retrieved_bytes = None;
         for _ in 0..20 {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            if let Some(b) = adapter.try_get_cached_segment_async_bytes(tenant, &key1).await {
+            if let Some(b) = adapter
+                .try_get_cached_segment_async_bytes(tenant, &key1)
+                .await
+            {
                 retrieved_bytes = Some(b);
                 break;
             }

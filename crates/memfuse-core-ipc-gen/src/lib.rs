@@ -15,4 +15,5 @@
 #[allow(mismatched_lifetime_syntaxes)]
 pub mod memfuse_generated;
 
-pub use memfuse_generated::mem_fuse::ipc::*;
+#[deprecated(note = "use memfuse_wire instead")]
+pub use memfuse_wire::*;
