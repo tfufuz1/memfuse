@@ -52,6 +52,7 @@ async fn test_flusher_batch_window_coalesces_writes() -> Result<()> {
             WalConfig {
                 flusher_config: WalFlusherConfig {
                     batch_window_micros: 50,
+                    ..Default::default()
                 },
                 ..Default::default()
             },
@@ -150,4 +151,102 @@ async fn test_wal_flusher_actor_no_write_to_sealed() {
     );
 
     assert!(sealed_path.exists(), "Sealed path must exist");
+}
+
+#[tokio::test]
+async fn test_wal_queue_capacity_zero_rejected() {
+    let dir = tempdir().expect("tempdir");
+    let wal_path = dir.path().join("invalid_cap.wal");
+
+    let res = Wal::open_with_config(
+        &wal_path,
+        WalConfig {
+            flusher_config: WalFlusherConfig {
+                queue_capacity: 0,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert!(res.is_err(), "queue_capacity == 0 must return an error");
+    if let Err(err) = res {
+        assert!(
+            err.to_string().contains("queue_capacity"),
+            "Error message must mention queue_capacity, got: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_wal_try_append_backpressure() -> Result<()> {
+    let dir = tempdir()?;
+    let wal_path = dir.path().join("try_append_backpressure.wal");
+
+    // Configure capacity of 1 with batch_window_micros = 100_000 (100ms window)
+    let wal = Arc::new(
+        Wal::open_with_config(
+            &wal_path,
+            WalConfig {
+                flusher_config: WalFlusherConfig {
+                    queue_capacity: 1,
+                    batch_window_micros: 100_000,
+                },
+                ..Default::default()
+            },
+        )
+        .await?,
+    );
+
+    // Get flusher_tx directly to fill channel capacity without holding truncate_lock
+    let flusher_tx = {
+        let guard = wal.flusher_tx.read().unwrap();
+        guard.clone().unwrap()
+    };
+
+    let (ack1_tx, _ack1_rx) = tokio::sync::oneshot::channel();
+    let (ack2_tx, _ack2_rx) = tokio::sync::oneshot::channel();
+
+    // 1st command is popped by flusher loop and enters batch window wait
+    flusher_tx
+        .send(WalCommand::Append {
+            payload: vec![1, 2, 3],
+            last_hmac_val: [0u8; 32],
+            ack: ack1_tx,
+        })
+        .await
+        .unwrap();
+
+    // 2nd command fills the bounded channel (capacity 1)
+    flusher_tx
+        .send(WalCommand::Append {
+            payload: vec![4, 5, 6],
+            last_hmac_val: [0u8; 32],
+            ack: ack2_tx,
+        })
+        .await
+        .unwrap();
+
+    // Now try_append_batch when channel queue is full
+    let op = WalOp::Put {
+        tx_id: TxId::new(10),
+        key: b"overflow_key".to_vec(),
+        value: b"overflow_val".to_vec(),
+    };
+    let (overflow_batch, _) = wal.prepare_batch(vec![(op, 10)]).await?;
+
+    let try_res = wal.try_append_batch(overflow_batch).await;
+    assert!(
+        try_res.is_err(),
+        "try_append_batch must return error when queue is full"
+    );
+    if let Err(err) = try_res {
+        assert!(
+            err.to_string().contains("backpressure"),
+            "Error must mention backpressure, got: {err}"
+        );
+    }
+
+    Ok(())
 }

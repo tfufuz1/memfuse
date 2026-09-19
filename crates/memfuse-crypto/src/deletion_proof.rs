@@ -816,8 +816,7 @@ mod tests {
         let prev_hmac = [0x55u8; 32];
         let delete_event = b"delete_event:doc_id=42:tx_id=100";
 
-        let receipt =
-            compute_wal_delete_receipt(&prev_hmac, delete_event, integrity_key).unwrap();
+        let receipt = compute_wal_delete_receipt(&prev_hmac, delete_event, integrity_key).unwrap();
 
         // O(1) Verification without cleartext
         assert!(
@@ -826,9 +825,7 @@ mod tests {
 
         // Tampered receipt or wrong key fails
         let wrong_key = b"wrong-integrity-key-32-bytes---";
-        assert!(
-            !verify_wal_delete_receipt(&receipt, &prev_hmac, delete_event, wrong_key).unwrap()
-        );
+        assert!(!verify_wal_delete_receipt(&receipt, &prev_hmac, delete_event, wrong_key).unwrap());
 
         let tampered_event = b"delete_event:doc_id=43:tx_id=100";
         assert!(
@@ -847,14 +844,15 @@ mod tests {
         let prev_hmac = [0x77u8; 32];
         let delete_event = b"doc_42_delete";
 
-        let receipt =
-            compute_wal_delete_receipt(&prev_hmac, delete_event, integrity_key).unwrap();
+        let receipt = compute_wal_delete_receipt(&prev_hmac, delete_event, integrity_key).unwrap();
 
         let proof = DeletionProof::create_with_wal_receipt(
             scope,
             vec![b"k42".to_vec()],
             TxId(100),
-            vec![LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap()],
+            vec![
+                LayerCleanupProof::new_after_verified_empty(DeletionLayer::LsmMemtable, 0).unwrap(),
+            ],
             vec![ExcludedScope::LlmParameterMemory],
             Some(receipt),
             &test_key(),

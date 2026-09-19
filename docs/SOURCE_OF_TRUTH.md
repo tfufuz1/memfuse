@@ -83,21 +83,21 @@ Layer 4:  memfuse-mcp         — Model Context Protocol (MCP) stdio JSON-RPC 2.
 | `memfuse-sys` | 0 | 437 | 🟢 Clean | Low-level unsafe system abstractions and FFI island for MemFuse (Ring 0) |
 | `memfuse-wire` | 0 | 1873 | 🟢 Clean | Ring 0 Unsafe Island: Auto-generated FlatBuffers IPC code and zero-copy adapters for MemFuse |
 | `memfuse-core` | 1 | 10589 | 🟢 Clean | Core types, traits, and error handling for MemFuse |
-| `memfuse-calibration` | 2 | 1939 | 🟢 Clean |  |
+| `memfuse-calibration` | 2 | 1940 | 🟢 Clean |  |
 | `memfuse-checkpoint` | 2 | 6126 | 🟢 Clean | Backup and snapshot management for MemFuse storage |
-| `memfuse-crypto` | 2 | 6979 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
-| `memfuse-graph` | 2 | 15901 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
+| `memfuse-crypto` | 2 | 7156 | 🟢 Clean | Encryption at Rest and KV-Cache Security utilities for MemFuse |
+| `memfuse-graph` | 2 | 16098 | 🟢 Clean | CSR-Graph for entity-relation traversal (Signal 3 in 4-Signal Fusion) |
 | `memfuse-sandbox` | 2 | 992 | 🟢 Clean | WASM Execution Boundary for MemFuse MCP CodeExecution Permission |
 | `memfuse-simd` | 2 | 1388 | 🟢 Clean | Ring 0 SIMD distance kernels and runtime dispatch for MemFuse (Unsafe Island) |
 | `memfuse-text` | 2 | 8235 | 🟢 Clean | MemFuse — Text processing and BM25 search for Hybrid Search |
-| `memfuse-index` | 3 | 19753 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
+| `memfuse-index` | 3 | 19985 | 🟢 Clean | HNSW vector index with SIMD distance computation for MemFuse |
 | `memfuse-ollama` | 3 | 4571 | 🟢 Clean |  |
-| `memfuse-store` | 3 | 26357 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
-| `memfuse-candle` | 4 | 4529 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
+| `memfuse-store` | 3 | 26700 | 🟢 Clean | LSM-Tree storage engine for MemFuse |
+| `memfuse-candle` | 4 | 4587 | 🟢 Clean | Native Candle GGUF ML inference backend for MemFuse |
 | `memfuse-embed` | 5 | 2219 | 🧊 Optional |  |
 | `memfuse-db` | 6 | 37318 | 🟢 Clean | MemFuse — Embedded hybrid-search for AI agents |
 | `memfuse-bench` | 7 | 5741 | 🟢 Clean | MemFuse — Reproducible Benchmark Harness for Retrieval Accuracy |
-| `memfuse-router` | 7 | 7156 | 🟢 Clean |  |
+| `memfuse-router` | 7 | 7270 | 🟢 Clean |  |
 | `memfuse-agent` | 8 | 6969 | 🟢 Clean | Persistent agent workflow engine for MemFuse — checkpoint/execute/audit loop |
 | `memfuse-py` | 8 | 1880 | 🟢 Clean | Python bindings for MemFuse using PyO3 |
 | `memfuse-mcp` | 9 | 6839 | 🟢 Clean |  |

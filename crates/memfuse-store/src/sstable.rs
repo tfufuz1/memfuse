@@ -2685,7 +2685,10 @@ mod tests {
         // Insert block2, causing total bytes (25) to exceed shard capacity (20) -> evicts block1
         cache.insert(file_id, offsets[1], block2);
         assert_eq!(cache.len(), 1);
-        assert!(!cache.contains(file_id, offsets[0]), "block1 must be evicted due to byte capacity limit");
+        assert!(
+            !cache.contains(file_id, offsets[0]),
+            "block1 must be evicted due to byte capacity limit"
+        );
         assert!(cache.contains(file_id, offsets[1]));
     }
 

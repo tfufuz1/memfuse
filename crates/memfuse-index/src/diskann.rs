@@ -970,6 +970,7 @@ impl DiskAnnIndex {
         self.load().await // Mmap neu laden
     }
 
+    #[allow(clippy::unnecessary_cast)]
     async fn load_all_vectors_from_mmap(&self) -> Result<(Vec<Vec<f32>>, Vec<DocId>)> {
         let disk_count = {
             let guard = self.inner.header.read();
@@ -1990,6 +1991,7 @@ impl DiskAnnIndex {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn search_blocking(
         &self,
         query: &[f32],
@@ -2147,6 +2149,7 @@ impl VectorIndex for DiskAnnIndex {
         self.search_internal(query, k).await
     }
 
+    #[allow(clippy::unnecessary_cast)]
     async fn delete(&self, tx: TxId, id: DocId) -> Result<()> {
         let fallback_opt = self.inner.hnsw_fallback.read().clone();
         if let Some(hnsw) = fallback_opt {
@@ -2209,6 +2212,7 @@ impl VectorIndex for DiskAnnIndex {
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_cast)]
     async fn all_doc_ids(&self) -> Result<Vec<DocId>> {
         let fallback_opt = self.inner.hnsw_fallback.read().clone();
         if let Some(hnsw) = fallback_opt {

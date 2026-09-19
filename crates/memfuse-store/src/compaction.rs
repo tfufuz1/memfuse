@@ -2642,7 +2642,11 @@ mod tests {
 
         let tmp = TempDir::new().expect("temp dir");
         let bc = create_block_cache(1);
-        let manifest = Arc::new(crate::manifest::Manifest::open(tmp.path().join("MANIFEST")).await.expect("manifest"));
+        let manifest = Arc::new(
+            crate::manifest::Manifest::open(tmp.path().join("MANIFEST"))
+                .await
+                .expect("manifest"),
+        );
         let registry = Arc::new(SnapshotRegistry::new());
 
         let mut config = CompactionConfig::default();
@@ -2653,7 +2657,14 @@ mod tests {
                 memory_limit: 100 * 1024 * 1024,
             },
         ));
-        let engine = CompactionEngine::new(config, registry.clone(), bc.clone(), None, budget, Some(manifest));
+        let engine = CompactionEngine::new(
+            config,
+            registry.clone(),
+            bc.clone(),
+            None,
+            budget,
+            Some(manifest),
+        );
 
         // Active snapshot pinned at seq 15
         registry.pin(15);
@@ -2678,17 +2689,27 @@ mod tests {
             .await
             .expect("compaction succeeds");
 
-        let reader = SstableReader::open(&output_path, bc).await.expect("open reader");
+        let reader = SstableReader::open(&output_path, bc)
+            .await
+            .expect("open reader");
         let entries = reader.iter().await.expect("iter entries");
 
         // Under min_snapshot_seq = 15:
         // 1) seq 20 (>= 15): kept.
         // 2) seq 18 (>= 15, tombstone): kept because raw_seq >= min_snapshot_seq.
         // 3) seq 5 (< 15): floor version below min_snapshot_seq, kept.
-        assert_eq!(entries.len(), 3, "Expected 3 entries (seq 20, seq 18 tombstone, seq 5 floor)");
+        assert_eq!(
+            entries.len(),
+            3,
+            "Expected 3 entries (seq 20, seq 18 tombstone, seq 5 floor)"
+        );
         assert_eq!(entries[0].2 & !TOMBSTONE_BIT, 20);
         assert_eq!(entries[1].2 & !TOMBSTONE_BIT, 18);
-        assert_ne!(entries[1].2 & TOMBSTONE_BIT, 0, "seq 18 must be a tombstone");
+        assert_ne!(
+            entries[1].2 & TOMBSTONE_BIT,
+            0,
+            "seq 18 must be a tombstone"
+        );
         assert_eq!(entries[2].2 & !TOMBSTONE_BIT, 5);
     }
 }

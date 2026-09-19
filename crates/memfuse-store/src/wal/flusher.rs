@@ -70,7 +70,8 @@ impl std::fmt::Debug for WalCommand {
 /// Configuration for the WAL background flusher actor.
 ///
 /// Controls how aggressively the flusher coalesces concurrent writes
-/// into a single `sync_all()` call to reduce fsync overhead under load.
+/// into a single `sync_all()` call to reduce fsync overhead under load,
+/// and sets bounded backpressure queue capacity.
 #[derive(Debug, Clone, Copy)]
 pub struct WalFlusherConfig {
     /// Maximum time to wait for additional messages after receiving the first,
@@ -79,12 +80,17 @@ pub struct WalFlusherConfig {
     /// Typical range: 50–500 µs. Higher values coalesce more writes per fsync
     /// at the cost of added tail latency. Default: 100 µs.
     pub batch_window_micros: u64,
+
+    /// Queue capacity for the bounded flusher actor command channel.
+    /// Default: 1_024. Must be > 0.
+    pub queue_capacity: usize,
 }
 
 impl Default for WalFlusherConfig {
     fn default() -> Self {
         Self {
             batch_window_micros: 100,
+            queue_capacity: super::DEFAULT_WAL_QUEUE_CAPACITY,
         }
     }
 }
@@ -97,13 +103,19 @@ impl Wal {
         &self,
         mut file: crate::wal::fs::File,
         config: WalFlusherConfig,
-    ) {
-        let mut tx_guard = self.flusher_tx.write().unwrap_or_else(|e| e.into_inner());
-        if tx_guard.is_some() {
-            return;
+    ) -> Result<()> {
+        if config.queue_capacity == 0 {
+            return Err(MemFuseError::invalid_input(
+                "WAL queue_capacity must be greater than 0",
+            ));
         }
 
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<WalCommand>();
+        let mut tx_guard = self.flusher_tx.write().unwrap_or_else(|e| e.into_inner());
+        if tx_guard.is_some() {
+            return Ok(());
+        }
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<WalCommand>(config.queue_capacity);
         let path = self.path.clone();
         let header_written = Arc::clone(&self.header_written);
         let size = Arc::clone(&self.size);
@@ -473,5 +485,6 @@ impl Wal {
         });
 
         *tx_guard = Some(tx);
+        Ok(())
     }
 }

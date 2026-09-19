@@ -236,6 +236,9 @@ pub const MAX_WAL_SIZE: u64 = 128 * 1024 * 1024;
 /// Maximum size for a single WAL entry payload (64MB).
 pub const MAX_WAL_ENTRY_SIZE: u32 = 64 * 1024 * 1024;
 
+/// Default capacity for the bounded WAL flusher command channel.
+pub const DEFAULT_WAL_QUEUE_CAPACITY: usize = 1_024;
+
 pub static FAIL_APPEND_FOR_TX: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static DELAY_APPEND_FOR_TX: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static DELAY_APPEND_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -271,8 +274,7 @@ pub struct Wal {
     pub(crate) fallback_integrity_key: Option<[u8; 32]>,
     pub(crate) allow_legacy_integrity_key_fallback: bool,
     pub(crate) last_hmac: Arc<tokio::sync::Mutex<[u8; 32]>>,
-    pub(crate) flusher_tx:
-        std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<WalCommand>>>,
+    pub(crate) flusher_tx: std::sync::RwLock<Option<tokio::sync::mpsc::Sender<WalCommand>>>,
     pub(crate) sealed: Arc<std::sync::atomic::AtomicBool>,
     pub truncate_lock: Arc<tokio::sync::Mutex<()>>,
     #[allow(dead_code)]
@@ -385,7 +387,7 @@ impl Wal {
             simulate_append_failure: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
 
-        wal.enable_flusher_with_config(file, config.flusher_config);
+        wal.enable_flusher_with_config(file, config.flusher_config)?;
 
         // If file is not empty, find the last valid HMAC to continue the chain
         if metadata.len() > 0 {
@@ -478,12 +480,15 @@ impl Wal {
             truncate_lock: Arc::new(tokio::sync::Mutex::new(())),
             simulate_append_failure: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
-        wal.enable_flusher_with_config(
+        if let Err(e) = wal.enable_flusher_with_config(
             self::fs::LoomFile::new(),
             WalFlusherConfig {
                 batch_window_micros: 0,
+                queue_capacity: DEFAULT_WAL_QUEUE_CAPACITY,
             },
-        );
+        ) {
+            tracing::error!("Failed to enable flusher in loom: {e}");
+        }
         wal
     }
 }

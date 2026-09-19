@@ -5668,9 +5668,18 @@ mod tests {
         // Acquire snapshot via inner_read() and verify all 3 indices are atomically populated
         let snapshot = graph.inner_read();
         assert!(snapshot.hyperedges.contains_key(&he_id));
-        assert!(snapshot.doc_to_hyperedges.get(&doc_id).is_some_and(|set| set.contains(&he_id)));
-        assert!(snapshot.hyperedge_index.get(&e1).is_some_and(|set| set.contains(&he_id)));
-        assert!(snapshot.hyperedge_index.get(&e2).is_some_and(|set| set.contains(&he_id)));
+        assert!(snapshot
+            .doc_to_hyperedges
+            .get(&doc_id)
+            .is_some_and(|set| set.contains(&he_id)));
+        assert!(snapshot
+            .hyperedge_index
+            .get(&e1)
+            .is_some_and(|set| set.contains(&he_id)));
+        assert!(snapshot
+            .hyperedge_index
+            .get(&e2)
+            .is_some_and(|set| set.contains(&he_id)));
         drop(snapshot);
 
         // Atomically tombstone hyperedge
